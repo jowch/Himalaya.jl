@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { PeakGlyph } from "../src/components/ui/peakMark";
-import { peakGlyph } from "../src/components/ui/peakMark";
+import { PeakGlyph } from "../src/print/ui/peakMark";
+import { peakGlyph } from "../src/print/ui/peakMark";
 
 const PHASE = "oklch(0.570 0.150 58)";
 
@@ -54,9 +54,16 @@ describe("<PeakGlyph> — legend + overlay geometry", () => {
     expect(poly!.getAttribute("fill")).toBe("none");
   });
 
-  it("hot adds a ring element", () => {
+  it("hot marks the glyph with data-hot but does NOT add a separate ring element", () => {
+    // Greenfield q-link redesign: the mark is unchanged when hot — emphasis lives
+    // on the q-line + q-readout, and `data-hot` stays only as a DOM hook. There is
+    // no longer a concentric hot-ring element drawn on the glyph itself.
     const c = glyphFor({ source: "auto", color: PHASE, hot: true });
-    expect(c.querySelector('[data-role="hot-ring"]')).not.toBeNull();
+    expect(c.querySelector('[data-role="hot-ring"]')).toBeNull();
+    expect(c.querySelector('[data-hot="true"]')).not.toBeNull();
+    // not hot → no data-hot hook.
+    const cold = glyphFor({ source: "auto", color: PHASE });
+    expect(cold.querySelector('[data-hot="true"]')).toBeNull();
   });
 
   it("excluded is hollow (fill none)", () => {

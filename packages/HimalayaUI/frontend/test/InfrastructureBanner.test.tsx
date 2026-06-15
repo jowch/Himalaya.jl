@@ -3,7 +3,8 @@ import { act, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Mutation } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { InfrastructureBanner } from "../src/components/InfrastructureBanner";
+import { InfrastructureBanner } from "../src/print/shell/InfrastructureBanner";
+import { useFloatingDock } from "../src/print/shell/floatingDock";
 
 function withQC(qc: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
@@ -45,6 +46,8 @@ describe("InfrastructureBanner", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    // Reset the shared dock lane so one test's occupancy never leaks.
+    useFloatingDock.setState({ centerLaneOccupied: false });
   });
 
   it("renders nothing when no pending mutations", () => {
@@ -107,6 +110,27 @@ describe("InfrastructureBanner", () => {
     expect(banner).toHaveTextContent("Couldn’t save. Try refreshing.");
     expect(banner.textContent ?? "").not.toContain("—");
     expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
+  });
+
+  it("docks centre by default (no page action bar occupies the lane)", () => {
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    expect(screen.getByTestId("infrastructure-banner")).toHaveAttribute(
+      "data-dock",
+      "center",
+    );
+  });
+
+  it("steps aside to the corner while a bottom-centre action bar occupies the lane (LA-COLLIDE)", () => {
+    // The contact sheet's opaque CullBar/ComposeBar sit in the same bottom-
+    // centre lane at a higher z; without stepping aside the banner is occluded.
+    useFloatingDock.setState({ centerLaneOccupied: true });
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    expect(screen.getByTestId("infrastructure-banner")).toHaveAttribute(
+      "data-dock",
+      "aside",
+    );
   });
 
   it("disappears when the mutation settles", () => {

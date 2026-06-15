@@ -43,4 +43,20 @@ describe("buildFilename", () => {
   it("supports svg extension", () => {
     expect(buildFilename("himalaya-trace-jc23", "svg")).toBe("himalaya-trace-jc23-2026-05-08.svg");
   });
+
+  // Regression: the raw title was interpolated unsanitized — spaces/colons/dots
+  // leaked into the filename and could defeat extension detection (and the
+  // anchor `download` attribute). buildFilename must slugify the stem.
+  it("slugifies a spaced title so the extension is unambiguous", () => {
+    expect(buildFilename("himalaya-series-Series by dose", "svg")).toBe(
+      "himalaya-series-series-by-dose-2026-05-08.svg",
+    );
+  });
+  it("strips dots and colons from the stem (no mid-name '.' before the ext)", () => {
+    const out = buildFilename("himalaya-series-1:2.5 ratio", "png");
+    expect(out).toBe("himalaya-series-1-2-5-ratio-2026-05-08.png");
+    // Exactly one dot, and it precedes the extension.
+    expect(out.split(".").length).toBe(2);
+    expect(out.endsWith(".png")).toBe(true);
+  });
 });

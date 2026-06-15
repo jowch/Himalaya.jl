@@ -25,6 +25,87 @@ function TextareaTrap({ active = true }: { active?: boolean }): JSX.Element {
   );
 }
 
+function EmptyTrap(): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, true);
+  return <div ref={ref} data-testid="empty-trap" />;
+}
+
+describe("useFocusTrap — engagement (APG modal dialog)", () => {
+  it("on activation, moves focus from the outside trigger into the container (first focusable)", () => {
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    const { getByTestId, unmount } = render(<TrapContainer />);
+    expect(document.activeElement).toBe(getByTestId("btn-a"));
+
+    unmount();
+    document.body.removeChild(trigger);
+  });
+
+  it("on activation with no focusable children, focuses the container itself (tabIndex=-1)", () => {
+    const trigger = document.createElement("button");
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const { getByTestId, unmount } = render(<EmptyTrap />);
+    const container = getByTestId("empty-trap");
+    expect(document.activeElement).toBe(container);
+    expect(container.getAttribute("tabindex")).toBe("-1");
+
+    unmount();
+    document.body.removeChild(trigger);
+  });
+
+  it("does not steal focus when it is already inside the container on activation (autoFocus case)", () => {
+    const { getByTestId, rerender } = render(<TrapContainer active={false} />);
+    const b = getByTestId("btn-b");
+    b.focus();
+    rerender(<TrapContainer active={true} />);
+    expect(document.activeElement).toBe(b);
+  });
+
+  it("intercepts Tab while focus is OUTSIDE the container and drives it to the first focusable", () => {
+    const { getByTestId } = render(<TrapContainer />);
+    const a = getByTestId("btn-a");
+
+    // Force focus out without a focusin event (blur → body), simulating an
+    // inert-background click / programmatic blur.
+    (document.activeElement as HTMLElement).blur();
+    expect(document.activeElement).toBe(document.body);
+
+    const evt = fireEvent.keyDown(document.body, { key: "Tab", bubbles: true });
+    expect(evt).toBe(false); // defaultPrevented — Tab never reaches background controls
+    expect(document.activeElement).toBe(a);
+  });
+
+  it("pulls focus back into the container when it lands outside while active (focusin guard)", () => {
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+
+    const { getByTestId, unmount } = render(<TrapContainer />);
+    outside.focus(); // fires focusin synchronously in JSDOM
+    expect(document.activeElement).toBe(getByTestId("btn-a"));
+
+    unmount();
+    document.body.removeChild(outside);
+  });
+
+  it("leaves a Tab that a consumer already defaultPrevented alone (NavModal Tab-commit interplay)", () => {
+    const { getByTestId } = render(<TrapContainer />);
+    const c = getByTestId("btn-c");
+    c.focus();
+    const prevent = (e: Event): void => e.preventDefault();
+    c.addEventListener("keydown", prevent);
+    fireEvent.keyDown(c, { key: "Tab", bubbles: true });
+    // Consumer owns the key — the trap must not also wrap.
+    expect(document.activeElement).toBe(c);
+    c.removeEventListener("keydown", prevent);
+  });
+});
+
 describe("useFocusTrap", () => {
   it("Tab on the last element wraps focus to the first", () => {
     const { getByTestId } = render(<TrapContainer />);

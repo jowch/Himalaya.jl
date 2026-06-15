@@ -11,8 +11,30 @@ import {
 } from "./errors";
 import type { FlatPayload, Mutator, RollbackContext } from "./types";
 
+/**
+ * Per-call lifecycle callbacks for `mutate`. They fire AFTER the queue's own
+ * global handlers (optimistic rollback, validation toast, retry policy):
+ * - `onSuccess` fires on CONFIRMATION — HTTP response or own-op SSE frame,
+ *   whichever wins the race. Consumers use it for honest success toasts
+ *   (never toast optimistically at mutate() time).
+ * - `onError` fires on TERMINAL failure — for infrastructure errors that is
+ *   after the retry policy exhausts (the InfrastructureBanner only covers the
+ *   pending window; once the mutation settles as error it disappears, so a
+ *   consumer that claimed nothing would leave a silent rollback).
+ * TanStack semantics apply: when mutate() is called again before the previous
+ * call settles, only the LATEST call's callbacks fire (no toast pile-up).
+  * NOTE: onError also fires for 404s a `treats404AsSuccess` mutator treats
+ * as success (the mutation still settles as error; the global handler merely
+ * skips the rollback) - guard with isValidationError/is404Error if your
+ * mutator opts in.
+ */
+export interface MutateCallbacks<TResponse = unknown> {
+  onSuccess?: (response: TResponse) => void;
+  onError?: (error: unknown) => void;
+}
+
 export interface UseQueueMutationResult<TInput, TResponse = unknown> {
-  mutate: (input: TInput) => void;
+  mutate: (input: TInput, callbacks?: MutateCallbacks<TResponse>) => void;
   isPending: boolean;
   isSuccess: boolean;
   /** Last successful response, or undefined if no mutation has succeeded yet. */
@@ -94,12 +116,11 @@ export function useQueueMutation<TInput, TScope, TResponse>(
         if (mutator.treats404AsSuccess && is404Error(err)) return;
         context?.restore?.();
         if (isValidationError(err)) {
-          // ConflictError (409, content_hash drift) is surfaced via the
-          // typed throw on `useMutation.error` and rendered by the conflict
-          // modal — suppressing the toast keeps the user from seeing a
-          // generic "Couldn't save comparison" banner stacked on top of the
-          // dedicated diff UI. The same goes for any future typed-throw that
-          // routes through a bespoke error surface; gate via instanceof.
+          // ConflictError (409, content_hash drift) is caught here solely to
+          // suppress the generic error toast — there is no conflict modal
+          // (multiplayer is last-write-wins; conflict UI was cancelled).
+          // The same pattern applies to any future typed-throw that has its
+          // own bespoke error surface; gate via instanceof.
           if (err instanceof ConflictError) return;
           showToast(buildValidationMessage(mutator.kind, err), "error");
         }
@@ -115,7 +136,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
     },
   );
 
-  const mutate = (input: TInput): void => {
+  const mutate = (input: TInput, callbacks?: MutateCallbacks<TResponse>): void => {
     // The single cast at the framework layer: useMutation flat-spreads
     // {kind, clientOpId, ...scope, ...input} into the variables, but TS
     // can't statically prove that the resulting object satisfies the
@@ -127,7 +148,16 @@ export function useQueueMutation<TInput, TScope, TResponse>(
       ...scope,
       ...(input as object),
     } as unknown as Payload;
-    mutation.mutate(payload);
+    // Conditional spread (exactOptionalPropertyTypes): never pass an explicit
+    // `undefined` handler into TanStack's MutateOptions.
+    mutation.mutate(payload, {
+      ...(callbacks?.onSuccess
+        ? { onSuccess: (response: TResponse) => callbacks.onSuccess!(response) }
+        : {}),
+      ...(callbacks?.onError
+        ? { onError: (err: unknown) => callbacks.onError!(err) }
+        : {}),
+    });
   };
 
   return {

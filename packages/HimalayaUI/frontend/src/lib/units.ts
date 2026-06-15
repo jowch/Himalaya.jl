@@ -71,3 +71,20 @@ export function formatKappa(k: number): string {
   if (abs < 0.01) return k.toExponential(2);
   return k.toFixed(3);
 }
+
+/**
+ * Figure-grade κ: like {@link formatKappa} but renders the scientific-notation
+ * branch with a real `×10ⁿ` (superscript) mantissa instead of the `e-4` ASCII
+ * form, for a clean journal/presentation label (e.g. `1.70×10⁻⁴`).
+ */
+export function formatKappaPretty(k: number): string {
+  const s = formatKappa(k);
+  const m = /^(-?\d+(?:\.\d+)?)e([+-]?\d+)$/.exec(s);
+  if (!m) return s;
+  const mantissa = m[1]!;
+  const expDigits = m[2]!.replace("+", "");
+  const sup = Array.from(expDigits)
+    .map((ch) => (ch === "-" ? "⁻" : (SUPERSCRIPT[ch] ?? ch)))
+    .join("");
+  return `${mantissa}×10${sup}`;
+}

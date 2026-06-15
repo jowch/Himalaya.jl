@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { App } from "../src/App";
+import { PrintApp as App } from "../src/print/App";
 import { useAppState } from "../src/state";
 import { renderWithProviders } from "./test-utils";
 
@@ -100,7 +100,7 @@ describe("App smoke", () => {
 
   it("a /compare* URL redirects to the series folio (Compare retired, #177)", async () => {
     renderAppAt("/experiments/1/compare");
-    await waitFor(() => expect(screen.getByTestId("series-folio-page")).toBeInTheDocument(),
+    await waitFor(() => expect(screen.getByTestId("folio-header")).toBeInTheDocument(),
       { timeout: 3000 });
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });

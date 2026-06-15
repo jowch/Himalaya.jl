@@ -78,7 +78,7 @@ test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to 
   await page.goto("/index/lipid/JC001");
   // IndexSlugRedirect resolves the slug → /sample/42 (the focus workspace).
   await expect(page).toHaveURL(/\/sample\/42$/);
-  await expect(page.getByTestId("focus-workspace-page")).toBeVisible();
+  await expect(page.getByTestId("focus-workspace")).toBeVisible();
 });
 
 test("legacy /index deep-link whose slug 404s falls back to the corpus contact sheet", async ({ page }) => {

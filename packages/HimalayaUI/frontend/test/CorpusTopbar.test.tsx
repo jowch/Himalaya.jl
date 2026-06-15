@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
-import { CorpusTopbar } from "../src/components/CorpusTopbar";
+import { CorpusTopbar } from "../src/print/shell/CorpusTopbar";
 
 const EXPERIMENTS = [
   { id: 1, name: "SSRL Apr 2026", path: "/e1", data_dir: "/d1",
@@ -15,11 +15,17 @@ const EXPERIMENTS = [
 ];
 
 function mockExperiments(): void {
-  vi.spyOn(global, "fetch").mockResolvedValue(
-    new Response(JSON.stringify(EXPERIMENTS), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+  // A fresh Response per call: the topbar runs TWO queries (experiments +
+  // corpus samples, both needed by the SA-F5 unknown-filter verdict), and a
+  // Response body is single-use — a shared mockResolvedValue would leave the
+  // second query permanently unresolved ("body already used").
+  vi.spyOn(global, "fetch").mockImplementation(() =>
+    Promise.resolve(
+      new Response(JSON.stringify(EXPERIMENTS), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
   );
 }
 
@@ -61,15 +67,15 @@ describe("CorpusTopbar", () => {
     expect(wordmark).toHaveAttribute("href", "/samples");
   });
 
-  it("renders three stage-tabs; Samples is active and links to /samples", () => {
+  it("renders two stage-tabs (Samples, Series); Samples is active and links to /samples", () => {
     mockExperiments();
     renderTopbar();
     const samples = screen.getByTestId("stage-tab-samples");
     expect(samples).toHaveAttribute("href", "/samples");
     expect(samples).toHaveAttribute("data-active", "true");
-    // Index remains inert until Phase 4; Series is now a live link (#173 / I3.3)
-    // but inactive on /samples.
-    expect(screen.getByTestId("stage-tab-index")).toBeDisabled();
+    // The focus workspace is no longer a top-level stage tab — it is reached by
+    // opening a sample. Only Samples + Series remain.
+    expect(screen.queryByTestId("stage-tab-index")).toBeNull();
     const series = screen.getByTestId("stage-tab-series");
     expect(series).toHaveAttribute("href", "/series");
     expect(series).not.toHaveAttribute("data-active");
@@ -105,14 +111,6 @@ describe("CorpusTopbar", () => {
     expect(screen.getByTestId("beamtime-probe")).toHaveTextContent("");
   });
 
-  it("shows a Contact sheet | Loupe segmented switch", () => {
-    mockExperiments();
-    renderTopbar("/samples");
-    const seg = screen.getByTestId("view-seg");
-    expect(seg).toHaveTextContent("Contact sheet");
-    expect(seg).toHaveTextContent("Loupe");
-  });
-
   // The beamtime filter is honored only on the samples surface. It used to
   // render on every route — changeable but inert on /series and /sample/:id.
   // Hide it where it does nothing rather than lie.
@@ -134,35 +132,27 @@ describe("CorpusTopbar", () => {
     expect(screen.queryByTestId("beamtime-chip")).toBeNull();
   });
 
-  it("marks Contact sheet active on /samples and disables Loupe", () => {
+  it("an unknown ?beamtime shows the honest disabled option, never 'all experiments' (SA-F5)", async () => {
     mockExperiments();
-    renderTopbar("/samples");
-    expect(screen.getByTestId("view-seg-sheet")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    expect(screen.getByTestId("view-seg-loupe")).toBeDisabled();
+    renderTopbar("/samples?beamtime=99");
+    // Wait for BOTH lists (experiments + corpus) to settle the unknown verdict.
+    const unknown = await screen.findByRole("option", { name: "Unknown beamtime" });
+    expect(unknown).toBeDisabled();
+    const select = screen.getByTestId("beamtime-chip") as HTMLSelectElement;
+    expect(select.value).toBe("99");
+    // The displayed selection is the honest label — the same copy string the
+    // contact sheet's EmptyState shows (shared UNKNOWN_BEAMTIME_LABEL).
+    expect(select.selectedOptions[0]?.textContent).toBe("Unknown beamtime");
   });
 
-  it("marks Loupe active on a loupe route and links sheet back to /samples", () => {
+  it("picking 'all experiments' is the way out of an unknown ?beamtime", async () => {
     mockExperiments();
-    renderTopbar("/samples/loupe/2");
-    expect(screen.getByTestId("view-seg-loupe")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    expect(screen.getByTestId("view-seg-sheet")).toHaveAttribute(
-      "href",
-      "/samples",
-    );
-  });
-
-  it("preserves ?beamtime= on the Contact sheet link", () => {
-    mockExperiments();
-    renderTopbar("/samples/loupe/2?beamtime=1");
-    expect(screen.getByTestId("view-seg-sheet")).toHaveAttribute(
-      "href",
-      "/samples?beamtime=1",
+    renderTopbar("/samples?beamtime=99");
+    await screen.findByRole("option", { name: "Unknown beamtime" });
+    fireEvent.change(screen.getByTestId("beamtime-chip"), { target: { value: "" } });
+    expect(screen.getByTestId("beamtime-probe")).toHaveTextContent("");
+    await waitFor(() =>
+      expect(screen.queryByRole("option", { name: "Unknown beamtime" })).toBeNull(),
     );
   });
 

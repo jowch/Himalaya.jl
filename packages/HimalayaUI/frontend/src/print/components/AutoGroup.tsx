@@ -1,0 +1,109 @@
+import type { ReactNode } from "react";
+
+export interface AutoGroupAction {
+  label: string;
+  onClick?: () => void;
+  muted?: boolean;
+  /** The action's own chain is in flight: disabled + `aria-busy="true"` (no
+   *  double-submit). The caller flips `label` to the progressive register
+   *  ("Confirming…") so the control states its reason for being inert. */
+  busy?: boolean;
+}
+
+export interface AutoGroupProps {
+  /** "summary" (recessed, scoping) | "compose" (plate bg, builder). Default "summary". */
+  variant?: "summary" | "compose";
+  /** Optional bold title shown above the body (when a caller needs a heading). */
+  title?: string;
+  /** Body copy — ReactNode so the caller can embed <strong> emphasis. */
+  children: ReactNode;
+  /** Optional link-style actions (compose variant). */
+  actions?: AutoGroupAction[];
+  /** PLACEMENT-ONLY. Appended last. */
+  className?: string;
+}
+
+function Star(): JSX.Element {
+  return (
+    <svg
+      data-role="autogroup-star"
+      className="w-[15px] h-[15px] shrink-0"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M8 1.4l1.7 4.2 4.5.3-3.5 2.9 1.2 4.4L8 10.9 4.1 13.2l1.2-4.4L1.8 5.9l4.5-.3z"
+        fill="var(--color-print-accent)"
+      />
+    </svg>
+  );
+}
+
+export function AutoGroup({
+  variant = "summary",
+  title,
+  children,
+  actions,
+  className,
+}: AutoGroupProps): JSX.Element {
+  const bg = variant === "compose" ? "bg-plate" : "bg-paper-sunk";
+  const body = <div className="text-body text-ink-soft">{children}</div>;
+  return (
+    <div
+      data-testid="auto-group"
+      data-variant={variant}
+      className={`rounded border border-hair p-3 ${bg}${className ? ` ${className}` : ""}`}
+    >
+      <div className="flex gap-2 items-start">
+        <Star />
+        {title ? (
+          <span className="text-meta text-ink font-bold">{title}</span>
+        ) : (
+          body
+        )}
+      </div>
+
+      {title && <div className="mt-2">{body}</div>}
+
+      {actions?.length ? (
+        <div className="flex gap-3 mt-2">
+          {actions.map((action) => {
+            // controls-don't-lie: an action with no `onClick` is inert, so it
+            // renders visibly + behaviourally disabled (faint, no underline-on-
+            // hover, `disabled` + `aria-disabled`) rather than as a live accent
+            // link that does nothing. A busy action is likewise inert (its
+            // chain is already running) and additionally says so via aria-busy.
+            const busy = action.busy === true;
+            const inert = action.onClick === undefined || busy;
+            return (
+              <button
+                key={action.label}
+                type="button"
+                {...(action.onClick && !busy ? { onClick: action.onClick } : {})}
+                disabled={inert}
+                aria-disabled={inert || undefined}
+                aria-busy={busy || undefined}
+                className={
+                  inert
+                    ? "text-sm font-semibold text-ink-soft cursor-not-allowed"
+                    : action.muted
+                      ? // BU-EDIT-VERB: a muted-but-LIVE action (the "Edit" door)
+                        // must not read as the inert/disabled state, which is also
+                        // ink-soft with no rest affordance. A standing dotted
+                        // underline marks it interactive-but-secondary; it firms to
+                        // a solid underline on hover. (Accent actions don't need it
+                        // — their colour already signals "interactive".)
+                        "text-sm font-semibold text-ink-soft underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                      : "text-sm font-semibold text-print-accent hover:underline"
+                }
+              >
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}

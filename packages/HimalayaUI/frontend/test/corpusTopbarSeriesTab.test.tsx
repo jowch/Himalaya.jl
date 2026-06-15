@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
-import { CorpusTopbar } from "../src/components/CorpusTopbar";
+import { CorpusTopbar } from "../src/print/shell/CorpusTopbar";
 
 function renderAt(path: string) {
   render(

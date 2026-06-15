@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/components/ui/**,
+// Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/print/ui/**,
 // flags banned appearance utilities / raw color literals. PURE-ABSOLUTE: every matched
 // violation (after the ui/ exclusion + per-rule allowlist) is a hard error (exit 2). There is
 // no baseline — the named scale + component library are now the only sanctioned source of
 // appearance, so any new bracket/raw-color escape is a regression, full stop.
 // Pure functions are exported for unit testing; the CLI runs only when invoked directly.
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, sep, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // import.meta.url is a file: URL when run by node directly, but some loaders
@@ -37,10 +37,10 @@ const SRC_DIR = join(HERE, "..", "src");
 const COLOR_AUTHORING_ALLOWLIST = new Set([
   "phases.ts",
   "lib/comparison/coloring.ts",
-  "components/MemberHeatmapLayer.tsx",
-  "components/DetectorImage.tsx",
-  "components/FocusDetectorPanel.tsx",
-  "main.tsx",
+  // MemberHeatmapLayer/CrossTraceTrackingLayer author phase color; they now live under
+  // src/print/export/ and are covered by that prefix's isExcluded() exemption — no entry needed.
+  // print/main.tsx authors the configureBoneyard oklch skeleton defaults (the sole entry).
+  "print/main.tsx",
 ]);
 // figure-export/** is allowlisted by prefix (the whole export palette dir).
 const COLOR_AUTHORING_ALLOW_PREFIXES = ["lib/figure-export/"];
@@ -131,9 +131,18 @@ function relToSrc(absPath) {
   return relative(SRC_DIR, absPath).split(sep).join("/");
 }
 
-// src/components/ui/** is excluded entirely (it is where appearance is authored).
+// src/print/ui/**, src/print/plot/**, src/print/detector/**, src/print/comb/**,
+// and src/print/export/** are excluded (appearance authored — primitives, the
+// trace-plot engine, the detector rendering layer, the comb/residual rendering
+// layer, and the deliberately un-branded export renderer).
 function isExcluded(relPath) {
-  return relPath.startsWith("components/ui/");
+  return (
+    relPath.startsWith("print/ui/") ||
+    relPath.startsWith("print/plot/") ||
+    relPath.startsWith("print/detector/") ||
+    relPath.startsWith("print/comb/") ||
+    relPath.startsWith("print/export/")   // CleanFigure: deliberately un-branded export idiom (Arial + literal hex)
+  );
 }
 
 // Scan one file's text. Returns [{ rule, file, line, text }].
@@ -155,6 +164,37 @@ export function scanContent(relPath, content) {
   return violations;
 }
 
+// Relative import/export specifiers on one line. Group 1 = `... from "X"`, group 2 = dynamic import("X").
+const IMPORT_SPEC_RE =
+  /(?:import|export)\b[^'"]*?\bfrom\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
+
+// Import-boundary guard: a file under src/print/** may not import (relatively) from the OLD
+// src/components/** or src/pages/**. As of the full migration both legacy dirs are GONE (the
+// whole frontend now lives under src/print/), so this is a REINTRODUCTION guardrail — it keeps
+// anyone from re-creating a top-level src/components/ or src/pages/ and importing across it. We
+// resolve each relative specifier against the importer's dir (POSIX) and flag it if it lands
+// under components/ or pages/. Print-internal imports (./components, ./pages — i.e.
+// src/print/components, src/print/pages) resolve under print/ and pass. Exported pure for unit testing.
+export function scanLegacyImports(relPath, content) {
+  if (!relPath.startsWith("print/")) return [];
+  const dir = posix.dirname(relPath);
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    IMPORT_SPEC_RE.lastIndex = 0;
+    let m;
+    while ((m = IMPORT_SPEC_RE.exec(lines[i])) != null) {
+      const spec = m[1] ?? m[2];
+      if (!spec || !spec.startsWith(".")) continue; // bare/external specifiers are fine
+      const resolved = posix.normalize(posix.join(dir, spec));
+      if (resolved.startsWith("components/") || resolved.startsWith("pages/")) {
+        out.push({ rule: "no-legacy-import", file: relPath, line: i + 1, text: spec });
+      }
+    }
+  }
+  return out;
+}
+
 // --- CLI ---------------------------------------------------------------------
 // Pure-absolute: scan every source file, error on ANY violation (no baseline).
 function runCli() {
@@ -162,7 +202,9 @@ function runCli() {
   const all = [];
   for (const abs of files) {
     const rel = relToSrc(abs);
-    all.push(...scanContent(rel, readFileSync(abs, "utf8")));
+    const content = readFileSync(abs, "utf8");
+    all.push(...scanContent(rel, content));
+    all.push(...scanLegacyImports(rel, content));
   }
 
   if (all.length > 0) {
@@ -171,8 +213,9 @@ function runCli() {
       process.stderr.write(`  ${v.rule}  src/${v.file}:${v.line}  ${JSON.stringify(v.text)}\n`);
     }
     process.stderr.write(
-      "Move the appearance utility into src/components/ui/**, or use a named scale/role token. " +
-        "Raw color literals belong only in the color-authoring files.\n",
+      "Move the appearance utility into src/print/ui/**, or use a named " +
+        "scale/role token. Raw color literals belong only in the color-authoring files. " +
+        "src/print/** may not import from src/components/** or src/pages/** (no-legacy-import).\n",
     );
     return 2;
   }

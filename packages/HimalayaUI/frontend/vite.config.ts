@@ -38,5 +38,10 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
+    // Single entry: index.html → src/print/main.tsx → PrintApp ("The Print").
+    // No rollupOptions.input override — Vite uses the default index.html entry,
+    // so `vite build` emits dist/index.html (the name server.jl serves) and the
+    // dev server resolves the app at `/`. (The cutover removed the legacy
+    // print.html / src/main.tsx / src/App.tsx scaffolding.)
   },
 });

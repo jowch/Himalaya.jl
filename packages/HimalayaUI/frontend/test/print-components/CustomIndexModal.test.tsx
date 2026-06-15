@@ -1,0 +1,85 @@
+import { render, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { CustomIndexModal } from "../../src/print/components/CustomIndexModal";
+import { PN3M } from "../../src/print/comb/comb.fixtures";
+
+const base = {
+  open: true,
+  symmetries: ["Pn3m", "Im3m", "Ia3d", "Lamellar", "Hexagonal"],
+  symmetry: "Im3m",
+  paramName: "a",
+  paramValue: "252",
+  paramMin: 120, paramMax: 360, paramStep: 1,
+  previewSeries: PN3M,
+  observed: [0.03, 0.045, 0.06],
+  fit: { landed: 3, total: 5, snapped: true },
+};
+
+describe("CustomIndexModal", () => {
+  it("renders head, symmetry seg, lattice control, preview, fit line and footer when open", () => {
+    const { getByTestId, getByText, getAllByRole } = render(
+      <CustomIndexModal {...base} onClose={() => {}} onCancel={() => {}} onAdd={() => {}}
+        onSymmetryChange={() => {}} onParamChange={() => {}} />,
+    );
+    expect(getByText("Custom index")).toBeTruthy();
+    expect(getByText("Speculative")).toBeTruthy();
+    expect(getAllByRole("button").some((b) => b.textContent === "Im3m")).toBe(true);
+    expect(getByTestId("lattice-param")).toBeTruthy();
+    expect(getByTestId("custom-preview")).toBeTruthy();
+    expect(getByTestId("fit-metadata").textContent).toContain(
+      "3 of 5 reflections land on observed peaks",
+    );
+    expect(getByText("Add to assignment")).toBeTruthy();
+    expect(getByText("Cancel")).toBeTruthy();
+  });
+  it("forwards onSelectObserved to the preview (click-to-snap on a baseline peak)", () => {
+    const onSelectObserved = vi.fn();
+    const { container } = render(
+      <CustomIndexModal {...base} onClose={() => {}} onCancel={() => {}} onAdd={() => {}}
+        onSymmetryChange={() => {}} onParamChange={() => {}} onSelectObserved={onSelectObserved} />,
+    );
+    const hits = container.querySelectorAll("[data-observed-hit]");
+    expect(hits.length).toBe(base.observed.length);
+    fireEvent.click(hits[0]!);
+    expect(onSelectObserved).toHaveBeenCalledWith(base.observed[0]);
+  });
+
+  it("renders nothing when open=false", () => {
+    const { queryByText } = render(
+      <CustomIndexModal {...base} open={false} onClose={() => {}} onCancel={() => {}} onAdd={() => {}}
+        onSymmetryChange={() => {}} onParamChange={() => {}} />,
+    );
+    expect(queryByText("Custom index")).toBeNull();
+  });
+  it("disables Add when addDisabled is set (out-of-range / empty param) and never fires onAdd", () => {
+    const onAdd = vi.fn();
+    const { getByText } = render(
+      <CustomIndexModal {...base} addDisabled onClose={() => {}} onCancel={() => {}} onAdd={onAdd}
+        onSymmetryChange={() => {}} onParamChange={() => {}} />,
+    );
+    const add = getByText("Add to assignment") as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.click(add);
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+  it("second-channels paramInvalid onto the lattice number field (aria-invalid)", () => {
+    const { getByLabelText } = render(
+      <CustomIndexModal {...base} paramInvalid onClose={() => {}} onCancel={() => {}} onAdd={() => {}}
+        onSymmetryChange={() => {}} onParamChange={() => {}} />,
+    );
+    expect(getByLabelText("lattice parameter value").getAttribute("aria-invalid")).toBe("true");
+  });
+  it("wires the actions", () => {
+    const onAdd = vi.fn(), onCancel = vi.fn(), onSymmetryChange = vi.fn();
+    const { getByText } = render(
+      <CustomIndexModal {...base} onClose={() => {}} onCancel={onCancel} onAdd={onAdd}
+        onSymmetryChange={onSymmetryChange} onParamChange={() => {}} />,
+    );
+    fireEvent.click(getByText("Add to assignment"));
+    fireEvent.click(getByText("Cancel"));
+    fireEvent.click(getByText("Pn3m"));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSymmetryChange).toHaveBeenCalledWith("Pn3m");
+  });
+});

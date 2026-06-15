@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
-import { StaleUrlPage } from "../src/components/StaleUrlPage";
+import { StaleUrlPage } from "../src/print/shell/StaleUrlPage";
 import { useAppState } from "../src/state";
 import type { StaleUrlContext } from "../src/state";
 

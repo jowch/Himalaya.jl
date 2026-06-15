@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SegmentedControl } from "../../src/components/ui/SegmentedControl";
+import { SegmentedControl } from "../../src/print/ui/SegmentedControl";
 
 type Mode = "log" | "linear";
 const TWO = [
@@ -132,23 +132,6 @@ describe("SegmentedControl — data contract (E2E selectors)", () => {
     expect(screen.getByTestId("scale-linear")).toBeInTheDocument();
   });
 
-  it("honors a stateAttr override to ALSO emit data-mode (GroupingModeToggle contract)", () => {
-    render(
-      <SegmentedControl<GMode>
-        aria-label="Trace grouping mode"
-        role="radiogroup"
-        variant="plain"
-        options={THREE}
-        value="byPhase"
-        onChange={() => {}}
-        testId="grouping-mode"
-        stateAttr="data-mode"
-      />,
-    );
-    const root = screen.getByTestId("grouping-mode");
-    expect(root).toHaveAttribute("data-mode", "byPhase");
-    expect(root).toHaveAttribute("data-state", "byPhase");
-  });
 });
 
 describe("SegmentedControl — radiogroup semantics", () => {

@@ -1,6 +1,6 @@
 import { render, screen, cleanup } from "@testing-library/react";
 import { afterEach, describe, it, expect } from "vitest";
-import { PhaseChip } from "../../src/components/ui/PhaseChip";
+import { PhaseChip } from "../../src/print/ui/PhaseChip";
 
 afterEach(cleanup);
 

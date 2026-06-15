@@ -38,7 +38,7 @@ export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
   | "speculative_created" | "speculative_deleted"
   | "set_exposure_status" | "select_exposure"
-  | "add_tag" | "remove_tag"
+  | "add_tag" | "remove_tag" | "edit_tag"
   | "post_message" | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
@@ -102,10 +102,28 @@ export interface PendingDeferred<T> {
  * Curation-frame `post_state`: the recomputed indices snapshot threaded onto
  * `peak_*` / `analyze_run` SSE frames so the cache can replay without a
  * refetch.
+ *
+ * F-WIPE W1 additively extended ALL reanalyzing frame producers — peak_added
+ * / peak_removed / peak_excluded / peak_unexcluded AND analyze_run (the
+ * manual-reanalyze route was the last producer to gain the envelope):
+ *
+ * - `assignment` — the same `{state, members}` envelope the assignment_*
+ *   frames carry (shared `_assignment_post_state` serializer in
+ *   routes_analysis.jl), reflecting the semantically re-attached membership
+ *   after reanalysis.
+ * - `assignment_dropped` — PER-MEMBER list of phase names whose assignment
+ *   member did not survive reanalysis (its index no longer exists in the new
+ *   candidate set, or merged into a sibling). May repeat a phase; consumers
+ *   aggregate. Present ONLY when non-empty on the wire.
+ *
+ * Both optional: a pre-W1 backend omits them, and consumers must then leave
+ * the assignment cache untouched (no invalidate — today's behavior).
  */
 export interface CurationPostState {
   analysis_inputs_hash: string;
   indices: unknown[];
+  assignment?: Pick<Assignment, "state" | "members">;
+  assignment_dropped?: string[];
 }
 
 /**

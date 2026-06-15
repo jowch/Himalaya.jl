@@ -1,0 +1,86 @@
+import { type CSSProperties } from "react";
+import type { RingPlacement } from "./detectorGeometry";
+
+interface Props {
+  /** Beam center in normalized image coords (0-1). The ring origin. */
+  beamCenter: { x: number; y: number };
+  /** Rings with radii in normalized image coords (fraction of image width). */
+  rings: RingPlacement[];
+  /** q hovered elsewhere (trace peak / comb). The matching ring lights to the
+   *  accent q-link. Props-driven so the renderer is pure; the composite threads
+   *  Zustand `hoveredQ`. */
+  hoveredQ?: number;
+  /** Fired on hit-ring enter (q) / leave (undefined). Omit -> inert rings. */
+  onHoverQ?: (q?: number) => void;
+  /** Displayed image aspect ratio (width / height). The viewBox is stretched to
+   *  the (non-square) image rect by preserveAspectRatio="none", which would
+   *  squash a <circle> into an ellipse; we pre-correct the y-radius by this ratio
+   *  so rings render as TRUE circles. Defaults to 1 (square). */
+  imageAspect?: number;
+  /** Orientation when the parent drives it (mirrors DetectorImage). */
+  orient?: "portrait" | "landscape";
+}
+
+export function DetectorRings({ beamCenter, rings, hoveredQ, onHoverQ, imageAspect, orient }: Props): JSX.Element {
+  const svgStyle: CSSProperties = {
+    position: "absolute", inset: 0, width: "100%", height: "100%",
+    pointerEvents: "none", // hit rings re-enable individually
+    ...(orient === "landscape" ? { transform: "rotate(90deg)", transformOrigin: "center" } : {}),
+  };
+  const TOL = 1e-6;
+  // r is a fraction of image WIDTH. After preserveAspectRatio="none" stretches the
+  // 0..1 viewBox to a Wp×Hp rect, an x-radius rx renders rx·Wp px and a y-radius ry
+  // renders ry·Hp px. To get equal pixel radii (a circle), ry = rx·(Wp/Hp) = r·aspect.
+  const aspect = imageAspect ?? 1;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10">
+      {/* viewBox is the normalized image box; preserveAspectRatio="none" stretches
+          it to the displayed image rect so beam center + radii register. The frame's
+          overflow:hidden clips the arcs of an off-center beam. */}
+      <svg data-testid="detector-rings" data-orient={orient ?? "portrait"}
+           viewBox="0 0 1 1" preserveAspectRatio="none" style={svgStyle} aria-hidden="true">
+        {rings.map(({ q, r, color, ghost }, i) => {
+          const hot = hoveredQ !== undefined && Math.abs(q - hoveredQ) <= TOL;
+          // Hover keeps the ring's OWN colour — emphasis is a wider, more opaque
+          // stroke, never a terracotta-accent recolour (matches the trace-plot
+          // hover rule: the accent is not a hover highlight).
+          const stroke = color ?? "var(--color-ink-faint)";
+          // Stroke widths are in screen px (vector-effect="non-scaling-stroke" keeps
+          // them crisp despite the preserveAspectRatio="none" stretch).
+          // Ghost dots take the diameter from this width, so they run a touch
+          // wider than the solid stroke to read clearly as dots.
+          const sharpW = hot ? 2.6 : ghost ? 2.2 : 1.5;
+          const sharpOp = hot ? 0.95 : ghost ? 0.7 : 0.85;
+          // Dark casing drawn UNDER the stroke, ~1px wider each side. Invisible on
+          // the dark window backing, but on bright Bragg arcs / mid-gray data it
+          // outlines the stroke so every ring reads as a drawn annotation — never
+          // mistaken for the (now grayscale) image, and the warm phase strokes stop
+          // washing out where they cross the bright beam region.
+          const casingW = sharpW + 2;
+          const casingOp = hot ? 0.7 : ghost ? 0.35 : 0.55;
+          // Ghost (predicted-absent) rings are DOTTED: a zero-length dash + round
+          // linecap renders a dot (diameter = stroke width) every 7px along the ring.
+          const dash = ghost ? "0 7" : undefined;
+          const cap = ghost ? "round" : undefined;
+          return (
+            <g key={i} data-role="det-ring" data-ring-q={q}
+               data-hot={hot ? "true" : undefined} data-ghost={ghost ? "true" : undefined}>
+              <ellipse data-role="ring-casing" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
+                fill="none" stroke="oklch(0.12 0.01 60)" strokeWidth={casingW} vectorEffect="non-scaling-stroke"
+                strokeDasharray={dash} strokeLinecap={cap} opacity={casingOp} style={{ pointerEvents: "none" }} />
+              <ellipse data-role="ring-sharp" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
+                fill="none" stroke={stroke} strokeWidth={sharpW} vectorEffect="non-scaling-stroke"
+                strokeDasharray={dash} strokeLinecap={cap} opacity={sharpOp}
+                style={{ pointerEvents: "none" }} />
+              <ellipse data-role="ring-hit" cx={beamCenter.x} cy={beamCenter.y} rx={r} ry={r * aspect}
+                fill="none" stroke="transparent" strokeWidth={5} vectorEffect="non-scaling-stroke"
+                style={{ pointerEvents: onHoverQ ? "stroke" : "none", cursor: onHoverQ ? "pointer" : "default" }}
+                {...(onHoverQ ? { onMouseEnter: () => onHoverQ(q), onMouseLeave: () => onHoverQ(undefined) } : {})} />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}

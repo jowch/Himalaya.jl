@@ -32,6 +32,7 @@ using Test
     include("test_actions.jl")
     include("test_events.jl")
     include("test_assignments.jl")
+    include("test_assignment_reattach.jl")
     include("test_sse.jl")
     include("test_routes_sse_broadcast.jl")
     include("test_route_response_shapes.jl")

@@ -338,6 +338,9 @@ function migrate_schema!(db::SQLite.DB)
     # `exposures` table — placing it earlier would have it dropped along with
     # `_migrate_old_exposures` during `migrate_pk_to_autoincrement!`.
     migrate_exposures_unique_filename!(db)
+    # Heal + enforce one-tag-per-key on samples (TAG-DEDUP-MODEL). Order-free
+    # relative to the exposures/peak migrations — it only touches sample_tags.
+    migrate_sample_tags_unique_key!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -1049,11 +1052,15 @@ this is a data backfill, not a user action.
 
 `active=1` matches WITHOUT a kind filter, by design: this captures both
 user-confirmed (active custom) groups AND the auto group of a never-confirmed
-exposure — converging migrated DBs with `seed_assignment_if_absent!`'s
-new-model default (every analyzed exposure defaults to state='indexed' + auto
-members). Consequence to be aware of: after upgrade, an analyzed-but-never-
-confirmed exposure reports a non-null `confirmed_index` (the auto guess) where
-the legacy `kind='custom'` snapshot reported `nothing`.
+exposure. This is a one-time HISTORICAL backfill — it preserves what a
+pre-Plan-A DB already displayed at the moment of upgrade. NOTE: it deliberately
+DIVERGES from current analyze behavior. A fresh analyze no longer seeds the
+assignment from the auto group (auto-grouping is not a durable concept — see
+`_persist_analysis_inner!`), so new exposures read as unindexed until a human
+curates them; only legacy upgrades carry the auto guess forward. Consequence to
+be aware of: after upgrade, an analyzed-but-never-confirmed legacy exposure
+reports a non-null `confirmed_index` (the auto guess) where the legacy
+`kind='custom'` snapshot reported `nothing`.
 
 LOG-DERIVABILITY CAVEAT (load-bearing for disaster recovery): this backfill is
 the ONLY record of a pre-Plan-A confirmation's membership — those exposures have
@@ -1542,6 +1549,52 @@ function migrate_exposures_unique_filename!(db::SQLite.DB)
 
         DBInterface.execute(db,
             "CREATE UNIQUE INDEX IF NOT EXISTS exposures_unique_filename ON exposures(sample_id, filename)")
+    end
+    nothing
+end
+
+"""
+    migrate_sample_tags_unique_key!(db)
+
+Enforce the single-valued-key invariant on `sample_tags`: a sample carries **at
+most one tag per key** (TAG-DEDUP-MODEL). Before the batch route's upsert landed,
+a series-scoping write could insert a `source='scoping'` row on top of an
+identical `source='manual'` row with the same `(sample_id, key)`, leaving two
+byte-identical chips on the contact sheet and in the loupe. The forward-write bug
+is closed (the batch route now upserts on `(sample_id, key)`), but legacy DBs
+still hold the duplicate rows and nothing structurally prevents a new one.
+
+This heal collapses each duplicate `(sample_id, key)` group to its **oldest row**
+(lowest id — the same winner the batch upsert's `ORDER BY id LIMIT 1` picks, so
+the manual tag, typically written first, survives), deletes the rest, then
+installs a UNIQUE index so the invariant holds at the DB layer for every future
+write. No event is emitted: this is a one-time data heal, not a user action
+(mirrors `migrate_exposures_unique_filename!`).
+
+Idempotent: a clean DB has no duplicate groups and `CREATE UNIQUE INDEX IF NOT
+EXISTS` is a no-op on a second run.
+"""
+function migrate_sample_tags_unique_key!(db::SQLite.DB)
+    SQLite.transaction(db) do
+        dups = Tables.rowtable(DBInterface.execute(db, """
+            SELECT sample_id, key FROM sample_tags
+            WHERE sample_id IS NOT NULL
+            GROUP BY sample_id, key HAVING COUNT(*) > 1"""))
+
+        for d in dups
+            ids = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM sample_tags WHERE sample_id = ? AND key = ? ORDER BY id ASC",
+                [d.sample_id, d.key]))
+            for (i, row) in enumerate(ids)
+                i == 1 && continue  # oldest row wins; matches the batch upsert
+                @warn "Removed duplicate sample tag" sample_id=d.sample_id key=d.key id=row.id
+                DBInterface.execute(db,
+                    "DELETE FROM sample_tags WHERE id = ?", [row.id])
+            end
+        end
+
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX IF NOT EXISTS sample_tags_unique_key ON sample_tags(sample_id, key)")
     end
     nothing
 end

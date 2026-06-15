@@ -26,6 +26,7 @@ const LISTING_ROW: SeriesSummary = {
   has_stale_members: false,
   ordering_variable: "LL37 : lipid ratio",
   spans_experiments: false,
+  experiment_name: "exp-april",
 };
 
 describe("series read fetchers", () => {

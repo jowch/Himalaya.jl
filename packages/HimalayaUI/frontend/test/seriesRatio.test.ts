@@ -1,5 +1,19 @@
 import { describe, it, expect } from "vitest";
-import { seriesRatio } from "../src/lib/seriesRatio";
+import { seriesRatio, ratioTerm } from "../src/lib/seriesRatio";
+
+describe("ratioTerm (single per-peak label)", () => {
+  it("returns the √N / integer term for a phase + 1-based position", () => {
+    expect(ratioTerm("Pn3m", 1)).toBe("√2"); // radicand 2
+    expect(ratioTerm("Pn3m", 3)).toBe("2"); // radicand 4 → perfect square
+    expect(ratioTerm("Im3m", 2)).toBe("2"); // radicand 4
+    expect(ratioTerm("Lamellar", 2)).toBe("2"); // radicand 4
+  });
+  it("returns empty for an unknown phase or out-of-range position", () => {
+    expect(ratioTerm("Nonsense", 1)).toBe("");
+    expect(ratioTerm("Pn3m", 0)).toBe("");
+    expect(ratioTerm("Pn3m", 999)).toBe("");
+  });
+});
 
 describe("seriesRatio", () => {
   it("formats cubic Pn3m radicands as √N terms", () => {

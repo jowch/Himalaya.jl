@@ -2,6 +2,7 @@
 @import "@fontsource/plus-jakarta-sans/400.css";
 @import "@fontsource/plus-jakarta-sans/500.css";
 @import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
 @import "@fontsource/newsreader/400.css";
 @import "@fontsource/newsreader/500.css";
 @import "@fontsource/newsreader/600.css";
@@ -35,6 +36,14 @@
   --color-paper-sunk:   oklch(0.951 0.008 84);
   --color-plate:        oklch(0.992 0.004 90);
   --color-ink:          oklch(0.265 0.013 68);
+  /* De-emphasis tones — pick by WCAG context, NOT by "how faint do I want it".
+     `ink-soft` (6.50:1 on paper) is the tone for SMALL / NORMAL-weight
+     informational TEXT — legends, labels, captions, hints, placeholders, value
+     text, inactive tabs, helper/empty/loading copy (AA-normal needs 4.5:1).
+     `ink-faint` (3.16:1 on paper) is the tone for LARGE / DECORATIVE / non-text
+     contexts only — bold tracked uppercase kickers (AA-large 3.0:1), aria-hidden
+     glyphs/separators, icon-only controls and swatch/cell fills (non-text 3:1).
+     Do NOT borrow `ink-faint` for small body text — it fails AA-normal. */
   --color-ink-soft:     oklch(0.467 0.012 70);
   --color-ink-faint:    oklch(0.640 0.010 74);
   --color-hair:         oklch(0.882 0.008 80);
@@ -70,6 +79,15 @@
   --radius-sm:   5px;     /* buttons, inputs, chips, segmented controls */
   --radius-md:   5px;     /* cards, plates, sheets, modals */
   --radius-full: 9999px;  /* pills, dots */
+
+  /* Elevation — the single genuine shadow (DESIGN.md §4 "Plate Lift"): soft,
+     warm, shallow. The ONE token every lifted plate-like surface (figure
+     plate, folio cards, scoping worksheet, loupe frame surround) draws from,
+     via the `.card` rule / Card `elevated`. Warm rgba(40,30,20) per DESIGN.md —
+     the cool dark-era rgba(20,24,40) cast is retired (FOL P2-1). */
+  --shadow-plate-lift:
+    0 1px 0 rgba(255, 255, 255, .6) inset,
+    0 6px 24px -8px rgba(40, 30, 20, .14);
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Newsreader", Georgia, ui-serif, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -93,8 +111,11 @@
   --text-xl:    19px;
   /* Serif display step (R0a, #221). Newsreader hero/figure/sample title — the
      plate's name (DESIGN.md typography `display`). Set via the `.text-display`
-     role below, not by inlining `text-display`. */
-  --text-display: 27px;
+     role below, not by inlining `text-display`. Restored to the mockup's 31px
+     hero size (TY-DISPLAY): the greenfield shell set this conservatively at 27px,
+     a step quieter than series-folio.html:113 (31px) / sample-table.html:128
+     (30px). Deliberate, render-verified bump per DESIGN.md §3 Fixed-Scale Rule. */
+  --text-display: 31px;
   /* Loupe-plate headline step (R2-T9). Newsreader serif at the sample-table
      mockup's `.loupe-head h2` size (26px). Set via the `.text-headline-lg`
      role below — DESIGN.md §3 Fixed-Scale Rule forbids inline 26px size literals. */
@@ -180,9 +201,7 @@
     background: var(--color-plate);
     border: 0.5px solid var(--color-hair);
     border-radius: var(--radius-md); /* 5px — folds onto the radius scale (spec §3/§8 sign-off) */
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, .6) inset,
-      0 6px 24px -8px rgba(20, 24, 40, .15);
+    box-shadow: var(--shadow-plate-lift);
     position: relative;
   }
 
@@ -225,6 +244,58 @@
   .anim-overlay svg [data-role="tick-root"] line {
     animation: overlay-fade-in 140ms ease both;
   }
+
+  /*
+   * AN-MOTION (expressive entrances) — the app's transient surfaces enter with
+   * a livelier, more "designed" motion instead of snapping. The back-ease
+   * `cubic-bezier(.34,1.26,.64,1)` carries a SINGLE small overshoot (≈3%) that
+   * reads as a gentle spring — NOT an elastic multi-oscillation (design law:
+   * no bounce/elastic). Drawer/scrim use a pure strong ease-out (a sliding
+   * panel overshooting looks like a glitch). All are one-shot mount entrances;
+   * the `prefers-reduced-motion: reduce` block below near-zeros them. The
+   * smaller `.anim-pal-scale` stays the snappy popover/dropdown entry — these
+   * are for the bigger, more consequential surfaces (modals, toasts).
+   */
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.94); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(18px) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes drawer-in {
+    from { opacity: 0.4; transform: translateX(28px); }
+    to   { opacity: 1;   transform: none; }
+  }
+  .anim-modal-in  { animation: modal-in  240ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+  .anim-toast-in  { animation: toast-in  240ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+  .anim-drawer-in { animation: drawer-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  /* State taxonomy — focus-visible (DESIGN.md): every bespoke button/link gets
+     the keyboard-only accent ring by default. Primitives that refine it (ghost
+     1px, etc.) win via the utilities layer — but layer override is PER-PROPERTY:
+     `outline-1` alone would still inherit this rule's 2px offset, so the 1px
+     refiners redeclare `focus-visible:outline-offset-0` explicitly (the shipped
+     ghost look is 1px at offset 0). Deliberate suppressions win via
+     @layer components ([data-observed-hit], .print-range) or focus:outline-none
+     utilities (Popover container, Input inner). Mouse clicks never show a ring. */
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* UI-RINGCLIP: the default ring sits 2px OUTSIDE the box (4px reach), which an
+     overflow scrollport clips at its edges — the NavModal result list (overflow-y
+     clips x → left/right) and the ThumbnailGallery filmstrip (overflow-x clips y →
+     top/bottom). Elements that live full-bleed inside such a scroller opt into an
+     INSET ring (drawn 2px inside the box, on top of content) so the accent ring is
+     whole in any scrollport, with no layout change and no loss of the full-bleed
+     row/thumb. Same 2px accent stroke — only the offset flips. */
+  [data-focus-ring="inset"]:focus-visible {
+    outline-offset: -2px;
+  }
 }
 
 /*
@@ -243,7 +314,7 @@
  *   text-headline     Newsreader serif section title — folio/scoping (R0a)
  *   text-headline-lg  Newsreader serif plate headline — loupe sample title (R2-T9, 26px)
  *   text-caption      microcopy: timestamps, hints, "no items" placeholders
- *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint)
+ *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint|soft)
  *   text-label        form / section labels — uppercase, tracked, dim
  *   text-meta         inline labels (non-uppercase): author names, tag keys
  *   text-body         default readable text — chat body, paragraph
@@ -268,8 +339,18 @@
                       color: var(--color-ink-soft); }
   .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
                         font-weight: 700; text-transform: uppercase; }
-  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.13em; }
-  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.09em; }
+  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.10em; }
+  /* Kicker tone contrast (WCAG 1.4.3): ink-faint measures 3.16:1 on paper —
+     clearing only the 3:1 non-text/large-text line — and 2.92:1 on paper-sunk,
+     which fails every line. (Note 700-weight uppercase at this size is NOT
+     WCAG "large text": large-bold starts at 18.66px, so the 3:1 line never
+     actually applies to kickers; faint survives on plain paper only as a
+     decorative tone.) So `tone="faint"` is reserved for decorative/redundant
+     labels resting on plain paper; informational labels and ANY kicker on a
+     sunk surface use `tone="soft"` (ink-soft, 6.50:1 on paper — AA at all
+     sizes). See the --color-ink-faint definition note above. */
+  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.10em; }
+  .text-kicker-soft   { color: var(--color-ink-soft);     letter-spacing: 0.10em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
                       letter-spacing: 0.06em; color: var(--color-ink-soft); }
@@ -285,17 +366,64 @@
                       line-height: 1.4; font-weight: 600; }
 
   /* Icon-only buttons keep a compact visible box but expand the pointer/touch
-     target to >=44px (WCAG 2.5.5) via a centered overlay, so dense chip rows
-     do not balloon. The overlay is transparent and pointer-events:auto so it
-     forwards clicks to the button. */
+     target via a centered overlay, so dense chip rows do not balloon. The
+     overlay is transparent and pointer-events:auto so it forwards clicks to the
+     button.
+
+     Width is capped at 24px (the WCAG 2.5.8 AA target-size floor) rather than
+     44px (the 2.5.5 AAA touch goal): in a dense horizontal cluster the buttons
+     sit ~27px center-to-center, so a 44px overlay reaches ~22px past its centre,
+     well past the ~13.5px midpoint, and the later sibling's overlay paints over
+     the earlier button's half (a real pointer mis-map -- clicking one button
+     fired its neighbour). At 24px the overlay reaches only 12px from centre, so
+     it never crosses the midpoint and each button wins its closer half. We keep
+     the height generous (44px) because vertical clusters are spaced wide enough
+     that the same overlap does not occur. Net: AA-2.5.8 met by size, AAA-2.5.5
+     traded away horizontally to stop the cannibalisation. */
   .icon-button::before {
     content: "";
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 44px;
+    width: 24px;
     height: 44px;
     transform: translate(-50%, -50%);
+  }
+
+  /* Slider — custom range track + thumb. WebKit/Moz pseudo-elements cannot be
+     expressed as Tailwind utilities, so the appearance is authored here (the
+     legitimate styles.css home for pseudo-element styling). Colors via tokens. */
+  .print-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+    background: var(--color-hair-strong); border-radius: 9999px; outline: none; }
+  /* The thumb box-shadow is a 0-blur hairline RING (not a Plate-Lift drop shadow):
+     border = 2.5px plate gap, box-shadow = the 1px hair-strong outer ring. Flat (H). */
+  .print-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--color-accent);
+    cursor: pointer; border: 2.5px solid var(--color-plate);
+    box-shadow: 0 0 0 1px var(--color-hair-strong); }
+  .print-range::-moz-range-thumb { width: 16px; height: 16px; border: 2.5px solid var(--color-plate);
+    border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-hair-strong); }
+  .print-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .print-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+  /* Custom-index preview click-to-snap targets: kill the UA focus box (it
+     rendered as a stray blue square over the peak) and show an on-brand accent
+     ring ONLY on keyboard focus — mouse clicks never show a ring. Mirrors the
+     .print-range focus treatment; SVG :focus-visible stroke can't be expressed
+     in Tailwind, so it lives here. */
+  [data-observed-hit] { outline: none; cursor: pointer; }
+  [data-observed-hit]:focus-visible { stroke: var(--color-accent); stroke-width: 2; }
+
+  /* Armed peak marks in the trace plot: while editing is armed each per-peak
+     SVG <g> becomes a role=button tab stop (PlotPeaks), but the base keyboard
+     ring above targets button:/a: only — an SVG g is neither. Mirror the 2px
+     accent ring on the g's bounding box (outline works on SVG elements in the
+     supported engines); a stroke override would be swallowed here because the
+     glyph shapes set their own stroke. Keyboard-only, like every other ring. */
+  [data-role="plot-peaks"] g[role="button"] { outline: none; cursor: pointer; }
+  [data-role="plot-peaks"] g[role="button"]:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
 }
 
@@ -317,5 +445,18 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+}
+
+/* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
+   so it overrides the layered global transition rule AND the keyframe animations
+   (.anim-*, .bone skeleton pulse, overlay-fade-in). We near-zero rather than fully
+   remove durations so any transitionend/animationend listeners still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }

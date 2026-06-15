@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ModalShell } from "../../src/components/ui/ModalShell";
+import { ModalShell } from "../../src/print/ui/ModalShell";
 
 describe("ModalShell", () => {
   it("renders nothing when open=false", () => {
@@ -99,15 +99,21 @@ describe("ModalShell", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("does NOT steal initial focus to the frame (children own focus)", () => {
+  it("moves initial focus off the trigger and into the dialog on open (WCAG 2.4.3)", () => {
     const trigger = document.createElement("button");
     document.body.appendChild(trigger);
     trigger.focus();
     render(
-      <ModalShell open onClose={() => {}} aria-label="X" testId="m"><button>hi</button></ModalShell>,
+      <ModalShell open onClose={() => {}} aria-label="X" testId="m">
+        <button data-testid="inner">hi</button>
+      </ModalShell>,
     );
-    // ModalShell imposes no autofocus → focus stays where the caller left it.
-    expect(document.activeElement).toBe(trigger);
+    // The focus trap engages on open: activeElement leaves the background
+    // trigger and lands on the dialog's first focusable. Consumers that place
+    // focus themselves still win — autoFocus runs before the trap effect and
+    // is respected; a parent's own focus effect runs after it (child-before-
+    // parent effect order) and overrides it (NavModal's input).
+    expect(document.activeElement).toBe(screen.getByTestId("inner"));
     document.body.removeChild(trigger);
   });
 

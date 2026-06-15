@@ -6,16 +6,18 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 | Task | Location | Notes |
 |------|----------|-------|
-| App entry | `main.tsx` | `StrictMode > ErrorBoundary > QueryClientProvider > App` |
-| App shell | `App.tsx` | Composition root; Zustand selectors + TanStack Query |
+| App entry | `print/main.tsx` | `index.html → print/main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter > PrintApp`; mounts `#app` |
+| App shell | `print/App.tsx` (`PrintApp`) | Composition root: `AppRoutes` + SSE + mutation-queue effects + shell siblings |
 | Server state | `queries.ts` | TanStack Query hooks; `authOpts(username)` helper |
 | API layer | `api.ts` | Fetch wrappers; AuthOpts per-call for mutations |
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
-| Components | `components/` | See [components/AGENTS.md](components/AGENTS.md) |
-| UI primitives | `components/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
-| Pages | `pages/` | `SamplesPage`, `LoupePage`, `FocusWorkspacePage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired in Phases 3–5) |
+| App shell + routing | `print/shell/` | `CorpusShell`, `CorpusTopbar`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
+| Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
+| UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
+| Render layers | `print/{plot,detector,comb,waterfall,export}/` | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder) — excluded from the `lint:design` appearance guard |
+| Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
@@ -41,7 +43,7 @@ SSE self-echo filtering uses a per-tab `client_id` minted into `sessionStorage` 
 
 ## Imperative renderers in effects
 
-Wrap any function that is both defined inside a component AND used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `TraceViewer`'s overlay renderer follows this pattern.
+Wrap any function that is both defined inside a component AND used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. The trace plot's overlay renderer follows this pattern.
 
 ## Tailwind v4 theming
 
@@ -49,16 +51,16 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 ## Design system — closed-look primitives + the design guard (ENFORCED)
 
-The Print's recurring patterns live as **closed-look** primitives in `components/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
+The Print's recurring patterns live as **closed-look** primitives in `print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
 
-This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `components/ui/**`:
+This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `print/ui/**`:
 
 - arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)
 - arbitrary radius `rounded-[…]` → `rounded-sm` / `rounded-md` (both 5px) / `rounded-full`
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, `MemberHeatmapLayer.tsx`, `DetectorImage.tsx`, `FocusDetectorPanel.tsx`, `main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,waterfall,export}/` render-layer prefixes, `print/main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
 
 ## Skeleton loading via boneyard-js
 
@@ -72,7 +74,7 @@ Each load-gated card wraps content in `<Skeleton>` from `boneyard-js/react`. Ful
 Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGENTS.md`. The invariants that bite UI code outside the queue:
 
 - **Optimistic placeholder ids are NEGATIVE.** `Peak.id < 0` means "not yet confirmed by server"; SSE confirmation overwrites with the positive server id. UI code that filters or compares peak ids must handle negatives.
-- **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (StaleIndicesBanner, useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
+- **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (e.g. useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
 
 ## Multi-layer contract testing
 
@@ -83,4 +85,4 @@ Every reconciliation contract has six layers (route emit → SSE payload → `ap
 - Mint `client_op_id` inside `mutationFn`, not at hook creation time.
 - Don't read `peaks(id)` derivatively during in-flight ops without `useExposureHasPendingPeakOps` gating.
 - Don't assert on Tailwind class strings in tests — use `data-testid` / `data-*` attributes.
-- Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `components/ui/` primitive; `className` is placement-only (see "Design system").
+- Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `print/ui/` primitive; `className` is placement-only (see "Design system").

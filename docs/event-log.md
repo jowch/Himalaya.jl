@@ -205,16 +205,28 @@ The EventSource connection is bound to `App.tsx`'s mount/unmount only;
 `clientId` is stable for the lifetime of the tab, so no listener
 recycling is needed.
 
-### Conflict resolution (deferred)
+### Conflict resolution
+
+> **⚠ Superseded — decided 2026-06-03 (greenfield "The Print" rebuild).** The
+> optimistic-concurrency model described below (`If-Match` + 409-retry, Plan 7
+> R5b) is **cancelled, not deferred.** The product decision is that commit
+> conflicts should not surface as friction: multiplayer stays last-write-wins
+> permanently, and the positive replacement is **edit-tracking → undo/redo →
+> versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
+> conflict UI from this section. See `docs/redesign-notes.md` (2026-06-03
+> entry), `docs/future-feature-ideas.md` §"Multi-user / review", and
+> `docs/superpowers/specs/2026-06-03-figure-export-design.md` §"Non-goal:
+> conflict resolution". The original deferral note is retained below for
+> historical context only.
 
 Optimistic concurrency via `If-Match` headers + 409-retry on the
-frontend (R5b in Plan 7) is **deferred**. The gate is R4 instrumentation
-showing real contention: ≥2% delta-event collision rate over ≥4 weeks /
-≥500 events. Until then, multiplayer is last-write-wins, which the
+frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
+instrumentation showing real contention: ≥2% delta-event collision rate over
+≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
 event log makes auditable after the fact.
 
-`exposures.selected` is intentionally LWW even after R5b ships — see the
-note in `CLAUDE.md`.
+`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
+the 2026-06-03 decision above, *all* entities follow this LWW grain.)
 
 ---
 
@@ -242,12 +254,25 @@ this doc:
 - **`broadcast_event!` SSE frames carry `client_op_id` and `ts`** in
   addition to the fields described in §3 above. Curation routes that
   recompute analysis also attach an optional `post_state` envelope
-  (`{ analysis_inputs_hash, indices }`) so subscribers can replay-without-
-  refetch.
+  (`{ analysis_inputs_hash, indices, assignment: { state, members } }`,
+  plus `assignment_dropped: [phases…]` only when the reanalysis dropped
+  assignment members whose phase+basis identity failed to re-attach —
+  F-WIPE W1) so subscribers can replay-without-refetch. `assignment_dropped`
+  is a PER-MEMBER list — phases may repeat when multiple distinct members of
+  one phase drop (including two members merging onto a single re-attached
+  candidate); consumers aggregate. The `assignment` envelope is serialized
+  by the same `_assignment_post_state` helper the `assignment_*` frames use.
+  `analyze_run` frames carry the SAME envelope (the wipe/re-attach runs on
+  manual reanalyze too): the manual exposure-analyze route builds it via
+  `_enrich_curation_post_state`, and the non-deferred CLI / experiment-wide
+  path builds it inside `analyze_exposure!` — both with `assignment_dropped`
+  only when non-empty.
 - **`analyze_run` events suppress both the frame and the durable row**
   when both `findpeaks_skipped` and `indexpeaks_skipped` are true. Hashes
   already prove no-op-ness; a count of "nothing happened" offers no
-  load-bearing observability value.
+  load-bearing observability value. (The trace-unchanged fast path skips
+  the row entirely; the manual analyze route's slow-path no-op still writes
+  the row but mirrors the `_maybe_broadcast_event!` frame suppression.)
 - **Post-commit broadcast queue.** Events emitted inside the outer tx
   defer their SSE frame until commit. Each request handler has its own
   queue via `task_local_storage()`; `_flush_post_commit_broadcasts!()`

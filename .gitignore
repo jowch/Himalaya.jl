@@ -79,3 +79,8 @@ cache/thumb-*/
 
 # impeccable design-skill scratch (screenshots, live config) — local only, never versioned
 .impeccable/
+
+# Node deps / build caches — the real deps live in packages/HimalayaUI/frontend/node_modules
+# (its own .gitignore covers that); this anchors the root so a stray vitest/vite run
+# from the repo root never commits a node_modules cache (e.g. .vite/vitest results.json).
+node_modules/

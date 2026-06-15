@@ -5,9 +5,9 @@
  * excluded), a different shape from a comparison's per-member plate. Holding
  * them in one slot would let the two flows clobber each other across tabs.
  *
- * baseHash invariant: captured at edit-mode entry, FROZEN until commit; ridden
- * as `expected_content_hash` ON THE COMMIT ONLY (recipe-save `PATCH` never
- * reads it). A draft series projects `content_hash === ""` (the draft sentinel).
+ * The commit route is last-write-wins (Plan 6a): the draft no longer carries a
+ * `baseHash` / `expected_content_hash` — the backend stopped 409ing on a stale
+ * hash, so nothing reads it.
  *
  * Optionality is encoded as `T | null` / `T | undefined` (not `T?`) per the
  * `exactOptionalPropertyTypes` gotcha so round-trip Zustand `set` works.
@@ -38,8 +38,6 @@ export interface SeriesDraft {
   /** The existing series being edited. Always a real positive id — there is
    *  no "create a series from the builder" path (creation is scoping, I3.4). */
   id: number;
-  /** content_hash captured at edit-mode entry; frozen until commit. */
-  baseHash: string | undefined;
   title: string;
   description: string;
   orderingVariable: string | null;
@@ -57,10 +55,9 @@ interface PersistedEnvelope {
   draft: SeriesDraft;
 }
 
-export function emptySeriesDraft(id: number, baseHash: string | undefined): SeriesDraft {
+export function emptySeriesDraft(id: number): SeriesDraft {
   return {
     id,
-    baseHash,
     title: "",
     description: "",
     orderingVariable: null,

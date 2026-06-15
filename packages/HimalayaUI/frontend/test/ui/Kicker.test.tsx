@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { Kicker } from "../../src/components/ui/Kicker";
+import { Kicker } from "../../src/print/ui/Kicker";
 
 describe("Kicker", () => {
   it("renders its children text", () => {
@@ -16,6 +16,12 @@ describe("Kicker", () => {
   it("defaults tone to faint", () => {
     render(<Kicker>Notes</Kicker>);
     expect(screen.getByText("Notes")).toHaveAttribute("data-tone", "faint");
+  });
+
+  it("exposes the soft tone (informational labels / sunk surfaces, WCAG 1.4.3)", () => {
+    render(<Kicker tone="soft">Sample</Kicker>);
+    const el = screen.getByText("Sample");
+    expect(el).toHaveAttribute("data-tone", "soft");
   });
 
   it("renders a heading when as='h3'", () => {

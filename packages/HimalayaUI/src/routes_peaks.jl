@@ -25,18 +25,29 @@ function _resolve_analysis_dir(db::SQLite.DB, exposure_id::Int)::Union{String, N
 end
 
 """
-    _enrich_curation_post_state!(db, exposure_id) -> Dict
+    _enrich_curation_post_state(db, exposure_id;
+                                dropped_assignment_phases = String[]) -> Dict
 
 Read the post-mutation state needed by the M2 SSE post_state contract:
 the current `analysis_inputs_hash` for the exposure plus the current
-`indices` array. Both reads happen inside the caller's transaction so the
-snapshot is consistent.
+`indices` array, and (F-WIPE W1) the current `assignment` — in the same
+`{state, members}` shape the assignment_* frames carry (shared
+`_assignment_post_state` serializer) — so foreign tabs converge on the
+re-attached membership without a refetch. `assignment_dropped` is included
+ONLY when the reanalysis dropped members (phases whose semantic identity
+failed to re-attach; threaded from `analyze_exposure!`'s return). All reads
+happen inside the caller's transaction so the snapshot is consistent.
 """
-function _enrich_curation_post_state(db::SQLite.DB, exposure_id::Int)
-    Dict{Symbol, Any}(
+function _enrich_curation_post_state(db::SQLite.DB, exposure_id::Int;
+                                     dropped_assignment_phases::Vector{String} = String[])
+    ps = Dict{Symbol, Any}(
         :analysis_inputs_hash => read_inputs_hash(db, exposure_id),
         :indices              => _serialized_indices_for_broadcast(db, exposure_id),
+        :assignment           => _assignment_post_state(_assignment_body(db, exposure_id)),
     )
+    isempty(dropped_assignment_phases) ||
+        (ps[:assignment_dropped] = dropped_assignment_phases)
+    ps
 end
 
 """
@@ -160,14 +171,17 @@ function register_peaks_routes!()
             # the fast-skip path. defer_broadcast=true suppresses the inner
             # analyze_run frame — the curation broadcast carries the post_state.
             dir = _resolve_analysis_dir(db, id)
+            dropped = String[]
             if dir !== nothing
-                analyze_exposure!(db, id, dir;
+                ares = analyze_exposure!(db, id, dir;
                     trace_known_unchanged = true,
                     defer_broadcast       = true)
+                dropped = ares.dropped_assignment_phases
             end
 
             new_hash  = read_inputs_hash(db, id)
-            post_state = _enrich_curation_post_state(db, id)
+            post_state = _enrich_curation_post_state(db, id;
+                dropped_assignment_phases = dropped)
 
             _queue_peak_added_broadcast!(result, id, payload, post_state)
 
@@ -265,13 +279,16 @@ function register_peaks_routes!()
                     mutated = true
 
                     dir = _resolve_analysis_dir(db, exposure_id)
+                    dropped = String[]
                     if dir !== nothing
-                        analyze_exposure!(db, exposure_id, dir;
+                        ares = analyze_exposure!(db, exposure_id, dir;
                             trace_known_unchanged = true,
                             defer_broadcast       = true)
+                        dropped = ares.dropped_assignment_phases
                     end
 
-                    post_state = _enrich_curation_post_state(db, exposure_id)
+                    post_state = _enrich_curation_post_state(db, exposure_id;
+                        dropped_assignment_phases = dropped)
                     _enqueue_broadcast_from_result!(result, "peak_excluded",
                         "exposure", exposure_id; post_state = post_state)
                 end
@@ -299,13 +316,16 @@ function register_peaks_routes!()
                 mutated = true
 
                 dir = _resolve_analysis_dir(db, exposure_id)
+                dropped = String[]
                 if dir !== nothing
-                    analyze_exposure!(db, exposure_id, dir;
+                    ares = analyze_exposure!(db, exposure_id, dir;
                         trace_known_unchanged = true,
                         defer_broadcast       = true)
+                    dropped = ares.dropped_assignment_phases
                 end
 
-                post_state = _enrich_curation_post_state(db, exposure_id)
+                post_state = _enrich_curation_post_state(db, exposure_id;
+                    dropped_assignment_phases = dropped)
                 _enqueue_broadcast_from_result!(result, "peak_unexcluded",
                     "exposure", exposure_id; post_state = post_state)
             end
@@ -357,13 +377,16 @@ function register_peaks_routes!()
                     payload     = payload)
 
                 dir = _resolve_analysis_dir(db, exposure_id)
+                dropped = String[]
                 if dir !== nothing
-                    analyze_exposure!(db, exposure_id, dir;
+                    ares = analyze_exposure!(db, exposure_id, dir;
                         trace_known_unchanged = true,
                         defer_broadcast       = true)
+                    dropped = ares.dropped_assignment_phases
                 end
 
-                post_state = _enrich_curation_post_state(db, exposure_id)
+                post_state = _enrich_curation_post_state(db, exposure_id;
+                    dropped_assignment_phases = dropped)
                 _enqueue_broadcast_from_result!(result, "peak_removed",
                     "exposure", exposure_id; post_state = post_state)
 

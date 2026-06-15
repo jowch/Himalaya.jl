@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation, Routes, Route } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate, Routes, Route } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
-import { CorpusTopbar } from "../src/components/CorpusTopbar";
+import { CorpusTopbar } from "../src/print/shell/CorpusTopbar";
 import { useAppState } from "../src/state";
 
 // Two experiments; samples 1-3 in experiment 1, sample 9 in experiment 2.
@@ -35,6 +35,38 @@ function mockFetch(): void {
 function LocationProbe(): JSX.Element {
   const loc = useLocation();
   return <span data-testid="loc">{loc.pathname}</span>;
+}
+
+// Mid-session navigation probe: a button that navigates to the given path,
+// simulating the user editing the URL or following a stale link.
+function NavTo({ path }: { path: string }): JSX.Element {
+  const navigate = useNavigate();
+  return (
+    <button data-testid="nav-to" onClick={() => navigate(path)}>
+      go
+    </button>
+  );
+}
+
+function renderWithNav(initialPath: string, navPath: string) {
+  return render(
+    <QueryClientProvider client={makeClient()}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <>
+                <CorpusTopbar />
+                <LocationProbe />
+                <NavTo path={navPath} />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 function renderAt(path: string) {
@@ -76,6 +108,20 @@ describe("CorpusTopbar — focus affordances (F-13/F-14/F-12)", () => {
     expect(stepper).toHaveTextContent("Lipid B");
   });
 
+  // F6: the caption is small INFORMATIONAL text, so under the F-CONTRAST
+  // settled roles it must ride the ink-soft token (AA-normal >= 4.5:1) — faint
+  // is decorative-only (3.16:1 on paper, below AA for text). The Kicker
+  // primitive's data-tone attribute is its documented tone contract (the
+  // token-pair ratios themselves are pinned in contrast-tokens.test.ts).
+  it("renders the 'sample N of M' caption in the soft informational tone, not faint (F-CONTRAST)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderAt("/sample/2");
+    await screen.findByTestId("sample-stepper");
+    const caption = screen.getByText(/sample 2 of 3/);
+    expect(caption).toHaveAttribute("data-tone", "soft");
+  });
+
   it("next navigates to the next sample in the experiment", async () => {
     mockFetch();
     useAppState.setState({ activeSampleId: 2 });
@@ -103,49 +149,95 @@ describe("CorpusTopbar — focus affordances (F-13/F-14/F-12)", () => {
     expect(screen.getByTestId("sample-stepper-next")).not.toBeDisabled();
   });
 
-  // ── F-14: active Index stage tab on /sample/:id ──────────────────────────
-  it("marks the Index stage tab active on a /sample/:id route", async () => {
+  // ── F-STALEURL: a bogus /sample/:id must not show the stale stepper ──────
+  // Mid-session the store keeps the previous activeSampleId (a bogus route
+  // never seeds it), so the stepper would otherwise keep showing the previous
+  // sample's name and live prev/next above a "Sample not found" body.
+  it("hides the stepper when navigating mid-session to a bogus numeric /sample/:id (F-STALEURL)", async () => {
     mockFetch();
     useAppState.setState({ activeSampleId: 2 });
-    renderAt("/sample/2");
-    const tab = screen.getByTestId("stage-tab-index");
-    expect(tab).toHaveAttribute("aria-current", "page");
-  });
-
-  it("leaves the Index stage tab inactive off a sample route", () => {
-    mockFetch();
-    renderAt("/samples");
-    expect(screen.getByTestId("stage-tab-index")).not.toHaveAttribute("aria-current");
-  });
-
-  // ── F-12: Notes toggle button ────────────────────────────────────────────
-  it("shows a Notes toggle only on a sample route", async () => {
-    mockFetch();
-    useAppState.setState({ activeSampleId: 2 });
-    renderAt("/sample/2");
-    expect(await screen.findByTestId("notes-toggle")).toBeInTheDocument();
-  });
-
-  it("does not show the Notes toggle off a sample route", () => {
-    mockFetch();
-    renderAt("/samples");
-    expect(screen.queryByTestId("notes-toggle")).not.toBeInTheDocument();
-  });
-
-  it("clicking the Notes toggle flips notesDrawerOpen", async () => {
-    mockFetch();
-    useAppState.setState({ activeSampleId: 2, notesDrawerOpen: false });
-    renderAt("/sample/2");
-    fireEvent.click(await screen.findByTestId("notes-toggle"));
-    expect(useAppState.getState().notesDrawerOpen).toBe(true);
-  });
-
-  it("badges the Notes toggle when the active sample has notes", async () => {
-    mockFetch();
-    useAppState.setState({ activeSampleId: 9 });
-    renderAt("/sample/9");
+    renderWithNav("/sample/2", "/sample/99999");
+    // Warm start on a real sample: the stepper is up, the corpus cache is hot.
+    await screen.findByTestId("sample-stepper");
+    fireEvent.click(screen.getByTestId("nav-to"));
+    expect(screen.getByTestId("loc")).toHaveTextContent("/sample/99999");
     await waitFor(() =>
-      expect(screen.getByTestId("notes-toggle")).toHaveAttribute("data-has-notes", "true"),
+      expect(screen.queryByTestId("sample-stepper")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("hides the stepper when navigating mid-session to a non-numeric /sample/:id (F-STALEURL)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderWithNav("/sample/2", "/sample/not-a-number");
+    await screen.findByTestId("sample-stepper");
+    fireEvent.click(screen.getByTestId("nav-to"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("sample-stepper")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the stepper across a valid-to-valid step (no flicker gate on store equality)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderWithNav("/sample/2", "/sample/3");
+    await screen.findByTestId("sample-stepper");
+    fireEvent.click(screen.getByTestId("nav-to"));
+    // The store still says 2 for an effect tick after the URL says 3; a known
+    // param stays "found" throughout, so the stepper must remain mounted.
+    expect(screen.getByTestId("sample-stepper")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("sample-stepper")).toBeInTheDocument(),
+    );
+  });
+
+  // ── the focus workspace is not a top-level stage tab ─────────────────────
+  // There is no "Index"/"Focus" stage tab — the focus workspace is reached by
+  // opening a sample, and the on-focus context is carried by the sample stepper.
+  it("renders no Index/Focus stage tab on a /sample/:id route", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderAt("/sample/2");
+    // The stepper still mounts (focus context), but no stage tab for focus.
+    expect(await screen.findByTestId("sample-stepper")).toBeInTheDocument();
+    expect(screen.queryByTestId("stage-tab-index")).toBeNull();
+  });
+
+  // ── notes were removed from the focus surface ────────────────────────────
+  it("renders no Notes toggle on a sample route (notes feature removed)", async () => {
+    mockFetch();
+    useAppState.setState({ activeSampleId: 2 });
+    renderAt("/sample/2");
+    await screen.findByTestId("sample-stepper");
+    expect(screen.queryByTestId("notes-toggle")).toBeNull();
+  });
+});
+
+describe("CorpusTopbar — the SAME sample stepper on the Loupe route", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useAppState.setState({ activeSampleId: undefined, activeExposureId: undefined });
+  });
+
+  it("renders the stepper on /samples/loupe/:id (corpus order, no router state)", async () => {
+    mockFetch();
+    renderAt("/samples/loupe/2");
+    const stepper = await screen.findByTestId("sample-stepper");
+    // No beamtime → whole corpus [1,2,3,9]; sample 2 is index 1 → "sample 2 of 4".
+    expect(stepper).toHaveTextContent("sample 2 of 4");
+    expect(stepper).toHaveTextContent("Lipid B");
+  });
+
+  it("the ‹ › steps the loupe (navigates to the sibling's loupe) + carries the [ ] tooltips", async () => {
+    mockFetch();
+    renderAt("/samples/loupe/2");
+    await screen.findByTestId("sample-stepper");
+    expect(screen.getByTestId("sample-stepper-prev")).toHaveAttribute("title", "Previous sample ([)");
+    expect(screen.getByTestId("sample-stepper-next")).toHaveAttribute("title", "Next sample (])");
+    fireEvent.click(screen.getByTestId("sample-stepper-next"));
+    await waitFor(() =>
+      expect(screen.getByTestId("loc")).toHaveTextContent("/samples/loupe/3"),
     );
   });
 });

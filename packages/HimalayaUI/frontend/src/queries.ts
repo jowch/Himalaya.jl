@@ -13,6 +13,7 @@ import {
   removeSampleTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
   postSampleMessageMutator,
@@ -37,6 +38,7 @@ import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure
 import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
 import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
+import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
 import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
@@ -98,6 +100,12 @@ export const queryKeys = {
   // clobbers a detail entry (mirrors the comparison/comparisons split). Read
   // hooks (useSeriesList / useSeries) — see below (I3.3).
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
+  // Nested under the series-detail prefix on purpose — `queryKeys.series(id)`
+  // invalidations (rename / member reorder / commit / SSE replay) prefix-match
+  // and re-pull the trace batch, which is the desired refresh-on-member-change
+  // behavior.
+  seriesTraces: (id: number | undefined) =>
+    ["series", id ?? "none", "traces"] as const,
   seriesList: ["series-list"] as const,
   seriesPins: ["series-pins"] as const,
   // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
@@ -106,15 +114,6 @@ export const queryKeys = {
   // refreshes the /series/new proposal.
   corpusSampleTags:    ["corpus-sample-tags"] as const,
   corpusPickerSamples: ["corpus-picker-samples"] as const,
-  // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
-  // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
-  // is per-experiment (distinct (key, value) pairs).
-  recentlyPickedExposures: (userId: number | undefined, limit: number) =>
-    ["user", userId ?? "none", "recently-picked-exposures", limit] as const,
-  sampleTags: (experimentId: number | undefined) =>
-    ["experiment", experimentId ?? "none", "sample-tags"] as const,
-  pickerSamples: (experimentId: number | undefined) =>
-    ["experiment", experimentId ?? "none", "picker-samples"] as const,
   // Phase 13 — comparison pins, scoped per-user via the X-Username header
   // (no userId in the key — the cache row is implicitly per-tab/per-username).
   comparisonPins: ["comparison-pins"] as const,
@@ -616,9 +615,48 @@ export function useRemoveCorpusSampleTag(sampleId: number) {
   };
 }
 
+/**
+ * Corpus contact-sheet tag editor (#LO-TAGDUP Slice 2). Scope carries `sampleId`
+ * only — same routing as useRemoveCorpusSampleTag — which routes the op to
+ * editCorpusSampleTagMutator via resolveMutator (edit_tag, sampleId-only).
+ */
+export function useEditCorpusSampleTag(sampleId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    editCorpusSampleTagMutator,
+    { sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (a: { tagId: number; key: string; value: string }) => inner.mutate(a),
+  };
+}
+
 export function useSetExposureStatus(sampleId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
+}
+
+/** Batch/cross-sample exposure-status setter for the contact-sheet cull.
+ *  Unlike useSetExposureStatus (one bound sample), the sampleId rides in the
+ *  per-call input and overrides the placeholder scope (useQueueMutation spreads
+ *  input over scope: payload = {kind, clientOpId, ...scope, ...input}), so one
+ *  hook dispatches reject/restore to ANY sample. Each mutate() mints its own
+ *  client_op_id and patches queryKeys.exposures(sampleId). */
+export function useSetExposureStatusBatch() {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(setExposureStatusMutator, {
+    sampleId: 0, username, clientId: CLIENT_ID,
+  });
+  return {
+    ...inner,
+    mutate: (v: { sampleId: number; exposureId: number; status: "accepted" | "rejected" | null }) =>
+      // sampleId rides in the input position → payload.sampleId === v.sampleId,
+      // overriding the placeholder scope.sampleId (0). The cast is required
+      // because SetExposureStatusInput doesn't declare sampleId; the runtime
+      // payload merge is what carries it.
+      inner.mutate(v as unknown as { exposureId: number; status: "accepted" | "rejected" | null }),
+  };
 }
 
 export function useSelectExposure(sampleId: number) {
@@ -626,7 +664,10 @@ export function useSelectExposure(sampleId: number) {
   const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
   return {
     ...inner,
-    mutate: (exposureId: number) => inner.mutate({ exposureId }),
+    // Threads the optional per-call callbacks through so consumers can toast
+    // on confirmation / terminal failure (see MutateCallbacks).
+    mutate: (exposureId: number, callbacks?: Parameters<typeof inner.mutate>[1]) =>
+      inner.mutate({ exposureId }, callbacks),
   };
 }
 
@@ -765,6 +806,23 @@ export function useScopeSeries() {
 }
 
 /**
+ * Series CREATE (M-A: Op B of the scoping scope→create chain). A SINGLE-write
+ * queue op — `series_save` → POST /api/series (no id ⇒ create). Split out from
+ * the tag write (useScopeSeries, Op A) because the queue resolves an op's
+ * deferred with whichever lands first (HTTP return OR own-op SSE frame); a
+ * compound two-write op had its `add_tag` frame resolve the deferred before the
+ * create returned, so `mutation.data` was the tag confirmation, not the Series.
+ * As a single write, this op's only own-op frame is `series_created`, so
+ * `data` is reliably the created Series (like useSaveSeries, which the builder
+ * reads `.data.members` from). The page chains scopeSeries.mutate →
+ * createSeries.mutate via a ref state machine, then navigates to /series/:id.
+ */
+export function useCreateSeries() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(createSeriesMutator, { username, clientId: CLIENT_ID });
+}
+
+/**
  * Series recipe-save (I3.5b). `series_save` → POST /api/series (create) or
  * PATCH /api/series/:id (recipe edit; `payload.id` discriminates). Optimistic
  * surface is the `seriesDraft`; the mutator does no optimistic cache write.
@@ -777,10 +835,9 @@ export function useSaveSeries() {
 
 /**
  * Series plate-commit (I3.5b). `series_commit` → POST /api/series/:id/commit.
- * Spinner (no optimistic write). On 409 the fetcher throws `ConflictError`,
- * which the App-level `attachConflictBridge` routes to `pendingConflict`
- * (kind `series_commit`) — bridge-free here, single writer, mirroring
- * `useSaveComparison`.
+ * Spinner (no optimistic write). The commit route is last-write-wins (Plan 6a):
+ * the backend no longer 409s on a stale hash and the body carries no
+ * `expected_content_hash`, so there is no conflict surface here.
  */
 export function useCommitSeriesPlate() {
   const username = useAppState((s) => s.username);
@@ -806,6 +863,17 @@ export function useSeries(id: number | undefined) {
     // Parity with useComparison (above): a missing/draft series should error
     // fast rather than retry 3× — the I3.5a builder reuses this.
     retry: false,
+  });
+}
+
+/** Batch member traces for a series (one request, `exposure_id → Trace`). Feeds
+ *  the greenfield folio via `toWaterfallRows(members, tracesById)` (Plan 4b wires
+ *  `SeriesCard`→`CardFigure`); avoids the O(N×M) per-exposure fan-out. */
+export function useSeriesTraces(seriesId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.seriesTraces(seriesId),
+    queryFn: () => api.getSeriesTraces(seriesId as number),
+    enabled: seriesId !== undefined,
   });
 }
 
@@ -836,13 +904,10 @@ export function usePostComparisonMessage(comparisonId: number) {
 
 export function useSaveComparison() {
   const username = useAppState((s) => s.username);
-  // Phase 12 — bridging ConflictError to Zustand's `pendingConflict` slot
-  // happens via a single MutationCache subscriber mounted in App.tsx (see
-  // `lib/queue/conflictBridge.ts`). The hook is intentionally bridge-free
-  // so multiple mount sites (ComparePageEdit's Save, ConflictModal's
-  // Overwrite) cannot race on the slot — there is one subscriber, one
-  // writer. Toast suppression on 409 still lives in useQueueMutation's
-  // onError (the conflict modal owns that surface).
+  // Compare is retired (#177); this mutator stays registered only for
+  // foreign-event replay. A 409 still surfaces a typed `ConflictError` on
+  // `useMutation.error` (and toast suppression lives in useQueueMutation's
+  // onError), but there is no longer a conflict surface that reads it.
   return useQueueMutation(
     saveComparisonMutator,
     { username, clientId: CLIENT_ID },
@@ -855,52 +920,6 @@ export function useDeleteComparison() {
     deleteComparisonMutator,
     { username, clientId: CLIENT_ID },
   );
-}
-
-// ─── Picker support hooks (Plan §Phase 5, Task 5.2) ────────────────────────
-
-/**
- * Fetches the user's most-recently-picked exposures (across all comparisons
- * and experiments). Used by the comparison picker's "Recently used" section.
- * Disabled until `userId` is defined so an empty user state doesn't fire a
- * GET /api/users/undefined/recently-picked-exposures.
- */
-export function useRecentlyPickedExposures(
-  userId: number | undefined, limit = 20,
-) {
-  return useQuery({
-    queryKey: queryKeys.recentlyPickedExposures(userId, limit),
-    queryFn: () => api.getRecentlyPickedExposures(userId as number, limit),
-    enabled: userId !== undefined,
-  });
-}
-
-/**
- * Fetches distinct `(key, value)` sample-tag pairs for an experiment. Used
- * by the picker's tag-filter dropdown. Empty list when no tags exist.
- */
-export function useSampleTags(experimentId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.sampleTags(experimentId),
-    queryFn: () => api.getSampleTags(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
-}
-
-/**
- * Picker primary list. Returns one row per sample with the resolved
- * indexing-exposure id frozen at fetch time. Spec §PR1 backend.
- *
- * `enabled: experimentId !== undefined` matches `useSampleTags` — picker is
- * always opened from an experiment context, but the hook is shaped to
- * accept `undefined` so render isn't gated on experiment selection.
- */
-export function usePickerSamples(experimentId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.pickerSamples(experimentId),
-    queryFn: () => api.getPickerSamples(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
 }
 
 // ─── Comparison pins (Plan §Phase 13, Task 13.2) ───────────────────────────

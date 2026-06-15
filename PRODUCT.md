@@ -10,6 +10,8 @@ Structural scientists working with small-angle X-ray scattering (SAXS) data: sof
 
 Their context is focused and iterative. They are not browsing; they are forming a hypothesis about one diffraction pattern, testing it against known phase-ratio series (Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square), and often comparing several patterns side by side. They are domain experts who can overrule the software, and will, so the software has to show its work.
 
+**Primary persona: Dr. Maya Okonkwo, structural scientist.** A soft-matter chemist back from a synchrotron beamtime with a few dozen 1D integration traces of a lipid mesophase series. She knows the phase-ratio series cold and trusts her own eye on a clean pattern, so she uses HimalayaUI to do the arithmetic she would otherwise do by hand: propose a phase, score the fit, and let her curate peaks and overrule the call in seconds. She wants the assignment, the reasoning behind it, and a publication-ready figure, with the least chrome between her and the data.
+
 ## Product Purpose
 
 HimalayaUI is a thinking tool for forming and testing phase hypotheses about SAXS diffraction patterns, both deep within a single pattern and across several. It wraps the core Himalaya peak-finding and indexing engine in an interactive workspace: find Bragg peaks in a trace, fit their q-values to candidate phases, curate the result, and compare patterns.
@@ -42,5 +44,5 @@ The target sits in the gap between all four: visually composed and modern, but s
 ## Accessibility & Inclusion
 
 - **Color-blind safety is a hard requirement.** Phase and peak colors carry meaning, so every color encoding must be paired with a second channel: shape, label, position, or pattern. An index identified only by hue is broken. Verify encodings against deuteranopia and protanopia.
-- **WCAG AA contrast** on all text and interactive elements, in both the dark default theme and the light theme.
-- Honor `prefers-reduced-motion` as the design grows: the fractal-noise grain, palette fades, and trace-overlay animations should degrade to a calm, motion-free fallback.
+- **WCAG AA contrast** on all text and interactive elements. The product ships a single light "Print" identity (warm paper and ink); every text and interaction colour, including the eight phase hues, is tuned to clear AA on the `plate` surface. There is no dark theme to maintain a second contrast budget for.
+- Honor `prefers-reduced-motion`. The system's motion is deliberately minimal: 120ms ease-out transitions on colour, background, border, and opacity, plus a few short functional animations (overlay fade-ins, the skeleton-loading pulse). Under reduced-motion these near-zero out so the interface settles with no perceptible spatial movement, while functional feedback that conveys state (spinners, progress fills, focus rings) is preserved.

@@ -6,7 +6,11 @@
 
 const TWO_PI = 2 * Math.PI;
 
-export type SymmetryKind = "cubic" | "lamellar" | "hex";
+// "square" is the 2D square lattice. Its q-law is q = 2π√N / a with
+// N = h²+k² — algebraically identical to the cubic case (N = h²+k²+l²), so it
+// falls through to the cubic branch everywhere kind is switched on. It is named
+// distinctly only so the picker reads honestly (a 2D phase, not a cubic one).
+export type SymmetryKind = "cubic" | "lamellar" | "hex" | "square";
 
 export interface SymmetrySpec {
   kind: SymmetryKind;
@@ -19,12 +23,21 @@ export interface SymmetrySpec {
   max: number;
 }
 
+// Allowed reflection indices (Ms) are the squared magnitudes h²+k²+l² (3D) or
+// h²+k² (2D) behind core Himalaya's `phaseratios` (src/phase.jl) — the single
+// source of truth — so a user-fit comb here reproduces the indexer's own ratio
+// series exactly. Fm3m / Fd3m / Square added in F13; their Ms mirror phase.jl
+// verbatim. The [def,min,max] bands are slider bounds (physically reasonable
+// lattice ranges for each phase), not part of the ratio physics.
 export const SYMS: Record<string, SymmetrySpec> = {
   Pn3m:      { kind: "cubic",    Ms: [2, 3, 4, 6, 8, 9],      param: "a", def: 197, min: 120, max: 320 },
   Im3m:      { kind: "cubic",    Ms: [2, 4, 6, 8, 10, 12],    param: "a", def: 252, min: 120, max: 360 },
   Ia3d:      { kind: "cubic",    Ms: [6, 8, 14, 16, 20, 22],  param: "a", def: 218, min: 120, max: 360 },
+  Fm3m:      { kind: "cubic",    Ms: [3, 4, 8, 11, 12],       param: "a", def: 200, min: 120, max: 400 },
+  Fd3m:      { kind: "cubic",    Ms: [3, 8, 11, 12, 16, 19, 24, 27, 32, 35, 36], param: "a", def: 250, min: 120, max: 500 },
   Lamellar:  { kind: "lamellar", Ms: [1, 2, 3, 4, 5],         param: "d", def: 60,  min: 30,  max: 130 },
   Hexagonal: { kind: "hex",      Ms: [1, 3, 4, 7, 9, 12],     param: "a", def: 70,  min: 40,  max: 160 },
+  Square:    { kind: "square",   Ms: [1, 2, 4, 5, 8, 9, 10, 13, 16, 17, 18, 20], param: "a", def: 80, min: 40, max: 200 },
 };
 
 export interface CustomReflection { N: number; q: number }

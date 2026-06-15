@@ -32,6 +32,16 @@ function term(radicand: number): string {
   return Number.isInteger(root) ? String(root) : `√${radicand}`;
 }
 
+/** The single ratio term a peak at `position` (1-based `ratio_position`)
+ *  carries for `phase`, e.g. "√2", "√3", "2". Used to label a candidate's
+ *  claimed peaks on the trace (candidate hover). Empty when the phase or
+ *  position is unknown. */
+export function ratioTerm(phase: string, position: number): string {
+  const radicands = RADICANDS[phase];
+  if (!radicands || position < 1 || position > radicands.length) return "";
+  return term(radicands[position - 1]!);
+}
+
 export function seriesRatio(phase: string, positions: number[]): string {
   const radicands = RADICANDS[phase];
   if (!radicands) return "";

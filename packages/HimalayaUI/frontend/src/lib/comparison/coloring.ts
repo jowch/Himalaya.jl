@@ -6,8 +6,11 @@
  *   bySample  — color is a property of `sample_id`. Reordering doesn't
  *               shift colors. Same-sample multiple traces share a color
  *               (acceptable for v1; user breaks ties via `color_override`).
- *   byPhase   — color is `phaseColor(snapshot.confirmed_index.phase)`.
- *               Unindexed traces fall back to `ORPHAN_FALLBACK`.
+ *   byPhase   — color is `phaseColor(dominantPhase(member))`, resolved via
+ *               the shared lib/series/memberRead predicate the series plate
+ *               uses (confirmed_phases[0] ?? confirmed_index.phase; form-
+ *               factor / null states are phaseless). Phaseless traces fall
+ *               back to `ORPHAN_FALLBACK`.
  *   distinct  — palette walked by `display_order` (in `allMembers` array
  *               order). Cycles when N > palette.length.
  *
@@ -29,6 +32,7 @@
  */
 import type { SeriesMember } from "../../api";
 import { phaseColor } from "../../phases";
+import { dominantPhase } from "../series/memberRead";
 
 export type GroupingMode = "bySample" | "byPhase" | "distinct";
 
@@ -171,8 +175,13 @@ function hashSampleId(id: number): number {
 }
 
 function defaultByPhase(member: SeriesMember): string {
-  const phase = member.snapshot?.confirmed_index?.phase;
-  if (!phase) return ORPHAN_FALLBACK;
+  // Single shared predicate (BU-EXPORTDIVERGE): the plate's identity source
+  // is memberRead.dominantPhase (confirmed_phases[0] ?? confirmed_index.phase,
+  // phaseless under form_factor/null states). Reading confirmed_index.phase
+  // directly here made coexistence members export in the wrong phase color
+  // whenever the two chains disagreed.
+  const phase = dominantPhase(member);
+  if (phase === null) return ORPHAN_FALLBACK;
   return phaseColor(phase);
 }
 

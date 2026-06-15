@@ -28,7 +28,7 @@ colors:
 typography:
   display:
     fontFamily: "Newsreader, Georgia, ui-serif, serif"
-    fontSize: "27px"
+    fontSize: "31px"
     fontWeight: 500
     lineHeight: 1.15
     letterSpacing: "normal"
@@ -110,9 +110,11 @@ components:
 
 # Design System: HimalayaUI — "The Print"
 
-> **Status:** authored 2026-05-27 as the canonical reference for the redesign's fidelity pass (milestone "HimalayaUI — The Print finish"). This describes the Print system the remediation built to; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223). As of R9 (#232) the shipped tokens (`styles.css` `@theme`, `phases.ts`) have been verified to match this doc; the retired dark "Darkroom" defaults are gone. This doc is now both the spec **and** the shipped state.
+> **Status: this is the living visual spec for "The Print", not a finished remediation log.** It is the canonical, extendable reference: every new screen, primitive, and token is expected to be authored against the rules below and to extend the named scales rather than scatter one-offs. The token primitives in the frontmatter are normative; the prose contextualizes how to apply them.
 >
-> **Update (2026-05-29 component-library extraction).** The Print's recurring patterns were extracted into closed-look primitives under `src/components/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, Toast, HintText) and the system is now **mechanically enforced**: `scripts/check-design.mjs` runs as a pure-absolute `lint:design` build step that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside `src/components/ui/**`. Consumers pass placement-only `className`; appearance lives in the primitives. Two token truths changed: `rounded.md` 7px → 5px (radius collapsed to one 5px step), and `--color-print-accent` now sources from `--color-accent`. See `docs/superpowers/plans/2026-05-29-component-library-extraction.md`.
+> History, for accuracy: the system was first authored 2026-05-27 for the redesign's fidelity pass; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223), the shipped tokens (`styles.css` `@theme`, `phases.ts`) were verified to match this doc at R9 (#232), and the retired dark "Darkroom" defaults are gone. The system is a single light "Print" identity; there is no dark theme. The primitives were later relocated to `src/print/ui/` (the old `src/components/ui/` directory no longer exists) as the whole frontend moved under `src/print/`. When you add a screen, component, state, or token, add it here too, keeping the doc and the shipped system in lockstep.
+>
+> **Update (component-library extraction).** The Print's recurring patterns were extracted into closed-look primitives under `src/print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, Toast, HintText, and the base-layer Input, Field, Menu, Chip, Tooltip, and more) and the system is now **mechanically enforced**: `scripts/check-design.mjs` runs as a pure-absolute `lint:design` build step that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-authoring dirs (`src/print/ui/**`, plus the renderer dirs `src/print/plot/**`, `src/print/detector/**`, `src/print/comb/**`, `src/print/export/**`). Consumers pass placement-only `className`; appearance lives in the primitives. Two token truths changed at extraction: `rounded.md` 7px → 5px (radius collapsed to one 5px step), and `--color-print-accent` now sources from `--color-accent`. See `docs/superpowers/plans/2026-05-29-component-library-extraction.md`.
 
 ## 1. Overview
 
@@ -132,6 +134,30 @@ This system rejects its four neighbours: not **legacy scientific software** (no 
 - Phase colour is generous and semantic, paper-tuned so every phase reads at AA on `plate`.
 - Newsreader serif for display titles; Plus Jakarta Sans for prose; monospace for measurements.
 - The figure is framed as a **plate** (the one elevated object); most surfaces are flat paper + hairlines.
+
+### Spacing & density
+
+This is a dense instrument, not a marketing page; whitespace is a tool for grouping, not for air. The named spacing scale is intentionally thin:
+
+- **sm** (8px): the gap inside a control row, between an icon and its label, between a chip and its neighbour.
+- **md** (16px): the default card body padding and the gap between sibling controls. The `Card` `padding="md"` step is `p-4` (16px).
+- **stage** (34px): the breathing gap that sets a figure plate or a page section apart from its surroundings, the one place the layout is allowed to open up.
+
+Around those three named steps, surfaces use Tailwind's default spacing scale for the in-between values (card padding ranges 13–28px across the `Card` `padding` prop's `sm`/`md`/`lg` steps; page frames pad with `px-10 py-8`). The shared `.card-header` strip is a fixed 56px so card top edges line up across a workspace.
+
+**The Thin-Scale Rule.** The named scale (`sm`/`md`/`stage`) is deliberately small and is an open extension point. When a recurring spacing value earns a name, add it to the scale as a reviewed change rather than scattering one-off paddings; until then, prefer the nearest Tailwind step over inventing a magic number.
+
+### Copy and UX writing
+
+The voice matches the brand: an **assured, precise, unshowy** colleague. Copy is direct and specific, never tentative, never cute, never a wizard's hand-holding. It states what is true and what the next action is.
+
+- **The No-Em-Dash Rule.** Never use an em dash (or a "--" stand-in) in interface copy or in this system's docs. Break the thought into two sentences, or use a comma or colon.
+- **Buttons** name the action as a verb in the user's terms: "Reanalyze", "New series", "Save figure", "Reject". Not "OK" / "Submit" / "Go".
+- **Empty states** tell the user why the surface is empty and what to do next, in the `EmptyState` title + body pair (e.g. title "No series match", body "Clear the search or filter to see the whole folio.").
+- **Error copy** is honest and specific, never a masquerade: a failed fetch says it failed and offers a recovery ("Couldn't load the folio" / "The series list failed to load. Try reloading the page."), and is never allowed to read as an empty "no results" state.
+- **Loading copy** is quiet and momentary ("Loading series…") behind the skeleton, not a spinner narration.
+
+**The Domain-Vocabulary-Is-Correct Rule.** The instrument's own terms are *precise*, not jargon to be softened: Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square, Miller, q-value, hkl, reanalyze. These are the scientist's working vocabulary; "simplifying" them is a regression, not an accessibility win. Write to the expert, not around them.
 
 ## 2. Colors
 
@@ -177,7 +203,7 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 **Character.** Three voices, each a signal: serif = this is a title on a plate; sans = this is chrome/prose; monospace = this is a measurement (q, score, lattice, Miller indices, series ratio).
 
 ### Hierarchy
-- **Display** (Newsreader 500, ~27px): the figure/sample/series hero title. The plate's name.
+- **Display** (Newsreader 500, ~31px): the figure/sample/series hero title. The plate's name.
 - **Headline** (Newsreader 500, 19px): section-level serif titles (folio, scoping).
 - **Title** (Plus Jakarta Sans 600, 15px): card titles, primary inputs.
 - **Body** (400, 13px): the readable default.
@@ -188,7 +214,7 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 ### Named rules
 **The Serif-Means-Title Rule.** Newsreader is for titles on a plate (sample name, figure title, card title, the progress numeral). Never set prose or chrome in serif.
 **The Monospace-Means-Measurement Rule.** Mono is for values produced by the instrument. Never for prose.
-**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `components/ui/**`.)
+**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/print/ui/**`.) The display step is one such extension point: it sits at 31px (restored to the mockup hero size from the greenfield shell's conservative 27px — TY-DISPLAY), a deliberate, render-verified decision made by editing the `--text-display` token, never by inlining a size.
 
 ## 4. Elevation
 
@@ -202,6 +228,24 @@ Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk
 **The Flat-Except-the-Plate Rule.** Surfaces are flat; depth is tonal (the paper ramp) + hairlines. The plate (and plate-like cards) is the single lifted object. A drop shadow on anything else is wrong.
 
 ## 5. Components
+
+For each component, lead with a short character line, then specify shape, colour assignment, states, and any distinctive behaviour.
+
+### State taxonomy
+
+Every interactive primitive draws from one shared vocabulary of states. The treatments below are what the shipped primitives in `src/print/ui/` actually implement; where a state is not yet systematized it is flagged as an extension point.
+
+- **Rest.** The quiet default. Ghost buttons read ink-soft on transparent; inputs are a `plate` well with a `hair-strong` hairline; cards are flat `plate` + hairline.
+- **Hover.** A small tonal lift, never a colour shift that implies meaning. Ghost-button hover brings text to `ink` over a `paper-sunk` fill; solid and accent buttons brighten (`hover:brightness-110`); outline buttons and Field rows fill to `paper-sunk`. All of it rides the global 120ms ease-out colour transition.
+- **Active / pressed.** For toggles, the "on" state is the canonical **ink fill, paper text** (segmented-control active segment); an armed tool button switches to the terracotta accent fill with `aria-pressed`. Never a recessed `paper-sunk` fill for "on" (the L-5/B-A defect).
+- **Focus-visible.** A terracotta `accent` ring, keyboard-only (`focus-visible`, offset). Buttons outline 2px accent; ghost and inverse variants use a 1px accent outline; inputs land the ring on the whole field via `focus-within:border-accent`; SVG hit targets (custom-index snap points, slider thumbs) stroke accent on `:focus-visible` only. Mouse clicks never show a ring. Bespoke `<button>`/`<a>` elements outside the primitives inherit the 2px accent ring by default from a base-layer rule in `styles.css`, so the state is systematized everywhere; primitive refinements and deliberate suppressions override it from higher layers (per-property — the 1px refiners redeclare `outline-offset-0` explicitly).
+- **Disabled.** `disabled:opacity-45 disabled:cursor-not-allowed` on buttons; individual segmented-control segments can be disabled (e.g. Loupe with no sample selected). Disabled is a dimming, not a colour change.
+- **Selected.** `Card selected` adds accent selection chrome: an accent-tinted border plus a subtle inset accent ring (flat, no shadow), and exposes `data-selected="true"` for tests and targeted CSS. This is the candidate-pick / row-selection signal.
+- **Busy / loading.** Two distinct treatments, chosen by surface: a **skeleton** (boneyard `Skeleton`, the slow `.bone` pulse, fed a committed `*.bones.json` capture or an inline fixture) for the first paint of a data-driven region; a **progress fill** (`ProgressBar`, accent capsule, `role="progressbar"`) for a known-duration job. A bare spinner is reserved for indeterminate inline waits and is not yet a systematized primitive (extension point).
+- **Error.** Inline and honest. Inputs take `invalid` → `border-error` plus `aria-invalid`, second-channeled by consumer error text. Page-level fetch failures render an `EmptyState` with failure copy (never a masquerading "no results"). `Toast` (`role="status"`) carries transient feedback with a leading status glyph + word (severity is the word + `aria-label`, not an edge hue).
+- **Read-only.** A genuinely inert value renders as a static, non-interactive row, no chevron, no pointer cursor, not a `<button>` (the `Field` static branch). Controls must not lie: an affordance that does nothing is removed, not styled live.
+
+**The Honest-Surface-State Rule.** Skeleton for the first load of a data region; spinner or progress for an in-flight action on already-loaded content; `EmptyState` (with a next-step CTA in the body) for a legitimately empty or failed surface; inline `border-error` + error text for a single invalid field. Never let a failure read as an empty state, and never show a control that cannot act.
 
 ### Buttons
 - **Shape:** 5px radius (`rounded.sm`), compact padding.
@@ -231,7 +275,16 @@ Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk
 - **Reflections card:** the lower-row table beside the detector window on the focus workspace. Column headers are `phase · order · q · d`. The mockup (`docs/redesign-mockups/focus-workspace.html`) labels the second column `hkl`; the shipped header is **`order`** by deliberate rename — SAXS peaks in our data model carry a 1-based ratio-series position, not an (h,k,l) Miller triple (`lib/seriesRatio.ts`, `src/phase.jl` `phaseratios`). "order" reads as "1st reflection, 2nd reflection…", which is what the value is. Treat the live `order` header as correct; the mockup `hkl` is the intentional divergence, not a regression.
 
 ### Motion
-- Fast and nearly invisible: 120ms ease-out on colour/background/border/opacity. No bounce, no elastic, no scroll choreography. (The fractal-noise grain of the dark era is removed.)
+
+Motion is polish measured in milliseconds, never spectacle. It exists to soften state changes so the eye keeps its place, not to draw attention to itself.
+
+- **Default transition.** A global rule transitions `color`, `background-color`, `border-color`, and `opacity` over **120ms ease-out** (`styles.css` `@layer base`). That is the whole motion budget for hovers, focus, selection, and tonal shifts.
+- **Easing.** Ease-out only. No bounce, no elastic, no spring. Movement decelerates into rest and stops.
+- **Functional animations, kept short.** A few one-shot keyframes carry genuine feedback: overlay fade-ins (`.anim-pal-in` 120ms, `.anim-pal-scale` 140ms popover entry, `overlay-fade-in` 140ms for newly-built trace marks) and the slow `.bone` skeleton pulse (1.8s). These convey state (something appeared, something is loading), so they earn their motion.
+- **Motion conveys state only.** Nothing animates for delight. There is no page-load choreography, no scroll-driven sequence, no staggered entrance beyond the skeleton's brief reveal stagger. If a motion does not report a state change, it does not belong.
+- **The Reduced-Motion Rule.** Under `prefers-reduced-motion: reduce`, every transition and animation is near-zeroed to 0.01ms (not removed, so `transitionend` / `animationend` listeners still fire) and `scroll-behavior` snaps to auto. The result has no perceptible spatial movement while functional feedback that depends on completing (spinners, progress, focus) is preserved.
+
+> The fractal-noise grain, palette fades, and trace-overlay choreography of the retired dark "Darkroom" era are gone. Do not reintroduce them.
 
 ## 6. Do's and Don'ts
 

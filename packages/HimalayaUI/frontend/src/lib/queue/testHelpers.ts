@@ -79,10 +79,7 @@ async function runMutatorImpl(
 
 export function exposeTestHelpers(qc: QueryClient, mc: MutationCache): void {
   // Gate on DEV — vite tree-shakes the helpers out of production bundles.
-  // Cast through unknown because tsconfig doesn't include vite/client types
-  // for ImportMeta.env.
-  const env = (import.meta as unknown as { env?: { DEV?: boolean } }).env;
-  if (!env?.DEV) return;
+  if (!import.meta.env.DEV) return;
   window.__himalayaTest = {
     runMutator: ((name: string, flat: any) => {
       const m = MUTATORS[name];

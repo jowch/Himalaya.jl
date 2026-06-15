@@ -164,10 +164,14 @@ using HimalayaUI
                 [s_other, "buffer", "PBS"])
             # Same VALUE "DOPC" as the lipid tag above but a different KEY.
             # DISTINCT collapses on the (key, value) PAIR, not on value alone,
-            # so this must surface as its own corpus entry.
+            # so this must surface as its own corpus entry. It lives on its own
+            # sample: one sample carries at most one tag per key
+            # (sample_tags_unique_key), so the second "buffer" pair can't share
+            # s_other with the (buffer, PBS) row above.
+            s_other2 = HimalayaUI.create_sample!(ctx.db; experiment_id=e2_id, name="OTHER2")
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
-                [s_other, "buffer", "DOPC"])
+                [s_other2, "buffer", "DOPC"])
             # A duplicate (key, value) on a third sample in experiment 1 —
             # DISTINCT must collapse it to a single corpus entry.
             s3 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D3")
@@ -199,6 +203,52 @@ using HimalayaUI
                 r = HTTP.get("$base/api/sample-tags")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
+            end
+        end
+    end
+
+    @testset "GET /api/sample-tags returns per-(key,value) sample count" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # Seed a second sample in the same experiment so (lipid, DOPC) spans
+            # two samples. The count field must reflect the distinct-sample count.
+            s2 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D2")
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [ctx.sample_id, "dose", "10"])
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s2, "dose", "10"])
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/sample-tags")
+                @test r.status == 200
+                tags = JSON3.read(String(r.body))
+                row = first(filter(p -> p.key == "dose" && p.value == "10", tags))
+                @test haskey(row, :count)
+                @test row.count >= 1
+                # Two distinct samples share (dose=10); count must reflect that.
+                @test row.count == 2
+            end
+        end
+    end
+
+    @testset "GET /api/experiments/:eid/sample-tags returns per-(key,value) sample count" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            s2 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D2")
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [ctx.sample_id, "lipid", "DOPC"])
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s2, "lipid", "DOPC"])
+            with_test_server(ctx.db) do port, base
+                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+                @test r.status == 200
+                tags = JSON3.read(String(r.body))
+                row = first(filter(p -> p.key == "lipid" && p.value == "DOPC", tags))
+                @test haskey(row, :count)
+                @test row.count == 2
             end
         end
     end

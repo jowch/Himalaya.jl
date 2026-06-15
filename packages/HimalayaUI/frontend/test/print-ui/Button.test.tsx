@@ -1,0 +1,104 @@
+import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { Button } from "../../src/print/ui/Button";
+
+describe("<Button> armed state", () => {
+  it("defaults to not-armed and sets no aria-pressed", () => {
+    render(<Button>+ Peak</Button>);
+    const b = screen.getByRole("button", { name: "+ Peak" });
+    expect(b.getAttribute("data-armed")).toBe(null);
+    expect(b.getAttribute("aria-pressed")).toBe(null);
+  });
+  it("reflects armed on data-armed and aria-pressed", () => {
+    render(<Button armed>+ Peak</Button>);
+    const b = screen.getByRole("button", { name: "+ Peak" });
+    expect(b.getAttribute("data-armed")).toBe("true");
+    expect(b.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("a toggle button keeps aria-pressed='false' when disarmed (FO-RESCORE2 F12)", () => {
+    // armed={false} means a toggle in its OFF state — the attribute must read
+    // "false", not vanish (which would read as a plain non-toggle button to AT).
+    render(<Button armed={false}>+ Peak</Button>);
+    const b = screen.getByRole("button", { name: "+ Peak" });
+    expect(b.getAttribute("aria-pressed")).toBe("false");
+    // ...but a non-toggle (no armed prop) still carries no aria-pressed at all.
+    expect(b.getAttribute("data-armed")).toBe(null);
+  });
+  it("keeps the variant data-attr when armed", () => {
+    render(<Button variant="ghost" armed>x</Button>);
+    expect(screen.getByRole("button").getAttribute("data-variant")).toBe("ghost");
+  });
+  it("still fires onClick when armed", () => {
+    const onClick = vi.fn();
+    render(<Button armed onClick={onClick}>x</Button>);
+    fireEvent.click(screen.getByRole("button"));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("<Button> outline variant", () => {
+  it("carries data-variant=outline and renders its label", () => {
+    render(<Button variant="outline">Drop</Button>);
+    const b = screen.getByRole("button", { name: "Drop" });
+    expect(b.getAttribute("data-variant")).toBe("outline");
+  });
+  it("renders the button", () => {
+    render(<Button variant="outline">Set as representative</Button>);
+    expect(screen.getByRole("button", { name: "Set as representative" })).toBeInTheDocument();
+  });
+  it("still fires onClick", () => {
+    const onClick = vi.fn();
+    render(<Button variant="outline" onClick={onClick}>Drop</Button>);
+    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+  it("armed overrides outline resting look (data-armed=true)", () => {
+    render(<Button variant="outline" armed>Drop</Button>);
+    const b = screen.getByRole("button", { name: "Drop" });
+    expect(b.getAttribute("data-variant")).toBe("outline");
+    expect(b.getAttribute("data-armed")).toBe("true");
+  });
+});
+
+describe("<Button> ghostInverse variant", () => {
+  it("renders the ghostInverse variant for dark surfaces", () => {
+    render(<Button variant="ghostInverse">Restore</Button>);
+    const btn = screen.getByRole("button", { name: "Restore" });
+    expect(btn.getAttribute("data-variant")).toBe("ghostInverse");
+  });
+});
+
+describe("<Button> success variant", () => {
+  it("carries data-variant=success and renders its label (the constructive Keep verb)", () => {
+    render(<Button variant="success">Keep</Button>);
+    const b = screen.getByRole("button", { name: "Keep" });
+    expect(b.getAttribute("data-variant")).toBe("success");
+  });
+  it("fires onClick", () => {
+    const onClick = vi.fn();
+    render(<Button variant="success" onClick={onClick}>Keep</Button>);
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("<Button> disabled state", () => {
+  it("forwards the disabled attribute (gated actions)", () => {
+    render(<Button variant="solid" disabled>Confirm & build</Button>);
+    expect(screen.getByRole("button", { name: /confirm & build/i })).toBeDisabled();
+  });
+});
+
+describe("<Button> danger variant", () => {
+  it("carries data-variant=danger and renders its label", () => {
+    render(<Button variant="danger">Delete sample</Button>);
+    const b = screen.getByRole("button", { name: "Delete sample" });
+    expect(b.getAttribute("data-variant")).toBe("danger");
+  });
+  it("fires onClick", () => {
+    const onClick = vi.fn();
+    render(<Button variant="danger" onClick={onClick}>Delete sample</Button>);
+    fireEvent.click(screen.getByRole("button", { name: "Delete sample" }));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});

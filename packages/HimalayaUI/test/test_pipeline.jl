@@ -57,6 +57,12 @@ using SQLite
     @test length(stored_groups) == 1
     @test stored_groups[1].kind   == "auto"
     @test stored_groups[1].active == 1
+
+    # Auto-grouping is NOT a durable concept: the auto `index_groups` row above
+    # is still written (the legacy export reads it), but persist_analysis! must
+    # NOT seed the durable assignment cart from it. A fresh, never-curated
+    # analyze reads as unindexed — zero assignment members.
+    @test HimalayaUI._assignment_body(db, e_id)[:members] == Int[]
 end
 
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment

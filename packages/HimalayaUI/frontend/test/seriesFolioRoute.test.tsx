@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppRoutes } from "../src/components/AppRoutes";
+import { AppRoutes } from "../src/print/shell/AppRoutes";
 import { useAppState } from "../src/state";
 
 beforeEach(() => {
@@ -39,7 +39,7 @@ function renderAt(path: string) {
 describe("/series routing", () => {
   it("mounts SeriesFolioPage under the corpus shell", async () => {
     renderAt("/series");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
     // proves it is under CorpusShell (the corpus topbar), not the legacy AppShell
     expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
   });

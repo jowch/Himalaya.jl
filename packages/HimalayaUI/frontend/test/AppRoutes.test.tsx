@@ -9,7 +9,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
-import { AppRoutes } from "../src/components/AppRoutes";
+import { AppRoutes } from "../src/print/shell/AppRoutes";
 import type { ResolveSuccess } from "../src/api";
 
 function makeQc() {
@@ -64,14 +64,14 @@ describe("AppRoutes — single-shell route table", () => {
 
   it("redirects a /compare* URL to the series folio (Compare retired, #177)", async () => {
     renderRoutes("/compare/all");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).toBeNull();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("redirects an experiment-scoped /compare URL to the series folio (#177)", async () => {
     renderRoutes("/experiments/7/compare/123");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
@@ -171,7 +171,12 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
       } as Response),
     );
     renderRoutes("/index/lipid/JC001");
-    expect(await screen.findByTestId("focus-workspace-page")).toBeInTheDocument();
+    // Phase-4 cutover: /sample/:id now serves the greenfield FocusPage. The
+    // single ResolveSuccess fetch mock doesn't satisfy the page's corpus-sample
+    // query, so it renders its `focus-not-found` body — which only mounts on
+    // the Focus route. That the Focus route (not /samples) was reached is the
+    // assertion this slug-redirect test makes.
+    expect(await screen.findByTestId("focus-not-found")).toBeInTheDocument();
   });
 
   it("/index/:experiment/:sample falls back to /samples when resolve 404s", async () => {
@@ -229,7 +234,7 @@ describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
     useAppState.setState({ activeExperimentId: 7 });
     renderRoutes("/experiments/7/compare/123");
     await waitFor(() => {
-      expect(screen.getByTestId("series-folio-page")).toBeInTheDocument();
+      expect(screen.getByTestId("folio-header")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });

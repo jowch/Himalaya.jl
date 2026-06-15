@@ -232,7 +232,10 @@ function register_exposures_routes!()
             # below — unambiguous, vs. the prior MAX(id)-sentinel approach
             # which could alias if a concurrent analyze interleaved between
             # the snapshot and the SELECT (review issue #15).
-            analyze_exposure!(db, id, analysis_dir; defer_broadcast = true, req = req)
+            # F-WIPE W1: the wipe/re-attach runs on this manual path too, so
+            # capture the dropped-members report for the SSE post_state below.
+            ares = analyze_exposure!(db, id, analysis_dir;
+                                     defer_broadcast = true, req = req)
 
             new_hash = read_inputs_hash(db, id)
             client_op_id = get_client_op_id(req)
@@ -258,20 +261,37 @@ function register_exposures_routes!()
             end
             if !isempty(evt)
                 row = evt[1]
-                post_state = Dict{Symbol, Any}(
-                    :analysis_inputs_hash => new_hash,
-                    :indices              => _serialized_indices_for_broadcast(db, id),
-                )
-                # The system-emitted row carries NULL client_id/op_id; pass
-                # the request's headers in the SSE frame so foreign tabs can
-                # still self-echo-filter (own client_id matches).
-                _enqueue_post_commit_broadcast!(
-                    Int(row.id), "analyze_run", "exposure", id,
-                    ismissing(row.user_id) ? nothing : Int(row.user_id),
-                    get_client_id(req),
-                    get_client_op_id(req),
-                    ismissing(row.payload) ? nothing : String(row.payload);
-                    post_state = post_state)
+                payload_obj = ismissing(row.payload) ? nothing :
+                              JSON3.read(String(row.payload))
+                # M0.4 mirror (see `_maybe_broadcast_event!`): a no-op reanalyze
+                # (both skip flags true) must emit NO frame from this manual
+                # route either — foreign tabs have nothing to converge on. This
+                # hand-enqueued path previously bypassed the suppression that
+                # the non-deferred `analyze_exposure!` path applies.
+                noop = payload_obj !== nothing &&
+                       get(payload_obj, :findpeaks_skipped, false) === true &&
+                       get(payload_obj, :indexpeaks_skipped, false) === true
+                if !noop
+                    # F-WIPE W1: same post_state contract as the curation frames
+                    # (shared builder, see `_enrich_curation_post_state`) — the
+                    # assignment envelope carries the re-attached member ids, and
+                    # `assignment_dropped` rides along only when the reanalyze
+                    # dropped members. Without it, the frontend's envelope-absent-
+                    # means-do-not-touch rule strands cached members on the
+                    # cascaded (dead) index ids until a hard refetch.
+                    post_state = _enrich_curation_post_state(db, id;
+                        dropped_assignment_phases = ares.dropped_assignment_phases)
+                    # The system-emitted row carries NULL client_id/op_id; pass
+                    # the request's headers in the SSE frame so foreign tabs can
+                    # still self-echo-filter (own client_id matches).
+                    _enqueue_post_commit_broadcast!(
+                        Int(row.id), "analyze_run", "exposure", id,
+                        ismissing(row.user_id) ? nothing : Int(row.user_id),
+                        get_client_id(req),
+                        get_client_op_id(req),
+                        ismissing(row.payload) ? nothing : String(row.payload);
+                        post_state = post_state)
+                end
             end
 
             HTTP.Response(200, ["Content-Type" => "application/json"],

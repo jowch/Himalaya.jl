@@ -8,6 +8,7 @@ import {
   removeExposureTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   updateSampleMutator,
   postSampleMessageMutator,
   postComparisonMessageMutator,
@@ -70,6 +71,15 @@ describe("resolveMutator", () => {
         payload: { sampleId: 10, tagId: 7 },
       }),
     ).toBe(removeCorpusSampleTagMutator);
+  });
+
+  it("dispatches a sampleId-only edit_tag op to the corpus edit mutator", () => {
+    expect(
+      resolveMutator({
+        kind: "edit_tag",
+        payload: { sampleId: 10, tagId: 7, key: "dose", value: "12" },
+      }),
+    ).toBe(editCorpusSampleTagMutator);
   });
 
   it("dispatches a persisted scoping batch op (add_tag with `tags`) to scopeSeriesMutator", () => {
@@ -157,6 +167,10 @@ describe("resolveMutatorForEvent", () => {
   it("splits remove_tag by entity_type", () => {
     expect(resolveMutatorForEvent("remove_tag", "sample"))  .toBe(removeSampleTagMutator);
     expect(resolveMutatorForEvent("remove_tag", "exposure")).toBe(removeExposureTagMutator);
+  });
+
+  it("routes edit_tag to the corpus edit mutator (sample-only kind)", () => {
+    expect(resolveMutatorForEvent("edit_tag", "sample")).toBe(editCorpusSampleTagMutator);
   });
 
   it("splits post_message by entity_type (wire-string entity types)", () => {

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- The Print — a SAXS diffraction mark: concentric rings + beam centre.
+       Colours are hex approximations of the brand tokens (paper / ink /
+       terracotta accent) for cross-browser favicon robustness. -->
+  <rect width="32" height="32" rx="7" fill="#faf8f3" />
+  <circle cx="16" cy="16" r="11" fill="none" stroke="#36312c" stroke-width="2" />
+  <circle cx="16" cy="16" r="6.5" fill="none" stroke="#bf5a34" stroke-width="2.2" />
+  <circle cx="16" cy="16" r="2" fill="#36312c" />
+</svg>

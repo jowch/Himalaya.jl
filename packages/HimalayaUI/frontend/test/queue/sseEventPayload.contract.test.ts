@@ -199,6 +199,80 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   // -------------------------------------------------------------------------
+  // F-WIPE W1/W2 — peak_* frames now carry the assignment envelope INSIDE the
+  // curation post_state: { analysis_inputs_hash, indices, assignment: {state,
+  // members}, assignment_dropped?: string[] }. Serialized by the same Julia
+  // `_assignment_post_state` helper the assignment_* frames use
+  // (routes_peaks.jl::_enrich_curation_post_state). Backend pair:
+  // test/test_assignment_reattach.jl (frame shape) +
+  // test_route_response_shapes.jl (route emit).
+  // -------------------------------------------------------------------------
+
+  it("peak_excluded with the W1 envelope writes indices + hash + assignment cache (no invalidate)", () => {
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: false },
+    ]);
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    const evt: SseEvent = {
+      id: 99, kind: "peak_excluded", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.5, auto_peak_id: 7 },
+      post_state: {
+        analysis_inputs_hash: "h-new",
+        indices: [{ id: 1, exposure_id: 5, phase: "Im3m", basis: 0.1 }],
+        assignment: { state: "indexed", members: [10] },
+      },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash)
+      .toBe("h-new");
+    expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toHaveLength(1);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      { queryKey: queryKeys.assignment(5) });
+  });
+
+  it("peak_added W1 envelope reaches the assignment cache through the same shared writer", () => {
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), []);
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "null", members: [] });
+    const evt: SseEvent = {
+      id: 99, kind: "peak_added", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.42, peak_curation_id: 100 },
+      post_state: {
+        analysis_inputs_hash: "h-new", indices: [],
+        assignment: { state: "indexed", members: [11] },
+      },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [11] });
+  });
+
+  it("peak frame WITHOUT the assignment envelope (old backend) leaves the assignment cache untouched", () => {
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    const evt: SseEvent = {
+      id: 99, kind: "peak_removed", entity_type: "exposure", entity_id: 5,
+      payload: { peak_curation_id: 7, q: 0.5 },
+      post_state: { analysis_inputs_hash: "h-new", indices: [] },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      { queryKey: queryKeys.assignment(5) });
+  });
+
+  // -------------------------------------------------------------------------
   // Assignment events (Plan D-3) — DISTINCT {assignment:{state,members}}
   // post_state (NO top-level `indices` key).
   // -------------------------------------------------------------------------
@@ -320,10 +394,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.status).toBe("rejected");
   });
 
-  it("select_exposure invalidates the parent sample's exposure list", () => {
-    let invalidated: unknown = null;
+  it("select_exposure invalidates the exposure list AND the picker projection", () => {
+    const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
+      invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     // Mirrors routes_exposures.jl PATCH /select: payload is {sample_id}.
     const evt: SseEvent = {
@@ -331,7 +405,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { sample_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.exposures(1));
+    expect(invalidated).toContainEqual(queryKeys.exposures(1));
+    // indexing_exposure_id derives from selection; the builder's Confirm
+    // resolves its plate through the picker projection (BU-RECIPENOOP), so a
+    // foreign re-selection must refresh it or Confirm commits the PREVIOUS
+    // representative exposure.
+    expect(invalidated).toContainEqual(queryKeys.corpusPickerSamples);
   });
 
   // -------------------------------------------------------------------------

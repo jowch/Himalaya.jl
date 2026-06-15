@@ -15,7 +15,7 @@ src/AGENTS.md                                        # core peak-finding/indexin
 packages/HimalayaUI/src/AGENTS.md                    # backend (SQLite, Oxygen, pipeline)
 packages/HimalayaUI/test/AGENTS.md                   # Julia test patterns
 packages/HimalayaUI/frontend/src/AGENTS.md           # frontend conventions
-packages/HimalayaUI/frontend/src/components/AGENTS.md  # UI component gotchas
+packages/HimalayaUI/frontend/src/print/shell/AGENTS.md  # app shell / routing / modal gotchas
 packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md  # mutation queue internals
 packages/HimalayaUI/frontend/test/AGENTS.md          # Vitest/JSDOM patterns
 packages/HimalayaUI/frontend/e2e/AGENTS.md           # Playwright patterns
@@ -28,7 +28,7 @@ If this is your first session on this repo, skim these in order before touching 
 1. [docs/peak-finding.md](docs/peak-finding.md) — why `findpeaks` is the way it is. Load-bearing.
 2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching `config.jl`, `manifest.jl`, or cli init/reingest.
 3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
-4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites, the SSE handler, or `StaleIndicesBanner` gating.
+4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites, or the SSE handler.
 5. [docs/mutation-queue.md](docs/mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`.
 6. [docs/contract-testing.md](docs/contract-testing.md) — six-layer testing rule. Required before fixing a queue/SSE/cache reconciliation bug.
 
@@ -43,11 +43,11 @@ packages/HimalayaUI/
   configs/                          # built-in experiment.toml templates (simple.toml)
   frontend/
     src/                            # frontend — see frontend/src/AGENTS.md
-      components/                   # see components/AGENTS.md
+      print/                        # all presentation: shell/, ui/, components/, pages/, render layers
+        shell/                      # app shell, routing, modals — see print/shell/AGENTS.md
       hooks/                        # custom React hooks
       lib/                          # url, plot, comparison, figure-export helpers
         queue/                      # mutation queue — see lib/queue/AGENTS.md
-      pages/                        # ComparePage, ComparePageEdit
       bones/                        # committed *.bones.json skeleton captures
     test/                           # Vitest unit tests — see frontend/test/AGENTS.md
     e2e/                            # Playwright mocked — see e2e/AGENTS.md
@@ -130,7 +130,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 | Routes, SQLite, pipeline, events, image, idempotency | [packages/HimalayaUI/src/AGENTS.md](packages/HimalayaUI/src/AGENTS.md) |
 | Backend tests, in-process SSE, FK-heal fixtures | [packages/HimalayaUI/test/AGENTS.md](packages/HimalayaUI/test/AGENTS.md) |
 | Zustand, TanStack Query, SSE wiring, Tailwind, boneyard | [packages/HimalayaUI/frontend/src/AGENTS.md](packages/HimalayaUI/frontend/src/AGENTS.md) |
-| Component-specific quirks (Plot, DetectorImage, TraceViewer, StaleIndicesBanner) | [packages/HimalayaUI/frontend/src/components/AGENTS.md](packages/HimalayaUI/frontend/src/components/AGENTS.md) |
+| App shell / routing / modal gotchas (CorpusShell, CorpusTopbar, AppRoutes, NavModal, OnboardingFlow) | [packages/HimalayaUI/frontend/src/print/shell/AGENTS.md](packages/HimalayaUI/frontend/src/print/shell/AGENTS.md) |
 | Mutation queue internals | [packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md](packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md) |
 | Vitest / JSDOM / RTL patterns | [packages/HimalayaUI/frontend/test/AGENTS.md](packages/HimalayaUI/frontend/test/AGENTS.md) |
 | Playwright selectors, port binding, live-mode timing | [packages/HimalayaUI/frontend/e2e/AGENTS.md](packages/HimalayaUI/frontend/e2e/AGENTS.md) |
@@ -138,15 +138,16 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 ## Current state
 
+- **Greenfield cutover (2026-06-15, branch `worktree-greenfield-ui-rebuild`, UNMERGED):** "The Print" is the sole app. The real app was promoted into `src/print/App.tsx` (`PrintApp`); `index.html → src/print/main.tsx` is the single entry (mounts `#app`); the legacy `src/App.tsx`/`src/main.tsx`/`print.html` were removed. `npm run build` now emits `dist/index.html` containing the real app (it previously built a stub). Plan: `docs/superpowers/plans/2026-06-14-greenfield-main-cutover.md`.
 - Core Himalaya: `v0.5.1` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + Focus/Index workspace + Inspect page + Series (folio/scoping/builder) + experiment-config system + skeleton loading + multiplayer + instrumentation foundation + mutation queue + slug permalinks + figure export + functional-redesign sweep (M1–M3) + component-library extraction (enforced design system) complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
   - **Frontend:** corpus contact sheet → loupe → Focus/Index workspace (`/sample/:id`: trace hero + detector panel + phase-call rail + notes margin/drawer), with clickable corpus→sample doors (M1), trace viewer with peak editing + auto-fit + log/linear toggle, Miller plot, PhasePanel with curate + stale-indices reanalyze, Inspect/loupe page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), OnboardingFlow + NavModal with focus trapping, skeleton loading on all data-driven cards. The earlier three-card *chat* Index and the @-mention subsystem were **retired 2026-05-29** (presentation deleted, message data plane parked — see `frontend/src/components/AGENTS.md`).
-  - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) deferred behind R4 instrumentation gate.
+  - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) **cancelled 2026-06-03** — no conflict UI; multiplayer stays last-write-wins, replaced by edit-tracking → undo/redo → versioning (designed in Layer 4). See `docs/redesign-notes.md` (2026-06-03) + `docs/event-log.md` §"Conflict resolution".
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.
   - **Series + picker + figure export + permalinks:** the standalone Compare page was **folded into Series 2026-05-29** (`/compare/*` redirects to `/series`); the Series folio/scoping/builder renders multi-trace overlays (`MultiTracePlot` render core) with sample-first picker, conflict resolution modal, and PNG/SVG copy/save. Slug-based permalink URLs round-trip through `useStateFromUrl` / `useUrlFromState`.
-  - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into 12 closed-look primitives under `src/components/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, Toast, HintText) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside `src/components/ui/**` (rules #3/#5 allowlist the colour-authoring files: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the detector/heatmap layers, `main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; static catalog at `docs/design-system.html`. Plan: [docs/superpowers/plans/2026-05-29-component-library-extraction.md](docs/superpowers/plans/2026-05-29-component-library-extraction.md).
+  - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into 12 closed-look primitives under `src/print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside `src/print/ui/**` (rules #3/#5 allowlist the colour-authoring files: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the detector/heatmap layers, `print/main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; static catalog at `docs/design-system.html`. Plan: [docs/superpowers/plans/2026-05-29-component-library-extraction.md](docs/superpowers/plans/2026-05-29-component-library-extraction.md).
   - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~180 Vitest files (~1500 tests) · 10 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs.
 - Deferred: holistic trace-plot-card / peak-move redesign (M4 — gated on rethinking the `auto_peaks`/`peak_curations` curation model), Phase panel Recent section, export UI, per-user audit view, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 

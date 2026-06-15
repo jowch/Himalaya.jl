@@ -1,9 +1,8 @@
 /**
  * Shortest angular distance between two hues, in degrees (mod 360, range
  * [0, 180]). Extracted from `test/coloring.test.ts` (issue #252) so the
- * phase-offset >=13deg invariant can run against both the on-screen
- * `COMPARE_PALETTE` (`lib/comparison/coloring.ts`) and the export
- * `COMPARE_PALETTE_LIGHT` (`lib/figure-export/presets.ts`) from one proven
+ * phase-offset >=13deg invariant can run against the on-screen
+ * `COMPARE_PALETTE` (`lib/comparison/coloring.ts`) from one proven
  * implementation. Phase/member colors visually conflate when their hues sit
  * too close; this is the load-bearing perceptual check behind that floor.
  *

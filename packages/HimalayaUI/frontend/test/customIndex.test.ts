@@ -56,4 +56,38 @@ describe("customIndex physics (Plan D-9)", () => {
     // first order back-computes to pq
     expect(customRefls("Pn3m", a)[0]!.q).toBeCloseTo(pq, 8);
   });
+
+  // ── F13: the three phases the custom-index modal was missing. The allowed
+  // reflection indices (Ms) are the squared magnitudes h²+k²+l² behind core
+  // Himalaya's `phaseratios` (src/phase.jl) — the single source of truth — so a
+  // user-fit comb in the UI matches the indexer's own ratio series exactly.
+  it("Fm3m refls follow the √3,√4,√8,√11,√12 series (cubic 2π√N/a)", () => {
+    const a = 200;
+    const r = customRefls("Fm3m", a);
+    expect(r.map((x) => x.N)).toEqual([3, 4, 8, 11, 12]);
+    expect(r[0]!.q).toBeCloseTo((2 * Math.PI * Math.sqrt(3)) / a, 6);
+  });
+
+  it("Fd3m refls follow the √3,√8,√11,√12,√16,√19,√24,√27,√32,√35,√36 series", () => {
+    const a = 250;
+    const r = customRefls("Fd3m", a);
+    expect(r.map((x) => x.N)).toEqual([3, 8, 11, 12, 16, 19, 24, 27, 32, 35, 36]);
+    expect(r[0]!.q).toBeCloseTo((2 * Math.PI * Math.sqrt(3)) / a, 6);
+  });
+
+  it("Square (2D) refls follow √(h²+k²): 1,2,4,5,8,9,10,13,16,17,18,20 at 2π√N/a", () => {
+    const a = 80;
+    const r = customRefls("Square", a);
+    expect(r.map((x) => x.N)).toEqual([1, 2, 4, 5, 8, 9, 10, 13, 16, 17, 18, 20]);
+    // first order q = 2π/a (N = 1)
+    expect(r[0]!.q).toBeCloseTo((2 * Math.PI) / a, 6);
+    // √2 reflection
+    expect(r[1]!.q).toBeCloseTo((2 * Math.PI * Math.sqrt(2)) / a, 6);
+  });
+
+  it("SYMS carries all eight canonical phases", () => {
+    expect(Object.keys(SYMS).sort()).toEqual(
+      ["Fd3m", "Fm3m", "Hexagonal", "Ia3d", "Im3m", "Lamellar", "Pn3m", "Square"],
+    );
+  });
 });
