@@ -741,3 +741,59 @@ image       = "{name}.tiff"
         @test cfg.col_display_name == 3
     end
 end
+
+@testset "config round-trips beam center + pixel size" begin
+    mktempdir() do dir
+        toml = joinpath(dir, "experiment.toml")
+        write(toml, """
+        [experiment]
+        name = "T/E"
+        [beamline]
+        energy_kev    = 12.0
+        flight_path_m = 2.5
+        beam_center_x = 420.791
+        beam_center_y = 838.83
+        pixel_size_um = 172.0
+        [manifest]
+        header_row = 0
+        sample_id = 1
+        name = 2
+        display_name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+        cfg = HimalayaUI.load_config(toml)
+        @test cfg.beam_center_x == 420.791
+        @test cfg.beam_center_y == 838.83
+        @test cfg.pixel_size_um == 172.0
+
+        # Round-trip through config_to_toml preserves the populated fields
+        # (this is the reingest persistence path — no mirror column).
+        cfg2 = HimalayaUI._build_config(TOML.parse(HimalayaUI.config_to_toml(cfg)))
+        @test cfg2.beam_center_x == 420.791
+        @test cfg2.beam_center_y == 838.83
+        @test cfg2.pixel_size_um == 172.0
+
+        # Bare integer in TOML coerces to Float64.
+        write(toml, replace(read(toml, String), "beam_center_x = 420.791" => "beam_center_x = 420"))
+        @test HimalayaUI.load_config(toml).beam_center_x === 420.0
+    end
+end
+
+@testset "config beam center absent round-trips to nothing" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    @test cfg.beam_center_x === nothing
+    @test cfg.beam_center_y === nothing
+    @test cfg.pixel_size_um === nothing
+    cfg2 = HimalayaUI._build_config(TOML.parse(HimalayaUI.config_to_toml(cfg)))
+    @test cfg2.beam_center_x === nothing
+    @test cfg2.pixel_size_um === nothing
+end
