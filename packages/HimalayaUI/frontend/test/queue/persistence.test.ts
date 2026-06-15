@@ -10,7 +10,7 @@ import {
 import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { makeFakeMutation } from "./helpers";
 import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
+import { saveSeriesMutator } from "../../src/lib/queue/mutators/saveSeries";
 
 describe("persistence: mirrorToSessionStorage", () => {
   beforeEach(() => {
@@ -265,31 +265,30 @@ describe("persistence: rehydrate", () => {
   });
 });
 
-// I5.2 (#183): SCHEMA_VERSION bumped 2 → 3 because Compare routes were retired
-// (I3.6 #177). A pre-cutover queued `comparison_*` op (persisted as schemaVersion
-// 2) must DROP at the version guard on rehydrate — NOT replay into its (kept)
-// mutator and fire a request that 404s against the dead route. The kept
-// comparison machinery (mutator arms in mutatorRegistry, applyRemoteToCache)
-// stays FOREVER for historical/migrated SSE logs; only the locally-queued op is
-// dropped.
-describe("persistence: stale comparison_* op drop (#183)", () => {
+// Stale-schemaVersion drop guard. A persisted op carrying an old SCHEMA_VERSION
+// must DROP at the version guard on rehydrate — NOT replay into its (still
+// registered) mutator and fire a request that may 404 against a moved/dead
+// route. Retargeted from the retired `comparison_save` cluster onto the
+// surviving `series_save` save-create/submit mutator, which exercises the same
+// generic persistence/version-guard mechanism.
+describe("persistence: stale-schemaVersion op drop", () => {
   beforeEach(() => {
     sessionStorage.clear();
   });
 
-  it("drops a pre-cutover (schemaVersion 2) comparison_save op without replaying it", async () => {
-    // Spy so we can prove the kept saveComparison mutator's request is never
-    // fired — the op must drop at the version guard, not replay-then-404.
-    const requestSpy = vi.spyOn(saveComparisonMutator, "request");
+  it("drops a stale (mismatched schemaVersion) series_save op without replaying it", async () => {
+    // Spy so we can prove the registered series_save mutator's request is never
+    // fired — the op must drop at the version guard, not replay.
+    const requestSpy = vi.spyOn(saveSeriesMutator, "request");
 
     sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify([
         {
-          schemaVersion: 2, // pre-cutover; current SCHEMA_VERSION is 3
-          kind: "comparison_save",
-          clientOpId: "op-stale-cmp",
-          payload: { title: "stale draft", members: [] },
+          schemaVersion: SCHEMA_VERSION - 1, // stale; current SCHEMA_VERSION is newer
+          kind: "series_save",
+          clientOpId: "op-stale-series",
+          payload: { title: "stale draft", samples: [] },
         },
       ]),
     );
@@ -305,15 +304,13 @@ describe("persistence: stale comparison_* op drop (#183)", () => {
     requestSpy.mockRestore();
   });
 
-  it("keeps the comparison_save mutator resolvable (frozen machinery)", () => {
-    // The bump must NOT delete the kept comparison_* machinery — a current
-    // comparison_save op still resolves to its mutator (master plan §2.1:
-    // comparison* branches frozen forever). Cheapest possible regression guard
-    // against an over-eager future deletion.
+  it("keeps the series_save mutator resolvable", () => {
+    // A current series_save op still resolves to its mutator. Cheapest possible
+    // regression guard against an over-eager future deletion of the machinery.
     const mutator = resolveMutator({
-      kind: "comparison_save",
-      payload: { title: "x", members: [] },
+      kind: "series_save",
+      payload: { title: "x", samples: [] },
     });
-    expect(mutator).toBe(saveComparisonMutator);
+    expect(mutator).toBe(saveSeriesMutator);
   });
 });

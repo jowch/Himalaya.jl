@@ -32,8 +32,6 @@ import {
 } from "../../src/lib/queue/mutators/assignment";
 import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 import {
   updateSampleMutator,
   addSampleTagMutator, removeSampleTagMutator,
@@ -384,47 +382,6 @@ const SPECS: Spec[] = [
         payload: { exposureId: 6 },
         sampleId: 1, username: "alice", clientId: "tab",
         exposureId: 6,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  // Compare page mutators (Phase 3). Both have noop onMutate per spec —
-  // submission shows a spinner, no optimistic write — so the rollback
-  // contract is trivially satisfied. The row exists to pin "no future
-  // contributor accidentally adds an optimistic write that doesn't
-  // round-trip."
-  {
-    name: "saveComparison",
-    keys: [["comparison", 42] as unknown as QueryKey,
-           ["comparisons", "all"] as unknown as QueryKey],
-    seed: (qc) => {
-      qc.setQueryData(["comparison", 42], { id: 42, title: "X" });
-      qc.setQueryData(["comparisons", "all"], [{ id: 42 }]);
-    },
-    run: (qc) => {
-      const ctx = saveComparisonMutator.onMutate({
-        kind: "comparison_save", clientOpId: "op",
-        payload: {},
-        username: "alice", clientId: "tab",
-        id: 42, title: "edited", members: [],
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "deleteComparison",
-    keys: [["comparison", 42] as unknown as QueryKey,
-           ["comparisons", "all"] as unknown as QueryKey],
-    seed: (qc) => {
-      qc.setQueryData(["comparison", 42], { id: 42, title: "X" });
-      qc.setQueryData(["comparisons", "all"], [{ id: 42 }]);
-    },
-    run: (qc) => {
-      const ctx = deleteComparisonMutator.onMutate({
-        kind: "comparison_delete", clientOpId: "op",
-        payload: { id: 42 },
-        username: "alice", clientId: "tab",
-        id: 42,
       } as any, qc);
       ctx.restore();
     },

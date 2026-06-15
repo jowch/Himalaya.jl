@@ -431,41 +431,6 @@ describe("handleRemoteEvent", () => {
     });
   });
 
-  it("comparison_pinned SSE invalidates the comparisonPins cache", () => {
-    const spy = vi.spyOn(qc, "invalidateQueries");
-    handleRemoteEvent({
-      id: 500,
-      kind: "comparison_pinned",
-      entity_type: "user",
-      entity_id: 7, // user_id
-      client_op_id: null,
-      payload: { comparison_id: 42 },
-    }, qc, qc.getMutationCache());
-    // Expect a single invalidation against the comparisonPins query key.
-    const pinInvalidations = spy.mock.calls.filter(
-      (c) => Array.isArray((c[0] as { queryKey?: unknown[] })?.queryKey)
-        && (c[0] as { queryKey: unknown[] }).queryKey[0] === "comparison-pins",
-    );
-    expect(pinInvalidations).toHaveLength(1);
-  });
-
-  it("comparison_unpinned SSE invalidates the comparisonPins cache", () => {
-    const spy = vi.spyOn(qc, "invalidateQueries");
-    handleRemoteEvent({
-      id: 501,
-      kind: "comparison_unpinned",
-      entity_type: "user",
-      entity_id: 7,
-      client_op_id: null,
-      payload: { comparison_id: 42 },
-    }, qc, qc.getMutationCache());
-    const pinInvalidations = spy.mock.calls.filter(
-      (c) => Array.isArray((c[0] as { queryKey?: unknown[] })?.queryKey)
-        && (c[0] as { queryKey: unknown[] }).queryKey[0] === "comparison-pins",
-    );
-    expect(pinInvalidations).toHaveLength(1);
-  });
-
   it("applyRemoteToCache default branch invalidates peaks/indices for unknown kinds", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     handleRemoteEvent({

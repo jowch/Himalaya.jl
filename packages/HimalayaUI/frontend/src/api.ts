@@ -1,5 +1,3 @@
-import type { GroupingMode } from "./lib/comparison/coloring";
-
 export interface User {
   id: number;
   username: string;
@@ -433,14 +431,13 @@ export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indi
 export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
 export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);
 
-// ─── Comparisons (Plan §Phase 3) ────────────────────────────────────────────
+// ─── Member snapshots (shared by the Series plate) ──────────────────────────
 //
-// Shapes mirror the Julia route emit / `fetch_comparison_with_members` in
-// `comparisons.jl`. The `MemberSnapshot` type lives here because it must be
-// the single source of truth for both the HTTP response parser AND the SSE
-// `applyRemoteToCache` handler — both paths must produce the same parsed
-// shape to avoid cache divergence during reconciliation. (The Compare-era
-// client-side `lib/comparison/snapshot.ts` deriver was removed in I5.3 #184.)
+// The `MemberSnapshot` type lives here because it must be the single source of
+// truth for both the HTTP response parser AND the SSE `applyRemoteToCache`
+// handler — both paths must produce the same parsed shape to avoid cache
+// divergence during reconciliation. Consumed by `SeriesMember` (the going-
+// forward render-pipeline input type) and the series reading/figure helpers.
 
 export interface MemberSnapshotPeak {
   id: number;
@@ -480,241 +477,29 @@ export interface MemberSnapshot {
   analysis_inputs_hash: string;
 }
 
-/** Per-member input shape sent to `POST /api/comparisons` and `/submit`. */
-export interface ComparisonMemberInput {
-  /** Existing member id (UPDATE on submit) or null/undefined (INSERT/create). */
-  id?: number | null;
-  exposure_id: number | null;
-  display_order: number;
-  band_height?: number;
-  y_offset?: number;
-  normalization?: string;
-  color_override?: string | null;
-  label_override?: string | null;
-  q_window_min?: number | null;
-  q_window_max?: number | null;
-  peak_display?: unknown;
-  snapshot: MemberSnapshot;
-}
-
-/** Per-member shape returned by GET / POST endpoints. Mirrors `fetch_comparison_with_members`. */
-export interface ComparisonMember {
-  id: number;
-  comparison_id: number;
-  exposure_id: number | null;
-  display_order: number;
-  band_height: number;
-  y_offset: number;
-  normalization: string;
-  color_override: string | null;
-  label_override: string | null;
-  q_window_min: number | null;
-  q_window_max: number | null;
-  peak_display: unknown;
-  snapshot: MemberSnapshot | null;
-  is_stale: boolean;
-  created_by: number | null;
-  created_at: string | null;
-}
-
-/**
- * Per-member shape returned by the series GET / POST endpoints.
- * Mirrors `fetch_series_with_plate` (packages/HimalayaUI/src/series.jl).
- * Field-for-field identical to `ComparisonMember` except `comparison_id` →
- * `series_id`. This is the render pipeline's going-forward input type.
- *
- * The two types are intentionally twinned until `ComparisonMember` is retired
- * (I3.6 / I5.3) — tighten a shared field (e.g. `peak_display: unknown`) in
- * both, or the render pipeline and Compare diverge.
- */
-export interface SeriesMember {
-  id: number;
-  series_id: number;
-  exposure_id: number | null;
-  display_order: number;
-  band_height: number;
-  y_offset: number;
-  normalization: string;
-  color_override: string | null;
-  label_override: string | null;
-  q_window_min: number | null;
-  q_window_max: number | null;
-  peak_display: unknown;
-  snapshot: MemberSnapshot | null;
-  is_stale: boolean;
-  created_by: number | null;
-  created_at: string | null;
-}
-
-export interface Comparison {
-  id: number;
-  title: string;
-  description: string | null;
-  content_hash: string;
-  created_by: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  forked_from_id: number | null;
-  forked_at_hash: string | null;
-  forked_from_title: string | null;
-  /** Author's persisted view choices (spec §6.4); NULL = author never picked. */
-  view_grouping_mode: string | null;
-  view_show_peak_ticks: boolean | null;
-  view_show_peak_labels: boolean | null;
-  last_event_at: string | null;
-  members: ComparisonMember[];
-}
-
 /** Lightweight summary row used by the listing endpoints. */
-export interface ComparisonSummary {
-  id: number;
-  title: string;
-  description: string | null;
-  content_hash: string;
-  created_by: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  forked_from_id: number | null;
-  forked_at_hash: string | null;
-  /**
-   * Author's persisted view choices (spec §6.4); NULL = author never picked.
-   * `view_grouping_mode` is intentionally loose (`string | null`) on read —
-   * permissive-read / strict-write; `SaveComparisonBody` uses `GroupingMode`.
-   * Populated by #137 (backend); reads `undefined` until that lands.
-   */
-  view_grouping_mode: string | null;
-  view_show_peak_ticks: boolean | null;
-  view_show_peak_labels: boolean | null;
-  last_event_at: string | null;
-  /**
-   * Listing projection fields (see `_comparison_listing_rows`).
-   * Populated by #137 (backend); reads `undefined` until that lands.
-   */
-  author_username: string | null;
-  member_count: number;
-  /** Backend-capped top-3 distinct phases (`_topk_phases`). */
-  member_phases: string[];
-  /** True distinct-phase total — drives the `+N more` overflow in the sidebar. */
-  member_phase_count: number;
-  has_stale_members: boolean;
-}
-
-export interface ComparisonMessage {
-  id: number;
-  comparison_id: number;
-  author_id: number | null;
-  author: string | null;
-  body: string;
-  created_at: string;
-}
-
-/**
- * Body shape posted to `POST /api/comparisons` (create) and
- * `POST /api/comparisons/:id/submit` (update). The mutator picks the route
- * based on the presence of `id` in the payload.
- */
-export interface SaveComparisonBody {
-  title: string;
-  description?: string | null;
-  members: ComparisonMemberInput[];
-  /** Required on submit (existing comparison); absent on create. */
-  expected_content_hash?: string;
-  /** Set when forking; both fields ride together or not at all. */
-  forked_from_id?: number | null;
-  forked_at_hash?: string | null;
-  /**
-   * Author's view choices (spec §6.4); omitted = not changed by this save.
-   * Strict `GroupingMode` on write vs. permissive `string | null` on the read
-   * types is deliberate — see the read-type comments.
-   */
-  view_grouping_mode?: GroupingMode | null;
-  view_show_peak_ticks?: boolean | null;
-  view_show_peak_labels?: boolean | null;
-}
-
 /**
  * Thrown by a fetcher when the server returns 409 (content_hash drift).
  * Carries the server's `current_hash` and `current_state`. `status` is 409 so
  * the queue's failure-class router treats it as a validation error (no retry,
  * surfaces in `onError`); `useQueueMutation` suppresses the toast on it.
  *
- * There is no longer a conflict surface that consumes it. Compare is retired
- * (#177, replay-only) and the series-commit route is last-write-wins (Plan 6a,
- * no longer 409s). The type is kept because `saveComparison` / `commitSeriesPlate`
- * still defensively parse a 409 should one ever arrive.
+ * There is no longer a conflict surface that consumes it. The series-commit
+ * route is last-write-wins (Plan 6a, no longer 409s). The type is kept because
+ * `commitSeriesPlate` still defensively parses a 409 should one ever arrive.
  */
 export class ConflictError extends Error {
   status = 409 as const;
   constructor(
     public current_hash: string | null,
-    // A comparison-submit 409 carries a `Comparison`; a series-commit 409
-    // (`commitSeriesPlate`) carries a `Series`. No discriminator.
-    public current_state: Comparison | Series | null,
+    // A series-commit 409 (`commitSeriesPlate`) carries a `Series`.
+    public current_state: Series | null,
     message?: string,
   ) {
     super(message ?? "content_hash conflict");
     this.name = "ConflictError";
   }
 }
-
-/**
- * Save a comparison — create (no id) or submit (id present). Internally calls
- * `POST /api/comparisons` or `POST /api/comparisons/:id/submit`. On 409,
- * throws `ConflictError` with the server's current state attached.
- *
- * Why this branches on id (rather than two separate fetchers): the queue
- * mutator's `request` function takes a single payload — branching here keeps
- * the OpKind-to-route mapping in one place and the mutator's `request`
- * trivially testable.
- */
-export async function saveComparison(
-  body: SaveComparisonBody,
-  comparisonId: number | undefined,
-  opts?: AuthOpts,
-): Promise<Comparison> {
-  const path = comparisonId === undefined
-    ? "/api/comparisons"
-    : `/api/comparisons/${comparisonId}/submit`;
-  try {
-    return await request<Comparison>("POST", path, body, opts);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 409) {
-      const b = err.body as
-        | { current_hash?: string; current_state?: Comparison }
-        | null;
-      throw new ConflictError(
-        b?.current_hash ?? null,
-        b?.current_state ?? null,
-        err.message,
-      );
-    }
-    throw err;
-  }
-}
-
-export const deleteComparison = (id: number, opts?: AuthOpts) =>
-  request<{ id: number; deleted: boolean; event_id: number }>(
-    "DELETE", `/api/comparisons/${id}`, undefined, opts);
-
-export const getComparison = (id: number) =>
-  request<Comparison>("GET", `/api/comparisons/${id}`);
-
-export const listComparisons = () =>
-  request<ComparisonSummary[]>("GET", "/api/comparisons");
-
-export const listExperimentComparisons = (experiment_id: number) =>
-  request<ComparisonSummary[]>("GET", `/api/experiments/${experiment_id}/comparisons`);
-
-export const getComparisonForks = (id: number) =>
-  request<ComparisonSummary[]>("GET", `/api/comparisons/${id}/forks`);
-
-export const listComparisonMessages = (comparison_id: number) =>
-  request<ComparisonMessage[]>("GET", `/api/comparisons/${comparison_id}/messages`);
-
-export const postComparisonMessage = (
-  comparison_id: number, body: string, opts?: AuthOpts,
-) => request<ComparisonMessage>(
-  "POST", `/api/comparisons/${comparison_id}/messages`, { body }, opts);
 
 // ─── Picker / scoping shared types ──────────────────────────────────────────
 
@@ -771,25 +556,6 @@ export const batchSampleTags = (
 ): Promise<BatchSampleTagResult[]> =>
   request<BatchSampleTagResult[]>(
     "POST", "/api/samples/tags/batch", { key, tags, source }, opts);
-
-// ─── Comparison pins (Plan §Phase 13, Task 13.2) ────────────────────────────
-//
-// Per-user pinned comparisons surface at the top of the sidebar. Pin/unpin
-// are trivial idempotent state toggles — no `with_idempotency`, no SSE — so
-// the API is a straightforward POST/DELETE pair. The list endpoint reads
-// `X-Username` and returns a flat array of comparison ids in
-// most-recently-pinned-first order.
-
-export const listComparisonPins = (opts?: AuthOpts): Promise<number[]> =>
-  request<number[]>("GET", "/api/users/me/comparison-pins", undefined, opts);
-
-export const pinComparison = (id: number, opts?: AuthOpts) =>
-  request<{ comparison_id: number; pinned: boolean }>(
-    "POST", `/api/comparisons/${id}/pin`, undefined, opts);
-
-export const unpinComparison = (id: number, opts?: AuthOpts) =>
-  request<{ comparison_id: number; pinned: boolean }>(
-    "DELETE", `/api/comparisons/${id}/pin`, undefined, opts);
 
 // ─── Series (#166 / #167 / #168 — series event-kind cluster) ────────────────
 //
@@ -851,7 +617,7 @@ export interface SeriesSample {
   excluded: boolean;
 }
 
-/** The plate — one `series_members` row. Mirrors `ComparisonMember`. */
+/** The plate — one `series_members` row. */
 export interface SeriesMember {
   id: number;
   series_id: number;
@@ -960,7 +726,7 @@ export interface CommitSeriesPlateBody {
 /**
  * Save a series — create (no id ⇒ `POST /api/series`) or recipe-edit
  * (id present ⇒ `PATCH /api/series/:id`). Branches on id so the queue
- * mutator's `request` stays a single-payload call (mirrors `saveComparison`).
+ * mutator's `request` stays a single-payload call.
  */
 export async function saveSeries(
   body: SaveSeriesBody,
@@ -975,7 +741,7 @@ export async function saveSeries(
 /**
  * Commit the plate (the old "submit"). On 409 (content_hash drift) throws the
  * typed `ConflictError` carrying the server's `current_hash` + `current_state`
- * (a `Series`), mirroring `saveComparison` (I3.5b). This is the ONLY series
+ * (a `Series`). This is the ONLY series
  * fetcher that throws `ConflictError`: recipe-save (`PATCH /api/series/:id`)
  * never reads `expected_content_hash` and never 409s, so `saveSeries` is left
  * untouched.

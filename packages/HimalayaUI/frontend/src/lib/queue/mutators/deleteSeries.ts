@@ -1,6 +1,6 @@
 /**
- * deleteSeries mutator (#166). Mirrors `deleteComparison`: no optimistic
- * write; `onSuccess` removes the detail cache (NOT invalidate — refetching a
+ * deleteSeries mutator (#166). No optimistic write; `onSuccess` removes the
+ * detail cache (NOT invalidate — refetching a
  * deleted resource 404s) and filters the id out of the listing cache.
  */
 import * as api from "../../../api";

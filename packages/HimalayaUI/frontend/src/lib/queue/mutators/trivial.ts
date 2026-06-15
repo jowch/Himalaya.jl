@@ -12,7 +12,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import * as api from "../../../api";
 import type {
-  Sample, SampleTag, Exposure, ExposureTag, SampleMessage, ComparisonMessage,
+  Sample, SampleTag, Exposure, ExposureTag, SampleMessage,
   AuthOpts, CorpusSample,
 } from "../../../api";
 import { queryKeys } from "../../../queries";
@@ -471,54 +471,6 @@ export const postSampleMessageMutator: Mutator<PostSampleMessageInput, PostSampl
         list ?? [],
         response,
         (m) => m.body === response.body && m.sample_id === response.sample_id,
-      ),
-    );
-  },
-};
-
-// ---------------------------------------------------------------------------
-// post_message — comparison context (Phase 10)
-// ---------------------------------------------------------------------------
-// Same OpKind ("post_message") as the sample variant; the registry
-// discriminates by payload shape (`comparisonId` vs `sampleId`). Cache key
-// is `queryKeys.comparisonMessages(comparisonId)` and the wire route is
-// `POST /api/comparisons/:id/messages`. The placeholder shape mirrors the
-// `ComparisonMessage` row.
-
-export type PostComparisonMessageInput = { body: string };
-type PostComparisonMessageScope = BaseScope & { comparisonId: number };
-
-export const postComparisonMessageMutator: Mutator<
-  PostComparisonMessageInput, PostComparisonMessageScope, ComparisonMessage
-> = {
-  kind: "post_message",
-  onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.comparisonMessages(p.comparisonId);
-    const prev = qc.getQueryData<ComparisonMessage[]>(key);
-    const placeholder: ComparisonMessage = {
-      id: nextOptimisticId(),
-      comparison_id: p.comparisonId,
-      author_id: null,
-      author: p.username ?? null,
-      body: p.body,
-      created_at: new Date().toISOString(),
-    };
-    qc.setQueryData<ComparisonMessage[]>(key, [...(prev ?? []), placeholder]);
-    return {
-      restore: () => {
-        if (prev === undefined) qc.removeQueries({ queryKey: key, exact: true });
-        else qc.setQueryData(key, prev);
-      },
-    };
-  },
-  request: (p) => api.postComparisonMessage(p.comparisonId, p.body, buildAuthOpts(p)),
-  onSuccess: (p, response, qc) => {
-    const key = queryKeys.comparisonMessages(p.comparisonId);
-    qc.setQueryData<ComparisonMessage[]>(key, (list) =>
-      replacePlaceholder(
-        list ?? [],
-        response,
-        (m) => m.body === response.body && m.comparison_id === response.comparison_id,
       ),
     );
   },

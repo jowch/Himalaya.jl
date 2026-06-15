@@ -11,7 +11,7 @@ export interface ScopeSeriesInput {
 export interface ScopeSeriesScope { username: string | undefined; clientId: string }
 
 // Local auth-opts wrapper — same pattern every mutator file uses (saveSeries,
-// saveComparison, trivial, …): wrap the shared authOpts(username, clientId,
+// trivial, …): wrap the shared authOpts(username, clientId,
 // clientOpId) so request() reads the op's metadata off the flat payload.
 function buildAuthOpts(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);

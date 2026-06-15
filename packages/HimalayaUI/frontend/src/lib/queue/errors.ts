@@ -63,8 +63,6 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   update_sample: "Couldn't update sample",
   reanalyze_exposure: "Couldn't re-analyze exposure",
   delete_index: "Couldn't delete index",
-  comparison_save: "Couldn't save comparison",
-  comparison_delete: "Couldn't delete comparison",
 };
 
 /**
