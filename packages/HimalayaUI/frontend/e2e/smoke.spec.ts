@@ -129,7 +129,7 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
 // I4.4 + plotting redesign (#280): the auto-peaks/curation model — the `+`
 // "Add index N" candidate buttons, the curated "Active set" with
 // `data-index-id`/`data-active` rows, the `/groups/:id/members` POST, and the
-// StaleIndicesBanner (`role="alert"` + POST `/analyze` "Re-analyze") — were
+// stale-indices alert (`role="alert"` + POST `/analyze` "Re-analyze") — were
 // RETIRED by the greenfield rebuild. The focus surface now uses the assignment
 // model (AssignmentRail/AssignmentCart driven by `confirmed_index`); there is no
 // curation `+`, no active-set membership row, and no stale-indices banner /

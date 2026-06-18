@@ -388,7 +388,7 @@ permalinks PR and removed as placeholder code; re-introducing it requires:
   `AlreadyDeletedSample` / experiment `E2ETest`, plus concrete ids the
   spec can reference.
 - A two-tab Playwright spec asserting tab A's URL → StaleUrlPage transition
-  after tab B's delete (per spec §8.3).
+  after tab B's delete.
 
 Pick this up when cross-tab delete becomes a real UX surface. The current
 multiplayer model treats deletes as low-volume; the unit-level coverage

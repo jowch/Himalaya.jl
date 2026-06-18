@@ -386,7 +386,7 @@ end
 
 @testset "insert_speculative_index! inherits exposure analysis_inputs_hash (issue #35 Bug 6)" begin
     # Pre-fix, the INSERT into `indices` set inputs_hash = NULL on speculative
-    # rows. StaleIndicesBanner gates on (index.inputs_hash !== exposure
+    # rows. The stale-indices alert gates on (index.inputs_hash !== exposure
     # .analysis_inputs_hash), so a speculative create immediately registered as
     # stale and the banner spuriously fired after every speculative create. The
     # fix in src/speculative.jl reads the exposure's current analysis_inputs_hash

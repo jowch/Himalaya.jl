@@ -342,6 +342,15 @@ companion** (`orientation="vertical"`) and the waterfall stack share the same
 low→high `display_order`; pixel alignment between them is the *plate's*
 responsibility — `WaterfallChart` does not embed the strip.
 
+**Why cross-sample / cross-experiment overlay is physically valid.** The
+q-axis is in *absolute* Å⁻¹ (a real reciprocal-space coordinate, not a
+detector-relative or per-sample-normalised axis), so traces from different
+samples — or different experiments / beamtimes — share one x-axis and can be
+overlaid and compared directly. This is the load-bearing assumption behind
+the waterfall, behind the Series folio's "cross-experiment" filter
+(`lib/series/folioFilter.ts`, `series.jl` `spans_experiments`), and behind
+the deferred cross-experiment comparison feature.
+
 ### 2.5 Animation
 
 Three primitives, all 120–140ms ease:

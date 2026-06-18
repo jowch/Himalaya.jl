@@ -95,7 +95,7 @@ using Tables
     # AFTER `persist_analysis!`'s transaction committed — autocommit, outside
     # any tx. A crash between the persist commit and the UPDATEs would leave
     # `exposures.analysis_inputs_hash` and `indices.inputs_hash` divergent,
-    # making StaleIndicesBanner state permanently wrong.
+    # making the stale-indices alert state permanently wrong.
     #
     # The fix moves the UPDATEs into `_persist_analysis_inner!` so they
     # commit/rollback as part of the same tx. This test exercises the

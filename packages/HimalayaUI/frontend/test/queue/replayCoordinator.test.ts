@@ -300,7 +300,7 @@ describe("handleRemoteEvent", () => {
     }, qc, qc.getMutationCache());
     await d.promise;
     // Without this propagation the indices stay frozen at "old-hash" and the
-    // StaleIndicesBanner sticks until a hard refetch.
+    // stale-indices alert sticks until a hard refetch.
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
     expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
   });
