@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Experiment · Configuration — The Print</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --serif:"Newsreader",Georgia,ui-serif,serif;--sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .t-kicker{font-size:11.5px;font-weight:700;letter-spacing:.10em;text-transform:uppercase}.t-kicker.acc{color:var(--accent)}.t-kicker.soft{color:var(--ink-soft)}
+  .top{display:flex;align-items:center;gap:16px;height:56px;padding:0 24px;border-bottom:1px solid var(--hair);background:var(--paper)}
+  .wm{font-family:var(--serif);font-weight:600;font-size:17px}.top .sp{flex:1}.top .who{width:27px;height:27px;border-radius:9999px;background:var(--paper-sunk);border:1px solid var(--hair-strong)}
+  .shell{display:flex;min-height:calc(100vh - 56px)}
+  .side{width:252px;flex:none;border-right:1px solid var(--hair);background:var(--paper-sunk);padding:20px 14px;display:flex;flex-direction:column;gap:2px}
+  .side .hd{display:flex;align-items:center;margin:0 6px 14px}.side .new{margin-left:auto;font-size:12px;color:var(--accent);font-weight:600;cursor:pointer}
+  .exp{display:block;padding:10px 11px;border-radius:5px;cursor:pointer;border:1px solid transparent}.exp:hover{background:var(--paper)}
+  .exp.on{background:var(--plate);border-color:var(--hair-strong);box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 3px 10px -6px rgba(40,30,20,.16)}
+  .exp .en{font-family:var(--serif);font-size:15px}.exp .es{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);margin-top:4px}
+  .main{flex:1;min-width:0;padding:30px 40px 64px}.frame{max-width:1080px}
+
+  /* ===== SHARED experiment header (identical to Samples) ===== */
+  .hrow{display:flex;align-items:flex-end;gap:18px;padding-bottom:14px;border-bottom:2px solid var(--ink)}
+  h1{font-family:var(--serif);font-weight:500;font-size:40px;line-height:1.05;letter-spacing:-.01em}
+  .resc{margin-left:auto;display:flex;align-items:center;gap:11px;white-space:nowrap}
+  .resc .txt{font-size:11px;color:var(--ink-soft)}.resc .txt b{color:var(--success);font-weight:500}
+  .btn{font-size:11.5px;font-weight:600;border-radius:5px;padding:5px 11px;cursor:pointer;border:1px solid transparent;font-family:var(--sans);white-space:nowrap}
+  .btn.outline{border-color:var(--hair-strong);background:var(--plate);color:var(--ink)}.btn.sm{font-size:11px;padding:3px 9px}
+  .masthead{display:flex;margin-top:14px;font-family:var(--mono);font-size:11.5px}
+  .masthead .m{padding:0 18px;border-right:1px solid var(--hair);display:flex;flex-direction:column;gap:2px}.masthead .m:first-child{padding-left:0}.masthead .m:last-child{border-right:none}
+  .masthead .mv{font-weight:600;font-size:15px;color:var(--ink)}.masthead .mk{font-family:var(--sans);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft)}
+  .tabs{display:flex;gap:4px;margin:20px 0 0;border-bottom:1px solid var(--hair)}
+  .stab{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:8px 13px;border-radius:5px 5px 0 0;color:var(--ink-soft);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .stab.on{color:var(--ink);border-bottom-color:var(--ink)}.stab .d{width:6px;height:6px;border-radius:50%;background:var(--hair-strong)}.stab.on .d{background:var(--accent)}
+
+  /* ===== Configuration content ===== */
+  .ident{margin:20px 0 6px}
+  .deck{font-size:14px;color:var(--ink-soft);border-bottom:1px dotted transparent;cursor:text;display:inline-block;padding-bottom:1px}.deck:hover{border-bottom-color:var(--hair-strong)}
+  .dir{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:6px}
+  .body{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:36px}
+  .lbl{font-size:11.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:14px;display:flex;align-items:center}.lbl .o{margin-left:auto}
+  .geo .row{display:flex;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--hair)}.geo .row:last-child{border-bottom:none}
+  .geo .gk{font-size:12px;color:var(--ink-soft);width:108px;flex:none}.geo .gv{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--ink)}
+  .geo .src{margin-left:14px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint)}.geo .src.ok{color:var(--success)}
+  .plate{background:var(--plate);border:1px solid var(--hair-strong);border-radius:5px;box-shadow:var(--lift);padding:15px 18px}
+  .plate .pc{font-family:var(--serif);font-size:14px;color:var(--ink-soft);margin-bottom:14px}
+  .tl{display:flex;gap:6px;height:60px;align-items:flex-end}
+  .seg{position:relative;background:var(--paper-sunk);border:1px solid var(--hair);border-radius:4px;height:100%;display:flex;align-items:flex-end;gap:3px;padding:7px 8px 20px}
+  .seg .stk{flex:1;background:var(--ink-faint);border-radius:1px 1px 0 0;min-width:2px}.seg .scap{position:absolute;left:8px;bottom:5px;font-size:9px;color:var(--ink-soft)}
+  .axis{display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink-soft);margin-top:8px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+  <header class="top"><span class="wm">Himalaya</span><span class="sp"></span><span class="who"></span></header>
+  <div class="shell">
+    <aside class="side">
+      <div class="hd"><span class="t-kicker soft">Experiments</span><span class="new">+ New</span></div>
+      <a class="exp on"><div class="en">1p7m</div><div class="es">170 samples · 13 loads</div></a>
+      <a class="exp"><div class="en">2025_11 GISAXS</div><div class="es">84 samples · 6 loads</div></a>
+      <a class="exp"><div class="en">DOPC dose series</div><div class="es">36 samples · 3 loads</div></a>
+      <a class="exp"><div class="en">calibration runs</div><div class="es">12 samples · 1 load</div></a>
+      <a class="exp"><div class="en">Mar beamtime</div><div class="es">210 samples · 14 loads</div></a>
+    </aside>
+    <main class="main"><div class="frame">
+
+      <!-- SHARED HEADER -->
+      <div class="t-kicker acc" style="margin-bottom:7px">Experiment</div>
+      <div class="hrow"><h1>1p7m</h1>
+        <div class="resc"><span class="txt">scanned 2 min ago · <b>up to date</b></span><button class="btn outline sm">Rescan</button></div></div>
+      <div class="masthead">
+        <div class="m"><span class="mv">13</span><span class="mk">loads</span></div>
+        <div class="m"><span class="mv">170</span><span class="mk">samples</span></div>
+        <div class="m"><span class="mv">682</span><span class="mk">exposures</span></div>
+        <div class="m"><span class="mv">30.8&thinsp;h</span><span class="mk">span</span></div>
+        <div class="m"><span class="mv">4</span><span class="mk">sessions</span></div>
+      </div>
+      <div class="tabs"><span class="stab on"><span class="d"></span>Configuration</span><span class="stab"><span class="d"></span>Samples</span></div>
+
+      <!-- CONFIGURATION CONTENT -->
+      <div class="ident">
+        <div><span class="deck">SSRL, April 2026. Lipid mesophase series, 1.7&thinsp;m flight path.</span></div>
+        <div class="dir">/Volumes/data/ssrl/2026_04/1p7m</div>
+      </div>
+
+      <div class="body">
+        <div class="geo">
+          <div class="lbl">Geometry <button class="btn outline sm o">Override</button></div>
+          <div class="row"><span class="gk">Energy</span><span class="gv">9.00 keV</span><span class="src">PRP</span></div>
+          <div class="row"><span class="gk">Flight path</span><span class="gv">1.70 m</span><span class="src">PRP</span></div>
+          <div class="row"><span class="gk">Detector</span><span class="gv">Pilatus 1M</span><span class="src">PRP</span></div>
+          <div class="row"><span class="gk">Pixel pitch</span><span class="gv">172 &micro;m</span><span class="src">PRP</span></div>
+          <div class="row"><span class="gk">Beam center</span><span class="gv">420.8, 838.8 px</span><span class="src ok">setup files &check;</span></div>
+          <div class="row"><span class="gk">q units</span><span class="gv">&Aring;&#8315;&#185;</span><span class="src">PRP</span></div>
+        </div>
+        <div>
+          <div class="lbl">Acquisition</div>
+          <div class="plate">
+            <div class="pc">Four sessions, thirteen loads</div>
+            <div class="tl">
+              <div class="seg" style="flex:0.35"><span class="scap">refs</span><div class="stk" style="height:28%"></div></div>
+              <div class="seg" style="flex:2.6"><span class="scap">HA rack · 8 loads</span><div class="stk" style="height:80%"></div><div class="stk" style="height:55%"></div><div class="stk" style="height:80%"></div><div class="stk" style="height:80%"></div><div class="stk" style="height:48%"></div><div class="stk" style="height:80%"></div><div class="stk" style="height:72%"></div><div class="stk" style="height:34%"></div></div>
+              <div class="seg" style="flex:1.1"><span class="scap">JC rack · 3 loads</span><div class="stk" style="height:80%"></div><div class="stk" style="height:30%"></div><div class="stk" style="height:60%"></div></div>
+              <div class="seg" style="flex:0.6"><span class="scap">reshoot · 1</span><div class="stk" style="height:58%"></div></div>
+            </div>
+            <div class="axis"><span>Apr 25 18:37</span><span>Apr 27 01:26</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:34px">
+        <div class="lbl">Sources</div>
+        <div class="geo" style="max-width:660px">
+          <div class="row"><span class="gk">Data directory</span><span class="gv">data/</span><span class="src">experiment.toml</span></div>
+          <div class="row"><span class="gk">Analysis</span><span class="gv">analysis/automatic_analysis/tot_files</span><span class="src">experiment.toml</span></div>
+          <div class="row"><span class="gk">Integration</span><span class="gv">{name}.dat</span><span class="src">pattern</span></div>
+          <div class="row"><span class="gk">Detector image</span><span class="gv">{name}.tiff</span><span class="src">pattern</span></div>
+          <div class="row"><span class="gk">Sidecar metadata</span><span class="gv">{name}.prp</span><span class="src">pattern</span></div>
+        </div>
+      </div>
+
+    </div></main>
+  </div>
+</body>
+</html>
