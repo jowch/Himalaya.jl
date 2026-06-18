@@ -64,7 +64,7 @@ Required fields:
 - `onMutate(payload, qc): RollbackContext` — write optimistic effect, snapshot prior cache, return `{restore}` closure
 - `request(payload, signal): Promise<TResponse>` — call `api.<route>(...)` with `authOpts(payload.username, payload.clientId, payload.clientOpId)`
 - `onSuccess(payload, response, qc)` — replace placeholders with server-assigned ids, write `analysis_inputs_hash` if peak-affecting
-- `affectsExposurePeaks?: () => boolean` — `true` for peak/reanalyze ops; gates `useExposureHasPendingPeakOps`. Default false; only set to true if `StaleIndicesBanner`/`useSpeculativeSnap` should suspend during this op.
+- `affectsExposurePeaks?: () => boolean` — `true` for peak/reanalyze ops; gates `useExposureHasPendingPeakOps`. Default false; only set to true if `useSpeculativeSnap` should suspend during this op.
 
 **Cross-cutting invariants** (regression-tested; don't violate):
 - **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/optimisticId.ts` — shared monotonic counter across mutators, no collisions.

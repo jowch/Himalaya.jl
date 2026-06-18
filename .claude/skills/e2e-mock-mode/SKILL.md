@@ -54,14 +54,14 @@ Playwright route mocks like `**/api/samples/10/exposures` don't match URLs with 
    If yes, run the documented serve command from CLAUDE.md:
    ```bash
    julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-     serve <experiment-dir> --port 8080
+     serve --port 8080
    ```
-   The user supplies the experiment dir (it's not safe to guess).
+   `serve` reads the central DB via `HIMALAYA_DB_PATH` (or the default); it takes no experiment-dir argument.
 
 ## Args
 
 - `--grep "<name>"` — pass through to Playwright to run a single test
-- `<file>` — pass through to run a single spec file (e.g. `e2e/inspect.spec.ts`)
+- `<file>` — pass through to run a single spec file (e.g. `e2e/smoke.spec.ts`)
 - `--keep-backend` — skip steps 2/3, run anyway (user takes responsibility for the leak)
 
 ## Why user-only (`disable-model-invocation: true`)
@@ -71,5 +71,5 @@ Stopping the Julia backend can disrupt other work the user is doing — manual p
 ## Gotchas
 
 - **Port reuse:** Playwright's `webServer` config has `reuseExistingServer: !process.env.CI`. If Vite is already running, Playwright reuses it. If your Vite was started with `npm run dev` (default `--host`), it binds to `localhost` (potentially `::1` IPv6) and Playwright's `127.0.0.1` checks fail with a 60-second timeout. Always use `--host 127.0.0.1` when starting Vite for E2E.
-- **Test count:** 14 tests total (5 inspect.spec.ts + 9 smoke.spec.ts). All should pass when the backend is stopped. If smoke tests still fail with the backend down, that's a real bug, not the leak.
+- **Test count:** 11 mocked spec files (corpus-culling, figure-export, loupe-tags, multiplayer-replay-rerun, new-series-creation, permalinks, qlink, series-builder, series-folio, series-scoping, smoke). All should pass when the backend is stopped. If specs still fail with the backend down, that's a real bug, not the leak.
 - **The leak is asymmetric:** read-only routes leak through and return real data. Mutations (POST/PATCH) might 404 or silently succeed against the wrong sample. Don't trust E2E mutation assertions when the backend is up.

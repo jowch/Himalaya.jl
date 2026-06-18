@@ -255,7 +255,7 @@ export interface PeakUpdatedResponse extends Peak {
 /**
  * Backend response for DELETE /api/peaks/:id. Carries the post-state hash so
  * the client can mark the exposure cache fresh inline with the optimistic
- * delete and avoid a transient StaleIndicesBanner flash before the SSE frame
+ * delete and avoid a transient stale-indices alert flash before the SSE frame
  * arrives.
  */
 export interface PeakRemoveResponse {
@@ -423,7 +423,7 @@ export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOp
 export interface ReanalyzeResponse {
   id: number;
   analyzed: boolean;
-  /** New post-analyze hash. Used to clear StaleIndicesBanner inline with
+  /** New post-analyze hash. Used to clear the stale-indices alert inline with
    *  the HTTP response, before the SSE post_state arrives. */
   analysis_inputs_hash: string;
 }
@@ -568,7 +568,7 @@ export const batchSampleTags = (
 // listing summary type `SeriesSummary` and the read fetchers
 // (listSeries / getSeries / forksOfSeries) below back the read hooks
 // useSeriesList / useSeries in queries.ts. See the Decision Record in
-// docs/superpowers/plans/2026-05-18-series-event-kinds.md.
+// docs/event-log.md.
 // Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
 
 /**

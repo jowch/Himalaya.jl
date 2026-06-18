@@ -7,8 +7,8 @@ How to run a HimalayaUI dev session against a live backend. Two scenarios: a sin
 Two terminals:
 
 ```bash
-# Terminal 1 — backend on :8080.
-bin/himalaya serve /path/to/experiment --port 8080
+# Terminal 1 — backend on :8080. DB is chosen by HIMALAYA_DB_PATH (or the default ~/.himalaya/himalaya.db), NOT a path argument.
+HIMALAYA_DB_PATH=/path/to/experiment/himalaya.db bin/himalaya serve --port 8080
 # (Or, without sysimage: julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- serve --port 8080)
 
 # Terminal 2 — Vite on :5173, proxying /api/* to :8080.

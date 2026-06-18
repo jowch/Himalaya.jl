@@ -371,7 +371,7 @@ function migrate_schema!(db::SQLite.DB)
     # Compare page (Plan §Phase 1, Task 1.1): comparisons / comparison_members /
     # comparison_messages. Must run AFTER R4 — none of the compare tables touch
     # user_actions, but ordering keeps every cross-cutting fix-up bounded by the
-    # earlier R-numbered migrations. See docs/superpowers/specs/2026-05-02-compare-page-design.md.
+    # earlier R-numbered migrations. (compare page retired; see git history)
     migrate_compare!(db)
 
     # Compare page Phase 13: per-user pinned comparisons.

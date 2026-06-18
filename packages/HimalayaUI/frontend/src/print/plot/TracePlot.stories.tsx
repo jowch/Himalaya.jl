@@ -72,8 +72,7 @@ const annotatedModel: TraceModel = {
 };
 
 // HeroPlate: the full Print figure plate — closed-look primitives composing the
-// publication framing around the redesigned TracePlot, matching the mockup at
-// docs/redesign-mockups/2026-05-29-focus-plot.html.
+// publication framing around the redesigned TracePlot.
 export const HeroPlate: Story = {
   // args satisfies the Story constraint; render overrides the entire output.
   args: { trace: heroModel, height: 360 },

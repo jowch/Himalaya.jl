@@ -195,7 +195,7 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
     # doesn't read as "stale" the moment it lands. The speculative is built
     # from the same effective peak set the exposure hash already covers, so
     # any inputs_hash other than `analysis_inputs_hash` would be misleading.
-    # Without this, StaleIndicesBanner fires immediately after every
+    # Without this, the stale-indices alert fires immediately after every
     # speculative create (NULL ≠ exposure hash → mismatch).
     current_hash = read_inputs_hash(db, exposure_id)
 

@@ -1,6 +1,6 @@
 ---
 name: himalaya-reviewer
-description: Project-specific code reviewer for Himalaya.jl. Use after a meaningful chunk of work lands (new file, refactor, feature) to validate it against this codebase's load-bearing gotchas. Knows the SQLite/Oxygen/TS-strict/Q0f31/Zustand/Plot patterns from CLAUDE.md by heart and reviews specifically against them.
+description: Project-specific code reviewer for Himalaya.jl. Use after a meaningful chunk of work lands (new file, refactor, feature) to validate it against this codebase's load-bearing gotchas. Knows the SQLite/Oxygen/TS-strict/Q0f31/Zustand/d3-trace-plot patterns from CLAUDE.md by heart and reviews specifically against them.
 tools: Bash, Read, Grep, Glob
 ---
 
@@ -25,21 +25,20 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 - **Oxygen.jl singleton API:** `@get "/path/{id}" function(req::HTTP.Request, id::Int) ... end`. Path params come via typed function args. JSON body parsing uses unqualified `json(req)`, NOT `Oxygen.json(req)`.
 - **Phase serialization:** `string(nameof(P))` not `string(P)` — the latter returns `"Himalaya.Pn3m"`, breaking SQLite roundtrips.
 - **Detector TIFFs are Q0f31 fixed-point.** `Float32.(channelview(raw))` divides by 2³¹ and silently breaks log1p. Use `reinterpret.(Int32, channelview(raw))` to recover photon counts. Check any new image-processing code.
-- **Image route uses `Cache-Control: no-store`** in `routes_exposures.jl`. Don't change to a longer max-age without invalidation tied to exposure id + analysis version.
-- **Index scoring formula:** `score = coverage × consistency`. R² is NOT in the score (it's a UI gate at 0.98 in PhasePanel). Guard `cv` against zero mean.
+- **Image route uses `Cache-Control: private, max-age=31536000, immutable`** in `routes_exposures.jl`, with URL-based invalidation: the frontend appends `?v=<image_version_token>` (IMAGE_PROCESSING_VERSION + TIFF mtime) so the URL is the cache key. When rendered bytes change, bump `IMAGE_PROCESSING_VERSION` (`image.jl`) rather than lengthening max-age.
+- **Index scoring formula:** `score = coverage × consistency`. R² is NOT in the score — it's computed by `fit(index)` (`src/index.jl`), stored per-index in the `r_squared` column, and surfaced informationally as a "fit R²" readout in the comb/residual chart (`print/comb/ResidualChart.tsx`). The old `r_squared < 0.98` hard UI gate no longer exists. Guard `cv` against zero mean.
 
 ### Frontend — TS strict / Zustand / TanStack Query / Plot
 
 - **`exactOptionalPropertyTypes: true`** — `set({ username: undefined })` fails. Use `string | undefined` rather than `username?: string` for optional fields. Use `authOpts(username)` helper for passing optional auth.
 - **Zustand: named actions only.** No direct `useAppState.setState({ ... })` outside `state.ts`. Adding a new state transition means a new named action.
 - **State split:** Zustand owns *client* state (active ids, hover, username). TanStack Query owns *server* state. Mutations should invalidate scoped query keys (`queryKeys.peaks(id)` etc.), not mix concerns.
-- **`ImageBitmap.close()` neuters width/height to 0.** Must capture dims before closing: `const { width, height } = bitmap; bitmap.close();`. Regression test in `test/DetectorImage.test.tsx`.
-- **`fetch()` for image route uses `cache: "no-store"`** to defeat browser cache after analysis re-runs.
+- **`ImageBitmap.close()` neuters width/height to 0.** Must capture dims before closing: `const { width, height } = bitmap; bitmap.close();`. Regression test in `test/print-detector/DetectorImage.test.tsx`.
+- **Image URL carries a `?v=<version token>` query param** so a re-analysis changes the URL and forces a refetch (matching the backend `immutable` Cache-Control). The `fetch()` for the image route no longer uses `cache: "no-store"`.
 - **`DetectorImage` auto-rotate:** ResizeObserver-driven. JS sets `maxWidth/maxHeight` on the rotated canvas — pure CSS doesn't work because `transform: rotate` doesn't change layout box. JSDOM `ResizeObserver` stub lives in `test/setup.ts`.
-- **TraceViewer floor-only y-fit:** `yDomain = [p05·0.7, fullTraceMax·1.2]`. Don't change the upper bound to a windowed max — that loses peaks-vs-beam relative scale. See `PlotCard::computeFit`.
-- **Observable Plot:** runtime `.scale().invert()` not in DOM types — cast with `(el as unknown as { scale: ... })`.
+- **Trace plot y-fit:** `yExtent = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)]` over the full positive trace extent (`print/plot/TracePlot.tsx`). Don't change the upper bound to a windowed max — that loses peaks-vs-beam relative scale.
 - **Imperative render functions in effects:** wrap in `useCallback`, depend on `[theCallback]` alone. No redundant dep lists.
-- **`QNumInput` focus-gated input pattern.** External value changes only sync to draft when not focused. Any numeric input that can be updated by external events should follow this.
+- **Focus-gated numeric-input pattern.** A numeric input whose value can change from external events (SSE, sibling controls) should sync the external value into its draft only while it is *not* focused — otherwise an incoming update clobbers what the user is typing. (No single named component owns this; enforce the pattern wherever it applies.)
 - **E2E selectors:** `data-testid`, `role`, `data-*` only. Never assert on Tailwind class strings.
 - **Playwright port:** binds to `127.0.0.1:5173`, not `localhost`. If running Vite separately, use `--host 127.0.0.1`. Live Julia backend on :8080 leaks past route mocks for URLs with query strings — be wary.
 

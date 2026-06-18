@@ -1,6 +1,6 @@
 ---
 name: pre-merge-smoke
-description: Run the manual smoke checklist for queue-touching changes before merging. Spins up dev server, exercises the queue end-to-end through the browser preview, reports findings. Pulls steps from docs/superpowers/plans/2026-05-02-mutation-queue.md §"Verification checklist".
+description: Run the manual smoke checklist for queue-touching changes before merging. Spins up dev server, exercises the queue end-to-end through the browser preview, reports findings. The smoke steps in §3 are the canonical manual checklist.
 disable-model-invocation: true
 ---
 
@@ -15,20 +15,16 @@ Before merging any PR that touches:
 - `lib/queue/mutators/*` (mutator additions or refactors)
 - `routes_peaks.jl`, `routes_analysis.jl`, or any route emitting `apply_event!`
 - `applyRemoteToCache.ts` (SSE-driven cache merge)
-- `StaleIndicesBanner.tsx`, `SpeculativeBuilder.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
+- `CustomIndexModal.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
 - `App.tsx` SSE wiring or `attachPersistence`/`rehydrate` calls
 
 For non-queue PRs, a clean unit + integration test run is enough; this skill is overkill.
 
 ## Procedure
 
-### 1. Read the verification checklist
+### 1. Scope
 
-```
-docs/superpowers/plans/2026-05-02-mutation-queue.md  ← §"Verification checklist (full plan)"
-```
-
-That section is canonical; this skill mirrors it but with browser-driving steps. Re-read in case items have been added/removed since this skill was last updated.
+The browser-driving smoke steps in §3 below are the canonical manual checklist (the queue's design plan was consolidated away — `docs/event-log.md` §3a and `docs/mutation-queue.md` are the living architecture references). Automated coverage (`Pkg.test("HimalayaUI")`, `npm test`, `npm run build`, the two-context Playwright multiplayer replay test) runs separately; this skill is only the manual browser sweep that those can't cover.
 
 ### 2. Build + serve
 
@@ -40,8 +36,8 @@ npm run build
 Then in the worktree root:
 
 ```bash
-# Use a dev experiment dir; defaults to ~/.himalaya/himalaya.db
-bin/himalaya serve /path/to/dev/experiment --port 8080 &
+# serve has no path arg; it serves the central DB (HIMALAYA_DB_PATH / ~/.himalaya/himalaya.db)
+bin/himalaya serve --port 8080 &
 ```
 
 (If the user hasn't set up a dev experiment, ask before scaffolding one — `himalaya config new --dir` writes to disk.)
@@ -132,7 +128,11 @@ If all steps pass: "All N smoke steps pass; OK to merge."
 
 ## Fallback triggers
 
-If a smoke step exposes user-visible regression that the test suite missed, the spec's [Fallback triggers](../../../../docs/superpowers/specs/2026-05-02-mutation-queue-design.md#fallback-triggers) describe when to back out the queue's optimistic-merge approach in favor of the simpler invalidate-and-refetch path. Don't merge a regression to ship faster — escalate to design conversation.
+If a smoke step exposes a user-visible regression the test suite missed, don't merge to ship faster — escalate to a design conversation. The queue's three pre-committed fallback triggers (the conditions under which its optimistic-merge approach should be backed out) are:
+
+1. **A mutator needs to inspect *other* pending mutations to compute its effect.** That breaks the framework's `(op, baseState) → (cacheEffect, request)` shape — the abstraction has leaked. Fall back to per-mutation `onMutate` optimistic updates without queue infrastructure; lose replay-on-remote-event, keep the autoReanalyze elimination.
+2. **The `analyze_exposure!` fast-skip no longer reduces the no-change path to microseconds** (steady state ~150µs; ceiling ~500µs). The synchronous-reanalyze pattern then relocates latency rather than eliminating it — revert to client-side autoReanalyze and treat the queue as cache-merging-only.
+3. **The response-body cache produces user-visible drift** between rehydrated retries and current server state more than a few times per long session (canonical case: a deploy that changes a response shape mid-session). Schema-version the cached responses or scope retries by deploy-version.
 
 ## What this skill is NOT for
 

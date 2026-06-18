@@ -34,7 +34,7 @@ Read these in order before touching code:
 1. `docs/peak-finding.md` — peak-finding design (load-bearing)
 2. `docs/experiment-config.md` — if touching config/manifest/cli
 3. `docs/scoring.md` — if touching score/auto_group/remove_subsets
-4. `docs/event-log.md` — if touching events.jl, hash.jl, SSE, or StaleIndicesBanner
+4. `docs/event-log.md` — if touching events.jl, hash.jl, SSE, or the stale-indices reanalyze affordance
 5. `docs/mutation-queue.md` — if touching lib/queue/, idempotency.jl, or applyRemoteToCache.ts
 6. `docs/contract-testing.md` — if fixing queue/SSE/cache reconciliation bugs
 
@@ -135,7 +135,7 @@ When reviewing a PR (as reviewer, not author):
 
 - `analyze_exposure!` synthesizes effective peaks as `auto_peaks − excludes ∪ adds` — touch only with curation-lifecycle tests green
 - `score(index)` = `coverage × consistency` — R² is NOT part of score (UI hard gate at 0.98)
-- `StaleIndicesBanner` is gated on hash mismatch + `useExposureHasPendingPeakOps`
+- The stale-indices reanalyze affordance (a role=`alert`, no dedicated component) is derived from index `inputs_hash` vs exposure `analysis_inputs_hash` mismatch; the `useReanalyzeExposure` path is gated on `useExposureHasPendingPeakOps` so it doesn't flash mid-op
 - `useExposureHasPendingPeakOps` gates any UI reading `peaks(id)` derivatively during in-flight ops
 - `MutationCache.getAll()` insertion order is load-bearing for replay-as-rerun
 - Experiment dirs are read-only at runtime (except `himalaya config new`)

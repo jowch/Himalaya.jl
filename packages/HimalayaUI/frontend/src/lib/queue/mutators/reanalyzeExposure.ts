@@ -1,6 +1,6 @@
 /**
  * reanalyze_exposure mutator (M2.5). Manual "Re-analyze" button on
- * StaleIndicesBanner. There is no real optimistic effect — the server runs
+ * the stale-indices alert. There is no real optimistic effect — the server runs
  * analysis and the resulting indices arrive via SSE post_state on the
  * analyze_run frame (handled by applyRemoteToCache.ts). The onMutate returns
  * a no-op restore.
@@ -36,7 +36,7 @@ export const reanalyzeExposureMutator: Mutator<
   // Null optimistic effect: no cache write, restore is a no-op.
   onMutate: (): RollbackContext => ({ restore: () => {} }),
   request: (p) => api.reanalyzeExposure(p.exposureId, buildAuthOpts(p)),
-  // Write the new hash onto the exposure cache so StaleIndicesBanner clears
+  // Write the new hash onto the exposure cache so the stale-indices alert clears
   // immediately on HTTP success — without this, there's a flicker window
   // between the HTTP response and the SSE post_state arrival where the
   // banner still shows "stale" against the old hash. Indices still
@@ -46,7 +46,7 @@ export const reanalyzeExposureMutator: Mutator<
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
       old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
   },
-  // Marks this op as peak-affecting so StaleIndicesBanner / speculative-snap
+  // Marks this op as peak-affecting so the stale-indices alert / speculative-snap
   // gating treats an in-flight reanalyze the same way as a peak curation.
   affectsExposurePeaks: () => true,
 };

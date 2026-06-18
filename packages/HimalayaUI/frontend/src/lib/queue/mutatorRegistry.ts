@@ -185,7 +185,7 @@ export function resolveMutatorForEvent(
     // arm would be unreachable dead code. This is a conscious, plan-aware
     // deviation from the literal "convert both to tri-scope" wording of #159
     // / master plan §11. See
-    // docs/superpowers/specs/2026-05-18-corpus-sample-tag-mutations-design.md.
+    // docs/mutation-queue.md.
     case "add_tag":
       return entityType === "sample" ? addSampleTagMutator : addExposureTagMutator;
     case "remove_tag":

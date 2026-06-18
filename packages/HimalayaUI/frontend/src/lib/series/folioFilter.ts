@@ -9,8 +9,9 @@
  * `ordering_variable` straight off the series row):
  *
  *  - "cross" (cross-experiment) keeps only series whose members span more than
- *    one distinct experiment (valid because q is absolute — see redesign-notes
- *    architecture decision 1).
+ *    one distinct experiment (valid because q is in absolute Å⁻¹, so traces
+ *    from different experiments share one x-axis and compare directly — see
+ *    docs/himalayaui-design.md §2.4).
  *  - "variable" sort orders by the recipe ordering variable, tiebroken by title
  *    so series with no variable yet (null) stay in a stable order.
  */

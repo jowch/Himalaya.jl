@@ -13,7 +13,7 @@
  *     falls back to `invalidateQueries({groups, indices})`.
  *
  *   Bug 6 — `insert_speculative_index!` missing `inputs_hash`. Pre-fix, the
- *     INSERT into `indices` left `inputs_hash` NULL. StaleIndicesBanner gates
+ *     INSERT into `indices` left `inputs_hash` NULL. The stale-indices alert gates
  *     on (index.inputs_hash !== exposure.analysis_inputs_hash) → NULL ≠ hash
  *     → banner spuriously fired immediately after every speculative create.
  *     Post-fix: the inserted row inherits the exposure's current
@@ -142,7 +142,7 @@ test.describe("issue #35 speculative-create reconciliation", () => {
     expect(cardText, "phase chip must show real phase").toContain("Lamellar");
   });
 
-  test("StaleIndicesBanner stays hidden after speculative create (Bug 6)", async ({ page }) => {
+  test("stale-indices alert stays hidden after speculative create (Bug 6)", async ({ page }) => {
     const before = await existingSpeculativeIds(fx.exposureId);
     await seedAndOpen(page, fx);
     // Sanity: no banner at rest.
@@ -158,7 +158,7 @@ test.describe("issue #35 speculative-create reconciliation", () => {
       return [...after].filter(id => !before.has(id)).length;
     }, { timeout: 8000 }).toBe(1);
 
-    // Pre-fix, the banner appeared within the StaleIndicesBanner debounce
+    // Pre-fix, the banner appeared within the stale-indices alert debounce
     // (150ms) because the new index's inputs_hash was NULL. Wait 1 s to give
     // it a fair chance to surface, then assert it didn't.
     await page.waitForTimeout(1000);

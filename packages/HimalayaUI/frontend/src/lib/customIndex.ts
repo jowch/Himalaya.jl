@@ -2,7 +2,7 @@
 //
 // Symmetry → predicted reflections from a user-chosen lattice, the basis the
 // backend stores (the q₁ slope), and snap-to-peaks helpers. Mirrors the mockup
-// `SYMS` / `customRefls` / `snapValues` (docs/redesign-mockups/2026-05-29-focus-plot.html).
+// `SYMS` / `customRefls` / `snapValues`.
 
 const TWO_PI = 2 * Math.PI;
 

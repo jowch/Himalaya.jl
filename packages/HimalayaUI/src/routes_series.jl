@@ -10,7 +10,7 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 #
 # No route carries an `is_author` / 403 gate (architecture decision 3).
 # Existence (404) checks remain; the `/commit` optimistic-concurrency (409) gate
-# was relaxed to last-write-wins (docs/redesign-notes.md 2026-06-03).
+# was relaxed to last-write-wins (docs/event-log.md §"Conflict resolution").
 #
 # `_json_error` and `_view_fields_error` are shared route helpers defined in
 # `json.jl` (same module). I3.6 (#177) relocated them there from the now-deleted
@@ -234,8 +234,8 @@ function register_series_routes!()
         end
         return with_idempotency(db, req) do
             # Existence (404) only — the optimistic-concurrency 409 gate was
-            # relaxed to last-write-wins (no conflict UI; docs/redesign-notes.md
-            # 2026-06-03). content_hash is still written by the committed event
+            # relaxed to last-write-wins (no conflict UI; docs/event-log.md
+            # §"Conflict resolution"). content_hash is still written by the committed event
             # (post_state + future fork/stale checks), so compute_series_content_hash
             # / current_series_content_hash stay defined and used in the event layer.
             if !series_exists(db, id)
