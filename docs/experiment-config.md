@@ -136,8 +136,9 @@ The `[manifest].name` column is the **stable scientific identifier** (e.g. `JC00
 rename happens through the manifest CSV + reingest.
 
 The `[manifest].display_name` column is the **friendly user-facing label** (e.g. `DOPC + cholesterol`).
-It is initialised from the manifest at first ingest and editable via the UI thereafter; reingest never
-clobbers it.
+It is initialised from the manifest at first ingest and editable via the UI; note that **reingest
+refreshes it from the manifest** (alongside `notes`), so a UI edit to `display_name` is overwritten on
+the next reingest unless the manifest carries the same value (`cli.jl` `_reingest_inner!`).
 
 Migrating an existing `experiment.toml` from the legacy `label/name` shape to the new
 `name/display_name` shape: run `himalaya migrate-toml <experiment-dir>`. Section-aware
@@ -263,8 +264,7 @@ DB. Reingestion is **safe to run repeatedly** and preserves curation
 work:
 
 - Existing samples are matched by `(experiment_id, name)` and updated
-  in place — `display_name` is **not** clobbered on reingest (user edits are preserved);
-  notes get refreshed.
+  in place — both `display_name` and `notes` are **refreshed from the manifest** on reingest.
 - Exposures are matched by `(sample_id, filename)`. **Existing exposures
   are never deleted or modified by reingest** — their `accepted` /
   `rejected` status, manual peaks, and analysis results are preserved.
@@ -347,7 +347,7 @@ himalaya migrate-toml <experiment_dir>
     Upgrade experiment.toml from the legacy label/name column shape to the new
     name/display_name shape. Section-aware, regex-anchored; idempotent (safe to
     re-run on an already-migrated file). Required once per experiment dir when
-    deploying the issue #88 schema change.
+    deploying the label/name → name/display_name schema change.
 ```
 
 ## Storage

@@ -34,9 +34,9 @@ Frontend (TS):
 - `packages/HimalayaUI/frontend/src/lib/queue/errors.ts` — failure-class classification
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/*.ts` — each mutator file
 - `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` — rehydrate dispatch
-- `packages/HimalayaUI/frontend/src/lib/{clientOpId,toast,peakQTol,optimisticId,authOpts}.ts`
-- `packages/HimalayaUI/frontend/src/components/{StaleIndicesBanner,SpeculativeBuilder,InfrastructureBanner}.tsx`, `components/ui/Toast.tsx`
-- `packages/HimalayaUI/frontend/src/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
+- `packages/HimalayaUI/frontend/src/lib/{clientOpId,toast,authOpts}.ts`, `lib/queue/{peakQTol,optimisticId}.ts`
+- `packages/HimalayaUI/frontend/src/print/shell/InfrastructureBanner.tsx`, `print/ui/Toast.tsx`
+- `packages/HimalayaUI/frontend/src/print/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
 
 ## Invariant checklist
 
@@ -62,7 +62,7 @@ Frontend (TS):
 
 - **3-generic `Mutator` interface — no `as unknown as Flat` casts.** The 26 casts removed in commit `67a18a3` were the M3 typing cleanup. Any new mutator file that brings them back is a regression. The framework's `Mutator<TInput, TScope, TResponse>` types callbacks against `OpPayload<TInput> & TScope & TInput` directly.
 
-- **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/optimisticId.ts` (shared monotonic counter). Don't introduce module-local counters or use `Date.now() * -1` (collision risk). UI code that reads the cache must tolerate negative ids.
+- **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/queue/optimisticId.ts` (shared monotonic counter). Don't introduce module-local counters or use `Date.now() * -1` (collision risk). UI code that reads the cache must tolerate negative ids.
 
 - **Q-tolerance comparisons use `peakQTol(q)`.** Mirrors Julia's `MAX(1e-6, |q|*0.001)`. Don't use bare `< 1e-6` or `< 1e-9` — for q far from 1.0 the tolerances diverge from the backend.
 
@@ -82,7 +82,7 @@ Frontend (TS):
 
 - **`applyRemoteToCache` peak-merge uses `peakQTol`.** Same q-tolerance discipline as point 3 above.
 
-- **`mutatorRegistry.ts` discriminates dual-scope kinds via payload shape.** `add_tag` / `remove_tag` exist as both sample-scoped and exposure-scoped mutators sharing one OpKind. The resolver picks via `payload.experimentId !== undefined`. New dual-scope kinds need a similar discriminator.
+- **`mutatorRegistry.ts` discriminates dual-scope kinds via payload shape.** `add_tag` / `remove_tag` exist as both sample-scoped and exposure-scoped mutators sharing one OpKind. The resolver checks `exposureId` first, then `payload.experimentId !== undefined` distinguishes sample- vs corpus-scope (a corpus-tag op with no `experimentId` would otherwise collide). New dual-scope kinds need a similar discriminator.
 
 - **`attachPersistence` returns the unsubscribe.** `App.tsx` uses it as the `useEffect` cleanup. Re-mounting without cleanup leaks subscriptions.
 
@@ -92,9 +92,9 @@ Frontend (TS):
 
 ### App-level wiring
 
-- **App.tsx wires `handleRemoteEvent`, NOT `handleCurationEvent`.** The legacy file `lib/sseSubscriber.ts` was deleted in `cd7ecfe`. Any code that imports it is stale.
+- **`print/App.tsx` wires `handleRemoteEvent`, NOT `handleCurationEvent`.** The legacy file `lib/sseSubscriber.ts` was deleted in `cd7ecfe`. Any code that imports it is stale.
 
-- **App.tsx wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
+- **`print/App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
 
 ## Common diff patterns to watch for
 

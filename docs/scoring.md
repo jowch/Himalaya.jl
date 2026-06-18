@@ -62,7 +62,7 @@ Zero-sharpness falls back to `cv = 0` (treated as maximally consistent), degradi
 
 R² from the least-squares lattice fit is stored per index in the database but is **not part of `score`**. In practice, any assignment Himalaya produces has very high R² — the fitting step is constrained enough that poor fits are rare. R² does not discriminate between competing good assignments.
 
-Instead, R² acts as a **hard gate in the UI**: alternatives with `r_squared < 0.98` are visually dimmed in PhasePanel with a "low R²" label. Users can still manually promote them. This keeps the score formula clean and ensures R² doesn't dominate over the physically-motivated coverage and consistency signals.
+Instead, R² is surfaced **informationally** in the UI: the comb/residual chart renders a `fit R²` readout (`src/print/comb/ResidualChart.tsx`) so users can see the lattice-fit quality, but it is not used as a hard gate. There is no `r_squared < 0.98` dimming threshold and no "low R²" label — the candidate/assignment UI (`AssignmentRail` / `CandidateRow`) ranks on `score` alone. This keeps the score formula clean and ensures R² doesn't dominate over the physically-motivated coverage and consistency signals.
 
 ## Gauss–Bonnet coexistence flag — not in the score
 

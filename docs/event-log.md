@@ -44,9 +44,7 @@ round-trip test in `test_events.jl`.
 |---|---|
 | `peak_added` | `INSERT INTO peak_curations(kind='add', q=…)` |
 | `peak_excluded` | `INSERT INTO peak_curations(kind='exclude', q=…)` |
-| `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (with `undoes_event_id` set when resolvable) |
-| `index_confirmed` | `INSERT OR IGNORE INTO index_group_members(group_id, index_id)` |
-| `index_unconfirmed` | `DELETE FROM index_group_members WHERE group_id=… AND index_id=…` |
+| `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (the route stamps `undoes_event_id` onto the `user_actions` row when resolvable — see Atomicity note) |
 | `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_set_state` | UPSERT `assignments.state`; clears `assignment_members` when state ≠ `indexed` (entity_type=`exposure`, payload `{state}`) |
@@ -57,10 +55,27 @@ round-trip test in `test_events.jl`.
 `idx_events_by_exposure` so per-exposure folds find them; the dispatcher
 returns `nothing` for these kinds.
 
+**Retired no-op guards:** `index_confirmed` and `index_unconfirmed` are
+legacy group-membership kinds (plotting redesign D-10). The dispatcher
+keeps explicit no-op guards for them
+(`(kind == "index_confirmed" || kind == "index_unconfirmed") && return nothing`)
+so old event logs still fold cleanly, but they write nothing. The
+`/groups` routes that emitted them are gone and the `index_group_members`
+write was removed; confirmation is now carried by `assignment_add` /
+`assignment_remove` writing `assignment_members`.
+
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_status`, `add_tag`, `remove_tag`, `post_message`, `update_sample`,
-`update_experiment`, `analyze`, `reingest`, `analyze_run`.
+`set_exposure_status`, `select_exposure`, `add_tag`, `remove_tag`,
+`edit_tag`, `post_message`, `update_sample`, `analyze`, `reingest`. The
+dispatcher carries explicit no-op `return nothing` guards for the
+view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
+
+`analyze_run` is *not* a `log_action!` event: it is emitted via
+`apply_event!(InTransaction(), …)` in `pipeline.jl` and broadcast through
+`_maybe_broadcast_event!`, with a dispatcher no-op `return nothing` guard
+and the §3a no-op suppression rule (suppress both frame and durable row
+when both skip flags are true).
 
 ### Payload contract
 
@@ -75,10 +90,19 @@ neutralised at the boundary.
 
 `apply_event!` opens a single `SQLite.transaction` covering both the
 `user_actions` insert and the dispatcher's view writes. Either both
-commit or neither does. Routes that wrap multiple `apply_event!` calls
-(e.g. speculative create + delete) must open an outer
-`SQLite.transaction` themselves so the entire route is atomic; see
-`routes_peaks.jl` and `routes_analysis.jl` for the pattern.
+commit or neither does. Routes that wrap multiple events (e.g.
+speculative create + delete, or a curation followed by an `analyze_run`)
+run inside `with_idempotency(db, req) do … end`'s outer transaction and
+use the `apply_event!(InTransaction(), …)` variant, which participates in
+that outer tx and defers its SSE frame to the post-commit broadcast
+queue. See §3a for the full picture; `routes_peaks.jl` and
+`routes_analysis.jl` follow this pattern.
+
+The route also stamps `undoes_event_id` onto the `user_actions` row when
+an event undoes a prior one (e.g. `routes_peaks.jl` passes
+`undoes_event_id = undoes` for `peak_unexcluded`) — this is a call-site
+argument to `apply_event!`, not something the dispatcher's view DELETE
+writes.
 
 ### Return shape
 
@@ -167,8 +191,8 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on EventSource
-  reconnect via TanStack Query refetch — `App.tsx` invalidates the
-  exposure's query keys on the first reconnect.
+  reconnect via TanStack Query refetch — `src/print/App.tsx` (`PrintApp`)
+  invalidates the exposure's query keys on the first reconnect.
 - Slow subscribers (channel full) and disconnected subscribers (channel
   closed) are pruned via `_try_put!` rather than blocking the broadcast
   loop. A pruned subscriber reconnects on the EventSource side and gets
@@ -176,12 +200,13 @@ commits. Implications:
 
 ### Client side (`src/lib/queue/replayCoordinator.ts` + `applyRemoteToCache.ts`)
 
-`handleRemoteEvent(remote, ctx)` (in `replayCoordinator.ts`) drives SSE
+`handleRemoteEvent(remote, qc, mc)` (in `replayCoordinator.ts`) drives SSE
 intake; cache folding lives in `applyRemoteToCache(remote, qc)`
 (`applyRemoteToCache.ts`). Together they:
 
 1. Parse the JSON frame; ignore on parse error or missing `entity_id`.
-2. **Self-echo filter.** Skip if `event.client_id === ctx.clientId`. The
+2. **Self-echo filter.** Skip if `remote.client_id === getClientId()`
+   (the per-tab id from `lib/clientId.ts`). The
    `clientId` is a per-tab UUID minted into `sessionStorage` on first
    load (see `lib/clientId.ts`); it survives reload but is scoped to a
    single browser tab. Each mutation sends it via the `X-Client-Id`
@@ -196,14 +221,14 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    *all* tabs — there's no originating tab to suppress.
 4. Dispatch on `remote.kind` via `applyRemoteToCache`'s switch
    statement — each event kind has a per-kind cache merge branch
-   (e.g. `peak_added` writes the new peak row, `comparison_deleted`
-   removes comparison queries). No `entity_type` filter; all event
+   (e.g. `peak_added` writes the new peak row, `series_deleted`
+   removes the deleted series' queries). No `entity_type` filter; all event
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
-The EventSource connection is bound to `App.tsx`'s mount/unmount only;
-`clientId` is stable for the lifetime of the tab, so no listener
-recycling is needed.
+The EventSource connection is bound to `src/print/App.tsx` (`PrintApp`)'s
+mount/unmount only; `clientId` is stable for the lifetime of the tab, so
+no listener recycling is needed.
 
 ### Conflict resolution
 
@@ -213,8 +238,8 @@ recycling is needed.
 > conflicts should not surface as friction: multiplayer stays last-write-wins
 > permanently, and the positive replacement is **edit-tracking → undo/redo →
 > versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
-> conflict UI from this section. See `docs/redesign-notes.md` (2026-06-03
-> entry), `docs/future-feature-ideas.md` §"Multi-user / review", and
+> conflict UI from this section. See `docs/future-feature-ideas.md`
+> §"Multi-user / review" and
 > `docs/superpowers/specs/2026-06-03-figure-export-design.md` §"Non-goal:
 > conflict resolution". The original deferral note is retained below for
 > historical context only.

@@ -7,24 +7,26 @@ Two suites:
 
 ## Selectors
 
-Use stable `data-*` attributes, `data-testid`, or `role`. **Never assert on Tailwind class strings** — they change when styling evolves. Stable testid families: `data-index-id`, `data-alternative-id`, `data-active`, `data-low-r2`, `data-speculative`.
+Use stable `data-*` attributes, `data-testid`, or `role`. **Never assert on Tailwind class strings** — they change when styling evolves. Stable testid families: `data-index-id`, `data-active`, `data-sample-id` (cold-assign panel rows only).
 
 Single test by name:
 
 ```bash
-node_modules/.bin/playwright test --grep "Reject → Other"
+node_modules/.bin/playwright test --grep "batch-reject"
 ```
 
 ## Seeding Zustand state
 
-There is no `data-sample-id` / `data-exposure-id`. To navigate to a specific sample/exposure, seed Zustand state in `localStorage` before `page.goto("/")`:
+There is no `data-exposure-id`, and `data-sample-id` only exists on the cold-assign panel rows (`ColdAssignPanel`), not on the main sample navigation surfaces. To navigate to a specific sample/exposure, seed Zustand state in `localStorage` before `page.goto("/")`:
 
 ```ts
 await page.addInitScript((state) => {
-  localStorage.setItem("himalaya-ui:state", JSON.stringify({ state, version: 3 }));
+  localStorage.setItem("himalaya-ui:state", JSON.stringify({ state, version: 5 }));
 }, { activeSampleId: 1, activeExposureId: 2 });
 await page.goto("/");
 ```
+
+The persisted version is currently `5` (see `src/state.ts`); any older version number also works because the store's `migrate` function upgrades old seeds, so the exact number is not load-bearing.
 
 See the live specs for the full pattern.
 

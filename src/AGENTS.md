@@ -11,7 +11,8 @@ Peak-finding and phase-indexing algorithms for 1D SAXS traces.
 | Sharpness | `sharpness.jl` | Savitzky-Golay 2nd derivative or CWT |
 | Thresholding | `threshold.jl` | Kneedle elbow finder |
 | Phase types | `phase.jl` | Phase abstract hierarchy + `phaseratios` |
-| Indexing | `index.jl` | `Index` struct, `indexpeaks`, `score` |
+| Indexing | `index.jl` | `Index` struct, `indexpeaks`, `score`, `remove_subsets` |
+| Bicontinuous-cubic ratios | `bonnet.jl` | Gauss–Bonnet lattice ratios (`bonnet_lattice`, `bonnet_consistent`) |
 | Utilities | `util.jl` | Shared math helpers |
 
 Background reading: `docs/peak-finding.md` (load-bearing), `docs/scoring.md`.
@@ -41,9 +42,9 @@ julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 
 `totalprom` and the `prom` field on `Index` no longer exist — the struct now has `sharpness::SparseVector`.
 
-`auto_group` and `remove_subsets` in `pipeline.jl` both depend on `score` ordering — correctness of auto-analysis flows from score quality.
+`auto_group` (in `packages/HimalayaUI/src/pipeline.jl`) and `remove_subsets` (in `src/index.jl`) both depend on `score` ordering — correctness of auto-analysis flows from score quality.
 
-R² is stored per index but is **NOT** part of `score`; it is a UI hard gate (threshold 0.98 in `PhasePanel`).
+R² is stored per index but is **NOT** part of `score`; it is surfaced informationally in the UI (a "fit R²" readout in the comb/residual chart). The old R²≥0.98 hard confirm gate was retired in the plotting-redesign — assignment is now ungated (see the D-10 "SEMANTIC SHIFT" comment in `packages/HimalayaUI/src/comparisons.jl`).
 
 ## Anti-patterns
 

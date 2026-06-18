@@ -6,25 +6,40 @@ Optimistic-and-confirmation mutation pipeline. User gesture → durable SQLite r
 ## STRUCTURE
 ```
 lib/queue/
-├── types.ts              # Mutator<TInput, TScope, TResponse> + OpKind
-├── Mutator.ts            # Base mutator factory
+├── types.ts              # Mutator<TInput, TScope, TResponse> interface + OpKind
 ├── useQueueMutation.ts   # TanStack Query wiring + idempotency
 ├── applyRemoteToCache.ts # SSE → cache merge per kind
-├── MutationCache.ts      # In-memory pending mutation store
 ├── replayCoordinator.ts  # Replay-as-rerun logic
-├── clientOpId.ts         # Idempotency key minting
-├── clientId.ts           # Per-tab SSE self-echo token
+├── mutatorRegistry.ts    # resolveMutator / resolveMutatorForEvent
+├── persistence.ts        # mirror MutationCache pending set to sessionStorage
+├── hooks.ts              # useExposureHasPendingPeakOps + per-op gating hooks
+├── queueMeta.ts          # per-mutation metadata
+├── replacePlaceholder.ts # swap optimistic placeholder ids for real ids
+├── assignmentDropped.ts  # dropped-assignment handling
 ├── optimisticId.ts       # Negative placeholder ids
 ├── peakQTol.ts           # q-value tolerance helper
 ├── deferred.ts           # Deferred promise utility
 ├── errors.ts             # Queue error taxonomy
+├── testHelpers.ts        # test-only helpers
+├── index.ts              # barrel
 └── mutators/             # Per-kind implementations
     ├── peakAdd.ts
-    ├── peakExclude.ts
-    ├── peakUnexclude.ts
     ├── peakRemove.ts
-    ├── indexConfirm.ts
-    └── indexUnconfirm.ts
+    ├── peakSetExcluded.ts
+    ├── reanalyzeExposure.ts
+    ├── createSpeculative.ts
+    ├── customIndex.ts
+    ├── indexGroup.ts
+    ├── assignment.ts
+    ├── scopeSeries.ts
+    ├── createSeries.ts
+    ├── saveSeries.ts
+    ├── deleteSeries.ts
+    ├── commitSeriesPlate.ts
+    └── trivial.ts
+
+# Note: clientOpId.ts (idempotency-key minting) and clientId.ts (per-tab SSE
+# self-echo token) live one level up in lib/, not in lib/queue/.
 ```
 
 ## CONVENTIONS

@@ -12,7 +12,7 @@ grep -E "FAIL|passed|failed" /tmp/vitest.out
 Single-file run:
 
 ```bash
-node_modules/.bin/vitest run test/DetectorImage.test.tsx
+node_modules/.bin/vitest run test/print-detector/DetectorImage.test.tsx
 ```
 
 ## RTL over `document.querySelector`
@@ -21,7 +21,7 @@ For DOM assertions use `screen.getByText("X").closest("li")` + `toHaveAttribute`
 
 ## `data-testid` / `data-*` over class strings
 
-Never assert on Tailwind class strings — they change when styling evolves. Use stable `data-*` attributes that the component intentionally exposes (`data-index-id`, `data-alternative-id`, `data-active`, `data-low-r2`, `data-speculative`, etc.).
+Never assert on Tailwind class strings — they change when styling evolves. Use stable `data-*` attributes that the component intentionally exposes (`data-active`, `data-orient`, etc.).
 
 ## JSDOM `fetch` interceptor pattern
 
@@ -44,7 +44,7 @@ The hidden floating bars (CullBar, ComposeBar) hide via the `inert` attribute. J
 
 ## `ImageBitmap.close()` regression
 
-A getter-based mock in `test/DetectorImage.test.tsx` simulates the spec-mandated width/height-zeroing on `close()`. Keep it green — production code captures `{ width, height }` before closing.
+`test/print-detector/DetectorImage.test.tsx` stubs `createImageBitmap` with a plain `{ width, height, close: vi.fn() }` mock. Production code captures `{ width, height }` before calling `close()`, so reading dimensions after close stays safe.
 
 ## Anti-patterns
 

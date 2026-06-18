@@ -34,7 +34,7 @@ mints a fresh one.
 
 > **Invariant: mint `client_op_id` inside `mutationFn`, not at hook
 > construction.** `useQueueMutation` mints it via `newClientOpId()` per
-> `mutate()` call (`useQueueMutation.ts:110`). Capturing one in a closure at
+> `mutate()` call (`useQueueMutation.ts:147`). Capturing one in a closure at
 > hook mount time would make every retry of every mutation through that hook
 > share one id — the server's idempotency cache would treat the second user
 > action as a duplicate of the first.
@@ -47,14 +47,16 @@ lifecycle (per-tab, survives reload).
 ## 2. Anatomy of a queue mutator
 
 Every queue-able operation is a `Mutator<TInput, TScope, TResponse>`
-(`lib/queue/types.ts`). Five fields:
+(`lib/queue/types.ts`). Its fields:
 
 ```
 kind                  // OpKind discriminator (e.g. "peak_added")
 onMutate(payload, qc) // optimistic cache write; returns RollbackContext
 request(payload, sig) // HTTP call; honours AbortSignal
 onSuccess(payload, response, qc)  // canonical cache write
+synthesizeFromSse?(remote, base)  // SSE-wins synthetic response (see §3)
 affectsExposurePeaks?(payload, exposureId)  // hook-level scoping
+treats404AsSuccess?   // treat HTTP 404 as a no-op success (idempotent removes)
 ```
 
 `useQueueMutation(mutator, scope)` wires it into TanStack Query's
@@ -107,7 +109,7 @@ empty registry).
 If we awaited HTTP directly and triggered `onSuccess` from the response, the
 indices cache wouldn't update until the next `post_state` SSE frame landed
 in the *foreign-event* path — but that path skips when `client_id` matches.
-The `StaleIndicesBanner` would then stick at the pre-mutation hash until a
+The stale-indices indicator would then stick at the pre-mutation hash until a
 polling refetch (or page navigation) replaced it. Resolving the deferred
 from SSE — and applying `post_state` *before* resolving — closes that
 window deterministically.
@@ -280,7 +282,7 @@ best-effort, durable rows in `user_actions` are not.
 ### Single-process scope
 
 `OP_LOCKS` is in-process only. The deployment model is one-experiment-per-
-process (see [CLAUDE.md](../CLAUDE.md) "Central DB"); a multi-process or
+process (see [CLAUDE.md](../CLAUDE.md) "Running the app"); a multi-process or
 sharded deployment would need a different primitive. Two paths:
 
 1. Change the cache `INSERT` to `INSERT OR IGNORE` and on `changes()=0`
@@ -315,9 +317,9 @@ changed since the trace hash was recorded) but still recomputes
 in the response body, and the queue mutator's `onSuccess` writes it into
 the exposure cache directly.
 
-The result: no refetch round-trip, no `StaleIndicesBanner` flicker. New
-curation routes should follow this pattern; otherwise the banner spuriously
-fires until a polling refetch lands.
+The result: no refetch round-trip, no stale-indices flicker. New
+curation routes should follow this pattern; otherwise the stale-indices
+indicator spuriously fires until a polling refetch lands.
 
 The `analyze_run` no-op fast path also suppresses both the SSE frame and
 the durable `user_actions` row when both `findpeaks_skipped` and
@@ -335,7 +337,7 @@ response, and the SSE echo land out of order.
 
 Canonical consumers:
 
-- `StaleIndicesBanner` — don't show "stale" while a re-analyze is mid-flight.
+- the stale-indices indicator on the Focus/sample surface — don't show "stale" while a re-analyze is mid-flight.
 - `useSpeculativeSnap` — don't snap to a peak that may roll back.
 
 Reuse the hook for any new card or query that reads `peaks(exposureId)`
@@ -353,7 +355,7 @@ set and resumes (HTTP retries pick up where they left off; SSE frames
 that landed during the reload window have their `client_op_id` matched
 against the rehydrated registry).
 
-`schema_version` mismatch between the persisted shape and the current
+`schemaVersion` mismatch between the persisted shape and the current
 build drops the queue with a toast — the alternative (silent type drift)
 would corrupt the cache.
 
@@ -367,7 +369,7 @@ would corrupt the cache.
 | Class | Examples | Retry? | UX |
 |---|---|---|---|
 | Validation | 4xx, schema rejection, duplicate ↔ existing row | No | Toast with kind-specific message |
-| Infrastructure | 5xx, network error, timeout | Yes (up to 5x, exponential backoff capped at 30s) | Banner mounted at App.tsx via `useMutationState` |
+| Infrastructure | 5xx, network error, timeout | Yes (up to 5x, exponential backoff capped at 30s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
 
 A validation error rolls back the optimistic effect via `context.restore`
 and the user sees a toast. The mutation's `state` ends in `error`.
@@ -377,7 +379,7 @@ in the background — the banner indicates "trying"; the user can keep
 working. After 5 failures, the mutation lands in `error` and the
 optimistic effect rolls back.
 
-`InfrastructureBanner` (`components/InfrastructureBanner.tsx`) is a global
+`InfrastructureBanner` (`print/shell/InfrastructureBanner.tsx`) is a global
 status strip that reads from `useMutationState` directly. It hides until
 any mutation has been pending > 500ms (avoids flicker on fast successes)
 and upgrades to a "stuck" state with a Refresh button after > 30s.
@@ -422,10 +424,10 @@ discipline and the canonical paired test files.
 | `lib/queue/mutatorRegistry.ts` | Discovery / lookup of mutators by kind |
 | `lib/queue/optimisticId.ts` | Negative-id minting helper |
 | `lib/queue/peakQTol.ts` | Tolerance for matching peak rows by q value |
-| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / trivial / reanalyze) |
+| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / series / assignment / trivial / reanalyze) |
 | `lib/clientId.ts` | Per-tab UUID (sessionStorage) |
 | `lib/clientOpId.ts` | Per-mutation UUID (`crypto.randomUUID` per call) |
-| `components/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |
+| `print/shell/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |
 
 **Backend** (`packages/HimalayaUI/src/`):
 

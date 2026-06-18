@@ -25,7 +25,7 @@ asking them to track something else?**
 
 ### 1.2 Two workflow steps, visually separate
 
-There are exactly two things the user does on the Index page:
+There are exactly two things the user does on the Focus page (`/sample/:id`):
 
 1. **Pick peaks.** Foreground, active edit. The user is making a claim
    about what's a real diffraction peak vs noise.
@@ -70,7 +70,7 @@ to silently carry stale state.
 ### 1.5 Server state vs client state
 
 TanStack Query owns server state (experiments, samples, exposures, peaks,
-indices, groups, messages). Zustand owns client state (active sample,
+indices, groups). Zustand owns client state (active sample,
 hovered index, theme, persisted scope, modal step). They never overlap.
 
 This split is load-bearing. Mutations invalidate scoped query keys
@@ -155,9 +155,9 @@ The user prefers seeing "the thing you picked is gone" to seeing
 Ship the simpler thing. Live with it. Notice what actually breaks. Fix
 that. The current iteration is *not* the spec — it's a checkpoint.
 Several decisions in §2 below started out the opposite of where they
-landed (Miller inset top-right → bottom-left → outside the plot;
-circles above triangles → vlines from top; faded color → faded gray).
-Each reversal cost an hour and saved a permanent worse state.
+landed (Miller inset top-right → bottom-left → outside the plot, since
+removed entirely; circles above triangles → vlines from top; faded color
+→ faded gray). Each reversal cost an hour and saved a permanent worse state.
 
 ---
 
@@ -168,12 +168,14 @@ These are the concrete choices in the current build. They are not
 
 ### 2.1 Layout
 
-- **Three cards on the Index page**, ratio 22 / 56 / 22 (chat / plot / indices)
-  on a max-width 1600px workspace. Below 1100px the chat reflows below the
-  other two.
-- **Vertical structure**: app utility row (44px) → tab rocker row → page
-  body. The tab rocker (Index / Compare) sits where a per-page title used
-  to live; the actual page title moved into the plot card's top strip.
+- **Focus workspace** (`/sample/:id`): a trace hero (the loud plot) plus a
+  detector panel, a phase-call rail, and a notes margin/drawer, on a
+  max-width workspace. The plot is the loudest thing on the page; the rail
+  and panels recede until asked for.
+- **Vertical structure**: app utility row → page body. The shell is
+  URL-routed (`CorpusShell` / `CorpusTopbar`); the page title moved into the
+  workspace's top strip. The earlier Index/Compare tab rocker was removed in
+  the greenfield cutover (merge `dcac451`, PR #281).
 - **Card-header utility** (`.card-header`, height 56px, 1rem padding,
   `flex items-center`) shared between the plot card's title strip and
   the indices card's "Index choices" header so their top edges line up.
@@ -182,16 +184,19 @@ These are the concrete choices in the current build. They are not
   the experiment is context (the container) and the sample is the leaf the
   user is actively working on. De-emphasising the parent draws the eye to
   the sample without hiding the experiment path.
-- **Compare page** is a placeholder; the tab exists, the content does not.
+- **Series stage** (`/series`): the former Compare page was retired and
+  folded into Series, which renders multi-trace overlays through a
+  folio / scoping / builder set of pages. Deep `/compare*` links redirect to
+  `/series`.
 
 ### 2.2 Typography
 
 - **Plus Jakarta Sans** everywhere. We tried mono for kbd hints,
   timestamps, and stat labels — it added a second visual rhythm without
   earning its complexity. Sans-only reads more cohesive.
-- The `--font-mono` CSS variable is still defined in the theme so we can
-  re-introduce it for genuinely-monospace surfaces (raw data dumps, SMILES
-  strings) if those ever land. Currently unreferenced.
+- The `--font-mono` CSS variable is defined in the theme and used by the
+  `.text-data` / `.text-data-strong` roles (`styles.css`) for genuinely
+  monospace data surfaces (e.g. q-values, flag labels).
 
 ### 2.3 Color
 
@@ -214,13 +219,17 @@ These are the concrete choices in the current build. They are not
 
 ### 2.4 Trace plot
 
-- Observable Plot at the core. We wrap it in a `host > plotContainer +
-  overlayRef` nested DOM so React can manage the overlay SVG (cursor,
-  ticks, peak triangles) without `replaceChildren` wiping it on each
-  render.
-- **X axis label**: `q (Å⁻¹)` with a custom `tickFormat` that uses plain
-  decimal or scientific notation. Plot's default SI formatter rendered
-  e.g. 0.040 as "40 m" (milli-) which made no sense in this context.
+- A bespoke d3 trace-plot engine at the core (`print/plot/TracePlot.tsx`,
+  built on `d3-scale`/`d3-shape`; axis formatting is hand-rolled, not
+  `d3-format`). React owns the SVG
+  tree directly — trace path, overlay marks (cursor, ticks, peak triangles)
+  and axes are all declarative React elements, so there is no imperative
+  `replaceChildren` to fight on each render. Observable Plot was fully
+  retired (2026-06-13); `@observablehq/plot` is no longer a dependency.
+- **X axis label**: `q (Å⁻¹)` (`print/plot/Axis.tsx`) with a hand-rolled tick
+  formatter (`lib/plot/formatAxis.ts`) that uses plain decimal or scientific
+  notation — never SI-prefix abbreviations, which would render e.g. 0.040 as
+  the nonsensical "40 m" (milli-).
 - **Wheel scroll** zooms around the cursor; **double-click** resets to
   full range. The visible q-range is shared with numeric inputs in the
   plot card's title strip (the `QRange` controls).
@@ -293,10 +302,13 @@ multiplayer-readiness and cold-start latency:
    fire. See [`docs/event-log.md`](event-log.md) for the full hash
    contract.
 
-`queries.ts::invalidateExposure` invalidates `peaks`, `indices`, **and
-`groups`** so the right-rail Active set updates immediately after any peak
-edit triggers auto-reanalysis. SSE multiplayer fan-out (§2.10) reuses the
-same invalidation function.
+Cache reconciliation flows through the mutation queue (Plan 8): own-op
+confirmations and foreign SSE events are funnelled through
+`handleRemoteEvent` / `applyRemoteToCache.ts` (`lib/queue/`), which updates
+the `peaks` / `indices` / `groups` caches for the affected exposure so the
+Active set updates immediately after a peak edit triggers auto-reanalysis.
+SSE multiplayer fan-out (§2.10) takes the same path. See
+[`docs/mutation-queue.md`](mutation-queue.md).
 
 ### 2.7 Persistence
 
@@ -330,7 +342,9 @@ machines starts them over (intentional — server doesn't know about
   [`docs/event-log.md`](event-log.md) for the dispatcher contract,
   hash memoization, and SSE multiplayer.
 - **Chat (`sample_messages`).** FK `author_id → users.id` with
-  `ON DELETE SET NULL`; backs the per-sample ChatCard.
+  `ON DELETE SET NULL`. Persists as a parked data plane — the chat
+  presentation (ChatCard / @-mention subsystem) was retired 2026-05-29 and
+  there is no UI on top of it.
 - Exposure, tag, and notes endpoints are intact even though the UI
   doesn't surface them right now (see §1.9).
 
@@ -343,16 +357,22 @@ machines starts them over (intentional — server doesn't know about
   between commit and broadcast loses the frame but not the event
   (durable in `user_actions`); clients reconcile on EventSource
   reconnect via TanStack Query refetch.
-- The frontend `App.tsx` SSE handler (`src/lib/sseSubscriber.ts`)
-  invalidates `peaks`/`indices`/`groups`/`exposure` query keys for the
-  affected exposure on every remote `curation` event. **Self-echo
-  filter:** events whose `actor` matches the local username are
-  skipped, so the local user's own optimistic UI doesn't get clobbered
-  by a refetch on its own write.
-- **Conflict resolution is deferred.** `If-Match` + 409-retry (R5b in
-  the plan) is gated on R4 instrumentation showing actual contention
-  (≥2% delta-event collision rate over ≥4 weeks / ≥500 events). Until
-  then, last-write-wins is the documented behaviour.
+- The frontend SSE handler lives in `print/App.tsx` (the `PrintApp` root):
+  it opens one EventSource and routes every `curation` frame to
+  `handleRemoteEvent` (`lib/queue/replayCoordinator.ts`), the mutation-queue
+  replay-as-rerun path that reconciles the `peaks` / `indices` / `groups`
+  caches for the affected exposure. See [`docs/mutation-queue.md`](mutation-queue.md).
+  **Self-echo filter:** the guard keys on a **per-tab `client_id`**
+  (`lib/clientId.ts`) — a frame whose `client_id` matches the local tab's id
+  is treated as own-op, so the tab's own optimistic UI isn't clobbered by a
+  replay of its own write. Two tabs of the same user are distinct subscribers
+  (the guard is per-tab, not per-username).
+- **Conflict resolution was cancelled (2026-06-03).** The `If-Match` +
+  409-retry path (R5b) and the Series conflict-resolution modal were both
+  dropped — there is no conflict UI. Last-write-wins is permanent; the
+  conflict story is instead being addressed by edit-tracking → undo/redo →
+  versioning (designed in Layer 4). See
+  [`docs/event-log.md`](event-log.md) §"Conflict resolution".
 
 ---
 
@@ -360,10 +380,6 @@ machines starts them over (intentional — server doesn't know about
 
 Things we know we don't yet have a good answer for:
 
-- **Compare page content.** The tab is a placeholder. What's the actual
-  primary task on Compare? Stacked / waterfall plots? Side-by-side
-  per-sample cards? We don't know yet, and putting in something generic
-  would lock in the wrong shape.
 - **Exposure triage.** A sample often has 5–20 exposures and the UI
   currently auto-picks the first by id. A Lightroom-style filmstrip
   ("good / bad / maybe", keyboard-driven) is a natural fit, but we
@@ -381,10 +397,12 @@ Things we know we don't yet have a good answer for:
   chroma are not safe for all forms of color vision. A dash-pattern
   channel (ticks) and shape channel (Miller dots) could make the phase
   distinction redundant with hue. Not done.
-- **Chat threads / mentions / reactions.** ChatCard is intentionally a
-  flat list right now. We added the message thread to test whether
-  per-sample conversation is even a thing scientists do. Wait for
-  evidence before layering features on.
+- **Chat threads / mentions / reactions.** The chat UI was retired
+  2026-05-29 (presentation deleted, including the @-mention subsystem); only
+  the parked `sample_messages` data plane remains. The original experiment —
+  per-sample conversation — never gathered enough evidence that scientists
+  want it. The open question is whether to revive it at all before layering
+  threads / mentions / reactions on top.
 
 See [`docs/future-feature-ideas.md`](future-feature-ideas.md) for the
 running list of deferred work, including these and analysis-engine ideas
