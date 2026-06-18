@@ -4,7 +4,7 @@
  * the same payload + cache logic and route between them at the hook layer
  * based on `excluded`. Optimistically flips the peak's `excluded` field;
  * onSuccess writes the server peak (authoritative) and updates the exposure
- * `analysis_inputs_hash` so `StaleIndicesBanner` does not flash.
+ * `analysis_inputs_hash` so the stale-indices alert does not flash.
  */
 import * as api from "../../../api";
 import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api";

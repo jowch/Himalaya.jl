@@ -15,7 +15,7 @@ Before merging any PR that touches:
 - `lib/queue/mutators/*` (mutator additions or refactors)
 - `routes_peaks.jl`, `routes_analysis.jl`, or any route emitting `apply_event!`
 - `applyRemoteToCache.ts` (SSE-driven cache merge)
-- `StaleIndicesBanner.tsx`, `SpeculativeBuilder.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
+- `CustomIndexModal.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
 - `App.tsx` SSE wiring or `attachPersistence`/`rehydrate` calls
 
 For non-queue PRs, a clean unit + integration test run is enough; this skill is overkill.
@@ -36,8 +36,8 @@ npm run build
 Then in the worktree root:
 
 ```bash
-# Use a dev experiment dir; defaults to ~/.himalaya/himalaya.db
-bin/himalaya serve /path/to/dev/experiment --port 8080 &
+# serve has no path arg; it serves the central DB (HIMALAYA_DB_PATH / ~/.himalaya/himalaya.db)
+bin/himalaya serve --port 8080 &
 ```
 
 (If the user hasn't set up a dev experiment, ask before scaffolding one — `himalaya config new --dir` writes to disk.)

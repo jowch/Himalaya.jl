@@ -14,7 +14,7 @@ This is the load-bearing reference for the Plan 7 architecture in
 
 Read this before touching `events.jl`, `hash.jl`, the `apply_event!` call
 sites in `routes_*.jl`, the SSE handler in `server.jl`, or the
-`StaleIndicesBanner` gating logic in the frontend.
+stale-indices reanalyze affordance in the frontend.
 
 ---
 
@@ -127,7 +127,7 @@ Three SHA-256 hashes drive skip-when-unchanged:
 |---|---|---|
 | `exposures.trace_hash` | `hash_trace_file(.dat path)` — bytes of the integration file | `findpeaks` |
 | `exposures.analysis_inputs_hash` | `hash_peak_set(eff)` — sorted `(q, sharpness)` Float64 tuples | `indexpeaks` |
-| `indices.inputs_hash` | snapshot of the `analysis_inputs_hash` that produced this index | drives `StaleIndicesBanner` |
+| `indices.inputs_hash` | snapshot of the `analysis_inputs_hash` that produced this index | drives the stale-indices alert |
 
 **Skip predicate (both stages):**
 
@@ -142,10 +142,13 @@ actually having anything to read back. The `analyze_run` event payload
 records the full skip predicate's outcome — instrumentation must reflect
 the real branch taken, not the hash comparison alone.
 
-**Staleness banner:** `StaleIndicesBanner` renders when *any* index's
-`inputs_hash` differs from its exposure's current `analysis_inputs_hash`.
-This replaces the retired `status='stale'` enum — there is no longer any
-write-side "mark all indices stale" call. Staleness is purely derived.
+**Staleness is derived, not a named component.** A stale-indices `alert`
+(role=`alert`; there is no `StaleIndicesBanner` component) surfaces when
+*any* index's `inputs_hash` differs from its exposure's current
+`analysis_inputs_hash`; the reanalyze action is wired through
+`useReanalyzeExposure`. This replaces the retired `status='stale'` enum —
+there is no write-side "mark all indices stale" call. Staleness is purely
+derived from the hash comparison.
 
 **`hash_peak_set` is order-independent.** Inputs are sorted by `q` before
 hashing, so an exclude-then-add or add-then-exclude that lands on the

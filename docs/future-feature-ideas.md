@@ -213,9 +213,10 @@ verb (peak-move) is a backend data-model problem, not a plot interaction.
   `src/print/pages/FocusPage.tsx`): empty area → add manual peak; on a
   manual peak → delete; on an auto peak → toggle exclusion. No mode, no
   modifier, no cursor change to say which.
-- **Two conflicting "reset" verbs** — dblclick does a true full reset
-  (x+y → null); the ZoomIndicator labeled "reset" actually calls
-  `onFitFeatures` (auto-fit to features), not a reset.
+- **Two conflicting "reset" verbs** — double-click does a true full reset
+  (`onReset`, x+y → null), while the "Auto-fit" button (`onAutoFit`, sets
+  `xDomain` to null to fit features) is a different verb wearing similar
+  affordance.
 - **No peak-move at all** — q is immutable; only add / remove(manual) /
   exclude(auto) exist.
 

@@ -2,7 +2,7 @@
  * peak_removed mutator (M2.2). Optimistically removes the peak from the cache
  * and restores on rollback. The DELETE route returns 200 with
  * `{event_id, view_row_id, analysis_inputs_hash}`; onSuccess writes the new
- * hash onto the exposure cache so the StaleIndicesBanner doesn't flash
+ * hash onto the exposure cache so the stale-indices alert doesn't flash
  * between the optimistic delete and the SSE `post_state` arrival.
  */
 import * as api from "../../../api";
@@ -62,7 +62,7 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
   request: (p) => api.removePeak(p.peakId, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     // The peak is already removed optimistically. Write the new hash onto the
-    // exposure cache so the StaleIndicesBanner doesn't flash before the SSE
+    // exposure cache so the stale-indices alert doesn't flash before the SSE
     // post_state arrives.
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
       old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
@@ -76,7 +76,7 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
   // `mutationFn`, so the `analysis_inputs_hash` write above is skipped on the
   // 404 path. The fresh hash normally arrives via the original op's SSE
   // `post_state` frame, and `useExposureHasPendingPeakOps` masks
-  // `StaleIndicesBanner` until the mutation settles. Edge case: if the user
+  // the stale-indices alert until the mutation settles. Edge case: if the user
   // disconnects across both the original HTTP response *and* its SSE frame,
   // the cache hash stays stale until the next refetch — the banner could
   // briefly read "stale" once `useExposureHasPendingPeakOps` un-masks. This

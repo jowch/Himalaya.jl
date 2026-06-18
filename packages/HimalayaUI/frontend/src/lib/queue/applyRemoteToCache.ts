@@ -33,7 +33,7 @@ function writeAssignmentFromPostState(
  * path (via `applyRemoteToCache`) AND by the own-op confirmation paths in
  * `replayCoordinator` — own ops need post_state propagation too, otherwise
  * the indices cache stays frozen at the pre-mutation `inputs_hash` and the
- * StaleIndicesBanner sticks until a hard refetch.
+ * stale-indices alert sticks until a hard refetch.
  *
  * F-WIPE W2: this is ALSO where the W1 assignment envelope on peak_* frames
  * is consumed, deliberately. Every curation frame is processed by exactly
@@ -66,7 +66,7 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   // `indices`/`analysis_inputs_hash` as `undefined` off a Series and
   // clobbers `queryKeys.exposure(entity_id)`; series ids and exposure ids
   // share the integer namespace, so a colliding cached exposure row would
-  // have its `analysis_inputs_hash` wiped (falsely tripping StaleIndicesBanner
+  // have its `analysis_inputs_hash` wiped (falsely tripping the stale-indices alert
   // or breaking a later mutation's expected-hash check).
   const ps = remote.post_state as CurationPostState;
   if (!Array.isArray(ps.indices)) return;

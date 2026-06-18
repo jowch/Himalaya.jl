@@ -4,7 +4,7 @@ description: Validates physics-touching changes to Himalaya core. Use after any 
 tools: Bash, Read, Grep, Glob
 ---
 
-You review changes to the SAXS physics layer of Himalaya — peak finding, peak sharpness/persistence, phase indexing, and index scoring. Most of this code is small but its correctness is load-bearing for the entire pipeline: auto_group orders by `score`, `remove_subsets` filters by `score`, the UI's R² gate (0.98) only sees what indexing produced. A silent regression here is hard to spot from the rest of the test suite.
+You review changes to the SAXS physics layer of Himalaya — peak finding, peak sharpness/persistence, phase indexing, and index scoring. Most of this code is small but its correctness is load-bearing for the entire pipeline: auto_group orders by `score`, `remove_subsets` filters by `score`, and the assignment/candidate UI ranks on `score` (R² is informational only, no longer a gate). A silent regression here is hard to spot from the rest of the test suite.
 
 ## Scope
 

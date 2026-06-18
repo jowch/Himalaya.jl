@@ -95,15 +95,16 @@ Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exp
 make sysimage          # creates build/himalaya.so
 bin/himalaya config new --type simple --dir /path/to/experiment
 # edit /path/to/experiment/experiment.toml to set name + column mappings
-bin/himalaya init /path/to/experiment
-bin/himalaya analyze /path/to/experiment
-bin/himalaya serve /path/to/experiment --port 8080
+bin/himalaya init /path/to/experiment        # init takes a positional path
+bin/himalaya analyze -e /path/to/experiment  # analyze/reingest/show take -e <id|name|path>
+# serve has no path arg — it serves the central DB (HIMALAYA_DB_PATH / default_db_path):
+bin/himalaya serve --port 8080
 # After editing manifest.csv or experiment.toml:
-bin/himalaya reingest /path/to/experiment
+bin/himalaya reingest -e /path/to/experiment
 
 # Without sysimage (slower cold start, no build required):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  serve /path/to/experiment --port 8080
+  serve --port 8080
 ```
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
@@ -147,7 +148,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
   - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) **cancelled 2026-06-03** — no conflict UI; multiplayer stays last-write-wins, replaced by edit-tracking → undo/redo → versioning (designed in Layer 4). See `docs/event-log.md` §"Conflict resolution".
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.
   - **Series + picker + figure export + permalinks:** the standalone Compare page was **folded into Series 2026-05-29** (`/compare/*` redirects to `/series`); the Series folio/scoping/builder renders multi-trace overlays on the bespoke d3 plot engine (`src/print/plot/`) with sample-first picker and PNG/SVG copy/save. Multiplayer is last-write-wins (no conflict UI — see the Plan 7 note above). Slug-based permalink URLs round-trip through `useStateFromUrl`.
-  - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into a closed-look primitive library under `src/print/ui/` (~50 primitives — Button, Card, SegmentedControl, PhaseChip, Input, Field, Menu, Tooltip, … — list illustrative) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside `src/print/ui/**` (rules #3/#5 allowlist the colour-authoring files: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the detector/heatmap layers, `print/main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; static catalog at `docs/design-system.html`.
+  - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into a closed-look primitive library under `src/print/ui/` (~50 primitives — Button, Card, SegmentedControl, PhaseChip, Input, Field, Menu, Tooltip, … — list illustrative) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-exempt dirs (`src/print/ui/**` plus the `print/{plot,detector,comb,export}/` render layers) (rules #3/#5 also allowlist the colour-authoring files: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, `print/main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; static catalog at `docs/design-system.html`.
   - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~279 Vitest files · 11 Playwright E2E spec files (mocked) + 4 Playwright live-integration specs.
 - Deferred: holistic trace-plot-card / peak-move redesign (M4 — gated on rethinking the `auto_peaks`/`peak_curations` curation model), Phase panel Recent section, export UI, per-user audit view, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 

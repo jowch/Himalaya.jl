@@ -21,7 +21,7 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 ### Zustand
 
-- **Named actions only.** The store exposes named actions (`clearUsername`, `setTheme`, `openNavModal`, etc.). Direct `useAppState.setState({ ... })` outside `state.ts` bypasses encapsulation and triggers lint warnings. New state transitions need a named action added to `state.ts`.
+- **Named actions only.** The store exposes named actions (`clearUsername`, `setActiveSample`, `openNavModal`, etc.). Direct `useAppState.setState({ ... })` outside `state.ts` bypasses encapsulation and triggers lint warnings. New state transitions need a named action added to `state.ts`.
 - **State split is load-bearing.** Zustand owns *client* state (active sample/exposure ids, `hoveredIndexId`, username). TanStack Query owns *server* state (experiments, samples, exposures, peaks, indices, groups). Mixing these concerns — e.g. storing server data in Zustand, or caching client state in a query — breaks cache invalidation.
 
 ### TanStack Query

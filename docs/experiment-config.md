@@ -38,7 +38,7 @@ $EDITOR /data/ssrl-2025-oct/lipid-a/experiment.toml
 himalaya init /data/ssrl-2025-oct/lipid-a
 
 # 4. Later, after editing the manifest or fixing the config:
-himalaya reingest /data/ssrl-2025-oct/lipid-a
+himalaya reingest -e /data/ssrl-2025-oct/lipid-a
 ```
 
 The experiment directory is expected to contain at least:
@@ -259,7 +259,7 @@ This invariant is enforced by code review and by a regression test:
 ## Re-ingestion
 
 If the manifest is corrected, the config edited, or new exposures
-arrive on disk, run `himalaya reingest <experiment_dir>` to update the
+arrive on disk, run `himalaya reingest -e <experiment_dir>` to update the
 DB. Reingestion is **safe to run repeatedly** and preserves curation
 work:
 
@@ -339,7 +339,7 @@ himalaya init <experiment_dir>
     the experiment in the DB. Discovers exposures by filesystem prefix
     scan against the configured integration pattern.
 
-himalaya reingest <experiment_dir>
+himalaya reingest -e <experiment_dir>
     Re-read experiment.toml + manifest.csv and update the DB.
     Idempotent on stable input. Preserves curated exposures.
 

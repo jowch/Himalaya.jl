@@ -82,7 +82,7 @@ Why: the server-side SSE subscriber registration completes ~50–200 ms
 after the GET (the backend's HTTP handler returns first; the streaming
 response keeps writing). A click that fires before the subscriber lands
 in `SSE_SUBSCRIBERS[]` will broadcast `post_state` to no one, the test
-browser misses the indices update, and `StaleIndicesBanner` sticks until
+browser misses the indices update, and the stale-indices alert sticks until
 the next polling refetch.
 
 Pattern:
@@ -91,7 +91,7 @@ Pattern:
 await page.goto("/");
 await page.waitForTimeout(800);   // SSE warmup
 await page.click('[data-testid="add-peak"]');
-await expect(page.locator(".stale-banner")).toHaveCount(0);
+await expect(page.getByRole("alert").filter({ hasText: /stale/i })).toHaveCount(0);
 ```
 
 The mocked suite has no such warmup because there's no real subscriber to
@@ -135,7 +135,6 @@ If you add a *new* test directory at the same level (e.g. an
 |---|---|
 | `peak-add-no-stale-banner.spec.ts` | Synchronous reanalyze closes the stale-banner window |
 | `post-pr37.spec.ts` | Multiple bug fixes from PR #37 review (queue ordering, custom group reset) |
-| `sample-rename-preserves-fields.spec.ts` | Sample rename doesn't blank other metadata fields |
 | `sample-tag-add-and-delete.spec.ts` | Tag CRUD round-trip via SSE |
 | `speculative-create.spec.ts` | Speculative index create + delete |
 

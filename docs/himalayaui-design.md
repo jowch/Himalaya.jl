@@ -44,7 +44,7 @@ everything else must *get out of the way*. Multiplying alpha leaves "faded
 orange" still distinctly orange — competing for the eye's color signal at
 the same hue, just dimmer.
 
-We fade to neutral gray (`var(--color-fg-dim)`) instead. This removes the
+We fade to neutral gray (`var(--color-ink-soft)`) instead. This removes the
 color signal entirely, so the hovered phase becomes the only chromatic
 element on the canvas. The faded ticks are still readable; they just
 stop *speaking color*.
@@ -179,8 +179,8 @@ These are the concrete choices in the current build. They are not
 - **Card-header utility** (`.card-header`, height 56px, 1rem padding,
   `flex items-center`) shared between the plot card's title strip and
   the indices card's "Index choices" header so their top edges line up.
-- **Title strip breadcrumb:** the experiment name renders in `text-fg-muted`
-  even when set; the sample name uses `text-fg`. This is intentional —
+- **Title strip breadcrumb:** the experiment name renders in `text-ink-soft`
+  even when set; the sample name uses `text-ink`. This is intentional —
   the experiment is context (the container) and the sample is the leaf the
   user is actively working on. De-emphasising the parent draws the eye to
   the sample without hiding the experiment path.
@@ -211,7 +211,7 @@ These are the concrete choices in the current build. They are not
   Fm3m (coral), Fd3m (rose-purple), Hexagonal (seafoam teal), Lamellar
   (periwinkle), Square (chartreuse). Hues stay clear of ±20° of the peak
   hues (220° accent, 340° manual) and the high-chroma warning zone (~75°).
-- **Faded annotations render in `--color-fg-dim`** (neutral gray) at
+- **Faded annotations render in `--color-ink-soft`** (neutral gray) at
   reduced opacity, *not* at the phase color with reduced opacity.
 - `:root { color-scheme: dark }` (and `light` on the matching theme
   override) re-themes native form controls and scrollbars without
@@ -231,12 +231,13 @@ These are the concrete choices in the current build. They are not
   notation — never SI-prefix abbreviations, which would render e.g. 0.040 as
   the nonsensical "40 m" (milli-).
 - **Wheel scroll** zooms around the cursor; **double-click** resets to
-  full range. The visible q-range is shared with numeric inputs in the
-  plot card's title strip (the `QRange` controls).
+  full range. The visible q-range is shared with the numeric inputs in the
+  plot card's title strip (the controlled `xDomain` / `setXDomain` state on
+  `TracePlate`; there is no discrete `QRange` component).
 - **Click empty plot space** adds a manual peak at the exact clicked q.
   **Click within ~10 pixels of an existing peak triangle** removes it.
   No q-snap — the user zooms in for precision.
-- **Cursor crosshair** (solid vertical rule + follow-dot in `--color-fg-dim`)
+- **Cursor crosshair** (solid vertical rule + follow-dot in `--color-ink-soft`)
   only appears inside the plot interior, gated by the plot's margin
   constants. Neutral gray so it doesn't compete with the phase-coloured
   ticks.
@@ -249,7 +250,7 @@ These are the concrete choices in the current build. They are not
     inside the bumped `MARGIN_TOP`) carries the persistent phase-colour
     swatches at 55% opacity. This is where colour lives by default.
   - **Plot vlines** inside the data area are neutral gray
-    (`--color-fg-dim`) at 35% opacity by default — they show *where* an
+    (`--color-ink-soft`) at 35% opacity by default — they show *where* an
     index would land without competing with the trace data.
   - On hover, the hovered index's ticks go solid full-opacity in *both*
     places (track and plot), and any other indices fade to gray 30% in
@@ -356,9 +357,11 @@ SSE multiplayer fan-out (§2.10) takes the same path. See
 
 ### 2.7 Persistence
 
-Zustand `persist` middleware → `localStorage`. Persists `username`,
-`activeExperimentId`, `activeSampleId`, `activePage`, `theme`,
-`tutorialSeen`. Refresh lands the user back on the same scope; switching
+Zustand `persist` middleware → `localStorage`. Persists `username`
+(+ name), `activeExperimentId`, `activeSampleId`, `tutorialSeen` (the
+dual-nav `activePage` and the `theme` toggle were both retired — routing
+is URL-based and there is one fixed palette). Refresh lands the user back
+on the same scope; switching
 machines starts them over (intentional — server doesn't know about
 "current view").
 

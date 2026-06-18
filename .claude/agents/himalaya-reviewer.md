@@ -38,7 +38,7 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 - **`DetectorImage` auto-rotate:** ResizeObserver-driven. JS sets `maxWidth/maxHeight` on the rotated canvas — pure CSS doesn't work because `transform: rotate` doesn't change layout box. JSDOM `ResizeObserver` stub lives in `test/setup.ts`.
 - **Trace plot y-fit:** `yExtent = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)]` over the full positive trace extent (`print/plot/TracePlot.tsx`). Don't change the upper bound to a windowed max — that loses peaks-vs-beam relative scale.
 - **Imperative render functions in effects:** wrap in `useCallback`, depend on `[theCallback]` alone. No redundant dep lists.
-- **`QNumInput` focus-gated input pattern.** External value changes only sync to draft when not focused. Any numeric input that can be updated by external events should follow this.
+- **Focus-gated numeric-input pattern.** A numeric input whose value can change from external events (SSE, sibling controls) should sync the external value into its draft only while it is *not* focused — otherwise an incoming update clobbers what the user is typing. (No single named component owns this; enforce the pattern wherever it applies.)
 - **E2E selectors:** `data-testid`, `role`, `data-*` only. Never assert on Tailwind class strings.
 - **Playwright port:** binds to `127.0.0.1:5173`, not `localhost`. If running Vite separately, use `--host 127.0.0.1`. Live Julia backend on :8080 leaks past route mocks for URLs with query strings — be wary.
 

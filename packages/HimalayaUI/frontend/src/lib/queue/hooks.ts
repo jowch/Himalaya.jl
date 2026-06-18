@@ -4,7 +4,7 @@ import type { OpKind, OpPayload } from "./types";
 /**
  * Op kinds that change the effective peak set for an exposure. Used by
  * `useExposureHasPendingPeakOps` to gate UI elements that should hide or
- * suspend during a peak-curation chain (StaleIndicesBanner, speculative-snap).
+ * suspend during a peak-curation chain (the stale-indices alert, speculative-snap).
  *
  * `reanalyze_exposure` is included because a manual reanalyze races with
  * curation ops and can produce intermediate states the user shouldn't see.
