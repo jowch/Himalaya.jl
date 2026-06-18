@@ -369,7 +369,5 @@ optimisation for queries that don't want to parse TOML.
 
 ## Further reading
 
-- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](superpowers/specs/2026-04-28-experiment-config-design.md) — design spec
-- [docs/superpowers/plans/2026-04-28-experiment-config.md](superpowers/plans/2026-04-28-experiment-config.md) — implementation plan
 - [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl) — the implementation
 - [packages/HimalayaUI/configs/simple.toml](../packages/HimalayaUI/configs/simple.toml) — the default template

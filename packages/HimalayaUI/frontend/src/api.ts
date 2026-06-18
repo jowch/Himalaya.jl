@@ -568,7 +568,7 @@ export const batchSampleTags = (
 // listing summary type `SeriesSummary` and the read fetchers
 // (listSeries / getSeries / forksOfSeries) below back the read hooks
 // useSeriesList / useSeries in queries.ts. See the Decision Record in
-// docs/superpowers/plans/2026-05-18-series-event-kinds.md.
+// docs/event-log.md.
 // Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
 
 /**

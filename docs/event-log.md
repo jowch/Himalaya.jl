@@ -153,6 +153,15 @@ same final peak set produces the same hash. This is the contract that
 makes "no-op rerun → skip indexpeaks" hold across curation orderings.
 There is a regression test for this in `test_pipeline.jl`.
 
+**Why `peak_curations` has no `sharpness` column.** Sharpness is
+deliberately *not* persisted on curations: storing it would decouple it
+from the trace, so `analysis_inputs_hash` would lie when the trace bytes
+change but the curation `q` stays put. Instead `effective_peaks` re-derives
+sharpness for every `kind='add'` curation from `Himalaya.sharpness(I)` on
+each analyze call, so the `(q, sharpness)` tuples fed to `hash_peak_set`
+always reflect the current trace. Adding a `sharpness` column to
+`peak_curations` would silently break this memoization invariant.
+
 **Hash migration.** Pre-Plan-7 DBs have NULL hashes; the first
 `analyze_exposure!` on each exposure populates them. No backfill is
 needed.
@@ -239,10 +248,8 @@ no listener recycling is needed.
 > permanently, and the positive replacement is **edit-tracking → undo/redo →
 > versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
 > conflict UI from this section. See `docs/future-feature-ideas.md`
-> §"Multi-user / review" and
-> `docs/superpowers/specs/2026-06-03-figure-export-design.md` §"Non-goal:
-> conflict resolution". The original deferral note is retained below for
-> historical context only.
+> §"Multi-user / review" and `docs/himalayaui-design.md` §2.10. The original
+> deferral note is retained below for historical context only.
 
 Optimistic concurrency via `If-Match` headers + 409-retry on the
 frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
@@ -345,8 +352,6 @@ this doc:
 
 - [`docs/himalayaui-design.md`](himalayaui-design.md) §2.6, §2.9, §2.10 —
   design principles and the active-set preservation story.
-- [`docs/superpowers/specs/2026-05-01-multiplayer-instrumentation-design.md`](superpowers/specs/2026-05-01-multiplayer-instrumentation-design.md) — original design spec.
-- [`docs/superpowers/plans/2026-05-01-multiplayer-instrumentation.md`](superpowers/plans/2026-05-01-multiplayer-instrumentation.md) — implementation plan with R0–R5a phases.
 - `packages/HimalayaUI/src/{events,hash,server,pipeline}.jl` and
   `packages/HimalayaUI/frontend/src/lib/queue/{replayCoordinator,applyRemoteToCache}.ts`
   — the code.

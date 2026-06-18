@@ -4,8 +4,8 @@ import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import { waterfallQDomain, type WaterfallRow } from "./waterfallModel";
 import { phaseColor } from "../../phases";
 
-// Frozen mini-waterfall geometry — mirrors the SeriesCard `#wf-*` figure in
-// docs/redesign-mockups/series-folio.html (W=340 reference, stepY=31, pads).
+// Frozen mini-waterfall geometry — mirrors the SeriesCard `#wf-*` figure
+// (mockup reference: W=340, stepY=31, pads).
 const PAD_L = 14;
 const PAD_R = 14;
 const PAD_T = 12;

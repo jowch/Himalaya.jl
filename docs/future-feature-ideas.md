@@ -288,12 +288,20 @@ good / bad / maybe rating. The current Index page auto-picks the first
 exposure by id; this page would let the user curate which exposure the
 analysis runs on.
 
-### Tag editing UI
+### Tag editing — known gaps
 
-Backend (`sample_tags`) and routes (nested under `routes_samples.jl`) are intact, but the
-UI was dropped from the three-card redesign. Re-introduce when we know
-what tag-driven workflows actually look like — probably alongside the
-summary table or the cross-experiment comparison page.
+A full tag-editing UI now exists (`TagEditor`, `TagList`, `TagPill`,
+`TagSuggest` primitives + the `ManageTagsModal` composite; routes nested
+under `routes_samples.jl`). The remaining work is coherence + bug-fixes
+across the three surfaces it appears on:
+
+- **Modal add-row ignores Enter (A1).** In `ManageTagsModal` the `onCommit`
+  on the key/value `TagSuggest` fields only updates local state — it never
+  calls `handleAdd`; the user must click **Add**. Enter should commit.
+- **`SamplesPage` renders an `editable` `TagList` with no handlers wired
+  (A3).** It passes no `onAddTag`/`onRemoveTag` to `SampleTableRow`, so the
+  edit affordance is a lie on the contact sheet — either wire it or render
+  read-only there.
 
 ### Stale-indices banner
 
@@ -308,11 +316,26 @@ covers most cases now, but a manual fallback is useful for batch edits.
 (The standalone Compare page was retired into Series; `/compare*` deep-links
 redirect to the Series surface.)
 
-### Stacked / waterfall comparison
+### Waterfall comparison — deferred enhancements
 
-Multi-sample trace overlay with configurable I-offset between traces.
-Publication-quality SVG export. Useful for visualizing phase transitions
-across a sample series.
+The core waterfall shipped (the Series builder's `WaterfallChart`: per-member
+stacked traces with a configurable I-offset, plus PNG/SVG figure export).
+Deferred:
+
+- **Cross-stack reflection connector + ghost rings.** Hovering an anchor
+  would draw a dashed connector to the *same* reflection across the stacked
+  members, with ghost rings for predicted-but-absent reflections. Blocked
+  on the data model: `MemberSnapshotPeak` carries no `ratio_position` or
+  `phase` field, so the connector would misalign whenever a reflection drops
+  out. Needs a snapshot-schema change first.
+- **Heatmap toggle (YAGNI for now).** A continuous intensity-colour LUT
+  competes with the "colour = phase meaning" rule and stacked traces are
+  more legible at typical 6–8-exposure titration density. If built, it
+  should be a separate renderer triggered only at high member counts.
+- **Default offset tuning (awaiting owner decision).** The default
+  trace-offset of 1.20× opens ~28px inter-row gaps (step h·1.20 = 168px >
+  band h = 140px). The only honest lever is lowering the default toward
+  ~1.0–1.05 to close them; left as-is pending a call.
 
 ### Summary table
 
@@ -441,12 +464,55 @@ page when that lands.
 
 ---
 
+## Interaction & accessibility residuals
+
+Open gaps surfaced by the greenfield holistic audit (work itself shipped to
+GOLD; these were the deliberately-deferred tail).
+
+### Sample doors are not real links
+
+Every sample door (name, frames, "Index") in `SampleTableRow` is a
+`<button onClick>` (`onOpenLoupe` / `onOpenFocus` → `navigate()`), never an
+`<a href>`. So Cmd-click / middle-click / open-in-new-tab is impossible
+anywhere in the corpus contact sheet — a real cost for a tool whose primary
+workflow is comparing samples side by side. Wants real hrefs on the doors.
+
+### Keyboard-accessible reorder in Scoping
+
+The Scoping worksheet reorders via drag handle only — no ▲▼ move buttons,
+so it has a WCAG 2.1.1 gap the Series builder doesn't (Builder has explicit
+Move up / Move down via `useReorderShortcuts`). The undo history already
+records `reorder` entries, so wiring keyboard moves is low-risk.
+
+### Cross-surface keyboard consistency
+
+Two parallel sample-switchers exist — `[`/`]` on Loupe and `,`/`.` on the
+Focus stepper — neither shown on both surfaces (B4: unify into one set).
+The Samples contact-sheet X/K legend only appears once exposures are
+selected, so a first-timer never discovers the gesture (B5: show a resting
+hint). Also a `kept` frame in the Loupe `Verdict` shows a no-op **Restore**
+button alongside **Drop** — only Drop is meaningful when not dropped.
+
 ## Frontend infrastructure
 
 ### Code splitting
 
 Vite warns the bundle is >500 kB. Probably split: NavModal +
 OnboardingFlow + the Series builder page as lazy chunks.
+
+### Virtualize the samples contact sheet
+
+`SamplesPage` mounts every sample row with no windowing (fine at the
+~139-sample dev corpus, flagged as the highest-leverage perf item at
+~678 thumbnails). Adding `react-virtual` (or similar) is also the
+prerequisite for an accurate `aria-rowcount` on the roving grid.
+
+### Semantic spacing / density scale
+
+There's no `@theme` spacing-token system — the named grid constants
+(`LOUPE_BODY_GRID`, `FOCUS_PAGE_GRID`, `FOCUS_SPLIT_GRID`) are single-sourced
+but still literal Tailwind class strings. A semantic spacing scale would let
+density be tuned coherently app-wide rather than per-surface.
 
 ### `ResizeObserver` on the trace plot
 

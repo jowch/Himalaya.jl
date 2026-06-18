@@ -45,6 +45,8 @@ SSE self-echo filtering uses a per-tab `client_id` minted into `sessionStorage` 
 
 Wrap any function that is both defined inside a component AND used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. The trace plot's overlay renderer follows this pattern.
 
+**Async re-entry guards need a ref, not state.** `useFigureExport` blocks double-invocation with a synchronous `inFlight` ref (`if (inFlight.current) return` before `setPending(true)`), *not* the `pending` state alone — state flips asynchronously, so two clicks in one tick both pass a state-only guard. The ref blocks re-entry; the state drives the UI. Same shape for any async-action hook.
+
 ## Tailwind v4 theming
 
 "The Print" palette (light warm paper, terracotta accent hue 38, Newsreader serif) is defined once in `styles.css` via `@theme { --color-* ... }` — a single identity, no theme toggle (R0a, #221). The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Serif titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
@@ -60,7 +62,9 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,export}/` render-layer prefixes, `print/main.tsx`). Note `print/waterfall/` is NOT among the exempt prefixes. Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,export}/` render-layer prefixes, `print/main.tsx`). Note `print/waterfall/` is NOT among the exempt prefixes — its appearance (line colour, bead glyphs, axis strokes) lives inside the already-exempt `print/plot/` layer it composes, so a raw SVG colour literal surfacing in `print/waterfall/` must move into `print/plot/` or become a `--color-*` token. Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+
+`check-design.mjs` also enforces a **`no-legacy-import` rule** (`scanLegacyImports`) alongside the appearance guard: it fails the build if any `src/print/**` file relatively imports from top-level `src/components/**` or `src/pages/**`. Those legacy dirs are gone post-cutover, so the rule now functions as a regression tripwire against re-introducing the retired tree.
 
 ## Skeleton loading via boneyard-js
 
@@ -79,6 +83,19 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 ## Multi-layer contract testing
 
 Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See `docs/contract-testing.md` for canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
+
+## SA-ROVING data grid (contact sheet)
+
+The samples contact sheet (`SheetTable`) is an APG roving-tabindex grid. Three-layer split:
+
+- **Pure reducer** `src/lib/grid/rovingGrid.ts` (`nextGridCoord`) — coordinate math, no React.
+- **Hook + provider** `src/lib/grid/useRovingGrid.ts` (`useRovingGrid` / `RovingGridProvider`). The context default is **INERT** (`tabIndexFor` returns `undefined`, `registerCellEl` is a no-op) so a non-roving `SheetTable` carries zero grid behaviour until a `roving` boolean prop opts in.
+- **Wiring** `SheetTable.tsx` via the `roving?: boolean` prop.
+
+Load-bearing details:
+- **SSE focus-yank guard.** The hook only calls `focus()` when a `wantFocus` ref is set — and it is set *only* by user-driven coord changes (keydown / `requestActivate` / enter/exit interaction), consumed in a `useLayoutEffect`. A foreign SSE re-render must never steal focus. (Same discipline as the `RepresentativeBox` switch.)
+- **Interaction mode** for multi-widget cells: `INTERACTION_COLS = new Set([2, 4])` (Exposures/`ThumbnailGallery`, Tags/`TagList`). Enter or F2 enters interaction mode (focus the first inner widget, arrows rove within, Escape returns to the gridcell in navigation mode).
+- **jsdom can't honestly test the multi-listener focus path** — the e2e spec (real Chrome) is the gate, not the Vitest unit tests (see the jsdom-dispatch false-green gotcha: a microtask checkpoint between listeners lets React unmount mid-dispatch).
 
 ## Anti-patterns
 

@@ -317,6 +317,15 @@ changed since the trace hash was recorded) but still recomputes
 in the response body, and the queue mutator's `onSuccess` writes it into
 the exposure cache directly.
 
+**Caveat — `kind='add'` curations defeat the no-file-I/O fast path.** The
+`findpeaks` skip is only fully file-free when every curation is
+`kind='exclude'`. When `any_add_curations(db, exposure_id)` is true,
+`analyze_exposure!` falls back to loading the `.dat` trace because
+add-curation sharpness must be sampled from it via `Himalaya.sharpness(I)`
+(see `docs/event-log.md` §2 for why sharpness isn't persisted). So a
+peak-*add* route still recomputes hashes/indices cheaply but is not the
+microsecond, zero-I/O path that pure exclude/remove routes get.
+
 The result: no refetch round-trip, no stale-indices flicker. New
 curation routes should follow this pattern; otherwise the stale-indices
 indicator spuriously fires until a polling refetch lands.
@@ -471,5 +480,4 @@ Backend (`packages/HimalayaUI/test/`):
 
 - [event-log.md](event-log.md) — the dispatcher contract, hash invariants, and SSE multiplayer semantics. The queue composes with these unchanged.
 - [contract-testing.md](contract-testing.md) — the six-layer testing rule.
-- [superpowers/specs/2026-05-02-mutation-queue-design.md](superpowers/specs/2026-05-02-mutation-queue-design.md) — original design spec; 14 architectural decisions, fallback triggers.
-- [superpowers/plans/2026-05-02-mutation-queue.md](superpowers/plans/2026-05-02-mutation-queue.md) — implementation plan; useful for archaeology, not as live reference.
+- `.claude/skills/pre-merge-smoke/SKILL.md` — the manual queue smoke checklist + the three fallback triggers (when to back out the optimistic-merge approach).

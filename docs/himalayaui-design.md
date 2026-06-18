@@ -255,6 +255,50 @@ These are the concrete choices in the current build. They are not
     places (track and plot), and any other indices fade to gray 30% in
     both places. The track row doubles as a legend-by-position.
 
+**Why bespoke d3 rather than Observable Plot.** The decisive reason was
+*inverted projection ownership*: Plot owned the q→pixel mapping, so every
+interactive layer had to reverse-engineer the projection back out of Plot's
+rendered DOM (`plotEl.scale('x')`), forcing a ~420-line imperative bridge
+(`Plot.plot()` → `replaceChildren`). The owned engine exports the projection
+(`print/plot/projection.ts` — `makeProjection`/`makeAxis`, backed by
+`d3-scale`), so every layer reads the same scale declaratively.
+
+**The comb / residual panel is a separate SVG subsystem, not part of
+`<TracePlot>`.** It lives in `print/comb/` (`CombScaffold`, `CombChart`,
+`ResidualChart`; `CombsPanel` in `print/components/`) and rides the shared
+q-link spine (predicted-q, `phaseColor`) but is never feature-gated into
+`TracePlot` — an explicit boundary. Within it:
+
+- **`CombChart` and `ResidualChart` are siblings, not one component with a
+  `view` prop.** They share only the log-q x-projection and the rowed
+  scaffold; their glyph geometry (teeth/carets/rings vs zero-line/band/scatter)
+  is entirely different, so a unified `view`-prop component would violate
+  one-responsibility.
+- **Both are fixed to log-q**, with no per-panel log/linear toggle and *no*
+  coupling to the hero trace's log/linear state. The comb is a ratio diagram
+  (teeth at √N multiples of q₁): even in log, crowded in linear.
+- **The hovered-q "hot" highlight uses a wider stem + larger ringed cap in
+  the row's own phase colour — never the terracotta accent.** This diverges
+  from the old mockup CSS (`.tooth.hot { stroke: var(--accent) }`): the
+  accent is reserved for the active assignment, not hover.
+- **`ResidualChart` uses a fixed symmetric y-domain (±`RESID_DOMAIN` = ±3%)**,
+  not auto-scaled per row, with a tolerance band at ±`RESID_BAND` = ±2.2%.
+  Display tiers: within band → filled dot; outside band but within domain →
+  hollow dot; beyond domain → clamped to the edge.
+- **`CombLegend` legends the trace-plot peak-glyph vocabulary** (auto
+  triangle / manual diamond / predicted-absent caret / excluded), *not* the
+  comb's intrinsic tooth/caret/ring vocabulary — even though `CombsPanel`
+  places it below `CombChart`. The two vocabularies deliberately differ.
+
+**The series waterfall composes N single-trace `TracePlot`s** (one per
+member), not one shared coordinate space. This per-member partitioning is the
+deliberate replacement for the legacy `computeYBands`/`computeReference`/
+`applyNormalization` machinery in `lib/comparison/` (those files still exist
+but `src/print/` imports none of them). The vertical **`PhaseStrip`
+companion** (`orientation="vertical"`) and the waterfall stack share the same
+low→high `display_order`; pixel alignment between them is the *plate's*
+responsibility — `WaterfallChart` does not embed the strip.
+
 ### 2.5 Animation
 
 Three primitives, all 120–140ms ease:
@@ -373,6 +417,21 @@ machines starts them over (intentional — server doesn't know about
   conflict story is instead being addressed by edit-tracking → undo/redo →
   versioning (designed in Layer 4). See
   [`docs/event-log.md`](event-log.md) §"Conflict resolution".
+
+### 2.11 Figure export
+
+- **Content-WYSIWYG, style-transformed, via a tiny split-button.** The
+  `ExportButton` (`print/components/`) is a split control: the main face
+  copies a clipboard PNG; the chevron opens Download-as-PNG / Download-as-SVG.
+  There is no preview, no options dialog, no sheet or modal — the deliberate
+  non-design (the deferred `ExportSheet`/`ConflictModal` were collapsed away).
+- **The presentation styling is the adapter's job, not the button's.** The
+  call site hands `useFigureExport` a style-agnostic `renderSvg: () => string`
+  thunk that returns the clean scientific-presentation SVG (white background,
+  GraphPad-style figure); the hook and button never know the styling. So the
+  on-screen plot can stay dark/interactive while the exported figure is print
+  styling. (Hook re-entry is guarded by an `inFlight` ref — see the frontend
+  `AGENTS.md`.)
 
 ---
 

@@ -55,8 +55,7 @@ export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
 /**
  * The rejection reason of a dropped frame, read from the `rejection_reason`
  * exposure-tag convention (key `"rejection_reason"`, `source = "manual"` — the
- * legacy Inspect page wrote these via POST /api/exposures/:id/tags; see
- * docs/superpowers/specs/2026-04-25-inspect-page-design.md). DISPLAY-ONLY here:
+ * legacy Inspect page wrote these via POST /api/exposures/:id/tags). DISPLAY-ONLY here:
  * PATCH /api/exposures/:id/status accepts no reason field, so the loupe's drop
  * verb cannot set one without composing a second mutation — out of scope for
  * this surface. Multiple reason tags join with "; ". `undefined` when absent.

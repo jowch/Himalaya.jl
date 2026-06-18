@@ -48,6 +48,7 @@ lib/queue/
 - **Invariant**: `MutationCache.getAll()` preserves insertion order (load-bearing for replay)
 - **Invariant**: optimistic placeholder ids are negative (`peak.id < 0`)
 - `OpKind` ≠ event kind in the Julia backend (mapping is 1-to-1 but names may differ)
+- **The queue does NOT serialize HTTP.** TanStack `useMutation` fires requests concurrently; there is no `concurrency: 1`. "FIFO ordering" means only the replay-rerun *call order* (the `onMutate` re-invocation sequence after a foreign SSE event), never HTTP dispatch order. For `useReanalyzeExposure`, concurrent in-flight requests for the same exposure are possible — correctness rests on idempotency + last-write-wins, not on request ordering.
 
 ## ANTI-PATTERNS
 - Never capture `client_op_id` in a closure at hook mount time

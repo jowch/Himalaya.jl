@@ -424,7 +424,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "analyze_run" && return nothing
 
     # Compare page (Plan §Phase 1, Task 1.2): three view-producing kinds.
-    # See docs/superpowers/specs/2026-05-02-compare-page-design.md §Event kinds.
+    # (compare retired; see git history)
     if kind == "comparison_created"
         return _update_view_for_comparison_created!(db, entity_id, payload, event_id)
     end
