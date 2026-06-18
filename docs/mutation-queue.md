@@ -70,6 +70,27 @@ flat payload before any callback runs. Mutator code never has to cast.
 *durable mutation*. Membership predicates like
 `useExposureHasPendingPeakOps` operate on `OpKind`.
 
+### Two resolvers, two arm counts — `add_tag` is asymmetric on purpose
+
+`mutatorRegistry.ts` exposes two dispatchers, and they disagree on
+`add_tag` *by design*:
+
+- `resolveMutator` (rehydrate path, by op-payload shape) is **4-arm** for
+  `add_tag`: scopeSeries / addExposureTag / addSampleTag /
+  addCorpusSampleTag, peeled apart by the `tags` array, then `exposureId`,
+  then `experimentId`.
+- `resolveMutatorForEvent` (the `synthesizeResponseFromSse` path, by event
+  kind + entity_type) is **2-arm**: sample vs exposure only.
+
+The event resolver gets away with two arms because a corpus-originated and
+an experiment-originated sample-tag event are byte-identical on the SSE wire
+(same `entity_type="sample"`, same payload — the route always resolves
+`experiment_id` off the sample row), so a third arm would be unreachable
+dead code: it only picks a `synthesizeFromSse` for the own-op confirmation
+*response shape*, and the cache patch is the pending mutation's own
+`onSuccess`. **Don't copy the 4-arm shape into the event resolver.**
+Evidence: `lib/queue/mutatorRegistry.ts:178-195`.
+
 ---
 
 ## 3. The happy-path lifecycle
@@ -128,6 +149,37 @@ applied, double-applying the optimistic effect.
 > only settle once — calling `abort()` first triggers the registered
 > `onAbort` listener in `mutationFn`, which rejects the deferred, beating
 > our `resolve()`.
+
+### Why a queued op must be single-write
+
+One queued op fires *one* HTTP write. A mutator that fires two sequential
+writes under one `client_op_id` has its deferred resolved by whichever SSE
+frame lands FIRST — the first write's first event — so `mutation.data`
+becomes the first write's confirmation, not the second's, and the second
+write's frame falls into the foreign-event path and double-applies on the
+originating tab. Multi-step gestures chain *separate* ops, sequenced by
+page-level state, not by a compound mutator. This is why the abandoned
+`scopeAndCreateSeries` (one op: tag-write then create-write) was split into
+the current `scopeSeriesMutator` + `createSeriesMutator`: each single-write
+op has exactly one own-op SSE frame on its op-id, so its deferred reliably
+resolves with the right payload. Evidence:
+`lib/queue/mutators/createSeries.ts:30-51`.
+
+### The one sanctioned two-frame route: `custom-index`
+
+The single-write rule is about *queued ops*, not *event frames* — one op
+may still emit several events, as long as the own-tab deferred resolves off
+the FIRST. `POST /api/exposures/{id}/custom-index` is the only route that
+emits two `apply_event!` calls (`speculative_created` then `assignment_add`)
+in one `with_idempotency` body under one `client_op_id`. The own-tab
+deferred resolves on the FIRST frame — `speculative_created`, which carries
+the new `IndexEntry` into the indices cache — not on the HTTP response and
+not on the second frame; `assignment_add` then patches the cart. The emit
+order is load-bearing: reversing it, or resolving off the second frame,
+would patch the cart before the index row exists. (`custom_index_commit`
+has no own event kind — `resolveMutatorForEvent` resolves both emitted
+kinds to their normal mutators, so nothing special is needed there.)
+Evidence: `src/routes_analysis.jl:423-501`.
 
 ---
 
@@ -225,6 +277,21 @@ The compromise: `applyPostStateOnly(remote, qc)` and return early. The
 indices cache and `analysis_inputs_hash` are propagated; the per-kind body
 is skipped because it already ran in `onSuccess`.
 
+### Why `applyPostStateOnly` must guard against id collision
+
+`applyPostStateOnly` runs unconditionally for ALL SSE kinds on both own-tab
+paths (SSE-wins deferred-match + self-echo), so a `series_plate_committed`
+frame reaches it too — and that frame's `remote.post_state` is a full
+Series projection, not a `CurationPostState`. Series ids and exposure ids
+share the SQLite integer namespace, so without the `Array.isArray(ps.indices)`
+bail-out the `as CurationPostState` cast would read `indices` /
+`analysis_inputs_hash` as `undefined` off a Series and clobber
+`queryKeys.exposure(entity_id)` for any cached exposure whose id collides
+with the committed series — wiping that exposure's `analysis_inputs_hash`
+(spurious stale-indices alert, or a broken expected-hash check on its next
+peak op). The guard returns early unless `post_state.indices` is an array.
+Evidence: `lib/queue/applyRemoteToCache.ts:56-72`.
+
 ---
 
 ## 6. The backend half: `with_idempotency`
@@ -305,6 +372,20 @@ op.
 
 `server.jl::start_gc_timer!` wires this into a background timer in
 `serve(db)`.
+
+### Lock-ordering invariant: `OP_LOCKS_MU` never wraps `_DB_WRITE_LOCK`
+
+`OP_LOCKS_MU` (the mutex guarding the `OP_LOCKS` Dict) must never be held
+across a `_DB_WRITE_LOCK` acquisition. `with_idempotency` honours this by
+ordering OP_LOCKS_MU → release → `_DB_WRITE_LOCK` (`_op_lock` takes the
+mutex only long enough to `get!` the per-op-id lock out of the Dict, then
+releases before the lock body runs the tx). `gc_idempotent_responses!`
+takes the *reverse* order — `_DB_WRITE_LOCK` → release → OP_LOCKS_MU (the
+DELETE commits before the lock prune runs). Because each holder releases
+the first mutex before taking the second, the two paths can't deadlock.
+Any future code added under `OP_LOCKS_MU` that calls into something which
+may acquire `_DB_WRITE_LOCK` would converge the orderings and deadlock
+under concurrent load. Evidence: `server.jl:21-28`.
 
 ---
 

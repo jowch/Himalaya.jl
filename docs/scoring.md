@@ -68,6 +68,52 @@ Instead, R² is surfaced **informationally** in the UI: the comb/residual chart 
 
 When a bicontinuous cubic (Pn3m / Im3m / Ia3d) is in an exposure's assignment, the `bonnet` field on the indices response (`GET /api/exposures/{id}/indices`) flags candidates whose measured lattice matches what the Gauss–Bonnet ratio predicts for a *coexisting* cubic of a different phase (`a_Pn3m : a_Im3m : a_Ia3d = 1.000 : 1.279 : 1.576`; kernel in `src/bonnet.jl`). It is a **display-and-ranking affordance computed from the live assignment**, recomputed per request and **never persisted, never folded into `score`**. Folding it in would corrupt the `auto_group` / `remove_subsets` ordering, which relies on `score` being coverage×consistency alone — so the Bonnet match surfaces only as the ⭙ badge (and may sort up within the candidate-list view), never as a score change.
 
+## Peak-to-ratio assignment is greedy, not optimal
+
+Before `score` ever runs, `indexpeaks` has to decide *which* observed peak fills
+*which* slot in a phase's ratio series. When several observed peaks fall within
+`tol` of the same ratio — or one peak sits within tolerance of two adjacent
+ratios — there is a conflict, and the conflict is resolved greedily.
+
+The implementation (`src/index.jl:168-180`) collects every `(ratio, peak)`
+match whose residual is under tolerance, sorts the matches by ascending
+residual, and walks them best-first. A match is committed only if **both** its
+ratio slot and its peak are still free; once either is claimed it is locked:
+
+```julia
+rs, ps, δs = findnz(residuals)
+used_ratios = Set()
+assign = view(assignments, :, i)
+
+# go through matches in order of increasing error
+# only do assignment if ratio and peak haven't already been assigned
+for j = sortperm(δs)
+    r, p = rs[j], ps[j]
+    if r ∉ used_ratios && assign[p] == 0
+        assign[p] = r
+        push!(used_ratios, r)
+    end
+end
+```
+
+This produces a 1:1 matching (no ratio is filled twice, no peak is used twice),
+but it is **greedy, not optimal** — it is not the Hungarian/Kuhn–Munkres
+assignment that minimises total residual. Greedy and optimal can disagree: a
+slightly-offset strong peak can win a slot by having the single smallest
+residual, even when the geometrically-correct peak would have given a better
+*overall* matching once the knock-on assignments are accounted for. The
+displaced peak then either lands in a worse slot or finds none free.
+
+The failure this can cause is quiet. After assignment, bases that do not clear
+`minpeaks(P)` are dropped (`src/index.jl:184-185`); if a greedy mis-assignment
+costs an index even one slot, an otherwise-valid index can fall below the
+minimum and be **silently discarded** — it never reaches `score`, never appears
+in the candidate list, and there is no diagnostic. This is rare in practice
+(tolerances are tight and real phase ratios are well-separated), but it is the
+mechanism to suspect when a phase you expect is simply absent rather than
+ranked low. Switching to an optimal assignment is the obvious remedy if a
+fixture ever exhibits it.
+
 ## Design constraints
 
 Several design choices are non-obvious enough to be worth stating explicitly:

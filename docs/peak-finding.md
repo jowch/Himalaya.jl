@@ -72,6 +72,38 @@ is below `RATIO_FLOOR_MIN_CANDIDATES` (currently 20) — at low candidate
 counts the median is dominated by the peaks themselves and would
 suppress real signal.
 
+## The indexing tolerance is asymmetric
+
+Peak *finding* hands candidates to `indexpeaks`, which decides whether their
+q-ratios match a phase. Before any per-ratio residual is computed, `indexpeaks`
+prunes the candidate ratios with a single mask (`src/index.jl:142-143`):
+
+```julia
+# TODO: work out addition tol on max side
+mask = 1 - tol .<= observed_ratios .<= maximum(ratios)
+```
+
+The two ends of this window are not treated the same. The lower bound is
+**softened** by `tol` (`1 - tol`), so a peak landing just below the fundamental
+ratio of 1 still survives the mask. The upper bound is a **hard cutoff** at the
+phase's highest ratio: a peak whose ratio exceeds `maximum(ratios)` by even a
+hair is rejected outright, with no tolerance band. The in-code `TODO` is an
+explicit acknowledgement that the high side still needs its own tolerance.
+
+Two consequences follow, and both are easy to trip over:
+
+- **`tol` is not symmetric at the high end.** A small positive measurement error
+  on the top reflection — the very peaks most vulnerable to it, since they sit
+  in the noisiest, steeply-falling tail of the trace — can push a real peak past
+  the cutoff and out of consideration, even though the same-sized error on a
+  low-order peak would be tolerated.
+- **Extending a phase's ratio table changes what the *old* top ratio can
+  match.** Because the cutoff is `maximum(ratios)`, adding a higher-order
+  reflection raises the ceiling. Peaks that previously sat just above the former
+  top ratio (and were masked out) now fall inside the window and become
+  available — so adding reflections is not a purely additive change to a phase
+  definition; it can shift which peaks match the existing top ratio.
+
 ## Why not σ-based SNR?
 
 The `_tot.dat` files include a per-point intensity uncertainty σ(q)

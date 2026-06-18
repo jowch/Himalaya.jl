@@ -171,6 +171,48 @@ needed.
 
 ---
 
+## 2a. The analyze wipe / re-attach invariants
+
+Every `analyze_exposure!` **wipes and re-inserts** all `auto` indices and
+peaks with fresh PKs, then re-attaches the prior curation onto the new
+candidates. Three load-bearing invariants live only in `pipeline.jl`
+comments today:
+
+- **`MEMBER_REATTACH_RELTOL = 0.05`** (`pipeline.jl:83`). A pre-wipe
+  assignment member matches a post-rebuild candidate of the same phase
+  only within a 5% basis change (`|Δbasis| ≤ 0.05·basis`). Beyond that it
+  is silently dropped and reported in the SSE `assignment_dropped` field.
+- **One-candidate-per-identity.** Two snapshot members of the same phase
+  whose bases both fall within tolerance of *one* new candidate must NOT
+  merge: the new candidate is claimed by exactly one identity
+  (`claimed_new_ids`), and the later claimant (snapshot order is phase,
+  basis) is dropped+reported, not reassigned to the next-nearest
+  candidate. Re-attach is an identity match, not an assignment problem.
+- **Fresh analysis never seeds `assignment_members`.** A never-curated
+  exposure (`had_assignment_members` false) comes out with an empty
+  assignment and reads as unindexed; the auto group still computes (it
+  feeds scoring/ordering and the legacy `index_groups` export) but it no
+  longer seeds the durable cart. Only reanalysis of an already-curated
+  exposure re-attaches members. (`pipeline.jl:568-626`.)
+
+### Speculative indices survive the wipe; their `index_peaks` FKs are re-resolved
+
+User-drawn `speculative` indices persist as rows across the auto-peak
+wipe, but their `index_peaks` peak FKs would dangle (auto peaks are
+re-detected with new ids). They are re-resolved from a q-value snapshot
+taken **before** the wipe, with three fallbacks for the working basis: (1)
+≥2 snapshot peaks still match live peaks → refit basis from them; (2) <2
+survive → stale-recovery from the stored snapshot q-values (the user's
+hypothesis); (3) last resort → the persisted `indices.basis`. An
+auto-discovery pass then pulls in NEW peaks within `SNAP_TOL` (0.0025
+relative, `speculative.jl:11`) for unfilled ratio positions; an index that
+still can't fill ≥2 positions is marked `status='stale'`. Any new code
+path that mutates `auto_peaks` without going through this snapshot +
+re-resolve will silently corrupt speculative peak references on every
+future reanalysis. (`pipeline.jl:299-551`.)
+
+---
+
 ## 3. SSE multiplayer
 
 ### Server side (`server.jl`)
@@ -316,6 +358,18 @@ this doc:
 
 ---
 
+## 3b. Series `content_hash` covers the plate only
+
+`compute_series_content_hash` (`series.jl:303-355`) deliberately **excludes**
+the recipe: only `title`, `description`, and the `series_members` rows feed
+the `sha256:`-prefixed hash; `series_samples` (the recipe), `ordering_variable`,
+and `order_rule` do not. So `forked_at_hash` comparisons are **plate-only** — a
+recipe edit after forking does not make the fork look diverged, and
+`series_recipe_updated` events never touch `content_hash`. Only plate-affecting
+edits (title, description, member rows) change the hash.
+
+---
+
 - **Reverse proxy.** Set `proxy_buffering off` on the `/api/events`
   location in nginx, or rely on the `X-Accel-Buffering: no` header. SSE
   needs flushed-per-frame delivery.
@@ -329,6 +383,16 @@ this doc:
 - **Disaster recovery.** `rebuild_views_from_log!(db, exposure_id)` will
   rebuild `peak_curations` and `index_group_members` for one exposure
   from the event log. Useful if a view table is ever corrupted.
+- **Pre-Plan-A assignments are NOT log-derivable.** A from-empty rebuild
+  (drop `assignments`/`assignment_members`, re-fold the log) is **not**
+  safe for pre-Plan-A confirmations. Those exposures carry only retired
+  `index_confirmed` events (now dispatcher no-ops, `events.jl:354-362`)
+  and no `assignment_add`, so their assignment exists solely because
+  `migrate_assignments!` backfilled it from `index_groups`
+  (`db.jl:1065-1074`). Re-folding the log silently loses every pre-Plan-A
+  confirmation unless the `assignments_v1` sentinel is cleared and
+  `migrate_assignments!` is re-run **first**. Post-Plan-A confirmations
+  ride `assignment_add` and round-trip through the log normally.
 
 ---
 

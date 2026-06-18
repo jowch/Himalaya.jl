@@ -25,11 +25,22 @@ end
 
 This bypasses `default_db_path()` (`HIMALAYA_DB_PATH` or `~/.himalaya/himalaya.db`) and gives every test its own clean DB. The central DB is for production CLI use; tests must not depend on its state.
 
+## Oxygen is a process-global singleton — one test server at a time
+
+`start_test_server!` (`src/server.jl:197-208`) calls `Oxygen.resetstate()`, `bind_db!(db)` (binds the module-level `_DB_REF` singleton), and `register_routes!`. `stop_test_server!` (`:210-218`) must run between servers or state leaks: it terminates Oxygen, nulls `_DB_REF[]`, and clears `SSE_SUBSCRIBERS[]` + `OP_LOCKS`. `with_test_server` (`test_http.jl:4-12`) pairs them — `start_test_server!` then `stop_test_server!` in `finally`.
+
+Two consequences:
+
+- **`runtests.jl` include order is load-bearing.** `with_test_server` lives in `test_http.jl`, which `runtests.jl` includes before any route test. A route test file cannot be run standalone (`julia test/test_routes_*.jl`) without first including `test_http.jl`.
+- **The suite cannot be naively parallelized.** One Oxygen state + one `_DB_REF` for the whole process means two servers up at once corrupt each other.
+
 ## In-process SSE subscriber
 
 To assert SSE fanout in Julia tests, register a `(pending = Channel{String}(64),)` directly on `HimalayaUI.SSE_SUBSCRIBERS[]` under `HimalayaUI.SSE_LOCK` instead of opening an HTTP streaming connection. Faster, deterministic, no port management. `test_idempotency_replay_invariant.jl::_capture_sse_during` is the canonical pattern.
 
 **Julia `do`-block gotcha**: `do` syntax passes the function as the FIRST arg. `_capture_sse_during("kind") do ... end` ⇒ `_capture_sse_during(f, "kind")`. Order your helper signature accordingly.
+
+**`_capture_sse_during` must sleep before draining frames.** It sleeps ~0.3s after the HTTP call returns, because `broadcast_event!` is NOT synchronous inside the route handler. Peak/curation routes enqueue the broadcast into a task-local post-commit queue (`task_local_storage(POST_COMMIT_BROADCAST_KEY)`); `with_idempotency` fires it via `_flush_post_commit_broadcasts!` only AFTER its `SQLite.transaction` commits. A new SSE-invariant test that omits or shortens the sleep races the flush and sees zero frames. See `test_idempotency_replay_invariant.jl:49-51`; `src/events.jl:206-225` (enqueue), `:258-270` (flush after commit).
 
 ## FK-heal regression tests
 

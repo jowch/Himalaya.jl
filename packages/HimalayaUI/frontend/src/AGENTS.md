@@ -31,11 +31,25 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 Use the store's named actions (`clearUsername`, `setTutorialSeen`, `openNavModal`, …). Avoid `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. New state transitions go in `state.ts` as named actions.
 
+## Zustand persist — version-bump wipe-guard
+
+Two invisible invariants in `state.ts` (`persist` config, `queries.ts`'s sibling — see `state.ts:494-530`). Adding a persisted field + naively bumping `version` silently wipes **every existing user's** state on first load:
+
+- **Bumping `version` WITHOUT a `migrate` discards the entire persisted blob.** Zustand v4 drops a blob whose version it can't migrate — all prefs (username/tutorialSeen/active*/…) gone on upgrade. Every version bump must ship a `migrate`. The current migrate's only job across all prior versions is unconditional dead-key strips (`activePage` I5.2, `theme` R0a), so there's no `switch (version)`.
+- **`migrate` must return the ORIGINAL object on malformed/non-object input — never `{}`.** Handing `{}` is itself a partial wipe; returning the original lets `merge` fold whatever survived (or fall back to defaults). The wipe-guard is `if (persisted && typeof persisted === "object") { …strip… } return persisted` — the `else` returns untouched.
+
 ## State split (load-bearing)
 
 - **Zustand owns *client* state**: active sample/exposure, hoveredIndexId, username.
 - **TanStack Query owns *server* state**: experiments, samples, exposures, peaks, indices, assignment.
 - Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.indices(id)`). Don't mix the two concerns in the same hook.
+
+## Route → store → auto-pick cascade (the exposure-clobber hazard)
+
+`setActiveSample` cascades `activeExposureId: undefined`, so a careless call resets the user's deliberate exposure pick. Two cooperating hooks keep this in check — touching either requires understanding the whole route-hook → Zustand → auto-pick chain:
+
+- **`useSyncActiveSampleFromRoute` calls `setActiveSample` ONLY when the parsed id differs from the stored one** (`useSyncActiveSampleFromRoute.ts:67-73`). Drop the `parsed === activeSampleId` no-op guard and every render re-seeds the sample → clears the exposure → `useAutoPickExposure` re-adopts the representative, discarding an in-session deliberate switch (the FO-NAV-SKELETON / R5 representative-switcher fix).
+- **`useAutoPickExposure` writes only when the rule picks a DIFFERENT, defined exposure** (`useAutoPickExposure.ts:85-90`). Its rule (`resolveActiveExposure`) KEEPS a still-valid `currentId` and is pure, so the page resolves the same value during render — that's what paints a cached sample's trace in the same frame instead of flashing a skeleton through the store→effect seam.
 
 ## Per-tab SSE identity
 
@@ -79,6 +93,12 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 - **Optimistic placeholder ids are NEGATIVE.** `Peak.id < 0` means "not yet confirmed by server"; SSE confirmation overwrites with the positive server id. UI code that filters or compares peak ids must handle negatives.
 - **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (e.g. useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
+
+## Query layer gotchas
+
+- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (`queries.ts:73-78`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["peak-entity", id]`, `["index-entity", id]`, `["exposure-entity", id]`, …) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates. (Same discipline elsewhere: `["series", id]` detail vs `["series-list"]` listing are distinct roots.)
+
+- **`useStableQueryMap`'s WeakMap-nonce — do not "simplify" it** (`queries.ts:241-281`). It's the only thing stopping every parent re-render from minting a fresh `Map<id, T>`, which tears down + replots the multi-trace plot on every keystroke — wheel/brush smoothness in `MultiTracePlot` is the casualty. It can't be replaced by a `JSON.stringify` signature (a variable-length deps array breaks `useMemo` memoisation when the previous length was 0 — React's elementwise loop terminates early and returns the stale value) nor by deep equality (it tracks REF identity, since TanStack reuses `q.data` refs when nothing changed; a per-hook-instance WeakMap assigns each fresh object a stable nonce). The regression is **invisible to Vitest** — verify by hand. The WeakMap write is idempotent, so it's StrictMode- and Concurrent-safe.
 
 ## Multi-layer contract testing
 

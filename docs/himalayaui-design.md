@@ -256,6 +256,48 @@ These are the concrete choices in the current build. They are not
     places (track and plot), and any other indices fade to gray 30% in
     both places. The track row doubles as a legend-by-position.
 
+**Cross-panel q-hover is one-way keyed.** `TracePlot` emits `onHoverQ`
+keyed on its *internal* `hoverId` (set by the frame hit-test and per-glyph
+focus), **not** on the incoming `hoveredQ` prop. This asymmetry is the only
+thing preventing an infinite feedback loop when two panels wire their hover
+states together (TracePlot↔TracePlot in the waterfall, or TracePlot↔comb):
+an external hover resolves to an `externalHotId` for display but never
+round-trips back out. Any new panel that joins the q-link chain must
+preserve this — emit on internal state, never re-emit the incoming prop
+(`print/plot/TracePlot.tsx:152-161`).
+
+**The `PlotFrame` wheel handler is imperative on purpose.** React's
+synthetic `onWheel` is passive and cannot `preventDefault()`, so `PlotFrame`
+binds wheel via `addEventListener("wheel", …, { passive: false })` in a
+`useEffect` (`print/plot/PlotFrame.tsx:75-86`). Moving it to a JSX `onWheel`
+prop silently breaks zoom in Chrome/Firefox — the scroll passes through to
+the page. Its companion is the `stateRef` pattern: `TracePlot` writes
+projection + peaks + interaction into a ref on every render
+(`TracePlot.tsx:139,269-277`) so the imperative event closures read fresh
+values without re-binding.
+
+**Detector overlay: beam-center y-flip + null-calibration fallback.** The
+beam-center y is flipped (`1 − y/h`) because the detector/PONI origin is
+bottom-left (physics, y-up) while SVG is top-left (y-down) — omit or reverse
+it and every ring is misplaced on real samples
+(`print/detector/detectorGeometry.ts:52-56`). When `DetectorCalibration` is
+`null`, `buildRingPlacements` falls back to a *presentational* ring layout
+(centered beam, the old 100-unit viewBox radius fractions) so composites and
+stories render without real geometry wired (`:63-83`).
+
+**Peak markers carry two functional edge-case guards, not cosmetic clamps**
+(`print/plot/marks/PlotPeaks.tsx`):
+  - **FO-CLIPMARK** — a peak whose intensity maps above the plot ceiling has
+    its apex clamped *down* so the whole glyph stays inside the plot body and
+    clickable; without it the click lands in the dead top margin
+    (`plotPy < 0` is ignored) and the peak becomes un-disable-able. The
+    q-line still drops to the true q (`:119-128`).
+  - **FO-ZOOMEDIT** — a peak whose q falls outside the current zoom window is
+    clipped to invisibility, so its `role="button"`/`tabIndex` are stripped:
+    a clipped-invisible tab stop would break keyboard parity (pointer can't
+    reach it either). Off-window is detected from the projection's own domain
+    since d3 scales don't clamp (`:149-158`, applied at `:168`).
+
 **Why bespoke d3 rather than Observable Plot.** The decisive reason was
 *inverted projection ownership*: Plot owned the q→pixel mapping, so every
 interactive layer had to reverse-engineer the projection back out of Plot's
