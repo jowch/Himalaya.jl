@@ -120,12 +120,13 @@ end
         analysis_dir = joinpath(dir, "analysis")
         mkpath(analysis_dir)
 
-        # Two PRP files with consistent geometry; pipe_length matches the calibrated
-        # setup distance so the nominal-vs-calibrated gap check stays below the 1% threshold.
+        # Two PRP files with consistent geometry. The nominal pipe length (1700 mm)
+        # differs from the setup calibrated distance (1809.5 mm) by ~6.4%, but that
+        # expected calibration gap is NOT flagged as a discrepancy (option A).
         for (name, hpos) in [("HA_001", 58.9), ("HA_002", 63.1)]
             write_prp(joinpath(data_dir, "$name.prp");
                 beam_energy_ev = 9000.027604502573,
-                pipe_length_mm = 1809.5,   # matches setup mean_distance → no gap discrepancy
+                pipe_length_mm = 1700,
                 detector = "Pilatus 1M",
                 exposure_time = 15.0,
                 horizontal_position_mm = hpos)
@@ -169,9 +170,9 @@ end
             vcat(prp_paths, [joinpath(data_dir, "HA_003.prp")]), setup_files)
         @test any(d -> d.field == "beam_energy_ev", disc2)
 
-        # No setup file → fall back to PRP pipe length (HA_001/HA_002 have pipe_length=1809.5mm)
+        # No setup file → fall back to PRP pipe length (HA_001/HA_002 have pipe_length=1700mm)
         geo3, _ = HimalayaUI.derive_geometry(prp_paths, String[])
-        @test geo3.flight_path_m ≈ 1.8095
+        @test geo3.flight_path_m ≈ 1.700
         @test geo3.flight_path_m_source == "prp"
 
         # Unknown detector → pixel_size_um missing, discrepancy flagged
@@ -482,8 +483,9 @@ end
         @test geo.beam_center_x ≈ 421.409
         @test geo.pixel_size_um ≈ 172.0
 
-        # The nominal vs calibrated gap is flagged as a discrepancy (6.4% gap)
-        @test any(d -> occursin("flight_path_m_nominal_vs_calibrated", d.field), disc)
+        # The ~6.4% nominal-vs-calibrated flight-path gap is EXPECTED calibration
+        # physics and is deliberately NOT flagged as a discrepancy (option A).
+        @test !any(d -> occursin("flight_path_m_nominal_vs_calibrated", d.field), disc)
 
         # Auto-naming: every sample name contains the coordinate anchor
         for load in result.loads
