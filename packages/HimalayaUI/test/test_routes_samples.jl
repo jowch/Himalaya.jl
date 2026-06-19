@@ -8,9 +8,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     s1 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
     s2 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2", display_name="UX2")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # List
-        r = HTTP.get("$base/api/experiments/$exp_id/samples")
+        r = call("GET", "/api/experiments/$exp_id/samples")
         @test r.status == 200
         list = JSON3.read(String(r.body))
         @test length(list) == 2
@@ -18,18 +18,18 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].tags  == []
 
         # PATCH
-        r = HTTP.patch("$base/api/samples/$s1";
-            body = JSON3.write(Dict(:notes => "hello")),
+        r = call("PATCH", "/api/samples/$s1";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:notes => "hello"))))
         @test r.status == 200
         @test JSON3.read(String(r.body)).notes == "hello"
 
         # POST tag
-        r = HTTP.post("$base/api/samples/$s1/tags";
-            body = JSON3.write(Dict(:key => "lipid", :value => "DOPC")),
+        r = call("POST", "/api/samples/$s1/tags";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "lipid", :value => "DOPC"))))
         @test r.status == 201
         tag = JSON3.read(String(r.body))
         @test tag.key   == "lipid"
@@ -37,17 +37,17 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         tag_id = tag.id
 
         # Samples list now shows the tag
-        r    = HTTP.get("$base/api/experiments/$exp_id/samples")
+        r    = call("GET", "/api/experiments/$exp_id/samples")
         list = JSON3.read(String(r.body))
         @test length(list[1].tags) == 1
         @test list[1].tags[1].key == "lipid"
 
         # DELETE tag
-        r = HTTP.delete("$base/api/samples/$s1/tags/$tag_id";
+        r = call("DELETE", "/api/samples/$s1/tags/$tag_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 204
 
-        r    = HTTP.get("$base/api/experiments/$exp_id/samples")
+        r    = call("GET", "/api/experiments/$exp_id/samples")
         list = JSON3.read(String(r.body))
         @test list[1].tags == []
     end
@@ -83,8 +83,8 @@ end
     sC = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="C")
     HimalayaUI.create_exposure!(db; sample_id=sC, filename="c1")
 
-    with_test_server(db) do port, base
-        list   = JSON3.read(String(HTTP.get("$base/api/samples").body))
+    with_inproc_routes(db) do call
+        list   = JSON3.read(String(call("GET", "/api/samples").body))
         byname = Dict(String(s.name) => s for s in list)
 
         @test byname["A"].assignment_state == "indexed"
@@ -103,19 +103,19 @@ end
                                              analysis_dir="/t3/a")
     sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX-immut")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # :name is no longer in the allowlist — should return 400.
-        r = HTTP.request("PATCH", "$base/api/samples/$sid",
-            ["Content-Type" => "application/json",
-             "X-Username"   => "alice"],
-            JSON3.write(Dict(:name => "renamed")); status_exception=false)
+        r = call("PATCH", "/api/samples/$sid";
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:name => "renamed"))))
         @test r.status == 400
 
         # :display_name is accepted; leading/trailing whitespace is trimmed.
-        r2 = HTTP.request("PATCH", "$base/api/samples/$sid",
-            ["Content-Type" => "application/json",
-             "X-Username"   => "alice"],
-            JSON3.write(Dict(:display_name => "  spaced  ")))
+        r2 = call("PATCH", "/api/samples/$sid";
+            headers = ["Content-Type" => "application/json",
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:display_name => "  spaced  "))))
         @test r2.status == 200
         body = JSON3.read(String(r2.body))
         @test body[:display_name] == "spaced"
@@ -129,18 +129,18 @@ end
                                              analysis_dir="/t2/a")
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         op_id = "uuid-tag-retry-1"
         body  = JSON3.write(Dict(:key => "lipid", :value => "DOPC"))
         hdrs  = ["Content-Type"   => "application/json",
                  "X-Username"     => "alice",
                  "X-Client-Op-Id" => op_id]
 
-        r1 = HTTP.post("$base/api/samples/$s_id/tags"; body=body, headers=hdrs)
+        r1 = call("POST", "/api/samples/$s_id/tags"; headers=hdrs, body=Vector{UInt8}(body))
         @test r1.status == 201
         body1 = String(copy(r1.body))
 
-        r2 = HTTP.post("$base/api/samples/$s_id/tags"; body=body, headers=hdrs)
+        r2 = call("POST", "/api/samples/$s_id/tags"; headers=hdrs, body=Vector{UInt8}(body))
         @test r2.status == 201
         @test String(copy(r2.body)) == body1
 
@@ -165,16 +165,17 @@ end
                                              analysis_dir="/tdup409/a")
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
-        r1 = HTTP.post("$base/api/samples/$s_id/tags";
-            body=JSON3.write(Dict(:key => "dose", :value => "10")), headers=hdrs)
+        r1 = call("POST", "/api/samples/$s_id/tags";
+            headers=hdrs,
+            body=Vector{UInt8}(JSON3.write(Dict(:key => "dose", :value => "10"))))
         @test r1.status == 201
 
         # Same key, different value, fresh op_id → collision.
-        r2 = HTTP.post("$base/api/samples/$s_id/tags";
-            body=JSON3.write(Dict(:key => "dose", :value => "20")), headers=hdrs,
-            status_exception=false)
+        r2 = call("POST", "/api/samples/$s_id/tags";
+            headers=hdrs,
+            body=Vector{UInt8}(JSON3.write(Dict(:key => "dose", :value => "20"))))
         @test r2.status == 409
 
         # Still exactly one dose row, original value untouched; no add_tag twin.
@@ -194,16 +195,17 @@ end
     sB = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DB")
     sC = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DC")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = JSON3.write(Dict(
             :key    => "temperature",
             :source => "scoping",
             :tags   => [Dict(:sample_id => sA, :value => "25C"),
                         Dict(:sample_id => sB, :value => "30C"),
                         Dict(:sample_id => sC, :value => "35C")]))
-        r = HTTP.post("$base/api/samples/tags/batch"; body = body,
+        r = call("POST", "/api/samples/tags/batch";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(body))
         @test r.status == 201
 
         created = JSON3.read(String(r.body))
@@ -230,7 +232,7 @@ end
         @test n_events == 3
 
         # Samples list reflects the new tags.
-        list = JSON3.read(String(HTTP.get("$base/api/experiments/$exp_id/samples").body))
+        list = JSON3.read(String(call("GET", "/api/experiments/$exp_id/samples").body))
         @test length(list[1].tags) == 1
         @test list[1].tags[1].source == "scoping"
     end
@@ -243,13 +245,14 @@ end
                                              analysis_dir="/tbd/a")
     sA = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DA")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = JSON3.write(Dict(
             :key  => "lipid",
             :tags => [Dict(:sample_id => sA, :value => "DOPC")]))
-        r = HTTP.post("$base/api/samples/tags/batch"; body = body,
+        r = call("POST", "/api/samples/tags/batch";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(body))
         @test r.status == 201
         @test JSON3.read(String(r.body))[1].source == "manual"
     end
@@ -267,15 +270,15 @@ end
     sB = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DB")
     bad_sample_id = sB + 9999  # no such sample — FK violation mid-loop
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = JSON3.write(Dict(
             :key  => "temperature",
             :tags => [Dict(:sample_id => sA,            :value => "25C"),
                       Dict(:sample_id => bad_sample_id, :value => "30C"),
                       Dict(:sample_id => sB,            :value => "35C")]))
-        r = HTTP.request("POST", "$base/api/samples/tags/batch",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            body; status_exception = false)
+        r = call("POST", "/api/samples/tags/batch";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(body))
         @test r.status >= 400
 
         # Atomic boundary: the valid sA insert before the bad entry must NOT
@@ -298,7 +301,7 @@ end
     sA = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DA")
     sB = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DB")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         op_id = "uuid-batch-tags-retry-1"
         body  = JSON3.write(Dict(
             :key    => "temperature",
@@ -309,11 +312,11 @@ end
                  "X-Username"     => "alice",
                  "X-Client-Op-Id" => op_id]
 
-        r1 = HTTP.post("$base/api/samples/tags/batch"; body = body, headers = hdrs)
+        r1 = call("POST", "/api/samples/tags/batch"; headers=hdrs, body=Vector{UInt8}(body))
         @test r1.status == 201
         body1 = String(copy(r1.body))
 
-        r2 = HTTP.post("$base/api/samples/tags/batch"; body = body, headers = hdrs)
+        r2 = call("POST", "/api/samples/tags/batch"; headers=hdrs, body=Vector{UInt8}(body))
         @test r2.status == 201
         @test String(copy(r2.body)) == body1
 
@@ -335,10 +338,11 @@ end
                                              analysis_dir="/tbv/a")
     sA = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DA")
 
-    with_test_server(db) do port, base
-        post(b) = HTTP.request("POST", "$base/api/samples/tags/batch",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(b); status_exception = false)
+    with_inproc_routes(db) do call
+        hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+        post(b) = call("POST", "/api/samples/tags/batch";
+            headers = hdrs,
+            body = Vector{UInt8}(JSON3.write(b)))
 
         # Missing key.
         @test post(Dict(:tags => [Dict(:sample_id => sA, :value => "x")])).status == 400
@@ -399,10 +403,10 @@ end
         [sid, "dose", "10", "manual"])
     T = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
 
-    with_test_server(db) do port, base
-        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$T",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:value => "12")); status_exception=false)
+    with_inproc_routes(db) do call
+        r = call("PATCH", "/api/samples/$sid/tags/$T";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:value => "12"))))
         @test r.status == 200
         body = JSON3.read(String(r.body))
         @test body.id == T && body.value == "12" && body.key == "dose"
@@ -429,11 +433,11 @@ end
         [sid, "temp", "25", "manual"])
     B = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Editing B's key to "dose" collides with A.
-        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$B",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:key => "dose")); status_exception=false)
+        r = call("PATCH", "/api/samples/$sid/tags/$B";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "dose"))))
         @test r.status == 409
     end
 end
@@ -458,16 +462,16 @@ end
         [sid, "dose", "10", "scoping"])
     B = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Value-only edit of A (key omitted): allowed despite B sharing the key.
-        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$A",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:value => "5")); status_exception=false)
+        r = call("PATCH", "/api/samples/$sid/tags/$A";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:value => "5"))))
         @test r.status == 200
         # No-op key write alongside a value edit (what the modal actually sends).
-        r2 = HTTP.request("PATCH", "$base/api/samples/$sid/tags/$B",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:key => "dose", :value => "20")); status_exception=false)
+        r2 = call("PATCH", "/api/samples/$sid/tags/$B";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "dose", :value => "20"))))
         @test r2.status == 200
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT value FROM sample_tags WHERE id = ? ", [A]))
@@ -482,10 +486,10 @@ end
                                              analysis_dir="/tp404/a")
     sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S1")
 
-    with_test_server(db) do port, base
-        r = HTTP.request("PATCH", "$base/api/samples/$sid/tags/999999",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:value => "x")); status_exception=false)
+    with_inproc_routes(db) do call
+        r = call("PATCH", "/api/samples/$sid/tags/999999";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:value => "x"))))
         @test r.status == 404
     end
 end
@@ -501,7 +505,7 @@ end
         [sid, "dose", "10", "manual"])
     T = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         n0 = only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM user_actions"))).c
         # Capture the list of view tables before the PATCH.
@@ -510,9 +514,9 @@ end
                 "SELECT COUNT(*) AS c FROM $tbl"))).c
         end
 
-        HTTP.request("PATCH", "$base/api/samples/$sid/tags/$T",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:value => "13")))
+        call("PATCH", "/api/samples/$sid/tags/$T";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:value => "13"))))
 
         n1 = only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM user_actions"))).c
@@ -550,14 +554,14 @@ end
         [S, "dose", "10", "manual"])
     X = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         n0 = only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM user_actions"))).c
 
-        r = HTTP.post("$base/api/samples/tags/batch";
-            body    = JSON3.write(Dict(:key => "dose", :source => "scoping",
-                                       :tags => [Dict(:sample_id => S, :value => "12")])),
-            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        r = call("POST", "/api/samples/tags/batch";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "dose", :source => "scoping",
+                                   :tags => [Dict(:sample_id => S, :value => "12")]))))
         @test r.status == 201
 
         # Exactly one dose row remains, same id, updated value.
@@ -600,14 +604,14 @@ end
         [S, "dose", "12", "scoping"])
     X = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         n0 = only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM user_actions"))).c
 
-        r = HTTP.post("$base/api/samples/tags/batch";
-            body    = JSON3.write(Dict(:key => "dose", :source => "scoping",
-                                       :tags => [Dict(:sample_id => S, :value => "12")])),
-            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        r = call("POST", "/api/samples/tags/batch";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "dose", :source => "scoping",
+                                   :tags => [Dict(:sample_id => S, :value => "12")]))))
         @test r.status == 201
 
         # No new event: value was unchanged.
@@ -638,14 +642,14 @@ end
                                              analysis_dir="/tbu3/a")
     S = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="SU3")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         n0 = only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM user_actions"))).c
 
-        r = HTTP.post("$base/api/samples/tags/batch";
-            body    = JSON3.write(Dict(:key => "lipid", :source => "scoping",
-                                       :tags => [Dict(:sample_id => S, :value => "DOPC")])),
-            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        r = call("POST", "/api/samples/tags/batch";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "lipid", :source => "scoping",
+                                   :tags => [Dict(:sample_id => S, :value => "DOPC")]))))
         @test r.status == 201
 
         # New row inserted, source matches the batch.
@@ -684,7 +688,7 @@ end
         "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, ?)",
         [S, "dose", "5", "manual"])
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         op_id = "uuid-batch-upsert-idem-1"
         body_str = JSON3.write(Dict(:key => "dose", :source => "scoping",
                                     :tags => [Dict(:sample_id => S, :value => "99")]))
@@ -692,7 +696,7 @@ end
                 "X-Username"     => "alice",
                 "X-Client-Op-Id" => op_id]
 
-        r1 = HTTP.post("$base/api/samples/tags/batch"; body=body_str, headers=hdrs)
+        r1 = call("POST", "/api/samples/tags/batch"; headers=hdrs, body=Vector{UInt8}(body_str))
         @test r1.status == 201
         body1 = String(copy(r1.body))
 
@@ -702,7 +706,7 @@ end
         n_events0 = only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM user_actions"))).c
 
-        r2 = HTTP.post("$base/api/samples/tags/batch"; body=body_str, headers=hdrs)
+        r2 = call("POST", "/api/samples/tags/batch"; headers=hdrs, body=Vector{UInt8}(body_str))
         @test r2.status == 201
         # Cached response replayed verbatim.
         @test String(copy(r2.body)) == body1
@@ -742,9 +746,9 @@ end
         "INSERT INTO sample_tags (sample_id, key, value, source)
          VALUES (?, 'lipid', 'DOPC', 'manual')", [s1])
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Full corpus: every sample across both experiments.
-        r = HTTP.get("$base/api/samples")
+        r = call("GET", "/api/samples")
         @test r.status == 200
         all = JSON3.read(String(r.body))
         @test length(all) == 3
@@ -764,19 +768,19 @@ end
         @test by_name["A2"].tags == []
 
         # ?experiment_id= filter narrows to one experiment.
-        r = HTTP.get("$base/api/samples?experiment_id=$e1")
+        r = call("GET", "/api/samples?experiment_id=$e1")
         @test r.status == 200
         filtered = JSON3.read(String(r.body))
         @test length(filtered) == 2
         @test Set(s.name for s in filtered) == Set(["A1", "A2"])
 
         # Nonexistent experiment id → empty array (SQL gives this for free).
-        r = HTTP.get("$base/api/samples?experiment_id=999999")
+        r = call("GET", "/api/samples?experiment_id=999999")
         @test r.status == 200
         @test JSON3.read(String(r.body)) == []
 
         # Malformed experiment_id → 400, not a silent ignore.
-        r = HTTP.get("$base/api/samples?experiment_id=abc"; status_exception=false)
+        r = call("GET", "/api/samples?experiment_id=abc")
         @test r.status == 400
     end
 end
@@ -792,8 +796,8 @@ end
         "INSERT INTO samples (experiment_id, name, display_name)
          VALUES (NULL, 'orphan', 'Orphan')")
 
-    with_test_server(db) do port, base
-        r = HTTP.get("$base/api/samples")
+    with_inproc_routes(db) do call
+        r = call("GET", "/api/samples")
         @test r.status == 200
         rows = JSON3.read(String(r.body))
         @test length(rows) == 1
@@ -809,29 +813,28 @@ end
                                              analysis_dir="/tsrc/a")
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
 
         # No source field → defaults to 'manual'.
-        r = HTTP.post("$base/api/samples/$s_id/tags";
-            body = JSON3.write(Dict(:key => "lipid", :value => "DOPC")),
-            headers = hdrs)
+        r = call("POST", "/api/samples/$s_id/tags";
+            headers = hdrs,
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "lipid", :value => "DOPC"))))
         @test r.status == 201
         @test JSON3.read(String(r.body)).source == "manual"
 
         # Explicit source is honored end to end.
-        r = HTTP.post("$base/api/samples/$s_id/tags";
-            body = JSON3.write(Dict(:key => "temp", :value => "25C",
-                                    :source => "scoping")),
-            headers = hdrs)
+        r = call("POST", "/api/samples/$s_id/tags";
+            headers = hdrs,
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "temp", :value => "25C",
+                                    :source => "scoping"))))
         @test r.status == 201
         @test JSON3.read(String(r.body)).source == "scoping"
 
         # Non-string source → 400, nothing written.
-        r = HTTP.request("POST", "$base/api/samples/$s_id/tags",
-            ["Content-Type" => "application/json", "X-Username" => "alice"],
-            JSON3.write(Dict(:key => "x", :value => "y", :source => 42));
-            status_exception = false)
+        r = call("POST", "/api/samples/$s_id/tags";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:key => "x", :value => "y", :source => 42))))
         @test r.status == 400
 
         # Exactly the two successful inserts persisted, with the right source.
