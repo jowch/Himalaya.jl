@@ -40,7 +40,7 @@ end
     migrate_schema!(db)
     # Verify columns exist by inserting and reading back
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-    samp_id = create_sample!(db; experiment_id=exp_id)
+    samp_id = create_sample!(db; experiment_id=exp_id, name = "S")
     DBInterface.execute(db,
         "INSERT INTO exposures (sample_id, filename, kind, selected, status, image_path)
          VALUES (?, 'test.dat', 'file', 0, 'accepted', '/tmp/test.tiff')", [samp_id])
@@ -68,14 +68,14 @@ end
     @test exp.name == "TestRun"
     @test exp.path == "/data/exp1"
 
-    s_id = create_sample!(db; experiment_id = exp_id, name = "D1", display_name = "UX1")
+    s_id = create_sample!(db; experiment_id = exp_id, name = "D1")
     @test s_id == 1
 
     samples = get_samples(db, exp_id)
     @test length(samples) == 1
     @test first(samples).name == "D1"
 
-    e_id = create_exposure!(db; sample_id = s_id, filename = "JC001", kind = "file")
+    e_id = create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "JC001", kind = "file")
     @test e_id == 1
 
     exposures = get_exposures(db, s_id)
@@ -143,8 +143,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         DBInterface.execute(db,
             "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
@@ -196,8 +196,8 @@ end
         """)
         # Set up an exposure
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         # Three peaks: one auto kept, one auto excluded, one manual.
         # The INSERTs populate sqlite_sequence["peaks"], marking this as a
         # "used" DB (not a fresh R2.1 DB waiting for first analysis).
@@ -251,8 +251,8 @@ end
             )
         """)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         # Manual peak that the speculative will anchor on.
         res = DBInterface.execute(db,
             "INSERT INTO peaks (exposure_id, q, source) VALUES (?, 0.20, 'manual')", [e_id])
@@ -303,8 +303,8 @@ end
         DBInterface.execute(legacy,
             "DROP INDEX IF EXISTS idx_one_custom_group_per_exposure")
         exp_id = HimalayaUI.create_experiment!(legacy; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(legacy; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(legacy; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(legacy; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(legacy; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(legacy,
             "INSERT INTO index_groups (exposure_id, kind) VALUES (?, 'custom')", [e_id])
         DBInterface.execute(legacy,
@@ -877,8 +877,8 @@ end
     mktempdir() do tmp
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, """
             INSERT INTO comparisons (title, content_hash, created_at, updated_at)
             VALUES ('t', 'h', '2026-01-01', '2026-01-01')""")
@@ -1178,73 +1178,12 @@ end
     end
 end
 
-@testset "migrate_samples_naming! — duplicate names suffixed by ascending id" begin
-    mktempdir() do tmp
-        db = SQLite.DB(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
-        DBInterface.execute(db, """CREATE TABLE experiments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
-            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
-            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-        DBInterface.execute(db, """CREATE TABLE samples (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
-            label TEXT, name TEXT, notes TEXT)""")
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'exp')")
-        # Three rows that collide post-COALESCE on (1, "JC001").
-        DBInterface.execute(db,
-            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
-            [10, 1, "JC001", "v1"])
-        DBInterface.execute(db,
-            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
-            [11, 1, "JC001", "v2"])
-        DBInterface.execute(db,
-            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
-            [12, 1, "JC001", "v3"])
-
-        HimalayaUI.migrate_samples_naming!(db)
-
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, name FROM samples ORDER BY id"))
-        @test rows[1].name == "JC001"
-        @test rows[2].name == "JC001-2"
-        @test rows[3].name == "JC001-3"
-    end
-end
-
-@testset "migrate_samples_naming! — dup suffix avoids user-named -N collision" begin
-    mktempdir() do tmp
-        db = SQLite.DB(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
-        DBInterface.execute(db, """CREATE TABLE experiments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
-            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
-            experiment_type TEXT, energy_kev REAL, flight_path_m REAL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-        DBInterface.execute(db, """CREATE TABLE samples (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, experiment_id INTEGER REFERENCES experiments(id),
-            label TEXT, name TEXT, notes TEXT)""")
-        DBInterface.execute(db, "INSERT INTO experiments (id, name) VALUES (1, 'exp')")
-        # Two duplicates of JC001 PLUS a user-named JC001-2 already in the table.
-        DBInterface.execute(db,
-            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
-            [10, 1, "JC001", "v1"])
-        DBInterface.execute(db,
-            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
-            [11, 1, "JC001", "v2"])
-        DBInterface.execute(db,
-            "INSERT INTO samples (id, experiment_id, label, name) VALUES (?, ?, ?, ?)",
-            [12, 1, "JC001-2", "user-named"])
-
-        HimalayaUI.migrate_samples_naming!(db)
-
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, name FROM samples ORDER BY id"))
-        @test rows[1].name == "JC001"        # oldest of the dup pair keeps bare name
-        @test rows[2].name == "JC001-3"      # second dup gets suffix-3 (skipping -2)
-        @test rows[3].name == "JC001-2"      # user-named sample preserved
-    end
-end
+# Retired (ingestion redesign, Phase A): migrate_samples_naming! no longer suffixes
+# duplicate sample names. Sample labels may legitimately repeat across loads; identity is
+# (load_id, slot_index), not the label. The "duplicate labels survive naming+collapse"
+# testset in test_ingestion_schema.jl covers the new contract. (Two dup-suffix testsets
+# removed here: "duplicate names suffixed by ascending id" and "dup suffix avoids
+# user-named -N collision".) See db.jl migrate_samples_name_collapse! and spec §10.
 
 @testset "migrate_samples_naming! — idempotent on second run" begin
     mktempdir() do tmp
@@ -1445,7 +1384,7 @@ end
     end
 end
 
-@testset "open_db: pre-Plan-7 legacy DB (non-AUTOINCREMENT + (label, name)) preserves identifiers" begin
+@testset "open_db: pre-Plan-7 legacy (label, name) DB collapses to the single friendly name" begin
     mktempdir() do tmp
         dbpath = joinpath(tmp, "h.db")
         # Build the worst-case fixture: legacy (label, name) shape WITHOUT AUTOINCREMENT.
@@ -1472,15 +1411,17 @@ end
         SQLite.close(db)
 
         db2 = HimalayaUI.open_db(dbpath)
+        scols = lowercase.(String.(getproperty.(Tables.rowtable(
+            DBInterface.execute(db2, "PRAGMA table_info(samples)")), :name)))
+        @test "name" in scols && !("display_name" in scols)   # collapsed to one label
         rows = Tables.rowtable(DBInterface.execute(db2,
-            "SELECT id, name, display_name FROM samples ORDER BY id"))
+            "SELECT id, name FROM samples ORDER BY id"))
         @test length(rows) == 2
-        # Stable identifier (was label) preserved as name:
-        @test rows[1].name == "JC001"
-        @test rows[2].name == "JC002"
-        # Friendly text (was name) preserved as display_name:
-        @test rows[1].display_name == "DOPC + chol"
-        @test rows[2].display_name == "POPC"
+        # Post-collapse the single `name` is the friendly text (old `name` column, routed
+        # name→display_name→name by the naming+collapse migrations). The old machine `label`
+        # (JC001/JC002) is dropped — identity is now (load_id, slot_index).
+        @test rows[1].name == "DOPC + chol"
+        @test rows[2].name == "POPC"
     end
 end
 

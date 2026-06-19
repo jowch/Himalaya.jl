@@ -161,10 +161,10 @@ end
         gone    = tempname() * ".tiff"     # path set, file absent
         try
             exp = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-            samp = HimalayaUI.create_sample!(db; experiment_id=exp)
-            e1 = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=present)
-            HimalayaUI.create_exposure!(db; sample_id=samp, image_path=gone)
-            HimalayaUI.create_exposure!(db; sample_id=samp)   # NULL image_path
+            samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
+            e1 = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=present)
+            HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=gone)
+            HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp)   # NULL image_path
 
             res = HimalayaUI.prewarm_thumbnails!(db; threads=false)
             @test res.warmed == 1

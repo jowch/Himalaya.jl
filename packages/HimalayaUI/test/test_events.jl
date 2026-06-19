@@ -95,8 +95,8 @@ end
 
         # Set up an exposure with one auto peak (so peak_excluded has a target).
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db,
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
 
@@ -143,8 +143,8 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice", "X-Client-Id" => "tab-xyz"], UInt8[])
         HimalayaUI.apply_event!(db, req;
@@ -160,8 +160,8 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         HimalayaUI.apply_event!(db, req;
             kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:k=>1))
@@ -176,8 +176,8 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice", "X-Client-Op-Id" => "uuid-abc"], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
@@ -193,8 +193,8 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
             kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:q=>1.0))
@@ -209,8 +209,8 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         DBInterface.execute(db,
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
 
@@ -246,8 +246,8 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         DBInterface.execute(db, """
             INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload, client_id)
             VALUES (NULL, 'noop_test', 'exposure', ?, '{}', NULL)
@@ -263,8 +263,8 @@ end
 
         # Set up minimal data.
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db,
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
         ap_id = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
@@ -302,8 +302,8 @@ end
             db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
             HimalayaUI.bind_db!(db)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
             req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
             result = HimalayaUI.apply_event!(db, req;
                 kind="noop_test", entity_type="exposure", entity_id=e_id,
@@ -335,8 +335,8 @@ end
             db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
             HimalayaUI.bind_db!(db)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
             req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
             HimalayaUI.apply_event!(db, req;
                 kind="noop_test", entity_type="exposure", entity_id=e_id,
@@ -483,10 +483,10 @@ end
         HimalayaUI.bind_db!(db)
         # Seed exposures so exposure_id FKs are valid.
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         _premint_comparison!(db, 1)
         members = [
@@ -524,8 +524,8 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 7)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -556,9 +556,9 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 5)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -589,9 +589,9 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 8)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -624,8 +624,8 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 12)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -666,9 +666,9 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 3)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -720,8 +720,8 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 11)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         HimalayaUI.apply_event!(db, req;
@@ -749,10 +749,10 @@ end
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         cmp_id = 21
         _premint_comparison!(db, cmp_id)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
@@ -851,8 +851,8 @@ end
         db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
 
         HimalayaUI.apply_event!(db, req; kind="assignment_add",
@@ -877,8 +877,8 @@ end
         db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
 
@@ -904,8 +904,8 @@ end
         db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
 
         HimalayaUI.apply_event!(db, req; kind="assignment_add",

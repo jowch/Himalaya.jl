@@ -11,9 +11,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id,
-        name="D1", display_name="UX1")
-    e1 = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
-    e2 = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="other")
+        name="D1")
+    e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="other")
 
     with_test_server(db) do port, base
         # List
@@ -74,8 +74,8 @@ end
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e1 = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="A")
-    e2 = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="B")
+    e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="A")
+    e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="B")
 
     with_test_server(db) do port, base
         op_id = "uuid-select-retry-1"

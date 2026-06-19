@@ -67,7 +67,7 @@ function _setup_analyzed_exposure(tmp::String;
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename=filename)
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename=filename)
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     (db = db, experiment_id = exp_id, sample_id = s_id,
      exposure_id = e_id, analysis_dir = analysis_dir)
@@ -84,8 +84,8 @@ end
             try
                 exp_id = HimalayaUI.create_experiment!(ctx.db; path="/x",
                     data_dir="/x", analysis_dir="/x")
-                s_id = HimalayaUI.create_sample!(ctx.db; experiment_id=exp_id)
-                e_id = HimalayaUI.create_exposure!(ctx.db; sample_id=s_id)
+                s_id = HimalayaUI.create_sample!(ctx.db; experiment_id=exp_id, name="S")
+                e_id = HimalayaUI.create_exposure!(ctx.db; experiment_id=exp_id, sample_id=s_id)
                 snap = HimalayaUI.compute_member_snapshot(ctx.db, e_id)
                 @test snap[:effective_peaks] == []
                 @test snap[:confirmed_index] === nothing
@@ -421,8 +421,8 @@ end
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             # Add two more exposures and seed members for alice across them.
-            e2 = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id, filename="e2")
-            e3 = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id, filename="e3")
+            e2 = HimalayaUI.create_exposure!(ctx.db; experiment_id=ctx.experiment_id, sample_id=ctx.sample_id, filename="e2")
+            e3 = HimalayaUI.create_exposure!(ctx.db; experiment_id=ctx.experiment_id, sample_id=ctx.sample_id, filename="e3")
             alice = HimalayaUI.get_or_create_user!(ctx.db, "alice")
             _premint_cmp!(ctx.db, 44)
             req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])

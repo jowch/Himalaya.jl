@@ -76,7 +76,7 @@ end
             exp_id = HimalayaUI.init_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+            e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
             HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
             with_test_server(db) do port, base
@@ -118,7 +118,7 @@ end
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
             DBInterface.execute(db,
                 "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (77, ?, 'Pn3m', 0.1)", [e_id])
 
@@ -193,7 +193,7 @@ end
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:display_name => "Renamed Display"))
+                body_json = JSON3.write(Dict(:name => "Renamed Display"))
 
                 pre_count = _count_actions(db, "update_sample")
                 r1 = nothing; r2 = nothing

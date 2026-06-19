@@ -37,7 +37,7 @@ function _setup_analyzed_exposure(tmp::String)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     (db = db, exposure_id = e_id, sample_id = s_id, analysis_dir = analysis_dir)
 end
@@ -297,6 +297,10 @@ end
                 expected = [
                     :id, :sample_id, :filename, :kind, :selected, :status,
                     :image_path, :trace_hash, :analysis_inputs_hash,
+                    # Phase-A exposure columns (the route SELECT *s, so all surface)
+                    :experiment_id, :prp_path, :timestamp, :exposure_time,
+                    :horizontal_position, :scan_id, :frame_no, :load_id,
+                    :content_fingerprint,
                     :tags, :sources, :image_version,
                 ]
                 assert_keys(body, expected)
@@ -353,7 +357,7 @@ end
                 r = HTTP.get("$base/api/samples/$(ctx.sample_id)")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
-                # Sample type: id, experiment_id, name, display_name, notes, tags.
+                # Sample type: id, experiment_id, name, notes, tags.
                 # Route adds `created_at` from the row; document either as
                 # tightened or as known-extra.
                 @test :id in keys(body)
@@ -419,7 +423,7 @@ end
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
             with_test_server(db) do port, base
                 r = HTTP.post("$base/api/exposures/$e_id/tags";
                     body = JSON3.write(Dict(:key => "k", :value => "v")),

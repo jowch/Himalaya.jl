@@ -18,8 +18,8 @@ using HimalayaUI
         mktempdir() do tmp
             ctx   = _setup_analyzed_exposure(tmp)
             alice = HimalayaUI.get_or_create_user!(ctx.db, "alice")
-            e2    = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id, filename="e2")
-            e3    = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id, filename="e3")
+            e2    = HimalayaUI.create_exposure!(ctx.db; experiment_id=ctx.experiment_id, sample_id=ctx.sample_id, filename="e2")
+            e3    = HimalayaUI.create_exposure!(ctx.db; experiment_id=ctx.experiment_id, sample_id=ctx.sample_id, filename="e3")
             _premint_cmp!(ctx.db, 200)
             req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
             HimalayaUI.apply_event!(ctx.db, req;

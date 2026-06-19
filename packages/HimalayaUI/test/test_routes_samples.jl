@@ -5,8 +5,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     HimalayaUI.create_schema!(db)
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d",
                                              analysis_dir="/t/a")
-    s1 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    s2 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2", display_name="UX2")
+    s1 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    s2 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2")
 
     with_test_server(db) do port, base
         # List
@@ -62,8 +62,8 @@ end
     # the representative (proves selected wins over highest-id). Its assignment
     # carries Pn3m (score 0.9) + Lamellar (0.4) → dominant phase = Pn3m.
     sA  = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="A")
-    eA1 = HimalayaUI.create_exposure!(db; sample_id=sA, filename="a1")
-    HimalayaUI.create_exposure!(db; sample_id=sA, filename="a2")   # higher id, NOT selected
+    eA1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sA, filename="a1")
+    HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sA, filename="a2")   # higher id, NOT selected
     DBInterface.execute(db, "UPDATE exposures SET selected = 1 WHERE id = ?", [eA1])
     rPn = DBInterface.execute(db,
         "INSERT INTO indices (exposure_id, phase, basis, score) VALUES (?, 'Pn3m', 0.1, 0.9)", [eA1])
@@ -76,12 +76,12 @@ end
 
     # Sample B — FORM FACTOR. Representative exposure declared form_factor.
     sB = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="B")
-    eB = HimalayaUI.create_exposure!(db; sample_id=sB, filename="b1")
+    eB = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sB, filename="b1")
     DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [eB])
 
     # Sample C — UNINDEXED. Representative exposure, no assignment row.
     sC = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="C")
-    HimalayaUI.create_exposure!(db; sample_id=sC, filename="c1")
+    HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sC, filename="c1")
 
     with_test_server(db) do port, base
         list   = JSON3.read(String(HTTP.get("$base/api/samples").body))
@@ -96,29 +96,22 @@ end
     end
 end
 
-@testset "PATCH /api/samples/:id rejects name (now immutable), accepts display_name" begin
+@testset "PATCH /api/samples/:id accepts name, leading/trailing whitespace trimmed" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
     exp_id = HimalayaUI.init_experiment!(db; path="/t3", data_dir="/t3/d",
                                              analysis_dir="/t3/a")
-    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX-immut")
+    sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
     with_test_server(db) do port, base
-        # :name is no longer in the allowlist — should return 400.
-        r = HTTP.request("PATCH", "$base/api/samples/$sid",
-            ["Content-Type" => "application/json",
-             "X-Username"   => "alice"],
-            JSON3.write(Dict(:name => "renamed")); status_exception=false)
-        @test r.status == 400
-
-        # :display_name is accepted; leading/trailing whitespace is trimmed.
+        # :name is accepted; leading/trailing whitespace is trimmed.
         r2 = HTTP.request("PATCH", "$base/api/samples/$sid",
             ["Content-Type" => "application/json",
              "X-Username"   => "alice"],
-            JSON3.write(Dict(:display_name => "  spaced  ")))
+            JSON3.write(Dict(:name => "  spaced  ")))
         @test r2.status == 200
         body = JSON3.read(String(r2.body))
-        @test body[:display_name] == "spaced"
+        @test body[:name] == "spaced"
     end
 end
 
@@ -733,9 +726,9 @@ end
         "UPDATE experiments SET config = ? WHERE id = ?",
         ["[beamline]\nq_units = \"nm-1\"\n", e1])
 
-    s1 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A1", display_name="UX-A1")
-    s2 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A2", display_name="UX-A2")
-    s3 = HimalayaUI.create_sample!(db; experiment_id=e2, name="B1", display_name="UX-B1")
+    s1 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A1")
+    s2 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A2")
+    s3 = HimalayaUI.create_sample!(db; experiment_id=e2, name="B1")
 
     # One tag on s1, so the projection's bundled `tags` array is exercised.
     DBInterface.execute(db,
@@ -789,8 +782,8 @@ end
     # experiment (a SQL NULL) must not 500 the corpus route — its q_units
     # falls back to the default rather than throwing in `Int(...)`.
     DBInterface.execute(db,
-        "INSERT INTO samples (experiment_id, name, display_name)
-         VALUES (NULL, 'orphan', 'Orphan')")
+        "INSERT INTO samples (experiment_id, name)
+         VALUES (NULL, 'orphan')")
 
     with_test_server(db) do port, base
         r = HTTP.get("$base/api/samples")
@@ -807,7 +800,7 @@ end
     HimalayaUI.create_schema!(db)
     exp_id = HimalayaUI.init_experiment!(db; path="/tsrc", data_dir="/tsrc/d",
                                              analysis_dir="/tsrc/a")
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
     with_test_server(db) do port, base
         hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]

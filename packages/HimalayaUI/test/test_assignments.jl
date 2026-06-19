@@ -32,8 +32,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         # Two indices, an active custom group owning both, an inactive auto group.
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
@@ -71,8 +71,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (20, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (21, ?, 'Im3m', 0.1)", [e_id])
@@ -105,8 +105,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (30, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (31, ?, 'Im3m', 0.1)", [e_id])
@@ -143,8 +143,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (40, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (400, ?, 'auto', 0)", [e_id])
@@ -166,8 +166,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         # No assignment yet → defaults: state 'indexed', empty members.
         b0 = HimalayaUI._assignment_body(db, e_id)
@@ -190,8 +190,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [e_id])
 
@@ -212,8 +212,8 @@ if isdefined(@__MODULE__, :with_test_server)
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
             DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
             DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
@@ -235,8 +235,8 @@ end
         db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         # Valid set → 'null' state recorded.
         HimalayaUI.apply_event!(db, req; kind="assignment_set_state",
@@ -255,8 +255,8 @@ if isdefined(@__MODULE__, :with_test_server)
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
             DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
             DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
@@ -292,8 +292,8 @@ end
         db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
         DBInterface.execute(db, "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (200, ?, 'custom', 1)", [e_id])
 
@@ -322,8 +322,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         # Assigned Pn3m at a=100; a candidate Im3m at a=128 (Bonnet-consistent).
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis, lattice_d) VALUES (10, ?, 'Pn3m', 0.1, 100.0)", [e_id])
@@ -355,8 +355,8 @@ if isdefined(@__MODULE__, :with_test_server)
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
 
@@ -393,8 +393,8 @@ if isdefined(@__MODULE__, :with_test_server)
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
             DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
             DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
@@ -424,8 +424,8 @@ if isdefined(@__MODULE__, :with_test_server)
             req = HTTP.Request("POST", "/x",
                 ["X-Username" => "alice", "X-Client-Op-Id" => "op-d1-1"], UInt8[])
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
 
             HimalayaUI.apply_event!(db, req; kind="assignment_add",
@@ -449,8 +449,8 @@ end
     mktempdir() do dir
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         a = 100.0
         P = Himalaya.Ia3d
@@ -482,8 +482,8 @@ if isdefined(@__MODULE__, :with_test_server)
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
             a = 150.0
             P = Himalaya.Pn3m

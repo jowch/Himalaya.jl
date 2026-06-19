@@ -13,8 +13,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         data_dir = joinpath(tmp, "data"),
         analysis_dir = analysis_dir)
     s_id = HimalayaUI.create_sample!(db; experiment_id = exp_id,
-        name = "D1", display_name = "UX1")
-    HimalayaUI.create_exposure!(db; sample_id = s_id, filename = "example_tot")
+        name = "D1")
+    HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "example_tot")
 
     with_test_server(db) do port, base
         # GET
