@@ -48,7 +48,7 @@ end
 @testset "Validation routing: every mutating route returns 4xx on malformed body" begin
     mktempdir() do tmp
         ctx = _setup_full_fixture(tmp)
-        with_test_server(ctx.db) do port, base
+        with_inproc_routes(ctx.db) do call
             base_headers = ["Content-Type" => "application/json",
                             "X-Username"   => "alice"]
 
@@ -92,10 +92,9 @@ end
 
             for (method, path, body, label) in cases
                 @testset "$label" begin
-                    r = HTTP.request(method, "$base$path";
-                        body = JSON3.write(body),
+                    r = call(method, path;
                         headers = base_headers,
-                        status_exception = false)
+                        body = Vector{UInt8}(JSON3.write(body)))
                     @test 400 <= r.status < 500
                 end
             end
