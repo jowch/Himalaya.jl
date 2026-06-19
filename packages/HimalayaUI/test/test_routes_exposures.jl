@@ -7,7 +7,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
 
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id,
@@ -70,7 +70,7 @@ end
 
 @testset "PATCH /api/exposures/:id/select is idempotent under retry" begin
     tmp = mktempdir()
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
