@@ -413,4 +413,93 @@ end
         @test result.loads[1].start_time isa DateTime
         @test result.loads[1].end_time   isa DateTime
     end
+
+    @testset "scan_and_group! inserts loads/samples/exposures" begin
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+
+        # 2 slots × 2 frames in one load
+        slot_h = [58.9, 63.1]
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        all_stems = String[]
+        for (si, h) in enumerate(slot_h)
+            for fi in 1:2
+                offset = (si - 1) * 2 * 19 + (fi - 1) * 19
+                stem = "HA_$(si)_$(fi)_S$(lpad((si-1)*2+fi, 4,'0'))_0_001"
+                push!(all_stems, stem)
+                write_prp(joinpath(data_dir, "$stem.prp");
+                    timestamp = Dates.format(t0 + Second(offset), "dd u yyyy HH:MM:SS"),
+                    beam_energy_ev = 9000.027604502573,
+                    pipe_length_mm = 1700, detector = "Pilatus 1M",
+                    exposure_time = 15.0, horizontal_position_mm = h)
+                write(joinpath(data_dir, "$stem.tif"), "fake tif")
+                # No .dat files: analyze_exposure! will fail to read them, which is OK
+                # for this insert-path test (we set analyze=false)
+            end
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+
+        db = fresh_db()
+        # Create a bare experiment (Phase-A create_experiment! signature)
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "test-ingest", path = dir,
+            data_dir = data_dir, analysis_dir = analysis_dir)
+
+        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
+
+        # Exposures in DB
+        exps = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, experiment_id, sample_id, filename, image_path, scan_id, frame_no FROM exposures WHERE experiment_id = ?",
+            [exp_id]))
+        @test length(exps) == 4
+        @test all(e.experiment_id == exp_id for e in exps)
+        # After grouping, sample_id is populated
+        @test all(!ismissing(e.sample_id) for e in exps)
+        # image_path persisted (non-NULL, equals the written .tif path) — the image route
+        # and prewarm_thumbnails! both filter `WHERE image_path IS NOT NULL`.
+        @test all(!ismissing(e.image_path) for e in exps)
+        @test all(endswith(String(e.image_path), ".tif") for e in exps)
+        # scan_id / frame_no parsed from the filename stem (`_S<digits>_…_<frame>`) and persisted (spec §4/§10)
+        @test all(!ismissing(e.scan_id) for e in exps)
+        @test all(e.frame_no == 1 for e in exps)   # every fixture stem ends `_001`
+
+        # Samples: 2 (one per slot)
+        samps = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name, load_id, slot_index FROM samples WHERE experiment_id = ?", [exp_id]))
+        @test length(samps) == 2
+        @test all(s.slot_index in [1, 2] for s in samps)
+        @test any(occursin("S01P01", s.name) for s in samps)
+
+        # Loads: 1
+        loads = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, load_index, frame_count FROM loads WHERE experiment_id = ?", [exp_id]))
+        @test length(loads) == 1
+        @test loads[1].load_index == 1
+        @test loads[1].frame_count == 4
+
+        # Geometry written to experiments row
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT energy_kev, flight_path_m, flight_path_m_source, beam_center_x FROM experiments WHERE id = ?",
+            [exp_id])))
+        @test row.energy_kev ≈ 9.000027604502573
+        @test row.flight_path_m ≈ 1.8095   # from setup file
+        @test row.flight_path_m_source == "setup"
+        @test row.beam_center_x ≈ 421.409
+
+        # Idempotent: a second scan of the same directory is a true no-op. Insert-only
+        # discipline applies to loads AND samples AND exposures — re-running must not mint
+        # a fresh load_id (which would re-key the sample dedup and duplicate samples).
+        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
+        exps2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM exposures WHERE experiment_id = ?", [exp_id]))
+        @test length(exps2) == 4  # exposures unchanged
+        loads2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM loads WHERE experiment_id = ?", [exp_id]))
+        @test length(loads2) == 1  # loads unchanged (no orphan duplicate load row)
+        samps2 = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
+        @test length(samps2) == 2  # samples unchanged (sample dedup keyed on a stable load_id)
+    end
 end
