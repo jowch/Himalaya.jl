@@ -27,7 +27,8 @@ Internal (non-exported) symbols are accessed `HimalayaUI.<name>` in tests.
 
 - **Create** `packages/HimalayaUI/test/test_inproc.jl` — the `with_inproc_routes` helper + liveness check + scrub. One responsibility: in-process dispatch fixture.
 - **Create** `packages/HimalayaUI/test/test_inproc_equivalence.jl` — the differential harness (wire ≡ in-process matrix). Kept permanently.
-- **Create** `packages/HimalayaUI/test/test_template_db.jl` — the M2 template builder + `open_prepared_clone` + `with_legacy_db` opt-out helper.
+- **Create** `packages/HimalayaUI/test/test_template_db.jl` — the M2 template builder + `open_prepared_clone`. (No `with_legacy_db` helper: regime-a and legacy-migration testsets are simply left on their existing `SQLite.DB()`/`open_db` fixtures, not routed through an opt-out.)
+- **Create** `packages/HimalayaUI/test/test_fixtures.jl` — shared cross-file test helpers extracted in M3.0 so GROUP buckets don't break on missing symbols.
 - **Modify** `packages/HimalayaUI/test/test_http.jl` — include `test_inproc.jl` so the helper rides the same load order as `with_test_server`.
 - **Modify** ~25 `packages/HimalayaUI/test/test_routes_*.jl` / `test_picker_*.jl` / etc. — mechanical `with_test_server` → `with_inproc_routes` swap (M1).
 - **Modify** `packages/HimalayaUI/test/runtests.jl` — per-`@testset` timing (M0); `GROUP` buckets (M3).
@@ -144,7 +145,7 @@ git commit -m "test(perf): per-file @elapsed timing report in runtests (M0.2)"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/HimalayaUI/test/test_inproc.jl` with the helper plus an inline self-test at the bottom (guarded so it only runs standalone), OR add the test to a scratch file. Use this self-test as the failing test first — create `packages/HimalayaUI/test/_scratch_inproc_test.jl`:
+Create the test in a **scratch file** (NOT inline in `test_inproc.jl`). Critical: `test_http.jl` and its transitive includes (`test_inproc.jl`, `test_template_db.jl`, `test_fixtures.jl`) are included once **per GROUP bucket** in M3, so any top-level `@testset` in them would run 3× and break the M3 Pass-sum invariant. These files must define helpers only — no `@testset`. Use the scratch file as the failing test first — create `packages/HimalayaUI/test/_scratch_inproc_test.jl`:
 
 ```julia
 using Test, HTTP, SQLite
@@ -273,7 +274,8 @@ Create `packages/HimalayaUI/test/test_inproc_equivalence.jl`:
 # produces the SAME HTTP.Response as a real socket request, for the shapes most
 # likely to diverge. This is the single load-bearing equivalence proof (spec
 # §5.1). Keep it green permanently.
-using Test, HTTP, SQLite, JSON3
+using Test, HTTP, SQLite, JSON3, DBInterface
+using FileIO, ImageCore, TiffImages   # for the binary-PNG contract row
 using HimalayaUI
 
 if !isdefined(@__MODULE__, :with_test_server)
@@ -289,10 +291,16 @@ _sig_headers(r::HTTP.Response) = sort([
     lowercase(k) => v for (k, v) in r.headers
     if !(lowercase(k) in _TRANSPORT_HEADERS)])
 
+# Normalize body to a String regardless of representation: the wire path returns
+# bytes (Vector{UInt8}) parsed off the socket; the in-process path may leave the
+# body as the raw String set by format_response! (misc.jl:402). copy(::String)
+# would throw, so branch on the type.
+_body(r::HTTP.Response) = r.body isa AbstractString ? String(r.body) : String(copy(r.body))
+
 "Assert a wire response and an in-process response are equivalent."
 function _assert_equiv(wire::HTTP.Response, inproc::HTTP.Response; label="")
     @test wire.status == inproc.status
-    @test String(copy(wire.body)) == String(copy(inproc.body))
+    @test _body(wire) == _body(inproc)
     @test _sig_headers(wire) == _sig_headers(inproc)
 end
 
@@ -328,13 +336,27 @@ end
         end
     end
 
-    @testset "GET with query string (preserved in target)" begin
+    @testset "GET binary PNG image — exercises the X-Image-*/Cache-Control contract (B-2)" begin
+        # Must seed a REAL image_path or the route 404s on BOTH transports and the
+        # 200 PNG branch (the only code that emits image/png + X-Image-*/Cache-Control)
+        # is never reached. TIFF-seeding mirrors test_routes_image.jl:4-19. Use the
+        # FULL image (not thumb) so X-Image-Width/Height are present, and so the
+        # response is recomputed deterministically each call (same source ⇒ identical
+        # PNG bytes across transports).
         mktempdir() do d
-            fx = _seed(d)
-            path = "/api/exposures/$(fx.e_id)/image?thumb=1"
-            w  = with_test_server(fx.db) do port, base; HTTP.get("$base$path"; status_exception=false) end
-            ip = with_inproc_routes(fx.db) do call; call("GET", path) end
-            _assert_equiv(w, ip; label="image-thumb")  # also exercises binary PNG + X-Image-*/Cache-Control headers
+            tiff = joinpath(d, "img.tiff")
+            save(tiff, Gray.(rand(Float32, 512, 384)))
+            db = HimalayaUI.open_db(joinpath(d, "h.db"))   # M0.4 predates M2; use open_db
+            exp_id = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
+            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, image_path=tiff)
+            path = "/api/exposures/$e_id/image?thumb=0"   # explicit full branch; exercises query parsing
+            w  = with_test_server(db) do port, base; HTTP.get("$base$path"; status_exception=false) end
+            ip = with_inproc_routes(db) do call; call("GET", path) end
+            @test w.status == 200                          # guard: the contract branch was actually hit
+            @test HTTP.header(w, "Content-Type") == "image/png"
+            @test HTTP.header(w, "X-Image-Width") != ""    # full branch only
+            _assert_equiv(w, ip; label="image-png")        # body bytes + X-Image-*/Cache-Control parity
         end
     end
 
@@ -389,7 +411,7 @@ end
             with_test_server(fx.db) do port, base
                 r1 = _replay((h,b)->HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=b, headers=h), "op-wire")
                 r2 = _replay((h,b)->HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=b, headers=h), "op-wire")
-                (r1.status, String(copy(r1.body)), String(copy(r2.body)))
+                (r1.status, _body(r1), _body(r2))
             end
         end
         inproc_bodies = mktempdir() do d
@@ -397,15 +419,73 @@ end
             with_inproc_routes(fx.db) do call
                 r1 = _replay((h,b)->call("POST", "/api/samples/$(fx.s_id)/messages"; headers=h, body=Vector{UInt8}(b)), "op-ip")
                 r2 = _replay((h,b)->call("POST", "/api/samples/$(fx.s_id)/messages"; headers=h, body=Vector{UInt8}(b)), "op-ip")
-                (r1.status, String(copy(r1.body)), String(copy(r2.body)))
+                (r1.status, _body(r1), _body(r2))
             end
         end
         @test wire_bodies[1] == inproc_bodies[1]          # same status
         @test wire_bodies[2] == wire_bodies[3]            # wire: replay identical
         @test inproc_bodies[2] == inproc_bodies[3]        # in-process: replay identical
     end
+
+    @testset "GET numeric-array JSON body (trace) — serialization parity" begin
+        # The trace route returns numeric arrays (q/I) — the shape most prone to
+        # JSON serialization divergence (float precision, key order). routes_trace.jl:4.
+        mktempdir() do d
+            fx = _seed(d)
+            w  = with_test_server(fx.db) do port, base; HTTP.get("$base/api/exposures/$(fx.e_id)/trace"; status_exception=false) end
+            ip = with_inproc_routes(fx.db) do call; call("GET", "/api/exposures/$(fx.e_id)/trace") end
+            @test w.status == 200
+            _assert_equiv(w, ip; label="trace")
+        end
+    end
+
+    @testset "SSE broadcast fans out identically in-process" begin
+        # The wire path and in-process path must both flush the post-commit
+        # broadcast to a fake subscriber. Push a (pending=Channel,) sub directly
+        # (mirrors test_idempotency_replay_invariant.jl::_capture_sse_during) and
+        # assert exactly one frame on each transport. NOTE: in-process flush is
+        # synchronous (events.jl _flush_post_commit_broadcasts! runs in-task), so
+        # no sleep is needed; the wire path needs a short drain.
+        function _count_frames(seed_op)
+            pending = Channel{String}(64)
+            sub = (pending = pending,)
+            lock(HimalayaUI.SSE_LOCK) do; push!(HimalayaUI.SSE_SUBSCRIBERS[], sub); end
+            try
+                seed_op()
+            finally
+                lock(HimalayaUI.SSE_LOCK) do
+                    filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+                end
+                close(pending)
+            end
+            count(f -> !startswith(f, ":") && occursin("post_message", f), collect(pending))
+        end
+        hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice"]
+        bodyj = JSON3.write(Dict(:body => "hi"))
+        wire_n = mktempdir() do d
+            fx = _seed(d)
+            _count_frames() do
+                with_test_server(fx.db) do port, base
+                    HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=bodyj, headers=hdrs)
+                    sleep(0.3)   # wire broadcast fires off-task; allow the drain
+                end
+            end
+        end
+        inproc_n = mktempdir() do d
+            fx = _seed(d)
+            _count_frames() do
+                with_inproc_routes(fx.db) do call
+                    call("POST", "/api/samples/$(fx.s_id)/messages"; headers=hdrs, body=Vector{UInt8}(bodyj))
+                end  # synchronous flush — frame already on the channel
+            end
+        end
+        @test wire_n == 1
+        @test inproc_n == 1
+    end
 end
 ```
+
+(Optional: the DELETE row above asserts 404 parity. For genuine empty-body 204 coverage, a real 204 route exists at `routes_samples.jl:267` / `routes_exposures.jl:221` — add a row deleting a freshly-created tag per-transport-DB if 204 parity is wanted. Not load-bearing given the other rows.)
 
 - [ ] **Step 2: Run the harness; verify it passes**
 
@@ -715,15 +795,25 @@ The mechanical swap: replace `HimalayaUI.open_db(joinpath(<dir>, "h.db"))` (and 
 
 These testsets (verbatim list — they call `migrate_schema!`/`open_db` on a legacy-shaped DB and must NOT use the clone): the testsets at `test_db.jl` lines ~178-222, 233-286, 318-386, 388-418, 420-465, 507-537, 563-588, 590-602, 629-642, 644-717, 1029-1134, 1136-1163. Leave all of these exactly as they are (they build `SQLite.DB()` / synthetic legacy schemas directly). Only the *CRUD/behavior* testsets that build a fresh `open_db` fixture are candidates — and `test_db.jl`'s first-insert `id==1` CRUD testset (`:56-84`) uses `SQLite.DB()` + `create_schema!` directly (regime a), so it is **not** swapped either.
 
-- [ ] **Step 2: Swap regime-b files one commit each**
+- [ ] **Step 2: Find the actual swap candidates (don't trust a static list)**
 
-For each file below, replace its `open_db(joinpath(<dir>, "...db"))` fresh-fixture calls with `open_prepared_clone(<dir>)`, green-before/green-after (`include test_http.jl; include <file>`), equal Pass count, commit `test(perf): clone template DB in <file> (M2.2)`:
+The candidate set is exactly the files with a fresh-fixture `open_db(joinpath(...))` call — derive it, don't guess:
 
-- [ ] `test_routes_analysis.jl`, `test_routes_experiments.jl`, `test_routes_export.jl`, `test_routes_exposures.jl`, `test_routes_mentions.jl`, `test_routes_messages.jl`, `test_routes_peaks.jl`, `test_routes_resolve.jl`, `test_routes_samples.jl`, `test_routes_series.jl`, `test_routes_trace.jl`
-- [ ] `test_assignment_reattach.jl`, `test_assignments.jl`, `test_speculative.jl`, `test_picker_samples_route.jl`, `test_route_response_shapes.jl`, `test_route_validation_routing.jl`
-- [ ] `test_comparison_pins.jl`, `test_comparisons.jl`, `test_events.jl`, `test_fast_skip.jl`, `test_idempotency.jl`, `test_idempotency_replay_invariant.jl`, `test_idempotency_sse_suppression.jl`, `test_migrate_comparisons_to_series.jl`, `test_pipeline.jl`, `test_routes_sse_broadcast.jl`, `test_sse.jl`, `test_concurrent_writes.jl`, `test_config.jl`, `test_image.jl`
+```bash
+cd packages/HimalayaUI/test && grep -cE "open_db\(joinpath" *.jl | grep -v ':0'
+```
+Swap **only** those `open_db(joinpath(<dir>, "...db"))` calls → `open_prepared_clone(<dir>)`. Notes from the review (apply verbatim):
+- **Exclude (no swappable fresh fixture / wrong unit-under-test):** `test_routes_samples.jl`, `test_routes_resolve.jl` (no own `open_db(joinpath)` — they consume the shared `_setup_*` fixtures), and `test_config.jl:599` (its `open_db` *is* the parent-dir-creation unit-under-test — swapping it silently drops `mkpath` coverage and the green gate won't catch it).
+- **DO-NOT-SWAP:** `test_migrate_comparisons_to_series.jl` lines 232/248 (the "gated no-op" idempotency testset relies on `migrate_schema!` running on the opened DB — cloning defeats it). Annotate like the `test_db.jl` legacy testsets.
+- **Mixed-regime files** (`test_image.jl`, `test_config.jl`, `test_pipeline.jl`): swap ONLY the `open_db(joinpath)` fresh fixtures; leave every bare `SQLite.DB()` (regime-a) call as-is.
 
-For any file where a fixture asserts a specific autoincrement id > the template's zero baseline OR depends on `migrate_schema!` running, leave that fixture on `open_db` and note it in the commit body. (The green-after gate catches mismatches.)
+- [ ] **Step 3: Swap one commit each (green-before/green-after, equal Pass count)**
+
+For each candidate: green-before (`include test_http.jl; include <file>`), swap, green-after with equal Pass count, commit `test(perf): clone template DB in <file> (M2.2)`.
+
+- [ ] **Special case — the shared fixture (`_setup_analyzed_exposure`/`_setup_for_resolve`) opens its DB once in `test_route_response_shapes.jl:36`.** Swapping that single `open_db` changes the fixture for **three** consumers (`test_route_response_shapes`, `test_routes_resolve`, `test_picker_routes`) that have no own `open_db`. The per-file green-after for `test_route_response_shapes` alone does NOT exercise the other two — run all three consumer files together in the green-after for that commit.
+
+For any file where a fixture asserts a specific autoincrement id > the template's zero baseline OR depends on `migrate_schema!` running, leave that fixture on `open_db` and note it in the commit body. (The green-after gate catches id mismatches; it does NOT catch dropped `mkpath`/migration coverage — hence the explicit exclusions above.)
 
 ### Task M2.3: M2 milestone gate
 
@@ -745,6 +835,67 @@ git commit -m "test(perf): record M2 wall time (M2.3 gate)"
 ---
 
 ## Milestone M3 — Named GROUP buckets + parallel runner
+
+> **Blocker B-1 — read first.** The flat serial `runtests.jl` silently lets a helper defined in file A be used by file B (A included earlier). Partitioning into buckets severs that, so co-dependent files in *different* buckets throw `UndefVarError` at include time. Confirmed cross-file helpers: `_setup_analyzed_exposure` (defined **twice, incompatibly** — `test_route_response_shapes.jl:31` 4-field NT, `test_comparisons.jl:59` 5-field-with-`experiment_id`), `_premint_cmp!` (`test_comparisons.jl:19`), `_member_payload` (`test_comparisons.jl:26`), `_setup_for_resolve` (`test_route_response_shapes.jl:50`); consumers span `test_picker_routes`, `test_routes_resolve`, `test_spa_fallback`, `test_routes_series`, `test_comparison_pins`, `test_events`. **Task M3.0 must extract these into a shared file before bucketing**, or `GROUP=routes`/`GROUP=wire` are guaranteed red.
+
+### Task M3.0: Extract cross-file test helpers into a shared fixtures module
+
+**Files:**
+- Create: `packages/HimalayaUI/test/test_fixtures.jl`
+- Modify: `packages/HimalayaUI/test/test_http.jl` (include it, so every bucket gets it), `test_comparisons.jl`, `test_route_response_shapes.jl` (remove the moved defs; the canonical ones now live in `test_fixtures.jl`).
+
+**Interfaces:**
+- Produces: a single definition of each shared helper, included everywhere `test_http.jl` is.
+
+- [ ] **Step 1: Audit every cross-file helper**
+
+```bash
+cd packages/HimalayaUI/test
+# For each top-level `function _foo(` find which file defines it and which OTHER files use it.
+for fn in $(grep -rhoE '^function (_[A-Za-z0-9_!]+)\(' *.jl | sed -E 's/^function (_[A-Za-z0-9_!]+)\(/\1/' | sort -u); do
+  defs=$(grep -rl "^function $fn(" *.jl | tr '\n' ' ')
+  uses=$(grep -rl "\b$fn\b" *.jl | tr '\n' ' ')
+  ndef=$(echo $defs | wc -w); nuse=$(echo $uses | wc -w)
+  # flag helpers defined in 1 file but used in >1 file (cross-file), or defined in >1 file (dup)
+  if [ "$ndef" -gt 1 ] || { [ "$ndef" -eq 1 ] && [ "$nuse" -gt 1 ]; }; then
+    echo "CROSS/DUP: $fn  defs=[$defs] uses=[$uses]"
+  fi
+done
+```
+Expected: at minimum `_setup_analyzed_exposure` (DUP — two defs), `_premint_cmp!`, `_member_payload`, `_setup_for_resolve`. Capture the full list — it drives what moves into `test_fixtures.jl`.
+
+- [ ] **Step 2: Resolve the duplicate `_setup_analyzed_exposure`**
+
+Under serial `GROUP=All`, `test_comparisons.jl` (include #44) redefines it *before* `test_picker_routes.jl`/`test_routes_resolve.jl` (#46/#48) consume it, so those consumers actually use the **5-field** (`experiment_id`-bearing) `test_comparisons.jl:59` version. Make `test_fixtures.jl` hold that **5-field** definition (the superset). Read both definitions; confirm the 4-field consumers (`test_route_response_shapes.jl`, `test_spa_fallback.jl`) still work against the 5-field shape (a named-tuple with an *extra* field is safe for callers that ignore it). If any 4-field consumer destructures positionally or asserts the NT's exact fields, keep its local call working — adjust the consumer, not the canonical shape.
+
+- [ ] **Step 3: Create `test_fixtures.jl` with the canonical helpers**
+
+Move the canonical `_setup_analyzed_exposure` (5-field), `_premint_cmp!`, `_member_payload`, `_setup_for_resolve`, and any other CROSS/DUP helper from Step 1 into `packages/HimalayaUI/test/test_fixtures.jl` (verbatim bodies, single definition each). Delete the now-moved definitions from `test_comparisons.jl` and `test_route_response_shapes.jl`.
+
+- [ ] **Step 4: Include it from test_http.jl, before the others**
+
+At the TOP of `test/test_http.jl` body (before the `test_inproc.jl`/`test_template_db.jl` includes):
+
+```julia
+if !isdefined(@__MODULE__, :_setup_analyzed_exposure)
+    include("test_fixtures.jl")
+end
+```
+
+- [ ] **Step 5: Green check — full suite still passes (GROUP=All), count unchanged**
+
+```bash
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-m3_0.out 2>&1; echo "exit=$?"
+grep -E "Test Summary" /tmp/jl-m3_0.out | tail -3
+```
+Expected: `exit=0`; Pass == M2 gate count (pure refactor — same tests, deduped helpers).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/HimalayaUI/test/test_fixtures.jl packages/HimalayaUI/test/test_http.jl packages/HimalayaUI/test/test_comparisons.jl packages/HimalayaUI/test/test_route_response_shapes.jl
+git commit -m "test(perf): extract shared cross-file test fixtures (M3.0, unblocks bucketing)"
+```
 
 ### Task M3.1: Carve runtests.jl into GROUP buckets
 
@@ -768,10 +919,15 @@ _want(g) = GROUP == "All" || GROUP == g
 # IMPORTANT: under GROUP=All these run in the SAME total order as before
 # (db → pipeline → routes → events → wire → …). Each bucket includes
 # test_http.jl first (the isdefined guard makes re-include a no-op).
+# Every bucket lists test_http.jl FIRST — it transitively includes test_fixtures.jl
+# (M3.0), test_inproc.jl, test_template_db.jl, so any cross-file helper is in scope
+# regardless of which bucket a file lands in. (test_http.jl defines no tests, so the
+# Pass-sum invariant across buckets holds. The seen-set dedup keeps it included once
+# per process.)
 const GROUPS = [
-    ("db",       ["test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+    ("db",       ["test_http.jl","test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
                   "test_manifest.jl","test_migrate_toml.jl","test_validate.jl"]),
-    ("pipeline", ["test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
+    ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
                   "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
                   "test_effective_peaks_sharpness_passthrough.jl","test_fast_skip.jl",
                   "test_json.jl","test_image.jl"]),
@@ -914,6 +1070,13 @@ git commit -m "test(perf): make test-parallel runner over GROUP buckets (M3.2)"
 ```
 
 ### Task M3.3: M3 milestone gate
+
+- [ ] **Step 0: Guard — no `@testset` in the per-bucket-included helper files**
+
+```bash
+cd packages/HimalayaUI && grep -l '@testset' test/test_http.jl test/test_inproc.jl test/test_template_db.jl test/test_fixtures.jl 2>/dev/null
+```
+Expected: NO output. Any hit means that file's tests run once per bucket (3×) and the Pass-sum across buckets won't equal `GROUP=All` — move the test out before proceeding.
 
 - [ ] **Step 1: Final verification — serial fallback + parallel both green, count matches baseline**
 
