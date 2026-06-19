@@ -75,6 +75,44 @@ function fresh_db()
 end
 
 @testset "ingestion core (Phase B)" begin
+    @testset "detector pitch lookup" begin
+        # Known detectors
+        @test HimalayaUI.detector_pixel_size_um("Pilatus 1M") ≈ 172.0
+        @test HimalayaUI.detector_pixel_size_um("Pilatus 2M") ≈ 172.0
+        @test HimalayaUI.detector_pixel_size_um("Pilatus 300K") ≈ 172.0
+        @test HimalayaUI.detector_pixel_size_um("Eiger 1M")  ≈ 75.0
+        @test HimalayaUI.detector_pixel_size_um("Eiger 4M")  ≈ 75.0
+        # Unknown detector → missing
+        @test HimalayaUI.detector_pixel_size_um("Unknown XRD") === missing
+    end
+
+    @testset "parse_setup_info" begin
+        dir = mktempdir()
+        setup_path = joinpath(dir, "setup_info_20260425_181705.txt")
+        write_setup_info(setup_path;
+            beam_center_x = 421.409,
+            beam_center_y = 836.946,
+            mean_distance_mm = 1809.5)
+        info = HimalayaUI.parse_setup_info(setup_path)
+        @test info.beam_center_x ≈ 421.409
+        @test info.beam_center_y ≈ 836.946
+        @test info.mean_distance_m ≈ 1.8095
+
+        # Missing Mean distance line → missing
+        bad_path = joinpath(dir, "setup_bad.txt")
+        write(bad_path, "Beam center is at (100.0, 200.0)\n")
+        bad_info = HimalayaUI.parse_setup_info(bad_path)
+        @test bad_info.beam_center_x ≈ 100.0
+        @test bad_info.mean_distance_m === missing
+
+        # Completely empty → all missing
+        empty_path = joinpath(dir, "setup_empty.txt")
+        write(empty_path, "")
+        empty_info = HimalayaUI.parse_setup_info(empty_path)
+        @test empty_info.beam_center_x === missing
+        @test empty_info.mean_distance_m === missing
+    end
+
     @testset "parse_prp" begin
         dir = mktempdir()
         prp_path = joinpath(dir, "HA_85_422_S2404_0_001.prp")
