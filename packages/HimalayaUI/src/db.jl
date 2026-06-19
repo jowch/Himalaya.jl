@@ -2003,17 +2003,32 @@ function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractStr
 end
 
 function create_exposure!(db::SQLite.DB;
-        sample_id::Int,
-        filename::Union{String,Nothing}  = nothing,
-        kind::String                     = "file",
-        selected::Bool                   = false,
-        status::Union{String,Nothing}    = nothing,
-        image_path::Union{String,Nothing} = nothing)
-    result = DBInterface.execute(db,
-        "INSERT INTO exposures (sample_id, filename, kind, selected, status, image_path)
-         VALUES (?, ?, ?, ?, ?, ?)",
-        [sample_id, filename, kind, Int(selected), status, image_path])
-    Int(DBInterface.lastrowid(result))
+        experiment_id::Int,                              # required (Phase A)
+        sample_id::Union{Int,Nothing}      = nothing,    # optional (transient pre-group state)
+        filename::Union{String,Nothing}    = nothing,
+        kind::String                       = "file",
+        selected::Bool                     = false,
+        status::Union{String,Nothing}      = nothing,
+        image_path::Union{String,Nothing}  = nothing,
+        # --- new PRP fields (Phase A) ---
+        prp_path          = nothing,
+        timestamp         = nothing,
+        exposure_time     = nothing,
+        horizontal_position = nothing,
+        scan_id           = nothing,
+        frame_no          = nothing,
+        load_id           = nothing,
+        content_fingerprint = nothing)
+    result = DBInterface.execute(db, """
+        INSERT INTO exposures
+            (experiment_id, sample_id, filename, kind, selected, status, image_path,
+             prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
+             load_id, content_fingerprint)
+        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?)
+    """, [experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
+          prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
+          load_id, content_fingerprint])
+    return Int(DBInterface.lastrowid(result))
 end
 
 function get_experiment(db::SQLite.DB, id::Int)

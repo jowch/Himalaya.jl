@@ -95,6 +95,7 @@ function _cli_init_inner!(db::SQLite.DB, exp_dir::String)::Int
                 for stem in stems
                     image_path = resolve_file_path(cfg, data_dir, stem, cfg.image_pattern)
                     e_id = create_exposure!(db;
+                        experiment_id = exp_id,
                         sample_id  = s_id,
                         filename   = stem,
                         image_path = image_path)
@@ -212,6 +213,7 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
                 if isempty(existing_exp)
                     image_path = resolve_file_path(cfg, data_dir, stem, cfg.image_pattern)
                     create_exposure!(db;
+                        experiment_id = experiment_id,
                         sample_id  = s_id,
                         filename   = stem,
                         image_path = image_path)

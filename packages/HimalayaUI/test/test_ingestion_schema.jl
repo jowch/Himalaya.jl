@@ -242,4 +242,21 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             @test !any(i -> occursin("samples_unique_name", i), indexes(db2, "samples"))
         end
     end
+
+    @testset "create_exposure! experiment_id + prp fields, nullable sample_id" begin
+        path = fresh_db()
+        with_db(path) do db
+            eid = seed_experiment(db)   # honours NOT NULL name/path/data_dir/analysis_dir
+            # sample_id omitted (transient pre-group state must be allowed)
+            xid = HimalayaUI.create_exposure!(db; experiment_id=eid, filename="HA_85_001.tif",
+                prp_path="/d/HA_85_001.prp", timestamp="2026-04-12T10:02:00",
+                exposure_time=2.0, horizontal_position=12.4, scan_id=2404, frame_no=1)
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT experiment_id, sample_id, horizontal_position, frame_no FROM exposures WHERE id=?", [xid])))
+            @test row.experiment_id == eid
+            @test row.sample_id === missing
+            @test row.horizontal_position ≈ 12.4
+            @test row.frame_no == 1
+        end
+    end
 end
