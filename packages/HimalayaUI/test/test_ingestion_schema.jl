@@ -270,4 +270,45 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             @test HimalayaUI._resolve_analysis_dir(db, xid) == "/tmp/analysis-xyz"
         end
     end
+
+    @testset "legacy DB upgrades cleanly" begin
+        # Build a pre-redesign DB via create_schema! — the faithful representation of a real
+        # legacy DB (always created by an older create_schema!, which on this branch still
+        # emits name+display_name+samples_unique_name and lacks the Phase-A additions).
+        # A hand-built minimal 4-table stub is NOT faithful: it lacks tables that
+        # migrate_pk_to_autoincrement! rebuilds under PRAGMA foreign_keys=OFF, and a NULL
+        # experiments.data_dir trips the NOT NULL constraint in the rebuilt table.
+        dir = mktempdir(); path = joinpath(dir, "legacy.db")
+        db = SQLite.DB(path)
+        HimalayaUI.create_schema!(db)
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacy','/exp/legacy','/exp/legacy/data','/exp/legacy/analysis')")
+        # name = machine id ('JC001'), display_name = human label ('JC C04')
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (1, 1, 'JC001', 'JC C04')")
+        # no experiment_id column yet — migration will add it and backfill
+        DBInterface.execute(db,
+            "INSERT INTO exposures (sample_id, filename) VALUES (1, 'f.tif')")
+        SQLite.close(db)
+
+        dbm = SQLite.DB(path); HimalayaUI.migrate_schema!(dbm); SQLite.close(dbm)
+
+        with_db(path) do db2
+            # loads table must exist after migration
+            @test "loads" in lowercase.(String.(getproperty.(Tables.rowtable(DBInterface.execute(db2,
+                "SELECT name FROM sqlite_master WHERE type='table'")), :name)))
+            # samples.name collapsed to the old display_name value; display_name column gone
+            @test "name" in cols(db2, "samples") && !("display_name" in cols(db2, "samples"))
+            # exposures denorm: experiment_id column added
+            @test "experiment_id" in cols(db2, "exposures")
+            # backfill set experiment_id from the samples JOIN
+            row = first(Tables.rowtable(DBInterface.execute(db2,
+                "SELECT experiment_id FROM exposures WHERE filename='f.tif'")))
+            @test row.experiment_id == 1
+            # surviving label is the old display_name ('JC C04'), not the machine name ('JC001')
+            srow = first(Tables.rowtable(DBInterface.execute(db2,
+                "SELECT name FROM samples WHERE id=1")))
+            @test srow.name == "JC C04"
+        end
+    end
 end
