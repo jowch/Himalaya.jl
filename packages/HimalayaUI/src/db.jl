@@ -537,6 +537,25 @@ end
 function migrate_experiments_geometry!(db::SQLite.DB)
     _migrated(db, MIGRATION_EXPERIMENTS_GEOMETRY) && return nothing
     SQLite.transaction(db) do
+        existing = cols_of(db, "experiments")
+        adds = [
+            ("beam_center_x", "REAL"), ("beam_center_y", "REAL"),
+            ("pixel_size_um", "REAL"), ("q_units", "TEXT"),
+            ("energy_kev_source", "TEXT DEFAULT 'default'"),
+            ("flight_path_m_source", "TEXT DEFAULT 'default'"),
+            ("beam_center_x_source", "TEXT DEFAULT 'default'"),
+            ("beam_center_y_source", "TEXT DEFAULT 'default'"),
+            ("pixel_size_um_source", "TEXT DEFAULT 'default'"),
+            ("q_units_source", "TEXT DEFAULT 'default'"),
+            ("last_scanned_at", "TEXT"), ("scan_signature", "TEXT"),
+            ("ingest_status", "TEXT DEFAULT 'idle'"),
+            ("last_scan_tier", "TEXT DEFAULT 'fast'"),
+            ("consecutive_empty_ticks", "INTEGER NOT NULL DEFAULT 0"),
+        ]
+        for (name, decl) in adds
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE experiments ADD COLUMN $name $decl")
+        end
         _record_migration!(db, MIGRATION_EXPERIMENTS_GEOMETRY)
     end
     nothing

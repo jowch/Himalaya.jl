@@ -147,4 +147,19 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             @test_throws ErrorException HimalayaUI.migrate_schema!(db)
         end
     end
+
+    @testset "experiments geometry+scan columns" begin
+        path = fresh_db()
+        with_db(path) do db
+            c = cols(db, "experiments")
+            for col in ["beam_center_x","beam_center_y","pixel_size_um","q_units",
+                        "energy_kev_source","flight_path_m_source","beam_center_x_source",
+                        "beam_center_y_source","pixel_size_um_source","q_units_source",
+                        "last_scanned_at","scan_signature","ingest_status",
+                        "last_scan_tier","consecutive_empty_ticks"]
+                @test col in c
+            end
+            @test !("detector_distance_mm" in c)   # spec §10: no separate column
+        end
+    end
 end
