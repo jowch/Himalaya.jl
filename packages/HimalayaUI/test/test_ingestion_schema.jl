@@ -182,6 +182,23 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
         end
     end
 
+    @testset "create_experiment! geometry kwargs" begin
+        path = fresh_db()
+        with_db(path) do db
+            id = HimalayaUI.create_experiment!(db; name="geo",
+                path="/exp/geo", data_dir="/exp/geo/data", analysis_dir="/exp/geo/analysis",
+                energy_kev=9.0, energy_kev_source="prp",
+                flight_path_m=1.8095, flight_path_m_source="setup",
+                beam_center_x=421.409, beam_center_y=836.946, beam_center_x_source="setup",
+                pixel_size_um=172.0, q_units="A^-1")
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT flight_path_m, flight_path_m_source, beam_center_x FROM experiments WHERE id=?", [id])))
+            @test row.flight_path_m ≈ 1.8095
+            @test row.flight_path_m_source == "setup"
+            @test row.beam_center_x ≈ 421.409
+        end
+    end
+
     @testset "duplicate labels survive naming+collapse" begin
         # Build the pre-redesign DB with create_schema! (the canonical samples shape on this
         # branch is still name+display_name+samples_unique_name — i.e. the pre-collapse legacy

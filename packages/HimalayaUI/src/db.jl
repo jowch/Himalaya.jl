@@ -1968,15 +1968,28 @@ function create_experiment!(db::SQLite.DB;
         config::Union{String,Nothing} = nothing,
         experiment_type::Union{String,Nothing} = nothing,
         energy_kev::Union{Float64,Nothing} = nothing,
-        flight_path_m::Union{Float64,Nothing} = nothing)
-    result = DBInterface.execute(db,
-        """INSERT INTO experiments
-             (name, path, data_dir, analysis_dir, manifest_path,
-              config, experiment_type, energy_kev, flight_path_m)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [name, path, data_dir, analysis_dir, manifest_path,
-         config, experiment_type, energy_kev, flight_path_m])
-    Int(DBInterface.lastrowid(result))
+        flight_path_m::Union{Float64,Nothing} = nothing,
+        # --- new (Phase A) ---
+        energy_kev_source = "default", flight_path_m_source = "default",
+        beam_center_x = nothing, beam_center_x_source = "default",
+        beam_center_y = nothing, beam_center_y_source = "default",
+        pixel_size_um = nothing, pixel_size_um_source = "default",
+        q_units = nothing, q_units_source = "default",
+        last_scanned_at = nothing, scan_signature = nothing, ingest_status = "idle")
+    result = DBInterface.execute(db, """
+        INSERT INTO experiments
+            (name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
+             energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
+             beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
+             pixel_size_um, pixel_size_um_source, q_units, q_units_source,
+             last_scanned_at, scan_signature, ingest_status)
+        VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?)
+    """, [name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
+          energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
+          beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
+          pixel_size_um, pixel_size_um_source, q_units, q_units_source,
+          last_scanned_at, scan_signature, ingest_status])
+    return Int(DBInterface.lastrowid(result))
 end
 
 function create_sample!(db::SQLite.DB;
