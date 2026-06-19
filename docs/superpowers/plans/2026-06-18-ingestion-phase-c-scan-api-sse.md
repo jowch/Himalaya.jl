@@ -4,7 +4,7 @@
 
 **Goal:** Wire the scan and rescan endpoints, the `broadcast_progress!` helper, and the per-experiment rescan scheduler into the existing server infrastructure so that `POST /api/experiments` kicks off a first scan asynchronously with live SSE progress, `POST /api/experiments/{id}/scan` runs a cheap change-check then additive ingest, `GET /api/experiments/{id}` returns typed geometry + ingest status, `GET /api/experiments/{id}/loads` returns the Load▸Sample▸Exposure roll-up, `PATCH /api/experiments/{id}` writes human geometry overrides (replacing today's 400 stub), and `DELETE /api/experiments/{id}` tears down the experiment and its rescan timer.
 
-**Architecture:** All new routes live in `routes_experiments.jl` and are registered by `register_experiments_routes!()`. The scheduler is a new `Dict{Int,Timer}` module-level constant in `server.jl`, mirroring `GC_TIMER` but keyed per experiment; its Timer callback `@spawn`s the tick body and does both `trylock` and `unlock` on that spawned task (Julia `ReentrantLock` is task-owned). `broadcast_progress!` calls `_try_put!` directly (from `events.jl`) with no `user_actions` row — it rides the existing `"curation"` SSE event name. Phase B is assumed complete before this phase; this plan calls `scan_and_group!(db, experiment_id, root_dir; additive=…)` (positional `root_dir` = the experiment's `data_dir`, resolved by `isdefined` at call time) and the *future* `cheap_change_check(db, experiment_id, root_dir)` (a flagged Phase B gap — see the Phase-B handoff note), but does not define either.
+**Architecture:** All new routes live in `routes_experiments.jl` and are registered by `register_experiments_routes!()`. The scheduler is a new `Dict{Int,Timer}` module-level constant in `server.jl`, mirroring `GC_TIMER` but keyed per experiment; its Timer callback `@spawn`s the tick body and does both `trylock` and `unlock` on that spawned task (Julia `ReentrantLock` is task-owned). `broadcast_progress!` calls `_try_put!` directly (from `events.jl`) with no `user_actions` row — it rides the existing `"curation"` SSE event name. **Phase B is complete and lives in the same `HimalayaUI` module**, so this plan calls `scan_and_group!(db, experiment_id)` and `cheap_change_check(db, experiment_id)` **directly**: both resolve the experiment's `data_dir` from the row internally (no positional `root_dir`), `scan_and_group!` has no `additive` kwarg (it is idempotent via its dedup INSERT keys, so first-scan == rescan), and no `isdefined` guards are needed (the functions are defined at `include` time).
 
 **Tech Stack:** Julia, SQLite.jl / DBInterface.jl / Tables.jl, Oxygen.jl, HTTP.jl, JSON3.jl, stdlib `Test`. Backend package at `packages/HimalayaUI/`.
 
@@ -29,7 +29,7 @@
 
 **Out of scope (other phases):**
 - Phase A — schema migrations, `create_load!`/`create_sample!`/`create_exposure!` signatures, `analyze_exposure!` rewire. This plan assumes those are already landed.
-- Phase B — `prp.jl`, `geometry.jl`, `grouping.jl`, `scan_and_group!`. This plan calls `scan_and_group!` and `derive_geometry` but does not define them.
+- Phase B — `prp.jl`, `geometry.jl`, `grouping.jl`, `ingest.jl` (`scan_and_group!`, `cheap_change_check`). **Complete (verified 2026-06-19).** This plan calls `scan_and_group!(db, id)` and `cheap_change_check(db, id)` directly but does not define them.
 - Phase D — `exposure_moved`, `sample_renamed`, `sample_created`, `sample_split`, `grouping_flag_dismissed` event kinds (there is **no** `sample_merged` — merge fans out as `exposure_moved`); grouping-review structural edits.
 - Phase E — frontend routes, `display_name→name` TypeScript sweep, `applyRemoteToCache` `ingest_*` arms, store wiring.
 
@@ -1072,7 +1072,7 @@ function stop_all_rescan_timers!()
 end
 
 """
-    start_rescan_scheduler!(db, experiment_id; tick_interval_seconds, cheap_check_fn, scan_fn)
+    start_rescan_scheduler!(db, experiment_id; tick_interval_seconds, cheap_check_fn)
 
 Arm a per-experiment rescan Timer. On each tick the libuv timer thread does the
 MINIMUM possible work — it only `@spawn`s the tick body. EVERYTHING that touches
@@ -1090,18 +1090,18 @@ CRITICAL (Julia `ReentrantLock` is task-owned): the `trylock` and the matching
 thread", the lock would never release, and every later tick would be silently
 skipped. That is why both calls are inside the `@spawn` block below.
 
-`cheap_check_fn` and `scan_fn` are the change-detection and scan callables.
-When omitted (the production path), the tick resolves the Phase B functions at
-tick time via `isdefined(HimalayaUI, …)` (see `_rescan_tick!`), so the scheduler
-loads and arms even before Phase B lands. Passing explicit callables here (Task
-8's test) keeps the tick logic testable without the Phase B grouping engine.
+`cheap_check_fn` is an optional change-detection seam that defaults to the real
+`cheap_change_check` (Phase B). Task 8's backoff test injects a stub here to drive
+the tier transitions deterministically without filesystem fixtures; the production
+path passes nothing and the real cheap-check runs. There is no `scan_fn` seam —
+the tick calls `scan_and_group!` directly (a no-op on a directory with no matching
+triplets, so the test's empty temp dir needs no stub).
 
 Idempotent: calling twice closes the previous timer before installing a new one.
 """
 function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
                                   tick_interval_seconds::Real = 3600.0,
-                                  cheap_check_fn = nothing,
-                                  scan_fn        = nothing)
+                                  cheap_check_fn = nothing)
     # Close any existing timer for this experiment.
     stop_rescan_scheduler!(experiment_id)
 
@@ -1113,7 +1113,7 @@ function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
             lk = _rescan_lock(experiment_id)
             trylock(lk) || return  # scan already in flight; skip this tick
             try
-                _rescan_tick!(db, experiment_id, cheap_check_fn, scan_fn)
+                _rescan_tick!(db, experiment_id; cheap_check_fn = cheap_check_fn)
             catch err
                 @warn "rescan tick failed" experiment_id = experiment_id exception = err
             finally
@@ -1129,21 +1129,15 @@ function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
 end
 ```
 
-> **Phase-B handoff contract (settled):** the production tick resolves Phase B
-> by name at tick time, NOT via shadowable stub functions (defining a
-> same-named function does not "shadow" another in Julia, so a `_default_*` stub
-> path would silently never scan). The two names this plan and Phase B agree on:
-> - **`scan_and_group!`** — defined by Phase B (`ingest.jl`) as
->   `scan_and_group!(db, experiment_id, root_dir; additive=true, analyze=true, …)`.
->   Note the **positional `root_dir`** (the experiment's `data_dir`) — callers in
->   this phase must pass it.
-> - **cheap change-check — GAP:** Phase B as currently written does **not**
->   define any cheap-change-check function. Until it does, the scheduler tick
->   treats "no cheap-check function defined" as "assume changed" so a rescan is
->   never silently skipped (see `_rescan_tick!`). Phase B should add a
->   `cheap_change_check(db, experiment_id, root_dir)::Bool` (signature mirroring
->   `scan_and_group!`); this plan's `_rescan_tick!` is written to pick it up by
->   `isdefined` the moment it exists. This gap is flagged for the Phase B owner.
+> **Phase-B contract (complete, verified 2026-06-19):** both functions exist in
+> `ingest.jl` and load with the module, so the tick calls them directly:
+> - **`scan_and_group!(db, experiment_id; analyze=true, tif_pattern, prp_pattern, dat_pattern)`**
+>   — resolves `data_dir`/`analysis_dir` from the experiment row internally. No
+>   positional `root_dir`, no `additive` (idempotent via dedup INSERT keys).
+> - **`cheap_change_check(db, experiment_id; image_pattern="{name}.tif")::Bool`**
+>   — on-disk tif count vs persisted exposure count; returns `true` for an
+>   unknown/unreadable experiment, `false` for a missing dir. The tick calls it
+>   directly (the default of the `cheap_check_fn` seam).
 
 Also update `stop_test_server!` (~line 211) to call `stop_all_rescan_timers!()`:
 
@@ -1198,13 +1192,17 @@ The tick body: runs the cheap change-check, conditionally triggers `scan_and_gro
       try
         ticks_before_daily = 3   # configurable in the call below
 
-        # Stub: always returns false (no new files) so the tick is "empty"
-        no_change = (_, _) -> false
-        no_scan   = (_, _) -> nothing
+        # Inject the change decision so tier transitions are deterministic without
+        # filesystem fixtures. No scan stub is needed: on a "change" the real
+        # scan_and_group! runs against the EMPTY temp dir (no matching triplets) —
+        # a harmless no-op.
+        no_change  = (_, _) -> false
+        has_change = (_, _) -> true
 
         # Run ticks_before_daily empty ticks; should stay in 'fast' tier until threshold
         for _ in 1:ticks_before_daily
-            HimalayaUI._rescan_tick!(db, exp_id, no_change, no_scan;
+            HimalayaUI._rescan_tick!(db, exp_id;
+                cheap_check_fn = no_change,
                 fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
                 ticks_before_stop = 2)
         end
@@ -1216,7 +1214,8 @@ The tick body: runs the cheap change-check, conditionally triggers `scan_and_gro
         @test row.consecutive_empty_ticks == 0  # reset on tier transition
 
         # One more empty daily tick → not yet stopped (need ticks_before_stop=2 more)
-        HimalayaUI._rescan_tick!(db, exp_id, no_change, no_scan;
+        HimalayaUI._rescan_tick!(db, exp_id;
+            cheap_check_fn = no_change,
             fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
             ticks_before_stop = 2)
         row2 = Tables.rowtable(DBInterface.execute(db,
@@ -1225,9 +1224,10 @@ The tick body: runs the cheap change-check, conditionally triggers `scan_and_gro
         @test row2.last_scan_tier == "daily"
         @test row2.consecutive_empty_ticks == 1
 
-        # Simulate a change: re-arms back to fast
-        has_change = (_, _) -> true
-        HimalayaUI._rescan_tick!(db, exp_id, has_change, no_scan;
+        # Simulate a change: re-arms back to fast. cheap_check_fn returns true, then
+        # the real scan_and_group! runs against the EMPTY temp dir — a harmless no-op.
+        HimalayaUI._rescan_tick!(db, exp_id;
+            cheap_check_fn = has_change,
             fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
             ticks_before_stop = 2)
         row3 = Tables.rowtable(DBInterface.execute(db,
@@ -1256,30 +1256,25 @@ Add to `server.jl` after the scheduler functions from Task 7:
 
 ```julia
 """
-    _rescan_tick!(db, experiment_id, cheap_check_fn, scan_fn; kwargs...)
+    _rescan_tick!(db, experiment_id; cheap_check_fn=nothing, kwargs...)
 
 One tick of the per-experiment rescan scheduler. Called from the `@spawn`'d
 body inside the Timer callback so the libuv timer thread is never blocked.
 
-`cheap_check_fn` / `scan_fn` are either explicit callables (the test path) or
-`nothing` (the production path). When `nothing`, the tick resolves the Phase B
-functions BY NAME at tick time (no shadowable stubs):
-- change detection: `HimalayaUI.cheap_change_check(db, experiment_id, root_dir)`
-  if defined; otherwise **assume changed** (so a rescan is never silently skipped
-  while Phase B's cheap-check is still a gap — see the Phase-B handoff note).
-- scan: `HimalayaUI.scan_and_group!(db, experiment_id, root_dir; additive=true)`
-  if defined; otherwise a no-op.
-`root_dir` is read from `experiments.data_dir` for this experiment.
+Change detection runs `cheap_check_fn(db, experiment_id)` when a seam is injected
+(Task 8's backoff test), otherwise the real `cheap_change_check(db, experiment_id)`
+(Phase B). On a detected change it runs `scan_and_group!(db, experiment_id)`. Both
+Phase B functions resolve the experiment's `data_dir` from the row themselves, so
+this tick threads no path.
 
 Steps:
-1. Determine `changed::Bool` (callable, or resolved Phase B fn, or assume-changed).
-2. If changed: run the scan (callable, or resolved `scan_and_group!`), reset
-   `consecutive_empty_ticks`, re-arm the Timer at the `fast_interval` tier.
-3. If not changed: increment `consecutive_empty_ticks`. If the threshold for the
-   next tier is reached, advance the tier and reset the counter; stop the timer
-   when the `stopped` tier is reached.
-4. Persist `last_scan_tier` + `consecutive_empty_ticks` to the DB so restarts
-   don't reset quiet experiments to the fast tier.
+1. Read `(last_scan_tier, consecutive_empty_ticks)`; if the experiment is gone, return.
+2. Determine `changed::Bool`.
+3. If changed: run the scan, reset `consecutive_empty_ticks`, re-arm at the `fast` tier.
+4. If not changed: increment the counter; advance fast→daily at `ticks_before_daily`,
+   daily→stopped at `ticks_before_stop`, resetting the counter on each transition.
+5. Persist `last_scan_tier` + `consecutive_empty_ticks` so restarts don't reset
+   quiet experiments to the fast tier.
 
 kwargs (tunable thresholds — defaults match spec §9.4; exposed for testing):
 - `fast_interval`: seconds between fast-tier ticks (default 3600.0 = 1 h)
@@ -1287,31 +1282,25 @@ kwargs (tunable thresholds — defaults match spec §9.4; exposed for testing):
 - `ticks_before_daily`: consecutive empty fast ticks before advancing to daily (default 6)
 - `ticks_before_stop`: consecutive empty daily ticks before stopping (default 3)
 """
-function _rescan_tick!(db::SQLite.DB, experiment_id::Int,
-                        cheap_check_fn, scan_fn;
+function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
+                        cheap_check_fn = nothing,
                         fast_interval::Real    = 3600.0,
                         daily_interval::Real   = 86400.0,
                         ticks_before_daily::Int = 6,
                         ticks_before_stop::Int  = 3)
 
-    # Resolve the experiment's data directory (the scan/cheap-check root).
-    dir_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir FROM experiments WHERE id = ?", [experiment_id]))
-    isempty(dir_rows) && return  # experiment deleted between timer arm and tick
-    root_dir = String(dir_rows[1].data_dir)
+    # Single existence + state read. Empty ⇒ experiment deleted between timer arm
+    # and tick (the DELETE route stops the timer first, so this is belt-and-suspenders).
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id = ?",
+        [experiment_id]))
+    isempty(row) && return
 
-    # Change detection: explicit callable (test) → Phase B fn by name → assume
-    # changed (so a rescan is never silently skipped while the cheap-check is a
-    # Phase B gap). Test callables take (db, experiment_id); the Phase B fn takes
-    # (db, experiment_id, root_dir).
+    # Change detection: injected seam (test) or the real cheap_change_check. Both
+    # take (db, experiment_id) and resolve data_dir themselves.
     changed = try
-        if cheap_check_fn !== nothing
-            cheap_check_fn(db, experiment_id)
-        elseif isdefined(HimalayaUI, :cheap_change_check)
-            HimalayaUI.cheap_change_check(db, experiment_id, root_dir)
-        else
-            true  # no cheap-check available yet — always scan
-        end
+        cheap_check_fn !== nothing ? cheap_check_fn(db, experiment_id) :
+                                     cheap_change_check(db, experiment_id)
     catch err
         @warn "cheap change-check failed" experiment_id = experiment_id exception = err
         false
@@ -1319,15 +1308,11 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int,
 
     if changed
         try
-            if scan_fn !== nothing
-                scan_fn(db, experiment_id)
-            elseif isdefined(HimalayaUI, :scan_and_group!)
-                HimalayaUI.scan_and_group!(db, experiment_id, root_dir; additive = true)
-            end
+            scan_and_group!(db, experiment_id)
         catch err
             @warn "scan failed during rescan tick" experiment_id = experiment_id exception = err
         end
-        # Re-arm at fast tier on a successful change detection
+        # Re-arm at fast tier on a detected change.
         lock(_DB_WRITE_LOCK) do
             SQLite.transaction(db) do
                 DBInterface.execute(db, """
@@ -1343,15 +1328,9 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int,
         return
     end
 
-    # No change — increment tick counter and check backoff thresholds
-    row = Tables.rowtable(DBInterface.execute(db, """
-        SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id = ?
-    """, [experiment_id]))
-    isempty(row) && return  # experiment deleted between timer arm and tick
-
-    tier  = String(row[1].last_scan_tier)
-    ticks = Int(row[1].consecutive_empty_ticks)
-    new_ticks = ticks + 1
+    # No change — increment tick counter and check backoff thresholds.
+    tier      = String(row[1].last_scan_tier)
+    new_ticks = Int(row[1].consecutive_empty_ticks) + 1
 
     if tier == "fast" && new_ticks >= ticks_before_daily
         # Advance to daily
@@ -1412,7 +1391,7 @@ git commit -m "feat(server): _rescan_tick! tiered backoff (fast→daily→stoppe
 
 ## Task 9: `POST /api/experiments/{id}/scan` — rescan (cheap change-check + additive)
 
-The rescan endpoint runs the cheap change-check first; if nothing changed, it is a no-op (returns 200 with `changed: false`). If new files appeared, it calls `scan_and_group!(db, exp_id, data_dir; additive=true)` (positional `data_dir`), broadcasts progress via `broadcast_progress!`, and re-arms the rescan scheduler at the fast tier (spec §9.2). Supersedes the old `POST /api/experiments/{id}/reingest` route (which remains for backward compat until Phase E removes it).
+The rescan endpoint runs the cheap change-check first; if nothing changed, it skips the scan. If new files appeared, it calls `scan_and_group!(db, exp_id)`, broadcasts progress via `broadcast_progress!`, and re-arms the rescan scheduler at the fast tier (spec §9.2). (The old `POST /api/experiments/{id}/reingest` route was already removed in Phase B.)
 
 **Files:**
 - Modify: `packages/HimalayaUI/src/routes_experiments.jl`
@@ -1462,13 +1441,10 @@ In `routes_experiments.jl`, add inside `register_experiments_routes!()`:
 @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
     db   = current_db()
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, data_dir, ingest_status FROM experiments WHERE id = ?", [id]))
+        "SELECT id FROM experiments WHERE id = ?", [id]))
     isempty(rows) && return HTTP.Response(404,
         ["Content-Type" => "application/json"],
         JSON3.write(Dict(:error => "experiment not found")))
-
-    exp_row  = rows[1]
-    root_dir = String(exp_row.data_dir)
 
     # Mark as scanning immediately so the frontend header can show progress.
     lock(_DB_WRITE_LOCK) do
@@ -1480,25 +1456,16 @@ In `routes_experiments.jl`, add inside `register_experiments_routes!()`:
 
     broadcast_progress!(id; kind = "ingest_started", processed = 0, total = 0)
 
-    # Run the cheap change-check + additive scan on a @spawn'd task so this
-    # request can return immediately. Progress is streamed over SSE.
+    # Run the cheap change-check + additive scan on a @spawn'd task so this request
+    # returns immediately; progress streams over SSE. Both Phase B functions
+    # (cheap_change_check, scan_and_group!) resolve the experiment's data_dir from
+    # the row themselves, and return gracefully on an empty directory.
     Threads.@spawn begin
         try
-            # cheap_change_check and scan_and_group! are defined in Phase B (ingest.jl).
-            # Both take the data directory as a positional arg. When Phase B is
-            # absent (or the directory has no matching files), this block must not
-            # crash — the functions are expected to return gracefully on an empty
-            # directory. NOTE: Phase B does not yet define cheap_change_check (a
-            # flagged gap); until it does, treat a manual scan as "changed" so the
-            # additive scan always runs when explicitly requested.
-            changed = isdefined(HimalayaUI, :cheap_change_check) ?
-                HimalayaUI.cheap_change_check(db, id, root_dir) : true
-
+            changed = cheap_change_check(db, id)
             if changed
-                isdefined(HimalayaUI, :scan_and_group!) &&
-                    HimalayaUI.scan_and_group!(db, id, root_dir; additive = true)
-                # Re-arm the fast-tier rescan scheduler
-                start_rescan_scheduler!(db, id)
+                scan_and_group!(db, id)
+                start_rescan_scheduler!(db, id)   # re-arm the fast-tier scheduler
             end
 
             lock(_DB_WRITE_LOCK) do
@@ -1532,7 +1499,7 @@ In `routes_experiments.jl`, add inside `register_experiments_routes!()`:
 end
 ```
 
-> **Import note (verified):** all `src/*.jl` files are `include`d into the single `HimalayaUI` module (no submodules — see `HimalayaUI.jl`), and `events.jl:2` already does `using Dates: now, UTC, format, @dateformat_str`. Those four names are therefore in scope module-wide, including here. Use the **unqualified** `format(now(UTC), dateformat"…")` form — a qualified `Dates.format`/`Dates.now` is an `UndefVarError` because bare `Dates` is never imported. Do NOT add `using Dates`. The `isdefined(HimalayaUI, :scan_and_group!)` / `:cheap_change_check` guards let the route compile and serve without Phase B; Phase B adds the real implementations, resolved by name at call time.
+> **Import note (verified):** all `src/*.jl` files are `include`d into the single `HimalayaUI` module (no submodules — see `HimalayaUI.jl`), and `events.jl:2` already does `using Dates: now, UTC, format, @dateformat_str`. Those four names are therefore in scope module-wide, including here. Use the **unqualified** `format(now(UTC), dateformat"…")` form — a qualified `Dates.format`/`Dates.now` is an `UndefVarError` because bare `Dates` is never imported. Do NOT add `using Dates`. `cheap_change_check` and `scan_and_group!` are Phase B functions in the same module (no `isdefined` guards needed); call them directly.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -1655,9 +1622,9 @@ In `routes_experiments.jl`, add inside `register_experiments_routes!()` **before
     # Kick off first scan asynchronously.
     Threads.@spawn begin
         try
-            # scan_and_group! (Phase B, ingest.jl) takes data_dir positionally.
-            isdefined(HimalayaUI, :scan_and_group!) &&
-                HimalayaUI.scan_and_group!(db, exp_id, data_dir; additive = false)
+            # scan_and_group! (Phase B, ingest.jl) resolves data_dir from the row
+            # and is idempotent (dedup INSERT keys), so first-scan == rescan.
+            scan_and_group!(db, exp_id)
             lock(_DB_WRITE_LOCK) do
                 SQLite.transaction(db) do
                     DBInterface.execute(db,
@@ -1770,12 +1737,12 @@ git commit -m "fix(tests): update PATCH experiment expectation + rescan teardown
 
 ### Placeholder scan
 
-Every code step shows the complete implementation. The `isdefined(HimalayaUI, :scan_and_group!)` / `:cheap_change_check` guards in Tasks 7–10 are explicit Phase B handoff points, not placeholders — they let Phase C routes and the scheduler compile and serve correctly without the grouping engine, resolving the Phase B functions by name at call time once they exist (no Phase C code change needed).
+Every code step shows the complete implementation. There are no `isdefined` guards or placeholders: Phase B is complete and in the same module, so Tasks 7–10 call `scan_and_group!(db, id)` and `cheap_change_check(db, id)` directly.
 
-### Phase-B handoff contract (settled)
+### Phase-B contract (complete, verified 2026-06-19)
 
-- **`scan_and_group!(db, experiment_id, root_dir; additive=true, analyze=true, …)`** — defined by Phase B in `ingest.jl` (Plan B Task 8, signature confirmed). `root_dir` is **positional**; every caller in this phase (scan route, create route, `_rescan_tick!`) passes the experiment's `data_dir`.
-- **`cheap_change_check` — GAP (flagged for the Phase B owner):** Plan B as written does NOT define any cheap-change-check function. This plan resolves it by `isdefined` and, while it is absent, treats every manual scan / scheduler tick as "changed" so a rescan is never silently skipped. Phase B should add `cheap_change_check(db, experiment_id, root_dir)::Bool`; this plan picks it up automatically once defined. Until then the tiered-backoff "no change" path is only exercised by the test's explicit stub.
+- **`scan_and_group!(db, experiment_id; analyze=true, tif_pattern, prp_pattern, dat_pattern)`** — defined by Phase B in `ingest.jl`. Resolves `data_dir`/`analysis_dir` from the experiment row internally (**no positional `root_dir`**); **no `additive` kwarg** (idempotent via dedup INSERT keys, so first-scan == rescan). Every caller in this phase (scan route, create route, `_rescan_tick!`) calls it as `scan_and_group!(db, id)`.
+- **`cheap_change_check(db, experiment_id; image_pattern="{name}.tif")::Bool`** — defined by Phase B in `ingest.jl`. On-disk tif count vs persisted exposure count; `true` for an unknown/unreadable experiment, `false` for a missing dir. Called directly (the default of `_rescan_tick!`'s `cheap_check_fn` seam, which the backoff test overrides).
 
 ### Deferred / out of scope (this phase)
 
@@ -1792,12 +1759,21 @@ A verify-before-review pass against live source folded in these fixes:
 - **P1** `broadcast_progress!` frame is PAYLOAD-WRAPPED to match `broadcast_event!` (events.jl:1107-1120) and spec §9.3/§9.6: `:kind` (+ `:ts`) top-level, `experiment_id`/`processed`/`total`/`kwargs` under `:payload`. An earlier flat-frame fix put those fields at top level, which would NOT parse through the frontend's `curation` payload path (E1/E2 read `payload.experiment_id`); reverted to wrapped. Docstring signature → `kwargs...` — Task 1.
 - **P2** dropped the no-op in-transaction `PRAGMA foreign_keys = ON` from the delete; loads roll-up exposures now serialize with `bool_keys=(:selected,)`; legacy `_experiment_row_to_json` fallback now emits a uniform wire shape; timer-leak try/finally added to the Task 7/8 tests.
 
+### Revision (2026-06-19) — Phase B contract correction + ponytail cuts
+
+Phase B shipped (and was ponytail-trimmed) after this plan was first drafted, invalidating its central assumptions. This revision realigns to the real `ingest.jl`:
+- **Stale contract fixed:** `scan_and_group!` has no positional `root_dir` and no `additive` kwarg (both dropped in Phase B); `cheap_change_check` exists (was assumed a "gap"). Every call in Tasks 8–10 and `_rescan_tick!` is now `scan_and_group!(db, id)` / `cheap_change_check(db, id)`.
+- **Dropped the `isdefined` apparatus** (Tasks 7–10): Phase B is in the same module and loaded at `include` time, so the by-name resolution + assume-changed-gap fallback are dead. Direct calls.
+- **Dropped the `scan_fn` injection seam**; kept one `cheap_check_fn` seam defaulted to the real `cheap_change_check`. The backoff test injects the change-decision and lets the real scan run as a no-op on its empty temp dir — no `scan_fn` stub, no filesystem fixtures.
+- **`_rescan_tick!` no longer reads/threads `data_dir`** — both callees resolve it themselves; a single state read at the top doubles as the existence guard.
+- Verified `create_load!` is genuinely absent (Task 2 stands); `manifest_path` column still exists (Task 5 readonly-reject entry stands). Removed stale "supersedes `/reingest`" notes (that route was deleted in Phase B).
+
 ### Type/name consistency
 
 - `broadcast_progress!(experiment_id::Integer; kind, processed, total, kwargs...)` — emits a payload-wrapped frame; matches the test assertions (`obj.kind` top-level; `obj.payload.experiment_id`, `obj.payload.processed`, `obj.payload.total`).
 - `RESCAN_TIMERS::Dict{Int,Timer}`, `RESCAN_LOCKS::Dict{Int,ReentrantLock}` — referenced identically in Task 7 (definition), Task 6 (route calls `stop_rescan_scheduler!`), and Task 11 (registration check).
-- `start_rescan_scheduler!(db, experiment_id; tick_interval_seconds, cheap_check_fn, scan_fn)` and `stop_rescan_scheduler!(experiment_id)` — identical signature in definition (Task 7), the tick re-arm call (Task 8), and the scan route calls (Tasks 9, 10).
-- `_rescan_tick!(db, experiment_id, cheap_check_fn, scan_fn; fast_interval, daily_interval, ticks_before_daily, ticks_before_stop)` — kwargs match test call and implementation; `cheap_check_fn`/`scan_fn` accept a callable (test) or `nothing` (production, resolves Phase B by name).
+- `start_rescan_scheduler!(db, experiment_id; tick_interval_seconds, cheap_check_fn)` and `stop_rescan_scheduler!(experiment_id)` — identical signature in definition (Task 7), the tick re-arm call (Task 8), and the scan route calls (Tasks 9, 10).
+- `_rescan_tick!(db, experiment_id; cheap_check_fn, fast_interval, daily_interval, ticks_before_daily, ticks_before_stop)` — kwargs match test call and implementation; `cheap_check_fn` accepts a callable (test stub) or `nothing` (production → real `cheap_change_check`). No `scan_fn` seam; the scan call is direct.
 - `_experiment_row_to_json(row, db)` — 2-arg form used in the extended GET route (Task 3); 1-arg form (db=nothing) preserved for the list route backward compat.
 - `_experiment_stats(db, exp_id)` — defined and used only in Task 3; returns a NamedTuple embedded as `:stats` in the response.
 
