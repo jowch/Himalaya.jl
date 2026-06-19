@@ -73,8 +73,12 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
-# HimalayaUI backend (Julia) — slow, capture once. See packages/HimalayaUI/test/AGENTS.md
+# HimalayaUI backend (Julia) — ~3 min serial. Capture once. See packages/HimalayaUI/test/AGENTS.md
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
+# Faster (~2 min): run the 5 GROUP buckets as parallel processes:
+make test-parallel
+# One bucket only (db|pipeline|routes|events|wire):
+GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 
 # HimalayaUI frontend — from packages/HimalayaUI/frontend/
 npm test              # Vitest unit tests (one-shot)
@@ -86,7 +90,7 @@ npm run build         # lint:design + tsc --noEmit + vite build (must pass befor
 
 Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` / `HimalayaUI.<name>` in tests.
 
-**The Julia backend suite is slow** (5–10 min). Capture output once, grep the file. Same for `npm test`. Detailed slow-suite guidance in `packages/HimalayaUI/test/AGENTS.md`.
+**The Julia backend suite runs ~3 min serial (~2 min via `make test-parallel`).** Still capture output once and grep the file rather than re-running with different filters. Same for `npm test`. Route tests dispatch in-process (`with_inproc_routes`), not over a socket — see `packages/HimalayaUI/test/AGENTS.md` for the dispatch pattern, GROUP buckets, and the wire-keeper boundary.
 
 ## Running the app
 

@@ -10,67 +10,15 @@ using HimalayaUI
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Fixture helpers ─────────────────────────────────────────────────────────
-
-# Pre-mint a comparisons row at a known id so the dispatcher can run UPDATEs
-# (matches the route handler's two-step "INSERT placeholder, then dispatcher
-# fills in" pattern). Mirrors `_premint_comparison!` in test_events.jl.
-# Uses NULL placeholders to mirror the post-#67 route — the dispatcher's
-# `COALESCE(col, ?)` then stamps real values on first fold.
-function _premint_cmp!(db, id::Int)
-    DBInterface.execute(db,
-        """INSERT INTO comparisons (id, title, content_hash, created_at, updated_at)
-           VALUES (?, NULL, NULL, NULL, NULL)""", [id])
-    nothing
-end
-
-function _member_payload(; id=nothing, exposure_id=nothing, display_order::Int=0,
-                          band_height::Float64=1.0, y_offset::Float64=0.0,
-                          normalization::String="none",
-                          color_override=nothing, label_override=nothing,
-                          q_window_min=nothing, q_window_max=nothing,
-                          peak_display=nothing,
-                          snapshot=Dict(:effective_peaks => [],
-                                        :confirmed_index => nothing,
-                                        :analysis_inputs_hash => "sha256:zero"))
-    Dict{Symbol,Any}(
-        :id             => id,
-        :exposure_id    => exposure_id,
-        :display_order  => display_order,
-        :band_height    => band_height,
-        :y_offset       => y_offset,
-        :normalization  => normalization,
-        :color_override => color_override,
-        :label_override => label_override,
-        :q_window_min   => q_window_min,
-        :q_window_max   => q_window_max,
-        :peak_display   => peak_display,
-        :snapshot       => snapshot,
-    )
-end
+# Cross-file helpers (_premint_cmp!, _member_payload, _setup_analyzed_exposure)
+# are defined in test_fixtures.jl (included via test_http.jl) and available here
+# via the standard runtests.jl include order.
 
 function _setup_db()
     tmp = mktempdir()
-    db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+    db = open_prepared_clone(tmp)
     HimalayaUI.bind_db!(db)
     (db = db, tmp = tmp)
-end
-
-# Build an analyzed exposure. Returns (db, experiment_id, sample_id, exposure_id, analysis_dir).
-function _setup_analyzed_exposure(tmp::String;
-                                   datfile::String = "example_tot.dat",
-                                   filename::String = "example_tot")
-    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
-    mkpath(analysis_dir)
-    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", datfile),
-       joinpath(analysis_dir, datfile))
-    db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
-        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename=filename)
-    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
-    (db = db, experiment_id = exp_id, sample_id = s_id,
-     exposure_id = e_id, analysis_dir = analysis_dir)
 end
 
 @testset "comparisons.jl helpers" begin

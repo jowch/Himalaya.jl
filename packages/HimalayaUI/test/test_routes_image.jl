@@ -20,31 +20,31 @@ using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
     eid_noi = HimalayaUI.create_exposure!(db; sample_id=samp_id)  # no image
     eid_gone = HimalayaUI.create_exposure!(db; sample_id=samp_id, image_path=missing_path)  # path set, file missing
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Full image
-        r = HTTP.get("$base/api/exposures/$eid/image")
+        r = call("GET", "/api/exposures/$eid/image")
         @test r.status == 200
         @test Dict(r.headers)["Content-Type"] == "image/png"
         @test length(r.body) > 100
 
         # Thumb variant is smaller
-        rt = HTTP.get("$base/api/exposures/$eid/image?thumb=1")
+        rt = call("GET", "/api/exposures/$eid/image?thumb=1")
         @test rt.status == 200
         @test length(rt.body) < length(r.body)
 
         # null image_path → 404
-        r404 = HTTP.get("$base/api/exposures/$eid_noi/image"; status_exception=false)
+        r404 = call("GET", "/api/exposures/$eid_noi/image")
         @test r404.status == 404
 
         # nonexistent exposure → 404
-        r404b = HTTP.get("$base/api/exposures/9999/image"; status_exception=false)
+        r404b = call("GET", "/api/exposures/9999/image")
         @test r404b.status == 404
 
         # image_path set but source file missing → graceful 404, not 500
-        r404c = HTTP.get("$base/api/exposures/$eid_gone/image"; status_exception=false)
+        r404c = call("GET", "/api/exposures/$eid_gone/image")
         @test r404c.status == 404
         # thumb variant of a missing source must also 404, not 500
-        r404d = HTTP.get("$base/api/exposures/$eid_gone/image?thumb=1"; status_exception=false)
+        r404d = call("GET", "/api/exposures/$eid_gone/image?thumb=1")
         @test r404d.status == 404
     end
 
@@ -69,12 +69,12 @@ end
 
     decode_dims(body) = size(FileIO.load(FileIO.Stream{FileIO.format"PNG"}(IOBuffer(body))))
 
-    with_test_server(db) do port, base
-        rb = HTTP.get("$base/api/exposures/$big/image")
+    with_inproc_routes(db) do call
+        rb = call("GET", "/api/exposures/$big/image")
         @test rb.status == 200
         @test maximum(decode_dims(rb.body)) <= 1536      # capped
 
-        rs = HTTP.get("$base/api/exposures/$small/image")
+        rs = call("GET", "/api/exposures/$small/image")
         @test rs.status == 200
         @test maximum(decode_dims(rs.body)) == 600       # untouched (<=1536)
     end
@@ -95,18 +95,18 @@ end
     big  = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=big_path)
     rect = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=rect_path)
 
-    with_test_server(db) do port, base
-        rb = HTTP.get("$base/api/exposures/$big/image")
+    with_inproc_routes(db) do call
+        rb = call("GET", "/api/exposures/$big/image")
         h  = Dict(rb.headers)
         @test h["X-Image-Width"]  == "2048"   # RAW, not the <=1536 displayed size
         @test h["X-Image-Height"] == "2048"
 
-        rr = HTTP.get("$base/api/exposures/$rect/image")
+        rr = call("GET", "/api/exposures/$rect/image")
         hr = Dict(rr.headers)
         @test hr["X-Image-Width"]  == "600"   # cols
         @test hr["X-Image-Height"] == "400"   # rows
 
-        rt = HTTP.get("$base/api/exposures/$big/image?thumb=1")
+        rt = call("GET", "/api/exposures/$big/image?thumb=1")
         @test !haskey(Dict(rt.headers), "X-Image-Width")
     end
     rm(big_path; force=true); rm(rect_path; force=true)

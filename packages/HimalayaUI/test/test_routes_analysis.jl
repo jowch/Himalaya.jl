@@ -7,16 +7,16 @@ using Himalaya
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Indices
-        r = HTTP.get("$base/api/exposures/$e_id/indices")
+        r = call("GET", "/api/exposures/$e_id/indices")
         @test r.status == 200
         indices = JSON3.read(String(r.body))
         @test length(indices) >= 1
@@ -63,7 +63,7 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -75,17 +75,17 @@ end
     p1 = Int(peaks[1].id)
     p2 = Int(peaks[2].id)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = Dict(:phase => "Lamellar",
                     :anchor_peak_id => p1, :anchor_ratio => 1,
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
         op_id = "uuid-m24-spec-1"
 
-        r1 = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
+        r1 = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type"   => "application/json",
                        "X-Username"     => "alice",
-                       "X-Client-Op-Id" => op_id])
+                       "X-Client-Op-Id" => op_id],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r1.status == 200
         body1 = String(copy(r1.body))
 
@@ -99,11 +99,11 @@ end
         @test events_after_first == 1
 
         # Same op_id → cached body returned, no new index, no new event row.
-        r2 = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
+        r2 = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type"   => "application/json",
                        "X-Username"     => "alice",
-                       "X-Client-Op-Id" => op_id])
+                       "X-Client-Op-Id" => op_id],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r2.status == 200
         @test String(copy(r2.body)) == body1
 
@@ -124,7 +124,7 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -139,10 +139,10 @@ end
     new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         op_id = "uuid-m24-del-1"
 
-        r1 = HTTP.delete("$base/api/indices/$new_id";
+        r1 = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username"     => "alice",
                        "X-Client-Op-Id" => op_id])
         @test r1.status == 200
@@ -153,7 +153,7 @@ end
             [e_id]))).c
         @test events_after == 1
 
-        r2 = HTTP.delete("$base/api/indices/$new_id";
+        r2 = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username"     => "alice",
                        "X-Client-Op-Id" => op_id])
         @test r2.status == 200
