@@ -18,10 +18,11 @@
 # manifest-free, never-clobber ingest path.
 
 """
-    scan_and_group!(db, experiment_id, root_dir; additive=true, analyze=true,
+    scan_and_group!(db, experiment_id; analyze=true,
                     tif_pattern="{name}.tif", prp_pattern="{name}.prp", dat_pattern="{name}.dat")
 
-Full ingest of a beamtime directory into `db` under `experiment_id`.
+Full ingest of a beamtime directory into `db` under `experiment_id`. The scan
+root is the experiment's own `data_dir`/`analysis_dir` (resolved from its row).
 
 Steps:
   1. Resolve `data_dir` and `analysis_dir` from the `experiments` row.
@@ -37,23 +38,18 @@ Steps:
      the write transaction (same contract as `cli_init_with_db!`). Skipped when
      `analyze=false` (tests + the HTTP "scan-only" path).
 
-`additive` is accepted for API symmetry with the rescan caller (Task 10/11); the
-insert-only discipline means the orchestrator is always additive, so the flag is
-currently advisory. Returns a NamedTuple summary
+The insert-only discipline makes every scan additive: a clean rescan is a no-op,
+new files extend the existing loads/samples/exposures. Returns a NamedTuple summary
 `(status, added_loads, added_samples, added_exposures)`.
 """
 function scan_and_group!(
     db           ::SQLite.DB,
-    experiment_id::Int,
-    root_dir     ::AbstractString;
-    additive     ::Bool   = true,
+    experiment_id::Int;
     analyze      ::Bool   = true,
     tif_pattern  ::String = "{name}.tif",
     prp_pattern  ::String = "{name}.prp",
     dat_pattern  ::String = "{name}.dat",
 )
-    root_dir = abspath(root_dir)
-
     # Resolve data_dir and analysis_dir from the experiment row.
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT data_dir, analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
@@ -200,7 +196,7 @@ function scan_and_group!(
 end
 
 """
-    cheap_change_check(db, experiment_id, root_dir) -> Bool
+    cheap_change_check(db, experiment_id) -> Bool
 
 Cheap "has the directory changed since the last ingest?" probe for the Phase-C
 auto-rescan scheduler and the `POST /api/experiments/{id}/scan` route (both
@@ -221,15 +217,10 @@ insert-only dedup; a missed scan would silently drop data). The only `false`
 shortcuts are (a) a vanished/unreadable data dir — nothing to ingest, and a
 scheduler tick must never crash on a missing volume — and (b) on-disk count ≤
 persisted count.
-
-`root_dir` is accepted to match the Phase-C call contract
-(`cheap_change_check(db, experiment_id, root_dir)`); the authoritative scan root
-is the experiment's stored `data_dir`, so `root_dir` is currently advisory only.
 """
 function cheap_change_check(
     db::SQLite.DB,
-    experiment_id::Int,
-    root_dir::AbstractString;
+    experiment_id::Int;
     image_pattern::String = "{name}.tif",
 )::Bool
     # Resolve the experiment's data_dir (the authoritative scan root).

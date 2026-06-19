@@ -212,10 +212,10 @@ end
         @test length(metas) == 6
         # Each has a prp_path, tif_path, dat_path, and parsed prp fields
         m = first(metas)
-        @test haskey(m, :stem)
-        @test haskey(m, :prp_path)
-        @test haskey(m, :tif_path)
-        @test haskey(m, :prp)  # the parse_prp result
+        @test hasproperty(m, :stem)
+        @test hasproperty(m, :prp_path)
+        @test hasproperty(m, :tif_path)
+        @test hasproperty(m, :prp)  # the parse_prp result
         # Stems returned sorted
         @test [m.stem for m in metas] == sort([m.stem for m in metas])
         # A missing PRP (has tif but no prp) → prp is missing
@@ -528,7 +528,7 @@ end
             name = "test-ingest", path = dir,
             data_dir = data_dir, analysis_dir = analysis_dir)
 
-        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
 
         # Exposures in DB
         exps = Tables.rowtable(DBInterface.execute(db,
@@ -572,7 +572,7 @@ end
         # Idempotent: a second scan of the same directory is a true no-op. Insert-only
         # discipline applies to loads AND samples AND exposures — re-running must not mint
         # a fresh load_id (which would re-key the sample dedup and duplicate samples).
-        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
         exps2 = Tables.rowtable(DBInterface.execute(db,
             "SELECT id FROM exposures WHERE experiment_id = ?", [exp_id]))
         @test length(exps2) == 4  # exposures unchanged
@@ -679,11 +679,11 @@ end
             data_dir = data_dir, analysis_dir = analysis_dir)
 
         # Before any ingest: 2 files on disk, 0 exposures in DB → changed
-        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == true
+        @test HimalayaUI.cheap_change_check(db, exp_id) == true
 
         # After ingest: 2 files, 2 exposures → unchanged (true no-op tick)
-        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
-        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == false
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+        @test HimalayaUI.cheap_change_check(db, exp_id) == false
 
         # Add a new TIF/PRP pair on disk (not yet ingested) → changed again
         new_stem = "HA_3_S0003_0_001"
@@ -693,11 +693,11 @@ end
             detector = "Pilatus 1M", exposure_time = 15.0,
             horizontal_position_mm = 67.3)
         write(joinpath(data_dir, "$new_stem.tif"), "fake tif")
-        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == true
+        @test HimalayaUI.cheap_change_check(db, exp_id) == true
 
         # Re-scan picks up the new file; check goes quiet again
-        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
-        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == false
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+        @test HimalayaUI.cheap_change_check(db, exp_id) == false
 
         # Defensive: a non-existent data dir is treated as "no change" (nothing to ingest),
         # never an error (the scheduler tick must not crash on a vanished volume).
@@ -706,6 +706,6 @@ end
             name = "missing-dir", path = dir,
             data_dir = joinpath(dir, "does_not_exist"),
             analysis_dir = analysis_dir)
-        @test HimalayaUI.cheap_change_check(bad_db, bad_id, dir) == false
+        @test HimalayaUI.cheap_change_check(bad_db, bad_id) == false
     end
 end
