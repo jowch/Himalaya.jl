@@ -12,3 +12,4 @@ function with_test_server(f, db::SQLite.DB)
 end
 
 include("test_inproc.jl")
+include("test_template_db.jl")
