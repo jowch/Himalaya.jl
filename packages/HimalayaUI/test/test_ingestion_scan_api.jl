@@ -21,5 +21,52 @@ function scan_test_db()
 end
 
 @testset "ingestion scan API + SSE + scheduler (Phase C)" begin
-    # task subtestsets appended below
+    @testset "broadcast_progress! emits curation frame with no user_actions row" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            HimalayaUI.bind_db!(db)
+
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "BP", path = dir, data_dir = dir, analysis_dir = dir)
+
+            pending = Channel{String}(64)
+            sub = (pending = pending,)
+            lock(HimalayaUI.SSE_LOCK) do
+                push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+            end
+
+            before_count = Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM user_actions"))[1].c
+
+            HimalayaUI.broadcast_progress!(exp_id; kind = "ingest_started",
+                processed = 0, total = 680)
+
+            after_count = Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM user_actions"))[1].c
+
+            # No durable row written
+            @test after_count == before_count
+
+            # Frame is on the channel
+            @test isready(pending)
+            frame = take!(pending)
+            @test occursin("event: curation", frame)
+
+            data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
+            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            # Frame is payload-wrapped (mirrors broadcast_event!): `kind` top-level,
+            # experiment/count fields under `payload` so it parses like every other
+            # "curation" frame and the frontend reads `payload.experiment_id`.
+            @test obj.kind == "ingest_started"
+            @test obj.payload.experiment_id == exp_id
+            @test obj.payload.processed == 0
+            @test obj.payload.total == 680
+
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
 end
