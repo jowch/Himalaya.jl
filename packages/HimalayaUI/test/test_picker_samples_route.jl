@@ -177,8 +177,8 @@ end
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f1', 1)")
 
-        with_test_server(db) do port, base
-            r = HTTP.get("$base/api/experiments/1/picker-samples")
+        with_inproc_routes(db) do call
+            r = call("GET", "/api/experiments/1/picker-samples")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test length(body) == 1
@@ -188,7 +188,7 @@ end
 
             # Sanity: zero-exposure sample produces null (not absent).
             DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (11, 1, 'Empty')")
-            r2 = HTTP.get("$base/api/experiments/1/picker-samples")
+            r2 = call("GET", "/api/experiments/1/picker-samples")
             body2 = JSON3.read(String(r2.body))
             empty_row = first(filter(b -> b.sample.id == 11, collect(body2)))
             @test empty_row.indexing_exposure_id === nothing
@@ -205,8 +205,8 @@ end
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (20, 2, 'B1')")  # zero-exposure
         DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f1', 1)")
 
-        with_test_server(db) do port, base
-            r = HTTP.get("$base/api/picker-samples")
+        with_inproc_routes(db) do call
+            r = call("GET", "/api/picker-samples")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test length(body) == 2                          # samples from both experiments
@@ -226,8 +226,8 @@ end
 @testset "GET /api/picker-samples (corpus) — empty corpus" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "h.db"))
-        with_test_server(db) do port, base
-            r = HTTP.get("$base/api/picker-samples")
+        with_inproc_routes(db) do call
+            r = call("GET", "/api/picker-samples")
             @test r.status == 200
             @test length(JSON3.read(String(r.body))) == 0   # empty corpus → [] over HTTP
         end
