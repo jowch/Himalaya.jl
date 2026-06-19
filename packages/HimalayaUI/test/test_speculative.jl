@@ -241,13 +241,13 @@ end
     p1 = Int(peaks[1].id)
     p2 = Int(peaks[2].id)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = Dict(:phase => "Lamellar",
                     :anchor_peak_id => p1, :anchor_ratio => 1,
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
-        r = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
-            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        r = call("POST", "/api/exposures/$e_id/speculative";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r.status == 200
         new_ix = JSON3.read(String(r.body))
         new_id = Int(new_ix.id)
@@ -286,8 +286,8 @@ end
     new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    with_test_server(db) do port, base
-        r = HTTP.delete("$base/api/indices/$new_id";
+    with_inproc_routes(db) do call
+        r = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
 
@@ -323,9 +323,9 @@ end
     p1 = Int(peaks[1].id)
     p2 = Int(peaks[2].id)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Snap endpoint
-        r = HTTP.get("$base/api/exposures/$e_id/speculative-snap?phase=Lamellar&anchor_peak_id=$p1&anchor_ratio=1")
+        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Lamellar&anchor_peak_id=$p1&anchor_ratio=1")
         @test r.status == 200
         snaps = JSON3.read(String(r.body))
         @test length(snaps) >= 2
@@ -333,13 +333,11 @@ end
         @test snaps[1].is_anchor === true
 
         # Bad phase
-        r = HTTP.get("$base/api/exposures/$e_id/speculative-snap?phase=Bogus&anchor_peak_id=$p1";
-                     status_exception = false)
+        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Bogus&anchor_peak_id=$p1")
         @test r.status == 400
 
         # Missing anchor
-        r = HTTP.get("$base/api/exposures/$e_id/speculative-snap?phase=Lamellar";
-                     status_exception = false)
+        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Lamellar")
         @test r.status == 400
 
         # Create speculative
@@ -347,10 +345,10 @@ end
                     :anchor_peak_id => p1, :anchor_ratio => 1,
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)],
                     :active => true)
-        r = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
+        r = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r.status == 200
         new_ix = JSON3.read(String(r.body))
         @test new_ix.kind == "speculative"
@@ -364,15 +362,15 @@ end
 
         # DELETE rejects auto indices
         auto_ix_id = Int(first(filter(ix -> ix.kind != "speculative",
-                                       JSON3.read(String(HTTP.get("$base/api/exposures/$e_id/indices").body)))).id)
-        r = HTTP.delete("$base/api/indices/$auto_ix_id"; status_exception = false)
+                                       JSON3.read(String(call("GET", "/api/exposures/$e_id/indices").body)))).id)
+        r = call("DELETE", "/api/indices/$auto_ix_id")
         @test r.status == 403
 
         # DELETE allows speculative + cleans up
-        r = HTTP.delete("$base/api/indices/$new_id";
+        r = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
-        r2 = HTTP.get("$base/api/indices/$new_id"; status_exception = false)
+        r2 = call("GET", "/api/indices/$new_id")
         @test r2.status == 404
         # Group membership and index_peaks gone
         rs = Tables.rowtable(DBInterface.execute(db,
