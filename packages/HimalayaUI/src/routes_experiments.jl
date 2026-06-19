@@ -245,6 +245,66 @@ function register_experiments_routes!()
             JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
     end
 
+    @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment not found")))
+
+        # Mark as scanning immediately so the frontend header can show progress.
+        lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                DBInterface.execute(db,
+                    "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [id])
+            end
+        end
+
+        broadcast_progress!(id; kind = "ingest_started", processed = 0, total = 0)
+
+        # Run the cheap change-check + additive scan on a @spawn'd task so this request
+        # returns immediately; progress streams over SSE. Both Phase B functions
+        # (cheap_change_check, scan_and_group!) resolve the experiment's data_dir from
+        # the row themselves, and return gracefully on an empty directory.
+        Threads.@spawn begin
+            try
+                changed = cheap_change_check(db, id)
+                if changed
+                    scan_and_group!(db, id)
+                    start_rescan_scheduler!(db, id)   # re-arm the fast-tier scheduler
+                end
+
+                lock(_DB_WRITE_LOCK) do
+                    SQLite.transaction(db) do
+                        DBInterface.execute(db,
+                            "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
+                            [format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"), id])
+                    end
+                end
+                broadcast_progress!(id; kind = "ingest_complete",
+                    processed = 0, total = 0, changed = changed)
+            catch err
+                @warn "scan failed" experiment_id = id exception = err
+                lock(_DB_WRITE_LOCK) do
+                    SQLite.transaction(db) do
+                        DBInterface.execute(db,
+                            "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [id])
+                    end
+                end
+                broadcast_progress!(id; kind = "ingest_failed",
+                    processed = 0, total = 0,
+                    error = sprint(showerror, err))
+            end
+        end
+
+        log_action!(db, req; action = "scan",
+            entity_type = "experiment", entity_id = id)
+
+        HTTP.Response(202, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:status => "scanning", :experiment_id => id)))
+    end
+
     @delete "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,

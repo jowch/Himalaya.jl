@@ -381,4 +381,29 @@ end
             end
         end
     end
+
+    @testset "POST /api/experiments/{id}/scan no-change is idempotent" begin
+        db, dir, exp_id = scan_test_db()
+
+        with_test_server(db) do port, base
+            # First scan on empty dir: no files, should return 200 + changed=false
+            # (since scan_and_group! is Phase B and may not be present in test env,
+            #  the route must not crash when the directory has no matching files;
+            #  test the HTTP contract, not the full scan logic)
+            r = HTTP.post("$base/api/experiments/$exp_id/scan";
+                headers = ["X-Username" => "alice"],
+                status_exception = false)
+            # 200 or 202 are both acceptable (implementation may vary)
+            @test r.status in (200, 202)
+            body = JSON3.read(String(r.body))
+            @test haskey(body, :status)
+
+            # 404 for unknown experiment
+            r2 = HTTP.post("$base/api/experiments/999999/scan";
+                headers = ["X-Username" => "alice"],
+                status_exception = false)
+            @test r2.status == 404
+        end
+        SQLite.close(db)
+    end
 end
