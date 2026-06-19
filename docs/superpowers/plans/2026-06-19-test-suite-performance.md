@@ -357,25 +357,21 @@ end
         end
     end
 
-    @testset "DELETE 204 empty body" begin
-        # Use any DELETE route that returns 204; if none returns 204, assert the
-        # status+body match whatever the wire returns (the point is parity).
+    @testset "DELETE verb parity (404 on missing id, no body)" begin
+        # Exercises the DELETE method + a no-body request + an error-response
+        # body, asserting parity. Uses a REAL delete route (/api/peaks/{id},
+        # routes_peaks.jl:348) with a nonexistent id so no mutation/setup is
+        # needed and both transports see the identical not-found response.
         mktempdir() do d
             fx = _seed(d)
-            # Create a message then delete it (adjust path to a real DELETE route).
-            hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
-            mid = with_test_server(fx.db) do port, base
-                r = HTTP.post("$base/api/samples/$(fx.s_id)/messages";
-                              body=JSON3.write(Dict(:body=>"x")), headers=hdrs)
-                JSON3.read(String(r.body)).id
-            end
+            hdrs = ["X-Username" => "alice"]
             w  = with_test_server(fx.db) do port, base
-                HTTP.request("DELETE", "$base/api/messages/$mid", hdrs; status_exception=false)
+                HTTP.request("DELETE", "$base/api/peaks/99999", hdrs; status_exception=false)
             end
             ip = with_inproc_routes(fx.db) do call
-                call("DELETE", "/api/messages/$mid"; headers=hdrs)
+                call("DELETE", "/api/peaks/99999"; headers=hdrs)
             end
-            _assert_equiv(w, ip; label="delete")
+            _assert_equiv(w, ip; label="delete-404")
         end
     end
 
