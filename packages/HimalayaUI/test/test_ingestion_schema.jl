@@ -41,4 +41,16 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
 
 @testset "ingestion schema (Phase A)" begin
     # tasks append @testset blocks below
+
+    @testset "migrations recorded" begin
+        path = fresh_db()
+        with_db(path) do db
+            applied = Set(String.(getproperty.(Tables.rowtable(
+                DBInterface.execute(db, "SELECT name FROM schema_migrations")), :name)))
+            @test HimalayaUI.MIGRATION_LOADS_TABLE in applied
+            @test HimalayaUI.MIGRATION_EXPOSURES_EXPERIMENT_ID in applied
+            @test HimalayaUI.MIGRATION_EXPERIMENTS_GEOMETRY in applied
+            @test HimalayaUI.MIGRATION_SAMPLES_NAME_COLLAPSE in applied
+        end
+    end
 end

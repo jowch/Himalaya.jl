@@ -7,6 +7,20 @@ const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
+# Sentinel marker names for the ingestion-redesign Phase A schema migrations.
+const MIGRATION_LOADS_TABLE             = "loads_table_v1"
+const MIGRATION_EXPOSURES_EXPERIMENT_ID = "exposures_experiment_id_v1"
+const MIGRATION_EXPERIMENTS_GEOMETRY    = "experiments_geometry_v1"
+const MIGRATION_SAMPLES_NAME_COLLAPSE   = "samples_name_collapse_v1"
+
+# Sentinel helpers (ingestion redesign): gate-read and marker-write for the
+# `schema_migrations` table. Mirrors the inlined pattern in
+# `migrate_assignments!` / `migrate_comparisons_to_series!`.
+_migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
+    "SELECT 1 FROM schema_migrations WHERE name = ?", [name])))
+_record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db,
+    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", [name, comparison_now_iso()])
+
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
@@ -418,6 +432,51 @@ function migrate_schema!(db::SQLite.DB)
     # longer load-bearing at runtime since `experiments.config` is the
     # source of truth for `analyze_exposure!`.
     migrate_experiment_config_label_to_name!(db)
+
+    # Ingestion redesign (Phase A): additive schema scaffolding. Sentinel-gated
+    # stubs for now — later tasks fill in the real DDL. Run AFTER
+    # migrate_samples_naming!, in dependency order:
+    # loads → exposures denorm → experiments geometry → samples collapse.
+    migrate_loads_table!(db)
+    migrate_exposures_experiment_id!(db)
+    migrate_experiments_geometry!(db)
+    migrate_samples_name_collapse!(db)
+end
+
+# ── Ingestion redesign Phase A migrations ───────────────────────────────────
+# Sentinel-gated stubs (Task 1). Later tasks replace the bodies with real DDL;
+# each is idempotent via its `schema_migrations` sentinel.
+
+function migrate_loads_table!(db::SQLite.DB)
+    _migrated(db, MIGRATION_LOADS_TABLE) && return nothing
+    SQLite.transaction(db) do
+        _record_migration!(db, MIGRATION_LOADS_TABLE)
+    end
+    nothing
+end
+
+function migrate_exposures_experiment_id!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_EXPERIMENT_ID) && return nothing
+    SQLite.transaction(db) do
+        _record_migration!(db, MIGRATION_EXPOSURES_EXPERIMENT_ID)
+    end
+    nothing
+end
+
+function migrate_experiments_geometry!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPERIMENTS_GEOMETRY) && return nothing
+    SQLite.transaction(db) do
+        _record_migration!(db, MIGRATION_EXPERIMENTS_GEOMETRY)
+    end
+    nothing
+end
+
+function migrate_samples_name_collapse!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLES_NAME_COLLAPSE) && return nothing
+    SQLite.transaction(db) do
+        _record_migration!(db, MIGRATION_SAMPLES_NAME_COLLAPSE)
+    end
+    nothing
 end
 
 """
