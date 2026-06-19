@@ -120,11 +120,12 @@ end
         analysis_dir = joinpath(dir, "analysis")
         mkpath(analysis_dir)
 
-        # Two PRP files with consistent geometry
+        # Two PRP files with consistent geometry; pipe_length matches the calibrated
+        # setup distance so the nominal-vs-calibrated gap check stays below the 1% threshold.
         for (name, hpos) in [("HA_001", 58.9), ("HA_002", 63.1)]
             write_prp(joinpath(data_dir, "$name.prp");
                 beam_energy_ev = 9000.027604502573,
-                pipe_length_mm = 1700,
+                pipe_length_mm = 1809.5,   # matches setup mean_distance → no gap discrepancy
                 detector = "Pilatus 1M",
                 exposure_time = 15.0,
                 horizontal_position_mm = hpos)
@@ -168,9 +169,9 @@ end
             vcat(prp_paths, [joinpath(data_dir, "HA_003.prp")]), setup_files)
         @test any(d -> d.field == "beam_energy_ev", disc2)
 
-        # No setup file → fall back to PRP pipe length
+        # No setup file → fall back to PRP pipe length (HA_001/HA_002 have pipe_length=1809.5mm)
         geo3, _ = HimalayaUI.derive_geometry(prp_paths, String[])
-        @test geo3.flight_path_m ≈ 1.700
+        @test geo3.flight_path_m ≈ 1.8095
         @test geo3.flight_path_m_source == "prp"
 
         # Unknown detector → pixel_size_um missing, discrepancy flagged
@@ -412,6 +413,84 @@ end
         # Load time range
         @test result.loads[1].start_time isa DateTime
         @test result.loads[1].end_time   isa DateTime
+    end
+
+    @testset "grouping regression floor — SSRL 2026-04 Load 1 fixture" begin
+        using Dates
+
+        # Mirror the real 1p7m run structure (Load 1 of 13):
+        # 4 slots, 4 frames each, H steps ~3.95 mm, within-burst jitter ≈ 0.3 mm,
+        # 19 s between frames, 15 s exposure time (from PRP).
+        # Confirmed parameters from real data sweep 2026-06-18.
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+
+        SLOT_CENTERS_MM = [74.80, 70.85, 67.22, 63.49]  # from real HA data
+        WITHIN_BURST_JITTER = [0.0, 0.13, -0.24, 0.05]
+        FRAME_GAP_S = 19
+        t0 = DateTime(2026, 4, 25, 23, 14, 8)
+
+        scan_id = 2001
+        stems = String[]
+        for (si, h_center) in enumerate(SLOT_CENTERS_MM)
+            for (fi, jitter) in enumerate(WITHIN_BURST_JITTER)
+                offset = (si - 1) * length(WITHIN_BURST_JITTER) * FRAME_GAP_S + (fi - 1) * FRAME_GAP_S
+                stem = "HA_$(si)_$(lpad(scan_id, 4,'0'))_S$(scan_id)_0_001"
+                scan_id += 1
+                push!(stems, stem)
+                write_prp(joinpath(data_dir, "$stem.prp");
+                    timestamp        = Dates.format(t0 + Second(offset), "dd u yyyy HH:MM:SS"),
+                    beam_energy_ev   = 9000.027604502573,
+                    pipe_length_mm   = 1700,
+                    detector         = "Pilatus 1M",
+                    exposure_time    = 15.0,
+                    horizontal_position_mm = h_center + jitter)
+                write(joinpath(data_dir, "$stem.tif"), "fake tif")
+            end
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt");
+            beam_center_x = 421.409, beam_center_y = 836.946, mean_distance_mm = 1809.5)
+
+        metas = HimalayaUI.scan_directory(data_dir, analysis_dir)
+
+        # Regression floors for scan_directory
+        @test length(metas) >= 16          # ≥ all 16 exposures found
+        @test length(metas) <= 16          # ≤ only the 16 we wrote (no phantom)
+
+        result = HimalayaUI.group_into_samples(metas)
+
+        # One load (19 s gaps are well within one load)
+        @test length(result.loads) >= 1
+        # At least 4 slots detected
+        total_samples = sum(length(l.samples) for l in result.loads)
+        @test total_samples >= 4           # floor: found at least 4 slots
+        @test total_samples <= 6           # ceiling: shouldn't massively over-split
+        # Frame count matches
+        total_frames = sum(l.frame_count for l in result.loads)
+        @test total_frames == 16
+
+        # Geometry derivation
+        prp_paths   = filter(!isnothing, [m.prp_path for m in metas])
+        setup_files = [joinpath(analysis_dir, "setup_info_20260425_181705.txt")]
+        geo, disc   = HimalayaUI.derive_geometry(String.(prp_paths), String.(setup_files))
+
+        @test geo.energy_kev ≈ 9.000027604502573
+        @test geo.flight_path_m ≈ 1.8095            # calibrated, not PRP nominal
+        @test geo.flight_path_m_source == "setup"
+        @test geo.beam_center_x ≈ 421.409
+        @test geo.pixel_size_um ≈ 172.0
+
+        # The nominal vs calibrated gap is flagged as a discrepancy (6.4% gap)
+        @test any(d -> occursin("flight_path_m_nominal_vs_calibrated", d.field), disc)
+
+        # Auto-naming: every sample name contains the coordinate anchor
+        for load in result.loads
+            for (si, samp) in enumerate(load.samples)
+                @test occursin("P$(lpad(si, 2,'0'))", samp.name)
+            end
+        end
     end
 
     @testset "scan_and_group! inserts loads/samples/exposures" begin

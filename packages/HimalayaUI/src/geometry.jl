@@ -208,6 +208,23 @@ function derive_geometry(
         end
     end
 
+    # Discrepancy: large gap between PRP pipe length and setup calibrated distance.
+    # The real SSRL 2026-04 data shows a 6.4% gap (1809.5 vs 1700 mm) that propagates
+    # directly into every q value — flag it for the user to review.
+    if !ismissing(flight_path_m) && flight_path_m_source == "setup"
+        pipe_vals = filter(!ismissing, [p.pipe_length_m for p in parsed])
+        if !isempty(pipe_vals)
+            nominal = first(pipe_vals)
+            frac_gap = abs(flight_path_m - nominal) / nominal
+            if frac_gap > 0.01  # >1% gap (6.4% in the real data = 1809.5 vs 1700 mm)
+                push!(discrepancies, GeometryDiscrepancy("flight_path_m_nominal_vs_calibrated",
+                    "PRP pipe length $(round(nominal*1000; digits=1)) mm vs " *
+                    "setup calibrated $(round(flight_path_m*1000; digits=1)) mm " *
+                    "($(round(frac_gap*100; digits=1))% gap); using calibrated value"))
+            end
+        end
+    end
+
     geometry = (
         energy_kev             = energy_kev,
         energy_kev_source      = ismissing(energy_kev) ? "default" : "prp",
