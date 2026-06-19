@@ -7,18 +7,18 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # GET empty list
-        r = HTTP.get("$base/api/samples/$s_id/messages")
+        r = call("GET", "/api/samples/$s_id/messages")
         @test r.status == 200
         list = JSON3.read(String(r.body))
         @test length(list) == 0
 
         # POST first message
-        r = HTTP.post("$base/api/samples/$s_id/messages";
-            body = JSON3.write(Dict(:body => "looks cubic to me")),
+        r = call("POST", "/api/samples/$s_id/messages";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(Dict(:body => "looks cubic to me"))))
         @test r.status == 201
         msg = JSON3.read(String(r.body))
         @test msg.author == "alice"
@@ -36,14 +36,14 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test msg.author_id == Int(user_rows[1].id)
 
         # POST a second message as a different user
-        r = HTTP.post("$base/api/samples/$s_id/messages";
-            body = JSON3.write(Dict(:body => "agreed — Im3m a=19.3 nm")),
+        r = call("POST", "/api/samples/$s_id/messages";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "bob"])
+                       "X-Username"   => "bob"],
+            body = Vector{UInt8}(JSON3.write(Dict(:body => "agreed — Im3m a=19.3 nm"))))
         @test r.status == 201
 
         # GET list — chronological (oldest first)
-        r = HTTP.get("$base/api/samples/$s_id/messages")
+        r = call("GET", "/api/samples/$s_id/messages")
         list = JSON3.read(String(r.body))
         @test length(list) == 2
         @test list[1].author == "alice"
@@ -52,31 +52,28 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[2].body   == "agreed — Im3m a=19.3 nm"
 
         # POST without X-Username → 401
-        r = HTTP.post("$base/api/samples/$s_id/messages";
-            body = JSON3.write(Dict(:body => "anon")),
+        r = call("POST", "/api/samples/$s_id/messages";
             headers = ["Content-Type" => "application/json"],
-            status_exception = false)
+            body = Vector{UInt8}(JSON3.write(Dict(:body => "anon"))))
         @test r.status == 401
 
         # POST empty body → 400
-        r = HTTP.post("$base/api/samples/$s_id/messages";
-            body = JSON3.write(Dict(:body => "   ")),
+        r = call("POST", "/api/samples/$s_id/messages";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
-            status_exception = false)
+            body = Vector{UInt8}(JSON3.write(Dict(:body => "   "))))
         @test r.status == 400
 
         # GET for unknown sample → 200 empty (graceful)
-        r = HTTP.get("$base/api/samples/99999/messages")
+        r = call("GET", "/api/samples/99999/messages")
         @test r.status == 200
         @test length(JSON3.read(String(r.body))) == 0
 
         # POST to nonexistent sample → FK violation → non-2xx (FK enforcement is on)
-        r = HTTP.post("$base/api/samples/99999/messages";
-            body = JSON3.write(Dict(:body => "orphan message")),
+        r = call("POST", "/api/samples/99999/messages";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
-            status_exception = false)
+            body = Vector{UInt8}(JSON3.write(Dict(:body => "orphan message"))))
         @test r.status >= 400
 
         # Deleting the user should null out `author` on subsequent reads (the LEFT JOIN
@@ -84,7 +81,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # whether `PRAGMA foreign_keys = ON` is active — we only require that the UI's
         # display path (author name) sees null.
         DBInterface.execute(db, "DELETE FROM users WHERE username = ?", ["alice"])
-        r = HTTP.get("$base/api/samples/$s_id/messages")
+        r = call("GET", "/api/samples/$s_id/messages")
         list = JSON3.read(String(r.body))
         alice_msg = first(filter(m -> m.body == "looks cubic to me", list))
         @test alice_msg.author === nothing
@@ -98,18 +95,18 @@ end
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         op_id = "uuid-msg-retry-1"
         body  = JSON3.write(Dict(:body => "looks cubic to me"))
         hdrs  = ["Content-Type"   => "application/json",
                  "X-Username"     => "alice",
                  "X-Client-Op-Id" => op_id]
 
-        r1 = HTTP.post("$base/api/samples/$s_id/messages"; body=body, headers=hdrs)
+        r1 = call("POST", "/api/samples/$s_id/messages"; headers=hdrs, body=Vector{UInt8}(body))
         @test r1.status == 201
         body1 = String(copy(r1.body))
 
-        r2 = HTTP.post("$base/api/samples/$s_id/messages"; body=body, headers=hdrs)
+        r2 = call("POST", "/api/samples/$s_id/messages"; headers=hdrs, body=Vector{UInt8}(body))
         @test r2.status == 201
         @test String(copy(r2.body)) == body1
 
