@@ -917,6 +917,24 @@ In `routes_experiments.jl`, add inside `register_experiments_routes!()`:
                 DBInterface.execute(db, """
                     DELETE FROM sample_messages WHERE sample_id IN
                       (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                # Cross-feature tables OUTSIDE the core tree (db.jl:700-1060) that
+                # reference this experiment's samples/exposures. FK enforcement is
+                # OFF here, so their declared ON DELETE actions do NOT fire —
+                # replicate each by hand so no orphan rows remain:
+                #   series_samples.sample_id   -> samples   ON DELETE CASCADE  (delete row)
+                #   series_members.exposure_id -> exposures ON DELETE SET NULL (null the ref)
+                #   comparison_members.exposure_id -> exposures ON DELETE SET NULL (null the ref)
+                # Must run BEFORE the samples/exposures deletes below so the
+                # IN-subqueries still resolve the ids.
+                DBInterface.execute(db, """
+                    DELETE FROM series_samples WHERE sample_id IN
+                      (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                DBInterface.execute(db, """
+                    UPDATE series_members SET exposure_id = NULL WHERE exposure_id IN
+                      (SELECT id FROM exposures WHERE experiment_id = ?)""", [id])
+                DBInterface.execute(db, """
+                    UPDATE comparison_members SET exposure_id = NULL WHERE exposure_id IN
+                      (SELECT id FROM exposures WHERE experiment_id = ?)""", [id])
                 DBInterface.execute(db,
                     "DELETE FROM exposures WHERE experiment_id = ?", [id])
                 DBInterface.execute(db,
@@ -939,7 +957,7 @@ In `routes_experiments.jl`, add inside `register_experiments_routes!()`:
 end
 ```
 
-> **Cascade note (verified 2026-06-18, NOT cascading):** `grep -n "REFERENCES experiments\|REFERENCES samples\|REFERENCES exposures" packages/HimalayaUI/src/db.jl` confirms `samples.experiment_id`, `exposures.sample_id`, and every exposure-keyed structural table lack `ON DELETE CASCADE`. Phase A adds cascade ONLY to `exposures.experiment_id` and `loads.experiment_id`; the sample/exposure/index sub-tree does not cascade. That is why this route disables FK enforcement at the connection level (outside the transaction) and deletes the tree explicitly. Keep the delete list in sync if Phase B/D add new exposure- or index-keyed tables.
+> **Cascade note (verified 2026-06-18, NOT cascading):** `grep -n "REFERENCES experiments\|REFERENCES samples\|REFERENCES exposures" packages/HimalayaUI/src/db.jl` confirms `samples.experiment_id`, `exposures.sample_id`, and every exposure-keyed structural table lack `ON DELETE CASCADE`. Phase A adds cascade ONLY to `exposures.experiment_id` and `loads.experiment_id`; the sample/exposure/index sub-tree does not cascade. That is why this route disables FK enforcement at the connection level (outside the transaction) and deletes the tree explicitly. **Because FK enforcement is OFF, tables that DO declare `ON DELETE CASCADE`/`SET NULL` against samples/exposures from OUTSIDE the core block (`series_samples` CASCADE db.jl:1033, `series_members` SET NULL db.jl:1006, `comparison_members` SET NULL db.jl:732) will NOT fire those actions either** — the route replicates them by hand (delete the CASCADE row, null the SET-NULL refs) before the samples/exposures deletes. Keep the delete list in sync if Phase B/D add new tables that reference samples/exposures/indices.
 
 - [ ] **Step 4: Run to verify it passes**
 
