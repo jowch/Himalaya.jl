@@ -3,7 +3,7 @@ using Himalaya
 
 @testset "speculative.jl unit tests" begin
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -66,7 +66,7 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -119,7 +119,7 @@ end
 # verify auto-discovery behaviour without depending on real-data peak shapes.
 function _spec_synthetic_exposure(qs::Vector{Float64})
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -229,7 +229,7 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -271,7 +271,7 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -311,7 +311,7 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -391,7 +391,7 @@ end
     # and writes it onto the new index — they share the effective peak set, so
     # the inherited hash is correct by construction.
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
