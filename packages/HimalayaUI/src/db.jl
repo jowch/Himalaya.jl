@@ -45,7 +45,33 @@ CREATE TABLE IF NOT EXISTS experiments (
     experiment_type TEXT,
     energy_kev      REAL,
     flight_path_m   REAL,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    energy_kev_source        TEXT DEFAULT 'default',
+    flight_path_m_source     TEXT DEFAULT 'default',
+    beam_center_x            REAL,
+    beam_center_x_source     TEXT DEFAULT 'default',
+    beam_center_y            REAL,
+    beam_center_y_source     TEXT DEFAULT 'default',
+    pixel_size_um            REAL,
+    pixel_size_um_source     TEXT DEFAULT 'default',
+    q_units                  TEXT,
+    q_units_source           TEXT DEFAULT 'default',
+    last_scanned_at          TEXT,
+    scan_signature           TEXT,
+    ingest_status            TEXT DEFAULT 'idle',
+    last_scan_tier           TEXT DEFAULT 'fast',
+    consecutive_empty_ticks  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS loads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id INTEGER NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+    load_index    INTEGER NOT NULL,
+    session_id    INTEGER,
+    start_time    TEXT,
+    end_time      TEXT,
+    frame_count   INTEGER NOT NULL DEFAULT 0,
+    note          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS samples (
@@ -53,7 +79,11 @@ CREATE TABLE IF NOT EXISTS samples (
     experiment_id INTEGER REFERENCES experiments(id),
     name          TEXT,
     display_name  TEXT,
-    notes         TEXT
+    notes         TEXT,
+    load_id          INTEGER REFERENCES loads(id),
+    slot_index       INTEGER,
+    grouping_source  TEXT DEFAULT 'auto_position',
+    name_source      TEXT DEFAULT 'auto'
 );
 
 CREATE TABLE IF NOT EXISTS sample_tags (
@@ -73,7 +103,16 @@ CREATE TABLE IF NOT EXISTS exposures (
     status               TEXT CHECK (status IN ('accepted', 'rejected')),
     image_path           TEXT,
     trace_hash           TEXT,
-    analysis_inputs_hash TEXT
+    analysis_inputs_hash TEXT,
+    experiment_id        INTEGER REFERENCES experiments(id) ON DELETE CASCADE,
+    prp_path             TEXT,
+    timestamp            TEXT,
+    exposure_time        REAL,
+    horizontal_position  REAL,
+    scan_id              INTEGER,
+    frame_no             INTEGER,
+    load_id              INTEGER REFERENCES loads(id),
+    content_fingerprint  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
