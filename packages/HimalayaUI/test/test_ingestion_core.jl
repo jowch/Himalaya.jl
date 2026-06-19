@@ -305,4 +305,60 @@ end
         @test trunc_prp.horizontal_position_mm === missing
         @test trunc_prp.detector === missing
     end
+
+    @testset "slot clustering" begin
+        # Simulate one load: 3 slots × 4 frames each, H positions stepped ~4 mm apart,
+        # within-burst jitter ≈ 0.3 mm. Mirrors the real HA data pattern from spec §5.
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        slot_h = [74.80, 70.85, 67.22]  # three slot centers
+        jitter = [0.0, 0.13, -0.24, 0.05]  # within-burst jitter, 4 frames
+        frames = HimalayaUI.ExposureMeta[]
+        for (si, h_center) in enumerate(slot_h)
+            for (fi, j) in enumerate(jitter)
+                offset = (si - 1) * 4 * 19 + (fi - 1) * 19
+                stem = "HA_$(si)_$(fi)_S$(lpad((si-1)*4+fi, 4,'0'))_0_001"
+                push!(frames, HimalayaUI.ExposureMeta(stem, nothing, nothing, nothing,
+                    (timestamp = t0 + Second(offset),
+                     horizontal_position_mm = h_center + j,
+                     beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
+                     detector = "Pilatus 1M", exposure_time_s = 15.0)))
+            end
+        end
+
+        slots = HimalayaUI._cluster_slots(frames)
+        @test length(slots) == 3
+        @test all(length(s) == 4 for s in slots)
+
+        # All 4 frames of slot 1 should have H ≈ 74.80
+        slot1_h = [m.prp.horizontal_position_mm for m in slots[1]]
+        @test all(abs(h - 74.80) < 0.5 for h in slot1_h)
+
+        # Median-delta-near-zero fallback (the `med_delta < 1e-6` branch).
+        #
+        # This exercises the documented algorithm intent: within-slot revisits collapse the
+        # MEDIAN consecutive-frame delta to ~0 (most consecutive frames sit at the *same*
+        # position), so the plain `med_delta × slot_k` tolerance is degenerate (0) and would
+        # split on every frame. The fallback instead learns the slot-spacing tolerance from
+        # the non-zero deltas (the burst→burst jumps). Fixture: 3 slots, each a 3-frame burst
+        # at a fixed position (consecutive in-burst deltas == 0), with ~4 mm jumps between
+        # bursts. The 6 in-burst deltas are 0 and the 2 between-burst deltas are ~4 mm, so
+        # median(all 8) == 0 → fallback branch → tolerance = median(nonzero)≈3.8 mm / 5 ≈
+        # 0.76 mm, which sits below the ~4 mm burst jumps (so they split) and above the
+        # 0 mm within-burst jitter (so the bursts stay intact). 3 bursts → 3 slots.
+        burst_frames = HimalayaUI.ExposureMeta[]
+        for (si, h_center) in enumerate([74.80, 70.85, 67.22])
+            for _ in 1:3
+                push!(burst_frames, HimalayaUI.ExposureMeta("b_$(si)_$(length(burst_frames))",
+                    nothing, nothing, nothing,
+                    (timestamp = t0 + Second(length(burst_frames) * 19),
+                     horizontal_position_mm = h_center,   # identical within the burst → zero deltas
+                     beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
+                     detector = "Pilatus 1M", exposure_time_s = 15.0)))
+            end
+        end
+
+        slots_bf = HimalayaUI._cluster_slots(burst_frames)
+        @test length(slots_bf) == 3                       # one slot per burst position
+        @test all(length(s) == 3 for s in slots_bf)       # 3 frames each
+    end
 end
