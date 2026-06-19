@@ -224,6 +224,47 @@ end
         @test tif_only.prp_path === nothing
     end
 
+    @testset "load segmentation" begin
+        # Build 8 ExposureMeta with synthetic timestamps:
+        #   4 in Load 1 at T+0, T+19, T+38, T+57
+        #   2578s gap (reload)
+        #   4 in Load 2 at T+2635, T+2654, T+2673, T+2692
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        offsets = [0, 19, 38, 57, 2635, 2654, 2673, 2692]  # seconds
+        metas = [HimalayaUI.ExposureMeta(
+            "HA_$(lpad(i,2,'0'))_S$(lpad(i,4,'0'))_0_001",
+            nothing, nothing, nothing,
+            (timestamp = t0 + Second(s), horizontal_position_mm = 58.9 + Float64(i)*4.0,
+             beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
+             detector = "Pilatus 1M", exposure_time_s = 15.0),
+        ) for (i, s) in enumerate(offsets)]
+
+        loads = HimalayaUI._segment_loads(metas)
+        @test length(loads) == 2
+        @test length(loads[1]) == 4
+        @test length(loads[2]) == 4
+        @test loads[1][1].stem == "HA_01_S0001_0_001"
+        @test loads[2][1].stem == "HA_05_S0005_0_001"
+
+        # Unimodal fallback: all gaps equal → one load, returned with flag
+        uniform_metas = [HimalayaUI.ExposureMeta(
+            "HA_$(lpad(i,2,'0'))_S$(lpad(i,4,'0'))_0_001",
+            nothing, nothing, nothing,
+            (timestamp = t0 + Second(i * 20), horizontal_position_mm = 58.9 + Float64(i)*4.0,
+             beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
+             detector = "Pilatus 1M", exposure_time_s = 15.0),
+        ) for i in 1:4]
+        uni_loads, uni_flag = HimalayaUI._segment_loads_with_flag(uniform_metas)
+        @test length(uni_loads) == 1
+        @test uni_flag == :unimodal_fallback
+
+        # Single exposure → one load, no-crash
+        single = [first(metas)]
+        sl, sf = HimalayaUI._segment_loads_with_flag(single)
+        @test length(sl) == 1
+        @test sf == :ok
+    end
+
     @testset "parse_prp" begin
         dir = mktempdir()
         prp_path = joinpath(dir, "HA_85_422_S2404_0_001.prp")

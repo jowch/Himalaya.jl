@@ -110,6 +110,82 @@ Field order confirmed from config.jl struct definition (23 fields total):
 If ExperimentConfig gains new fields, this positional call must be updated
 in lockstep — re-read config.jl before editing.
 """
+# ---------------------------------------------------------------------------
+# Time-gap load segmentation (spec §5, step 2)
+# ---------------------------------------------------------------------------
+
+"""
+    _segment_loads(metas; gap_k = 10.0) -> Vector{Vector{ExposureMeta}}
+
+Split `metas` (sorted by timestamp) into loads using gap-relative segmentation:
+a time gap > `gap_k × median(all_consecutive_gaps)` starts a new load.
+
+Returns only the load groups (no flag). Use `_segment_loads_with_flag` to
+distinguish the unimodal fallback.
+"""
+function _segment_loads(metas::Vector{ExposureMeta}; gap_k::Float64 = 10.0)
+    groups, _ = _segment_loads_with_flag(metas; gap_k = gap_k)
+    return groups
+end
+
+"""
+    _segment_loads_with_flag(metas; gap_k = 10.0) -> (loads, flag)
+
+`flag ∈ {:ok, :unimodal_fallback}`:
+- `:ok`                — bimodal split found, or trivially one exposure
+- `:unimodal_fallback` — no gap exceeds the threshold; entire directory is one load
+"""
+function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 10.0)
+    isempty(metas) && return (Vector{ExposureMeta}[], :ok)
+
+    # Sort by timestamp; push exposures with missing timestamp to the end.
+    sorted = sort(metas; by = m -> begin
+        ts = m.prp !== nothing ? m.prp.timestamp : missing
+        ismissing(ts) ? DateTime(9999) : ts
+    end)
+
+    length(sorted) == 1 && return ([[sorted[1]]], :ok)
+
+    # Compute consecutive time gaps in seconds.
+    timestamps = [begin
+        ts = m.prp !== nothing ? m.prp.timestamp : missing
+        ismissing(ts) ? missing : ts
+    end for m in sorted]
+
+    gaps = Float64[]
+    for i in 2:length(timestamps)
+        if !ismissing(timestamps[i]) && !ismissing(timestamps[i-1])
+            push!(gaps, Float64(Dates.value(timestamps[i] - timestamps[i-1])) / 1000.0)  # ms → s
+        end
+    end
+
+    if isempty(gaps)
+        return ([sorted], :unimodal_fallback)
+    end
+
+    med = let v = sort(gaps)
+        n = length(v)
+        iseven(n) ? (v[n÷2] + v[n÷2+1]) / 2.0 : v[(n+1)÷2]
+    end
+    threshold = med * gap_k
+    flag = :unimodal_fallback  # default; set to :ok when we actually split
+
+    loads = Vector{ExposureMeta}[[sorted[1]]]
+    for i in 2:length(sorted)
+        ts_prev = sorted[i-1].prp !== nothing ? sorted[i-1].prp.timestamp : missing
+        ts_curr = sorted[i].prp   !== nothing ? sorted[i].prp.timestamp   : missing
+        gap_s = (!ismissing(ts_prev) && !ismissing(ts_curr)) ?
+            Float64(Dates.value(ts_curr - ts_prev)) / 1000.0 : 0.0
+        if gap_s > threshold
+            push!(loads, ExposureMeta[])
+            flag = :ok
+        end
+        push!(last(loads), sorted[i])
+    end
+
+    return (loads, flag)
+end
+
 function _minimal_scan_config(
     tif_pattern::String,
     prp_pattern::String,
