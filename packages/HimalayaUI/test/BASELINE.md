@@ -21,3 +21,16 @@ Implication for scope: M1 (in-process dispatch) remains clearly worthwhile, but 
 ROI of M2 (template DB) and especially M3 (parallel process buckets — 5× Julia
 startup+compile overhead) is much weaker at a 4.5-min baseline than at 20 min.
 **Re-measure after M1 before committing to M2/M3.**
+
+## M1 result (in-process dispatch migration complete)
+
+- Total Pass: **2170** (baseline 2145 + 25 equivalence-harness assertions), Fail 0, Error 0.
+- Wall time (`real`): **186.90 s** (~3m07s); test execution 3m02.4s.
+- vs baseline 268.65s → **~30% faster** (uncontended). 21 route-test files migrated from
+  per-test Oxygen server boots to in-process `internalrequest` dispatch; ~145 boots eliminated.
+- Beyond the raw 30%: in-process dispatch removes the server-boot/port-bind step entirely, so
+  the suite no longer balloons under CPU contention the way the wire version did (the original
+  ~1247s contended measurement). That robustness is arguably the bigger win.
+
+Go/no-go threshold was <600s; we are at 187s. The <3min goal is essentially met by M1 alone.
+M2/M3 ROI at this scale is marginal — see scope note above; deferred pending re-measure decision.
