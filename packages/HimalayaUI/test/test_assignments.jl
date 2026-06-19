@@ -5,7 +5,7 @@ using JSON3, HTTP
 
 @testset "assignments schema" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
 
         # Both new tables exist.
         tbls = Set(String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
@@ -30,7 +30,7 @@ end
 
 @testset "migrate_assignments! backfills from active group" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -69,7 +69,7 @@ end
     # assignment (auto-grouping is not durable), but legacy upgrades carry the
     # auto guess forward so a pre-Plan-A DB keeps what it displayed.
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -103,7 +103,7 @@ end
     # happy-path test deletes the sentinel to force a re-run, so this guard is
     # otherwise entirely uncovered.
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -141,7 +141,7 @@ end
     # assignment row — the migration keys strictly off active=1, mirroring the
     # legacy active-group semantics.
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -164,7 +164,7 @@ end
 
 @testset "_assignment_body shape" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -188,7 +188,7 @@ end
 
 @testset "GET /assignment serves the assignment body" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -210,7 +210,7 @@ end
 if isdefined(@__MODULE__, :with_test_server)
     @testset "GET /assignment in-process HTTP" begin
         mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            db = open_prepared_clone(dir)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
             e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -232,7 +232,7 @@ end
 
 @testset "assignment/state validation + effect" begin
     mktempdir() do dir
-        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db  = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
@@ -253,7 +253,7 @@ end
 if isdefined(@__MODULE__, :with_test_server)
     @testset "POST /assignment/state in-process HTTP" begin
         mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            db = open_prepared_clone(dir)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
             e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -289,7 +289,7 @@ end
     # NOTHING — the durable assignment is now the sole source of truth, written
     # exclusively by the assignment_* kinds.
     mktempdir() do dir
-        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db  = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
@@ -320,7 +320,7 @@ end
 
 @testset "_bonnet_for_index flags a coexisting cubic" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -353,7 +353,7 @@ end
 if isdefined(@__MODULE__, :with_test_server)
     @testset "POST /assignment/members adds a member (native route)" begin
         mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            db = open_prepared_clone(dir)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
             e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -391,7 +391,7 @@ if isdefined(@__MODULE__, :with_test_server)
 
     @testset "DELETE /assignment/members/{index_id} removes a member (native route)" begin
         mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            db = open_prepared_clone(dir)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
             e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -420,7 +420,7 @@ if isdefined(@__MODULE__, :with_test_server)
         # post_state = {assignment:{state,members}} with NO top-level `indices`
         # key, so the frontend's CurationPostState/applyPostStateOnly guard bails.
         mktempdir() do dir
-            db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            db  = open_prepared_clone(dir)
             req = HTTP.Request("POST", "/x",
                 ["X-Username" => "alice", "X-Client-Op-Id" => "op-d1-1"], UInt8[])
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
@@ -447,7 +447,7 @@ end
     # first reflection maximizes the convention-mismatch signal — assert that
     # predicted_q_for_phase(phase, basis) reproduces the physical comb for a=100.
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
         e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
@@ -480,7 +480,7 @@ end
 if isdefined(@__MODULE__, :with_test_server)
     @testset "POST /custom-index persists + adds to the assignment" begin
         mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            db = open_prepared_clone(dir)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
             e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
