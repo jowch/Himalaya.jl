@@ -53,8 +53,8 @@ end
     @testset "GET /api/series — empty corpus" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
-                resp = HTTP.get("$base/api/series", ["X-Username" => "alice"])
+            with_inproc_routes(db) do call
+                resp = call("GET", "/api/series"; headers = ["X-Username" => "alice"])
                 @test resp.status == 200
                 @test JSON3.read(resp.body) == []
             end
@@ -65,10 +65,9 @@ end
     @testset "GET /api/series/{id}" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Missing series → 404.
-                resp404 = HTTP.get("$base/api/series/999", ["X-Username" => "alice"];
-                                   status_exception = false)
+                resp404 = call("GET", "/api/series/999"; headers = ["X-Username" => "alice"])
                 @test resp404.status == 404
 
                 # Seed a series with one recipe row and one plate member.
@@ -81,7 +80,7 @@ end
                     (series_id, exposure_id, display_order, snapshot, created_at)
                     VALUES (5, 1000, 0, '{"effective_peaks":[],"confirmed_index":null,"analysis_inputs_hash":null}', '2026-05-01T00:00:00.000Z')""")
 
-                resp = HTTP.get("$base/api/series/5", ["X-Username" => "alice"])
+                resp = call("GET", "/api/series/5"; headers = ["X-Username" => "alice"])
                 @test resp.status == 200
                 got = JSON3.read(resp.body, Dict{Symbol, Any})
                 @test got[:id] == 5
@@ -189,11 +188,11 @@ end
     @testset "GET /api/series/{id}/forks" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # An existing series with no forks → empty array.
                 DBInterface.execute(db, """INSERT INTO series (id, title, state)
                     VALUES (7, 'parent', 'committed')""")
-                resp0 = HTTP.get("$base/api/series/7/forks", ["X-Username" => "alice"])
+                resp0 = call("GET", "/api/series/7/forks"; headers = ["X-Username" => "alice"])
                 @test resp0.status == 200
                 @test JSON3.read(resp0.body) == []
 
@@ -201,7 +200,7 @@ end
                 DBInterface.execute(db, """INSERT INTO series
                     (id, title, state, forked_from_id)
                     VALUES (8, 'child', 'committed', 7)""")
-                resp = HTTP.get("$base/api/series/7/forks", ["X-Username" => "alice"])
+                resp = call("GET", "/api/series/7/forks"; headers = ["X-Username" => "alice"])
                 @test resp.status == 200
                 forks = JSON3.read(resp.body, Vector{Dict{Symbol, Any}})
                 @test length(forks) == 1
@@ -249,29 +248,27 @@ end
     @testset "POST /api/series — create draft (smoke)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Missing title → 400 (uncached validation error).
-                resp400 = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:samples => []));
-                    status_exception = false)
+                resp400 = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:samples => []))))
                 @test resp400.status == 400
 
                 # samples present but not an array → 400.
-                resp400b = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:title => "t", :samples => "nope"));
-                    status_exception = false)
+                resp400b = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:title => "t", :samples => "nope"))))
                 @test resp400b.status == 400
 
                 # Well-formed create → 201; a series row + a user_actions row.
-                resp = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(
+                resp = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(
                         :title => "My series",
                         :order_rule => "ascending",
                         :samples => [Dict(:sample_id => 100, :position => 0,
-                                          :pinned => false, :excluded => false)])))
+                                          :pinned => false, :excluded => false)]))))
                 @test resp.status == 201
                 created = JSON3.read(resp.body, Dict{Symbol, Any})
                 new_id = created[:id]
@@ -307,16 +304,15 @@ end
 
                 # An empty samples array is a valid draft — the deliberate
                 # departure from comparisons, which rejects empty members.
-                respEmpty = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:title => "empty draft", :samples => [])))
+                respEmpty = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:title => "empty draft", :samples => []))))
                 @test respEmpty.status == 201
 
                 # A samples entry missing sample_id → uncached 400.
-                resp400c = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:title => "t", :samples => [Dict(:position => 0)]));
-                    status_exception = false)
+                resp400c = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:title => "t", :samples => [Dict(:position => 0)]))))
                 @test resp400c.status == 400
             end
             close(db)
@@ -338,21 +334,21 @@ end
                 "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (3000, 200, 'JC200b', 1)")
             DBInterface.execute(db,
                 "INSERT INTO samples (id, experiment_id, name) VALUES (300, 10, 'sC')")
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Recipe of three samples: 200 at position 0, 100 at position 1,
                 # 300 at position 2 — plus one EXCLUDED sample that must NOT
                 # produce a member. The resolved plate must follow recipe
                 # position order, skipping the excluded and exposureless rows.
-                resp = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(
+                resp = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(
                         :title => "resolved",
                         :samples => [
                             Dict(:sample_id => 200, :position => 0),
                             Dict(:sample_id => 100, :position => 1),
                             Dict(:sample_id => 300, :position => 2),
                             Dict(:sample_id => 100, :position => 3, :excluded => true),
-                        ])))
+                        ]))))
                 @test resp.status == 201
                 created = JSON3.read(resp.body, Dict{Symbol, Any})
                 @test created[:state] == "draft"
@@ -372,8 +368,8 @@ end
 
                 # And GET round-trips the same resolved plate.
                 got = JSON3.read(
-                    HTTP.get("$base/api/series/$(created[:id])",
-                             ["X-Username" => "alice"]).body, Dict{Symbol, Any})
+                    call("GET", "/api/series/$(created[:id])";
+                         headers = ["X-Username" => "alice"]).body, Dict{Symbol, Any})
                 @test length(got[:members]) == 2
                 @test got[:members][1]["exposure_id"] == 3000
                 @test got[:members][2]["exposure_id"] == 1000
@@ -385,36 +381,33 @@ end
     @testset "PATCH /api/series/{id} — recipe edit (smoke)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Missing series → 404.
-                resp404 = HTTP.patch("$base/api/series/999",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:samples => []));
-                    status_exception = false)
+                resp404 = call("PATCH", "/api/series/999";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:samples => []))))
                 @test resp404.status == 404
 
                 # samples not an array → 400.
                 DBInterface.execute(db, """INSERT INTO series (id, title, state)
                     VALUES (12, 'edit-me', 'draft')""")
-                resp400 = HTTP.patch("$base/api/series/12",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:samples => "nope"));
-                    status_exception = false)
+                resp400 = call("PATCH", "/api/series/12";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:samples => "nope"))))
                 @test resp400.status == 400
 
                 # A samples entry missing sample_id → uncached 400.
-                resp400b = HTTP.patch("$base/api/series/12",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:samples => [Dict(:position => 0)]));
-                    status_exception = false)
+                resp400b = call("PATCH", "/api/series/12";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:samples => [Dict(:position => 0)]))))
                 @test resp400b.status == 400
 
                 # Well-formed recipe edit → 200; a user_actions row written.
-                resp = HTTP.patch("$base/api/series/12",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(
+                resp = call("PATCH", "/api/series/12";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(
                         :order_rule => "descending",
-                        :samples => [Dict(:sample_id => 100, :position => 0)])))
+                        :samples => [Dict(:sample_id => 100, :position => 0)]))))
                 @test resp.status == 200
                 @test JSON3.read(resp.body, Dict{Symbol, Any})[:id] == 12
                 ev = Tables.rowtable(DBInterface.execute(db,
@@ -429,17 +422,16 @@ end
     @testset "POST /api/series/{id}/commit (smoke + no gate + LWW)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 _member = Dict(:exposure_id => 1000, :display_order => 0,
                                :snapshot => Dict(:effective_peaks => Any[],
                                                  :confirmed_index => nothing,
                                                  :analysis_inputs_hash => nothing))
 
                 # Missing series → 404.
-                resp404 = HTTP.post("$base/api/series/999/commit",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:members => [_member]));
-                    status_exception = false)
+                resp404 = call("POST", "/api/series/999/commit";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:members => [_member]))))
                 @test resp404.status == 404
 
                 # Seed a committed series authored by alice (id 1), with a
@@ -450,10 +442,9 @@ end
                     VALUES (20, 'committed-s', 'committed', 1, 'sha256:deadbeef')""")
 
                 # No is_author gate: bob (not the author) commits → NOT 403.
-                resp = HTTP.post("$base/api/series/20/commit",
-                    ["X-Username" => "bob", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:members => [_member]));
-                    status_exception = false)
+                resp = call("POST", "/api/series/20/commit";
+                    headers = ["X-Username" => "bob", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:members => [_member]))))
                 @test resp.status != 403
                 @test resp.status == 200
                 ev = Tables.rowtable(DBInterface.execute(db,
@@ -462,11 +453,10 @@ end
 
                 # LWW: a stale/wrong expected_content_hash is IGNORED — the commit
                 # succeeds with 200 and the members are applied (no 409 gate).
-                resp_lww = HTTP.post("$base/api/series/20/commit",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:members => [_member],
-                                     :expected_content_hash => "sha256:WRONG"));
-                    status_exception = false)
+                resp_lww = call("POST", "/api/series/20/commit";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:members => [_member],
+                                     :expected_content_hash => "sha256:WRONG"))))
                 @test resp_lww.status == 200
                 body_lww = JSON3.read(resp_lww.body, Dict{Symbol, Any})
                 @test !haskey(body_lww, :error)
@@ -478,10 +468,9 @@ end
     @testset "DELETE /api/series/{id} (smoke + no gate)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Missing series → 404.
-                resp404 = HTTP.delete("$base/api/series/999", ["X-Username" => "alice"];
-                                      status_exception = false)
+                resp404 = call("DELETE", "/api/series/999"; headers = ["X-Username" => "alice"])
                 @test resp404.status == 404
 
                 # Series authored by alice; bob (not the author) deletes it —
@@ -489,8 +478,7 @@ end
                 DBInterface.execute(db, "INSERT INTO users (id, username) VALUES (1, 'alice')")
                 DBInterface.execute(db, """INSERT INTO series
                     (id, title, state, created_by) VALUES (30, 'doomed', 'committed', 1)""")
-                resp = HTTP.delete("$base/api/series/30", ["X-Username" => "bob"];
-                                   status_exception = false)
+                resp = call("DELETE", "/api/series/30"; headers = ["X-Username" => "bob"])
                 @test resp.status != 403
                 @test resp.status == 200
                 deleted = JSON3.read(resp.body, Dict{Symbol, Any})
@@ -508,39 +496,37 @@ end
     @testset "series messages — full round-trip" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 DBInterface.execute(db, """INSERT INTO series (id, title, state)
                     VALUES (40, 'chatty', 'committed')""")
 
                 # Empty thread.
-                resp0 = HTTP.get("$base/api/series/40/messages", ["X-Username" => "alice"])
+                resp0 = call("GET", "/api/series/40/messages"; headers = ["X-Username" => "alice"])
                 @test resp0.status == 200
                 @test JSON3.read(resp0.body) == []
 
                 # POST without X-Username → 401.
-                resp401 = HTTP.post("$base/api/series/40/messages",
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:body => "hi"));
-                    status_exception = false)
+                resp401 = call("POST", "/api/series/40/messages";
+                    headers = ["Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:body => "hi"))))
                 @test resp401.status == 401
 
                 # POST with an empty body → 400.
-                resp400 = HTTP.post("$base/api/series/40/messages",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:body => "   "));
-                    status_exception = false)
+                resp400 = call("POST", "/api/series/40/messages";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:body => "   "))))
                 @test resp400.status == 400
 
                 # POST a real message → 201, then GET sees it.
-                resp = HTTP.post("$base/api/series/40/messages",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:body => "first post")))
+                resp = call("POST", "/api/series/40/messages";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:body => "first post"))))
                 @test resp.status == 201
                 msg = JSON3.read(resp.body, Dict{Symbol, Any})
                 @test msg[:body] == "first post"
                 @test msg[:series_id] == 40
 
-                resp2 = HTTP.get("$base/api/series/40/messages", ["X-Username" => "alice"])
+                resp2 = call("GET", "/api/series/40/messages"; headers = ["X-Username" => "alice"])
                 thread = JSON3.read(resp2.body, Vector{Dict{Symbol, Any}})
                 @test length(thread) == 1
                 @test thread[1][:body] == "first post"
@@ -553,26 +539,24 @@ end
     @testset "series pins (smoke)" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # series-pins without X-Username → 401.
-                resp401 = HTTP.get("$base/api/users/me/series-pins";
-                                   status_exception = false)
+                resp401 = call("GET", "/api/users/me/series-pins")
                 @test resp401.status == 401
 
                 # Fresh user → empty pin list.
-                resp0 = HTTP.get("$base/api/users/me/series-pins", ["X-Username" => "alice"])
+                resp0 = call("GET", "/api/users/me/series-pins"; headers = ["X-Username" => "alice"])
                 @test resp0.status == 200
                 @test JSON3.read(resp0.body) == []
 
                 # Pin a missing series → 404.
-                resp404 = HTTP.post("$base/api/series/999/pin", ["X-Username" => "alice"];
-                                    status_exception = false)
+                resp404 = call("POST", "/api/series/999/pin"; headers = ["X-Username" => "alice"])
                 @test resp404.status == 404
 
                 # Pin an existing series → 200, a user_actions row written.
                 DBInterface.execute(db, """INSERT INTO series (id, title, state)
                     VALUES (50, 'pin-me', 'committed')""")
-                respPin = HTTP.post("$base/api/series/50/pin", ["X-Username" => "alice"])
+                respPin = call("POST", "/api/series/50/pin"; headers = ["X-Username" => "alice"])
                 @test respPin.status == 200
                 pinned = JSON3.read(respPin.body, Dict{Symbol, Any})
                 @test pinned[:series_id] == 50
@@ -582,7 +566,7 @@ end
                 @test any(r -> r.action == "series_pinned", evP)
 
                 # Unpin → 200.
-                respUnpin = HTTP.delete("$base/api/series/50/pin", ["X-Username" => "alice"])
+                respUnpin = call("DELETE", "/api/series/50/pin"; headers = ["X-Username" => "alice"])
                 @test respUnpin.status == 200
                 unpinned = JSON3.read(respUnpin.body, Dict{Symbol, Any})
                 @test unpinned[:pinned] == false
@@ -597,13 +581,14 @@ end
     @testset "POST /api/series — series_created writes the recipe + draft state" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 body = JSON3.write(Dict(
                     :title   => "Heat ramp",
                     :samples => [Dict(:sample_id => 100, :position => 0, :pinned => true)],
                 ))
-                resp = HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"], body)
+                resp = call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(body))
                 @test resp.status == 201
                 got = JSON3.read(resp.body, Dict{Symbol, Any})
                 sid = got[:id]
@@ -638,10 +623,10 @@ end
                 # subscriber, must broadcast exactly one series_created frame
                 # carrying entity_type='series'.
                 frames = _capture_series_sse("series_created") do
-                    HTTP.post("$base/api/series",
-                        ["X-Username" => "alice", "Content-Type" => "application/json"],
-                        JSON3.write(Dict(:title => "Frame check",
-                            :samples => [Dict(:sample_id => 100, :position => 0)])))
+                    call("POST", "/api/series";
+                        headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                        body = Vector{UInt8}(JSON3.write(Dict(:title => "Frame check",
+                            :samples => [Dict(:sample_id => 100, :position => 0)]))))
                 end
                 @test length(frames) == 1
                 @test occursin("\"entity_type\":\"series\"", frames[1])
@@ -655,15 +640,15 @@ end
             db = _series_test_db(tmp)
             DBInterface.execute(db,
                 "INSERT INTO samples (id, experiment_id, name) VALUES (101, 10, 'sB')")
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Create a draft with one recipe row.
                 createBody = JSON3.write(Dict(
                     :title   => "Ramp",
                     :samples => [Dict(:sample_id => 100, :position => 0)],
                 ))
-                created = JSON3.read(HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    createBody).body, Dict{Symbol, Any})
+                created = JSON3.read(call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(createBody)).body, Dict{Symbol, Any})
                 sid = created[:id]
 
                 # PATCH with a completely different recipe — pure-replace, not a diff.
@@ -675,8 +660,9 @@ end
                         Dict(:sample_id => 100, :position => 1),
                     ],
                 ))
-                resp = HTTP.patch("$base/api/series/$sid",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"], patchBody)
+                resp = call("PATCH", "/api/series/$sid";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(patchBody))
                 @test resp.status == 200
                 got = JSON3.read(resp.body, Dict{Symbol, Any})
                 @test got[:ordering_variable] == "temperature"
@@ -704,21 +690,21 @@ end
     @testset "DELETE /api/series/{id} — series_deleted cascades + folds to absent" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 createBody = JSON3.write(Dict(
                     :title   => "Doomed",
                     :samples => [Dict(:sample_id => 100, :position => 0)],
                 ))
-                sid = JSON3.read(HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    createBody).body, Dict{Symbol, Any})[:id]
+                sid = JSON3.read(call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(createBody)).body, Dict{Symbol, Any})[:id]
 
                 # SSE layer: the DELETE route, like every event route, must
                 # broadcast exactly one series_deleted frame carrying
                 # entity_type='series' — cheap insurance against a future
                 # _enqueue_broadcast_from_result! regression.
                 frames = _capture_series_sse("series_deleted") do
-                    resp = HTTP.delete("$base/api/series/$sid", ["X-Username" => "alice"])
+                    resp = call("DELETE", "/api/series/$sid"; headers = ["X-Username" => "alice"])
                     @test resp.status == 200
                 end
                 @test length(frames) == 1
@@ -741,11 +727,11 @@ end
     @testset "POST /api/series/{id}/commit — series_plate_committed commits the plate" begin
         mktempdir() do tmp
             db = _series_test_db(tmp)
-            with_test_server(db) do port, base
-                sid = JSON3.read(HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:title => "Ramp",
-                                     :samples => [Dict(:sample_id => 100, :position => 0)]))
+            with_inproc_routes(db) do call
+                sid = JSON3.read(call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:title => "Ramp",
+                                     :samples => [Dict(:sample_id => 100, :position => 0)])))
                     ).body, Dict{Symbol, Any})[:id]
 
                 # Pass an explicit snapshot so the route's _series_member_payload
@@ -757,8 +743,9 @@ end
                                            :confirmed_index => nothing,
                                            :analysis_inputs_hash => nothing)),
                 ]))
-                resp = HTTP.post("$base/api/series/$sid/commit",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"], commitBody)
+                resp = call("POST", "/api/series/$sid/commit";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(commitBody))
                 @test resp.status == 200
                 got = JSON3.read(resp.body, Dict{Symbol, Any})
                 @test got[:state] == "committed"
@@ -781,19 +768,19 @@ end
                 # carrying a post_state envelope. Create + commit a fresh
                 # series through the in-process subscriber and assert the
                 # frame carries entity_type='series' and a post_state field.
-                sid2 = JSON3.read(HTTP.post("$base/api/series",
-                    ["X-Username" => "alice", "Content-Type" => "application/json"],
-                    JSON3.write(Dict(:title => "Frame check",
-                        :samples => [Dict(:sample_id => 100, :position => 0)]))).body,
+                sid2 = JSON3.read(call("POST", "/api/series";
+                    headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:title => "Frame check",
+                        :samples => [Dict(:sample_id => 100, :position => 0)])))).body,
                     Dict{Symbol, Any})[:id]
                 frames = _capture_series_sse("series_plate_committed") do
-                    HTTP.post("$base/api/series/$sid2/commit",
-                        ["X-Username" => "alice", "Content-Type" => "application/json"],
-                        JSON3.write(Dict(:members => [
+                    call("POST", "/api/series/$sid2/commit";
+                        headers = ["X-Username" => "alice", "Content-Type" => "application/json"],
+                        body = Vector{UInt8}(JSON3.write(Dict(:members => [
                             Dict(:exposure_id => 1000, :display_order => 0,
                                  :snapshot => Dict(:effective_peaks => [],
                                                    :confirmed_index => nothing,
-                                                   :analysis_inputs_hash => nothing))])))
+                                                   :analysis_inputs_hash => nothing))]))))
                 end
                 @test length(frames) == 1
                 @test occursin("\"entity_type\":\"series\"", frames[1])
@@ -807,25 +794,25 @@ end
         mktempdir() do tmp
             db = _series_test_db(tmp)
             DBInterface.execute(db, "INSERT INTO series (id, title, state) VALUES (5, 'S5', 'draft')")
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Pin → series_pins row written; GET reflects it.
-                respPin = HTTP.post("$base/api/series/5/pin", ["X-Username" => "alice"])
+                respPin = call("POST", "/api/series/5/pin"; headers = ["X-Username" => "alice"])
                 @test respPin.status == 200
-                pins = JSON3.read(HTTP.get("$base/api/users/me/series-pins",
-                    ["X-Username" => "alice"]).body)
+                pins = JSON3.read(call("GET", "/api/users/me/series-pins";
+                    headers = ["X-Username" => "alice"]).body)
                 @test pins == [5]
 
                 # Unpin → series_pins row removed.
-                respUnpin = HTTP.delete("$base/api/series/5/pin", ["X-Username" => "alice"])
+                respUnpin = call("DELETE", "/api/series/5/pin"; headers = ["X-Username" => "alice"])
                 @test respUnpin.status == 200
-                pins2 = JSON3.read(HTTP.get("$base/api/users/me/series-pins",
-                    ["X-Username" => "alice"]).body)
+                pins2 = JSON3.read(call("GET", "/api/users/me/series-pins";
+                    headers = ["X-Username" => "alice"]).body)
                 @test pins2 == []
 
                 # rebuild_views_from_log! round-trip: pin events live on
                 # entity_type='user'. Re-fold for the user → series_pins
                 # rebuilt. (Pin then unpin → empty; pin again to assert a row.)
-                HTTP.post("$base/api/series/5/pin", ["X-Username" => "alice"])
+                call("POST", "/api/series/5/pin"; headers = ["X-Username" => "alice"])
                 uid = Tables.rowtable(DBInterface.execute(db,
                     "SELECT id FROM users WHERE username = 'alice'"))[1].id
                 DBInterface.execute(db, "DELETE FROM series_pins WHERE user_id = ?", [uid])
@@ -876,13 +863,12 @@ end
         DBInterface.execute(db, """INSERT INTO series_members (series_id, exposure_id, display_order, snapshot, created_at)
             VALUES (7, $derived, 3, '$snap', '2026-06-06T00:00:00.000Z')""")
 
-        with_test_server(db) do port, base
+        with_inproc_routes(db) do call
             # 404 for an unknown series.
-            r404 = HTTP.get("$base/api/series/999/traces", ["X-Username" => "alice"];
-                            status_exception = false)
+            r404 = call("GET", "/api/series/999/traces"; headers = ["X-Username" => "alice"])
             @test r404.status == 404
 
-            r = HTTP.get("$base/api/series/7/traces", ["X-Username" => "alice"])
+            r = call("GET", "/api/series/7/traces"; headers = ["X-Username" => "alice"])
             @test r.status == 200
             body = JSON3.read(String(r.body), Dict{String, Any})
             # Only the resolvable exposure is present; the missing-dat + NULL +
@@ -895,7 +881,7 @@ end
 
             # An existing series with zero resolvable members → 200 + empty object (not 404).
             DBInterface.execute(db, "INSERT INTO series (id, title, state) VALUES (8, 'S8', 'draft')")
-            rEmpty = HTTP.get("$base/api/series/8/traces", ["X-Username" => "alice"])
+            rEmpty = call("GET", "/api/series/8/traces"; headers = ["X-Username" => "alice"])
             @test rEmpty.status == 200
             @test JSON3.read(String(rEmpty.body), Dict{String, Any}) == Dict{String, Any}()
         end
