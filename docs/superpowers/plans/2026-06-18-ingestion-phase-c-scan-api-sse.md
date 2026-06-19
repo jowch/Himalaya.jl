@@ -610,7 +610,7 @@ git commit -m "feat(api): GET /api/experiments/{id}/loads roll-up"
 
 ## Task 5: `PATCH /api/experiments/{id}` — geometry override (replaces 400 stub)
 
-Today `PATCH /api/experiments/{id}` returns 400 for every call (`routes_experiments.jl:73-85`). Phase C replaces the stub: a partial `ExperimentGeometryPatch` writes the named typed columns and sets their `*_source` to `"human"`. Human-set fields must never be refreshed on rescan (spec §9.2 + §4 never-clobber). The route accepts only the geometry + name/description fields; path fields (`data_dir`, `analysis_dir`) remain read-only (they are set by create and must sync with the filesystem).
+Today `PATCH /api/experiments/{id}` returns 400 for every call (`routes_experiments.jl:73-85`). Phase C replaces the stub: a partial `ExperimentGeometryPatch` writes the named typed geometry columns and sets their `*_source` to `"user"`. User-set fields must never be refreshed on rescan (spec §9.2 + §4 never-clobber). The route accepts **only the geometry fields**. `name`/`description` editing is deferred to Phase E1 (it needs a `description` column migration that does not exist yet), so `name` stays read-only here (PATCH name → 400, preserving the current derived-name contract). Path fields (`data_dir`, `analysis_dir`, `manifest_path`) also remain read-only (set by create, must sync with the filesystem).
 
 **Files:**
 - Modify: `packages/HimalayaUI/src/routes_experiments.jl` (replace `@patch "/api/experiments/{id}"` body)
@@ -619,7 +619,7 @@ Today `PATCH /api/experiments/{id}` returns 400 for every call (`routes_experime
 - [ ] **Step 1: Write the failing test**
 
 ```julia
-@testset "PATCH /api/experiments/{id} writes geometry overrides, marks source=human" begin
+@testset "PATCH /api/experiments/{id} writes geometry overrides, marks source=user" begin
     db, dir, exp_id = scan_test_db()
 
     with_test_server(db) do port, base
@@ -645,9 +645,9 @@ Today `PATCH /api/experiments/{id}` returns 400 for every call (`routes_experime
               FROM experiments WHERE id = ?
         """, [exp_id]))[1]
         @test row.flight_path_m       ≈ 1.7500
-        @test row.flight_path_m_source == "human"
+        @test row.flight_path_m_source == "user"
         @test row.beam_center_x       ≈ 500.0
-        @test row.beam_center_x_source == "human"
+        @test row.beam_center_x_source == "user"
         @test row.q_units             == "nm^-1"
 
         # Partial patch: only flight_path_m. Others untouched.
@@ -660,7 +660,7 @@ Today `PATCH /api/experiments/{id}` returns 400 for every call (`routes_experime
             "SELECT energy_kev, energy_kev_source, flight_path_m FROM experiments WHERE id=?",
             [exp_id]))[1]
         @test row2.energy_kev        ≈ 12.0
-        @test row2.energy_kev_source == "human"
+        @test row2.energy_kev_source == "user"
         @test row2.flight_path_m     ≈ 1.7500  # previous value preserved
 
         # 404 for unknown experiment
@@ -676,6 +676,14 @@ Today `PATCH /api/experiments/{id}` returns 400 for every call (`routes_experime
             headers = ["Content-Type" => "application/json"],
             status_exception = false)
         @test r4.status == 400
+
+        # name stays read-only here — rename lands in Phase E1 (derived-name
+        # contract preserved until then).
+        r5 = HTTP.patch("$base/api/experiments/$exp_id";
+            body    = JSON3.write(Dict(:name => "Renamed")),
+            headers = ["Content-Type" => "application/json"],
+            status_exception = false)
+        @test r5.status == 400
     end
     SQLite.close(db)
 end
@@ -696,15 +704,16 @@ outside any function):
 
 ```julia
 # Mutable geometry fields. Each writable field has a companion *_source column
-# (set to "human" on override; never refreshed by rescan). Path fields
-# (data_dir, analysis_dir) and manifest_path remain read-only — they are
-# set at create time and must stay in sync with the filesystem.
+# (set to "user" on override; never refreshed by rescan). name/description and
+# the path fields (data_dir, analysis_dir, manifest_path) remain read-only here —
+# name/description editing lands in Phase E1 (needs a description-column migration);
+# path fields are set at create time and must stay in sync with the filesystem.
 const _GEOMETRY_PATCH_FIELDS = [
     "flight_path_m", "beam_center_x", "beam_center_y",
     "pixel_size_um", "energy_kev", "q_units",
 ]
 const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
-                           "id", "created_at"]
+                           "id", "created_at", "name", "description"]
 ```
 
 Then, INSIDE `register_experiments_routes!()`, replace the entire
@@ -737,14 +746,7 @@ Then, INSIDE `register_experiments_routes!()`, replace the entire
         val === nothing && continue
         push!(set_clauses, "$field = ?")
         push!(params, val)
-        push!(set_clauses, "$(field)_source = 'human'")
-    end
-    # Allow name and description updates.
-    for field in ["name", "description"]
-        val = get(body, Symbol(field), get(body, field, nothing))
-        val === nothing && continue
-        push!(set_clauses, "$field = ?")
-        push!(params, val)
+        push!(set_clauses, "$(field)_source = 'user'")
     end
 
     isempty(set_clauses) && return HTTP.Response(200,

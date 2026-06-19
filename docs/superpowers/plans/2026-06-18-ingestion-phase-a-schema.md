@@ -786,7 +786,7 @@ function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractStr
 end
 ```
 
-> **Caller sweep (same commit):** grep `create_sample!(` across `packages/HimalayaUI/`. Update every caller that passes `display_name=` (e.g. `cli.jl:199`, `cli.jl` reingest path) to pass `name=` instead. Also update the unconditional clobber `UPDATE samples SET display_name=…` at `cli.jl:202-204` to `SET name=…, notes=…` **and** gate it `WHERE name_source != 'human'` (spec §4 never-clobber). Update any test fixtures passing `display_name:`. The CLI's grouping fields can be omitted (defaults apply) until Phase B rewrites that path.
+> **Caller sweep (same commit):** grep `create_sample!(` across `packages/HimalayaUI/`. Update every caller that passes `display_name=` (e.g. `cli.jl:199`, `cli.jl` reingest path) to pass `name=` instead. Also update the unconditional clobber `UPDATE samples SET display_name=…` at `cli.jl:202-204` to `SET name=…, notes=…` **and** gate it `WHERE name_source != 'user'` (spec §4 never-clobber). Update any test fixtures passing `display_name:`. The CLI's grouping fields can be omitted (defaults apply) until Phase B rewrites that path.
 
 - [ ] **Step 4: Run the full Phase-A file + a quick compile check of cli.jl**
 

@@ -656,7 +656,7 @@ Clones the `PATCH /api/samples/{id}` pattern from `routes_samples.jl:150–186`.
         row = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT name, name_source FROM samples WHERE id = ?", [s1_id])))
         @test String(row.name) == "JC C04 (S01P01)"
-        @test String(row.name_source) == "human"
+        @test String(row.name_source) == "user"
 
         # A sample_renamed event was written.
         evts = Tables.rowtable(DBInterface.execute(db,
@@ -684,7 +684,7 @@ function register_grouping_routes!()
     # ── Rename a sample ──────────────────────────────────────────────────────
     # PATCH /api/samples/{id}/name
     # Body: { "name": "new label" }
-    # Sets samples.name = body.name and name_source = 'human'. Records a
+    # Sets samples.name = body.name and name_source = 'user'. Records a
     # sample_renamed event for audit + SSE broadcast.
     # Clones the with_idempotency + apply_event! + _enqueue_broadcast pattern
     # from routes_samples.jl:167–185.
@@ -711,7 +711,7 @@ function register_grouping_routes!()
 
         return with_idempotency(db, req) do
             DBInterface.execute(db,
-                "UPDATE samples SET name = ?, name_source = 'human' WHERE id = ?",
+                "UPDATE samples SET name = ?, name_source = 'user' WHERE id = ?",
                 [new_name, id])
             result = apply_event!(InTransaction(), db, req;
                 kind        = "sample_renamed",
@@ -1129,7 +1129,7 @@ Inside `register_grouping_routes!()`, after the move route:
                 new_name = strip(String(body.name))
                 if !isempty(new_name)
                     DBInterface.execute(db,
-                        "UPDATE samples SET name = ?, name_source = 'human' WHERE id = ?",
+                        "UPDATE samples SET name = ?, name_source = 'user' WHERE id = ?",
                         [new_name, survivor_id])
                     rename_result = apply_event!(InTransaction(), db, req;
                         kind        = "sample_renamed",
@@ -1311,7 +1311,7 @@ Inside `register_grouping_routes!()`, after the merge route:
                 load_id          = load_id,
                 name             = something(new_name, "Split from sample $(id)"),
                 grouping_source  = "manual",
-                name_source      = isnothing(new_name) ? "auto" : "human")
+                name_source      = isnothing(new_name) ? "auto" : "user")
 
             # Record a sample_created audit event for the new sample (no view
             # write — no-op dispatcher). Canonical payload is `{ experiment_id }`

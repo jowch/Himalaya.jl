@@ -143,7 +143,7 @@ describe("ingestion api types (Phase E1)", () => {
 Replace the `Experiment` interface (currently `src/api.ts:8-22`):
 
 ```ts
-export type GeometrySource = "prp" | "setup" | "human" | "default";
+export type GeometrySource = "prp" | "setup" | "user" | "default";
 export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
 
 export interface Experiment {
@@ -205,7 +205,7 @@ export interface LoadExposure {
 }
 
 /** One sample slot inside a load (a (load, slot) coordinate). `name_source`/
- *  `grouping_source` are provenance tags ("human" | "computed" | …);
+ *  `grouping_source` are provenance tags ("user" | "computed" | …);
  *  `merged_into_id` is non-null when this slot was merged into a sibling. */
 export interface LoadSample {
   sample_id: number;
@@ -375,7 +375,7 @@ describe("ingestion fetchers (Phase E1)", () => {
   });
 
   it("updateExperiment PATCHes a geometry partial", async () => {
-    const spy = mockFetchSpy({ id: 7, flight_path_m: 1.81, flight_path_m_source: "human" });
+    const spy = mockFetchSpy({ id: 7, flight_path_m: 1.81, flight_path_m_source: "user" });
     const patch: api.ExperimentGeometryPatch = { flight_path_m: 1.81 };
     await api.updateExperiment(7, patch, { username: "u" });
     expect(spy.mock.calls[0]![0]).toBe("/api/experiments/7");
@@ -415,7 +415,7 @@ function mockFetchSpy(body: unknown) {
 ```ts
 /** Typed PATCH body for `PATCH /api/experiments/:id`. Replaces the read-only
  *  `Record<string,never>` stub. Any geometry field set here is written + its
- *  `*_source` is stamped `human` server-side (spec §9.2). Name/description are
+ *  `*_source` is stamped `user` server-side (spec §9.2). Name/description are
  *  also editable in place (Configuration header). */
 export interface ExperimentGeometryPatch {
   name?: string;
@@ -2240,7 +2240,7 @@ export function ConfigurationPage(): JSX.Element {
     <div className="flex flex-col gap-6">
       <Card padding="md" data-testid="config-geometry-region">
         <Kicker>Geometry</Kicker>
-        {/* E2 GeometryLedger: per-field value + prp/setup/human chip + Override
+        {/* E2 GeometryLedger: per-field value + prp/setup/user chip + Override
             + the multi-setup discrepancy banner. E1 shows the derived values. */}
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
           <dt className="text-ink-soft">Energy</dt>

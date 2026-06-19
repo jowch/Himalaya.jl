@@ -552,7 +552,7 @@ describe("moveExposureMutator", () => {
 });
 
 describe("renameSampleMutator", () => {
-  it("onMutate rewrites the sample name + sets name_source=human; restore reverts", () => {
+  it("onMutate rewrites the sample name + sets name_source=user; restore reverts", () => {
     const qc = new QueryClient();
     seedLoads(qc, 7);
     const ctx = renameSampleMutator.onMutate(
@@ -562,7 +562,7 @@ describe("renameSampleMutator", () => {
     const after = qc.getQueryData<Load[]>(queryKeys.loads(7))!;
     const a = after[0]!.samples.find((s) => s.sample_id === 10)!;
     expect(a.name).toBe("Renamed");
-    expect(a.name_source).toBe("human");
+    expect(a.name_source).toBe("user");
     ctx.restore();
     expect(qc.getQueryData<Load[]>(queryKeys.loads(7))![0]!.samples.find((s) => s.sample_id === 10)!.name).toBe("A");
   });
@@ -669,7 +669,7 @@ export const renameSampleMutator: Mutator<RenameSampleInput, RenameSampleScope, 
     patchLoads(qc, p.experimentId, (loads) => {
       for (const ld of loads) {
         const s = ld.samples.find((x) => x.sample_id === p.sampleId);
-        if (s) { s.name = p.name; s.name_source = "human"; break; }
+        if (s) { s.name = p.name; s.name_source = "user"; break; }
       }
       return loads;
     }),
@@ -904,7 +904,7 @@ export const splitSampleMutator: Mutator<SplitSampleInput, SplitSampleScope, api
         const created: LoadSample = {
           sample_id: nextOptimisticId(), // NEGATIVE placeholder until SSE confirms
           name: p.name, slot_index: src.slot_index, grouping_source: "manual",
-          name_source: "human", merged_into_id: null, flag: null, exposures: moved,
+          name_source: "user", merged_into_id: null, flag: null, exposures: moved,
         };
         const srcIdx = ld.samples.indexOf(src);
         ld.samples.splice(srcIdx + 1, 0, created);
@@ -2237,7 +2237,7 @@ git commit -m "feat(grouping): bulk-merge of the persistent selection"
 
 ## Task 16: `GeometryLedger` component
 
-Per-field rows: label · value (mono, edit-in-place via `Input mono`) · provenance chip (`PRP`/`setup files`/`edited`) · Override/Edit + Revert (when human-sourced); a "Undo last change" affordance in the card header; a multi-setup discrepancy banner when triggered. Presentational; `ConfigurationBody` (Task 19) owns the override/undo state.
+Per-field rows: label · value (mono, edit-in-place via `Input mono`) · provenance chip (`PRP`/`setup files`/`edited`) · Override/Edit + Revert (when user-sourced); a "Undo last change" affordance in the card header; a multi-setup discrepancy banner when triggered. Presentational; `ConfigurationBody` (Task 19) owns the override/undo state.
 
 **Files:**
 - Create: `src/print/components/GeometryLedger.tsx`
@@ -2254,7 +2254,7 @@ import { GeometryLedger, type GeometryRow } from "../src/print/components/Geomet
 const ROWS: GeometryRow[] = [
   { key: "beam_energy", label: "Beam energy", value: "9.00 keV", source: "prp" },
   { key: "beam_center", label: "Beam center", value: "(421.4, 836.9)", source: "setup" },
-  { key: "flight_path", label: "Flight path", value: "1.81 m", source: "human" },
+  { key: "flight_path", label: "Flight path", value: "1.81 m", source: "user" },
 ];
 
 const cb = { onOverride: () => {}, onRevert: () => {}, onUndo: () => {}, canUndo: false };
@@ -2267,7 +2267,7 @@ describe("GeometryLedger", () => {
     expect(screen.getByText("setup files")).toBeInTheDocument();
     expect(screen.getByText("edited")).toBeInTheDocument();
   });
-  it("human rows expose Revert; calls onRevert with the key", () => {
+  it("user rows expose Revert; calls onRevert with the key", () => {
     const onRevert = vi.fn();
     render(<GeometryLedger rows={ROWS} {...cb} onRevert={onRevert} />);
     fireEvent.click(screen.getByRole("button", { name: /revert/i }));
@@ -2304,7 +2304,7 @@ import type { JSX } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 
-export type GeometrySource = "prp" | "setup" | "human" | "default";
+export type GeometrySource = "prp" | "setup" | "user" | "default";
 
 export interface GeometryRow {
   key: string;
@@ -2324,7 +2324,7 @@ export interface GeometryLedgerProps {
 }
 
 const SOURCE_LABEL: Record<GeometrySource, string> = {
-  prp: "PRP", setup: "setup files", human: "edited", default: "unset",
+  prp: "PRP", setup: "setup files", user: "edited", default: "unset",
 };
 
 export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
@@ -2352,11 +2352,11 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
             <span className="w-32 shrink-0 text-xs text-ink-soft">{r.label}</span>
             <span className="font-mono text-sm font-medium text-ink">{r.value}</span>
             <SourceChip source={r.source} />
-            {r.source === "human" ? (
+            {r.source === "user" ? (
               <Button variant="ghost" aria-label={`Revert ${r.label}`} onClick={() => p.onRevert(r.key)}>↺ Revert</Button>
             ) : null}
             <Button variant="ghost" aria-label={`Override ${r.label}`} onClick={() => p.onOverride(r.key)}>
-              {r.source === "human" ? "Edit" : "Override"}
+              {r.source === "user" ? "Edit" : "Override"}
             </Button>
           </div>
         ))}
@@ -2376,9 +2376,9 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
 > ```tsx
 > // inline form (after adding --color-accent-wash):
 > function SourceChip({ source }: { source: GeometrySource }) {
->   const human = source === "human";
+>   const user = source === "user";
 >   return (
->     <span className={`ml-auto rounded-sm px-1.5 py-0.5 text-xs font-bold uppercase${human ? " bg-accent-wash text-accent" : " bg-paper-sunk text-ink-faint"}`}>
+>     <span className={`ml-auto rounded-sm px-1.5 py-0.5 text-xs font-bold uppercase${user ? " bg-accent-wash text-accent" : " bg-paper-sunk text-ink-faint"}`}>
 >       {SOURCE_LABEL[source]}
 >     </span>
 >   );
@@ -2774,10 +2774,10 @@ Create `src/print/components/ConfigurationBody.tsx`:
 - Build `GeometryRow[]` from the typed fields, **each with its own per-field `*_source`** (NOT a combined source):
   - `energy_kev` → "Beam energy" (`energy_kev_source`), value `\`${e.energy_kev?.toFixed(2)} keV\``
   - `flight_path_m` → "Flight path" (`flight_path_m_source`)
-  - **beam center → ONE row** "Beam center", value `\`(${bx}, ${by})\``, with a source that is `human` if EITHER `beam_center_x_source` or `beam_center_y_source` is `human`, else the (matching) derived source. (The two fields share a row visually but each carries its own provenance — surface the combined provenance: `x_source === y_source ? x_source : "human"` is the simple rule; refine if they can legitimately diverge.)
+  - **beam center → ONE row** "Beam center", value `\`(${bx}, ${by})\``, with a source that is `user` if EITHER `beam_center_x_source` or `beam_center_y_source` is `user`, else the (matching) derived source. (The two fields share a row visually but each carries its own provenance — surface the combined provenance: `x_source === y_source ? x_source : "user"` is the simple rule; refine if they can legitimately diverge.)
   - `pixel_size_um` → "Pixel pitch" (`pixel_size_um_source`)
   - `q_units` → "q units" (`q_units_source`)
-- Use `useUndoStack<{ key; prevValue: number | string; prevSource }>` to back both per-field Revert AND the header "Undo last change". On Override commit: push `{ key, prevValue, prevSource }`, then `updateMutate({ <patchKey>: parsed })`. On Revert/Undo: `pop()` → re-`updateMutate` to the prev value (or, if Phase D supports it, clear the human source so the next scan re-derives — confirm).
+- Use `useUndoStack<{ key; prevValue: number | string; prevSource }>` to back both per-field Revert AND the header "Undo last change". On Override commit: push `{ key, prevValue, prevSource }`, then `updateMutate({ <patchKey>: parsed })`. On Revert/Undo: `pop()` → re-`updateMutate` to the prev value (or, if Phase D supports it, clear the user source so the next scan re-derives — confirm).
 - **`discrepancyCount`**: derive it from a REAL signal, NOT an invented `geometry_discrepancies` field. Per spec §9.6, a multi-setup discrepancy is FLAGGED when constant geometry fields varied across PRPs. If E1/Phase-A exposes a `geometry_discrepancy_*` flag or a count on the experiment/loads, source it from there; otherwise compute it client-side from the data you have (e.g. count fields whose `*_source === "default"` meaning unresolved, or omit the banner for v1 and pass `discrepancyCount={0}`). **Do not pass a field that doesn't exist.** Document the chosen source inline.
 - Build `AcqSession[]` from `loads`: group by `start_time`'s date → session label; `loadFrameCounts` = each load's `frame_count`.
 - Build `SourceRow[]` from `data_dir`/`analysis_dir` (+ patterns IF E1 added them to `Experiment`); on edit, `updateMutate({ <field> })` (confirm `ExperimentGeometryPatch` accepts the field, or whether patterns need a different PATCH route — they may not be in the geometry patch).

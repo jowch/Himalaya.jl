@@ -1685,7 +1685,7 @@ Expected: FAIL (`UndefVarError: scan_and_group! not defined`).
 #
 # Discipline cloned from _reingest_inner! (cli.jl:156):
 #   - Always insert-only for exposures (dedup key (experiment_id, filename)).
-#   - Never clobber human-set fields (name_source='human', spec §4).
+#   - Never clobber user-set fields (name_source='user', spec §4).
 #   - The DB write is wrapped in _DB_WRITE_LOCK (server.jl:29).
 #   - analyze_exposure! is called OUTSIDE the main transaction (like cli_init_with_db!).
 #
@@ -1703,7 +1703,7 @@ Steps:
   1. Resolve `data_dir` and `analysis_dir` from the `experiments` row.
   2. Scan: enumerate TIF+PRP+DAT triplets with `scan_directory`.
   3. Geometry: derive from the sampled PRPs + the latest setup_info file; write
-     to `experiments` row (respects `*_source='human'` never-clobber).
+     to `experiments` row (respects `*_source='user'` never-clobber).
   4. Group: `group_into_samples` → loads/samples/slots.
   5. Persist: insert `loads`, `samples`, `exposures` rows (insert-only per the
      dedup key `(experiment_id, filename)` — no clobber on rescan).
@@ -1745,7 +1745,7 @@ function scan_and_group!(
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
 
     # -----------------------------------------------------------------------
-    # 2. Geometry: derive + write to experiments row (never-clobber human fields)
+    # 2. Geometry: derive + write to experiments row (never-clobber user fields)
     # -----------------------------------------------------------------------
     prp_paths   = filter(!isnothing, [m.prp_path for m in metas])
     setup_files = filter(isfile, let
@@ -1759,10 +1759,10 @@ function scan_and_group!(
     geo, _disc = derive_geometry(String.(prp_paths), String.(setup_files))
 
     # Persist geometry with never-clobber: only write fields whose current source
-    # is not 'human' (spec §4).
+    # is not 'user' (spec §4).
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
-            _update_geometry_if_not_human!(db, experiment_id, geo)
+            _update_geometry_if_not_user!(db, experiment_id, geo)
         end
     end
 
@@ -1872,13 +1872,13 @@ function scan_and_group!(
 end
 
 """
-    _update_geometry_if_not_human!(db, experiment_id, geo)
+    _update_geometry_if_not_user!(db, experiment_id, geo)
 
 Write derived geometry fields to the `experiments` row, skipping any field
-whose current `*_source` is `'human'` (never-clobber contract, spec §4).
+whose current `*_source` is `'user'` (never-clobber contract, spec §4).
 Called inside a write transaction.
 """
-function _update_geometry_if_not_human!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
+function _update_geometry_if_not_user!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
     current = first(Tables.rowtable(DBInterface.execute(db,
         """SELECT energy_kev_source, flight_path_m_source,
                   beam_center_x_source, beam_center_y_source, pixel_size_um_source
@@ -1888,8 +1888,8 @@ function _update_geometry_if_not_human!(db::SQLite.DB, experiment_id::Int, geo::
 
     function maybe!(field, source_field, val, source)
         curr_src = getproperty(current, Symbol(source_field))
-        if !ismissing(curr_src) && String(curr_src) == "human"
-            return  # never overwrite a human-set field
+        if !ismissing(curr_src) && String(curr_src) == "user"
+            return  # never overwrite a user-set field
         end
         val === missing && return
         push!(updates, field => val)
@@ -2613,7 +2613,7 @@ git commit -m "feat(grouping): derive_sample_flags pure read-time merge/split de
 | §6: Detector → pitch lookup, unknown → missing + flag | Task 2 ✓ |
 | §6: Setup file `Beam center is at (X, Y)` + `Mean distance` parse | Task 2 ✓ |
 | §6: Geometry authority — setup file `Mean distance` > PRP `Pipe length` | Task 3 ✓ |
-| §6: Per-field `*_source ∈ {prp, setup, human, default}` | Task 3 ✓ |
+| §6: Per-field `*_source ∈ {prp, setup, user, default}` | Task 3 ✓ |
 | §6: Multi-setup discrepancy detection (beam energy, pipe length variance) | Task 3 ✓ |
 | §6: Latest setup file by filename sort | Task 3 ✓ |
 | §9.1: `grouping.jl` / `scan_directory` reusing `resolve_files` | Task 4 ✓ |
@@ -2630,7 +2630,7 @@ git commit -m "feat(grouping): derive_sample_flags pure read-time merge/split de
 | §5: Naming rule `<label> (SNNPMM)`, `_label_from_stem` extraction | Task 7 ✓ |
 | §9.1: `scan_and_group!` transactional orchestrator, `_DB_WRITE_LOCK` | Task 8 ✓ |
 | §9.1: insert-only discipline (dedup by `(experiment_id, filename)`) | Task 8 ✓ |
-| §4: never-clobber for `name_source='human'` geometry fields | Task 8 (`_update_geometry_if_not_human!`) ✓ |
+| §4: never-clobber for `name_source='user'` geometry fields | Task 8 (`_update_geometry_if_not_user!`) ✓ |
 | §9.1: `analyze_exposure!` called outside main transaction | Task 8 ✓ |
 | §9.5: CLI `init` rewrite to call `scan_and_group!` core | Task 10 ✓ |
 | §9.2/§9.4: cheap change-check for rescan endpoint + scheduler (`cheap_change_check`) | Task 11 ✓ (closes the Phase-C cross-plan gap) |

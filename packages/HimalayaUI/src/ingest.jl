@@ -6,7 +6,7 @@
 #   - Insert-only for loads/samples/exposures (no clobber on rescan).
 #   - The exposure dedup key is (experiment_id, filename) — also enforced by the
 #     `exposures_unique_filename` UNIQUE index (db.jl migrate_exposures_unique_filename!).
-#   - Geometry never clobbers a `*_source='human'` field (spec §4).
+#   - Geometry never clobbers a `*_source='user'` field (spec §4).
 #   - Every DB write is wrapped in `_DB_WRITE_LOCK` (server.jl) + a SQLite.transaction
 #     so a mid-scan failure rolls back the whole insert batch (no partial write).
 #   - analyze_exposure! is called OUTSIDE the write transaction (same contract as
@@ -28,7 +28,7 @@ Steps:
   1. Resolve `data_dir` and `analysis_dir` from the `experiments` row.
   2. Scan: enumerate TIF+PRP+DAT triplets with `scan_directory`.
   3. Geometry: derive from the sampled PRPs + the latest setup_info file; write
-     to the `experiments` row (respects `*_source='human'` never-clobber).
+     to the `experiments` row (respects `*_source='user'` never-clobber).
   4. Group: `group_into_samples` → loads/samples/slots.
   5. Persist: insert `loads`, `samples`, `exposures` rows inside ONE write
      transaction (insert-only — dedup loads by (experiment_id, load_index),
@@ -79,10 +79,10 @@ function scan_and_group!(
     geo, _disc = derive_geometry(prp_paths, setup_files)
 
     # Persist geometry with never-clobber: only write fields whose current source
-    # is not 'human' (spec §4).
+    # is not 'user' (spec §4).
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
-            _update_geometry_if_not_human!(db, experiment_id, geo)
+            _update_geometry_if_not_user!(db, experiment_id, geo)
         end
     end
 
@@ -248,13 +248,13 @@ function cheap_change_check(
 end
 
 """
-    _update_geometry_if_not_human!(db, experiment_id, geo)
+    _update_geometry_if_not_user!(db, experiment_id, geo)
 
 Write derived geometry fields to the `experiments` row, skipping any field whose
-current `*_source` is `'human'` (never-clobber contract, spec §4) and any field
+current `*_source` is `'user'` (never-clobber contract, spec §4) and any field
 whose derived value is `missing`. Called inside a write transaction.
 """
-function _update_geometry_if_not_human!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
+function _update_geometry_if_not_user!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
     current = first(Tables.rowtable(DBInterface.execute(db,
         """SELECT energy_kev_source, flight_path_m_source,
                   beam_center_x_source, beam_center_y_source, pixel_size_um_source
@@ -264,8 +264,8 @@ function _update_geometry_if_not_human!(db::SQLite.DB, experiment_id::Int, geo::
 
     function maybe!(field, source_field, val, source)
         curr_src = getproperty(current, Symbol(source_field))
-        if !ismissing(curr_src) && String(curr_src) == "human"
-            return  # never overwrite a human-set field
+        if !ismissing(curr_src) && String(curr_src) == "user"
+            return  # never overwrite a user-set field
         end
         val === missing && return
         push!(updates, field => val)
