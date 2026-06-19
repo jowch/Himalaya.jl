@@ -1,5 +1,5 @@
 using Test, HTTP, SQLite, DBInterface, Tables
-using HimalayaUI: with_idempotency, open_db
+using HimalayaUI: with_idempotency
 
 @testset "with_idempotency: passthrough when X-Client-Op-Id absent" begin
     mktempdir() do tmp

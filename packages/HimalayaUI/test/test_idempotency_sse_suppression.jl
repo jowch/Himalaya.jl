@@ -1,5 +1,5 @@
 using Test, HTTP, JSON3, SQLite, DBInterface, Tables
-using HimalayaUI: with_idempotency, open_db, InTransaction, apply_event!
+using HimalayaUI: with_idempotency, InTransaction, apply_event!
 
 # SSE suppression on rollback / 4xx (issue #125 items 2 & 4).
 #

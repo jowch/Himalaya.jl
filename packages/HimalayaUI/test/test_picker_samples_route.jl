@@ -2,7 +2,7 @@ using Test
 using HTTP, JSON3
 using SQLite, DBInterface, Tables
 using HimalayaUI
-using HimalayaUI: open_db, picker_samples
+using HimalayaUI: picker_samples
 # `picker_samples` is reachable via `using HimalayaUI:` because it's a
 # module-level binding in `comparisons.jl` (which is `include`d into the
 # HimalayaUI module). No `export` is required — same pattern as
