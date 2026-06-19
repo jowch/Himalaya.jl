@@ -162,4 +162,50 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             @test !("detector_distance_mm" in c)   # spec §10: no separate column
         end
     end
+
+    @testset "samples name collapse + grouping cols" begin
+        path = fresh_db()
+        with_db(path) do db
+            c = cols(db, "samples")
+            @test "name" in c
+            @test !("display_name" in c)            # collapsed away
+            for col in ["load_id","slot_index","grouping_source","name_source"]
+                @test col in c
+            end
+            # label is NOT unique: two samples in one experiment may share a name
+            DBInterface.execute(db, "PRAGMA foreign_keys=ON")
+            eid = seed_experiment(db)   # honours NOT NULL name/path/data_dir/analysis_dir
+            DBInterface.execute(db, "INSERT INTO samples (experiment_id, name) VALUES (?, 'HA85 (S01P15)')", [eid])
+            @test_nowarn DBInterface.execute(db,
+                "INSERT INTO samples (experiment_id, name) VALUES (?, 'HA85 (S01P15)')", [eid])
+            @test !any(i -> occursin("samples_unique_name", i), indexes(db, "samples"))
+        end
+    end
+
+    @testset "duplicate labels survive naming+collapse" begin
+        # Build the pre-redesign DB with create_schema! (the canonical samples shape on this
+        # branch is still name+display_name+samples_unique_name — i.e. the pre-collapse legacy
+        # shape). A hand-built minimal fixture is NOT a faithful legacy DB: it lacks the tables
+        # the historical AUTOINCREMENT rebuild (migrate_pk_to_autoincrement!) rebuilds and copies
+        # under PRAGMA foreign_keys=OFF, and a NULL experiments.data_dir trips its NOT NULL rebuild.
+        # Real legacy DBs were always made by an earlier create_schema!, so this is the honest fixture.
+        dir = mktempdir(); path = joinpath(dir, "duplabel.db")
+        db = SQLite.DB(path)
+        HimalayaUI.create_schema!(db)
+        DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'e','/exp/e','/exp/e/data','/exp/e/analysis')")
+        # distinct machine names (unique), SAME display_name (the future label)
+        DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (1,1,'m1','HA85 (S01P15)')")
+        DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (2,1,'m2','HA85 (S01P15)')")
+        SQLite.close(db)
+
+        dbm = SQLite.DB(path); HimalayaUI.migrate_schema!(dbm); SQLite.close(dbm)
+
+        with_db(path) do db2
+            names = String.(getproperty.(Tables.rowtable(DBInterface.execute(db2,
+                "SELECT name FROM samples ORDER BY id")), :name))
+            @test names == ["HA85 (S01P15)", "HA85 (S01P15)"]   # NOT suffixed to '...-2'
+            @test !("display_name" in cols(db2, "samples"))
+            @test !any(i -> occursin("samples_unique_name", i), indexes(db2, "samples"))
+        end
+    end
 end

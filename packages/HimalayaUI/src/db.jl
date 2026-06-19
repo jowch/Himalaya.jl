@@ -564,6 +564,31 @@ end
 function migrate_samples_name_collapse!(db::SQLite.DB)
     _migrated(db, MIGRATION_SAMPLES_NAME_COLLAPSE) && return nothing
     SQLite.transaction(db) do
+        existing = cols_of(db, "samples")
+        # 1. grouping columns (additive, idempotent)
+        for (name, decl) in [
+                ("load_id", "INTEGER REFERENCES loads(id)"),
+                ("slot_index", "INTEGER"),
+                ("grouping_source", "TEXT DEFAULT 'auto_position'"),
+                ("name_source", "TEXT DEFAULT 'auto'")]
+            name in existing || DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN $name $decl")
+        end
+        # 2. collapse the two text columns to one. Guard so the migration is idempotent and
+        #    safe on DBs that never had both columns.
+        if "display_name" in existing
+            # DROP the unique index FIRST: SQLite re-points indexes onto a renamed column,
+            # so a surviving samples_unique_name would re-impose label uniqueness post-rename.
+            DBInterface.execute(db, "DROP INDEX IF EXISTS samples_unique_name")
+            if "name" in existing
+                DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN name")
+            end
+            DBInterface.execute(db, "ALTER TABLE samples RENAME COLUMN display_name TO name")
+        end
+        # 3. NO new UNIQUE on the label.
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS samples_experiment_idx ON samples(experiment_id)")
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS samples_load_slot_idx ON samples(load_id, slot_index)")
         _record_migration!(db, MIGRATION_SAMPLES_NAME_COLLAPSE)
     end
     nothing
@@ -1583,6 +1608,12 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
     # No samples table yet (partial legacy fixture or pre-create_schema! call) — skip.
     # create_schema! will create it with the canonical shape; nothing to rename.
     isempty(cols) && return nothing
+    # Post-redesign shape: a single `name` label, no `display_name`/`label`. Nothing to rename.
+    # Without this, the name-collapse migration (migrate_samples_name_collapse!) is silently
+    # reverted on every open_db. (Phase-A P0-1.)
+    if "name" in cols && !("display_name" in cols) && !("label" in cols)
+        return nothing
+    end
     if "display_name" in cols && !("label" in cols)
         return nothing  # already migrated
     end
@@ -1608,35 +1639,9 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
             try DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN label")
             catch e; occursin("no such column", sprint(showerror, e)) || rethrow(); end
         end
-        # Duplicate suffix pass (oldest id keeps bare name).
-        # Collision-safe: track existing (experiment_id, name) pairs so a user-named
-        # sample literally called "<name>-2" doesn't conflict with our rename target.
-        existing = Set{Tuple{Int64,String}}(
-            (Int64(r.experiment_id), String(r.name))
-            for r in Tables.rowtable(DBInterface.execute(db,
-                "SELECT experiment_id, name FROM samples WHERE name IS NOT NULL AND experiment_id IS NOT NULL")))
-        dups = Tables.rowtable(DBInterface.execute(db, """
-            SELECT experiment_id, name FROM samples
-            GROUP BY experiment_id, name HAVING COUNT(*) > 1"""))
-        for d in dups
-            ids = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM samples WHERE experiment_id = ? AND name = ? ORDER BY id ASC",
-                [d.experiment_id, d.name]))
-            for (i, row) in enumerate(ids)
-                i == 1 && continue  # oldest keeps the bare name
-                # Pick the next suffix that isn't already taken by a user-named sample.
-                suffix_n = i
-                new_name = "$(d.name)-$(suffix_n)"
-                while (Int64(d.experiment_id), new_name) in existing
-                    suffix_n += 1
-                    new_name = "$(d.name)-$(suffix_n)"
-                end
-                push!(existing, (Int64(d.experiment_id), new_name))
-                @warn "Renamed duplicate sample" experiment_id=d.experiment_id old=d.name new=new_name id=row.id
-                DBInterface.execute(db, "UPDATE samples SET name = ? WHERE id = ?",
-                    [new_name, row.id])
-            end
-        end
+        # Duplicate-label disambiguation retired (ingestion redesign): sample labels may
+        # legitimately repeat across loads (e.g. two `HA85 (S01P15)`); identity is (load_id, slot_index),
+        # not the label. See migrate_samples_name_collapse! and spec §10.
         DBInterface.execute(db,
             "CREATE UNIQUE INDEX IF NOT EXISTS samples_unique_name ON samples(experiment_id, name)")
         # Old idempotent_responses rows carry pre-rename payload shape; purge to
