@@ -416,7 +416,7 @@ function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symb
     # deliberate so a future column added to `samples` doesn't auto-leak
     # into the picker payload.
     samples = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, experiment_id, name, display_name, notes
+        "SELECT id, experiment_id, name, notes
          FROM samples WHERE experiment_id = ? ORDER BY id",
         [Int(experiment_id)]))
     _picker_samples_projection(db, samples)
@@ -428,7 +428,7 @@ function picker_samples(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
     # consumer can group client-side. Same explicit column list as the
     # scoped method — the JSON shape must not diverge.
     samples = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, experiment_id, name, display_name, notes
+        "SELECT id, experiment_id, name, notes
          FROM samples ORDER BY experiment_id, id"))
     _picker_samples_projection(db, samples)
 end
