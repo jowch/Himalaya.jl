@@ -20,6 +20,7 @@ Oxygen = "df9a0d86-3283-4920-82dc-4555fc0d1d8b"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+SQLite_jll = "76ed43ae-9a5d-5a62-8c75-30186b810ce8"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
@@ -39,6 +40,11 @@ ImageTransformations = "0.10.2"
 JSON3 = "1.14.3"
 Oxygen = "1.10.2"
 SQLite = "1.8.0"
+# SQLite_jll 3.53.2 hangs migrate_schema!'s ALTER TABLE ADD COLUMN on the legacy
+# peaks+indices schema (test_pipeline.jl "rowid PKs to AUTOINCREMENT" spins forever
+# in the SQLite ALTER compiler). Cap to the verified-good 3.51 line until a fixed
+# upstream release is confirmed. Manifest is gitignored, so fresh resolves need this.
+SQLite_jll = "~3.51"
 Sockets = "1.11.0"
 TOML = "1"
 Tables = "1.12.1"
