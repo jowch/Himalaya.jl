@@ -3,7 +3,7 @@ using HimalayaUI: with_idempotency, open_db
 
 @testset "with_idempotency: passthrough when X-Client-Op-Id absent" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
         called = Ref(0)
         result = with_idempotency(db, req) do
@@ -20,7 +20,7 @@ end
 
 @testset "with_idempotency: cache hit returns prior response" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-1"], UInt8[])
         called = Ref(0)
         # First call.
@@ -42,7 +42,7 @@ end
 
 @testset "with_idempotency: failures NOT cached" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-2"], UInt8[])
         called = Ref(0)
         # First call returns 4xx.
@@ -69,7 +69,7 @@ end
     # Two parallel tasks with same op_id, both miss the cache initially.
     # Per-op-id ReentrantLock serializes; one writes, other reads cache.
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-3"], UInt8[])
         called = Ref(0)
         body_lock = ReentrantLock()
@@ -97,7 +97,7 @@ end
     # `Oxygen.json(...)`) are `Vector{UInt8}`, so caching must `copy` first
     # or the caller's response object is left with an empty body.
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "uuid-preserve"], UInt8[])
         r = with_idempotency(db, req) do
             HTTP.Response(200; body = Vector{UInt8}("{\"id\":1}"))
@@ -114,7 +114,7 @@ end
 
 @testset "gc_idempotent_responses! sweeps rows older than TTL" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db, """
             INSERT INTO idempotent_responses (client_op_id, status_code, body, created_at)
             VALUES ('old-1', 200, '{}', datetime('now', '-2 hours'))
@@ -133,7 +133,7 @@ end
 
 @testset "gc_idempotent_responses! also sweeps OP_LOCKS entries with no live response" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         # Trigger creation of two OP_LOCKS entries.
         req1 = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "live-1"], UInt8[])
         req2 = HTTP.Request("POST", "/", ["X-Client-Op-Id" => "stale-1"], UInt8[])
@@ -167,7 +167,7 @@ end
     # Simulate a route that emits N events (speculative POST shape).
     # First call commits 3 events with same client_op_id; second call returns cached.
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         # Seed FK chain so apply_event! on entity_id=1 succeeds.
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
@@ -212,7 +212,7 @@ end
     # autocommit separately and a body-throw between them leaves an
     # orphaned event row.
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
@@ -247,7 +247,7 @@ end
 
 @testset "I2: with_idempotency body throw rolls back event AND cache atomically" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
@@ -282,7 +282,7 @@ end
     # that have a corresponding idempotent_responses row, and the row is
     # never written when the body throws.
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/",
                            ["X-Client-Op-Id" => "op-throw-leak"], UInt8[])
         try
@@ -308,7 +308,7 @@ end
     # retry with the same op_id should still work — the cleanup path must
     # not corrupt the lock registry for legitimate retry sequences.
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         req = HTTP.Request("POST", "/",
                            ["X-Client-Op-Id" => "op-4xx-leak"], UInt8[])
         r = with_idempotency(db, req) do
@@ -338,7 +338,7 @@ end
 
 @testset "I2: with_idempotency success commits event AND cache atomically" begin
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
