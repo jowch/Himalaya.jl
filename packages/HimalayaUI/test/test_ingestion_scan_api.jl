@@ -178,4 +178,73 @@ end
         end
         SQLite.close(db)
     end
+
+    @testset "PATCH /api/experiments/{id} writes geometry overrides, marks source=user" begin
+        db, dir, exp_id = scan_test_db()
+
+        with_test_server(db) do port, base
+            # Patch a geometry field
+            r = HTTP.patch("$base/api/experiments/$exp_id";
+                body    = JSON3.write(Dict(
+                    :flight_path_m  => 1.7500,
+                    :beam_center_x  => 500.0,
+                    :beam_center_y  => 800.0,
+                    :pixel_size_um  => 172.0,
+                    :energy_kev     => 9.0,
+                    :q_units        => "nm^-1")),
+                headers = ["Content-Type" => "application/json",
+                           "X-Username"   => "alice"],
+                status_exception = false)
+            @test r.status == 200
+
+            # Verify persisted values + source override
+            row = Tables.rowtable(DBInterface.execute(db, """
+                SELECT flight_path_m, flight_path_m_source,
+                       beam_center_x, beam_center_x_source,
+                       q_units
+                  FROM experiments WHERE id = ?
+            """, [exp_id]))[1]
+            @test row.flight_path_m       ≈ 1.7500
+            @test row.flight_path_m_source == "user"
+            @test row.beam_center_x       ≈ 500.0
+            @test row.beam_center_x_source == "user"
+            @test row.q_units             == "nm^-1"
+
+            # Partial patch: only flight_path_m. Others untouched.
+            r2 = HTTP.patch("$base/api/experiments/$exp_id";
+                body    = JSON3.write(Dict(:energy_kev => 12.0)),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r2.status == 200
+            row2 = Tables.rowtable(DBInterface.execute(db,
+                "SELECT energy_kev, energy_kev_source, flight_path_m FROM experiments WHERE id=?",
+                [exp_id]))[1]
+            @test row2.energy_kev        ≈ 12.0
+            @test row2.energy_kev_source == "user"
+            @test row2.flight_path_m     ≈ 1.7500  # previous value preserved
+
+            # 404 for unknown experiment
+            r3 = HTTP.patch("$base/api/experiments/999999";
+                body    = JSON3.write(Dict(:energy_kev => 1.0)),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r3.status == 404
+
+            # Read-only fields rejected
+            r4 = HTTP.patch("$base/api/experiments/$exp_id";
+                body    = JSON3.write(Dict(:data_dir => "/evil")),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r4.status == 400
+
+            # name stays read-only here — rename lands in Phase E1 (derived-name
+            # contract preserved until then).
+            r5 = HTTP.patch("$base/api/experiments/$exp_id";
+                body    = JSON3.write(Dict(:name => "Renamed")),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r5.status == 400
+        end
+        SQLite.close(db)
+    end
 end

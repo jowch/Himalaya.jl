@@ -1,5 +1,17 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
+# Mutable geometry fields. Each writable field has a companion *_source column
+# (set to "user" on override; never refreshed by rescan). name/description and
+# the path fields (data_dir, analysis_dir, manifest_path) remain read-only here —
+# name/description editing lands in Phase E1 (needs a description-column migration);
+# path fields are set at create time and must stay in sync with the filesystem.
+const _GEOMETRY_PATCH_FIELDS = [
+    "flight_path_m", "beam_center_x", "beam_center_y",
+    "pixel_size_um", "energy_kev", "q_units",
+]
+const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
+                           "id", "created_at", "name", "description"]
+
 """
     _beamline_from_config(cfg_text) -> NamedTuple
 
@@ -117,17 +129,50 @@ function register_experiments_routes!()
 
     @patch "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment not found")))
+
         body = json(req)
 
-        # Experiment name and path fields are no longer mutable via PATCH.
-        # Name and geometry are derived from experiment.toml + the on-disk files
-        # by the scan/ingest pipeline; path fields (data_dir, analysis_dir) must
-        # stay in sync with the config blob, so they are set at registration and
-        # refreshed by re-scanning, not patched.
-        # This route is a defensive surface for future fields only.
-        return HTTP.Response(400,
+        # Reject any attempt to write read-only path/id fields.
+        for k in _READONLY_FIELDS
+            (haskey(body, Symbol(k)) || haskey(body, k)) &&
+                return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "$k is read-only; change it via create/scan")))
+        end
+
+        # Build SET clauses for geometry fields present in the body.
+        set_clauses = String[]
+        params      = Any[]
+        for field in _GEOMETRY_PATCH_FIELDS
+            val = get(body, Symbol(field), get(body, field, nothing))
+            val === nothing && continue
+            push!(set_clauses, "$field = ?")
+            push!(params, val)
+            push!(set_clauses, "$(field)_source = 'user'")
+        end
+
+        isempty(set_clauses) && return HTTP.Response(200,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment metadata is read-only; it is derived from experiment.toml and refreshed by re-scanning")))
+            JSON3.write(Dict(:id => id, :updated => false)))
+
+        push!(params, id)
+        lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                DBInterface.execute(db,
+                    "UPDATE experiments SET $(join(set_clauses, ", ")) WHERE id = ?",
+                    params)
+            end
+        end
+
+        updated_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM experiments WHERE id = ?", [id]))
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(_experiment_row_to_json(updated_rows[1], db)))
     end
 
     @get "/api/experiments/{id}/loads" function(req::HTTP.Request, id::Int)
