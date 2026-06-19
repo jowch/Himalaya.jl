@@ -427,6 +427,190 @@ Run the full §5 backbone on the flat list of per-exposure metadata:
 The segmentation fallback (`:unimodal_fallback`) is surfaced both as a
 human-readable discrepancy string and onto each affected load's `flag`.
 """
+# ---------------------------------------------------------------------------
+# Read-time sample-flag derivation (spec §8.8 / §9.1)
+#
+# PURE: takes the get_loads_rollup rows (Phase D), returns a Dict keyed by
+# sample_id. NO DB, never a stored column. Phase D's get_loads_rollup calls this
+# over the rows it reads and suppresses any flag with a non-undone
+# grouping_flag_dismissed event before serializing (spec §9.2/§9.3).
+# ---------------------------------------------------------------------------
+
+"A cross-load merge suggestion: this sample's filename label recurs in another load."
+struct MergeFlag
+    merge_with_sample_id ::Int
+    merge_with_label     ::String
+end
+
+"An intra-sample split suggestion: the sample spans a position jump beyond local jitter."
+struct SplitFlag
+    split_at_index ::Int        # 1-based exposure index where the jump occurs
+    jump_from      ::Float64    # position just before the jump
+    jump_to        ::Float64    # position at the jump
+end
+
+"""One flag per sample, serialized by Phase D to the §8.8 `GroupingFlag` JSON union."""
+const GroupingFlag = Union{MergeFlag, SplitFlag}
+
+"""
+    derive_sample_flags(load_rows; slot_k = 5.0) -> Dict{Int, GroupingFlag}
+
+PURE read-time derivation of per-sample merge/split suggestions over the
+`get_loads_rollup` rows (spec §8.8). No DB access; returns a Dict keyed by
+`sample_id`, with a sample **absent** from the Dict meaning "no flag" (the
+contract's JSON `null`).
+
+`load_rows` is the `get_loads_rollup` shape (verified 2026-06-18):
+`Vector` of loads `(load_id, load_index, …, samples)`; each sample
+`(sample_id, name, slot_index, …, exposures)`; each exposure
+`(id, filename, horizontal_position, timestamp)` (the §8.8 leaf).
+
+Two suggestion kinds (a sample gets at most one; **split wins** if both apply):
+
+1. **Split** — within one sample, the per-exposure `horizontal_position` jumps
+   beyond the *local within-burst jitter* (gap-relative per spec §5, derived per
+   load, NOT a fixed threshold). The per-load jitter tolerance uses three regimes:
+   - Median-near-zero (multi-frame bursts): `median(nonzero deltas) / slot_k`
+     (same fallback as `_cluster_slots`, corrected to `/` per Task-6 note).
+   - Round-robin (median ≥ 1 mm — all deltas are slot-sized, no within-burst
+     near-zero pairs): `median / slot_k` — tolerance below slot spacing so the
+     first inter-slot gap is detectable as a split. This resolves the Task-6
+     KNOWN LIMITATION: `_cluster_slots` under-splits pure round-robin to one slot;
+     `derive_sample_flags` catches it here at read time.
+   - Normal burst+jump mix (median < 1 mm): `median * slot_k` — tolerance above
+     the within-burst jitter but below slot gaps (same as `_cluster_slots` normal).
+
+2. **Merge** — a sample's filename label (via `_label_from_stem` over its
+   exposures' `filename`s) recurs as the label of a sample in *another* load. The
+   grouper never auto-merges cross-load (spec §5), so this is surfaced as a
+   suggestion pointing at the other sample (`merge_with_sample_id` +
+   `merge_with_label`). When a label recurs in more than two loads, each flagged
+   sample points at the *first other* sample sharing that label (lowest
+   `sample_id`); the UI walks the chain.
+
+`slot_k = 5.0` matches `_cluster_slots`.
+"""
+function derive_sample_flags(load_rows; slot_k::Float64 = 5.0)::Dict{Int, GroupingFlag}
+    flags = Dict{Int, GroupingFlag}()
+
+    # ---- Per-load jitter tolerance, mirroring _cluster_slots (spec §5) -----
+    # Returns the split-detection tolerance for one load from its consecutive-frame
+    # position deltas. Three regimes:
+    #
+    #   1. Median near-zero (most frames at same position — multi-frame bursts):
+    #      learn tolerance from non-zero deltas (the burst→burst jumps) ÷ slot_k
+    #      so the tolerance falls BELOW the slot spacing. Mirrors _cluster_slots's
+    #      median-near-zero fallback exactly (corrected to / not × per Task-6 note).
+    #
+    #   2. Round-robin (ALL deltas are slot-sized — no within-burst near-zero pairs):
+    #      detected when median ≥ round_robin_floor_mm (1 mm — safely above the
+    #      ≈0.3 mm real-data jitter and below the ≈4 mm slot spacing). Use
+    #      med / slot_k to get a tolerance BELOW the slot spacing, making every
+    #      consecutive slot-gap detectable as a split. This is where the Task-6
+    #      KNOWN LIMITATION (pure single-frame round-robin under-splits to one slot)
+    #      becomes a concrete split flag: the first inter-slot gap exceeds tol.
+    #
+    #   3. Normal burst+jump mix (median reflects within-burst jitter, large jumps
+    #      are occasional): use med * slot_k so the tolerance sits above the jitter
+    #      but below the slot gaps. Same as _cluster_slots's normal branch.
+    #
+    # Uses _median_inline (inlined) to avoid a Statistics dependency.
+    # Round-robin detection floor: 1.0 mm sits safely above real-data within-burst
+    # jitter (≈0.3 mm) and below slot spacing (≈4 mm), making the three regimes
+    # below unambiguous for real SSRL data.
+    function _load_jitter_tol(positions::Vector{Union{Float64, Missing}})
+        deltas = Float64[]
+        for i in 2:length(positions)
+            if !ismissing(positions[i]) && !ismissing(positions[i-1])
+                push!(deltas, abs(positions[i] - positions[i-1]))
+            end
+        end
+        isempty(deltas) && return Inf
+        med = _median_inline(deltas)
+        if med < 1e-6
+            # Regime 1: median-near-zero (multi-frame bursts): learn from non-zero deltas.
+            nonzero = filter(d -> d > 1e-6, deltas)
+            return isempty(nonzero) ? Inf : _median_inline(nonzero) / slot_k
+        elseif med >= 1.0
+            # Regime 2: round-robin (median ≥ 1 mm — all deltas are slot-sized, no
+            # within-burst near-zero pairs). Use med / slot_k so the tolerance falls
+            # BELOW the slot spacing, making the first inter-slot gap detectable as
+            # a split. This is the Task-6 KNOWN LIMITATION resolved at read time:
+            # _cluster_slots under-splits pure round-robin to one slot; derive_sample_flags
+            # catches it here.
+            return med / slot_k
+        else
+            # Regime 3: normal burst+jump mix (median reflects within-burst jitter < 1 mm):
+            # tolerance above jitter but below slot gaps. Mirrors _cluster_slots normal branch.
+            return med * slot_k
+        end
+    end
+
+    # =====================================================================
+    # 1. SPLIT suggestions — per sample, per load (uses the load-local jitter
+    #    computed over *all* of that load's exposures in row order).
+    # =====================================================================
+    for ld in load_rows
+        # Flatten the load's exposures in (slot, then row) order to learn the
+        # load-local position-delta distribution — the same population
+        # _cluster_slots used during ingest.
+        load_positions = Union{Float64, Missing}[]
+        for sm in ld.samples, ex in sm.exposures
+            push!(load_positions,
+                ex.horizontal_position === nothing ? missing : Float64(ex.horizontal_position))
+        end
+        tol = _load_jitter_tol(load_positions)
+
+        for sm in ld.samples
+            xs = sm.exposures
+            length(xs) < 2 && continue
+            for i in 2:length(xs)
+                p_prev = xs[i-1].horizontal_position
+                p_curr = xs[i].horizontal_position
+                (p_prev === nothing || p_curr === nothing) && continue
+                if abs(Float64(p_curr) - Float64(p_prev)) > tol
+                    flags[Int(sm.sample_id)] = SplitFlag(
+                        i, Float64(p_prev), Float64(p_curr))
+                    break  # first jump only; the UI resolves one split at a time
+                end
+            end
+        end
+    end
+
+    # =====================================================================
+    # 2. MERGE suggestions — a sample's filename label recurs in another load.
+    #    Compute each sample's label once, group sample_ids by (label), and flag
+    #    every member of a multi-load group. Split takes precedence (skip if the
+    #    sample already has a split flag).
+    # =====================================================================
+    # label -> Vector of (sample_id, load_id), in stable iteration order.
+    by_label = Dict{String, Vector{Tuple{Int, Int}}}()
+    for ld in load_rows
+        for sm in ld.samples
+            isempty(sm.exposures) && continue
+            label = _label_from_stem(first(sm.exposures).filename)
+            push!(get!(by_label, label, Tuple{Int, Int}[]),
+                  (Int(sm.sample_id), Int(ld.load_id)))
+        end
+    end
+
+    for (label, members) in by_label
+        # Recurrence requires the label to appear in >1 distinct load.
+        distinct_loads = unique(last.(members))
+        length(distinct_loads) < 2 && continue
+        for (sid, lid) in members
+            haskey(flags, sid) && continue  # split wins
+            # Point at the first OTHER sample with this label in a different load
+            # (lowest sample_id for determinism).
+            others = sort([s for (s, l) in members if s != sid])
+            isempty(others) && continue
+            flags[sid] = MergeFlag(first(others), label)
+        end
+    end
+
+    return flags
+end
+
 function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
     isempty(metas) && return GroupingResult(GroupedLoad[], String[])
 

@@ -584,6 +584,76 @@ end
         @test length(samps2) == 2  # samples unchanged (sample dedup keyed on a stable load_id)
     end
 
+    @testset "derive_sample_flags" begin
+        # Helper to build a rollup-shaped exposure NamedTuple (mirrors get_loads_rollup).
+        exp(id, fname, hpos) = (id = id, filename = fname,
+            horizontal_position = hpos, timestamp = nothing)
+        smp(sid, name, slot, exps) = (sample_id = sid, name = name, slot_index = slot,
+            grouping_source = "auto_position", name_source = "auto",
+            merged_into_id = nothing, exposures = exps)
+        load(lid, lidx, smps) = (load_id = lid, load_index = lidx,
+            start_time = nothing, end_time = nothing,
+            frame_count = sum(length(s.exposures) for s in smps), samples = smps)
+
+        # --- Cross-load MERGE candidate: label "HA_85" recurs across two loads ---
+        # Load 1 slot 1: HA_85 burst (clean, ~0.1 mm jitter) → merge candidate (recurs in L2)
+        # Load 2 slot 1: HA_85 burst (clean)                  → merge candidate (recurs in L1)
+        # Load 1 slot 2: HA_90 burst (no recurrence)          → no flag
+        s1 = smp(101, "HA85 (S01P01)", 1,
+                 [exp(1, "HA_85_S2001_0_001", 74.80), exp(2, "HA_85_S2002_0_002", 74.83)])
+        s2 = smp(102, "HA90 (S01P02)", 2,
+                 [exp(3, "HA_90_S2003_0_001", 70.85), exp(4, "HA_90_S2004_0_002", 70.88)])
+        s3 = smp(201, "HA85 (S02P01)", 1,
+                 [exp(5, "HA_85_S2101_0_001", 74.75), exp(6, "HA_85_S2102_0_002", 74.79)])
+
+        rollup_merge = [load(1, 1, [s1, s2]), load(2, 1, [s3])]
+        flags = HimalayaUI.derive_sample_flags(rollup_merge)
+
+        # s1 and s3 are merge candidates of each other (shared label "HA_85")
+        @test haskey(flags, 101)
+        @test flags[101] isa HimalayaUI.MergeFlag
+        @test flags[101].merge_with_sample_id == 201
+        @test flags[101].merge_with_label == "HA_85"
+        @test haskey(flags, 201)
+        @test flags[201].merge_with_sample_id == 101
+        # s2 (label HA_90, no recurrence) is NOT flagged → absent from the Dict (contract null)
+        @test !haskey(flags, 102)
+
+        # --- Intra-sample SPLIT: one sample spans a ~4 mm position jump ---
+        # Load 1 has only this sample, so there is no cross-load recurrence;
+        # within the sample the position jumps 74.80 → 67.20 (≫ local jitter).
+        split_sample = smp(301, "HA77 (S01P01)", 1,
+            [exp(10, "HA_77_S3001_0_001", 74.80),
+             exp(11, "HA_77_S3002_0_002", 74.85),   # still ~slot center
+             exp(12, "HA_77_S3003_0_003", 67.20),   # JUMP here (index 3)
+             exp(13, "HA_77_S3004_0_004", 67.25)])
+        rollup_split = [load(3, 1, [split_sample])]
+        sflags = HimalayaUI.derive_sample_flags(rollup_split)
+        @test haskey(sflags, 301)
+        @test sflags[301] isa HimalayaUI.SplitFlag
+        @test sflags[301].split_at_index == 3            # the exposure index where the jump occurs
+        @test sflags[301].jump_from ≈ 74.85
+        @test sflags[301].jump_to   ≈ 67.20
+
+        # --- Pure single-frame round-robin (the prior Plan-B deferral, now a concrete split) ---
+        # Each "exposure" is a different slot position visited in one round; _cluster_slots
+        # under-split it to ONE sample (KNOWN LIMITATION). derive_sample_flags flags the
+        # first position jump as a split suggestion (spec §5: "single-frame … else flag").
+        rr_sample = smp(401, "JC (S01P01)", 1,
+            [exp(20, "JC_C01_S4001_0_001", 39.5),
+             exp(21, "JC_C02_S4002_0_001", 71.0),    # jump → split at index 2
+             exp(22, "JC_C03_S4003_0_001", 87.0)])
+        rr_flags = HimalayaUI.derive_sample_flags([load(4, 1, [rr_sample])])
+        @test haskey(rr_flags, 401)
+        @test rr_flags[401] isa HimalayaUI.SplitFlag
+        @test rr_flags[401].split_at_index == 2
+
+        # --- No flags for a clean directory (one load, one clean burst) ---
+        clean = smp(501, "HA60 (S01P01)", 1,
+            [exp(30, "HA_60_S5001_0_001", 58.9), exp(31, "HA_60_S5002_0_002", 58.95)])
+        @test isempty(HimalayaUI.derive_sample_flags([load(5, 1, [clean])]))
+    end
+
     @testset "cheap_change_check" begin
         dir = mktempdir()
         data_dir     = joinpath(dir, "data")
