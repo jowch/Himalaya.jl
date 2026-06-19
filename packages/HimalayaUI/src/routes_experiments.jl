@@ -114,39 +114,4 @@ function register_experiments_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
     end
-
-    @post "/api/experiments/{id}/reingest" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT path FROM experiments WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
-        exp_path = String(rows[1].path)
-        try
-            res = reingest!(db, id, exp_path)
-            log_action!(db, req; action = "reingest",
-                entity_type = "experiment", entity_id = id)
-            return HTTP.Response(200,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:status          => String(res.status),
-                                 :added_samples   => res.added_samples,
-                                 :added_exposures => res.added_exposures,
-                                 :manifest_path   => res.manifest_path)))
-        catch e
-            if e isa ManifestValidationError
-                return HTTP.Response(400,
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "manifest_invalid",
-                                     :violations => [Dict(:kind => string(v.kind),
-                                                          :sample_index => v.sample_index,
-                                                          :sample_name => v.sample_name,
-                                                          :detail => v.detail)
-                                                     for v in e.violations])))
-            end
-            return HTTP.Response(500,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => sprint(showerror, e))))
-        end
-    end
 end

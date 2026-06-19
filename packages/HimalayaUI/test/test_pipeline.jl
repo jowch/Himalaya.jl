@@ -466,189 +466,22 @@ end
     end
 end
 
-@testset "cli_init_with_db! reads experiment.toml" begin
-    mktempdir() do dir
-        # Set up experiment directory
-        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
-        data_dir     = joinpath(dir, "data")
-        mkpath(analysis_dir)
-        mkpath(data_dir)
-
-        # Use the canonical fixture for valid integration data
-        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
-        cp(fixture, joinpath(analysis_dir, "JC002.dat"))
-
-        # Manifest
-        manifest = joinpath(dir, "manifest.csv")
-        write(manifest, join([
-            "skip-row",
-            "1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\tnote_s\tnote_e",
-        ], "\n"))
-
-        # experiment.toml
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "Run/Exp"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 12.0
-        flight_path_m = 2.5
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
-
-        # Verify experiment was created with config and beamline params
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT name, energy_kev, flight_path_m, config FROM experiments WHERE id = ?", [exp_id]))
-        @test length(rows) == 1
-        @test rows[1].name == "Run/Exp"
-        @test rows[1].energy_kev == 12.0
-        @test rows[1].flight_path_m == 2.5
-        @test contains(rows[1].config, "[experiment]")
-
-        # Verify samples and exposures
-        samples = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
-        @test length(samples) == 1
-
-        exposures = Tables.rowtable(DBInterface.execute(db,
-            "SELECT filename FROM exposures WHERE sample_id = ? ORDER BY filename", [samples[1].id]))
-        @test [e.filename for e in exposures] == ["JC001", "JC002"]
-    end
-end
-
-@testset "cli_init_with_db! errors when experiment.toml missing" begin
-    mktempdir() do dir
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        @test_throws ErrorException HimalayaUI.cli_init_with_db!(db, dir)
-    end
-end
-
-@testset "cli_init_with_db! refuses duplicate registration" begin
-    mktempdir() do dir
-        write(joinpath(dir, "experiment.toml"),
-              """
-              [experiment]
-              name = "duplicate-test"
-              [layout]
-              data_dir = "data"
-              analysis_dir = "analysis/automatic_analysis"
-              exposure_type = "simple"
-              """)
-        mkpath(joinpath(dir, "analysis", "automatic_analysis"))
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        HimalayaUI.cli_init_with_db!(db, dir)              # first call ok
-        err = try
-            HimalayaUI.cli_init_with_db!(db, dir)          # second call rejected
-            nothing
-        catch e
-            e
-        end
-        @test err isa ErrorException
-        @test occursin("already registered", err.msg)
-        @test occursin("reingest", err.msg)
-        # Confirm no second row was inserted
-        rows = Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))
-        @test length(rows) == 1
-    end
-end
-
-@testset "cli_init_with_db! does not write to experiment directory" begin
-    mktempdir() do dir
-        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
-        data_dir = joinpath(dir, "data")
-        mkpath(analysis_dir)
-        mkpath(data_dir)
-        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
-        write(joinpath(dir, "manifest.csv"),
-              "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001\t\t")
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "T"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 0.0
-        flight_path_m = 0.0
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-
-        # Snapshot the file list before init
-        before = Set(readdir(dir))
-
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        HimalayaUI.cli_init_with_db!(db, dir)
-
-        # Snapshot after init — must be identical (no DB or other files written)
-        after = Set(readdir(dir))
-        @test before == after
-    end
-end
-
-# Removed: "reingest! adds new exposures and preserves curated ones". reingest!'s
-# sample upsert matches on the manifest col-2 identifier ("D1") while the Phase-A
-# naming collapse stores the friendly display name as samples.name, so reingest no
-# longer dedupes existing samples/exposures. reingest/CLI is being retired by the
-# ingestion redesign (auto-rescan replaces it), so this path is not being fixed.
-
-@testset "reingest! errors when experiment.toml missing" begin
-    mktempdir() do dir
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        exp_id = HimalayaUI.create_experiment!(db;
-            path = dir, data_dir = dir, analysis_dir = dir)
-        @test_throws ErrorException HimalayaUI.reingest!(db, exp_id, dir)
-    end
-end
-
 # ── CLI path-targeting tests ──────────────────────────────────────────────────
+#
+# These exercise `cli_analyze` / `_resolve_experiment` selection logic — NOT
+# ingestion. The manifest-driven CLI ingest (`cli_init_with_db!`) was deleted by
+# the ingestion redesign (HTTP scan is now the sole entry point), so the setup
+# previously done by `cli_init_with_db!` is reproduced directly via
+# `seed_experiment!` (DB rows only) plus on-disk .dat fixtures for analyze.
 
-using HimalayaUI: cli_analyze, cli_show, cli_init_with_db!
+include("seed.jl")
+using HimalayaUI: cli_analyze, cli_show
 
 let
     # Helper scoped to this section — not visible elsewhere in the test file.
-    function setup_exp_dir(dir; name="E", stems=["ST001"])
+    # Seeds an experiment in `db` and drops one .dat fixture per stem under
+    # analysis_dir so cli_analyze can actually run peak-finding.
+    function setup_exp_dir(db, dir; name="E", stems=["ST001"])
         analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
         mkpath(analysis_dir)
         mkpath(joinpath(dir, "data"))
@@ -656,34 +489,10 @@ let
         for stem in stems
             cp(fixture, joinpath(analysis_dir, stem * ".dat"); force=true)
         end
-        write(joinpath(dir, "manifest.csv"), join([
-            "skip-row",
-            "1\tD1\t$(name)\tT\tt\t\t\t\t$(join(stems, ","))\tnote_s\tnote_e",
-        ], "\n"))
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "$name"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
+        seed_experiment!(db, dir;
+            name = name, analysis_dir = analysis_dir,
+            sample_name = name, stems = stems,
+            experiment_type = "simple")
     end
 
     @testset "cli_analyze --experiment selects the right experiment" begin
@@ -693,8 +502,7 @@ let
 
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
-            cli_init_with_db!(db, dir1)
+            setup_exp_dir(db, dir1; name="Exp1", stems=["ST001"])
         end
 
         # Unregistered path → error.
@@ -708,21 +516,14 @@ let
         end
     end
 
-    # Removed: "cli_show --experiment selects the right experiment". cli_show looks
-    # samples up by the manifest col-2 identifier ("D1"), which the Phase-A naming
-    # collapse dropped (samples.name is now the friendly display name). reingest/CLI
-    # is being retired by the ingestion redesign, so this path is not being fixed.
-
     @testset "_resolve_experiment errors when multiple experiments and no key" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()
         dir2    = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="ExpA", stems=["ST001"])
-            setup_exp_dir(dir2; name="ExpB", stems=["ST002"])
-            cli_init_with_db!(db, dir1)
-            cli_init_with_db!(db, dir2)
+            setup_exp_dir(db, dir1; name="ExpA", stems=["ST001"])
+            setup_exp_dir(db, dir2; name="ExpB", stems=["ST002"])
             err = try; HimalayaUI._resolve_experiment(db, nothing); nothing; catch e; e; end
             @test err isa ErrorException
             @test occursin("Multiple experiments", err.msg)
@@ -734,8 +535,8 @@ let
         dir1    = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="ExpA", stems=["ST001"])
-            id = cli_init_with_db!(db, dir1)
+            res = setup_exp_dir(db, dir1; name="ExpA", stems=["ST001"])
+            id  = res.exp_id
             row = HimalayaUI._resolve_experiment(db, string(id))
             @test Int(row.id) == id
         end
@@ -746,8 +547,7 @@ let
         dir1    = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="UniqueName123", stems=["ST001"])
-            cli_init_with_db!(db, dir1)
+            setup_exp_dir(db, dir1; name="UniqueName123", stems=["ST001"])
             row = HimalayaUI._resolve_experiment(db, "UniqueName123")
             @test String(row.name) == "UniqueName123"
         end
@@ -1007,51 +807,6 @@ end
     p2 = JSON3.read(String(row2.payload))
     @test p2[:findpeaks_skipped]  == true
     @test p2[:indexpeaks_skipped] == true
-end
-
-@testset "cli_init_with_db! is atomic on validation failure" begin
-    mktempdir() do tmp
-        # Build an experiment dir whose manifest has duplicate sample names.
-        exp_dir = joinpath(tmp, "exp")
-        mkpath(joinpath(exp_dir, "data"))
-        mkpath(joinpath(exp_dir, "analysis", "automatic_analysis"))
-        # Minimal experiment.toml using new key names
-        write(joinpath(exp_dir, "experiment.toml"), """
-[experiment]
-name = "validation-fail"
-manifest = "manifest.csv"
-[manifest]
-delimiter      = "\\t"
-skip_rows      = 1
-sample_id      = 1
-name           = 2
-display_name   = 3
-filenames      = 9
-notes_sample   = 10
-notes_exposure = 11
-[layout]
-data_dir = "data"
-analysis_dir = "analysis/automatic_analysis"
-[files]
-integration = "{name}.dat"
-image       = "{name}.tiff"
-""")
-        # Two samples with the same name (duplicate_name violation).
-        write(joinpath(exp_dir, "manifest.csv"), """sample_id\tname\tdisplay_name\tcol4\tcol5\tcol6\tcol7\tcol8\tfilenames\tnotes_sample\tnotes_exposure
-1\tDUP\tfirst\t\t\t\t\t\tA001\t\t
-2\tDUP\tsecond\t\t\t\t\t\tA002\t\t
-""")
-
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        @test_throws HimalayaUI.ManifestValidationError HimalayaUI.cli_init_with_db!(db, exp_dir)
-
-        # No experiment row leaked — transaction rolled back.
-        rows = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM experiments"))
-        @test isempty(rows)
-        # No samples either.
-        srows = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM samples"))
-        @test isempty(srows)
-    end
 end
 
 @testset "analyze_exposure! defer_broadcast=true suppresses analyze_run SSE frame" begin

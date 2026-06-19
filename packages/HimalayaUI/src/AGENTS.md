@@ -8,14 +8,13 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 |------|----------|-------|
 | DB schema + CRUD | `db.jl` | FK enforcement ON; `AUTOINCREMENT` on mention-target tables |
 | Experiment config | `config.jl` | `ExperimentConfig` + `load_config` + `resolve_files` |
-| Manifest | `manifest.jl` | `ManifestSample` + `parse_manifest` (config-driven) |
-| Pre-ingest validation | `validate.jl` | `ManifestViolation` + `validate_manifest` |
+| Ingestion (auto-scan) | `ingest.jl` | `scan_and_group!` — sole ingestion entry point (HTTP scan); read-only wrt experiment dir |
 | Analysis pipeline | `pipeline.jl` | `analyze_exposure!`, `auto_group`, `persist_analysis!` |
 | Curation contract | `pipeline.jl::effective_peaks` | `auto_peaks − excludes ∪ adds` |
 | Event log + SSE | `events.jl` | `apply_event!` is the sole writer to view tables |
 | Idempotency | `idempotency.jl` | `with_idempotency` + `InTransaction` sentinel |
 | Speculative indices | `speculative.jl` | Build/delete + re-resolve |
-| CLI | `cli.jl` | `init`, `analyze`, `show`, `serve`, `config`, `reingest` |
+| CLI | `cli.jl` | `analyze`, `show`, `serve`, `config`, `migrate-toml` (ingestion is HTTP-scan-only, no `init`/`reingest`) |
 | REST routes | `routes_*.jl` | One file per resource |
 | Audit log | `actions.jl` | `X-Username` extraction + `user_actions` writer |
 | TIFF → PNG | `image.jl` | `load_and_lognormalize` (Q0f31-aware) |
@@ -46,8 +45,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 ## Pipeline + curation
 
 - **`analyze_exposure!` curation contract.** Before calling `Himalaya.indexpeaks`, it calls `effective_peaks(db, exposure_id, q, I)` which synthesises `auto_peaks − peak_curations(kind='exclude') ∪ peak_curations(kind='add')`, with sharpness for adds sampled from `Himalaya.sharpness(I)`. Without this, exclusions don't affect scoring and manual peaks never land in `IndexEntry.peaks`. Touch only with curation-lifecycle regression tests in `test_pipeline.jl` green. See `docs/event-log.md` §1 for the auto/curation table split.
-- **`persist_analysis!` is transactional.** The auto-peak diff-update + index re-resolve sequence is wrapped in `SQLite.transaction`. New write steps must go inside `_persist_analysis_inner!` so they stay atomic. Same pattern applies to `reingest!` in `cli.jl` (`_reingest_inner!`).
-- **`_reingest_inner!` return shape.** `NamedTuple{(:status, :added_samples, :added_exposures, :manifest_path)}` where `:status` is `:ok` or `:no_manifest`. The `POST /api/experiments/:id/reingest` route echoes those fields in JSON (HTTP 200 in both cases — `status` is the discriminator).
+- **`persist_analysis!` is transactional.** The auto-peak diff-update + index re-resolve sequence is wrapped in `SQLite.transaction`. New write steps must go inside `_persist_analysis_inner!` so they stay atomic. The ingestion path (`scan_and_group!` in `ingest.jl`) follows the same inner-transaction pattern.
 
 ## Experiment config
 
@@ -57,13 +55,12 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 - **`layout.exposure_type`** is validated at parse against `VALID_EXPOSURE_TYPES` (currently `("simple",)`) — extend the tuple before adding a new type.
 - Malformed TOML throws a wrapped `Invalid TOML in <path>: …` error.
 - **`_build_config(::AbstractDict)`** is the shared helper between `config_from_db` and `load_config`.
-- **`parse_manifest` has two methods.** `parse_manifest(source)` is a backward-compat wrapper using `simple.toml` defaults. `parse_manifest(cfg::ExperimentConfig, source)` is the config-driven version — use this in new code. Both accept IO and paths via `readlines(source)`.
 
-Read `docs/experiment-config.md` before touching `config.jl`, `manifest.jl`, or the cli init/reingest paths.
+Read `docs/experiment-config.md` before touching `config.jl` or the ingestion (`ingest.jl` / HTTP scan) path.
 
 ## Filesystem + DB layout
 
-- **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during `init`, `analyze`, `reingest`, or `serve`. Sole exception: `himalaya config new --dir`. A regression test in `test_pipeline.jl` snapshots dir contents before/after `cli_init_with_db!` — keep it green.
+- **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during ingestion (`scan_and_group!` / HTTP scan), `analyze`, or `serve`. Sole exception: `himalaya config new --dir`.
 - **Central DB.** All CLI commands open the same DB resolved by `default_db_path()` in `db.jl`: `HIMALAYA_DB_PATH` if set, else `~/.himalaya/himalaya.db` (parent auto-created). One DB stores every experiment; experiment dirs are pure read-only data sources. Tests pass an explicit file path (`open_db(joinpath(tmp, "himalaya.db"))`) for isolation.
 - **Filename ↔ exposure association via filesystem prefix scan.** Manifest filename entries are always prefixes: `JC001-004` expands to four, each scanned via `resolve_files(cfg, dir, prefix, cfg.integration_pattern)` against the filesystem. The manifest declares intent; disk decides what exists. Missing files produce a warning, not an error. When debugging "exposures missing after init/reingest," check actual files in `analysis_dir` first.
 
@@ -71,7 +68,7 @@ Read `docs/experiment-config.md` before touching `config.jl`, `manifest.jl`, or 
 
 - **Detector TIFFs are Q0f31 fixed-point.** TiffImages loads as `Gray{Q0f31}` (= `Fixed{Int32, 31}`). `Float32.(channelview(raw))` divides raw photon counts by 2³¹ (~2.1e9), making `log1p` a numerical no-op (~4.7e-10 per count). To recover photon counts, use `reinterpret.(Int32, channelview(raw))`. Then `max(., 0)` clips beamstop/dead-pixel negatives, `log1p` compresses, and a p99-of-positives clip prevents the direct beam from crushing diffraction-ring contrast. See `image.jl::load_and_lognormalize`.
 - **`Cache-Control: private, max-age=31536000, immutable`** on `routes_exposures.jl`'s image route. The frontend appends `?v=<image_version_token>` (= `IMAGE_PROCESSING_VERSION` + TIFF mtime), so the URL itself is the cache key — a TIFF rewrite or a `IMAGE_PROCESSING_VERSION` bump changes the URL and forces a refetch. Bump the version const (image.jl) whenever rendered bytes change; never lengthen the max-age without keeping the `?v=` invalidation intact.
-- **Thumb disk cache (issue #261).** `?thumb=1` requests go through `ensure_thumb_cached(db, exposure_id, path)` — a `<db_dir>/cache/thumb-128/{id}-{token}.png` cache, where `token = image_version_token(path)` so a version bump or TIFF rewrite naturally re-keys (stale entries are left, never read). Guarded on `db.file == ":memory:"` (renders fresh, no write) so in-memory test DBs work unchanged. The thumb path uses `load_and_lognormalize_thumb` (downscale-BEFORE-lognormalize) — a triage preview, NOT the science view; a faint narrow ring may under-render. `prewarm_thumbnails!(db; threads, overwrite)` populates the cache from `cli_init_with_db!` (after the ingest tx) and `reingest!` (after commit, with `overwrite=true` to defeat whole-second mtime granularity); workers are FS-only — never touch the DB connection inside the `@threads` loop.
+- **Thumb disk cache (issue #261).** `?thumb=1` requests go through `ensure_thumb_cached(db, exposure_id, path)` — a `<db_dir>/cache/thumb-128/{id}-{token}.png` cache, where `token = image_version_token(path)` so a version bump or TIFF rewrite naturally re-keys (stale entries are left, never read). Guarded on `db.file == ":memory:"` (renders fresh, no write) so in-memory test DBs work unchanged. The thumb path uses `load_and_lognormalize_thumb` (downscale-BEFORE-lognormalize) — a triage preview, NOT the science view; a faint narrow ring may under-render. `prewarm_thumbnails!(db; threads, overwrite)` populates the cache from the ingestion path (`scan_and_group!`, after the ingest tx; `overwrite=true` defeats whole-second mtime granularity on a re-scan); workers are FS-only — never touch the DB connection inside the `@threads` loop.
 
 ## Exposure-state quirks
 
