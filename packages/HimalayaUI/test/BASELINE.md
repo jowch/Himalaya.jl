@@ -45,3 +45,28 @@ M2/M3 ROI at this scale is marginal — see scope note above; deferred pending r
 - Full suite: **2170/2170, 192.6s** — i.e. ~same as M1's 187s. The ~5.8s theoretical saving is
   within full-suite run-to-run variance, so M2 shows no standalone wall-clock win at this scale.
   (Its value is real but small; it compounds slightly under M3's smaller parallel buckets.)
+
+## M3 result (GROUP buckets + parallel runner)
+
+- Cross-file helpers extracted to `test_fixtures.jl`; `runtests.jl` carved into 5 GROUP buckets
+  (`db`/`pipeline`/`routes`/`events`/`wire`); `make test-parallel` runs them concurrently.
+- **Serial `GROUP=All`: 2170/2170, 190.9s** (the bisect fallback, exact historical order).
+- **Parallel `make test-parallel`: 2170/2170 (bucket sum), 119s wall** — bounded by the `routes`
+  bucket (913 tests, ~113s). Buckets: db 527, pipeline 162, routes 913, events 471, wire 97.
+- The `test_fast_skip` "P99 < 500µs" micro-benchmark is meaningless under 5-way CPU contention
+  (measured 12.5ms); the parallel runner sets `HIMALAYA_SUITE_PARALLEL=1` and the assertion
+  neutralizes its ceiling there, keeping the real check in serial/CI.
+
+## Bottom line
+
+| Stage | Wall time | vs baseline |
+|---|---|---|
+| Baseline (wire, uncontended) | 268s | — |
+| M1 (in-process dispatch) | 187s | −30% |
+| M2 (template DB) | 192s | (within noise) |
+| M3 serial (GROUP=All) | 191s | −29% |
+| **M3 parallel (make test-parallel)** | **119s** | **−56%** |
+
+The decisive win is M1 (in-process dispatch) — which also removed the contention sensitivity that
+made the suite feel like ~20min. M3's parallel runner roughly halves wall-clock further. To go
+below ~119s, split the `routes` bucket (it bounds the parallel wall).
