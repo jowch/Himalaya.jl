@@ -10,3 +10,5 @@ function with_test_server(f, db::SQLite.DB)
         HimalayaUI.stop_test_server!()
     end
 end
+
+include("test_inproc.jl")
