@@ -38,7 +38,7 @@ function _fwipe_setup(tmp)
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
     cp(_FWIPE_DAT, joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
@@ -110,7 +110,7 @@ end
 # Minimal direct-persist fixture: exposure + N curated same-phase auto members
 # (no peaks/eff needed — the re-attach path never reads them).
 function _fwipe_merge_setup(tmp, member_bases::Vector{Float64})
-    db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))   # FK ON (cascade live)
+    db = open_prepared_clone(tmp)   # FK ON (cascade live)
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp, "data"), analysis_dir=joinpath(tmp, "analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -144,7 +144,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
         # {both} differs from the machine selection — a silent re-seed (the
         # pre-fix behavior) shrinks the assignment back to the selection.
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))   # FK ON (cascade live)
+            db = open_prepared_clone(tmp)   # FK ON (cascade live)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp, "data"), analysis_dir=joinpath(tmp, "analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
