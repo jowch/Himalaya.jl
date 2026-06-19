@@ -37,7 +37,7 @@ test-parallel:
 	@echo "Running $(words $(GROUPS)) groups in parallel..."
 	@pids=""; rc=0; \
 	for g in $(GROUPS); do \
-		( GROUP=$$g julia --project=packages/HimalayaUI \
+		( GROUP=$$g HIMALAYA_SUITE_PARALLEL=1 julia --project=packages/HimalayaUI \
 			-e 'using Pkg; Pkg.test("HimalayaUI")' > build/test-$$g.log 2>&1 ) & \
 		pids="$$pids $$!"; \
 	done; \
