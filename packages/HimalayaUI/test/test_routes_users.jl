@@ -4,16 +4,16 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Empty list
-        r = HTTP.get("$base/api/users")
+        r = call("GET", "/api/users")
         @test r.status == 200
         @test JSON3.read(String(r.body)) == []
 
         # Create without first/last (legacy path)
-        r = HTTP.post("$base/api/users";
-            body = JSON3.write(Dict(:username => "alice")),
-            headers = ["Content-Type" => "application/json"])
+        r = call("POST", "/api/users";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice"))))
         @test r.status == 201
         created = JSON3.read(String(r.body))
         @test created.username == "alice"
@@ -22,39 +22,39 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test isnothing(created.last_name)
 
         # Idempotent — second create returns existing
-        r = HTTP.post("$base/api/users";
-            body = JSON3.write(Dict(:username => "alice")),
-            headers = ["Content-Type" => "application/json"])
+        r = call("POST", "/api/users";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice"))))
         @test r.status == 200
         @test JSON3.read(String(r.body)).id == 1
 
         # Idempotent enrichment: a follow-up POST that supplies first/last fills in
         # the previously-NULL fields (but never overwrites non-null values).
-        r = HTTP.post("$base/api/users";
-            body = JSON3.write(Dict(:username => "alice",
+        r = call("POST", "/api/users";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice",
                                     :first_name => "Alice",
-                                    :last_name  => "Smith")),
-            headers = ["Content-Type" => "application/json"])
+                                    :last_name  => "Smith"))))
         @test r.status == 200
         enriched = JSON3.read(String(r.body))
         @test enriched.id == 1
         @test enriched.first_name == "Alice"
         @test enriched.last_name  == "Smith"
         # Existing names are preserved on a subsequent POST with different names.
-        r = HTTP.post("$base/api/users";
-            body = JSON3.write(Dict(:username => "alice",
+        r = call("POST", "/api/users";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice",
                                     :first_name => "DIFFERENT",
-                                    :last_name  => "OVERWRITE")),
-            headers = ["Content-Type" => "application/json"])
+                                    :last_name  => "OVERWRITE"))))
         @test r.status == 200
         preserved = JSON3.read(String(r.body))
         @test preserved.first_name == "Alice"
         @test preserved.last_name  == "Smith"
 
         # Create with first_name and last_name
-        r = HTTP.post("$base/api/users";
-            body = JSON3.write(Dict(:username => "jwhc", :first_name => "Jonathan", :last_name => "Chen")),
-            headers = ["Content-Type" => "application/json"])
+        r = call("POST", "/api/users";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:username => "jwhc", :first_name => "Jonathan", :last_name => "Chen"))))
         @test r.status == 201
         created2 = JSON3.read(String(r.body))
         @test created2.username   == "jwhc"
@@ -62,7 +62,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test created2.last_name  == "Chen"
 
         # List returns first_name/last_name
-        r = HTTP.get("$base/api/users")
+        r = call("GET", "/api/users")
         users = JSON3.read(String(r.body))
         @test length(users) == 2
         jwhc = first(filter(u -> u.username == "jwhc", users))
@@ -71,20 +71,19 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # Reject invalid handles (spaces, @, hyphens, etc.)
         for bad in ("has space", "with-dash", "@withat", "with.dot")
-            r = HTTP.post("$base/api/users";
-                body = JSON3.write(Dict(:username => bad)),
+            r = call("POST", "/api/users";
                 headers = ["Content-Type" => "application/json"],
-                status_exception = false)
+                body = Vector{UInt8}(JSON3.write(Dict(:username => bad))))
             @test r.status == 400
         end
 
         # Empty audit trail
-        r = HTTP.get("$base/api/users/alice/actions")
+        r = call("GET", "/api/users/alice/actions")
         @test r.status == 200
         @test JSON3.read(String(r.body)) == []
 
         # 404 for unknown user
-        r = HTTP.get("$base/api/users/nobody/actions"; status_exception = false)
+        r = call("GET", "/api/users/nobody/actions")
         @test r.status == 404
     end
 end
