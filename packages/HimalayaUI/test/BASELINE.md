@@ -34,3 +34,14 @@ startup+compile overhead) is much weaker at a 4.5-min baseline than at 20 min.
 
 Go/no-go threshold was <600s; we are at 187s. The <3min goal is essentially met by M1 alone.
 M2/M3 ROI at this scale is marginal — see scope note above; deferred pending re-measure decision.
+
+## M2 result (template-DB clone for fresh fixtures)
+
+- Measured per-fixture cost: `open_db` 37.4ms → `open_prepared_clone` 5.1ms (~32ms/call saved).
+- Swapped 153 fresh-fixture sites across 25 files to `open_prepared_clone`. EXCLUDED (left on
+  `open_db`): `test_db.jl` + `test_pipeline.jl` (legacy-migration testsets — `open_db` is the
+  unit-under-test), the equivalence harness, `test_concurrent_writes.jl`, and `test_fast_skip.jl`
+  (runs before the helper is defined in include order).
+- Full suite: **2170/2170, 192.6s** — i.e. ~same as M1's 187s. The ~5.8s theoretical saving is
+  within full-suite run-to-run variance, so M2 shows no standalone wall-clock win at this scale.
+  (Its value is real but small; it compounds slightly under M3's smaller parallel buckets.)
