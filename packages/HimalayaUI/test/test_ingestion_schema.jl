@@ -259,4 +259,15 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             @test row.frame_no == 1
         end
     end
+
+    @testset "experiment resolution by exposures.experiment_id" begin
+        path = fresh_db()
+        with_db(path) do db
+            eid = HimalayaUI.create_experiment!(db; name="e",
+                path="/tmp/e", data_dir="/tmp/e/data", analysis_dir="/tmp/analysis-xyz")
+            xid = HimalayaUI.create_exposure!(db; experiment_id=eid, filename="f.tif")  # sample_id NULL
+            # new helper resolves analysis_dir from the exposure's experiment_id directly
+            @test HimalayaUI._resolve_analysis_dir(db, xid) == "/tmp/analysis-xyz"
+        end
+    end
 end

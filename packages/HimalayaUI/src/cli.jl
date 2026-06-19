@@ -371,7 +371,7 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             end
             print("  Analyzing $(sample.name) / $(exp_row.filename) ... ")
             try
-                analyze_exposure!(db, e_id, exp.analysis_dir)
+                analyze_exposure!(db, e_id)
                 println("done")
             catch e
                 msg = isa(e, ErrorException) ? e.msg : sprint(showerror, e)

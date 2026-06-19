@@ -881,6 +881,19 @@ function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
 end
 
 """
+    analyze_exposure!(db, exposure_id; kwargs...)
+
+2-arg convenience overload: resolves `analysis_dir` via `_resolve_analysis_dir`
+(reads `exposures.experiment_id` directly, sample_id-independent), then delegates
+to the 3-arg method.
+"""
+function analyze_exposure!(db::SQLite.DB, exposure_id::Integer; kwargs...)
+    analysis_dir = _resolve_analysis_dir(db, Int(exposure_id))
+    analysis_dir === nothing && error("exposure $exposure_id not found")
+    return analyze_exposure!(db, exposure_id, analysis_dir; kwargs...)
+end
+
+"""
     analyze_exposure!(db, exposure_id, analysis_dir; trace_known_unchanged=false)
         -> NamedTuple{(:dropped_assignment_phases,)}
 
@@ -917,11 +930,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     t0 = time()
 
     rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT e.filename, x.id AS experiment_id
-           FROM exposures e
-           JOIN samples s ON s.id = e.sample_id
-           JOIN experiments x ON x.id = s.experiment_id
-           WHERE e.id = ?""", [exposure_id]))
+        "SELECT filename, experiment_id FROM exposures WHERE id = ?", [Int(exposure_id)]))
     isempty(rows) && error("exposure $exposure_id not found")
     filename      = rows[1].filename
     experiment_id = rows[1].experiment_id

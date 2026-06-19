@@ -10,15 +10,14 @@ _peak_curation_tol(q::Real) = max(1e-6, abs(Float64(q)) * 0.001)
 """
     _resolve_analysis_dir(db, exposure_id) -> Union{String, Nothing}
 
-Look up the analysis_dir for the experiment that owns this exposure. Returns
-nothing if the exposure is not found.
+Look up the analysis_dir for the experiment that owns this exposure via
+`exposures.experiment_id` directly (sample_id-independent). Returns nothing
+if the exposure is not found.
 """
 function _resolve_analysis_dir(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT x.analysis_dir
-           FROM exposures e
-           JOIN samples s ON s.id = e.sample_id
-           JOIN experiments x ON x.id = s.experiment_id
+           FROM exposures e JOIN experiments x ON x.id = e.experiment_id
            WHERE e.id = ?""", [exposure_id]))
     isempty(rows) && return nothing
     String(rows[1].analysis_dir)

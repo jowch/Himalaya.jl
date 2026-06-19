@@ -86,12 +86,12 @@ function register_experiments_routes!()
 
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT analysis_dir FROM experiments WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
+        # Verify the experiment exists before iterating its samples.
+        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM experiments WHERE id = ?", [id])))
+        exists || return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
-        analysis_dir = rows[1].analysis_dir
 
         samples   = get_samples(db, id)
         analyzed  = 0
@@ -99,7 +99,7 @@ function register_experiments_routes!()
         for sm in samples
             for ex in get_exposures(db, Int(sm.id))
                 try
-                    analyze_exposure!(db, Int(ex.id), String(analysis_dir))
+                    analyze_exposure!(db, Int(ex.id))
                     analyzed += 1
                 catch e
                     push!(skipped, "$(sm.name)/$(ex.filename): $(sprint(showerror, e))")
