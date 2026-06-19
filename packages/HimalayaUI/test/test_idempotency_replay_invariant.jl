@@ -69,7 +69,7 @@ end
             mkpath(analysis_dir)
             cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
                joinpath(analysis_dir, "example_tot.dat"))
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.init_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -111,7 +111,7 @@ end
         # Plan D Task D-3 layer-1/2: the native assignment member route must be
         # idempotent under retry — one durable row, one SSE frame, identical body.
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -146,7 +146,7 @@ end
 
     @testset "POST /api/samples/:id/messages (post_message)" begin
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -179,7 +179,7 @@ end
 
     @testset "PATCH /api/samples/:id (update_sample)" begin
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
