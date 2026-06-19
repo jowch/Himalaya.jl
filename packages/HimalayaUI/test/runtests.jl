@@ -70,6 +70,17 @@ let bucket_files = Set(Iterators.flatten(fs for (_, fs) in GROUPS))
     isempty(drift) || error("runtests: GROUP buckets ↔ ALL_ORDER drift: $(sort(collect(drift)))")
 end
 
+# Second guard (closes the disk↔list gap): every test_*.jl on disk must be in
+# ALL_ORDER, so a newly-added file can't silently run in NO configuration.
+# Exclude the include-only helpers — they define no testsets and are pulled in
+# transitively via test_http.jl, so they are intentionally absent from ALL_ORDER.
+let helpers  = Set(["test_http.jl","test_fixtures.jl","test_inproc.jl","test_template_db.jl"]),
+    on_disk  = Set(f for f in readdir(@__DIR__)
+                   if startswith(f, "test_") && endswith(f, ".jl") && !(f in helpers)),
+    orphaned = setdiff(on_disk, Set(ALL_ORDER))
+    isempty(orphaned) || error("runtests: test files on disk but in no run list: $(sort(collect(orphaned)))")
+end
+
 # GROUP=All must reproduce the historical order exactly — assert coverage.
 @testset "HimalayaUI" begin
     if GROUP == "All"

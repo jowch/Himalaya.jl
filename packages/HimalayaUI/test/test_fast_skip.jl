@@ -125,6 +125,9 @@ end
         # Pass count still sums to the serial total.
         ceiling_s = haskey(ENV, "HIMALAYA_SUITE_PARALLEL") ? Inf :
                     haskey(ENV, "CI") ? 2.0e-3 : 500e-6
+        # NB: ceiling_s == Inf under HIMALAYA_SUITE_PARALLEL → this is a tautology in
+        # parallel buckets (real latency check runs on serial GROUP=All / CI; the @test
+        # stays only so per-bucket Pass counts sum to the serial total).
         @test p99 < ceiling_s
     end
 end

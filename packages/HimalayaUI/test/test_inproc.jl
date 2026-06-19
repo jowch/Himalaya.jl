@@ -5,6 +5,15 @@ using HTTP, SQLite
 import Oxygen
 using HimalayaUI
 
+# NOTE on HIMALAYA_FRONTEND_DIST (spec mitigation #6, deliberately NOT applied):
+# register_routes! mounts a `/**` SPA catch-all when a frontend dist exists. We do
+# NOT neutralize HIMALAYA_FRONTEND_DIST here because (a) no in-process test ever hits
+# the catch-all — every migrated call targets `/api/...`, and the `api/` guard 404s
+# unknown `/api/...` paths regardless of the catch-all; and (b) setting it globally
+# would be a persistent, process-wide ENV mutation (test_spa_fallback.jl manages its
+# own dist locally with save/restore). So the catch-all's presence is irrelevant to
+# in-process dispatch — determinism is unaffected.
+#
 # Router-liveness check (spec blocker B1). resetstate() — called by BOTH
 # start_test_server! and stop_test_server! — swaps CONTEXT[] for a fresh
 # empty-router ServerContext, so a wire keeper running before an in-process
