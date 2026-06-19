@@ -218,8 +218,8 @@ if isdefined(@__MODULE__, :with_test_server)
             DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
             DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
 
-            with_test_server(db) do port, base
-                r = HTTP.get("$base/api/exposures/$e_id/assignment")
+            with_inproc_routes(db) do call
+                r = call("GET", "/api/exposures/$e_id/assignment")
                 @test r.status == 200
                 got = JSON3.read(String(r.body))
                 @test got.exposure_id == e_id
@@ -261,17 +261,17 @@ if isdefined(@__MODULE__, :with_test_server)
             DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
             DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
 
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Invalid state → 400.
-                r = HTTP.post("$base/api/exposures/$e_id/assignment/state",
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:state => "bogus")); status_exception=false)
+                r = call("POST", "/api/exposures/$e_id/assignment/state";
+                    headers = ["Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:state => "bogus"))))
                 @test r.status == 400
 
                 # Valid: form_factor clears members.
-                r = HTTP.post("$base/api/exposures/$e_id/assignment/state",
-                    ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    JSON3.write(Dict(:state => "form_factor")))
+                r = call("POST", "/api/exposures/$e_id/assignment/state";
+                    headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:state => "form_factor"))))
                 @test r.status == 200
                 got = JSON3.read(String(r.body))
                 @test got.state == "form_factor"
@@ -360,17 +360,17 @@ if isdefined(@__MODULE__, :with_test_server)
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
             DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
 
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Missing field -> 400.
-                r = HTTP.post("$base/api/exposures/$e_id/assignment/members",
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:nope => 1)); status_exception=false)
+                r = call("POST", "/api/exposures/$e_id/assignment/members";
+                    headers = ["Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:nope => 1))))
                 @test r.status == 400
 
                 # Valid add -> 200, body is the canonical assignment shape.
-                r = HTTP.post("$base/api/exposures/$e_id/assignment/members",
-                    ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    JSON3.write(Dict(:index_id => 10)))
+                r = call("POST", "/api/exposures/$e_id/assignment/members";
+                    headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:index_id => 10))))
                 @test r.status == 200
                 got = JSON3.read(String(r.body))
                 @test got.exposure_id == e_id
@@ -380,9 +380,9 @@ if isdefined(@__MODULE__, :with_test_server)
                 @test HimalayaUI._assignment_body(db, e_id)[:members] == [10]
 
                 # Idempotent re-add of the same member is a no-op on membership.
-                r = HTTP.post("$base/api/exposures/$e_id/assignment/members",
-                    ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    JSON3.write(Dict(:index_id => 11)))
+                r = call("POST", "/api/exposures/$e_id/assignment/members";
+                    headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:index_id => 11))))
                 @test r.status == 200
                 @test HimalayaUI._assignment_body(db, e_id)[:members] == [10, 11]
             end
@@ -399,17 +399,17 @@ if isdefined(@__MODULE__, :with_test_server)
             DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
             DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [e_id])
 
-            with_test_server(db) do port, base
-                r = HTTP.delete("$base/api/exposures/$e_id/assignment/members/10",
-                    ["X-Username" => "alice"])
+            with_inproc_routes(db) do call
+                r = call("DELETE", "/api/exposures/$e_id/assignment/members/10";
+                    headers = ["X-Username" => "alice"])
                 @test r.status == 200
                 got = JSON3.read(String(r.body))
                 @test collect(got.members) == Int[]
                 @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
 
                 # Removing an absent member is a benign no-op (200, empty).
-                r = HTTP.delete("$base/api/exposures/$e_id/assignment/members/10",
-                    ["X-Username" => "alice"])
+                r = call("DELETE", "/api/exposures/$e_id/assignment/members/10";
+                    headers = ["X-Username" => "alice"])
                 @test r.status == 200
             end
         end
@@ -489,16 +489,16 @@ if isdefined(@__MODULE__, :with_test_server)
             P = Himalaya.Pn3m
             basis = 2π / a * first(Himalaya.phaseratios(P))
 
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # missing basis → 400
-                r = HTTP.post("$base/api/exposures/$e_id/custom-index",
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:phase => "Pn3m")); status_exception=false)
+                r = call("POST", "/api/exposures/$e_id/custom-index";
+                    headers = ["Content-Type" => "application/json"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:phase => "Pn3m"))))
                 @test r.status == 400
 
-                r = HTTP.post("$base/api/exposures/$e_id/custom-index",
-                    ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    JSON3.write(Dict(:phase => "Pn3m", :basis => basis)))
+                r = call("POST", "/api/exposures/$e_id/custom-index";
+                    headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    body = Vector{UInt8}(JSON3.write(Dict(:phase => "Pn3m", :basis => basis))))
                 @test r.status == 200
                 got = JSON3.read(String(r.body))
                 @test got.phase == "Pn3m"
