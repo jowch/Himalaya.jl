@@ -183,6 +183,47 @@ end
         @test any(d -> d.field == "pixel_size_um", disc4)
     end
 
+    @testset "scan_directory" begin
+        dir = mktempdir()
+        data_dir = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+
+        # Write 6 PRP files with 3 distinct horizontal positions (2 frames per slot)
+        stems = ["HA_01_S001_0_001", "HA_01_S002_0_001",   # slot 1 (H ≈ 58.9)
+                 "HA_02_S003_0_001", "HA_02_S004_0_001",   # slot 2 (H ≈ 63.1)
+                 "HA_03_S005_0_001", "HA_03_S006_0_001"]   # slot 3 (H ≈ 67.3)
+        h_positions = [58.9, 58.91, 63.1, 63.09, 67.3, 67.31]
+        for (stem, hpos) in zip(stems, h_positions)
+            write_prp(joinpath(data_dir, "$stem.prp");
+                horizontal_position_mm = hpos)
+            write(joinpath(data_dir, "$stem.tif"), "fake tif")
+            write(joinpath(analysis_dir, "$stem.dat"), "fake dat")
+        end
+
+        # Write one setup_info file
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+
+        metas = HimalayaUI.scan_directory(data_dir, analysis_dir)
+
+        # All 6 stems found
+        @test length(metas) == 6
+        # Each has a prp_path, tif_path, dat_path, and parsed prp fields
+        m = first(metas)
+        @test haskey(m, :stem)
+        @test haskey(m, :prp_path)
+        @test haskey(m, :tif_path)
+        @test haskey(m, :prp)  # the parse_prp result
+        # Stems returned sorted
+        @test [m.stem for m in metas] == sort([m.stem for m in metas])
+        # A missing PRP (has tif but no prp) → prp is missing
+        write(joinpath(data_dir, "HA_04_S007_0_001.tif"), "fake tif")
+        metas2 = HimalayaUI.scan_directory(data_dir, analysis_dir)
+        @test length(metas2) == 7
+        tif_only = first(filter(m -> m.stem == "HA_04_S007_0_001", metas2))
+        @test tif_only.prp_path === nothing
+    end
+
     @testset "parse_prp" begin
         dir = mktempdir()
         prp_path = joinpath(dir, "HA_85_422_S2404_0_001.prp")
