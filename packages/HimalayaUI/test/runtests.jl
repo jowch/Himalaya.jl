@@ -1,62 +1,81 @@
 using Test
 
+const GROUP = get(ENV, "GROUP", "All")
 const _TEST_TIMES = Dict{String,Float64}()
 _timed_include(f) = (_TEST_TIMES[f] = @elapsed include(f))
+_want(g) = GROUP == "All" || GROUP == g
 
+# Buckets balanced from M0.2 timing (heaviest files spread across buckets).
+# IMPORTANT: under GROUP=All these run in the SAME total order as before
+# (db → pipeline → routes → events → wire → …). Each bucket includes
+# test_http.jl first (the isdefined guard makes re-include a no-op).
+# Every bucket lists test_http.jl FIRST — it transitively includes test_fixtures.jl
+# (M3.0), test_inproc.jl, test_template_db.jl, so any cross-file helper is in scope
+# regardless of which bucket a file lands in. (test_http.jl defines no tests, so the
+# Pass-sum invariant across buckets holds. The seen-set dedup keeps it included once
+# per process.)
+const GROUPS = [
+    ("db",       ["test_http.jl","test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+                  "test_manifest.jl","test_migrate_toml.jl","test_validate.jl"]),
+    ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
+                  "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
+                  "test_effective_peaks_sharpness_passthrough.jl",
+                  "test_json.jl","test_image.jl"]),
+    ("routes",   ["test_http.jl","test_routes_users.jl","test_routes_experiments.jl",
+                  "test_routes_samples.jl","test_routes_exposures.jl","test_routes_image.jl",
+                  "test_routes_peaks.jl","test_routes_messages.jl","test_routes_trace.jl",
+                  "test_routes_analysis.jl","test_speculative.jl","test_routes_export.jl",
+                  "test_routes_mentions.jl","test_route_response_shapes.jl",
+                  "test_route_validation_routing.jl","test_routes_series.jl",
+                  "test_picker_routes.jl","test_picker_samples_route.jl","test_routes_resolve.jl",
+                  "test_inproc_equivalence.jl"]),
+    ("events",   ["test_http.jl","test_actions.jl","test_events.jl","test_assignment_reattach.jl",
+                  "test_assignments.jl","test_fast_skip.jl","test_idempotency.jl",
+                  "test_idempotency_replay_invariant.jl","test_concurrent_writes.jl",
+                  "test_idempotency_sse_suppression.jl","test_comparisons.jl",
+                  "test_comparison_pins.jl"]),
+    ("wire",     ["test_http.jl","test_routes_health.jl","test_routes_status.jl",
+                  "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl"]),
+]
+
+# GROUP=All must reproduce the historical order exactly — assert coverage.
 @testset "HimalayaUI" begin
-    _timed_include("test_config.jl")
-    _timed_include("test_db.jl")
-    _timed_include("test_migrate_comparisons_to_series.jl")
-    _timed_include("test_datfile.jl")
-    _timed_include("test_manifest.jl")
-    _timed_include("test_hash.jl")
-    _timed_include("test_hash_peak_set_memoization.jl")
-    _timed_include("test_pipeline.jl")
-    _timed_include("test_auto_group_peak_id_claiming.jl")
-    _timed_include("test_effective_peaks_sharpness_passthrough.jl")
-    _timed_include("test_fast_skip.jl")
-    _timed_include("test_json.jl")
-    _timed_include("test_http.jl")
-    _timed_include("test_inproc_equivalence.jl")
-    _timed_include("test_routes_health.jl")
-    _timed_include("test_routes_users.jl")
-    _timed_include("test_routes_experiments.jl")
-    _timed_include("test_routes_samples.jl")
-    _timed_include("test_routes_exposures.jl")
-    _timed_include("test_image.jl")
-    _timed_include("test_routes_image.jl")
-    _timed_include("test_routes_status.jl")
-    _timed_include("test_routes_peaks.jl")
-    _timed_include("test_routes_messages.jl")
-    _timed_include("test_routes_trace.jl")
-    _timed_include("test_routes_analysis.jl")
-    _timed_include("test_speculative.jl")
-    _timed_include("test_routes_export.jl")
-    _timed_include("test_routes_mentions.jl")
-    _timed_include("test_actions.jl")
-    _timed_include("test_events.jl")
-    _timed_include("test_assignments.jl")
-    _timed_include("test_assignment_reattach.jl")
-    _timed_include("test_sse.jl")
-    _timed_include("test_routes_sse_broadcast.jl")
-    _timed_include("test_route_response_shapes.jl")
-    _timed_include("test_route_validation_routing.jl")
-    _timed_include("test_idempotency.jl")
-    _timed_include("test_idempotency_replay_invariant.jl")
-    _timed_include("test_concurrent_writes.jl")
-    _timed_include("test_idempotency_sse_suppression.jl")
-    _timed_include("test_comparisons.jl")
-    _timed_include("test_routes_series.jl")
-    _timed_include("test_picker_routes.jl")
-    _timed_include("test_picker_samples_route.jl")
-    _timed_include("test_routes_resolve.jl")
-    _timed_include("test_comparison_pins.jl")
-    _timed_include("test_validate.jl")
-    _timed_include("test_migrate_toml.jl")
-    _timed_include("test_spa_fallback.jl")
+    if GROUP == "All"
+        for f in ["test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+                  "test_datfile.jl","test_manifest.jl","test_hash.jl",
+                  "test_hash_peak_set_memoization.jl","test_pipeline.jl",
+                  "test_auto_group_peak_id_claiming.jl",
+                  "test_effective_peaks_sharpness_passthrough.jl","test_fast_skip.jl",
+                  "test_json.jl","test_http.jl","test_inproc_equivalence.jl",
+                  "test_routes_health.jl","test_routes_users.jl","test_routes_experiments.jl",
+                  "test_routes_samples.jl","test_routes_exposures.jl","test_image.jl",
+                  "test_routes_image.jl","test_routes_status.jl","test_routes_peaks.jl",
+                  "test_routes_messages.jl","test_routes_trace.jl","test_routes_analysis.jl",
+                  "test_speculative.jl","test_routes_export.jl","test_routes_mentions.jl",
+                  "test_actions.jl","test_events.jl","test_assignments.jl",
+                  "test_assignment_reattach.jl","test_sse.jl","test_routes_sse_broadcast.jl",
+                  "test_route_response_shapes.jl","test_route_validation_routing.jl",
+                  "test_idempotency.jl","test_idempotency_replay_invariant.jl",
+                  "test_concurrent_writes.jl","test_idempotency_sse_suppression.jl",
+                  "test_comparisons.jl","test_routes_series.jl","test_picker_routes.jl",
+                  "test_picker_samples_route.jl","test_routes_resolve.jl",
+                  "test_comparison_pins.jl","test_validate.jl","test_migrate_toml.jl",
+                  "test_spa_fallback.jl"]
+            _timed_include(f)
+        end
+    else
+        seen = Set{String}()
+        for (name, files) in GROUPS
+            _want(name) || continue
+            for f in files
+                f in seen && continue   # test_http.jl appears in several buckets
+                push!(seen, f)
+                _timed_include(f)
+            end
+        end
+    end
 end
 
-# Print slowest-first; harmless under Pkg.test, informative for M3 balancing.
 let rows = sort(collect(_TEST_TIMES); by = last, rev = true)
     println("\n── per-file test timing (slowest first) ──")
     for (f, t) in rows
