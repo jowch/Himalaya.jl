@@ -108,6 +108,80 @@ function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} 
 end
 
 function register_experiments_routes!()
+    @post "/api/experiments" function(req::HTTP.Request)
+        db   = current_db()
+        body = json(req)
+
+        # Required: path to the data directory.
+        path_val = get(body, :path, get(body, "path", nothing))
+        path_val === nothing && return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "path is required")))
+        data_dir = String(path_val)
+
+        isdir(data_dir) || return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "path does not exist or is not a directory",
+                             :path  => data_dir)))
+
+        # Derive defaults.
+        name_val  = get(body, :name, get(body, "name", nothing))
+        exp_name  = name_val !== nothing ? String(name_val) : basename(rstrip(data_dir, '/'))
+        # analysis_dir convention: look for an `analysis` subdirectory; fall back to data_dir.
+        analysis_dir = let ad = joinpath(data_dir, "analysis")
+            isdir(ad) ? ad : data_dir
+        end
+
+        exp_id = lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                create_experiment!(db;
+                    name         = exp_name,
+                    path         = data_dir,
+                    data_dir     = data_dir,
+                    analysis_dir = analysis_dir,
+                    ingest_status = "scanning")
+            end
+        end
+
+        broadcast_progress!(exp_id; kind = "ingest_started", processed = 0, total = 0)
+
+        # Kick off first scan asynchronously.
+        Threads.@spawn begin
+            try
+                # scan_and_group! (Phase B, ingest.jl) resolves data_dir from the row
+                # and is idempotent (dedup INSERT keys), so first-scan == rescan.
+                scan_and_group!(db, exp_id)
+                lock(_DB_WRITE_LOCK) do
+                    SQLite.transaction(db) do
+                        DBInterface.execute(db,
+                            "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
+                            [format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"), exp_id])
+                    end
+                end
+                broadcast_progress!(exp_id; kind = "ingest_complete", processed = 0, total = 0)
+                # Arm the rescan scheduler after a successful first scan.
+                start_rescan_scheduler!(db, exp_id)
+            catch err
+                @warn "first scan failed" experiment_id = exp_id exception = err
+                lock(_DB_WRITE_LOCK) do
+                    SQLite.transaction(db) do
+                        DBInterface.execute(db,
+                            "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
+                    end
+                end
+                broadcast_progress!(exp_id; kind = "ingest_failed",
+                    processed = 0, total = 0, error = sprint(showerror, err))
+            end
+        end
+
+        log_action!(db, req; action = "experiment_created",
+            entity_type = "experiment", entity_id = exp_id)
+
+        HTTP.Response(202, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:id => exp_id, :status => "scanning",
+                             :name => exp_name, :data_dir => data_dir)))
+    end
+
     @get "/api/experiments" function(req::HTTP.Request)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,

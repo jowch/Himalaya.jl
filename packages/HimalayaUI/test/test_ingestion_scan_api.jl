@@ -406,4 +406,49 @@ end
         end
         SQLite.close(db)
     end
+
+    @testset "POST /api/experiments creates experiment + starts async scan" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "himalaya.db"))
+
+            with_test_server(db) do port, base
+                r = HTTP.post("$base/api/experiments";
+                    body    = JSON3.write(Dict(:path => dir, :name => "MyExp")),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"],
+                    status_exception = false)
+                @test r.status in (200, 201, 202)
+                body = JSON3.read(String(r.body))
+                @test haskey(body, :id)
+                @test body.id isa Integer
+                @test body.id > 0
+
+                # Experiment row is created
+                exp_rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, name, data_dir, ingest_status FROM experiments WHERE id = ?",
+                    [body.id]))
+                @test length(exp_rows) == 1
+                @test exp_rows[1].name == "MyExp"
+                @test exp_rows[1].data_dir == dir
+
+                # ingest_status transitions to scanning (may have already completed in test)
+                @test exp_rows[1].ingest_status in ("scanning", "complete", "failed")
+
+                # Missing path → 400
+                r2 = HTTP.post("$base/api/experiments";
+                    body    = JSON3.write(Dict(:name => "NoPath")),
+                    headers = ["Content-Type" => "application/json"],
+                    status_exception = false)
+                @test r2.status == 400
+
+                # Non-existent path → 400
+                r3 = HTTP.post("$base/api/experiments";
+                    body    = JSON3.write(Dict(:path => "/does/not/exist/xyz123")),
+                    headers = ["Content-Type" => "application/json"],
+                    status_exception = false)
+                @test r3.status == 400
+            end
+            SQLite.close(db)
+        end
+    end
 end
