@@ -21,6 +21,11 @@ _migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInte
 _record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db,
     "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", [name, comparison_now_iso()])
 
+# Column names of a table — lets ADD COLUMN migrations stay idempotent on a
+# partially-migrated DB by skipping columns that already exist.
+cols_of(db, table) = String.(getproperty.(Tables.rowtable(
+    DBInterface.execute(db, "PRAGMA table_info($table)")), :name))
+
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
@@ -471,9 +476,44 @@ end
 function migrate_exposures_experiment_id!(db::SQLite.DB)
     _migrated(db, MIGRATION_EXPOSURES_EXPERIMENT_ID) && return nothing
     SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        adds = [
+            ("experiment_id", "INTEGER REFERENCES experiments(id) ON DELETE CASCADE"),
+            ("prp_path", "TEXT"), ("timestamp", "TEXT"), ("exposure_time", "REAL"),
+            ("horizontal_position", "REAL"), ("scan_id", "INTEGER"),
+            ("frame_no", "INTEGER"), ("load_id", "INTEGER REFERENCES loads(id)"),
+            ("content_fingerprint", "TEXT"),
+        ]
+        for (name, decl) in adds
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE exposures ADD COLUMN $name $decl")
+        end
+
+        # backfill experiment_id from the samples JOIN (sample_id may be NULL on some rows)
+        DBInterface.execute(db, """
+            UPDATE exposures
+               SET experiment_id = (SELECT s.experiment_id FROM samples s WHERE s.id = exposures.sample_id)
+             WHERE experiment_id IS NULL AND sample_id IS NOT NULL
+        """)
+
+        # FAIL-FAST: any exposure with no derivable experiment_id is a data error (spec §10 / P1-5)
+        orphans = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, filename FROM exposures WHERE experiment_id IS NULL"))
+        isempty(orphans) || error(
+            "migrate_exposures_experiment_id!: $(length(orphans)) exposures have no derivable " *
+            "experiment_id (orphaned sample_id). Resolve manually before migrating. ids: " *
+            join(getproperty.(orphans, :id), ", "))
+
+        # swap the dedup key: drop old (sample_id, filename), add (experiment_id, filename)
+        DBInterface.execute(db, "DROP INDEX IF EXISTS exposures_unique_filename")
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX exposures_unique_filename ON exposures(experiment_id, filename)")
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS exposures_experiment_idx ON exposures(experiment_id)")
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS exposures_load_idx ON exposures(load_id)")
         _record_migration!(db, MIGRATION_EXPOSURES_EXPERIMENT_ID)
     end
-    nothing
 end
 
 function migrate_experiments_geometry!(db::SQLite.DB)

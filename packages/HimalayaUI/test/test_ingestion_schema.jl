@@ -69,4 +69,29 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
                 "INSERT INTO loads (experiment_id, load_index) VALUES (999999, 0)")
         end
     end
+
+    @testset "exposures experiment_id + dedup" begin
+        path = fresh_db()
+        with_db(path) do db
+            c = cols(db, "exposures")
+            for col in ["experiment_id","prp_path","timestamp","exposure_time",
+                        "horizontal_position","scan_id","frame_no","load_id","content_fingerprint"]
+                @test col in c
+            end
+            # new dedup index present, old one gone
+            idx = indexes(db, "exposures")
+            @test any(i -> occursin("exposures_unique_filename", i), idx)
+            # the new index is on (experiment_id, filename): same filename, different sample, same experiment → rejected
+            DBInterface.execute(db, "PRAGMA foreign_keys=ON")
+            eid = seed_experiment(db)   # honours NOT NULL name/path/data_dir/analysis_dir
+            s1 = DBInterface.lastrowid(DBInterface.execute(db,
+                "INSERT INTO samples (experiment_id, name) VALUES (?, 'A')", [eid]))
+            s2 = DBInterface.lastrowid(DBInterface.execute(db,
+                "INSERT INTO samples (experiment_id, name) VALUES (?, 'B')", [eid]))
+            DBInterface.execute(db,
+                "INSERT INTO exposures (experiment_id, sample_id, filename) VALUES (?, ?, 'f.tif')", [eid, s1])
+            @test_throws Exception DBInterface.execute(db,
+                "INSERT INTO exposures (experiment_id, sample_id, filename) VALUES (?, ?, 'f.tif')", [eid, s2])
+        end
+    end
 end
