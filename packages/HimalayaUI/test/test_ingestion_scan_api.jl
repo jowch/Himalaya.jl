@@ -244,6 +244,14 @@ end
                 headers = ["Content-Type" => "application/json"],
                 status_exception = false)
             @test r5.status == 400
+
+            # A body with no recognized patchable (geometry) field → 400, matching
+            # the codebase PATCH-validation convention (test_route_validation_routing.jl).
+            r6 = HTTP.patch("$base/api/experiments/$exp_id";
+                body    = JSON3.write(Dict(:NOT_a_field => "x")),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r6.status == 400
         end
         SQLite.close(db)
     end

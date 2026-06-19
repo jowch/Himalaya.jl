@@ -230,9 +230,13 @@ function register_experiments_routes!()
             push!(set_clauses, "$(field)_source = 'user'")
         end
 
-        isempty(set_clauses) && return HTTP.Response(200,
+        # No recognized patchable (geometry) field in the body → 400, matching the
+        # codebase's PATCH validation convention (cf. PATCH /samples, exercised by
+        # test_route_validation_routing.jl: a body with no patchable field is a
+        # bad request, not a 200 no-op).
+        isempty(set_clauses) && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:id => id, :updated => false)))
+            JSON3.write(Dict(:error => "no patchable fields; supply a geometry field (flight_path_m, beam_center_x/y, pixel_size_um, energy_kev, q_units)")))
 
         push!(params, id)
         lock(_DB_WRITE_LOCK) do
