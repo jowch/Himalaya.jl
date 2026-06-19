@@ -7,7 +7,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
 
-    db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db;
         name = "E1", path = tmp,
         data_dir = joinpath(tmp, "data"),
@@ -107,7 +107,7 @@ end
         "id\tlabel\tname\tc4\tc5\tc6\tc7\tc8\tfile\tnsamp\tnexp\n" *
         "1\tS1\tSample-1\t.\t.\t.\t.\t.\tS001\t\t\n")
 
-    db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db;
         name = "ReE", path = tmp,
         data_dir = joinpath(tmp, "data"),
@@ -147,7 +147,7 @@ end
 
 @testset "PATCH /api/experiments/:id no longer accepts name" begin
     tmp = mktempdir()
-    db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db = open_prepared_clone(tmp)
     eid = HimalayaUI.init_experiment!(db;
         name = "PatchTest", path = tmp,
         data_dir = joinpath(tmp, "data"),
@@ -181,7 +181,7 @@ end
         "1\tDupSample\tLabel-A\t.\t.\t.\t.\t.\tS001\t\t\n" *
         "2\tDupSample\tLabel-B\t.\t.\t.\t.\t.\tS002\t\t\n")
 
-    db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db = open_prepared_clone(tmp)
     eid = HimalayaUI.init_experiment!(db;
         name = "DupTest", path = tmp,
         data_dir = joinpath(tmp, "data"),
@@ -199,7 +199,7 @@ end
 
 @testset "experiment route surfaces beam center + pixel size" begin
     tmp = mktempdir()
-    db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+    db = open_prepared_clone(tmp)
     exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data", analysis_dir="analysis")
 
     DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?", [
