@@ -25,42 +25,9 @@ function assert_keys(actual, expected::Vector{Symbol})
     @test actual_keys == expected_set
 end
 
-# Fixture: a fully-analyzed exposure with peaks + indices. Reuses the
-# example_tot.dat trace (same as test_routes_analysis.jl). Returns a tuple
-# (db, exposure_id, sample_id, analysis_dir).
-function _setup_analyzed_exposure(tmp::String)
-    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
-    mkpath(analysis_dir)
-    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
-       joinpath(analysis_dir, "example_tot.dat"))
-    db     = open_prepared_clone(tmp)
-    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
-        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
-    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
-    (db = db, exposure_id = e_id, sample_id = s_id, analysis_dir = analysis_dir)
-end
-
-"""
-Like `_setup_analyzed_exposure` but UPDATEs the rows to known slug-resolvable
-names ("test-exp" / "S1" / "JC001-007") and captures `experiment_id` for tests
-that need it. Used by `test_routes_resolve.jl` and the resolve-shape rows below.
-"""
-function _setup_for_resolve(tmp::String)
-    ctx = _setup_analyzed_exposure(tmp)
-    DBInterface.execute(ctx.db, "UPDATE experiments SET name = 'test-exp'")
-    DBInterface.execute(ctx.db, "UPDATE samples SET name = 'S1' WHERE id = ?",
-                        [ctx.sample_id])
-    DBInterface.execute(ctx.db, "UPDATE exposures SET filename = 'JC001-007' WHERE id = ?",
-                        [ctx.exposure_id])
-    exp_row = Tables.rowtable(DBInterface.execute(ctx.db,
-        "SELECT id FROM experiments LIMIT 1"))[1]
-    return (db = ctx.db,
-            experiment_id = Int(exp_row.id),
-            sample_id = ctx.sample_id,
-            exposure_id = ctx.exposure_id)
-end
+# Cross-file helpers (_setup_analyzed_exposure, _setup_for_resolve) are defined
+# in test_fixtures.jl (included via test_http.jl) and available here via the
+# standard runtests.jl include order.
 
 @testset "Route response shapes (queue contract)" begin
 

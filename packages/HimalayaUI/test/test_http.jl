@@ -11,5 +11,9 @@ function with_test_server(f, db::SQLite.DB)
     end
 end
 
+if !isdefined(@__MODULE__, :_setup_analyzed_exposure)
+    include("test_fixtures.jl")
+end
+
 include("test_inproc.jl")
 include("test_template_db.jl")
