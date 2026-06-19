@@ -75,13 +75,14 @@ function register_experiments_routes!()
         body = json(req)
 
         # Experiment name and path fields are no longer mutable via PATCH.
-        # Name is derived from experiment.toml via reingest; path fields
-        # (data_dir, analysis_dir, manifest_path) must also go through reingest
-        # to stay in sync with the config blob.
+        # Name and geometry are derived from experiment.toml + the on-disk files
+        # by the scan/ingest pipeline; path fields (data_dir, analysis_dir) must
+        # stay in sync with the config blob, so they are set at registration and
+        # refreshed by re-scanning, not patched.
         # This route is a defensive surface for future fields only.
         return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment metadata is read-only; rename via experiment.toml + reingest")))
+            JSON3.write(Dict(:error => "experiment metadata is read-only; it is derived from experiment.toml and refreshed by re-scanning")))
     end
 
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
