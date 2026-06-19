@@ -44,7 +44,7 @@ function setup_clean_analyzed_exposure(tmp::String; name="FastSkipExp", stem="ST
     image = "{name}.tiff"
     """)
 
-    db = open_prepared_clone(tmp)
+    db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = cli_init_with_db!(db, tmp)
 
     # Find the exposure id corresponding to our stem.
