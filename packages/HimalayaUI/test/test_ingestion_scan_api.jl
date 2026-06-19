@@ -86,4 +86,56 @@ end
         @test row.start_time    == "2026-04-12T08:00:00"
         SQLite.close(db)
     end
+
+    @testset "GET /api/experiments/{id} includes typed geometry + ingest_status + stats" begin
+        db, dir, exp_id = scan_test_db()
+        # Seed typed geometry columns directly (Phase B would do this via scan_and_group!)
+        DBInterface.execute(db, """
+            UPDATE experiments SET
+                beam_center_x       = 421.409,
+                beam_center_y       = 836.946,
+                beam_center_x_source = 'setup',
+                beam_center_y_source = 'setup',
+                pixel_size_um       = 172.0,
+                pixel_size_um_source = 'prp',
+                flight_path_m       = 1.8095,
+                flight_path_m_source = 'setup',
+                energy_kev          = 9.0,
+                energy_kev_source   = 'prp',
+                q_units             = 'A^-1',
+                ingest_status       = 'complete',
+                last_scanned_at     = '2026-04-12T10:00:00Z'
+            WHERE id = ?
+        """, [exp_id])
+        # Seed a load + sample + exposure so stats are non-zero
+        lid = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 4)
+        sid = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "HA85 (S01P15)",
+            load_id = lid, slot_index = 15)
+        HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = sid, filename = "f.tif")
+
+        with_test_server(db) do port, base
+            r = HTTP.get("$base/api/experiments/$exp_id")
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+
+            # Typed geometry
+            @test body.beam_center_x       ≈ 421.409
+            @test body.beam_center_x_source == "setup"
+            @test body.flight_path_m       ≈ 1.8095
+            @test body.flight_path_m_source == "setup"
+            @test body.energy_kev          ≈ 9.0
+            @test body.energy_kev_source   == "prp"
+            @test body.pixel_size_um       ≈ 172.0
+            @test body.q_units             == "A^-1"
+            @test body.ingest_status       == "complete"
+            @test body.last_scanned_at     == "2026-04-12T10:00:00Z"
+
+            # Stats roll-up
+            @test haskey(body, :stats)
+            @test body.stats.loads     == 1
+            @test body.stats.samples   == 1
+            @test body.stats.exposures == 1
+        end
+        SQLite.close(db)
+    end
 end

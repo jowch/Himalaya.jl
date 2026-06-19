@@ -40,13 +40,58 @@ end
 # Back-compat shim: routes_samples.jl still calls this for its per-sample q_units.
 _q_units_from_config(cfg_text)::String = _beamline_from_config(cfg_text).q_units
 
-function _experiment_row_to_json(row::NamedTuple)
-    d  = row_to_json(row)
-    bl = _beamline_from_config(get(d, :config, nothing))
-    d[:q_units]       = bl.q_units
-    d[:beam_center_x] = bl.beam_center_x
-    d[:beam_center_y] = bl.beam_center_y
-    d[:pixel_size_um] = bl.pixel_size_um
+"""
+    _experiment_stats(db, exp_id) -> NamedTuple
+
+Cheap roll-up of counts for the shared experiment header stat ledger.
+"""
+function _experiment_stats(db::SQLite.DB, exp_id::Integer)
+    loads = Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?", [exp_id]))[1].c
+    samples = Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", [exp_id]))[1].c
+    exposures = Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM exposures WHERE experiment_id = ?", [exp_id]))[1].c
+    (loads = Int(loads), samples = Int(samples), exposures = Int(exposures))
+end
+
+"""
+    _experiment_row_to_json(row, db) -> Dict
+
+Serialize an experiments row to the wire format. Reads typed geometry columns
+from Phase A directly (no TOML overlay). Falls back to `_beamline_from_config`
+for legacy rows that still have their geometry only in the TOML `config` blob
+(experiments ingested before Phase A).
+"""
+function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} = nothing)
+    d = row_to_json(row)
+    # Prefer typed columns (Phase A); fall back to TOML blob for legacy rows.
+    has_typed = !isnothing(get(d, :beam_center_x, nothing)) ||
+                !isnothing(get(d, :energy_kev, nothing))
+    if !has_typed
+        bl = _beamline_from_config(get(d, :config, nothing))
+        d[:q_units]              = bl.q_units
+        d[:beam_center_x]        = bl.beam_center_x
+        d[:beam_center_y]        = bl.beam_center_y
+        d[:pixel_size_um]        = bl.pixel_size_um
+        # energy_kev / flight_path_m are real columns even pre-Phase-A
+        # (live create_experiment! writes them); surface their VALUE keys too so
+        # the wire shape is identical to the typed path (a legacy row simply
+        # reports whatever those columns hold — possibly nothing — never absent).
+        d[:energy_kev]           = get(d, :energy_kev, nothing)
+        d[:flight_path_m]        = get(d, :flight_path_m, nothing)
+        d[:beam_center_x_source] = "default"
+        d[:beam_center_y_source] = "default"
+        d[:pixel_size_um_source] = "default"
+        d[:energy_kev_source]    = "default"
+        d[:flight_path_m_source] = "default"
+        d[:q_units_source]       = "default"
+    end
+    # Add stats roll-up when db is supplied (single-row endpoint).
+    if db !== nothing
+        exp_id = Int(row.id)
+        d[:stats] = _experiment_stats(db, exp_id)
+    end
     d
 end
 
@@ -67,7 +112,7 @@ function register_experiments_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_experiment_row_to_json(rows[1])))
+            JSON3.write(_experiment_row_to_json(rows[1], db)))
     end
 
     @patch "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
