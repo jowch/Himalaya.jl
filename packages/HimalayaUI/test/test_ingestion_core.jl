@@ -113,6 +113,76 @@ end
         @test empty_info.mean_distance_m === missing
     end
 
+    @testset "derive_geometry" begin
+        dir = mktempdir()
+        data_dir = joinpath(dir, "data")
+        mkpath(data_dir)
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(analysis_dir)
+
+        # Two PRP files with consistent geometry
+        for (name, hpos) in [("HA_001", 58.9), ("HA_002", 63.1)]
+            write_prp(joinpath(data_dir, "$name.prp");
+                beam_energy_ev = 9000.027604502573,
+                pipe_length_mm = 1700,
+                detector = "Pilatus 1M",
+                exposure_time = 15.0,
+                horizontal_position_mm = hpos)
+        end
+
+        # One setup file with calibrated distance
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt");
+            beam_center_x = 421.409, beam_center_y = 836.946, mean_distance_mm = 1809.5)
+
+        prp_paths   = [joinpath(data_dir, "HA_001.prp"), joinpath(data_dir, "HA_002.prp")]
+        setup_files = [joinpath(analysis_dir, "setup_info_20260425_181705.txt")]
+
+        geo, discrepancies = HimalayaUI.derive_geometry(prp_paths, setup_files)
+
+        # Energy from PRP
+        @test geo.energy_kev ≈ 9.000027604502573
+        @test geo.energy_kev_source == "prp"
+
+        # flight_path_m from calibrated setup file (authority per spec §6)
+        @test geo.flight_path_m ≈ 1.8095
+        @test geo.flight_path_m_source == "setup"
+
+        # Beam center from setup file
+        @test geo.beam_center_x ≈ 421.409
+        @test geo.beam_center_y ≈ 836.946
+        @test geo.beam_center_x_source == "setup"
+
+        # Pixel size from detector→pitch lookup
+        @test geo.pixel_size_um ≈ 172.0
+        @test geo.pixel_size_um_source == "prp"
+
+        # No discrepancies when fields are consistent
+        @test isempty(discrepancies)
+
+        # Discrepancy when PRP beam energies disagree
+        write_prp(joinpath(data_dir, "HA_003.prp");
+            beam_energy_ev = 8900.0,    # different!
+            pipe_length_mm = 1700, detector = "Pilatus 1M",
+            horizontal_position_mm = 68.0)
+        geo2, disc2 = HimalayaUI.derive_geometry(
+            vcat(prp_paths, [joinpath(data_dir, "HA_003.prp")]), setup_files)
+        @test any(d -> d.field == "beam_energy_ev", disc2)
+
+        # No setup file → fall back to PRP pipe length
+        geo3, _ = HimalayaUI.derive_geometry(prp_paths, String[])
+        @test geo3.flight_path_m ≈ 1.700
+        @test geo3.flight_path_m_source == "prp"
+
+        # Unknown detector → pixel_size_um missing, discrepancy flagged
+        write_prp(joinpath(data_dir, "HA_004.prp");
+            beam_energy_ev = 9000.0, pipe_length_mm = 1700,
+            detector = "SuperDetector X",
+            horizontal_position_mm = 72.0)
+        geo4, disc4 = HimalayaUI.derive_geometry([joinpath(data_dir, "HA_004.prp")], String[])
+        @test geo4.pixel_size_um === missing
+        @test any(d -> d.field == "pixel_size_um", disc4)
+    end
+
     @testset "parse_prp" begin
         dir = mktempdir()
         prp_path = joinpath(dir, "HA_85_422_S2404_0_001.prp")

@@ -102,3 +102,123 @@ function parse_setup_info(path::AbstractString)
         mean_distance_m = mean_distance_m,
     )
 end
+
+# ---------------------------------------------------------------------------
+# Geometry derivation orchestrator
+# ---------------------------------------------------------------------------
+
+"""
+    GeometryDiscrepancy
+
+A detected variance in a constant PRP field across multiple exposures,
+or an unresolvable field (unknown detector). Surfaced as a Configuration-tab
+banner (spec §6).
+"""
+struct GeometryDiscrepancy
+    field   ::String
+    message ::String
+end
+
+"""
+    derive_geometry(prp_paths, setup_files) -> (geometry, discrepancies)
+
+Sample the PRP files at `prp_paths` (reads all of them; at SSRL scale this is
+~700 files × ~50 lines each, sub-second), derive per-field geometry with source
+tags, and collect discrepancies.
+
+`setup_files` is a vector of `analysis/setup_info_*.txt` paths; the latest by
+filename sort is used for beam center + calibrated distance (filenames encode a
+`YYYYMMDD_HHMMSS` timestamp so lexicographic sort is chronological).
+
+Returns:
+  `geometry` — a NamedTuple with fields:
+      energy_kev, energy_kev_source,
+      flight_path_m, flight_path_m_source,
+      beam_center_x, beam_center_x_source,
+      beam_center_y, beam_center_y_source,
+      pixel_size_um, pixel_size_um_source
+  `discrepancies` — a Vector{GeometryDiscrepancy}
+"""
+function derive_geometry(
+    prp_paths::AbstractVector{<:AbstractString},
+    setup_files::AbstractVector{<:AbstractString},
+)
+    discrepancies = GeometryDiscrepancy[]
+
+    # Parse all PRPs (small files, sequential read is fine)
+    parsed = [parse_prp(p) for p in prp_paths]
+
+    # --- Energy (from PRP, should be constant) ---
+    energy_vals = filter(!ismissing, [p.energy_kev for p in parsed])
+    energy_kev = isempty(energy_vals) ? missing : first(energy_vals)
+    if length(unique(round.(skipmissing([p.beam_energy_ev for p in parsed]); digits=2))) > 1
+        push!(discrepancies, GeometryDiscrepancy("beam_energy_ev",
+            "beam energy varies across PRPs: " *
+            join(unique(round.(skipmissing([p.beam_energy_ev for p in parsed]); digits=2)), ", ") * " eV"))
+    end
+
+    # --- Pixel size from detector model (constant across run) ---
+    detectors = unique(filter(!ismissing, [p.detector for p in parsed]))
+    pixel_size_um    = missing
+    pixel_size_source = "default"
+    if length(detectors) == 1
+        pitch = detector_pixel_size_um(detectors[1])
+        if pitch === missing
+            push!(discrepancies, GeometryDiscrepancy("pixel_size_um",
+                "unknown detector model '$(detectors[1])': pixel pitch unknown, manual entry required"))
+        else
+            pixel_size_um    = pitch
+            pixel_size_source = "prp"
+        end
+    elseif length(detectors) > 1
+        push!(discrepancies, GeometryDiscrepancy("pixel_size_um",
+            "multiple detector models found: $(join(detectors, ", "))"))
+    end
+
+    # --- Beam center + flight path from setup file ---
+    beam_center_x        = missing; beam_center_x_source = "default"
+    beam_center_y        = missing; beam_center_y_source = "default"
+    flight_path_m        = missing; flight_path_m_source = "default"
+
+    if !isempty(setup_files)
+        # Filenames are "setup_info_YYYYMMDD_HHMMSS.txt"; lexicographic sort picks the latest.
+        latest_setup = last(sort(setup_files))
+        si = parse_setup_info(latest_setup)
+        if !ismissing(si.beam_center_x)
+            beam_center_x = si.beam_center_x; beam_center_x_source = "setup"
+        end
+        if !ismissing(si.beam_center_y)
+            beam_center_y = si.beam_center_y; beam_center_y_source = "setup"
+        end
+        if !ismissing(si.mean_distance_m)
+            flight_path_m = si.mean_distance_m; flight_path_m_source = "setup"
+        end
+    end
+
+    # Fallback: use PRP Pipe length when setup file absent or mean distance unparseable
+    if ismissing(flight_path_m)
+        pipe_vals = filter(!ismissing, [p.pipe_length_m for p in parsed])
+        if !isempty(pipe_vals)
+            flight_path_m = first(pipe_vals); flight_path_m_source = "prp"
+            # Flag if pipe lengths vary (multi-setup discrepancy)
+            if length(unique(round.(pipe_vals; digits=4))) > 1
+                push!(discrepancies, GeometryDiscrepancy("flight_path_m",
+                    "PRP pipe lengths vary: " * join(unique(pipe_vals .* 1000), ", ") * " mm"))
+            end
+        end
+    end
+
+    geometry = (
+        energy_kev             = energy_kev,
+        energy_kev_source      = ismissing(energy_kev) ? "default" : "prp",
+        flight_path_m          = flight_path_m,
+        flight_path_m_source   = flight_path_m_source,
+        beam_center_x          = beam_center_x,
+        beam_center_x_source   = beam_center_x_source,
+        beam_center_y          = beam_center_y,
+        beam_center_y_source   = beam_center_y_source,
+        pixel_size_um          = pixel_size_um,
+        pixel_size_um_source   = pixel_size_source,
+    )
+    return (geometry, discrepancies)
+end
