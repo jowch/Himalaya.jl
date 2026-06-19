@@ -51,4 +51,5 @@ using Test
     include("test_validate.jl")
     include("test_migrate_toml.jl")
     include("test_spa_fallback.jl")
+    include("test_ingestion_core.jl")
 end
