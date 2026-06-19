@@ -200,6 +200,63 @@ function scan_and_group!(
 end
 
 """
+    cheap_change_check(db, experiment_id, root_dir) -> Bool
+
+Cheap "has the directory changed since the last ingest?" probe for the Phase-C
+auto-rescan scheduler and the `POST /api/experiments/{id}/scan` route (both
+resolve this by name via `isdefined(HimalayaUI, :cheap_change_check)`).
+
+Returns `true` when the data directory appears to hold files not yet persisted
+(so a `scan_and_group!` is warranted), `false` when it looks unchanged (the
+scheduler tick can stay quiet / back off — spec §9.4).
+
+**Cheapness contract:** this does NOT parse PRP files or run grouping. It counts
+matching image files in the experiment's `data_dir` (a single `readdir` + suffix
+filter) and compares against `COUNT(*)` of already-persisted exposures. Additive
+ingest dedups on `(experiment_id, filename)`, so "more files on disk than rows in
+the DB" is exactly "there is new data to ingest".
+
+**Bias:** any ambiguity returns `true` (an extra scan is a harmless no-op via the
+insert-only dedup; a missed scan would silently drop data). The only `false`
+shortcuts are (a) a vanished/unreadable data dir — nothing to ingest, and a
+scheduler tick must never crash on a missing volume — and (b) on-disk count ≤
+persisted count.
+
+`root_dir` is accepted to match the Phase-C call contract
+(`cheap_change_check(db, experiment_id, root_dir)`); the authoritative scan root
+is the experiment's stored `data_dir`, so `root_dir` is currently advisory only.
+"""
+function cheap_change_check(
+    db::SQLite.DB,
+    experiment_id::Int,
+    root_dir::AbstractString;
+    image_pattern::String = "{name}.tif",
+)::Bool
+    # Resolve the experiment's data_dir (the authoritative scan root).
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT data_dir FROM experiments WHERE id = ?", [experiment_id]))
+    isempty(rows) && return true   # unknown experiment: let the caller's scan surface the error
+    data_dir = String(first(rows).data_dir)
+
+    isdir(data_dir) || return false  # vanished/unreadable dir: nothing to ingest, never crash
+
+    # Cheap on-disk count: number of files whose name matches the image suffix.
+    # image_pattern is "{name}<suffix>"; everything after "{name}" is the literal suffix.
+    suffix = replace(image_pattern, "{name}" => "")
+    on_disk = try
+        count(f -> endswith(f, suffix), readdir(data_dir))
+    catch
+        return true   # readdir failed for any reason: assume changed (safe direction)
+    end
+
+    # Persisted count.
+    persisted = Int(first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ?", [experiment_id]))).n)
+
+    return on_disk > persisted
+end
+
+"""
     _update_geometry_if_not_human!(db, experiment_id, geo)
 
 Write derived geometry fields to the `experiments` row, skipping any field whose

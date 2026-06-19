@@ -583,4 +583,59 @@ end
             "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
         @test length(samps2) == 2  # samples unchanged (sample dedup keyed on a stable load_id)
     end
+
+    @testset "cheap_change_check" begin
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        # Write 2 TIF/PRP pairs
+        for (i, h) in enumerate([58.9, 63.1])
+            stem = "HA_$(i)_S$(lpad(i, 4,'0'))_0_001"
+            write_prp(joinpath(data_dir, "$stem.prp");
+                timestamp = Dates.format(t0 + Second((i-1)*19), "dd u yyyy HH:MM:SS"),
+                beam_energy_ev = 9000.0, pipe_length_mm = 1700,
+                detector = "Pilatus 1M", exposure_time = 15.0,
+                horizontal_position_mm = h)
+            write(joinpath(data_dir, "$stem.tif"), "fake tif")
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+
+        db = fresh_db()
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "cheap-check", path = dir,
+            data_dir = data_dir, analysis_dir = analysis_dir)
+
+        # Before any ingest: 2 files on disk, 0 exposures in DB → changed
+        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == true
+
+        # After ingest: 2 files, 2 exposures → unchanged (true no-op tick)
+        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
+        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == false
+
+        # Add a new TIF/PRP pair on disk (not yet ingested) → changed again
+        new_stem = "HA_3_S0003_0_001"
+        write_prp(joinpath(data_dir, "$new_stem.prp");
+            timestamp = Dates.format(t0 + Second(600), "dd u yyyy HH:MM:SS"),
+            beam_energy_ev = 9000.0, pipe_length_mm = 1700,
+            detector = "Pilatus 1M", exposure_time = 15.0,
+            horizontal_position_mm = 67.3)
+        write(joinpath(data_dir, "$new_stem.tif"), "fake tif")
+        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == true
+
+        # Re-scan picks up the new file; check goes quiet again
+        HimalayaUI.scan_and_group!(db, exp_id, dir; analyze = false)
+        @test HimalayaUI.cheap_change_check(db, exp_id, dir) == false
+
+        # Defensive: a non-existent data dir is treated as "no change" (nothing to ingest),
+        # never an error (the scheduler tick must not crash on a vanished volume).
+        bad_db = fresh_db()
+        bad_id = HimalayaUI.create_experiment!(bad_db;
+            name = "missing-dir", path = dir,
+            data_dir = joinpath(dir, "does_not_exist"),
+            analysis_dir = analysis_dir)
+        @test HimalayaUI.cheap_change_check(bad_db, bad_id, dir) == false
+    end
 end
