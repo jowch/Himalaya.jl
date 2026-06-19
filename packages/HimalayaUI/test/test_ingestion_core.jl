@@ -75,5 +75,44 @@ function fresh_db()
 end
 
 @testset "ingestion core (Phase B)" begin
-    # task @testsets are appended below
+    @testset "parse_prp" begin
+        dir = mktempdir()
+        prp_path = joinpath(dir, "HA_85_422_S2404_0_001.prp")
+        write_prp(prp_path;
+            timestamp = "26 Apr 2026 18:20:27",
+            beam_energy_ev = 9000.027604502573,
+            pipe_length_mm = 1700,
+            detector = "Pilatus 1M",
+            exposure_time = 15.0,
+            horizontal_position_mm = 58.9)
+        prp = HimalayaUI.parse_prp(prp_path)
+
+        # Energy: strip "eV", convert to keV
+        @test prp.beam_energy_ev ≈ 9000.027604502573
+        @test prp.energy_kev ≈ 9.000027604502573
+
+        # Pipe length: strip "mm", store as metres
+        @test prp.pipe_length_m ≈ 1.700
+
+        # Detector model string (drives pitch lookup in geometry.jl)
+        @test prp.detector == "Pilatus 1M"
+
+        # Exposure time (seconds)
+        @test prp.exposure_time_s ≈ 15.0
+
+        # Horizontal position (mm)
+        @test prp.horizontal_position_mm ≈ 58.9
+
+        # Timestamp parses to a DateTime
+        @test prp.timestamp isa DateTime
+        @test year(prp.timestamp) == 2026
+        @test month(prp.timestamp) == 4
+
+        # Graceful missing: a truncated PRP returns missing for absent fields
+        trunc_path = joinpath(dir, "trunc.prp")
+        write(trunc_path, "Image file name: trunc.tif\nBeam energy=9000 eV\n")
+        trunc_prp = HimalayaUI.parse_prp(trunc_path)
+        @test trunc_prp.horizontal_position_mm === missing
+        @test trunc_prp.detector === missing
+    end
 end

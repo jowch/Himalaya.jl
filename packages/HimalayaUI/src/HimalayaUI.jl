@@ -3,6 +3,7 @@ module HimalayaUI
 include("db.jl")
 include("image.jl")
 include("datfile.jl")
+include("prp.jl")
 include("config.jl")
 include("manifest.jl")
 include("validate.jl")
