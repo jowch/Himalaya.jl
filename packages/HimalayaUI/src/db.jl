@@ -504,6 +504,24 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
             "experiment_id (orphaned sample_id). Resolve manually before migrating. ids: " *
             join(getproperty.(orphans, :id), ", "))
 
+        # PREFLIGHT (dedupe-then-enforce, spec §10): the new key is (experiment_id, filename).
+        # Detect collisions that were legal under the old (sample_id, filename) key and fail
+        # loudly with an actionable message rather than SQLite's terse "UNIQUE constraint failed"
+        # (which would otherwise re-throw on every open_db). Mirrors preflight_index_groups_uniqueness!.
+        # filename IS NOT NULL: a UNIQUE index treats multiple NULLs as distinct, so NULL filenames
+        # are not collisions and must be excluded from the GROUP BY (which would lump them together).
+        dupes = Tables.rowtable(DBInterface.execute(db, """
+            SELECT experiment_id, filename, COUNT(*) AS n
+              FROM exposures
+             WHERE filename IS NOT NULL
+             GROUP BY experiment_id, filename HAVING n > 1
+        """))
+        isempty(dupes) || error(
+            "migrate_exposures_experiment_id!: $(length(dupes)) (experiment_id, filename) groups " *
+            "have duplicate exposures (legal under the old (sample_id, filename) key) — manual " *
+            "merge required before the unique index can be enforced. groups: " *
+            join(["(exp=$(d.experiment_id), $(d.filename))" for d in dupes], ", "))
+
         # swap the dedup key: drop old (sample_id, filename), add (experiment_id, filename)
         DBInterface.execute(db, "DROP INDEX IF EXISTS exposures_unique_filename")
         DBInterface.execute(db,
