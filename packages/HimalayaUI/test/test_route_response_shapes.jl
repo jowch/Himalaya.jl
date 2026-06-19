@@ -33,7 +33,7 @@ function _setup_analyzed_exposure(tmp::String)
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -263,7 +263,7 @@ end
         # If a future change starts including tags, update the mutator
         # AND this test together.
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -370,7 +370,7 @@ end
 
     @testset "GET /api/samples/:id/messages → SampleMessage[]" begin
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -394,7 +394,7 @@ end
 
     @testset "POST /api/samples/:id/tags → SampleTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -415,7 +415,7 @@ end
 
     @testset "POST /api/exposures/:id/tags → ExposureTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
