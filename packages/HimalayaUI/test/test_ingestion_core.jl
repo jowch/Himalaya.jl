@@ -361,4 +361,56 @@ end
         @test length(slots_bf) == 3                       # one slot per burst position
         @test all(length(s) == 3 for s in slots_bf)       # 3 frames each
     end
+
+    @testset "group_into_samples" begin
+        # Two-load synthetic directory: 2 loads × 3 slots × 2 frames
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        slot_h_l1 = [74.80, 70.85, 67.22]
+        slot_h_l2 = [74.75, 70.90, 67.18]  # same positions in load 2 (reload)
+        frames = HimalayaUI.ExposureMeta[]
+        global_s = 1
+        for (li, slot_h) in enumerate([slot_h_l1, slot_h_l2])
+            load_start = li == 1 ? 0 : 600  # 600 s reload gap
+            for (si, h) in enumerate(slot_h)
+                for fi in 1:2
+                    offset = load_start + (si - 1) * 2 * 19 + (fi - 1) * 19
+                    stem = "HA_$(li)_$(si)_$(fi)_S$(lpad(global_s, 4,'0'))_0_001"
+                    global_s += 1
+                    push!(frames, HimalayaUI.ExposureMeta(stem, "/d/$stem.tif", "/d/$stem.prp", "/a/$stem.dat",
+                        (timestamp = t0 + Second(offset),
+                         horizontal_position_mm = h + (fi == 2 ? 0.1 : 0.0),
+                         beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
+                         detector = "Pilatus 1M", exposure_time_s = 15.0)))
+                end
+            end
+        end
+
+        result = HimalayaUI.group_into_samples(frames)
+
+        # Structure: 2 loads
+        @test length(result.loads) == 2
+        # 3 slots per load
+        @test all(length(l.samples) == 3 for l in result.loads)
+        # 2 frames per sample
+        @test all(length(s.exposures) == 2 for l in result.loads for s in l.samples)
+
+        # Auto-naming: first sample of load 1, slot 1 → "HA ... (S01P01)"
+        name11 = result.loads[1].samples[1].name
+        @test occursin("S01P01", name11)
+        # Second load: S02P01
+        name21 = result.loads[2].samples[1].name
+        @test occursin("S02P01", name21)
+
+        # Load indices 1-based
+        @test result.loads[1].load_index == 1
+        @test result.loads[2].load_index == 2
+
+        # Frame counts
+        @test result.loads[1].frame_count == 6  # 3 slots × 2 frames
+        @test result.loads[2].frame_count == 6
+
+        # Load time range
+        @test result.loads[1].start_time isa DateTime
+        @test result.loads[1].end_time   isa DateTime
+    end
 end

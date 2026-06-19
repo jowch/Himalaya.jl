@@ -324,3 +324,172 @@ function _minimal_scan_config(
         dat_pattern, tif_pattern,
     )
 end
+
+# ---------------------------------------------------------------------------
+# Grouped structs returned by group_into_samples (spec §5)
+# ---------------------------------------------------------------------------
+
+struct GroupedExposure
+    stem       ::String
+    tif_path   ::Union{String, Nothing}
+    prp_path   ::Union{String, Nothing}
+    dat_path   ::Union{String, Nothing}
+    timestamp  ::Union{DateTime, Missing}
+    exposure_time_s        ::Union{Float64, Missing}
+    horizontal_position_mm ::Union{Float64, Missing}
+    scan_id    ::Union{Int, Missing}   # parsed from the `_S<digits>_` filename token
+    frame_no   ::Union{Int, Missing}   # parsed from the trailing `_<digits>` frame index
+end
+
+struct GroupedSample
+    name           ::String
+    name_source    ::String   # always "auto" from this function
+    slot_index     ::Int
+    grouping_source::String   # "auto_position" or "auto_time"
+    exposures      ::Vector{GroupedExposure}
+end
+
+struct GroupedLoad
+    load_index  ::Int
+    frame_count ::Int
+    start_time  ::Union{DateTime, Missing}
+    end_time    ::Union{DateTime, Missing}
+    samples     ::Vector{GroupedSample}
+    flag        ::Symbol   # :ok | :unimodal_fallback | :single_exposure
+end
+
+struct GroupingResult
+    loads        ::Vector{GroupedLoad}
+    discrepancies::Vector{String}  # human-readable grouping anomalies
+end
+
+# ---------------------------------------------------------------------------
+# Auto-naming helper (spec §5 naming rule)
+# ---------------------------------------------------------------------------
+
+"""
+    _auto_name(label_hint, load_index, slot_index) -> String
+
+Produce a sample name per spec §5: `<label> (SNNPMM)` where S=load index,
+P=slot index (both 1-based, zero-padded to two digits). `label_hint` is derived
+from the filename token when parseable; an empty hint yields just the coordinate
+anchor `(SNNPMM)`.
+"""
+function _auto_name(label_hint::AbstractString, load_index::Int, slot_index::Int)
+    coord = "S$(lpad(load_index, 2, '0'))P$(lpad(slot_index, 2, '0'))"
+    isempty(strip(label_hint)) && return "($(coord))"
+    return "$(strip(label_hint)) ($(coord))"
+end
+
+"""
+    _label_from_stem(stem) -> String
+
+Extract the human label token from a filename stem like `HA_85_422_S2404_0_001`.
+Heuristic: the portion BEFORE the scan-id token `_S\\d+_`. Returns the stem
+unchanged if no such token is found.
+"""
+function _label_from_stem(stem::AbstractString)
+    m = match(r"^(.+?)_S\d+_", stem)
+    m === nothing && return String(stem)
+    return String(m.captures[1])
+end
+
+"""
+    _parse_scan_frame(stem) -> (scan_id::Union{Int,Missing}, frame_no::Union{Int,Missing})
+
+Extract the SSRL scan id and frame index from a filename stem such as
+`HA_85_422_S2404_0_001` (scan_id=2404, frame_no=1). The scan id is the integer
+in the `_S<digits>_` token; the frame number is the trailing `_<digits>` group
+at the very end of the stem. Either is `missing` when its token is absent
+(confirmed against the real SSRL 2026-04 naming convention).
+"""
+function _parse_scan_frame(stem::AbstractString)
+    m_scan  = match(r"_S(\d+)_", stem)
+    m_frame = match(r"_(\d+)$", stem)
+    scan_id  = m_scan  === nothing ? missing : parse(Int, m_scan.captures[1])
+    frame_no = m_frame === nothing ? missing : parse(Int, m_frame.captures[1])
+    return (scan_id, frame_no)
+end
+
+# ---------------------------------------------------------------------------
+# group_into_samples (spec §5)
+# ---------------------------------------------------------------------------
+
+"""
+    group_into_samples(metas::Vector{ExposureMeta}) -> GroupingResult
+
+Run the full §5 backbone on the flat list of per-exposure metadata:
+  1. Time-gap segment into loads (`_segment_loads_with_flag`).
+  2. Within each load, cluster by position (`_cluster_slots`).
+  3. Build the `GroupedLoad`/`GroupedSample`/`GroupedExposure` tree with
+     auto-names (`<label> (SNNPMM)`).
+
+The segmentation fallback (`:unimodal_fallback`) is surfaced both as a
+human-readable discrepancy string and onto each affected load's `flag`.
+"""
+function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
+    isempty(metas) && return GroupingResult(GroupedLoad[], String[])
+
+    load_groups, seg_flag = _segment_loads_with_flag(metas)
+    discrepancies = String[]
+
+    # Surface the segmentation fallback durably (spec §5: "unimodal fallback → flag
+    # for review"). The flag is a property of the whole segmentation pass, so it is
+    # both (a) recorded as a human-readable discrepancy and (b) carried onto the load
+    # row(s) below via `seg_flag`.
+    if seg_flag == :unimodal_fallback
+        push!(discrepancies,
+            "load segmentation: no clear bimodal time-gap separation; treated the " *
+            "entire directory as a single load — review load boundaries")
+    end
+
+    grouped_loads = GroupedLoad[]
+    for (li, load_metas) in enumerate(load_groups)
+        slot_groups = _cluster_slots(load_metas)
+        grouped_samples = GroupedSample[]
+        for (si, slot_metas) in enumerate(slot_groups)
+            # Label hint drawn from the slot's first stem.
+            label_hint = _label_from_stem(first(slot_metas).stem)
+
+            exps = [begin
+                sid, fno = _parse_scan_frame(m.stem)
+                ts  = (m.prp !== nothing && !ismissing(m.prp.timestamp)) ? m.prp.timestamp : missing
+                ets = m.prp !== nothing ? m.prp.exposure_time_s : missing
+                hpm = m.prp !== nothing ? m.prp.horizontal_position_mm : missing
+                GroupedExposure(
+                    m.stem,
+                    m.tif_path, m.prp_path, m.dat_path,
+                    ts, ets, hpm,
+                    sid, fno,
+                )
+            end for m in slot_metas]
+
+            push!(grouped_samples, GroupedSample(
+                _auto_name(label_hint, li, si),
+                "auto",
+                si,
+                "auto_position",
+                exps,
+            ))
+        end
+
+        timestamps = DateTime[]
+        for m in load_metas
+            ts = m.prp !== nothing ? m.prp.timestamp : missing
+            ismissing(ts) || push!(timestamps, ts)
+        end
+        start_time = isempty(timestamps) ? missing : minimum(timestamps)
+        end_time   = isempty(timestamps) ? missing : maximum(timestamps)
+
+        push!(grouped_loads, GroupedLoad(
+            li,
+            length(load_metas),
+            start_time,
+            end_time,
+            grouped_samples,
+            seg_flag,   # :ok | :unimodal_fallback | :single_exposure — from segmentation (spec §5)
+        ))
+    end
+
+    return GroupingResult(grouped_loads, discrepancies)
+end
