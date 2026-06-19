@@ -285,6 +285,125 @@ function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
     nothing
 end
 
+"""
+    _rescan_tick!(db, experiment_id; cheap_check_fn=nothing, kwargs...)
+
+One tick of the per-experiment rescan scheduler. Called from the `@spawn`'d
+body inside the Timer callback so the libuv timer thread is never blocked.
+
+Change detection runs `cheap_check_fn(db, experiment_id)` when a seam is injected
+(Task 8's backoff test), otherwise the real `cheap_change_check(db, experiment_id)`
+(Phase B). On a detected change it runs `scan_and_group!(db, experiment_id)`. Both
+Phase B functions resolve the experiment's `data_dir` from the row themselves, so
+this tick threads no path.
+
+Steps:
+1. Read `(last_scan_tier, consecutive_empty_ticks)`; if the experiment is gone, return.
+2. Determine `changed::Bool`.
+3. If changed: run the scan, reset `consecutive_empty_ticks`, re-arm at the `fast` tier.
+4. If not changed: increment the counter; advance fast→daily at `ticks_before_daily`,
+   daily→stopped at `ticks_before_stop`, resetting the counter on each transition.
+5. Persist `last_scan_tier` + `consecutive_empty_ticks` so restarts don't reset
+   quiet experiments to the fast tier.
+
+kwargs (tunable thresholds — defaults match spec §9.4; exposed for testing):
+- `fast_interval`: seconds between fast-tier ticks (default 3600.0 = 1 h)
+- `daily_interval`: seconds between daily-tier ticks (default 86400.0 = 24 h)
+- `ticks_before_daily`: consecutive empty fast ticks before advancing to daily (default 6)
+- `ticks_before_stop`: consecutive empty daily ticks before stopping (default 3)
+"""
+function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
+                        cheap_check_fn = nothing,
+                        fast_interval::Real    = 3600.0,
+                        daily_interval::Real   = 86400.0,
+                        ticks_before_daily::Int = 6,
+                        ticks_before_stop::Int  = 3)
+
+    # Single existence + state read. Empty ⇒ experiment deleted between timer arm
+    # and tick (the DELETE route stops the timer first, so this is belt-and-suspenders).
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id = ?",
+        [experiment_id]))
+    isempty(row) && return
+
+    # Change detection: injected seam (test) or the real cheap_change_check. Both
+    # take (db, experiment_id) and resolve data_dir themselves.
+    changed = try
+        cheap_check_fn !== nothing ? cheap_check_fn(db, experiment_id) :
+                                     cheap_change_check(db, experiment_id)
+    catch err
+        @warn "cheap change-check failed" experiment_id = experiment_id exception = err
+        false
+    end
+
+    if changed
+        try
+            scan_and_group!(db, experiment_id)
+        catch err
+            @warn "scan failed during rescan tick" experiment_id = experiment_id exception = err
+        end
+        # Re-arm at fast tier on a detected change.
+        lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                DBInterface.execute(db, """
+                    UPDATE experiments
+                       SET last_scan_tier         = 'fast',
+                           consecutive_empty_ticks = 0
+                     WHERE id = ?
+                """, [experiment_id])
+            end
+        end
+        start_rescan_scheduler!(db, experiment_id;
+            tick_interval_seconds = fast_interval)
+        return
+    end
+
+    # No change — increment tick counter and check backoff thresholds.
+    tier      = String(row[1].last_scan_tier)
+    new_ticks = Int(row[1].consecutive_empty_ticks) + 1
+
+    if tier == "fast" && new_ticks >= ticks_before_daily
+        # Advance to daily
+        lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                DBInterface.execute(db, """
+                    UPDATE experiments
+                       SET last_scan_tier         = 'daily',
+                           consecutive_empty_ticks = 0
+                     WHERE id = ?
+                """, [experiment_id])
+            end
+        end
+        start_rescan_scheduler!(db, experiment_id;
+            tick_interval_seconds = daily_interval)
+    elseif tier == "daily" && new_ticks >= ticks_before_stop
+        # Stop the scheduler
+        lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                DBInterface.execute(db, """
+                    UPDATE experiments
+                       SET last_scan_tier         = 'stopped',
+                           consecutive_empty_ticks = 0
+                     WHERE id = ?
+                """, [experiment_id])
+            end
+        end
+        stop_rescan_scheduler!(experiment_id)
+    else
+        # Stay in current tier, just increment the counter
+        lock(_DB_WRITE_LOCK) do
+            SQLite.transaction(db) do
+                DBInterface.execute(db, """
+                    UPDATE experiments
+                       SET consecutive_empty_ticks = ?
+                     WHERE id = ?
+                """, [new_ticks, experiment_id])
+            end
+        end
+    end
+    nothing
+end
+
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     Oxygen.resetstate()
     bind_db!(db)

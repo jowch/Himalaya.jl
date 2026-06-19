@@ -316,4 +316,69 @@ end
         end
         SQLite.close(db)
     end
+
+    @testset "_rescan_tick! tiered backoff persists to DB" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "BT", path = dir, data_dir = dir, analysis_dir = dir)
+
+            # The "change" branch below calls start_rescan_scheduler!, which arms a REAL
+            # Timer. Wrap the whole body so that timer (and any other) is always closed
+            # and the DB shut even if an assertion throws — a leaked Timer would keep
+            # firing against a closed DB.
+            try
+                ticks_before_daily = 3   # configurable in the call below
+
+                # Inject the change decision so tier transitions are deterministic without
+                # filesystem fixtures. No scan stub is needed: on a "change" the real
+                # scan_and_group! runs against the EMPTY temp dir (no matching triplets) —
+                # a harmless no-op.
+                no_change  = (_, _) -> false
+                has_change = (_, _) -> true
+
+                # Run ticks_before_daily empty ticks; should stay in 'fast' tier until threshold
+                for _ in 1:ticks_before_daily
+                    HimalayaUI._rescan_tick!(db, exp_id;
+                        cheap_check_fn = no_change,
+                        fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
+                        ticks_before_stop = 2)
+                end
+                row = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id=?",
+                    [exp_id]))[1]
+                # After exactly ticks_before_daily empty ticks, tier advances to daily
+                @test row.last_scan_tier == "daily"
+                @test row.consecutive_empty_ticks == 0  # reset on tier transition
+
+                # One more empty daily tick → not yet stopped (need ticks_before_stop=2 more)
+                HimalayaUI._rescan_tick!(db, exp_id;
+                    cheap_check_fn = no_change,
+                    fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
+                    ticks_before_stop = 2)
+                row2 = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id=?",
+                    [exp_id]))[1]
+                @test row2.last_scan_tier == "daily"
+                @test row2.consecutive_empty_ticks == 1
+
+                # Simulate a change: re-arms back to fast. cheap_check_fn returns true, then
+                # the real scan_and_group! runs against the EMPTY temp dir — a harmless no-op.
+                HimalayaUI._rescan_tick!(db, exp_id;
+                    cheap_check_fn = has_change,
+                    fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
+                    ticks_before_stop = 2)
+                row3 = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id=?",
+                    [exp_id]))[1]
+                @test row3.last_scan_tier == "fast"
+                @test row3.consecutive_empty_ticks == 0
+            finally
+                # The change-branch re-armed a fast-tier Timer; close it before the DB.
+                HimalayaUI.stop_rescan_scheduler!(exp_id)
+                HimalayaUI.stop_all_rescan_timers!()
+                SQLite.close(db)
+            end
+        end
+    end
 end
