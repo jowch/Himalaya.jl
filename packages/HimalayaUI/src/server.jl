@@ -167,6 +167,124 @@ function stop_gc_timer!()
     nothing
 end
 
+# Per-experiment rescan timer registry (spec §9.4).
+# Keyed by experiment_id (Int). Each entry is a Timer whose tick runs the
+# cheap change-check + additive scan on a @spawn'd task so the libuv timer
+# thread is never blocked by multi-minute scan work.
+# Distinct from GC_TIMER (a single module Ref). Not persisted across restarts;
+# on boot, the scheduler is re-armed by the first scan or manual rescan.
+const RESCAN_TIMERS = Dict{Int, Timer}()
+const RESCAN_TIMERS_MU = ReentrantLock()
+
+# Per-experiment reentrancy guard (spec §9.4: protect with an explicit
+# ReentrantLock, not the DB_WRITE_LOCK which carries write-ordering semantics).
+# Keyed by experiment_id. A timer tick attempts trylock; if already locked, the
+# tick is skipped (a scan is already in flight).
+const RESCAN_LOCKS = Dict{Int, ReentrantLock}()
+const RESCAN_LOCKS_MU = ReentrantLock()
+
+"""
+    _rescan_lock(experiment_id) -> ReentrantLock
+
+Return the per-experiment reentrancy lock, creating it on first access.
+"""
+function _rescan_lock(experiment_id::Int)
+    lock(RESCAN_LOCKS_MU) do
+        get!(RESCAN_LOCKS, experiment_id, ReentrantLock())
+    end
+end
+
+"""
+    stop_rescan_scheduler!(experiment_id)
+
+Stop and remove the rescan Timer for `experiment_id`. No-op if no timer is
+registered. Called before `DELETE /api/experiments/{id}` so the timer callback
+cannot fire against a non-existent row.
+"""
+function stop_rescan_scheduler!(experiment_id::Int)
+    lock(RESCAN_TIMERS_MU) do
+        t = get(RESCAN_TIMERS, experiment_id, nothing)
+        if t !== nothing
+            close(t)
+            delete!(RESCAN_TIMERS, experiment_id)
+        end
+    end
+    nothing
+end
+
+"""
+    stop_all_rescan_timers!()
+
+Close all per-experiment rescan timers. Called on server shutdown (mirror
+`stop_gc_timer!`).
+"""
+function stop_all_rescan_timers!()
+    lock(RESCAN_TIMERS_MU) do
+        for (_, t) in RESCAN_TIMERS
+            try; close(t); catch; end
+        end
+        empty!(RESCAN_TIMERS)
+    end
+    nothing
+end
+
+"""
+    start_rescan_scheduler!(db, experiment_id; tick_interval_seconds, cheap_check_fn)
+
+Arm a per-experiment rescan Timer. On each tick the libuv timer thread does the
+MINIMUM possible work — it only `@spawn`s the tick body. EVERYTHING that touches
+the per-experiment `ReentrantLock` (both `trylock` AND `unlock`) runs INSIDE the
+spawned task:
+
+1. `@spawn` the body so the libuv timer thread is never blocked.
+2. The spawned body `trylock`s the per-experiment lock; if already held (a scan
+   is in flight) it returns immediately, skipping this tick.
+3. With the lock held, it calls `_rescan_tick!`, then `unlock`s in a `finally`.
+
+CRITICAL (Julia `ReentrantLock` is task-owned): the `trylock` and the matching
+`unlock` MUST execute on the SAME task. If `trylock` ran on the timer thread and
+`unlock` ran on the `@spawn`'d task, the unlock would throw "unlock from wrong
+thread", the lock would never release, and every later tick would be silently
+skipped. That is why both calls are inside the `@spawn` block below.
+
+`cheap_check_fn` is an optional change-detection seam that defaults to the real
+`cheap_change_check` (Phase B). Task 8's backoff test injects a stub here to drive
+the tier transitions deterministically without filesystem fixtures; the production
+path passes nothing and the real cheap-check runs. There is no `scan_fn` seam —
+the tick calls `scan_and_group!` directly (a no-op on a directory with no matching
+triplets, so the test's empty temp dir needs no stub).
+
+Idempotent: calling twice closes the previous timer before installing a new one.
+"""
+function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
+                                  tick_interval_seconds::Real = 3600.0,
+                                  cheap_check_fn = nothing)
+    # Close any existing timer for this experiment.
+    stop_rescan_scheduler!(experiment_id)
+
+    timer = Timer(tick_interval_seconds; interval = tick_interval_seconds) do _
+        # Do NOTHING that touches the per-experiment lock on the timer thread.
+        # Spawn first, then trylock/unlock both on the spawned task (same-task
+        # ownership — see docstring).
+        Threads.@spawn begin
+            lk = _rescan_lock(experiment_id)
+            trylock(lk) || return  # scan already in flight; skip this tick
+            try
+                _rescan_tick!(db, experiment_id; cheap_check_fn = cheap_check_fn)
+            catch err
+                @warn "rescan tick failed" experiment_id = experiment_id exception = err
+            finally
+                unlock(lk)
+            end
+        end
+    end
+
+    lock(RESCAN_TIMERS_MU) do
+        RESCAN_TIMERS[experiment_id] = timer
+    end
+    nothing
+end
+
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     Oxygen.resetstate()
     bind_db!(db)
@@ -209,6 +327,7 @@ end
 
 function stop_test_server!()
     stop_gc_timer!()
+    stop_all_rescan_timers!()
     Oxygen.terminate()
     Oxygen.resetstate()
     _DB_REF[] = nothing

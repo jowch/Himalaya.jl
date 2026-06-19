@@ -247,4 +247,39 @@ end
         end
         SQLite.close(db)
     end
+
+    @testset "rescan timer start/stop lifecycle (unit)" begin
+        # This test never opens a real DB — it only exercises the timer registry.
+        # start_rescan_scheduler! requires a db for the tick body; we pass a temp one.
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "T", path = dir, data_dir = dir, analysis_dir = dir)
+
+            # Real Timers are armed below; guarantee they are all closed and the DB
+            # is shut even if an assertion throws mid-test (otherwise a leaked Timer
+            # keeps firing against a closed DB and poisons later testsets).
+            try
+                # Starting a scheduler registers a timer
+                HimalayaUI.start_rescan_scheduler!(db, exp_id;
+                    tick_interval_seconds = 3600)
+                @test haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
+
+                # Stopping it removes the entry
+                HimalayaUI.stop_rescan_scheduler!(exp_id)
+                @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
+
+                # Stopping a non-existent id is a no-op
+                @test_nowarn HimalayaUI.stop_rescan_scheduler!(exp_id)
+
+                # stop_all_rescan_timers! clears all entries
+                HimalayaUI.start_rescan_scheduler!(db, exp_id; tick_interval_seconds = 3600)
+                HimalayaUI.stop_all_rescan_timers!()
+                @test isempty(HimalayaUI.RESCAN_TIMERS)
+            finally
+                HimalayaUI.stop_all_rescan_timers!()
+                SQLite.close(db)
+            end
+        end
+    end
 end
