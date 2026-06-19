@@ -69,4 +69,21 @@ end
             HimalayaUI.SSE_SUBSCRIBERS[] = []
         end
     end
+
+    @testset "create_load! persists a load row" begin
+        db, dir, exp_id = scan_test_db()
+        lid = HimalayaUI.create_load!(db;
+            experiment_id = exp_id,
+            load_index    = 1,
+            start_time    = "2026-04-12T08:00:00",
+            end_time      = "2026-04-12T08:45:00",
+            frame_count   = 48)
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM loads WHERE id = ?", [lid])))
+        @test row.experiment_id == exp_id
+        @test row.load_index    == 1
+        @test row.frame_count   == 48
+        @test row.start_time    == "2026-04-12T08:00:00"
+        SQLite.close(db)
+    end
 end

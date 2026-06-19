@@ -2031,6 +2031,21 @@ function create_experiment!(db::SQLite.DB;
     return Int(DBInterface.lastrowid(result))
 end
 
+function create_load!(db::SQLite.DB;
+        experiment_id::Integer,
+        load_index::Integer,
+        session_id::Union{Integer, Nothing}    = nothing,
+        start_time::Union{String, Nothing}     = nothing,
+        end_time::Union{String, Nothing}       = nothing,
+        frame_count::Integer                   = 0,
+        note::Union{String, Nothing}           = nothing)
+    res = DBInterface.execute(db, """
+        INSERT INTO loads (experiment_id, load_index, session_id, start_time, end_time, frame_count, note)
+        VALUES (?,?,?,?,?,?,?)
+    """, [experiment_id, load_index, session_id, start_time, end_time, frame_count, note])
+    Int(DBInterface.lastrowid(res))
+end
+
 function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractString,
         notes=nothing, load_id=nothing, slot_index=nothing,
         grouping_source="auto_position", name_source="auto")
