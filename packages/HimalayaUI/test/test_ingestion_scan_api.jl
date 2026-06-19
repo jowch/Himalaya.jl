@@ -282,4 +282,38 @@ end
             end
         end
     end
+
+    @testset "DELETE /api/experiments/{id} removes experiment + cascade" begin
+        db, dir, exp_id = scan_test_db()
+        lid = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 2)
+        sid = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "A",
+            load_id = lid, slot_index = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = sid, filename = "f.tif")
+
+        with_test_server(db) do port, base
+            r = HTTP.delete("$base/api/experiments/$exp_id",
+                headers = ["X-Username" => "alice"],
+                status_exception = false)
+            @test r.status == 200
+
+            # Experiment is gone
+            r2 = HTTP.get("$base/api/experiments/$exp_id"; status_exception = false)
+            @test r2.status == 404
+
+            # Cascades: loads, samples, exposures removed
+            cnt_loads = Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?", [exp_id]))[1].c
+            cnt_samples = Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", [exp_id]))[1].c
+            @test cnt_loads   == 0
+            @test cnt_samples == 0
+
+            # 404 on repeat delete
+            r3 = HTTP.delete("$base/api/experiments/$exp_id",
+                headers = ["X-Username" => "alice"],
+                status_exception = false)
+            @test r3.status == 404
+        end
+        SQLite.close(db)
+    end
 end

@@ -244,4 +244,121 @@ function register_experiments_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
     end
+
+    @delete "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment not found")))
+
+        # Stop the rescan timer BEFORE the DB delete so the timer callback cannot
+        # fire against a non-existent row. stop_rescan_scheduler! is defined in server.jl
+        # and is a no-op when no timer is running for this id.
+        stop_rescan_scheduler!(id)
+
+        # Live schema (db.jl:32-152, confirmed 2026-06-18) keys a DEEP tree of
+        # structural tables off exposures/samples/indices, and almost none of those
+        # FKs declare `ON DELETE CASCADE`: samples.experiment_id (db.jl:34),
+        # exposures.sample_id (db.jl:42), and the exposure-keyed tables
+        # exposure_sources, exposure_tags, indices, auto_peaks, peak_curations,
+        # index_groups, assignments, assignment_members (db.jl:60-152), plus the
+        # indices-keyed index_peaks / index_group_members. Corrected Plan A does NOT
+        # add cascades (SQLite cannot ALTER a cascade onto an existing column).
+        # FK enforcement is ON at the connection level (open_db, db.jl:1907), so a
+        # bare `DELETE FROM experiments` would FK-fail and 500.
+        #
+        # Enumerating ~16 child deletes in FK order is brittle and easy to leave
+        # incomplete as the schema grows. Instead follow the codebase's own teardown
+        # idiom for cross-FK structural surgery (db.jl:1620-1647 and the other
+        # migrations): toggle `PRAGMA foreign_keys = OFF` at the CONNECTION level
+        # OUTSIDE the transaction (it is a documented no-op mid-transaction), do the
+        # parent + cascade deletes, then restore `ON` in a `finally`. Delete in
+        # FK-child→parent order anyway so the row set is internally consistent.
+        #
+        # Concurrency note: this disables FK checks connection-wide for the duration
+        # of the delete on the shared singleton connection (parallel=true). Acceptable
+        # because (a) experiment delete is a rare admin action, (b) the whole delete
+        # is serialized under `_DB_WRITE_LOCK`, and (c) it mirrors the established
+        # migration precedent. Do NOT issue `PRAGMA foreign_keys` INSIDE the
+        # transaction — SQLite silently ignores it there.
+        lock(_DB_WRITE_LOCK) do
+            DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
+            try
+                SQLite.transaction(db) do
+                    # exposure-keyed structural tables (children of exposures/indices)
+                    DBInterface.execute(db, """
+                        DELETE FROM index_peaks WHERE index_id IN
+                          (SELECT i.id FROM indices i
+                             JOIN exposures e ON e.id = i.exposure_id
+                            WHERE e.experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM index_group_members WHERE index_id IN
+                          (SELECT i.id FROM indices i
+                             JOIN exposures e ON e.id = i.exposure_id
+                            WHERE e.experiment_id = ?)""", [id])
+                    for tbl in ("assignment_members", "assignments", "index_groups",
+                                "indices", "auto_peaks", "peak_curations",
+                                "exposure_sources", "exposure_tags")
+                        # exposure_sources keys two exposure columns; clean both.
+                        if tbl == "exposure_sources"
+                            DBInterface.execute(db, """
+                                DELETE FROM exposure_sources WHERE averaged_exposure_id IN
+                                  (SELECT id FROM exposures WHERE experiment_id = ?)
+                                   OR source_exposure_id IN
+                                  (SELECT id FROM exposures WHERE experiment_id = ?)""",
+                                [id, id])
+                        else
+                            DBInterface.execute(db, """
+                                DELETE FROM $tbl WHERE exposure_id IN
+                                  (SELECT id FROM exposures WHERE experiment_id = ?)""",
+                                [id])
+                        end
+                    end
+                    # sample-keyed tables, then the core rows.
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_tags WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_messages WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    # Cross-feature tables OUTSIDE the core tree (db.jl:700-1060) that
+                    # reference this experiment's samples/exposures. FK enforcement is
+                    # OFF here, so their declared ON DELETE actions do NOT fire —
+                    # replicate each by hand so no orphan rows remain:
+                    #   series_samples.sample_id   -> samples   ON DELETE CASCADE  (delete row)
+                    #   series_members.exposure_id -> exposures ON DELETE SET NULL (null the ref)
+                    #   comparison_members.exposure_id -> exposures ON DELETE SET NULL (null the ref)
+                    # Must run BEFORE the samples/exposures deletes below so the
+                    # IN-subqueries still resolve the ids.
+                    DBInterface.execute(db, """
+                        DELETE FROM series_samples WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        UPDATE series_members SET exposure_id = NULL WHERE exposure_id IN
+                          (SELECT id FROM exposures WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        UPDATE comparison_members SET exposure_id = NULL WHERE exposure_id IN
+                          (SELECT id FROM exposures WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db,
+                        "DELETE FROM exposures WHERE experiment_id = ?", [id])
+                    DBInterface.execute(db,
+                        "DELETE FROM samples WHERE experiment_id = ?", [id])
+                    DBInterface.execute(db,
+                        "DELETE FROM loads WHERE experiment_id = ?", [id])
+                    DBInterface.execute(db,
+                        "DELETE FROM experiments WHERE id = ?", [id])
+                end
+            finally
+                DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+            end
+        end
+
+        log_action!(db, req; action = "experiment_deleted",
+            entity_type = "experiment", entity_id = id)
+
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:id => id, :deleted => true)))
+    end
 end
