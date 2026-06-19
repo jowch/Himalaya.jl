@@ -1,0 +1,1821 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ingestion — "The Print" (interactive prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
+<style>
+  /* ════════════════════════════════════════════════════════════════════
+   * Ingestion redesign, in "The Print" language. A clickable prototype:
+   * point at a directory → it scans, groups, derives geometry → you land
+   * in the corpus. The hard surface is grouping-review, where the
+   * scientist confirms ~170 auto-grouped samples are split correctly.
+   *
+   * Tokens are byte-faithful to the shipped system (DESIGN.md / styles.css):
+   * warm paper + ink, one terracotta accent, phase colour as data,
+   * Newsreader for titles, mono for measurements, 5px radius,
+   * flat-except-the-plate. Detector frames are dark windows in paper.
+   * ════════════════════════════════════════════════════════════════════ */
+  :root {
+    --paper:        oklch(0.978 0.006 85);
+    --paper-sunk:   oklch(0.951 0.008 84);
+    --plate:        oklch(0.992 0.004 90);
+    --ink:          oklch(0.265 0.013 68);
+    --ink-soft:     oklch(0.467 0.012 70);
+    --ink-faint:    oklch(0.640 0.010 74);
+    --hair:         oklch(0.882 0.008 80);
+    --hair-strong:  oklch(0.806 0.010 78);
+
+    /* phase palette (paper-tuned, AA on plate) */
+    --pn3m:  oklch(0.570 0.150 58);
+    --im3m:  oklch(0.520 0.120 162);
+    --lam:   oklch(0.505 0.150 264);
+    --hex:   oklch(0.540 0.130 350);
+
+    --accent:     oklch(0.555 0.150 38);   /* terracotta — the grease pencil */
+    --success:    oklch(0.520 0.120 162);
+    --warning:    oklch(0.620 0.130 70);
+    --error:      oklch(0.520 0.170 28);
+    --frame-edge: oklch(0.150 0.010 55);
+
+    --radius: 5px;
+    --shadow-plate: 0 1px 1px rgba(60,52,40,.04), 0 16px 36px -24px rgba(60,52,40,.20);
+
+    --font-sans:  "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-serif: "Newsreader", Georgia, serif;
+    --font-mono:  ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--font-sans); font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .mono { font-family: var(--font-mono); }
+  button { font-family: inherit; }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+
+  .app { height: 100%; display: flex; flex-direction: column; }
+
+  /* ── Top bar ───────────────────────────────────────────────────────── */
+  .topbar {
+    height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 14px;
+    padding: 0 24px; border-bottom: 1px solid var(--hair); background: var(--paper);
+    position: relative; z-index: 30;
+  }
+  .wordmark { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink); cursor: pointer; }
+  .wordmark .tail { color: var(--ink-faint); font-weight: 600; }
+  .topbar .spacer { flex: 1; }
+  /* two top-level axes: Experiments (containers) + Series (cross-cutting) */
+  .topnav { display: flex; gap: 1px; margin-left: 6px; }
+  .topnav-link { font-size: 12.5px; font-weight: 600; color: var(--ink-faint); background: none;
+    border: none; cursor: pointer; padding: 7px 12px; border-radius: 5px;
+    transition: color 120ms ease-out, background-color 120ms ease-out; }
+  .topnav-link:hover { color: var(--ink); background: var(--paper-sunk); }
+  .topnav-link.is-active { color: var(--ink); }
+  .topnav-link.is-active::after { content: ""; display: block; height: 2px; border-radius: 2px;
+    background: var(--accent); margin: 5px 2px -2px; }
+
+  /* experiment switcher (replaces a persistent sidebar) */
+  .switcher { position: relative; }
+  .switcher-btn {
+    display: flex; align-items: center; gap: 9px; border: 1px solid var(--hair-strong);
+    background: var(--plate); border-radius: 999px; padding: 5px 7px 5px 13px;
+    cursor: pointer; transition: background-color 120ms ease-out;
+  }
+  .switcher-btn:hover { background: var(--paper-sunk); }
+  .switcher-btn .sw-k { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); }
+  .switcher-btn .sw-name { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .switcher-btn .sw-chev { color: var(--ink-faint); font-size: 10px; margin-left: 2px;
+    width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; }
+  .switcher-menu {
+    position: absolute; top: calc(100% + 8px); left: 0; min-width: 320px;
+    background: var(--plate); border: 1px solid var(--hair-strong); border-radius: 8px;
+    box-shadow: var(--shadow-plate); padding: 6px; display: none;
+    animation: pop 140ms cubic-bezier(.22,1,.36,1);
+  }
+  .switcher.open .switcher-menu { display: block; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.99); } }
+  .sm-head { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); padding: 7px 10px 5px; }
+  .sm-item { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 6px;
+    cursor: pointer; transition: background-color 120ms ease-out; }
+  .sm-item:hover { background: var(--paper-sunk); }
+  .sm-item.is-active { background: var(--paper-sunk); }
+  .sm-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .sm-dot.ready { background: var(--success); }
+  .sm-dot.ingesting { background: var(--accent); }
+  .sm-dot.failed { background: var(--error); }
+  .sm-it-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .sm-it-meta { font-size: 10.5px; color: var(--ink-faint); margin-top: 1px; font-family: var(--font-mono); }
+  .sm-it-r { margin-left: auto; font-size: 10px; color: var(--accent); font-weight: 700; }
+  .sm-new { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    margin-top: 4px; border-top: 1px solid var(--hair); padding: 11px 10px 7px; background: none;
+    border-left: none; border-right: none; border-bottom: none; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; color: var(--accent); }
+  .sm-new:hover { color: var(--ink); }
+
+  /* ── Buttons ───────────────────────────────────────────────────────── */
+  .btn { font-family: inherit; font-size: 12px; font-weight: 600; border-radius: 5px;
+    padding: 7px 13px; cursor: pointer; border: 1px solid transparent;
+    transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out; }
+  .btn-solid { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn-solid:hover { filter: brightness(1.12); }
+  .btn-accent { background: var(--accent); color: oklch(0.99 0.005 85); border-color: var(--accent); }
+  .btn-accent:hover { filter: brightness(1.08); }
+  .btn-ghost { background: none; color: var(--ink-soft); }
+  .btn-ghost:hover { color: var(--ink); background: var(--paper-sunk); }
+  .btn-outline { background: var(--plate); color: var(--ink); border-color: var(--hair-strong); }
+  .btn-outline:hover { background: var(--paper-sunk); }
+  .btn-out-accent { background: var(--plate); color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 42%, var(--hair)); }
+  .btn-out-accent:hover { background: color-mix(in oklab, var(--accent) 7%, var(--plate)); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-sm { padding: 5px 10px; font-size: 11.5px; }
+
+  /* ── Generic kicker / display ──────────────────────────────────────── */
+  .kicker { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+  .display { font-family: var(--font-serif); font-size: 31px; line-height: 1.15;
+    font-weight: 500; letter-spacing: -0.005em; color: var(--ink); }
+  .headline { font-family: var(--font-serif); font-size: 19px; font-weight: 500; color: var(--ink); }
+
+  /* ── Stage ─────────────────────────────────────────────────────────── */
+  .stage { flex: 1; overflow: auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── Experiment header (shared, above the tabs) ────────────────────── */
+  .exp-header { padding: 30px 40px 0; max-width: 1280px; margin: 0 auto; }
+  .exp-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; }
+  .exp-name { display: flex; align-items: baseline; gap: 12px; }
+  .exp-desc { margin-top: 7px; font-size: 13px; color: var(--ink-soft); max-width: 64ch; }
+  .exp-rescan { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+  .rescan-state { display: flex; align-items: center; gap: 7px; font-size: 11.5px;
+    color: var(--ink-faint); }
+  .rescan-state .rs-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .rescan-state.checking .rs-dot { background: var(--warning); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  .exp-meta { margin-top: 10px; font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--ink-faint); display: flex; align-items: center; gap: 9px; }
+  .exp-meta .sep { color: var(--hair-strong); }
+  /* a quiet stats band with hairline edges + centered cells (replaces the heavy ink rule) */
+  .ledger-band { display: flex; margin: 22px 0 0; border-top: 1px solid var(--hair);
+    border-bottom: 1px solid var(--hair); }
+  .ledger-band .lg { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 13px 8px; border-right: 1px solid var(--hair); }
+  .ledger-band .lg:last-child { border-right: none; }
+  .ledger-band .lg-v { font-family: var(--font-mono); font-size: 18px; font-weight: 500; color: var(--ink); }
+  .ledger-band .lg-v.pending { color: var(--ink-faint); font-style: italic; font-family: var(--font-sans); font-size: 13px; }
+  .ledger-band .lg-k { font-size: 9.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); }
+
+  /* tabs */
+  .tabs { display: flex; gap: 2px; margin-top: 18px; border-bottom: 1px solid var(--hair); }
+  .tab { font-size: 11.5px; letter-spacing: 0.04em; font-weight: 700; text-transform: uppercase;
+    color: var(--ink-faint); padding: 9px 14px; cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 120ms ease-out; }
+  .tab:hover { color: var(--ink-soft); }
+  .tab.is-active { color: var(--ink); border-bottom-color: var(--accent); }
+
+  .tab-body { max-width: 1280px; margin: 0 auto; padding: 26px 40px 96px; }
+
+  /* ── Review banner ─────────────────────────────────────────────────── */
+  .banner { display: flex; align-items: center; gap: 14px;
+    background: color-mix(in oklab, var(--warning) 9%, var(--plate));
+    border: 1px solid color-mix(in oklab, var(--warning) 32%, var(--hair));
+    border-radius: 6px; padding: 13px 16px; margin-bottom: 24px; }
+  .banner .bn-mark { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    background: var(--warning); color: var(--plate); display: grid; place-items: center;
+    font-weight: 800; font-size: 13px; }
+  .banner .bn-text { flex: 1; }
+  .banner .bn-t { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .banner .bn-s { font-size: 11.5px; color: var(--ink-soft); margin-top: 1px; }
+  .banner.is-clean { background: color-mix(in oklab, var(--success) 8%, var(--plate));
+    border-color: color-mix(in oklab, var(--success) 28%, var(--hair)); }
+  .banner.is-clean .bn-mark { background: var(--success); }
+
+  /* ── Contact sheet (Corpus tab — reuses the shipped sheet) ─────────── */
+  .sheet { background: var(--plate); border: 1px solid var(--hair-strong); border-radius: 5px;
+    box-shadow: var(--shadow-plate); overflow: hidden; }
+  .CCOLS { display: grid; grid-template-columns: 248px minmax(340px,1fr) 86px 150px; }
+  .sheet-head { background: var(--paper-sunk); border-bottom: 1px solid var(--hair-strong); }
+  .sheet-head .CCOLS > div { padding: 10px 16px; font-size: 10px; letter-spacing: 0.09em;
+    text-transform: uppercase; font-weight: 700; color: var(--ink-faint); }
+  .srow { border-bottom: 1px solid var(--hair); }
+  .srow:last-child { border-bottom: none; }
+  .srow:hover { background: oklch(0.972 0.006 84); }
+  .srow > .CCOLS > div { padding: 13px 16px; display: flex; align-items: center; min-height: 90px; }
+  .spec { gap: 11px; }
+  .spec-text { min-width: 0; }
+  .spec-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .spec-id { font-size: 10.5px; color: var(--ink-faint); margin-top: 3px; font-family: var(--font-mono); }
+  .strip { gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+  .kept { font-family: var(--font-mono); }
+  .kept .k-n { font-size: 16px; font-weight: 500; color: var(--ink); }
+  .kept .k-d { font-size: 12px; color: var(--ink-faint); }
+  .status .pchip { font-size: 11px; font-weight: 700; font-family: var(--font-mono);
+    padding: 3px 9px; border-radius: 5px; }
+  .pchip.pn3m { color: var(--pn3m); background: color-mix(in oklab, var(--pn3m) 13%, transparent); }
+  .pchip.lam  { color: var(--lam);  background: color-mix(in oklab, var(--lam) 13%, transparent); }
+  .pchip.im3m { color: var(--im3m); background: color-mix(in oklab, var(--im3m) 13%, transparent); }
+  .pchip.hex  { color: var(--hex);  background: color-mix(in oklab, var(--hex) 13%, transparent); }
+  .status .unset { font-size: 12px; color: var(--ink-faint); display: flex; align-items: center; gap: 7px; }
+  .status .unset .dotline { width: 6px; height: 6px; border-radius: 50%;
+    border: 1.5px solid var(--hair-strong); }
+
+  /* detector thumbnails */
+  .thumb { position: relative; width: 56px; height: 56px; flex-shrink: 0; border-radius: 3px;
+    padding: 0; cursor: pointer; border: 1px solid var(--frame-edge); background: var(--frame-edge);
+    overflow: hidden; transition: box-shadow 110ms cubic-bezier(.22,1,.36,1); }
+  .thumb .det { display: block; width: 100%; height: 100%; }
+  .thumb:hover { box-shadow: 0 0 0 2px var(--hair-strong); }
+  .thumb.sel { box-shadow: 0 0 0 2px var(--accent); }
+  .thumb .fno { position: absolute; left: 3px; bottom: 1px; font-size: 8px;
+    font-family: var(--font-mono); color: oklch(0.78 0.01 80); opacity: 0.8; }
+
+  /* skeleton (ingest) */
+  .bone { background: linear-gradient(100deg, var(--paper-sunk) 30%, oklch(0.965 0.006 84) 50%, var(--paper-sunk) 70%);
+    background-size: 200% 100%; animation: bone 1.6s ease-in-out infinite; border-radius: 4px; }
+  @keyframes bone { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  /* ── Experiments home ──────────────────────────────────────────────── */
+  .home-shell { max-width: 1080px; margin: 0 auto; padding: 44px 40px 80px; }
+  .home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+    margin-bottom: 28px; }
+  .exp-list { display: flex; flex-direction: column; gap: 12px; }
+  .exp-card { display: grid; grid-template-columns: 12px 1fr auto auto; align-items: center; gap: 26px;
+    background: var(--plate); border: 1px solid var(--hair-strong); border-radius: 6px;
+    padding: 18px 22px; cursor: pointer; text-align: left; width: 100%;
+    transition: border-color 120ms ease-out, background-color 120ms ease-out; }
+  .ec-dist { display: flex; flex-direction: column; gap: 6px; width: 132px; }
+  .ec-dist-bar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; border: 1px solid var(--hair); }
+  .ec-dist-k { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-faint); text-align: center; }
+  .exp-card:hover { border-color: var(--hair-strong); background: oklch(0.985 0.005 88); box-shadow: var(--shadow-plate); }
+  .ec-status { width: 10px; height: 10px; border-radius: 50%; }
+  .ec-status.ready { background: var(--success); }
+  .ec-status.ingesting { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .ec-status.failed { background: var(--error); }
+  .ec-name { font-family: var(--font-serif); font-size: 21px; font-weight: 500; color: var(--ink); }
+  .ec-dir { font-size: 11px; color: var(--ink-faint); margin-top: 3px; font-family: var(--font-mono); }
+  .ec-stats { display: flex; gap: 22px; }
+  .ec-stat { text-align: right; }
+  .ec-stat .v { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--ink); }
+  .ec-stat .v.warn { color: var(--accent); }
+  .ec-stat .k { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); }
+
+  /* empty state */
+  .empty { max-width: 560px; margin: 90px auto 0; text-align: center; }
+  .empty .em-glyph { width: 64px; height: 64px; margin: 0 auto 22px; border-radius: 12px;
+    border: 1.5px dashed var(--hair-strong); display: grid; place-items: center; color: var(--ink-faint); }
+  .empty h2 { font-family: var(--font-serif); font-size: 26px; font-weight: 500; color: var(--ink); }
+  .empty p { font-size: 13.5px; color: var(--ink-soft); margin: 12px auto 26px; max-width: 46ch; line-height: 1.6; }
+
+  /* ── New experiment (directory picker) ─────────────────────────────── */
+  .create-shell { max-width: 620px; margin: 56px auto 0; padding: 0 32px 80px; }
+  .create-plate { background: var(--plate); border: 1px solid var(--hair-strong); border-radius: 8px;
+    box-shadow: var(--shadow-plate); padding: 30px 32px 28px; }
+  .field-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-soft); margin-bottom: 8px; display: block; }
+  .pathfield { position: relative; }
+  .pathfield .pf-input { display: flex; align-items: center; gap: 9px; background: var(--paper-sunk);
+    border: 1px solid var(--hair-strong); border-radius: 5px; padding: 0 12px;
+    transition: border-color 120ms ease-out; }
+  .pathfield.focused .pf-input { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .pathfield.invalid .pf-input { border-color: var(--error); }
+  .pf-input .pf-icon { color: var(--ink-faint); font-size: 13px; }
+  .pf-input input { flex: 1; border: none; background: none; outline: none; padding: 11px 0;
+    font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+  .pf-input input::placeholder { color: var(--ink-faint); font-family: var(--font-sans); }
+  .pf-hint { font-size: 10.5px; color: var(--ink-faint); margin-top: 7px; display: none; }
+  .pathfield.menu-open .pf-hint { display: block; }
+  .pf-hint .k { font-family: var(--font-mono); font-size: 9.5px; background: var(--paper-sunk);
+    border: 1px solid var(--hair-strong); border-radius: 3px; padding: 0 5px; color: var(--ink-soft); }
+  .pf-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; background: var(--plate);
+    border: 1px solid var(--hair-strong); border-radius: 6px; box-shadow: var(--shadow-plate);
+    padding: 5px; display: none; z-index: 20; max-height: 280px; overflow: auto; }
+  .pathfield.menu-open .pf-menu { display: block; }
+  .pf-opt { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 5px;
+    cursor: pointer; }
+  .pf-opt:hover, .pf-opt.hi { background: var(--paper-sunk); }
+  .pf-opt .pf-o-ic { color: var(--ink-faint); font-size: 13px; width: 14px; }
+  .pf-opt .pf-o-path { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+  .pf-opt .pf-o-path b { color: var(--accent); font-weight: 600; }
+  .pf-opt .pf-o-meta { margin-left: auto; font-size: 10px; color: var(--ink-faint); }
+  .pf-opt .pf-o-tab { margin-left: auto; font-family: var(--font-mono); font-size: 9.5px;
+    color: var(--ink-faint); border: 1px solid var(--hair-strong); border-radius: 3px;
+    padding: 0 4px; }
+  .pf-section { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-faint); padding: 8px 10px 4px; }
+
+  /* validation feedback */
+  .validate { margin-top: 14px; border-radius: 6px; padding: 0; overflow: hidden;
+    border: 1px solid transparent; transition: all 160ms ease-out; }
+  .validate.ok { border-color: color-mix(in oklab, var(--success) 30%, var(--hair));
+    background: color-mix(in oklab, var(--success) 6%, var(--plate)); padding: 13px 15px; }
+  .validate.err { border-color: color-mix(in oklab, var(--error) 32%, var(--hair));
+    background: color-mix(in oklab, var(--error) 6%, var(--plate)); padding: 13px 15px; }
+  .validate.busy { border-color: var(--hair-strong); background: var(--paper-sunk); padding: 13px 15px; }
+  .vd-row { display: flex; align-items: center; gap: 10px; }
+  .vd-mark { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; display: grid;
+    place-items: center; font-size: 11px; font-weight: 800; color: var(--plate); }
+  .validate.ok .vd-mark { background: var(--success); }
+  .validate.err .vd-mark { background: var(--error); }
+  .validate.busy .vd-mark { background: var(--ink-faint); }
+  .vd-t { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .vd-detail { margin-top: 9px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft);
+    line-height: 1.7; padding-left: 28px; }
+  .vd-detail .vd-em { color: var(--ink); }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--hair-strong);
+    border-top-color: var(--ink-soft); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .field-row { margin-top: 22px; }
+  .text-input { width: 100%; background: var(--paper-sunk); border: 1px solid var(--hair-strong);
+    border-radius: 5px; padding: 11px 12px; font-family: var(--font-sans); font-size: 13px; color: var(--ink);
+    outline: none; transition: border-color 120ms ease-out; }
+  .text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .advanced { margin-top: 16px; }
+  .adv-toggle { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); background: none;
+    border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+  .adv-toggle:hover { color: var(--ink); }
+  .adv-toggle .chev { transition: transform 140ms ease-out; }
+  .advanced.open .adv-toggle .chev { transform: rotate(90deg); }
+  .adv-body { display: none; margin-top: 12px; padding: 14px; background: var(--paper-sunk);
+    border-radius: 6px; }
+  .advanced.open .adv-body { display: block; }
+  .adv-grid { display: grid; grid-template-columns: 120px 1fr; gap: 10px 16px; align-items: center; }
+  .adv-grid .ag-k { font-size: 11.5px; color: var(--ink-soft); }
+  .adv-grid input { background: var(--plate); border: 1px solid var(--hair); border-radius: 4px;
+    padding: 6px 9px; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); outline: none; }
+  .create-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+
+  /* ── Grouping review (centerpiece) ─────────────────────────────────── */
+  .gr-shell { max-width: 1180px; margin: 0 auto; padding: 30px 40px 120px; }
+  .gr-back { font-size: 11.5px; font-weight: 600; background: none; border: none; cursor: pointer;
+    color: var(--accent); padding: 0; margin-bottom: 16px; display: inline-flex; align-items: center; gap: 5px; }
+  .gr-back:hover { text-decoration: underline; }
+  .gr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;
+    margin-bottom: 8px; }
+  .gr-sub { font-size: 13px; color: var(--ink-soft); max-width: 66ch; margin-top: 8px; }
+  .gr-summary { flex-shrink: 0; text-align: right; }
+  .gr-summary .gs-v { font-family: var(--font-serif); font-size: 25px; font-weight: 500; color: var(--ink); }
+  .gr-summary .gs-v b { color: var(--accent); font-weight: 500; }
+  .gr-summary .gs-k { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin-top: 2px; }
+  .gr-filter { display: flex; gap: 2px; margin: 22px 0 14px; align-items: center; }
+  .gr-filter > button { font-size: 11px; font-weight: 600; color: var(--ink-faint); background: none;
+    border: 1px solid transparent; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .gr-filter > button.on { color: var(--ink); background: var(--paper-sunk); border-color: var(--hair-strong); }
+  .gr-search { margin-left: auto; display: flex; align-items: center; gap: 8px; background: var(--plate);
+    border: 1px solid var(--hair-strong); border-radius: 5px; padding: 0 11px; width: 320px;
+    transition: border-color 120ms ease-out, box-shadow 120ms ease-out; }
+  .gr-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .gr-search .gs-ic { color: var(--ink-faint); flex-shrink: 0; font-size: 12px; }
+  .gr-search input { flex: 1; border: none; background: none; outline: none; padding: 7px 0;
+    font-family: var(--font-sans); font-size: 12.5px; color: var(--ink); }
+  .gr-search input::placeholder { color: var(--ink-faint); }
+  .gr-search .gs-clear { color: var(--ink-faint); background: none; border: none; cursor: pointer;
+    font-size: 13px; padding: 2px; display: none; }
+  .gr-search.has-q .gs-clear { display: block; }
+  .gr-empty { text-align: center; padding: 40px; color: var(--ink-faint); font-size: 13px; }
+
+  /* load fold */
+  .load { border: 1px solid var(--hair-strong); border-radius: 6px; background: var(--plate);
+    margin-bottom: 12px; overflow: hidden; }
+  .load.attn { border-color: color-mix(in oklab, var(--warning) 34%, var(--hair)); }
+  .load-head { display: flex; align-items: center; gap: 13px; padding: 14px 18px; cursor: pointer;
+    width: 100%; background: none; border: none; text-align: left;
+    transition: background-color 120ms ease-out; }
+  .load-head:hover { background: var(--paper-sunk); }
+  .load-chev { color: var(--ink-faint); font-size: 11px; transition: transform 140ms ease-out;
+    width: 12px; flex-shrink: 0; }
+  .load.open .load-chev { transform: rotate(90deg); }
+  .load-title { font-family: var(--font-serif); font-size: 18px; font-weight: 500; color: var(--ink); }
+  .load-meta { font-size: 11.5px; color: var(--ink-faint); margin-top: 1px; }
+  .load-status { margin-left: auto; display: flex; align-items: center; gap: 7px; font-size: 11.5px;
+    font-weight: 600; }
+  .load-status.clean { color: var(--success); }
+  .load-status.attn { color: var(--warning); }
+  .load-status .ls-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .load-body { display: none; border-top: 1px solid var(--hair); padding: 6px; background: var(--paper-sunk); }
+  .load.open .load-body { display: block; }
+
+  /* sample fold */
+  .smp { background: var(--plate); border: 1px solid var(--hair); border-radius: 5px; margin: 6px;
+    overflow: hidden; }
+  .smp.flag { border-color: color-mix(in oklab, var(--warning) 40%, var(--hair)); }
+  .smp.sel-bulk { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .smp-head { display: flex; align-items: center; gap: 12px; padding: 11px 14px; cursor: pointer;
+    transition: background-color 120ms ease-out; }
+  .smp-head:hover { background: oklch(0.985 0.005 88); }
+  .smp-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--hair-strong);
+    flex-shrink: 0; cursor: pointer; display: grid; place-items: center; background: var(--plate);
+    opacity: 0; transition: opacity 120ms ease-out; }
+  .smp-head:hover .smp-check, .smp.sel-bulk .smp-check, body.bulk-mode .smp-check { opacity: 1; }
+  .smp.sel-bulk .smp-check { background: var(--accent); border-color: var(--accent); }
+  .smp.sel-bulk .smp-check::after { content: "✓"; color: var(--plate); font-size: 10px; font-weight: 800; }
+  .smp-chev { color: var(--ink-faint); font-size: 10px; transition: transform 140ms ease-out; width: 10px; }
+  .smp.open .smp-chev { transform: rotate(90deg); }
+  .smp-name { font-family: var(--font-serif); font-size: 16px; font-weight: 500; color: var(--ink);
+    border-bottom: 1.5px dotted transparent; cursor: text; }
+  .smp-head:hover .smp-name { border-bottom-color: var(--hair-strong); }
+  .smp-name-input { font-family: var(--font-serif); font-size: 16px; font-weight: 500; color: var(--ink);
+    border: none; border-bottom: 1.5px solid var(--accent); background: none; outline: none; padding: 0; }
+  .smp-meta { font-size: 11px; color: var(--ink-faint); font-family: var(--font-mono); }
+  .smp-flag-chip { font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+    color: var(--warning); background: color-mix(in oklab, var(--warning) 14%, transparent);
+    border-radius: 4px; padding: 2px 7px; }
+  .smp-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; opacity: 0;
+    transition: opacity 120ms ease-out; }
+  .smp-head:hover .smp-actions, .smp.flag .smp-actions, .smp.open .smp-actions { opacity: 1; }
+  .ico-btn { font-size: 11px; font-weight: 600; color: var(--ink-soft); background: none;
+    border: 1px solid var(--hair-strong); border-radius: 4px; padding: 4px 9px; cursor: pointer;
+    transition: all 120ms ease-out; }
+  .ico-btn:hover { color: var(--ink); background: var(--paper-sunk); }
+  .ico-btn.warn { color: var(--warning); border-color: color-mix(in oklab, var(--warning) 36%, var(--hair)); }
+  .ico-btn.warn:hover { background: color-mix(in oklab, var(--warning) 10%, var(--plate)); }
+
+  /* exposure leaves */
+  .smp-exps { display: none; border-top: 1px solid var(--hair); padding: 4px; }
+  .smp.open .smp-exps { display: block; }
+  .exp-leaf { display: grid; grid-template-columns: 44px 1fr 120px 92px 30px; align-items: center;
+    gap: 12px; padding: 6px 10px; border-radius: 4px; transition: background-color 110ms ease-out; }
+  .exp-leaf:hover { background: var(--paper-sunk); }
+  .exp-thumb { width: 40px; height: 40px; border-radius: 3px; border: 1px solid var(--frame-edge);
+    overflow: hidden; background: var(--frame-edge); }
+  .exp-thumb .det { width: 100%; height: 100%; display: block; }
+  .exp-file { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+  .exp-h { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft); }
+  .exp-t { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); }
+  .exp-move { font-size: 13px; color: var(--ink-faint); background: none; border: none; cursor: pointer;
+    opacity: 0; padding: 4px; border-radius: 4px; }
+  .exp-leaf:hover .exp-move { opacity: 1; }
+  .exp-move:hover { color: var(--ink); background: var(--plate); }
+
+  /* split divider */
+  .split-divider { display: flex; align-items: center; gap: 12px; margin: 4px 10px; padding: 7px 12px;
+    border-radius: 5px; background: color-mix(in oklab, var(--warning) 8%, var(--plate));
+    border: 1px dashed color-mix(in oklab, var(--warning) 40%, var(--hair)); }
+  .split-divider .sd-line { flex: 1; font-size: 11px; color: var(--ink-soft); font-family: var(--font-mono); }
+  .split-divider .sd-line b { color: var(--warning); }
+
+  /* merge prompt */
+  .merge-prompt { margin: 4px 10px 8px; padding: 11px 14px; border-radius: 5px;
+    background: color-mix(in oklab, var(--warning) 7%, var(--plate));
+    border: 1px solid color-mix(in oklab, var(--warning) 30%, var(--hair)); }
+  .mp-text { font-size: 12px; color: var(--ink-soft); }
+  .mp-text b { color: var(--ink); font-weight: 600; }
+  .mp-actions { display: flex; gap: 8px; margin-top: 9px; }
+
+  /* ── Configuration tab ─────────────────────────────────────────────── */
+  .cfg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 4px; }
+  .cfg-card { background: var(--plate); border: 1px solid var(--hair-strong); border-radius: 6px; padding: 0; overflow: hidden; }
+  .cfg-card.lift { box-shadow: var(--shadow-plate); }
+  .cfg-card-h { display: flex; align-items: center; justify-content: space-between;
+    padding: 15px 18px; border-bottom: 1px solid var(--hair); }
+  .cfg-card-h h3 { font-family: var(--font-serif); font-size: 16px; font-weight: 500; color: var(--ink); }
+  .cfg-card-body { padding: 6px 18px 14px; }
+  .cfg-edit { flex: 1; background: var(--paper-sunk); border: 1px solid var(--hair-strong);
+    border-radius: 5px; padding: 8px 11px; font-family: var(--font-sans); font-size: 13px;
+    color: var(--ink); outline: none; transition: border-color 120ms ease-out, box-shadow 120ms ease-out; }
+  .cfg-edit:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .cfg-area { resize: vertical; min-height: 54px; line-height: 1.5; }
+  .geo-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hair); }
+  .geo-row:last-child { border-bottom: none; }
+  .geo-k { font-size: 12px; color: var(--ink-soft); width: 130px; flex-shrink: 0; }
+  .geo-v { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--ink); }
+  .geo-v input { font-family: var(--font-mono); font-size: 13px; color: var(--ink); width: 110px;
+    border: none; border-bottom: 1.5px solid var(--accent); background: none; outline: none; padding: 0; }
+  .src-tag { margin-left: auto; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    font-weight: 700; padding: 2px 7px; border-radius: 3px; }
+  /* provenance is derived-vs-human, not phase: derived sources stay quiet
+     (the label text is the channel); a human override wears the accent. */
+  .src-tag.prp, .src-tag.setup { color: var(--ink-faint); background: var(--paper-sunk); }
+  .src-tag.human { color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); }
+  .geo-override { font-size: 10.5px; font-weight: 600; color: var(--ink-faint); background: none;
+    border: none; cursor: pointer; opacity: 0; }
+  .geo-row:hover .geo-override { opacity: 1; }
+  .geo-override:hover { color: var(--accent); }
+
+  /* acquisition: one chart, loads as bars, clustered + labelled by session */
+  .acq { padding: 22px 20px 16px; }
+  .acq-chart { display: flex; align-items: flex-end; gap: 22px; }
+  .acq-session { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+  .acq-bars { display: flex; align-items: flex-end; gap: 3px; height: 84px;
+    border-bottom: 1px solid var(--hair-strong); }
+  .acq-bar { flex: 1; min-width: 5px; border-radius: 2px 2px 0 0;
+    background: color-mix(in oklab, var(--accent) 26%, var(--paper-sunk));
+    transition: background-color 120ms ease-out; }
+  .acq-bar:hover { background: color-mix(in oklab, var(--accent) 50%, var(--paper-sunk)); }
+  .acq-s-label { font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-soft); text-align: center; white-space: nowrap; }
+  .acq-s-sub { font-family: var(--font-mono); font-size: 9px; color: var(--ink-faint);
+    text-align: center; margin-top: 1px; }
+
+  .sources-card { margin-top: 22px; }
+  .src-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--hair); }
+  .src-row:last-child { border-bottom: none; }
+  .src-k { font-size: 12px; color: var(--ink-soft); width: 150px; flex-shrink: 0; }
+  .src-v { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); }
+
+  /* ── Failed scan ───────────────────────────────────────────────────── */
+  .fail-shell { max-width: 640px; margin: 60px auto 0; padding: 0 32px 80px; }
+  .fail-plate { background: var(--plate); border: 1px solid color-mix(in oklab, var(--error) 26%, var(--hair-strong));
+    border-radius: 8px; box-shadow: var(--shadow-plate); padding: 30px 32px; }
+  .fail-mark { width: 40px; height: 40px; border-radius: 50%; background: color-mix(in oklab, var(--error) 14%, var(--plate));
+    color: var(--error); display: grid; place-items: center; font-size: 20px; font-weight: 800; margin-bottom: 18px; }
+  .fail-detail { margin: 18px 0 22px; background: var(--frame-edge); border-radius: 6px; padding: 15px 17px;
+    font-family: var(--font-mono); font-size: 11.5px; color: oklch(0.82 0.01 80); line-height: 1.9; }
+  .fail-detail .fd-k { color: oklch(0.6 0.01 75); }
+  .fail-detail .fd-warn { color: oklch(0.78 0.11 50); }
+  .fail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ── Undo toast ────────────────────────────────────────────────────── */
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+    display: flex; align-items: center; gap: 16px; background: var(--ink); color: var(--paper);
+    border-radius: 8px; padding: 11px 13px 11px 18px; box-shadow: 0 18px 40px -14px rgba(40,33,24,.5);
+    opacity: 0; pointer-events: none; z-index: 9000;
+    transition: opacity 150ms ease-out, transform 220ms cubic-bezier(.22,1,.36,1); }
+  .toast.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+  .toast .to-msg { font-size: 12.5px; font-weight: 500; }
+  .toast .to-msg b { font-family: var(--font-mono); font-weight: 600; }
+  .toast .to-undo { font-size: 12px; font-weight: 700; color: oklch(0.86 0.07 55); background: none;
+    border: none; cursor: pointer; padding: 5px 8px; border-radius: 5px; }
+  .toast .to-undo:hover { background: rgba(255,255,255,.1); color: var(--paper); }
+
+  /* ── Bulk action bar ───────────────────────────────────────────────── */
+  .bulkbar { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+    display: flex; align-items: center; gap: 6px; background: var(--ink); color: var(--paper);
+    border-radius: 10px; padding: 8px 9px 8px 18px; box-shadow: 0 18px 40px -14px rgba(40,33,24,.5);
+    opacity: 0; pointer-events: none; z-index: 8000;
+    transition: opacity 150ms ease-out, transform 220ms cubic-bezier(.22,1,.36,1); }
+  .bulkbar.show { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+  .bulkbar .bb-n { font-size: 12.5px; font-weight: 600; margin-right: 12px; }
+  .bulkbar .bb-n b { font-family: var(--font-mono); }
+  .bulkbar button { font-size: 12px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer;
+    padding: 7px 12px; background: none; color: oklch(0.84 0.02 80); }
+  .bulkbar button:hover { color: var(--paper); background: rgba(255,255,255,.1); }
+  .bulkbar .bb-primary { background: var(--accent); color: oklch(0.99 0.005 85); }
+  .bulkbar .bb-primary:hover { filter: brightness(1.08); background: var(--accent); }
+
+  /* ── Confirm popover (guarded edits) ───────────────────────────────── */
+  .confirm-scrim { position: fixed; inset: 0; background: rgba(40,33,24,.18); z-index: 9500;
+    display: none; align-items: center; justify-content: center; }
+  .confirm-scrim.show { display: flex; }
+  .confirm { background: var(--plate); border: 1px solid var(--hair-strong); border-radius: 10px;
+    box-shadow: 0 24px 60px -18px rgba(40,33,24,.4); padding: 24px 26px; max-width: 460px; width: 92%;
+    animation: pop 160ms cubic-bezier(.22,1,.36,1); }
+  .confirm h3 { font-family: var(--font-serif); font-size: 19px; font-weight: 500; color: var(--ink); margin-bottom: 8px; }
+  .confirm p { font-size: 12.5px; color: var(--ink-soft); line-height: 1.6; }
+  .confirm-preview { margin: 16px 0; padding: 13px 15px; background: var(--paper-sunk); border-radius: 6px;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); line-height: 1.8; }
+  .confirm-preview .cp-arrow { color: var(--accent); }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+
+  /* ── Prototype jump menu (a review aid, not part of the product) ───── */
+  .protomap { position: fixed; left: 18px; bottom: 18px; z-index: 9999; }
+  .pm-btn { display: flex; align-items: center; gap: 7px; background: var(--ink); color: var(--paper);
+    border: none; border-radius: 999px; padding: 8px 14px; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 8px 24px -10px rgba(40,33,24,.5); opacity: 0.55;
+    transition: opacity 120ms ease-out; }
+  .pm-btn:hover { opacity: 1; }
+  .pm-btn .pm-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .pm-menu { position: absolute; left: 0; bottom: calc(100% + 8px); background: var(--plate);
+    border: 1px solid var(--hair-strong); border-radius: 8px; box-shadow: var(--shadow-plate);
+    padding: 6px; min-width: 260px; display: none; }
+  .protomap.open .pm-menu { display: block; }
+  .pm-sec { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-faint); padding: 8px 10px 4px; }
+  .pm-item { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    padding: 7px 10px; border-radius: 5px; font-size: 12px; color: var(--ink); }
+  .pm-item:hover { background: var(--paper-sunk); }
+  .pm-item .pm-i-sub { color: var(--ink-faint); font-size: 10.5px; }
+
+  /* ── Reusable menu / dropdown component (used by switcher, path picker, Move…) ── */
+  .menu { position: absolute; background: var(--plate); border: 1px solid var(--hair-strong);
+    border-radius: 8px; box-shadow: var(--shadow-plate); padding: 6px; display: none; z-index: 60;
+    min-width: 220px; animation: pop 140ms cubic-bezier(.22,1,.36,1); }
+  .menu.open { display: block; }
+  .menu-head { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-faint); padding: 7px 10px 5px; }
+  .menu-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    background: none; border: none; cursor: pointer; padding: 8px 10px; border-radius: 6px;
+    font-size: 12.5px; color: var(--ink); }
+  .menu-item:hover, .menu-item.hi { background: var(--paper-sunk); }
+  .menu-item .mi-meta { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); }
+  .menu-sep { height: 1px; background: var(--hair); margin: 5px 6px; }
+  .menu-empty { padding: 12px 10px; font-size: 11.5px; color: var(--ink-faint); text-align: center; }
+  .menu-search { margin: 2px 4px 6px; }
+  .menu-search input { width: 100%; background: var(--paper-sunk); border: 1px solid var(--hair-strong);
+    border-radius: 5px; padding: 6px 9px; font-family: var(--font-sans); font-size: 12px; color: var(--ink); outline: none; }
+  .menu-search input:focus { border-color: var(--accent); }
+
+  /* ── Edit-in-place (mirrors Series Builder .editable) ───────────────── */
+  .editable { border-bottom: 1.5px dotted var(--hair-strong); padding-bottom: 1px; cursor: text; }
+  .editable:hover { border-bottom-color: var(--accent); }
+  .edit-input { font: inherit; color: var(--ink); border: none; border-bottom: 1.5px solid var(--accent);
+    background: none; outline: none; padding: 0 0 1px; }
+  .desc-editable { cursor: text; border-bottom: 1px dotted transparent; transition: border-color 120ms ease-out; }
+  .desc-editable:hover { border-bottom-color: var(--hair-strong); }
+  .desc-input { font: inherit; color: var(--ink-soft); width: 100%; max-width: 64ch; border: none;
+    border-bottom: 1.5px solid var(--accent); background: none; outline: none; padding: 0 0 2px; resize: none; }
+
+  /* ── Stat ledger component (quiet, hairline-divided, no box) ────────── */
+  .statledger { display: flex; margin: 22px 0 4px; }
+  .statledger .st { display: flex; flex-direction: column; gap: 4px; padding: 2px 28px;
+    border-left: 1px solid var(--hair); }
+  .statledger .st:first-child { padding-left: 0; border-left: none; }
+  .statledger .st-v { font-family: var(--font-mono); font-size: 20px; font-weight: 500; color: var(--ink); line-height: 1; }
+  .statledger .st-v.pending { color: var(--ink-faint); font-style: italic; font-family: var(--font-sans); font-size: 14px; }
+  .statledger .st-k { font-size: 9.5px; letter-spacing: 0.09em; text-transform: uppercase; font-weight: 700; color: var(--ink-faint); }
+
+  /* ── Override undo (mirrors series-scoping undo) ────────────────────── */
+  .cfg-undo { font-size: 11px; font-weight: 600; color: var(--accent); background: none; border: none;
+    cursor: pointer; padding: 0; }
+  .cfg-undo:hover { text-decoration: underline; }
+  .cfg-undo[hidden] { display: none; }
+  .geo-revert { font-size: 12px; color: var(--ink-faint); background: none; border: none; cursor: pointer;
+    padding: 0 4px; opacity: 0; }
+  .geo-row:hover .geo-revert { opacity: 1; }
+  .geo-revert:hover { color: var(--accent); }
+
+  /* note that a placeholder maps to an existing shipped component */
+  .reuse-note { display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--ink-faint);
+    background: var(--paper-sunk); border: 1px solid var(--hair); border-radius: 999px; padding: 4px 11px; }
+  .reuse-note .rn-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-faint); }
+
+  /* acquisition plot (SVG, mirrors the focus/series plot axis language) */
+  .acq-plot { width: 100%; height: 150px; display: block; }
+  .acq-plot .axis-line { stroke: var(--hair-strong); stroke-width: 1; }
+  .acq-plot .tick { stroke: var(--hair); stroke-width: 1; }
+  .acq-plot .tick-txt { fill: var(--ink-faint); font-size: 9px; font-family: var(--font-mono); }
+  .acq-plot .acq-rect { fill: color-mix(in oklab, var(--accent) 26%, var(--paper-sunk)); }
+  .acq-plot .acq-rect:hover { fill: color-mix(in oklab, var(--accent) 50%, var(--paper-sunk)); }
+  .acq-plot .sess-txt { fill: var(--ink-soft); font-size: 9px; font-weight: 700; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <span class="wordmark" onclick="route('home')">Himalaya <span class="tail">· SAXS</span></span>
+    <nav class="topnav">
+      <button class="topnav-link" id="nav-exp" onclick="route('home')">Experiments</button>
+      <button class="topnav-link" id="nav-series" onclick="route('series')">Series</button>
+    </nav>
+    <span class="spacer"></span>
+    <div class="switcher" id="switcher" style="display:none">
+      <button class="switcher-btn" onclick="toggleSwitcher(event)">
+        <span class="sw-k">Experiment</span>
+        <span class="sw-name" id="sw-name">SSRL · 1p7m</span>
+        <span class="sw-chev">▾</span>
+      </button>
+      <div class="switcher-menu" id="switcher-menu"><!-- filled by JS --></div>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <!-- ══ Experiments home ══════════════════════════════════════════ -->
+    <div class="view" id="view-home">
+      <div class="home-shell">
+        <div class="home-head">
+          <div>
+            <div class="kicker">Experiments</div>
+            <h1 class="display">Your beamtimes</h1>
+          </div>
+          <button class="btn btn-accent" onclick="route('create')">+ New experiment</button>
+        </div>
+        <div class="exp-list" id="home-list"><!-- filled by JS --></div>
+      </div>
+    </div>
+
+    <!-- ══ Empty / first-run ═════════════════════════════════════════ -->
+    <div class="view" id="view-empty">
+      <div class="empty">
+        <div class="em-glyph">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+        </div>
+        <h2>No experiments yet</h2>
+        <p>Himalaya organizes a beamtime by sample. Point it at a directory of exposures and it scans, groups them into samples, and derives the geometry, so you skip the manifest.</p>
+        <button class="btn btn-accent" onclick="route('create')">+ New experiment</button>
+      </div>
+    </div>
+
+    <!-- ══ New experiment (directory picker) ═════════════════════════ -->
+    <div class="view" id="view-create">
+      <div class="create-shell">
+        <button class="gr-back" onclick="route('home')">← Experiments</button>
+        <div class="kicker">New experiment</div>
+        <h1 class="display" style="margin-bottom:6px">Point at a beamtime</h1>
+        <p class="exp-desc" style="margin-bottom:26px">Choose the directory of exposures. Himalaya reads the PRP and setup files, groups the frames into samples, and derives the geometry.</p>
+
+        <div class="create-plate">
+          <label class="field-label" for="pf">Data directory</label>
+          <div class="pathfield" id="pathfield">
+            <div class="pf-input">
+              <span class="pf-icon">▸</span>
+              <input id="pf" type="text" autocomplete="off" spellcheck="false"
+                     placeholder="/Volumes/data/ssrl/2026_04/…" />
+            </div>
+            <div class="pf-menu" id="pf-menu"><!-- suggestions --></div>
+            <div class="pf-hint"><span class="k">Tab</span> to complete · <span class="k">↑↓</span> to choose · <span class="k">↵</span> to scan</div>
+          </div>
+
+          <div class="validate" id="validate"></div>
+
+          <div class="field-row" id="name-row" style="display:none">
+            <label class="field-label" for="exp-name-in">Experiment name</label>
+            <input class="text-input" id="exp-name-in" type="text" />
+          </div>
+
+          <div class="advanced" id="advanced">
+            <button class="adv-toggle" onclick="document.getElementById('advanced').classList.toggle('open')">
+              <span class="chev">▸</span> File patterns
+            </button>
+            <div class="adv-body">
+              <div class="adv-grid">
+                <span class="ag-k">Image</span><input value="{name}.tiff" spellcheck="false" />
+                <span class="ag-k">Metadata</span><input value="{name}.prp" spellcheck="false" />
+                <span class="ag-k">Integration</span><input value="{name}.dat" spellcheck="false" />
+              </div>
+            </div>
+          </div>
+
+          <div class="create-actions">
+            <button class="btn btn-ghost" onclick="route('home')">Cancel</button>
+            <button class="btn btn-accent" id="create-go" disabled onclick="startIngest()">Scan and create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ Experiment page (Corpus | Configuration) ══════════════════ -->
+    <div class="view" id="view-exp">
+      <div class="exp-header">
+        <div class="exp-top">
+          <div>
+            <div class="kicker">Experiment</div>
+            <div class="exp-name">
+              <h1 class="display"><span class="editable" id="eh-name" onclick="editHeaderName()" title="Click to rename">SSRL · 1p7m</span></h1>
+            </div>
+            <p class="exp-desc"><span class="desc-editable" id="eh-desc" onclick="editHeaderDesc()" title="Click to edit">April 2026 beamtime · lipid mesophase series with LL37 titration.</span></p>
+            <div class="exp-meta" id="eh-meta"><!-- date range · path --></div>
+          </div>
+          <div class="exp-rescan" id="eh-rescan"><!-- filled by JS --></div>
+        </div>
+        <div class="statledger" id="eh-ledger"><!-- filled by JS --></div>
+        <div class="tabs">
+          <button class="tab is-active" id="tab-corpus" onclick="setTab('corpus')">Corpus</button>
+          <button class="tab" id="tab-config" onclick="setTab('config')">Configuration</button>
+        </div>
+      </div>
+
+      <!-- Corpus tab -->
+      <div class="tab-body" id="tab-body-corpus">
+        <div id="corpus-banner"></div>
+        <div class="sheet">
+          <div class="sheet-head">
+            <div class="CCOLS">
+              <div>Sample</div><div>Exposures</div><div>Kept</div><div>Phase</div>
+            </div>
+          </div>
+          <div id="corpus-rows"></div>
+        </div>
+      </div>
+
+      <!-- Configuration tab -->
+      <div class="tab-body" id="tab-body-config" style="display:none">
+        <div id="config-content"></div>
+      </div>
+    </div>
+
+    <!-- ══ Grouping review (centerpiece) ═════════════════════════════ -->
+    <div class="view" id="view-grouping">
+      <div class="gr-shell">
+        <button class="gr-back" onclick="backToCorpus()">← Back to corpus</button>
+        <div class="gr-head">
+          <div>
+            <div class="kicker">Grouping review</div>
+            <h1 class="display">Check the grouping</h1>
+            <p class="gr-sub">Confirm every sample loaded, has all its exposures, and is split where it should be. Position and time did the grouping; you settle the few it flagged. Phase and scoring come later, in the corpus.</p>
+          </div>
+          <div class="gr-summary">
+            <div class="gs-v"><b id="gr-flag-n">6</b> flagged</div>
+            <div class="gs-k">of 170 samples</div>
+          </div>
+        </div>
+        <div class="gr-filter">
+          <button class="on" data-f="attn" onclick="setGrFilter('attn',event)">Needs review</button>
+          <button data-f="all" onclick="setGrFilter('all',event)">All loads</button>
+          <div class="gr-search" id="gr-search">
+            <span class="gs-ic">⌕</span>
+            <input id="gr-search-in" placeholder="Filter samples — name or glob, e.g. HA8* or JC C0?" oninput="setGrSearch(this.value)" />
+            <button class="gs-clear" onclick="clearGrSearch()" title="Clear">✕</button>
+          </div>
+        </div>
+        <div id="gr-loads"></div>
+      </div>
+    </div>
+
+    <!-- ══ Failed scan ═══════════════════════════════════════════════ -->
+    <div class="view" id="view-failed">
+      <div class="fail-shell">
+        <button class="gr-back" onclick="route('home')">← Experiments</button>
+        <div class="fail-plate">
+          <div class="fail-mark">!</div>
+          <h1 class="headline" style="font-size:22px">No exposures found in that directory</h1>
+          <p class="exp-desc" style="margin-top:8px">Himalaya looked for image and metadata files matching the patterns, and matched none. The directory may be wrong, or the patterns may not fit this beamline's filenames.</p>
+          <div class="fail-detail">
+            <div><span class="fd-k">path</span>&nbsp;&nbsp;/Volumes/data/ssrl/2026_04/raw</div>
+            <div><span class="fd-k">looked for</span>&nbsp;&nbsp;{name}.tiff + {name}.prp</div>
+            <div><span class="fd-warn">matched 0 of 0 files</span></div>
+          </div>
+          <div class="fail-actions">
+            <button class="btn btn-accent" onclick="route('create')">Choose another directory</button>
+            <button class="btn btn-outline" onclick="route('create')">Edit file patterns</button>
+            <button class="btn btn-ghost" onclick="alert('Rescan (prototype)')">Retry scan</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ Series (cross-cutting axis) ═══════════════════════════════ -->
+    <div class="view" id="view-series">
+      <div class="home-shell">
+        <div class="home-head">
+          <div>
+            <div class="kicker">Series</div>
+            <h1 class="display">Folio</h1>
+            <p class="exp-desc" style="margin-top:8px">Series are the cross-cutting axis: an ordered reading of samples that can span experiments.</p>
+            <div style="margin-top:12px"><span class="reuse-note"><span class="rn-dot"></span>Placeholder — ships as the existing Series folio component</span></div>
+          </div>
+          <button class="btn btn-accent">+ New series</button>
+        </div>
+        <div class="exp-list" id="series-list"><!-- filled by JS --></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- floating UI -->
+<div class="toast" id="toast">
+  <span class="to-msg" id="toast-msg"></span>
+  <button class="to-undo" id="toast-undo">Undo</button>
+</div>
+
+<div class="bulkbar" id="bulkbar">
+  <span class="bb-n"><b id="bb-n">0</b> <span id="bb-word">samples</span> selected</span>
+  <button class="bb-primary" onclick="bulkMerge()">Merge</button>
+  <button onclick="bulkRename()">Rename…</button>
+  <button onclick="clearBulk()">Clear</button>
+</div>
+
+<div class="confirm-scrim" id="confirm-scrim">
+  <div class="confirm" id="confirm-box"></div>
+</div>
+
+<!-- prototype jump menu (review aid) -->
+<div class="protomap" id="protomap">
+  <button class="pm-btn" onclick="document.getElementById('protomap').classList.toggle('open')">
+    <span class="pm-dot"></span> PROTOTYPE
+  </button>
+  <div class="pm-menu">
+    <div class="pm-sec">Jump to a state</div>
+    <button class="pm-item" onclick="jump('home')">Experiments home <span class="pm-i-sub">— the landing</span></button>
+    <button class="pm-item" onclick="jump('empty')">Empty / first run <span class="pm-i-sub">— no experiments</span></button>
+    <button class="pm-item" onclick="jump('create')">New experiment <span class="pm-i-sub">— directory picker</span></button>
+    <button class="pm-item" onclick="jump('ingest')">Live ingest <span class="pm-i-sub">— watch it unfold</span></button>
+    <button class="pm-item" onclick="jump('corpus')">Corpus + review banner</button>
+    <button class="pm-item" onclick="jump('grouping')">Grouping review <span class="pm-i-sub">— the centerpiece</span></button>
+    <button class="pm-item" onclick="jump('config')">Configuration</button>
+    <button class="pm-item" onclick="jump('failed')">Failed scan</button>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════
+ * Detector-image renderer (faithful to the shipped detectorSVG).
+ * ════════════════════════════════════════════════════════════════════ */
+let UID = 0;
+function detectorSVG(rings, b, flare) {
+  const u = 'd' + (UID++); const cx = 50, cy = 50;
+  let r = '';
+  rings.forEach(ring => {
+    const op = Math.min(0.92, ring.i * (0.45 + 0.6 * b));
+    r += `<circle cx="${cx}" cy="${cy}" r="${ring.r}" fill="none" stroke="oklch(0.9 0.045 80)" stroke-width="${1.0+ring.i*2.0}" opacity="${op*0.55}" filter="url(#${u}g)"/>`
+      +  `<circle cx="${cx}" cy="${cy}" r="${ring.r}" fill="none" stroke="oklch(0.97 0.022 86)" stroke-width="${0.5+ring.i*0.8}" opacity="${op}"/>`;
+  });
+  let fl = '';
+  if (flare != null) {
+    const a = flare * Math.PI/180, fx = cx+Math.cos(a)*24, fy = cy+Math.sin(a)*24;
+    fl = `<g filter="url(#${u}g)"><ellipse cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" rx="17" ry="6" transform="rotate(${flare} ${fx.toFixed(1)} ${fy.toFixed(1)})" fill="oklch(0.95 0.07 76)" opacity="0.88"/></g>`;
+  }
+  return `<svg class="det" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs><radialGradient id="${u}bg">
+      <stop offset="0%" stop-color="oklch(${(0.30+0.16*b).toFixed(3)} 0.03 62)"/>
+      <stop offset="52%" stop-color="oklch(0.205 0.013 58)"/>
+      <stop offset="100%" stop-color="oklch(0.135 0.009 55)"/>
+    </radialGradient>
+    <filter id="${u}g" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.5"/></filter></defs>
+    <rect width="100" height="100" fill="url(#${u}bg)"/>${r}${fl}
+    <rect x="48.7" y="0" width="2.6" height="${cy}" fill="oklch(0.115 0.007 55)"/>
+    <circle cx="${cx}" cy="${cy}" r="5.5" fill="oklch(0.1 0.006 55)"/>
+  </svg>`;
+}
+const RINGS = {
+  pn3m: [{r:12,i:1.0},{r:16.5,i:0.7},{r:21,i:0.5},{r:26,i:0.34},{r:32,i:0.22}],
+  lam:  [{r:14,i:1.0},{r:28,i:0.6},{r:42,i:0.3}],
+  hex:  [{r:13,i:1.0},{r:22.5,i:0.55},{r:26,i:0.4}],
+  im3m: [{r:12,i:1.0},{r:17,i:0.62},{r:24,i:0.42},{r:29,i:0.26}],
+  buf:  [{r:19,i:0.18}],
+};
+
+/* ════════════════════════════════════════════════════════════════════
+ * Experiments (the switcher + home list).
+ * ════════════════════════════════════════════════════════════════════ */
+const EXPERIMENTS = [
+  { id:'e1', name:'SSRL · 1p7m', short:'SSRL · 1p7m', status:'ready',
+    dir:'/Volumes/data/ssrl/2026_04/1p7m', desc:'April 2026 beamtime · lipid mesophase series with LL37 titration.',
+    dates:'Apr 12–16, 2026', loads:13, samples:170, exposures:682, span:'5 days', sessions:4, needReview:4,
+    indexed:120, dist:['pn3m','pn3m','pn3m','pn3m','im3m','im3m','im3m','lam','lam','hex'] },
+  { id:'e2', name:'JC well plate', short:'JC well plate', status:'ingesting',
+    dir:'/Volumes/data/ssrl/2026_04/jc_plate', desc:'96-well peptide screen.',
+    dates:'Apr 17, 2026', loads:2, samples:38, exposures:148, span:'—', sessions:1, needReview:0 },
+  { id:'e3', name:'AgBe calibration', short:'AgBe calibration', status:'failed',
+    dir:'/Volumes/data/ssrl/2026_04/raw', desc:'Silver behenate standard.',
+    dates:'Apr 18, 2026', loads:0, samples:0, exposures:0, span:'—', sessions:0, needReview:0 },
+];
+let activeExp = EXPERIMENTS[0];
+
+function statusWord(s){ return s==='ready'?'Up to date':s==='ingesting'?'Processing':'Scan failed'; }
+
+function renderSwitcher() {
+  const m = document.getElementById('switcher-menu');
+  m.innerHTML = '<div class="sm-head">Experiments</div>' +
+    EXPERIMENTS.map(e => `
+      <div class="sm-item ${e.id===activeExp.id?'is-active':''}" onclick="pickExp('${e.id}')">
+        <span class="sm-dot ${e.status}"></span>
+        <span style="min-width:0">
+          <div class="sm-it-name">${e.name}</div>
+          <div class="sm-it-meta">${e.status==='failed'?'scan failed':e.samples+' samples · '+e.exposures+' exp'}</div>
+        </span>
+        ${e.needReview?`<span class="sm-it-r">${e.needReview} to review</span>`:''}
+      </div>`).join('') +
+    `<button class="sm-new" onclick="route('create')">+ New experiment</button>`;
+  document.getElementById('sw-name').textContent = activeExp.short;
+}
+function toggleSwitcher(e){ e.stopPropagation(); document.getElementById('switcher').classList.toggle('open'); }
+function pickExp(id){
+  activeExp = EXPERIMENTS.find(e=>e.id===id);
+  document.getElementById('switcher').classList.remove('open');
+  if (activeExp.status==='failed') route('failed');
+  else if (activeExp.status==='ingesting') { route('exp'); renderExp(true); }
+  else { route('exp'); renderExp(false); }
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#switcher')) document.getElementById('switcher').classList.remove('open');
+  if (!e.target.closest('#protomap')) document.getElementById('protomap').classList.remove('open');
+});
+
+const SERIES = [
+  { name:'LL37 titration', members:6, span:'SSRL · 1p7m', phases:['pn3m','pn3m','im3m','lam','lam','hex'] },
+  { name:'Lipid 1-1 vs 1-2', members:4, span:'2 experiments', phases:['pn3m','pn3m','im3m','im3m'] },
+  { name:'Temperature ramp', members:8, span:'SSRL · 1p7m', phases:['lam','lam','lam','hex','hex','im3m','im3m','pn3m'] },
+];
+function renderSeries() {
+  document.getElementById('series-list').innerHTML = SERIES.map(s => {
+    const strip = s.phases.map(p=>`<span style="flex:1;height:100%;background:var(--${p})"></span>`).join('');
+    return `<button class="exp-card" style="grid-template-columns:1fr 180px auto">
+      <span>
+        <div class="ec-name">${s.name}</div>
+        <div class="ec-dir" style="font-family:var(--font-sans)">${s.members} samples · ${s.span}</div>
+      </span>
+      <span style="display:flex;height:26px;border-radius:3px;overflow:hidden;border:1px solid var(--hair)">${strip}</span>
+      <span class="ec-stats"><span class="ec-stat"><div class="v">${s.members}</div><div class="k">samples</div></span></span>
+    </button>`;
+  }).join('');
+}
+function renderHome() {
+  document.getElementById('home-list').innerHTML = EXPERIMENTS.map(e => {
+    return `<button class="exp-card" onclick="pickExp('${e.id}')">
+      <span class="ec-status ${e.status}"></span>
+      <span>
+        <div class="ec-name">${e.name}</div>
+        <div class="ec-dir">${e.dates} · ${e.dir}</div>
+      </span>
+      <span class="ec-stats">
+        ${e.status==='failed'
+          ? `<span class="ec-stat"><div class="v warn">scan failed</div><div class="k">retry</div></span>`
+          : `
+          <span class="ec-stat"><div class="v">${e.samples}</div><div class="k">samples</div></span>
+          <span class="ec-stat"><div class="v">${e.exposures}</div><div class="k">exposures</div></span>
+          ${e.needReview?`<span class="ec-stat"><div class="v warn">${e.needReview}</div><div class="k">to review</div></span>`
+            : e.status==='ingesting'?`<span class="ec-stat"><div class="v warn">scanning…</div><div class="k">${e.exposures} so far</div></span>`
+            : `<span class="ec-stat"><div class="v">✓</div><div class="k">clean</div></span>`}`}
+      </span>
+    </button>`;
+  }).join('');
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Experiment page — Corpus + Configuration.
+ * ════════════════════════════════════════════════════════════════════ */
+const CORPUS = [
+  { name:'HEPES buffer', id:'S01P02', ringset:'buf', kept:3, total:3, phase:null, b:0.7 },
+  { name:'HA85 (S01P15)', id:'S01P15', ringset:'pn3m', kept:5, total:6, phase:'Pn3m', b:0.9 },
+  { name:'HA86 + LL37 1:0.25', id:'S01P16', ringset:'pn3m', kept:4, total:5, phase:'Pn3m', b:0.85 },
+  { name:'HA87 + LL37 1:0.5', id:'S01P17', ringset:'im3m', kept:5, total:6, phase:'Im3m', b:0.82 },
+  { name:'HA88 + LL37 1:1', id:'S01P18', ringset:'lam', kept:5, total:6, phase:'Lamellar', b:0.88 },
+  { name:'HA89 + LL37 1:2', id:'S01P19', ringset:'lam', kept:4, total:4, phase:null, b:0.8 },
+  { name:'HA90 + LL37 1:4', id:'S01P20', ringset:'hex', kept:5, total:5, phase:'Hexagonal', b:0.78 },
+  { name:'JC C04 (S02P05)', id:'S02P05', ringset:'im3m', kept:4, total:4, phase:'Im3m', b:0.86 },
+];
+function pchip(p){
+  if(!p) return `<span class="unset"><span class="dotline"></span>Not indexed</span>`;
+  const cls = p==='Pn3m'?'pn3m':p==='Lamellar'?'lam':p==='Hexagonal'?'hex':'im3m';
+  return `<span class="pchip ${cls}">${p}</span>`;
+}
+function corpusRow(s){
+  const thumbs = Array.from({length:Math.min(s.total,6)}, (_,i)=>
+    `<button class="thumb"><span class="fno">${String(i+1).padStart(2,'0')}</span>${detectorSVG(RINGS[s.ringset], s.b - i*0.05, null)}</button>`).join('');
+  return `<div class="srow"><div class="CCOLS">
+    <div class="spec"><span class="spec-text"><span class="spec-name">${s.name}</span><span class="spec-id">${s.id}</span></span></div>
+    <div class="strip">${thumbs}</div>
+    <div class="kept"><span class="k-n">${s.kept}</span><span class="k-d">&thinsp;/&thinsp;${s.total}</span></div>
+    <div class="status">${pchip(s.phase)}</div>
+  </div></div>`;
+}
+
+function renderExp(ingesting) {
+  if (!ingesting && ingestTimer) { clearInterval(ingestTimer); ingestTimer = null; }
+  document.getElementById('eh-name').textContent = activeExp.name;
+  document.getElementById('eh-desc').textContent = activeExp.desc;
+  document.getElementById('eh-meta').innerHTML =
+    `<span>${activeExp.dates}</span><span class="sep">·</span><span>${activeExp.dir}</span>`;
+  document.getElementById('switcher').style.display = 'block';
+
+  /* rescan / ingest status */
+  const rs = document.getElementById('eh-rescan');
+  if (ingesting) {
+    rs.innerHTML = `<span class="rescan-state checking"><span class="rs-dot"></span><span id="ing-label">Processing · 0 / ~680</span></span>`;
+  } else {
+    rs.innerHTML = `
+      <span class="rescan-state" id="rescan-label"><span class="rs-dot"></span>Up to date · scanned 2h ago</span>
+      <button class="btn btn-outline btn-sm" onclick="doRescan()">Rescan</button>`;
+  }
+
+  /* ledger */
+  const L = activeExp;
+  const cell = (v,k,pending)=>`<div class="st"><span class="st-v ${pending?'pending':''}">${v}</span><span class="st-k">${k}</span></div>`;
+  document.getElementById('eh-ledger').innerHTML = ingesting
+    ? cell(L.loads,'loads')+cell(L.samples,'samples')+cell(L.exposures,'exposures')+cell('pending','sessions',true)
+    : cell(L.loads,'loads')+cell(L.samples,'samples')+cell(L.exposures,'exposures')+cell(L.sessions,'sessions');
+
+  /* corpus banner */
+  const bn = document.getElementById('corpus-banner');
+  if (ingesting) { bn.innerHTML = ''; }
+  else if (activeExp.needReview > 0) {
+    bn.innerHTML = `<div class="banner">
+      <span class="bn-mark">!</span>
+      <span class="bn-text"><div class="bn-t">${activeExp.needReview} samples need grouping review</div>
+        <div class="bn-s">Position or filename disagreed on these. Confirm the split before you start indexing.</div></span>
+      <button class="btn btn-out-accent" onclick="route('grouping')">Review grouping →</button>
+    </div>`;
+  } else {
+    bn.innerHTML = `<div class="banner is-clean">
+      <span class="bn-mark">✓</span>
+      <span class="bn-text"><div class="bn-t">Grouping looks clean</div>
+        <div class="bn-s">All ${activeExp.samples} samples grouped without conflict. <a href="#" onclick="route('grouping');return false" style="color:var(--accent);font-weight:600">Review anyway →</a></div></span>
+    </div>`;
+  }
+
+  /* corpus rows */
+  document.getElementById('corpus-rows').innerHTML = ingesting ? '' : CORPUS.map(corpusRow).join('');
+  renderConfig();
+}
+
+function setTab(t) {
+  document.getElementById('tab-corpus').classList.toggle('is-active', t==='corpus');
+  document.getElementById('tab-config').classList.toggle('is-active', t==='config');
+  document.getElementById('tab-body-corpus').style.display = t==='corpus'?'block':'none';
+  document.getElementById('tab-body-config').style.display = t==='config'?'block':'none';
+}
+
+/* ── Configuration ── */
+const GEOMETRY = [
+  { k:'Beam energy', v:'9.00 keV', src:'prp' },
+  { k:'Flight path', v:'1.70 m', src:'prp' },
+  { k:'Detector', v:'Pilatus 1M', src:'prp' },
+  { k:'Pixel pitch', v:'172 µm', src:'prp' },
+  { k:'Beam center', v:'(421.4, 836.9)', src:'setup' },
+  { k:'Detector distance', v:'1809.5 mm', src:'setup' },
+  { k:'q-units', v:'Å⁻¹', src:'prp' },
+];
+const GEO_DERIVED = GEOMETRY.map(g=>({ v:g.v, src:g.src }));   /* frozen baseline for revert */
+let geoHistory = [];
+const srcLabel = s => s==='prp' ? 'PRP' : s==='setup' ? 'setup files' : 'edited';
+
+/* one SVG acquisition plot in the focus/series axis language (thin axis, mono ticks, no frame box) */
+function acqPlotSVG(sessions){
+  const W=560,H=150, mL=10,mR=10,mT=14,mB=32, pw=W-mL-mR, ph=H-mT-mB, axisY=mT+ph;
+  const maxF=Math.max(...sessions.flatMap(s=>s.loads));
+  const totalLoads=sessions.reduce((a,s)=>a+s.loads.length,0), gap=16;
+  const usable=pw-gap*(sessions.length-1);
+  let x=mL, bars='', labels='';
+  sessions.forEach(s=>{
+    const sw=usable*(s.loads.length/totalLoads), bw=sw/s.loads.length;
+    s.loads.forEach((f,i)=>{ const h=(f/maxF)*ph, bx=x+i*bw;
+      bars+=`<rect class="acq-rect" x="${(bx+1).toFixed(1)}" y="${(axisY-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"><title>${f} frames</title></rect>`; });
+    labels+=`<text class="sess-txt" x="${(x+sw/2).toFixed(1)}" y="${axisY+15}" text-anchor="middle">${s.label.toUpperCase()}</text>`
+      +`<text class="tick-txt" x="${(x+sw/2).toFixed(1)}" y="${axisY+26}" text-anchor="middle">${s.loads.length} load${s.loads.length>1?'s':''}</text>`;
+    x+=sw+gap;
+  });
+  return `<svg class="acq-plot" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+    <line class="axis-line" x1="${mL}" y1="${axisY}" x2="${W-mR}" y2="${axisY}"/>${bars}${labels}</svg>`;
+}
+
+function renderConfig() {
+  const geoRows = GEOMETRY.map((g,i)=>{
+    const human = g.src==='human';
+    return `<div class="geo-row">
+      <span class="geo-k">${g.k}</span>
+      <span class="geo-v" id="geo-v-${i}">${g.v}</span>
+      <span class="src-tag ${g.src}">${srcLabel(g.src)}</span>
+      ${human ? `<button class="geo-revert" style="opacity:1" title="Revert to ${srcLabel(GEO_DERIVED[i].src)} value (${GEO_DERIVED[i].v})" onclick="revertGeo(${i})">↺</button>` : ``}
+      <button class="geo-override" onclick="overrideGeo(${i})">${human?'Edit':'Override'}</button>
+    </div>`;
+  }).join('');
+
+  const sessions = [
+    { label:'Apr 12', loads:[42,30,55,40,22] }, { label:'Apr 13', loads:[48,52,38] },
+    { label:'Apr 14', loads:[60,44,33,50] }, { label:'Apr 16', loads:[28] },
+  ];
+
+  document.getElementById('config-content').innerHTML = `
+    <div class="cfg-grid">
+      <div class="cfg-card">
+        <div class="cfg-card-h"><h3>Geometry</h3>
+          <span style="display:flex;align-items:center;gap:14px">
+            <button class="cfg-undo" id="geo-undo" ${geoHistory.length?'':'hidden'} onclick="undoGeo()">↺ Undo last change</button>
+            <span style="font-size:11px;color:var(--ink-faint)">auto-derived</span>
+          </span>
+        </div>
+        <div class="cfg-card-body">${geoRows}</div>
+      </div>
+      <div class="cfg-card lift">
+        <div class="cfg-card-h"><h3>Acquisition</h3><span style="font-size:11px;color:var(--ink-faint)">${activeExp.loads} loads · ${activeExp.sessions} sessions</span></div>
+        <div class="acq">${acqPlotSVG(sessions)}</div>
+      </div>
+    </div>
+    <div class="cfg-card sources-card">
+      <div class="cfg-card-h"><h3>Sources</h3><span style="font-size:11px;color:var(--ink-faint)">edits apply on the next rescan</span></div>
+      <div class="cfg-card-body">
+        <div class="src-row"><span class="src-k">Data directory</span><span class="src-v editable" onclick="editSource(this)">${activeExp.dir}</span></div>
+        <div class="src-row"><span class="src-k">Analysis directory</span><span class="src-v editable" onclick="editSource(this)">${activeExp.dir}/analysis/automatic_analysis</span></div>
+        <div class="src-row"><span class="src-k">Image pattern</span><span class="src-v editable" onclick="editSource(this)">{name}.tiff</span></div>
+        <div class="src-row"><span class="src-k">Metadata pattern</span><span class="src-v editable" onclick="editSource(this)">{name}.prp</span></div>
+        <div class="src-row"><span class="src-k">Integration pattern</span><span class="src-v editable" onclick="editSource(this)">{name}.dat</span></div>
+      </div>
+      <div style="padding:13px 18px;border-top:1px solid var(--hair);display:flex;align-items:center;justify-content:space-between;gap:18px">
+        <span style="font-size:11.5px;color:var(--ink-soft);max-width:64ch"><b style="font-weight:600">Rescan</b> checks the directory for new files and ingests only those. It never re-reads existing exposures or overwrites your edits and curation.</span>
+        <button class="btn btn-outline btn-sm" onclick="doRescan()">Rescan now</button>
+      </div>
+    </div>`;
+}
+/* edit-in-place name + description in the header (mirrors Series Builder .editable) */
+function editHeaderName(){
+  const h1 = document.querySelector('.exp-name h1'); const cur = activeExp.name;
+  h1.innerHTML = `<input class="edit-input" id="eh-name-in" value="${cur.replace(/"/g,'&quot;')}" style="width:${Math.max(200,cur.length*16)}px">`;
+  const inp = document.getElementById('eh-name-in'); inp.focus(); inp.select();
+  const done = save => { if(save && inp.value.trim()){ activeExp.name=inp.value.trim(); activeExp.short=activeExp.name; }
+    h1.innerHTML = `<span class="editable" id="eh-name" onclick="editHeaderName()" title="Click to rename">${activeExp.name}</span>`;
+    document.getElementById('sw-name').textContent = activeExp.short; renderSwitcher(); };
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter')done(true); if(e.key==='Escape')done(false); });
+  inp.addEventListener('blur', ()=>done(true));
+}
+function editHeaderDesc(){
+  const p = document.querySelector('.exp-desc'); const cur = activeExp.desc;
+  p.innerHTML = `<textarea class="desc-input" id="eh-desc-in" rows="2">${cur.replace(/</g,'&lt;')}</textarea>`;
+  const inp = document.getElementById('eh-desc-in'); inp.focus(); inp.select();
+  const done = save => { if(save && inp.value.trim()) activeExp.desc=inp.value.trim();
+    p.innerHTML = `<span class="desc-editable" id="eh-desc" onclick="editHeaderDesc()" title="Click to edit">${activeExp.desc}</span>`; };
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); done(true);} if(e.key==='Escape')done(false); });
+  inp.addEventListener('blur', ()=>done(true));
+}
+function overrideGeo(i){
+  const el = document.getElementById('geo-v-'+i);
+  el.innerHTML = `<input class="edit-input" style="font-family:var(--font-mono);width:130px" id="geo-in-${i}" value="${GEOMETRY[i].v.replace(/"/g,'&quot;')}">`;
+  const inp = document.getElementById('geo-in-'+i); inp.focus(); inp.select();
+  const commit = save=>{
+    if(save && inp.value.trim() && inp.value.trim()!==GEOMETRY[i].v){
+      geoHistory.push({i, prevV:GEOMETRY[i].v, prevSrc:GEOMETRY[i].src});
+      GEOMETRY[i].v = inp.value.trim(); GEOMETRY[i].src='human';
+    }
+    renderConfig();
+  };
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter') commit(true); if(e.key==='Escape') commit(false); });
+  inp.addEventListener('blur', ()=>commit(true));
+}
+function revertGeo(i){
+  geoHistory.push({i, prevV:GEOMETRY[i].v, prevSrc:GEOMETRY[i].src});
+  GEOMETRY[i].v = GEO_DERIVED[i].v; GEOMETRY[i].src = GEO_DERIVED[i].src;
+  renderConfig();
+  showToast(`Reverted <b>${GEOMETRY[i].k}</b> to the ${srcLabel(GEO_DERIVED[i].src)} value`, null);
+}
+function undoGeo(){
+  const e = geoHistory.pop(); if(!e) return;
+  GEOMETRY[e.i].v = e.prevV; GEOMETRY[e.i].src = e.prevSrc; renderConfig();
+}
+/* generic edit-in-place for a source row (data dir, patterns) */
+function editSource(el){
+  const cur = el.textContent;
+  el.innerHTML = `<input class="edit-input" style="font-family:var(--font-mono);font-size:12.5px;width:${Math.max(220, cur.length*7.4)}px" value="${cur.replace(/"/g,'&quot;')}">`;
+  const inp = el.querySelector('input'); inp.focus(); inp.select();
+  const done = save => { el.textContent = (save && inp.value.trim()) ? inp.value.trim() : cur; };
+  inp.addEventListener('click', e=>e.stopPropagation());
+  inp.addEventListener('keydown', e=>{ e.stopPropagation(); if(e.key==='Enter')done(true); if(e.key==='Escape')done(false); });
+  inp.addEventListener('blur', ()=>done(true));
+}
+function doRescan(){
+  const lab = document.getElementById('rescan-label');
+  if(lab){ lab.className='rescan-state checking'; lab.innerHTML='<span class="rs-dot"></span>Checking for new files…'; }
+  setTimeout(()=>{
+    if(!activeExp._rescanned){
+      activeExp._rescanned = true;
+      activeExp.exposures += 12; activeExp.samples += 3;   /* additive: only the new files */
+      renderExp(false);
+      showToast('Rescan added <b>3</b> samples and <b>12</b> exposures from new files', null);
+    } else {
+      if(lab){ lab.className='rescan-state'; lab.innerHTML='<span class="rs-dot"></span>Up to date · no new files'; }
+      showToast('No new files since the last scan.', null);
+    }
+  }, 1300);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Live ingest (the unfold).
+ * ════════════════════════════════════════════════════════════════════ */
+let ingestTimer = null;
+function startIngest(){
+  /* create the experiment, jump to its page in ingesting state */
+  const name = (document.getElementById('exp-name-in').value || 'New experiment');
+  let exp = EXPERIMENTS.find(e=>e.id==='e1');
+  activeExp = exp; activeExp.name = activeExp.short = name;
+  route('exp'); setTab('corpus');
+  renderExp(true);
+  runIngestAnimation();
+}
+function jumpIngest(){
+  activeExp = EXPERIMENTS[0]; route('exp'); setTab('corpus'); renderExp(true); runIngestAnimation();
+}
+function runIngestAnimation(){
+  if (ingestTimer) clearInterval(ingestTimer);
+  const total = 682; let processed = 0; let shown = 0;
+  const rows = document.getElementById('corpus-rows');
+  rows.innerHTML = '';
+  /* skeleton placeholders */
+  const loadsToShow = CORPUS.length;
+  ingestTimer = setInterval(()=>{
+    processed = Math.min(total, processed + 38 + Math.round(Math.random()*30));
+    const lbl = document.getElementById('ing-label');
+    if (lbl) lbl.textContent = `Processing · ${processed} / ~${total}`;
+    /* reveal a sample row roughly in step with progress */
+    const target = Math.round((processed/total) * loadsToShow);
+    while (shown < target && shown < loadsToShow) {
+      rows.insertAdjacentHTML('beforeend', corpusRow(CORPUS[shown]));
+      shown++;
+    }
+    /* update ledger live */
+    const cell = (v,k,p)=>`<div class="st"><span class="st-v ${p?'pending':''}">${v}</span><span class="st-k">${k}</span></div>`;
+    document.getElementById('eh-ledger').innerHTML =
+      cell(Math.min(13,Math.ceil(processed/53)),'loads')+cell(shown+Math.round(processed/4.2),'samples')+
+      cell(processed,'exposures')+cell('pending','sessions',true);
+
+    if (processed >= total) {
+      clearInterval(ingestTimer); ingestTimer = null;
+      activeExp.status='ready'; activeExp.needReview=flaggedCount();
+      activeExp.loads=13; activeExp.samples=170; activeExp.exposures=682; activeExp.span='5 days'; activeExp.sessions=4;
+      setTimeout(()=>{ renderExp(false); renderSwitcher(); showToast('Ingest complete · <b>170</b> samples across <b>13</b> loads', null); }, 500);
+    }
+  }, 360);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Grouping review (centerpiece): Load ▸ Sample ▸ Exposures.
+ * ════════════════════════════════════════════════════════════════════ */
+function mkExps(prefix, hBase, n, startTime, ringset, b, jumpAt, hJump){
+  return Array.from({length:n}, (_,i)=>({
+    file: `${prefix}_${String(i+1).padStart(3,'0')}.tif`,
+    h: (jumpAt!=null && i>=jumpAt ? hJump : hBase) + (Math.random()*0.4-0.2),
+    t: startTime + i*14, ringset, b: b - i*0.04,
+  }));
+}
+function fmtTime(sec){ const m=Math.floor(sec/60), s=sec%60; return `10:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
+
+let GROUPING = null;
+function buildGrouping(){
+  GROUPING = {
+    loads: [
+      { id:'L1', title:'Load 1', op:'operator HA', meta:'24 samples · 96 exposures · 10:02–10:38', status:'clean', open:false,
+        samples: [
+          { id:'s1', name:'HA62 (S01P01)', slot:'P01', flag:null, exps: mkExps('HA_0241', 8.4, 4, 120, 'pn3m', 0.9) },
+          { id:'s2', name:'HA63 (S01P02)', slot:'P02', flag:null, exps: mkExps('HA_0245', 12.4, 4, 180, 'pn3m', 0.88) },
+        ] },
+      { id:'L2', title:'Load 2', op:'operator HA', meta:'24 samples · 100 exposures · 13:10–13:51', status:'attn', open:true,
+        samples: [
+          { id:'s3', name:'HA85 (S02P15)', slot:'P15', flag:'split', splitAt:4, hJump:36.2,
+            exps: mkExps('HA_0612', 18.6, 8, 400, 'pn3m', 0.92, 4, 36.2) },
+          { id:'s4', name:'HA86 (S02P16)', slot:'P16', flag:null, exps: mkExps('HA_0620', 22.5, 4, 520, 'im3m', 0.85) },
+          { id:'s3b', name:'HA70 (S02P08)', slot:'P08', flag:'merge', mergeWith:'HA70 (S01P08) in Load 1',
+            exps: mkExps('HA_0590', 14.2, 4, 600, 'pn3m', 0.86) },
+        ] },
+      { id:'L3', title:'Load 3', op:'operator JC', meta:'18 samples · 72 exposures · 15:40–16:12', status:'attn', open:true,
+        samples: [
+          { id:'s5', name:'JC C04 (S03P05)', slot:'P05', flag:'merge', mergeWith:'JC C04 (S01P05) in Load 1',
+            exps: mkExps('JC_C04', 71.0, 4, 200, 'im3m', 0.84) },
+          { id:'s6', name:'JC C05 (S03P06)', slot:'P06', flag:null, exps: mkExps('JC_C05', 87.0, 4, 260, 'lam', 0.8) },
+          { id:'s6b', name:'JC C09 (S03P09)', slot:'P09', flag:'split', splitAt:3, hJump:39.5,
+            exps: mkExps('JC_C09', 107.0, 6, 320, 'lam', 0.82, 3, 39.5) },
+        ] },
+    ],
+  };
+}
+function flaggedCount(){ if(!GROUPING) buildGrouping(); return GROUPING.loads.reduce((a,l)=>a+l.samples.filter(s=>s.flag).length,0); }
+let grFilter = 'attn', grSearch = '';
+function setGrFilter(f, ev){
+  grFilter = f;
+  document.querySelectorAll('.gr-filter > button').forEach(b=>b.classList.toggle('on', b.dataset.f===f));
+  renderGrouping();
+}
+function setGrSearch(v){ grSearch = v; document.getElementById('gr-search').classList.toggle('has-q', !!v.trim()); renderGrouping(); }
+function clearGrSearch(){ grSearch=''; const i=document.getElementById('gr-search-in'); if(i){i.value=''; i.focus();} document.getElementById('gr-search').classList.remove('has-q'); renderGrouping(); }
+function matchSample(s, q){
+  q = q.trim().toLowerCase(); if(!q) return true;
+  const fields = [s.name.toLowerCase(), ...s.exps.map(e=>e.file.toLowerCase())];
+  if(/[*?]/.test(q)){
+    const re = new RegExp('^'+q.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.'));
+    return fields.some(f=>re.test(f));
+  }
+  return fields.some(f=>f.includes(q));
+}
+function leafHTML(load, s, e, i){
+  return `<div class="exp-leaf">
+    <span class="exp-thumb">${detectorSVG(RINGS[e.ringset], e.b, null)}</span>
+    <span class="exp-file">${e.file}</span>
+    <span class="exp-h">H ${e.h.toFixed(1)} mm</span>
+    <span class="exp-t">${fmtTime(e.t)}</span>
+    <button class="exp-move" title="Move to another sample" data-load="${load.id}" data-sid="${s.id}" data-ei="${i}" onclick="moveExp(event)">⋯</button>
+  </div>`;
+}
+function sampleHTML(load, s){
+  let exps = '';
+  s.exps.forEach((e,i)=>{
+    if (s.flag==='split' && i===s.splitAt) {
+      exps += `<div class="split-divider">
+        <span class="sd-line">position jumps <b>${(s.exps[i-1].h).toFixed(1)} → ${e.h.toFixed(1)} mm</b> here — likely two samples</span>
+        <button class="ico-btn warn" onclick="confirmSplit('${load.id}','${s.id}')">Split here</button>
+      </div>`;
+    }
+    exps += leafHTML(load, s, e, i);
+  });
+  let merge = '';
+  if (s.flag==='merge') {
+    merge = `<div class="merge-prompt">
+      <div class="mp-text">Filename matches <b>${s.mergeWith}</b>. This looks like a reshoot of the same sample in a later load.</div>
+      <div class="mp-actions">
+        <button class="ico-btn warn" onclick="confirmMerge('${load.id}','${s.id}')">Merge into that sample</button>
+        <button class="ico-btn" onclick="dismissFlag('${load.id}','${s.id}')">Keep separate</button>
+      </div>
+    </div>`;
+  }
+  const flagChip = s.flag==='split' ? `<span class="smp-flag-chip">check split</span>`
+    : s.flag==='merge' ? `<span class="smp-flag-chip">possible reshoot</span>` : '';
+  const isOpen = s.flag ? true : s.open;
+  return `<div class="smp ${s.flag?'flag':''} ${isOpen?'open':''} ${bulkSel.has(s.id)?'sel-bulk':''}" id="smp-${s.id}">
+    <div class="smp-head">
+      <span class="smp-check" onclick="toggleBulk(event,'${s.id}')"></span>
+      <span class="smp-chev" onclick="toggleSample('${s.id}')">▸</span>
+      <span style="flex:1;min-width:0" onclick="toggleSample('${s.id}')">
+        <span class="smp-name" id="name-${s.id}" onclick="renameSample(event,'${s.id}')">${s.name}</span>
+        &nbsp;<span class="smp-meta">${s.exps.length} exposures · ${fmtTime(s.exps[0].t)}</span>
+        &nbsp;${flagChip}
+      </span>
+      <span class="smp-actions">
+        <button class="ico-btn" onclick="renameSample(event,'${s.id}')">Rename</button>
+        <button class="ico-btn" onclick="confirmSplit('${load.id}','${s.id}')">Split…</button>
+      </span>
+    </div>
+    <div class="smp-exps">${merge}${exps}</div>
+  </div>`;
+}
+function loadHTML(load, samples, forceOpen){
+  const stCls = load.status==='clean'?'clean':'attn';
+  const stTxt = load.status==='clean'?'grouped cleanly':`${load.samples.filter(s=>s.flag).length} to check`;
+  const open = load.open || forceOpen;
+  const hidden = load.samples.length - samples.length;
+  const subset = forceOpen && hidden>0 ? ` <span style="font-size:11px;color:var(--ink-faint);font-weight:400;font-family:var(--font-sans)">· ${samples.length} of ${load.samples.length} shown</span>` : '';
+  return `<div class="load ${load.status==='attn'?'attn':''} ${open?'open':''}" id="load-${load.id}">
+    <button class="load-head" onclick="toggleLoad('${load.id}')">
+      <span class="load-chev">▸</span>
+      <span style="min-width:0">
+        <div class="load-title">${load.title} <span style="font-size:12px;color:var(--ink-faint);font-weight:400;font-family:var(--font-sans)">· ${load.op}</span>${subset}</div>
+        <div class="load-meta">${load.meta}</div>
+      </span>
+      <span class="load-status ${stCls}"><span class="ls-dot"></span>${load.status==='clean'?'✓ ':'⚠ '}${stTxt}</span>
+    </button>
+    <div class="load-body">${samples.map(s=>sampleHTML(load,s)).join('')}</div>
+  </div>`;
+}
+function renderGrouping(){
+  if (!GROUPING) buildGrouping();
+  const q = grSearch.trim();
+  let loads = (!q && grFilter==='attn') ? GROUPING.loads.filter(l=>l.status==='attn') : GROUPING.loads;
+  const rendered = loads
+    .map(l => ({ l, samples: q ? l.samples.filter(s=>matchSample(s,q)||bulkSel.has(s.id)) : l.samples }))
+    .filter(x => x.samples.length > 0);
+  const host = document.getElementById('gr-loads');
+  host.innerHTML = rendered.length
+    ? rendered.map(x => loadHTML(x.l, x.samples, !!q)).join('')
+    : `<div class="gr-empty">No samples match “${q}”. <a href="#" onclick="clearGrSearch();return false" style="color:var(--accent);font-weight:600">Clear filter</a></div>`;
+  const flagN = GROUPING.loads.reduce((a,l)=>a+l.samples.filter(s=>s.flag).length,0);
+  document.getElementById('gr-flag-n').textContent = flagN;
+  if (activeExp.id==='e1') activeExp.needReview = flagN;   /* single source of truth */
+}
+function findSample(loadId, sId){
+  const l = GROUPING.loads.find(x=>x.id===loadId); return [l, l.samples.find(s=>s.id===sId)];
+}
+function toggleLoad(id){ const l=GROUPING.loads.find(x=>x.id===id); l.open=!l.open; renderGrouping(); }
+function toggleSample(id){
+  for (const l of GROUPING.loads){ const s=l.samples.find(x=>x.id===id); if(s){ s.open=!s.open; break; } }
+  renderGrouping();
+}
+
+/* inline rename */
+function renameSample(ev, id){
+  ev.stopPropagation();
+  const span = document.getElementById('name-'+id); if(!span) return;
+  let cur=''; for(const l of GROUPING.loads){const s=l.samples.find(x=>x.id===id); if(s){cur=s.name;break;}}
+  span.outerHTML = `<input class="smp-name-input" id="name-in-${id}" value="${cur}" />`;
+  const inp = document.getElementById('name-in-'+id); inp.focus(); inp.select();
+  const commit=(save)=>{
+    for(const l of GROUPING.loads){const s=l.samples.find(x=>x.id===id); if(s){ if(save) s.name=inp.value; break;}}
+    renderGrouping();
+  };
+  inp.addEventListener('keydown',e=>{ e.stopPropagation(); if(e.key==='Enter') commit(true); if(e.key==='Escape') commit(false); });
+  inp.addEventListener('blur',()=>commit(true));
+  inp.addEventListener('click',e=>e.stopPropagation());
+}
+
+/* guarded split */
+function confirmSplit(loadId, sId){
+  const [l,s] = findSample(loadId, sId);
+  const at = s.splitAt ?? Math.ceil(s.exps.length/2);
+  const a = s.exps.slice(0,at), b = s.exps.slice(at);
+  showConfirm({
+    title:'Split this sample',
+    body:`${s.name} will become two samples at the position jump. Existing analysis is untouched; you can undo.`,
+    preview:`<div>${s.name} · ${s.exps.length} exposures</div>
+      <div class="cp-arrow">↓ split at ${a[a.length-1].h.toFixed(1)} → ${b[0].h.toFixed(1)} mm</div>
+      <div>${s.name} · ${a.length} exposures</div>
+      <div>${s.name.replace(/\)$/,'b)')} · ${b.length} exposures</div>`,
+    confirm:'Split',
+    onConfirm:()=>{
+      const newS = { id:s.id+'b', name:s.name.replace(/\)$/,'b)'), slot:s.slot, flag:null, open:true, exps:b };
+      s.exps = a; s.flag=null; s.open=true;
+      const idx = l.samples.indexOf(s); l.samples.splice(idx+1,0,newS);
+      if (!l.samples.some(x=>x.flag)) l.status='clean';
+      renderGrouping();
+      showToast(`Split into <b>2</b> samples`, ()=>{ s.exps=[...a,...b]; s.flag='split'; l.samples.splice(l.samples.indexOf(newS),1); l.status='attn'; renderGrouping(); });
+    }
+  });
+}
+/* guarded merge */
+function confirmMerge(loadId, sId){
+  const [l,s] = findSample(loadId, sId);
+  showConfirm({
+    title:'Merge into the earlier sample',
+    body:`${s.name}'s ${s.exps.length} exposures will be re-pointed onto ${s.mergeWith}. The two become one sample with both acquisitions. Saved series keep their member. You can undo.`,
+    preview:`<div>${s.mergeWith} <span class="cp-arrow">+</span> ${s.name}</div>
+      <div class="cp-arrow">↓</div>
+      <div>${s.mergeWith} · two acquisitions</div>`,
+    confirm:'Merge',
+    onConfirm:()=>{
+      const flag = s.flag, mw = s.mergeWith;
+      const idx = l.samples.indexOf(s); l.samples.splice(idx,1);
+      if (!l.samples.some(x=>x.flag)) l.status='clean';
+      renderGrouping();
+      showToast(`Merged into <b>${mw.split(' in ')[0]}</b>`, ()=>{ s.flag=flag; l.samples.splice(idx,0,s); l.status='attn'; renderGrouping(); });
+    }
+  });
+}
+function dismissFlag(loadId, sId){
+  const [l,s] = findSample(loadId, sId); const flag=s.flag;
+  s.flag=null;
+  if (!l.samples.some(x=>x.flag)) l.status='clean';
+  renderGrouping();
+  showToast(`Kept <b>${s.name}</b> separate`, ()=>{ s.flag=flag; l.status='attn'; renderGrouping(); });
+}
+/* ── Reusable floating menu (the dropdown component: Move picker, etc.) ── */
+function openMenu(anchor, html){
+  let m = document.getElementById('floatmenu');
+  if(!m){ m=document.createElement('div'); m.id='floatmenu'; m.className='menu'; m.style.position='fixed'; document.body.appendChild(m); }
+  m.innerHTML = html;
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.min(r.left, window.innerWidth-300)+'px';
+  m.style.top = (r.bottom+6)+'px';
+  m.classList.add('open');
+  const inp = m.querySelector('input'); if(inp) inp.focus();
+}
+function closeMenu(){ const m=document.getElementById('floatmenu'); if(m) m.classList.remove('open'); }
+document.addEventListener('click', e=>{ if(!e.target.closest('#floatmenu') && !e.target.closest('.exp-move')) closeMenu(); });
+
+function moveExp(ev){
+  ev.stopPropagation();
+  const btn = ev.currentTarget, loadId=btn.dataset.load, sid=btn.dataset.sid, ei=+btn.dataset.ei;
+  const l = GROUPING.loads.find(x=>x.id===loadId), s = l.samples.find(x=>x.id===sid);
+  const targets = l.samples.filter(x=>x.id!==sid);
+  const items = targets.length
+    ? targets.map(t=>`<button class="menu-item" onclick="doMove('${loadId}','${sid}',${ei},'${t.id}')">${t.name}<span class="mi-meta">${t.exps.length} exp</span></button>`).join('')
+    : `<div class="menu-empty">No other samples in this load</div>`;
+  openMenu(btn, `<div class="menu-head">Move ${s.exps[ei].file} to</div>
+    <div class="menu-search"><input placeholder="Filter samples…" oninput="filterMoveMenu(this)"></div>
+    ${items}<div class="menu-sep"></div>
+    <button class="menu-item" onclick="closeMenu();showToast('New sample from this exposure <b>(prototype)</b>',null)">+ New sample from this exposure</button>`);
+}
+function filterMoveMenu(inp){
+  const q = inp.value.toLowerCase();
+  inp.closest('#floatmenu').querySelectorAll('.menu-item').forEach(it=>{
+    if(it.querySelector('.mi-meta')) it.style.display = it.textContent.toLowerCase().includes(q) ? 'flex' : 'none';
+  });
+}
+function doMove(loadId, sid, ei, tid){
+  closeMenu();
+  const l = GROUPING.loads.find(x=>x.id===loadId), s = l.samples.find(x=>x.id===sid), t = l.samples.find(x=>x.id===tid);
+  const [moved] = s.exps.splice(ei,1); t.exps.push(moved);
+  renderGrouping();
+  showToast(`Moved <b>${moved.file}</b> to <b>${t.name}</b>`, ()=>{ t.exps.pop(); s.exps.splice(ei,0,moved); renderGrouping(); });
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Bulk select.
+ * ════════════════════════════════════════════════════════════════════ */
+const bulkSel = new Set();
+function toggleBulk(ev, id){
+  ev.stopPropagation();
+  bulkSel.has(id) ? bulkSel.delete(id) : bulkSel.add(id);
+  document.getElementById('smp-'+id)?.classList.toggle('sel-bulk', bulkSel.has(id));
+  document.body.classList.toggle('bulk-mode', bulkSel.size>0);
+  document.getElementById('bb-n').textContent = bulkSel.size;
+  document.getElementById('bb-word').textContent = bulkSel.size===1 ? 'sample' : 'samples';
+  document.getElementById('bulkbar').classList.toggle('show', bulkSel.size>0);
+}
+function clearBulk(){
+  bulkSel.forEach(id=>document.getElementById('smp-'+id)?.classList.remove('sel-bulk'));
+  bulkSel.clear(); document.body.classList.remove('bulk-mode');
+  document.getElementById('bulkbar').classList.remove('show');
+}
+function bulkMerge(){
+  const ids = [...bulkSel];
+  if (ids.length < 2){ showToast('Select at least two samples to merge.', null); return; }
+  const refs = ids.map(id=>{ for(const l of GROUPING.loads){ const s=l.samples.find(x=>x.id===id); if(s) return {l,s}; } }).filter(Boolean);
+  const survivor = refs[0], losers = refs.slice(1);
+  const survBase = survivor.s.exps.length;
+  const snap = losers.map(r=>({ l:r.l, s:r.s, idx:r.l.samples.indexOf(r.s), flag:r.s.flag, status:r.l.status }));
+  losers.forEach(r=>{ survivor.s.exps.push(...r.s.exps); r.s.flag=null;
+    r.l.samples.splice(r.l.samples.indexOf(r.s),1); if(!r.l.samples.some(x=>x.flag)) r.l.status='clean'; });
+  survivor.s.open = true;
+  const n = ids.length, survName = survivor.s.name; clearBulk(); renderGrouping();
+  showToast(`Merged <b>${n}</b> samples into <b>${survName}</b>`, ()=>{
+    survivor.s.exps.splice(survBase);
+    snap.sort((a,b)=>a.idx-b.idx).forEach(r=>{ r.s.flag=r.flag; r.l.samples.splice(Math.min(r.idx,r.l.samples.length),0,r.s); r.l.status=r.status; });
+    renderGrouping();
+  });
+}
+function bulkRename(){ const n=bulkSel.size; clearBulk(); showToast(`Rename <b>${n}</b> samples <b>(prototype)</b> — opens a pattern field`, null); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * Toast + confirm.
+ * ════════════════════════════════════════════════════════════════════ */
+let toastTimer=null, undoFn=null;
+function showToast(msg, undo){
+  clearTimeout(toastTimer);
+  document.getElementById('toast-msg').innerHTML = msg;
+  const ub = document.getElementById('toast-undo');
+  ub.style.display = undo ? 'block' : 'none';
+  undoFn = undo;
+  document.getElementById('toast').classList.add('show');
+  toastTimer = setTimeout(()=>document.getElementById('toast').classList.remove('show'), undo?6000:3200);
+}
+document.getElementById('toast-undo').onclick = ()=>{ if(undoFn) undoFn(); document.getElementById('toast').classList.remove('show'); };
+
+function showConfirm(opts){
+  const box = document.getElementById('confirm-box');
+  box.innerHTML = `
+    <h3>${opts.title}</h3>
+    <p>${opts.body}</p>
+    ${opts.preview?`<div class="confirm-preview">${opts.preview}</div>`:''}
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-out-accent" id="confirm-go">${opts.confirm}</button>
+    </div>`;
+  document.getElementById('confirm-scrim').classList.add('show');
+  document.getElementById('confirm-go').onclick = ()=>{ closeConfirm(); opts.onConfirm(); };
+}
+function closeConfirm(){ document.getElementById('confirm-scrim').classList.remove('show'); }
+document.getElementById('confirm-scrim').addEventListener('click', e=>{ if(e.target.id==='confirm-scrim') closeConfirm(); });
+
+/* ════════════════════════════════════════════════════════════════════
+ * Directory picker (path field with suggestions + tab-complete).
+ * ════════════════════════════════════════════════════════════════════ */
+const FS = {
+  '/Volumes/data/ssrl/2026_04/': [
+    { name:'1p7m', files:'682 .tiff · 682 .prp · 678 .dat', valid:true },
+    { name:'jc_plate', files:'148 .tiff · 148 .prp', valid:true },
+    { name:'raw', files:'no matching files', valid:false },
+    { name:'analysis', files:'derived outputs', valid:false },
+  ],
+  '/Volumes/data/ssrl/': [
+    { name:'2026_04', files:'4 subdirectories', dir:true },
+    { name:'2025_11', files:'3 subdirectories', dir:true },
+  ],
+};
+const RECENTS = ['/Volumes/data/ssrl/2026_04/1p7m', '/Volumes/data/ssrl/2025_11/lipid_q'];
+const pf = document.getElementById('pf');
+const pathfield = document.getElementById('pathfield');
+let pfHi = -1, pfOpts = [];
+
+function pfSuggestions(val){
+  /* find the deepest known parent dir */
+  let parent = val.replace(/[^/]*$/,'');
+  let frag = val.slice(parent.length);
+  let entries = FS[parent];
+  const out = [];
+  if (!val) {
+    out.push({section:'Recent'});
+    RECENTS.forEach(r=>out.push({full:r, label:r, meta:'recent', recent:true}));
+    return out;
+  }
+  if (entries) {
+    const matches = entries.filter(e=>e.name.toLowerCase().startsWith(frag.toLowerCase()));
+    if (matches.length) out.push({section: parent});
+    matches.forEach(e=>out.push({
+      full: parent+e.name+(e.dir?'/':''), label: parent+'**'+e.name+'**'+(e.dir?'/':''),
+      meta: e.files, valid:e.valid, dir:e.dir, frag, name:e.name,
+    }));
+  }
+  return out;
+}
+function renderPfMenu(){
+  const val = pf.value;
+  pfOpts = pfSuggestions(val);
+  const menu = document.getElementById('pf-menu');
+  if (!pfOpts.length){ pathfield.classList.remove('menu-open'); return; }
+  menu.innerHTML = pfOpts.map((o,i)=>{
+    if (o.section) return `<div class="pf-section">${o.section}</div>`;
+    const label = o.label.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+    return `<div class="pf-opt ${i===pfHi?'hi':''}" data-i="${i}" onmousedown="pfPick(${i})">
+      <span class="pf-o-ic">${o.dir?'▸':'◆'}</span>
+      <span class="pf-o-path">${label}</span>
+      <span class="pf-o-meta">${o.meta}</span>
+    </div>`;
+  }).join('');
+  pathfield.classList.add('menu-open');
+}
+function completionFor(val){
+  const o = pfSuggestions(val).find(o=>!o.section && o.full.toLowerCase().startsWith(val.toLowerCase()) && o.full.length>val.length);
+  return o ? o.full : null;
+}
+function pfPick(i){
+  const o = pfOpts[i]; if(!o||o.section) return;
+  pf.value = o.full;
+  if (o.dir || (o.full.endsWith('/'))) { pfHi=-1; renderPfMenu(); pf.focus(); }
+  else { pathfield.classList.remove('menu-open'); validatePath(o); }
+}
+pf.addEventListener('focus', ()=>{ pathfield.classList.add('focused'); pfHi=-1; renderPfMenu(); });
+pf.addEventListener('blur', ()=>{ pathfield.classList.remove('focused'); setTimeout(()=>pathfield.classList.remove('menu-open'),120); });
+pf.addEventListener('input', ()=>{ pfHi=-1; document.getElementById('validate').className='validate'; document.getElementById('validate').innerHTML='';
+  document.getElementById('name-row').style.display='none'; document.getElementById('create-go').disabled=true; renderPfMenu(); });
+function pfComplete(){ const c = completionFor(pf.value); if(c){ pf.value=c; pfHi=-1; renderPfMenu(); return true; } return false; }
+pf.addEventListener('keydown', e=>{
+  const concrete = pfOpts.map((o,i)=>o.section?null:i).filter(x=>x!=null);
+  if (e.key==='ArrowDown'){ e.preventDefault(); const cur=concrete.indexOf(pfHi); pfHi=concrete[Math.min(concrete.length-1,cur+1)]??concrete[0]; renderPfMenu(); }
+  else if (e.key==='ArrowUp'){ e.preventDefault(); const cur=concrete.indexOf(pfHi); pfHi=concrete[Math.max(0,cur-1)]??concrete[0]; renderPfMenu(); }
+  else if (e.key==='Tab'){ if (completionFor(pf.value)){ e.preventDefault(); pfComplete(); } }
+  else if (e.key==='Enter'){
+    e.preventDefault();
+    if (pfHi>=0){ pfPick(pfHi); }
+    else { const m = pfSuggestions(pf.value).find(o=>!o.section && o.full===pf.value); if(m) validatePath(m); else probePath(pf.value); }
+  }
+  else if (e.key==='Escape'){ pathfield.classList.remove('menu-open'); }
+});
+function probePath(val){
+  /* user typed a full path and hit enter — find it in FS */
+  let parent = val.replace(/\/[^/]*$/,'/'); let name = val.slice(parent.length).replace(/\/$/,'');
+  const e = (FS[parent]||[]).find(x=>x.name===name);
+  if (e) validatePath({full:val, valid:e.valid, meta:e.files, name:e.name});
+  else validatePath({full:val, valid:false, meta:'directory not found', name:name});
+}
+function validatePath(o){
+  const v = document.getElementById('validate');
+  v.className='validate busy';
+  v.innerHTML = `<div class="vd-row"><span class="spinner"></span><span class="vd-t">Scanning ${o.full}…</span></div>`;
+  setTimeout(()=>{
+    if (o.valid){
+      v.className='validate ok';
+      const base = o.name || o.full.split('/').filter(Boolean).pop();
+      v.innerHTML = `<div class="vd-row"><span class="vd-mark">✓</span><span class="vd-t">Found a beamtime</span></div>
+        <div class="vd-detail">
+          <div><span class="vd-em">682</span> exposures · <span class="vd-em">682</span> .tiff · <span class="vd-em">682</span> .prp · <span class="vd-em">678</span> .dat</div>
+          <div>geometry from PRP: <span class="vd-em">9.00 keV · Pilatus 1M · 1.70 m</span></div>
+          <div>grouped into <span class="vd-em">~170 samples</span> across <span class="vd-em">~13 loads</span></div>
+        </div>`;
+      document.getElementById('name-row').style.display='block';
+      document.getElementById('exp-name-in').value = base==='1p7m' ? 'SSRL · 1p7m' : base;
+      document.getElementById('create-go').disabled=false;
+    } else {
+      v.className='validate err';
+      v.innerHTML = `<div class="vd-row"><span class="vd-mark">!</span><span class="vd-t">No exposures found here</span></div>
+        <div class="vd-detail">
+          <div><span class="vd-em">${o.meta}</span></div>
+          <div>looked for <span class="vd-em">{name}.tiff + {name}.prp</span></div>
+          <div>try another directory, or adjust the file patterns below</div>
+        </div>`;
+      document.getElementById('name-row').style.display='none';
+      document.getElementById('create-go').disabled=true;
+      document.getElementById('advanced').classList.add('open');
+    }
+  }, 850);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Router.
+ * ════════════════════════════════════════════════════════════════════ */
+function leaveTransient(){
+  /* never let one surface's transient state bleed onto the next */
+  if (ingestTimer) { clearInterval(ingestTimer); ingestTimer = null; }
+  clearBulk();
+  document.getElementById('toast').classList.remove('show');
+  closeConfirm();
+}
+function route(v){
+  if (v !== 'exp') leaveTransient();           /* keep ingest running when re-rendering the exp page */
+  else { clearBulk(); document.getElementById('toast').classList.remove('show'); closeConfirm(); }
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  const map = { home:'view-home', empty:'view-empty', create:'view-create',
+    exp:'view-exp', grouping:'view-grouping', failed:'view-failed', series:'view-series' };
+  document.getElementById(map[v]).classList.add('active');
+  document.querySelector('.stage').scrollTop = 0;
+  /* switcher is contextual: only while working inside an experiment */
+  document.getElementById('switcher').style.display = (v==='exp'||v==='grouping') ? 'block' : 'none';
+  document.getElementById('nav-exp').classList.toggle('is-active', v!=='series');
+  document.getElementById('nav-series').classList.toggle('is-active', v==='series');
+  if (v==='home') renderHome();
+  if (v==='series') renderSeries();
+  if (v==='grouping') renderGrouping();
+  if (v==='create'){ pf.value=''; document.getElementById('validate').className='validate';
+    document.getElementById('validate').innerHTML=''; document.getElementById('name-row').style.display='none';
+    document.getElementById('create-go').disabled=true; setTimeout(()=>pf.focus(),50); }
+}
+function backToCorpus(){ setTab('corpus'); route('exp'); renderExp(false); }
+function jump(state){
+  document.getElementById('protomap').classList.remove('open');
+  if (state==='home'){ activeExp=EXPERIMENTS[0]; renderSwitcher(); route('home'); }
+  else if (state==='empty'){ document.getElementById('sw-name').textContent='No experiment'; route('empty'); }
+  else if (state==='create'){ route('create'); }
+  else if (state==='ingest'){ jumpIngest(); }
+  else if (state==='corpus'){ activeExp=EXPERIMENTS[0]; activeExp.status='ready'; buildGrouping(); activeExp.needReview=flaggedCount();
+    activeExp.loads=13;activeExp.samples=170;activeExp.exposures=682;activeExp.span='5 days';activeExp.sessions=4;
+    renderSwitcher(); route('exp'); setTab('corpus'); renderExp(false); }
+  else if (state==='grouping'){ activeExp=EXPERIMENTS[0]; buildGrouping(); route('grouping'); }
+  else if (state==='config'){ activeExp=EXPERIMENTS[0]; activeExp.status='ready';
+    renderSwitcher(); route('exp'); setTab('config'); renderExp(false); }
+  else if (state==='failed'){ route('failed'); }
+}
+
+/* boot */
+buildGrouping();
+EXPERIMENTS[0].needReview = flaggedCount();   /* derive so banner/home/summary agree */
+renderSwitcher();
+renderHome();
+route('home');
+</script>
+</body>
+</html>
