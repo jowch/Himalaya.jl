@@ -83,8 +83,7 @@ function _cli_init_inner!(db::SQLite.DB, exp_dir::String)::Int
         for ms in samples
             s_id = create_sample!(db;
                 experiment_id = exp_id,
-                name          = ms.name,
-                display_name  = ms.display_name,
+                name          = ms.display_name,
                 notes         = ms.notes_sample)
             sample_count += 1
 
@@ -195,12 +194,11 @@ function _reingest_inner!(db::SQLite.DB, experiment_id::Int, exp_dir::String, to
             inserted_samples += 1
             create_sample!(db;
                 experiment_id = experiment_id,
-                name          = ms.name,
-                display_name  = ms.display_name,
+                name          = ms.display_name,
                 notes         = ms.notes_sample)
         else
             DBInterface.execute(db,
-                "UPDATE samples SET display_name = ?, notes = ? WHERE id = ?",
+                "UPDATE samples SET name = ?, notes = ? WHERE id = ? AND name_source != 'human'",
                 [ms.display_name, ms.notes_sample, existing[1].id])
             Int(existing[1].id)
         end

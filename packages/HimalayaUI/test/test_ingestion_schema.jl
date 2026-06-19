@@ -199,6 +199,23 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
         end
     end
 
+    @testset "create_sample! grouping fields, no display_name" begin
+        path = fresh_db()
+        with_db(path) do db
+            eid = seed_experiment(db)   # honours NOT NULL name/path/data_dir/analysis_dir
+            lid = DBInterface.lastrowid(DBInterface.execute(db,
+                "INSERT INTO loads (experiment_id, load_index) VALUES (?, 1)", [eid]))
+            sid = HimalayaUI.create_sample!(db; experiment_id=eid, name="HA85 (S01P15)",
+                load_id=lid, slot_index=15, grouping_source="auto_position", name_source="auto")
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name, load_id, slot_index, grouping_source, name_source FROM samples WHERE id=?", [sid])))
+            @test row.name == "HA85 (S01P15)"
+            @test row.load_id == lid
+            @test row.slot_index == 15
+            @test row.name_source == "auto"
+        end
+    end
+
     @testset "duplicate labels survive naming+collapse" begin
         # Build the pre-redesign DB with create_schema! (the canonical samples shape on this
         # branch is still name+display_name+samples_unique_name — i.e. the pre-collapse legacy

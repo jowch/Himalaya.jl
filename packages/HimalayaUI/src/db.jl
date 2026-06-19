@@ -1992,15 +1992,14 @@ function create_experiment!(db::SQLite.DB;
     return Int(DBInterface.lastrowid(result))
 end
 
-function create_sample!(db::SQLite.DB;
-        experiment_id::Int,
-        name::Union{String,Nothing}         = nothing,
-        display_name::Union{String,Nothing} = nothing,
-        notes::Union{String,Nothing}        = nothing)
-    result = DBInterface.execute(db,
-        "INSERT INTO samples (experiment_id, name, display_name, notes) VALUES (?, ?, ?, ?)",
-        [experiment_id, name, display_name, notes])
-    Int(DBInterface.lastrowid(result))
+function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractString,
+        notes=nothing, load_id=nothing, slot_index=nothing,
+        grouping_source="auto_position", name_source="auto")
+    res = DBInterface.execute(db, """
+        INSERT INTO samples (experiment_id, name, notes, load_id, slot_index, grouping_source, name_source)
+        VALUES (?,?,?,?,?,?,?)
+    """, [experiment_id, name, notes, load_id, slot_index, grouping_source, name_source])
+    return Int(DBInterface.lastrowid(res))
 end
 
 function create_exposure!(db::SQLite.DB;
