@@ -450,9 +450,22 @@ end
 function migrate_loads_table!(db::SQLite.DB)
     _migrated(db, MIGRATION_LOADS_TABLE) && return nothing
     SQLite.transaction(db) do
+        DBInterface.execute(db, """
+            CREATE TABLE IF NOT EXISTS loads (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+                load_index   INTEGER NOT NULL,
+                session_id   INTEGER,
+                start_time   TEXT,
+                end_time     TEXT,
+                frame_count  INTEGER NOT NULL DEFAULT 0,
+                note         TEXT
+            )
+        """)
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS loads_experiment_idx ON loads(experiment_id)")
         _record_migration!(db, MIGRATION_LOADS_TABLE)
     end
-    nothing
 end
 
 function migrate_exposures_experiment_id!(db::SQLite.DB)

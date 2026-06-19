@@ -53,4 +53,20 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             @test HimalayaUI.MIGRATION_SAMPLES_NAME_COLLAPSE in applied
         end
     end
+
+    @testset "loads table" begin
+        path = fresh_db()
+        with_db(path) do db
+            @test "loads" in lowercase.(String.(getproperty.(Tables.rowtable(
+                DBInterface.execute(db, "SELECT name FROM sqlite_master WHERE type='table'")), :name)))
+            c = cols(db, "loads")
+            for col in ["id","experiment_id","load_index","session_id","start_time","end_time","frame_count","note"]
+                @test col in c
+            end
+            # FK to experiments enforced
+            DBInterface.execute(db, "PRAGMA foreign_keys=ON")
+            @test_throws Exception DBInterface.execute(db,
+                "INSERT INTO loads (experiment_id, load_index) VALUES (999999, 0)")
+        end
+    end
 end
