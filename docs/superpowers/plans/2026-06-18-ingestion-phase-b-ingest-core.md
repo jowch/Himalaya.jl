@@ -1275,10 +1275,14 @@ function _cluster_slots(
     # (multi-frame bursts), the median delta is ~0 and `median × slot_k` would be a
     # degenerate (zero) tolerance. Learn the slot-spacing tolerance from the non-zero
     # deltas (the burst→burst jumps) instead; Inf when there are no jumps at all.
+    # NOTE: in the fallback regime the non-zero deltas ARE the inter-slot spacing, so the
+    # tolerance must sit BELOW them — divide by slot_k, not multiply (spec §5: tolerance
+    # between jitter and slot spacing). The normal branch multiplies because there
+    # median(deltas) is the within-burst JITTER. (Corrected 2026-06-19, Phase-B Task 6.)
     local threshold::Float64
     if med_delta < 1e-6
         nonzero = filter(d -> d > 1e-6, deltas)
-        threshold = isempty(nonzero) ? Inf : Statistics.median(nonzero) * slot_k
+        threshold = isempty(nonzero) ? Inf : Statistics.median(nonzero) / slot_k
     else
         threshold = med_delta * slot_k
     end
@@ -2508,8 +2512,10 @@ function derive_sample_flags(load_rows; slot_k::Float64 = 5.0)::Dict{Int, Groupi
         isempty(deltas) && return Inf
         med = Statistics.median(deltas)
         if med < 1e-6
+            # Fallback regime: nonzero deltas ARE slot spacing → tolerance below them
+            # (÷ slot_k), not above (see Task 6 fallback note; corrected 2026-06-19).
             nonzero = filter(d -> d > 1e-6, deltas)
-            return isempty(nonzero) ? Inf : Statistics.median(nonzero) * slot_k
+            return isempty(nonzero) ? Inf : Statistics.median(nonzero) / slot_k
         end
         return med * slot_k
     end
