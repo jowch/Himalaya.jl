@@ -130,6 +130,45 @@ function register_experiments_routes!()
             JSON3.write(Dict(:error => "experiment metadata is read-only; it is derived from experiment.toml and refreshed by re-scanning")))
     end
 
+    @get "/api/experiments/{id}/loads" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "experiment not found")))
+
+        loads_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT * FROM loads WHERE experiment_id = ? ORDER BY load_index", [id]))
+
+        result = map(loads_rows) do lr
+            samples_rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT * FROM samples WHERE load_id = ? ORDER BY slot_index", [Int(lr.id)]))
+
+            samples = map(samples_rows) do sr
+                exposures_rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, filename, prp_path, timestamp, exposure_time,
+                            horizontal_position, scan_id, frame_no, status, selected,
+                            image_path, content_fingerprint
+                       FROM exposures WHERE sample_id = ? ORDER BY frame_no, id",
+                    [Int(sr.id)]))
+                d = row_to_json(sr)
+                # exposures.selected is a SQLite 0/1 int; coerce to a JSON bool so this
+                # endpoint matches every other exposure serializer (routes_analysis.jl /
+                # comparisons.jl ~493 use `row_to_json(e; bool_keys=(:selected,))`).
+                d[:exposures] = [row_to_json(e; bool_keys = (:selected,)) for e in exposures_rows]
+                d
+            end
+
+            d = row_to_json(lr)
+            d[:samples] = samples
+            d
+        end
+
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(result))
+    end
+
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
         db   = current_db()
         # Verify the experiment exists before iterating its samples.

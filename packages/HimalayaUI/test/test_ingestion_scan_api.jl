@@ -138,4 +138,44 @@ end
         end
         SQLite.close(db)
     end
+
+    @testset "GET /api/experiments/{id}/loads returns Load▸Sample▸Exposure roll-up" begin
+        db, dir, exp_id = scan_test_db()
+        lid1 = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 8)
+        lid2 = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 2, frame_count = 4)
+        sid1 = HimalayaUI.create_sample!(db; experiment_id = exp_id,
+            name = "HA85 (S01P01)", load_id = lid1, slot_index = 1)
+        sid2 = HimalayaUI.create_sample!(db; experiment_id = exp_id,
+            name = "HA85 (S02P01)", load_id = lid2, slot_index = 1)
+        xid1 = HimalayaUI.create_exposure!(db; experiment_id = exp_id,
+            sample_id = sid1, filename = "f1.tif", horizontal_position = 12.4, frame_no = 1)
+        xid2 = HimalayaUI.create_exposure!(db; experiment_id = exp_id,
+            sample_id = sid1, filename = "f2.tif", horizontal_position = 12.4, frame_no = 2)
+        xid3 = HimalayaUI.create_exposure!(db; experiment_id = exp_id,
+            sample_id = sid2, filename = "f3.tif", horizontal_position = 39.5, frame_no = 1)
+
+        with_test_server(db) do port, base
+            r = HTTP.get("$base/api/experiments/$exp_id/loads")
+            @test r.status == 200
+            loads = JSON3.read(String(r.body))
+            @test length(loads) == 2
+
+            l1 = first(filter(l -> l.load_index == 1, loads))
+            @test length(l1.samples) == 1
+            @test l1.samples[1].name == "HA85 (S01P01)"
+            @test length(l1.samples[1].exposures) == 2
+            exps = l1.samples[1].exposures
+            filenames = [e.filename for e in exps]
+            @test "f1.tif" in filenames && "f2.tif" in filenames
+
+            l2 = first(filter(l -> l.load_index == 2, loads))
+            @test length(l2.samples) == 1
+            @test length(l2.samples[1].exposures) == 1
+
+            # 404 for unknown experiment
+            r2 = HTTP.get("$base/api/experiments/999999/loads"; status_exception = false)
+            @test r2.status == 404
+        end
+        SQLite.close(db)
+    end
 end
