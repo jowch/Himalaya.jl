@@ -353,10 +353,10 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
                     [e_id])
                 cur_id = Int(DBInterface.lastrowid(res))
 
-                with_test_server(db) do port, base
+                with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("peak_removed") do
-                        r = HTTP.delete("$base/api/peaks/$cur_id",
-                            ["X-Username" => "alice"])
+                        r = call("DELETE", "/api/peaks/$cur_id";
+                            headers = ["X-Username" => "alice"])
                         @test r.status == 200
                     end
                     @test length(frames) == 1
@@ -399,11 +399,11 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
                 end
                 patch_id = Int(auto_rows[end-1].id)
 
-                with_test_server(db) do port, base
+                with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("peak_excluded") do
-                        r = HTTP.patch("$base/api/peaks/$patch_id",
-                            ["Content-Type" => "application/json", "X-Username" => "alice"],
-                            JSON3.write(Dict(:excluded => true)))
+                        r = call("PATCH", "/api/peaks/$patch_id";
+                            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))))
                         @test r.status == 200
                     end
                     @test length(frames) == 1
@@ -431,11 +431,11 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
                     "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.123)",
                     [e_id])
 
-                with_test_server(db) do port, base
+                with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("analyze_run") do
-                        r = HTTP.post("$base/api/exposures/$e_id/analyze",
-                            ["X-Username" => "alice",
-                             "X-Client-Op-Id" => "op-fwipe-analyze-1"])
+                        r = call("POST", "/api/exposures/$e_id/analyze";
+                            headers = ["X-Username" => "alice",
+                                       "X-Client-Op-Id" => "op-fwipe-analyze-1"])
                         @test r.status == 200
                     end
                     @test length(frames) == 1
@@ -473,11 +473,11 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
                         [e_id, Float64(r.q)])
                 end
 
-                with_test_server(db) do port, base
+                with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("analyze_run") do
-                        r = HTTP.post("$base/api/exposures/$e_id/analyze",
-                            ["X-Username" => "alice",
-                             "X-Client-Op-Id" => "op-fwipe-analyze-2"])
+                        r = call("POST", "/api/exposures/$e_id/analyze";
+                            headers = ["X-Username" => "alice",
+                                       "X-Client-Op-Id" => "op-fwipe-analyze-2"])
                         @test r.status == 200
                     end
                     @test length(frames) == 1
@@ -500,11 +500,11 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
                 ctx = _fwipe_setup(tmp)
                 db, e_id = ctx.db, ctx.e_id
 
-                with_test_server(db) do port, base
+                with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("analyze_run") do
-                        r = HTTP.post("$base/api/exposures/$e_id/analyze",
-                            ["X-Username" => "alice",
-                             "X-Client-Op-Id" => "op-fwipe-analyze-3"])
+                        r = call("POST", "/api/exposures/$e_id/analyze";
+                            headers = ["X-Username" => "alice",
+                                       "X-Client-Op-Id" => "op-fwipe-analyze-3"])
                         @test r.status == 200   # response unchanged; only the frame is suppressed
                     end
                     @test isempty(frames)
