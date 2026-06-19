@@ -8,7 +8,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 |------|----------|-------|
 | App entry | `print/main.tsx` | `index.html → print/main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter > PrintApp`; mounts `#app` |
 | App shell | `print/App.tsx` (`PrintApp`) | Composition root: `AppRoutes` + SSE + mutation-queue effects + shell siblings |
-| Server state | `queries.ts` | TanStack Query hooks; `authOpts(username)` helper |
+| Server state | `queries.ts` | TanStack Query hooks; `authOpts(username, clientId, clientOpId)` helper lives in `lib/authOpts.ts` |
 | API layer | `api.ts` | Fetch wrappers; AuthOpts per-call for mutations |
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
@@ -16,7 +16,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | App shell + routing | `print/shell/` | `CorpusShell`, `CorpusTopbar`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
-| Render layers | `print/{plot,detector,comb,waterfall,export}/` | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder) — excluded from the `lint:design` appearance guard |
+| Render layers | `print/{plot,detector,comb,export}/` (and `print/waterfall/`) | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder). The `lint:design` appearance guard excludes `print/{plot,detector,comb,export}/` only — `print/waterfall/` is NOT exempt |
 | Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
@@ -25,17 +25,31 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 ## TypeScript strict + `exactOptionalPropertyTypes`
 
-`set({ username: undefined })` fails — optional fields declared as `string | undefined` (rather than `username?: string`) keep this ergonomic. For passing optional values through (e.g. `AuthOpts`), use the `authOpts(username)` helper in `queries.ts` which returns `{}` or `{ username }` — never `{ username: undefined }`.
+`set({ username: undefined })` fails — optional fields declared as `string | undefined` (rather than `username?: string`) keep this ergonomic. For passing optional values through (e.g. `AuthOpts`), use the `authOpts(username, clientId, clientOpId)` helper in `lib/authOpts.ts`, which omits any undefined key (never `{ username: undefined }`).
 
 ## Zustand — named actions
 
 Use the store's named actions (`clearUsername`, `setTutorialSeen`, `openNavModal`, …). Avoid `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. New state transitions go in `state.ts` as named actions.
+
+## Zustand persist — version-bump wipe-guard
+
+Two invisible invariants in `state.ts` (`persist` config, `queries.ts`'s sibling — see `state.ts:494-530`). Adding a persisted field + naively bumping `version` silently wipes **every existing user's** state on first load:
+
+- **Bumping `version` WITHOUT a `migrate` discards the entire persisted blob.** Zustand v4 drops a blob whose version it can't migrate — all prefs (username/tutorialSeen/active*/…) gone on upgrade. Every version bump must ship a `migrate`. The current migrate's only job across all prior versions is unconditional dead-key strips (`activePage` I5.2, `theme` R0a), so there's no `switch (version)`.
+- **`migrate` must return the ORIGINAL object on malformed/non-object input — never `{}`.** Handing `{}` is itself a partial wipe; returning the original lets `merge` fold whatever survived (or fall back to defaults). The wipe-guard is `if (persisted && typeof persisted === "object") { …strip… } return persisted` — the `else` returns untouched.
 
 ## State split (load-bearing)
 
 - **Zustand owns *client* state**: active sample/exposure, hoveredIndexId, username.
 - **TanStack Query owns *server* state**: experiments, samples, exposures, peaks, indices, assignment.
 - Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.indices(id)`). Don't mix the two concerns in the same hook.
+
+## Route → store → auto-pick cascade (the exposure-clobber hazard)
+
+`setActiveSample` cascades `activeExposureId: undefined`, so a careless call resets the user's deliberate exposure pick. Two cooperating hooks keep this in check — touching either requires understanding the whole route-hook → Zustand → auto-pick chain:
+
+- **`useSyncActiveSampleFromRoute` calls `setActiveSample` ONLY when the parsed id differs from the stored one** (`useSyncActiveSampleFromRoute.ts:67-73`). Drop the `parsed === activeSampleId` no-op guard and every render re-seeds the sample → clears the exposure → `useAutoPickExposure` re-adopts the representative, discarding an in-session deliberate switch (the FO-NAV-SKELETON / R5 representative-switcher fix).
+- **`useAutoPickExposure` writes only when the rule picks a DIFFERENT, defined exposure** (`useAutoPickExposure.ts:85-90`). Its rule (`resolveActiveExposure`) KEEPS a still-valid `currentId` and is pure, so the page resolves the same value during render — that's what paints a cached sample's trace in the same frame instead of flashing a skeleton through the store→effect seam.
 
 ## Per-tab SSE identity
 
@@ -44,6 +58,8 @@ SSE self-echo filtering uses a per-tab `client_id` minted into `sessionStorage` 
 ## Imperative renderers in effects
 
 Wrap any function that is both defined inside a component AND used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. The trace plot's overlay renderer follows this pattern.
+
+**Async re-entry guards need a ref, not state.** `useFigureExport` blocks double-invocation with a synchronous `inFlight` ref (`if (inFlight.current) return` before `setPending(true)`), *not* the `pending` state alone — state flips asynchronously, so two clicks in one tick both pass a state-only guard. The ref blocks re-entry; the state drives the UI. Same shape for any async-action hook.
 
 ## Tailwind v4 theming
 
@@ -60,7 +76,9 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,waterfall,export}/` render-layer prefixes, `print/main.tsx`). Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,export}/` render-layer prefixes, `print/main.tsx`). Note `print/waterfall/` is NOT among the exempt prefixes — its appearance (line colour, bead glyphs, axis strokes) lives inside the already-exempt `print/plot/` layer it composes, so a raw SVG colour literal surfacing in `print/waterfall/` must move into `print/plot/` or become a `--color-*` token. Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+
+`check-design.mjs` also enforces a **`no-legacy-import` rule** (`scanLegacyImports`) alongside the appearance guard: it fails the build if any `src/print/**` file relatively imports from top-level `src/components/**` or `src/pages/**`. Those legacy dirs are gone post-cutover, so the rule now functions as a regression tripwire against re-introducing the retired tree.
 
 ## Skeleton loading via boneyard-js
 
@@ -76,9 +94,28 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 - **Optimistic placeholder ids are NEGATIVE.** `Peak.id < 0` means "not yet confirmed by server"; SSE confirmation overwrites with the positive server id. UI code that filters or compares peak ids must handle negatives.
 - **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (e.g. useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
 
+## Query layer gotchas
+
+- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (`queries.ts:73-78`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["peak-entity", id]`, `["index-entity", id]`, `["exposure-entity", id]`, …) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates. (Same discipline elsewhere: `["series", id]` detail vs `["series-list"]` listing are distinct roots.)
+
+- **`useStableQueryMap`'s WeakMap-nonce — do not "simplify" it** (`queries.ts:241-281`). It's the only thing stopping every parent re-render from minting a fresh `Map<id, T>`, which tears down + replots the multi-trace plot on every keystroke — wheel/brush smoothness in `MultiTracePlot` is the casualty. It can't be replaced by a `JSON.stringify` signature (a variable-length deps array breaks `useMemo` memoisation when the previous length was 0 — React's elementwise loop terminates early and returns the stale value) nor by deep equality (it tracks REF identity, since TanStack reuses `q.data` refs when nothing changed; a per-hook-instance WeakMap assigns each fresh object a stable nonce). The regression is **invisible to Vitest** — verify by hand. The WeakMap write is idempotent, so it's StrictMode- and Concurrent-safe.
+
 ## Multi-layer contract testing
 
 Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See `docs/contract-testing.md` for canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
+
+## SA-ROVING data grid (contact sheet)
+
+The samples contact sheet (`SheetTable`) is an APG roving-tabindex grid. Three-layer split:
+
+- **Pure reducer** `src/lib/grid/rovingGrid.ts` (`nextGridCoord`) — coordinate math, no React.
+- **Hook + provider** `src/lib/grid/useRovingGrid.ts` (`useRovingGrid` / `RovingGridProvider`). The context default is **INERT** (`tabIndexFor` returns `undefined`, `registerCellEl` is a no-op) so a non-roving `SheetTable` carries zero grid behaviour until a `roving` boolean prop opts in.
+- **Wiring** `SheetTable.tsx` via the `roving?: boolean` prop.
+
+Load-bearing details:
+- **SSE focus-yank guard.** The hook only calls `focus()` when a `wantFocus` ref is set — and it is set *only* by user-driven coord changes (keydown / `requestActivate` / enter/exit interaction), consumed in a `useLayoutEffect`. A foreign SSE re-render must never steal focus. (Same discipline as the `RepresentativeBox` switch.)
+- **Interaction mode** for multi-widget cells: `INTERACTION_COLS = new Set([2, 4])` (Exposures/`ThumbnailGallery`, Tags/`TagList`). Enter or F2 enters interaction mode (focus the first inner widget, arrows rove within, Escape returns to the gridcell in navigation mode).
+- **jsdom can't honestly test the multi-listener focus path** — the e2e spec (real Chrome) is the gate, not the Vitest unit tests (see the jsdom-dispatch false-green gotcha: a microtask checkpoint between listeners lets React unmount mid-dispatch).
 
 ## Anti-patterns
 

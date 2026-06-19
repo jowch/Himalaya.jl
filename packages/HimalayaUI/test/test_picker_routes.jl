@@ -31,15 +31,15 @@ using HimalayaUI
                                 _member_payload(exposure_id=e2, display_order=1),
                                 _member_payload(exposure_id=e3, display_order=2),
                              ]))
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/users/$alice/recently-picked-exposures")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/users/$alice/recently-picked-exposures")
                 @test r.status == 200
                 ids = JSON3.read(String(r.body))
                 # All three exposures should be present.
                 @test sort(collect(ids)) == sort([ctx.exposure_id, e2, e3])
 
                 # Limit honored.
-                r = HTTP.get("$base/api/users/$alice/recently-picked-exposures?limit=2")
+                r = call("GET", "/api/users/$alice/recently-picked-exposures?limit=2")
                 @test r.status == 200
                 ids2 = JSON3.read(String(r.body))
                 @test length(ids2) == 2
@@ -51,8 +51,8 @@ using HimalayaUI
         mktempdir() do tmp
             ctx   = _setup_analyzed_exposure(tmp)
             alice = HimalayaUI.get_or_create_user!(ctx.db, "alice")
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/users/$alice/recently-picked-exposures")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/users/$alice/recently-picked-exposures")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
             end
@@ -62,9 +62,8 @@ using HimalayaUI
     @testset "GET /api/users/:id/recently-picked-exposures: 404 for unknown user id" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/users/9999/recently-picked-exposures";
-                             status_exception = false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/users/9999/recently-picked-exposures")
                 @test r.status == 404
             end
         end
@@ -92,8 +91,8 @@ using HimalayaUI
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s3, "control", "DOPC"])
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 pairs = Set([(String(t.key), String(t.value)) for t in tags])
@@ -125,8 +124,8 @@ using HimalayaUI
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [ctx.sample_id, "lipid", "DOPC"])
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 keys_seen = Set(String(t.key) for t in tags)
@@ -139,8 +138,8 @@ using HimalayaUI
     @testset "GET /api/experiments/:eid/sample-tags: empty list when no tags" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
             end
@@ -179,8 +178,8 @@ using HimalayaUI
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s3, "lipid", "DOPC"])
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 pairs = Set([(String(t.key), String(t.value)) for t in tags])
@@ -199,8 +198,8 @@ using HimalayaUI
     @testset "GET /api/sample-tags: empty list when no tags" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/sample-tags")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
             end
@@ -219,8 +218,8 @@ using HimalayaUI
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s2, "dose", "10"])
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 row = first(filter(p -> p.key == "dose" && p.value == "10", tags))
@@ -242,8 +241,8 @@ using HimalayaUI
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s2, "lipid", "DOPC"])
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 row = first(filter(p -> p.key == "lipid" && p.value == "DOPC", tags))

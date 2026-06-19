@@ -6,7 +6,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id,
@@ -14,9 +14,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # JSON
-        r = HTTP.get("$base/api/experiments/$exp_id/export?format=json")
+        r = call("GET", "/api/experiments/$exp_id/export?format=json")
         @test r.status == 200
         @test occursin("application/json", HTTP.header(r, "Content-Type"))
         body = JSON3.read(String(r.body))
@@ -28,7 +28,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(s.exposures[1].indices) >= 1
 
         # CSV
-        r = HTTP.get("$base/api/experiments/$exp_id/export?format=csv")
+        r = call("GET", "/api/experiments/$exp_id/export?format=csv")
         @test r.status == 200
         @test occursin("text/csv", HTTP.header(r, "Content-Type"))
         csv_body = String(r.body)
@@ -36,12 +36,11 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test occursin("D1,example_tot", csv_body)
 
         # Default = json
-        r = HTTP.get("$base/api/experiments/$exp_id/export")
+        r = call("GET", "/api/experiments/$exp_id/export")
         @test occursin("application/json", HTTP.header(r, "Content-Type"))
 
         # Invalid format
-        r = HTTP.get("$base/api/experiments/$exp_id/export?format=xml";
-                     status_exception = false)
+        r = call("GET", "/api/experiments/$exp_id/export?format=xml")
         @test r.status == 400
     end
 end

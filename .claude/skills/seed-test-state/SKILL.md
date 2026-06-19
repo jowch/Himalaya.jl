@@ -13,7 +13,6 @@ Quickly point the running preview at a specific app state — useful when iterat
 - `experiment=<id>` — experiment id (default: leave unchanged)
 - `sample=<id>` — sample id (default: leave unchanged)
 - `exposure=<id>` — exposure id, or `auto` to clear (default: clear, so PlotCard auto-picks)
-- `page=index|inspect|compare` — which tab (default: leave unchanged)
 
 If no args, shows current state and a list of available experiments/samples/exposures from the live backend.
 
@@ -33,7 +32,7 @@ If no args, shows current state and a list of available experiments/samples/expo
    ```
    Show id + name pairs.
 
-3. **Write the state.** The Zustand persisted state lives in `localStorage` under the key `himalaya-ui:state` with shape `{ state: { ... }, version: 3 }`.
+3. **Write the state.** The Zustand persisted state lives in `localStorage` under the key `himalaya-ui:state` with shape `{ state: { ... }, version: 5 }`.
    ```js
    (() => {
      const raw = localStorage.getItem('himalaya-ui:state') || '{}';
@@ -44,12 +43,11 @@ If no args, shows current state and a list of available experiments/samples/expo
      if (typeof SAMPLE === 'number')     parsed.state.activeSampleId     = SAMPLE;
      if (EXPOSURE === 'auto')            parsed.state.activeExposureId   = undefined;
      else if (typeof EXPOSURE === 'number') parsed.state.activeExposureId = EXPOSURE;
-     if (PAGE)                           parsed.state.activePage         = PAGE;
      // Required defaults so we don't trip the onboarding overlay:
      parsed.state.username     = parsed.state.username     ?? 'test-user';
      parsed.state.tutorialSeen = true;
      parsed.state.theme        = parsed.state.theme        ?? 'dark';
-     parsed.version = 3;
+     parsed.version = 5;
      localStorage.setItem('himalaya-ui:state', JSON.stringify(parsed));
      location.reload();
      return 'reloaded';
@@ -61,8 +59,8 @@ If no args, shows current state and a list of available experiments/samples/expo
 
 ## Examples
 
-- `/seed-test-state experiment=1 sample=12 page=index` → AgBe trace on Index page
-- `/seed-test-state page=inspect sample=12` → AgBe images on Inspect page
+- `/seed-test-state experiment=1 sample=12` → AgBe trace for sample 12
+- `/seed-test-state sample=12 exposure=auto` → AgBe sample, PlotCard auto-picks the exposure
 - `/seed-test-state exposure=auto` → reset to PlotCard's auto-picked first exposure
 
 ## Why user-only (`disable-model-invocation: true`)
@@ -71,6 +69,6 @@ Writing state to a live preview is a side-effecting operation that the user shou
 
 ## Gotchas
 
-- **Version mismatch:** Zustand persist key is `himalaya-ui:state`, version `3`. If `state.ts` bumps the version, this skill breaks until updated.
+- **Version mismatch:** Zustand persist key is `himalaya-ui:state`, version `5`. If `state.ts` bumps the version, this skill breaks until updated.
 - **Onboarding overlay:** if `username` isn't set, the app shows the onboarding modal and ignores other state. Skill always seeds a default username.
 - **Backend down:** if `:8080` doesn't respond, exposure lists won't load — but the page state seed still works, the user just sees empty data.

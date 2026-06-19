@@ -73,20 +73,24 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
-# HimalayaUI backend (Julia) — slow, capture once. See packages/HimalayaUI/test/AGENTS.md
+# HimalayaUI backend (Julia) — ~3 min serial. Capture once. See packages/HimalayaUI/test/AGENTS.md
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
+# Faster (~2 min): run the 5 GROUP buckets as parallel processes:
+make test-parallel
+# One bucket only (db|pipeline|routes|events|wire):
+GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 
 # HimalayaUI frontend — from packages/HimalayaUI/frontend/
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (mocked; auto-starts Vite)
 npm run e2e:live      # Live integration tests (requires backend + Vite running)
-npm run build         # tsc --noEmit + vite build (must pass before PR)
+npm run build         # lint:design + tsc --noEmit + vite build (must pass before PR)
 ```
 
 Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` / `HimalayaUI.<name>` in tests.
 
-**The Julia backend suite is slow** (5–10 min). Capture output once, grep the file. Same for `npm test`. Detailed slow-suite guidance in `packages/HimalayaUI/test/AGENTS.md`.
+**The Julia backend suite runs ~3 min serial (~2 min via `make test-parallel`).** Still capture output once and grep the file rather than re-running with different filters. Same for `npm test`. Route tests dispatch in-process (`with_inproc_routes`), not over a socket — see `packages/HimalayaUI/test/AGENTS.md` for the dispatch pattern, GROUP buckets, and the wire-keeper boundary.
 
 ## Running the app
 
@@ -95,15 +99,16 @@ Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exp
 make sysimage          # creates build/himalaya.so
 bin/himalaya config new --type simple --dir /path/to/experiment
 # edit /path/to/experiment/experiment.toml to set name + column mappings
-bin/himalaya init /path/to/experiment
-bin/himalaya analyze /path/to/experiment
-bin/himalaya serve /path/to/experiment --port 8080
+bin/himalaya init /path/to/experiment        # init takes a positional path
+bin/himalaya analyze -e /path/to/experiment  # analyze/reingest/show take -e <id|name|path>
+# serve has no path arg — it serves the central DB (HIMALAYA_DB_PATH / default_db_path):
+bin/himalaya serve --port 8080
 # After editing manifest.csv or experiment.toml:
-bin/himalaya reingest /path/to/experiment
+bin/himalaya reingest -e /path/to/experiment
 
 # Without sysimage (slower cold start, no build required):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  serve /path/to/experiment --port 8080
+  serve --port 8080
 ```
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
@@ -138,17 +143,17 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 ## Current state
 
-- **Greenfield cutover (2026-06-15, branch `worktree-greenfield-ui-rebuild`, UNMERGED):** "The Print" is the sole app. The real app was promoted into `src/print/App.tsx` (`PrintApp`); `index.html → src/print/main.tsx` is the single entry (mounts `#app`); the legacy `src/App.tsx`/`src/main.tsx`/`print.html` were removed. `npm run build` now emits `dist/index.html` containing the real app (it previously built a stub). Plan: `docs/superpowers/plans/2026-06-14-greenfield-main-cutover.md`.
-- Core Himalaya: `v0.5.1` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
+- **Greenfield cutover MERGED to `main` (PR #281, merge-commit `dcac451`, 2026-06-15):** "The Print" is the sole app. The real app lives in `packages/HimalayaUI/frontend/src/print/App.tsx` (`PrintApp`); `index.html → src/print/main.tsx` is the single entry (mounts `#app`); the legacy `src/App.tsx`/`src/main.tsx`/`print.html` were deleted. `npm run build` emits `dist/index.html` containing the real app. The `worktree-greenfield-ui-rebuild` branch has been deleted. Follow-ups on `main`: #282 (dropped the dead `/api/comparisons` frontend client) and #283 (beam-center calibration).
+- Core Himalaya: `v0.5.3` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + Focus/Index workspace + Inspect page + Series (folio/scoping/builder) + experiment-config system + skeleton loading + multiplayer + instrumentation foundation + mutation queue + slug permalinks + figure export + functional-redesign sweep (M1–M3) + component-library extraction (enforced design system) complete:
   - **Backend:** transactional SQLite pipeline (incl. `_reingest_inner!`), FK enforcement, REST API (Oxygen.jl), CLI (`config new/list`, `init`, `analyze`, `reingest`, `show`, `serve`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.
   - **Adapter-driven I/O:** `experiment.toml` per experiment, positional or named columns, configurable file patterns, prefix-based filesystem discovery.
-  - **Frontend:** corpus contact sheet → loupe → Focus/Index workspace (`/sample/:id`: trace hero + detector panel + phase-call rail + notes margin/drawer), with clickable corpus→sample doors (M1), trace viewer with peak editing + auto-fit + log/linear toggle, Miller plot, PhasePanel with curate + stale-indices reanalyze, Inspect/loupe page (detector image + thumbnail filmstrip + reject-reason chips + sample metadata), OnboardingFlow + NavModal with focus trapping, skeleton loading on all data-driven cards. The earlier three-card *chat* Index and the @-mention subsystem were **retired 2026-05-29** (presentation deleted, message data plane parked — see `frontend/src/components/AGENTS.md`).
-  - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) **cancelled 2026-06-03** — no conflict UI; multiplayer stays last-write-wins, replaced by edit-tracking → undo/redo → versioning (designed in Layer 4). See `docs/redesign-notes.md` (2026-06-03) + `docs/event-log.md` §"Conflict resolution".
+  - **Frontend:** corpus contact sheet → loupe → Focus workspace (`/sample/:id`: trace plate on the d3 `TracePlot` engine, detector + combs panels, phase-call + assignment rail), with clickable corpus→sample doors, peak editing + auto-fit + log/linear toggle, custom-index modal, Loupe/Inspect page (detector image + thumbnail gallery + reject-reason chips + sample metadata), OnboardingFlow + NavModal with focus trapping, skeleton loading on all data-driven surfaces. The earlier three-card *chat* Index and the @-mention subsystem were **retired 2026-05-29** (presentation deleted, message data plane parked).
+  - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) **cancelled 2026-06-03** — no conflict UI; multiplayer stays last-write-wins, replaced by edit-tracking → undo/redo → versioning (designed in Layer 4). See `docs/event-log.md` §"Conflict resolution".
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.
-  - **Series + picker + figure export + permalinks:** the standalone Compare page was **folded into Series 2026-05-29** (`/compare/*` redirects to `/series`); the Series folio/scoping/builder renders multi-trace overlays (`MultiTracePlot` render core) with sample-first picker, conflict resolution modal, and PNG/SVG copy/save. Slug-based permalink URLs round-trip through `useStateFromUrl` / `useUrlFromState`.
-  - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into 12 closed-look primitives under `src/print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside `src/print/ui/**` (rules #3/#5 allowlist the colour-authoring files: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the detector/heatmap layers, `print/main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; static catalog at `docs/design-system.html`. Plan: [docs/superpowers/plans/2026-05-29-component-library-extraction.md](docs/superpowers/plans/2026-05-29-component-library-extraction.md).
-  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~180 Vitest files (~1500 tests) · 10 Playwright E2E spec files (mocked) + 6 Playwright live-integration specs.
+  - **Series + picker + figure export + permalinks:** the standalone Compare page was **folded into Series 2026-05-29** (`/compare/*` redirects to `/series`); the Series folio/scoping/builder renders multi-trace overlays on the bespoke d3 plot engine (`src/print/plot/`) with sample-first picker and PNG/SVG copy/save. Multiplayer is last-write-wins (no conflict UI — see the Plan 7 note above). Slug-based permalink URLs round-trip through `useStateFromUrl`.
+  - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into a closed-look primitive library under `src/print/ui/` (~50 primitives — Button, Card, SegmentedControl, PhaseChip, Input, Field, Menu, Tooltip, … — list illustrative) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-exempt dirs (`src/print/ui/**` plus the `print/{plot,detector,comb,export}/` render layers) (rules #3/#5 also allowlist the colour-authoring files: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, `print/main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; static catalog at `docs/design-system.html`.
+  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~279 Vitest files · 11 Playwright E2E spec files (mocked) + 4 Playwright live-integration specs.
 - Deferred: holistic trace-plot-card / peak-move redesign (M4 — gated on rethinking the `auto_peaks`/`peak_curations` curation model), Phase panel Recent section, export UI, per-user audit view, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
@@ -170,8 +175,4 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md) — runbook for live-integration Playwright tests.
 - [packages/HimalayaUI/.env.example](packages/HimalayaUI/.env.example) — deployment env vars.
 
-**Specs and plans:**
-
-- [docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md](docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md) — web-app design spec (schema, API, UI).
-- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](docs/superpowers/specs/2026-04-28-experiment-config-design.md) — config system design.
-- [docs/superpowers/plans/](docs/superpowers/plans/) — implementation plans (one per sub-project).
+> The per-sub-project design specs and implementation plans that used to live under `docs/superpowers/` were consolidated into the living docs above and removed (2026-06-18); their full history is preserved in git.

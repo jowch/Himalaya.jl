@@ -1,7 +1,7 @@
 /**
  * peak_added mutator (M2.2). Optimistic effect inserts a manual Peak with a
  * negative placeholder id; onSuccess swaps in the server's authoritative row
- * and updates `exposure.analysis_inputs_hash` so `StaleIndicesBanner` does
+ * and updates `exposure.analysis_inputs_hash` so the stale-indices alert does
  * not flash. Indices are not invalidated here — they arrive via SSE
  * `post_state` through `applyRemoteToCache` (replay-without-refetch).
  */

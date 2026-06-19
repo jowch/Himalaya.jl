@@ -3,7 +3,7 @@ using HimalayaUI
 
 @testset "apply_event! writes to user_actions and returns event_id" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice"], UInt8[])
 
@@ -26,7 +26,7 @@ end
 
 @testset "apply_event! with no payload writes NULL payload and skips dispatcher" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "bob"], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
             kind = "no_payload_event", entity_type = "exposure", entity_id = 1)
@@ -40,7 +40,7 @@ end
 
 @testset "apply_event! with no X-Username writes user_id = NULL" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", Pair{String,String}[], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
             kind = "anon_event", entity_type = "exposure", entity_id = 1,
@@ -54,7 +54,7 @@ end
 
 @testset "log_action! still works (legacy wrapper)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         # Existing call sites pass these args; should write a row with the
         # legacy column shape and a payload of {:note => "..."} when given.
@@ -71,7 +71,7 @@ end
 
 @testset "idx_events_by_exposure index exists" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_by_exposure'"))
         @test !isempty(rows)
@@ -80,7 +80,7 @@ end
 
 @testset "user_actions has payload and undoes_event_id columns after migration" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         cols = [String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
             "PRAGMA table_info(user_actions)"))]
         @test "payload" in cols
@@ -90,7 +90,7 @@ end
 
 @testset "rebuild_views_from_log! reproduces incremental view state" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
         # Set up an exposure with one auto peak (so peak_excluded has a target).
@@ -140,7 +140,7 @@ end
 
 @testset "apply_event! persists client_id when X-Client-Id header present" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -157,7 +157,7 @@ end
 
 @testset "apply_event! writes NULL client_id when header absent" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -173,7 +173,7 @@ end
 
 @testset "apply_event! persists client_op_id when X-Client-Op-Id header present" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -190,7 +190,7 @@ end
 
 @testset "apply_event! writes NULL client_op_id when header absent" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -206,7 +206,7 @@ end
 
 @testset "rebuild_views_from_log! tolerates rows with NULL/non-NULL client_op_id mix" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -243,7 +243,7 @@ end
 
 @testset "rebuild_views_from_log! tolerates rows with NULL client_id" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -258,7 +258,7 @@ end
 
 @testset "migrate_r4_rebase_entity_type! rewrites legacy peak/index entity_type rows" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
         # Set up minimal data.
@@ -299,7 +299,7 @@ end
     end
     try
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             HimalayaUI.bind_db!(db)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -332,7 +332,7 @@ end
     end
     try
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             HimalayaUI.bind_db!(db)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -355,7 +355,7 @@ end
 
 @testset "I2: apply_event! with same (client_op_id, action, entity) returns existing event_id" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         # Seed FK chain.
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
@@ -389,7 +389,7 @@ end
 
 @testset "I2: apply_event!(::InTransaction, ...) participates in caller's transaction" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
@@ -457,7 +457,7 @@ end
 
 @testset "comparison_created: 0 members" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         _premint_comparison!(db, 1)
@@ -479,7 +479,7 @@ end
 
 @testset "comparison_created: 3 members, content_hash populated, member fields present" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         # Seed exposures so exposure_id FKs are valid.
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
@@ -521,7 +521,7 @@ end
 
 @testset "comparison_submitted: no-op (same state) preserves rows but recomputes hash" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -553,7 +553,7 @@ end
 
 @testset "comparison_submitted: member added (id === nothing)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -586,7 +586,7 @@ end
 
 @testset "comparison_submitted: member removed (DB id absent from payload)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -621,7 +621,7 @@ end
 
 @testset "comparison_submitted: UPDATE writes snapshot unconditionally on same exposure" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -663,7 +663,7 @@ end
 
 @testset "comparison_submitted: reorder updates display_order" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -703,7 +703,7 @@ end
 
 @testset "comparison_submitted: zero-row UPDATE errors (member id not for this comparison)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         _premint_comparison!(db, 4)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
@@ -717,7 +717,7 @@ end
 
 @testset "comparison_deleted cascades to members and messages" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -746,7 +746,7 @@ end
 
 @testset "rebuild_views_from_log!(entity_type=\"comparison\") reproduces live state" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -816,7 +816,7 @@ end
 
 @testset "I2: apply_event!(::InTransaction, ...) rolls back with caller's tx on throw" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
@@ -848,7 +848,7 @@ end
 
 @testset "assignment_add round-trips through the log" begin
     mktempdir() do dir
-        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db  = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -874,7 +874,7 @@ end
 
 @testset "assignment_remove round-trips through the log" begin
     mktempdir() do dir
-        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db  = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
@@ -901,7 +901,7 @@ end
 
 @testset "assignment_set_state round-trips and clears members on form_factor" begin
     mktempdir() do dir
-        db  = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db  = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")

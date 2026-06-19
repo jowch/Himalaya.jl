@@ -100,7 +100,8 @@ function _series_listing_rows(rows)::Vector{Dict{Symbol, Any}}
             :has_stale_members     => Bool(r.has_stale_members),
             :ordering_variable     => ismissing(r.ordering_variable) ? nothing : String(r.ordering_variable),
             # Cross-experiment = members resolve to >1 distinct samples.experiment_id.
-            # Valid because q is absolute (Å⁻¹); see redesign-notes architecture decision 1.
+            # Valid because q is in absolute Å⁻¹ — traces from different experiments
+            # share one x-axis and compare directly (docs/himalayaui-design.md §2.4).
             :spans_experiments     => !ismissing(r.spans_experiments) && Bool(r.spans_experiments),
             # Beamtime provenance: the members' single experiment's name when
             # NOT spanning; NULL when spanning, memberless, or the single experiment itself has a NULL name (the CASE guard

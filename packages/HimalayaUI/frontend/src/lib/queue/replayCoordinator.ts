@@ -42,7 +42,7 @@ export function handleRemoteEvent(
       // Apply post_state (indices + exposure hash) BEFORE resolving the
       // deferred so that by the time the mutator's onSuccess runs the
       // indices cache is already fresh. Without this, the indices stay
-      // frozen at the pre-mutation `inputs_hash` and StaleIndicesBanner
+      // frozen at the pre-mutation `inputs_hash` and the stale-indices alert
       // sticks until a hard refetch.
       applyPostStateOnly(remote, qc);
       // Resolve first, THEN abort — Promises only settle once, so the
@@ -66,7 +66,7 @@ export function handleRemoteEvent(
   // 2 would double-apply the per-kind body (e.g. duplicate peak row for
   // peak_added). But we still need to propagate `post_state.indices` —
   // mutator onSuccess paths don't write the indices cache, so without this
-  // the StaleIndicesBanner sticks.
+  // the stale-indices alert sticks.
   if (isOwnTab) {
     applyPostStateOnly(remote, qc);
     return;

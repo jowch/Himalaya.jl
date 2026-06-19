@@ -674,7 +674,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # transaction as the index/group rebuild. Previously these UPDATEs lived
     # in the `analyze_exposure!` caller AFTER persist_analysis!'s tx
     # committed, so a crash in between left exposures.analysis_inputs_hash
-    # and indices.inputs_hash divergent — StaleIndicesBanner state would
+    # and indices.inputs_hash divergent — the stale-indices alert state would
     # then get permanently stuck. Route callers wrap the whole flow in
     # with_idempotency's outer tx so this was benign for HTTP routes; the
     # bug only manifested for the CLI `himalaya analyze` path.

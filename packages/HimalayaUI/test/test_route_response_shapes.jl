@@ -25,51 +25,18 @@ function assert_keys(actual, expected::Vector{Symbol})
     @test actual_keys == expected_set
 end
 
-# Fixture: a fully-analyzed exposure with peaks + indices. Reuses the
-# example_tot.dat trace (same as test_routes_analysis.jl). Returns a tuple
-# (db, exposure_id, sample_id, analysis_dir).
-function _setup_analyzed_exposure(tmp::String)
-    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
-    mkpath(analysis_dir)
-    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
-       joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
-        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
-    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
-    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
-    (db = db, exposure_id = e_id, sample_id = s_id, analysis_dir = analysis_dir)
-end
-
-"""
-Like `_setup_analyzed_exposure` but UPDATEs the rows to known slug-resolvable
-names ("test-exp" / "S1" / "JC001-007") and captures `experiment_id` for tests
-that need it. Used by `test_routes_resolve.jl` and the resolve-shape rows below.
-"""
-function _setup_for_resolve(tmp::String)
-    ctx = _setup_analyzed_exposure(tmp)
-    DBInterface.execute(ctx.db, "UPDATE experiments SET name = 'test-exp'")
-    DBInterface.execute(ctx.db, "UPDATE samples SET name = 'S1' WHERE id = ?",
-                        [ctx.sample_id])
-    DBInterface.execute(ctx.db, "UPDATE exposures SET filename = 'JC001-007' WHERE id = ?",
-                        [ctx.exposure_id])
-    exp_row = Tables.rowtable(DBInterface.execute(ctx.db,
-        "SELECT id FROM experiments LIMIT 1"))[1]
-    return (db = ctx.db,
-            experiment_id = Int(exp_row.id),
-            sample_id = ctx.sample_id,
-            exposure_id = ctx.exposure_id)
-end
+# Cross-file helpers (_setup_analyzed_exposure, _setup_for_resolve) are defined
+# in test_fixtures.jl (included via test_http.jl) and available here via the
+# standard runtests.jl include order.
 
 @testset "Route response shapes (queue contract)" begin
 
     @testset "POST /api/exposures/:id/peaks → PeakAddResponse (flat Peak & metadata)" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.post("$base/api/exposures/$(ctx.exposure_id)/peaks";
-                    body = JSON3.write(Dict(:q => 0.5)),
+            with_inproc_routes(ctx.db) do call
+                r = call("POST", "/api/exposures/$(ctx.exposure_id)/peaks";
+                    body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 201
@@ -106,9 +73,9 @@ end
             auto = first(Tables.rowtable(DBInterface.execute(ctx.db,
                 "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
                 [ctx.exposure_id])))
-            with_test_server(ctx.db) do port, base
-                r = HTTP.patch("$base/api/peaks/$(auto.id)";
-                    body = JSON3.write(Dict(:excluded => true)),
+            with_inproc_routes(ctx.db) do call
+                r = call("PATCH", "/api/peaks/$(auto.id)";
+                    body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
@@ -131,15 +98,15 @@ end
     @testset "DELETE /api/peaks/:id (manual) → PeakRemoveResponse" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
+            with_inproc_routes(ctx.db) do call
                 # Add a manual peak first so we have something deletable.
-                r = HTTP.post("$base/api/exposures/$(ctx.exposure_id)/peaks";
-                    body = JSON3.write(Dict(:q => 0.5)),
+                r = call("POST", "/api/exposures/$(ctx.exposure_id)/peaks";
+                    body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 manual_id = JSON3.read(String(r.body)).id
 
-                r2 = HTTP.delete("$base/api/peaks/$manual_id";
+                r2 = call("DELETE", "/api/peaks/$manual_id";
                     headers = ["X-Username" => "alice"])
                 @test r2.status == 200
                 body = JSON3.read(String(r2.body))
@@ -157,8 +124,8 @@ end
             DBInterface.execute(ctx.db,
                 "UPDATE exposures SET analysis_inputs_hash = NULL WHERE id = ?",
                 [ctx.exposure_id])
-            with_test_server(ctx.db) do port, base
-                r = HTTP.post("$base/api/exposures/$(ctx.exposure_id)/analyze";
+            with_inproc_routes(ctx.db) do call
+                r = call("POST", "/api/exposures/$(ctx.exposure_id)/analyze";
                     headers = ["X-Username"     => "alice",
                                "X-Client-Op-Id" => "uuid-shape-reanalyze"])
                 @test r.status == 200
@@ -181,8 +148,8 @@ end
         # cache write or SSE post_state frame.
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/indices")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/exposures/$(ctx.exposure_id)/indices")
                 @test r.status == 200
                 indices = JSON3.read(String(r.body))
                 @test !isempty(indices)
@@ -208,10 +175,10 @@ end
     @testset "GET /api/indices/:id → single IndexEntry full shape" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                rs = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/indices")
+            with_inproc_routes(ctx.db) do call
+                rs = call("GET", "/api/exposures/$(ctx.exposure_id)/indices")
                 first_id = JSON3.read(String(rs.body))[1].id
-                r = HTTP.get("$base/api/indices/$first_id")
+                r = call("GET", "/api/indices/$first_id")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 expected = [
@@ -231,12 +198,12 @@ end
                 "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 2",
                 [ctx.exposure_id]))
             p1 = Int(peaks[1].id); p2 = Int(peaks[2].id)
-            with_test_server(ctx.db) do port, base
+            with_inproc_routes(ctx.db) do call
                 body_in = Dict(:phase => "Pn3m",
                                :anchor_peak_id => p1, :anchor_ratio => 1,
                                :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
-                r = HTTP.post("$base/api/exposures/$(ctx.exposure_id)/speculative";
-                    body = JSON3.write(body_in),
+                r = call("POST", "/api/exposures/$(ctx.exposure_id)/speculative";
+                    body = Vector{UInt8}(JSON3.write(body_in)),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
@@ -263,13 +230,13 @@ end
         # If a future change starts including tags, update the mutator
         # AND this test together.
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            with_test_server(db) do port, base
-                r = HTTP.patch("$base/api/samples/$s_id";
-                    body = JSON3.write(Dict(:notes => "n")),
+            with_inproc_routes(db) do call
+                r = call("PATCH", "/api/samples/$s_id";
+                    body = Vector{UInt8}(JSON3.write(Dict(:notes => "n"))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
@@ -290,8 +257,8 @@ end
     @testset "GET /api/exposures/:id → full Exposure shape" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/exposures/$(ctx.exposure_id)")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 expected = [
@@ -315,8 +282,8 @@ end
         # tightens the SELECT and forgets to keep nullables is caught.
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/exposures/$(ctx.exposure_id)/peaks")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/exposures/$(ctx.exposure_id)/peaks")
                 @test r.status == 200
                 peaks = JSON3.read(String(r.body))
                 @test !isempty(peaks)
@@ -337,8 +304,8 @@ end
             auto_id = first(Tables.rowtable(DBInterface.execute(ctx.db,
                 "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
                 [ctx.exposure_id]))).id
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/peaks/$auto_id")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/peaks/$auto_id")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 expected = [
@@ -353,8 +320,8 @@ end
     @testset "GET /api/samples/:id → full Sample shape (including tags)" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/samples/$(ctx.sample_id)")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/samples/$(ctx.sample_id)")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 # Sample type: id, experiment_id, name, notes, tags.
@@ -374,17 +341,17 @@ end
 
     @testset "GET /api/samples/:id/messages → SampleMessage[]" begin
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 # Post one to have something to read.
-                HTTP.post("$base/api/samples/$s_id/messages";
-                    body = JSON3.write(Dict(:body => "hello")),
+                call("POST", "/api/samples/$s_id/messages";
+                    body = Vector{UInt8}(JSON3.write(Dict(:body => "hello"))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
-                r = HTTP.get("$base/api/samples/$s_id/messages")
+                r = call("GET", "/api/samples/$s_id/messages")
                 @test r.status == 200
                 msgs = JSON3.read(String(r.body))
                 @test !isempty(msgs)
@@ -398,13 +365,13 @@ end
 
     @testset "POST /api/samples/:id/tags → SampleTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            with_test_server(db) do port, base
-                r = HTTP.post("$base/api/samples/$s_id/tags";
-                    body = JSON3.write(Dict(:key => "k", :value => "v")),
+            with_inproc_routes(db) do call
+                r = call("POST", "/api/samples/$s_id/tags";
+                    body = Vector{UInt8}(JSON3.write(Dict(:key => "k", :value => "v"))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 201
@@ -419,14 +386,14 @@ end
 
     @testset "POST /api/exposures/:id/tags → ExposureTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
-            db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
             e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
-            with_test_server(db) do port, base
-                r = HTTP.post("$base/api/exposures/$e_id/tags";
-                    body = JSON3.write(Dict(:key => "k", :value => "v")),
+            with_inproc_routes(db) do call
+                r = call("POST", "/api/exposures/$e_id/tags";
+                    body = Vector{UInt8}(JSON3.write(Dict(:key => "k", :value => "v"))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 201
@@ -446,8 +413,8 @@ end
     @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
                 body = JSON3.read(String(r.body))
                 # Key set frozen.
                 @test Set(keys(body)) == Set([
@@ -462,9 +429,8 @@ end
     @testset "GET /api/resolve 404 (missing exposure)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=nope";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&exposure=nope")
                 body = JSON3.read(String(r.body))
                 @test Set(keys(body)) == Set([
                     :error, :missing, :missing_value,
@@ -479,9 +445,8 @@ end
     @testset "GET /api/resolve 400 (ambiguous params)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)")
                 body = JSON3.read(String(r.body))
                 @test Set(keys(body)) == Set([:error])
             end

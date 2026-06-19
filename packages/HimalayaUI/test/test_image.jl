@@ -156,7 +156,7 @@ end
     mktempdir() do tmp
         # db_dir is the tmp dir; deliberately NOT an experiment dir, so the
         # cache writes never collide with the read-only-experiment-dir invariant.
-        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        db = open_prepared_clone(tmp)
         present = _make_detector_tiff(256)
         gone    = tempname() * ".tiff"     # path set, file absent
         try

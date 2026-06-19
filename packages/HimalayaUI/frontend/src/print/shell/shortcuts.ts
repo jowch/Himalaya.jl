@@ -1,7 +1,7 @@
 // Unified keyboard shortcut library — the single source of truth for the app's
 // gesture vocabulary. Handlers (useShortcuts), on-screen hints, the legend
 // (<KbdLegend>) and aria-keyshortcuts all derive from this registry, so they can
-// never drift apart. Design: docs/superpowers/notes/2026-06-13-keyboard-shortcut-library.md
+// never drift apart. Design: print/shell/AGENTS.md §"Keyboard shortcut registry"
 //
 // Locked decisions (Jonathan 2026-06-13): prev/next sample is `[`/`]` ONLY (no
 // more `,`/`.`); Focus is a two-axis model (←→ exposure, ↑↓ candidate preview,

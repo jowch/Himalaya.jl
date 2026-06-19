@@ -23,7 +23,7 @@ const LABELED_PEAKS = Dict(
 # Regression floors. Numbers reflect current algorithm behavior on these
 # specific traces; tightening these (raising recall, lowering spurious)
 # requires algorithm work and should bump these floors with the same commit.
-# See docs/superpowers/specs/2026-04-22-persistence-peakfinding-design.md for
+# See docs/peak-finding.md for
 # the design and the known-hard-case discussion.
 const RECALL_FLOOR = Dict(
     # Lowered 7→6 when SG edges moved to the "interp" boundary scheme. The old

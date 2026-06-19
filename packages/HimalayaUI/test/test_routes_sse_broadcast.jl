@@ -53,7 +53,7 @@ end
 @testset "Migrated routes broadcast SSE frames (issue #5)" begin
     @testset "POST /api/samples/:id/messages → post_message frame" begin
         tmp    = mktempdir()
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -73,7 +73,7 @@ end
 
     @testset "PATCH /api/samples/:id → update_sample frame" begin
         tmp    = mktempdir()
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -93,7 +93,7 @@ end
 
     @testset "POST/DELETE /api/samples/:id/tags → add_tag/remove_tag frames" begin
         tmp    = mktempdir()
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -119,7 +119,7 @@ end
 
     @testset "PATCH /api/exposures/:id/status → set_exposure_status frame" begin
         tmp    = mktempdir()
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -140,7 +140,7 @@ end
 
     @testset "PATCH /api/exposures/:id/select → select_exposure frame" begin
         tmp    = mktempdir()
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -169,7 +169,7 @@ end
         mkpath(analysis_dir)
         cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
            joinpath(analysis_dir, "example_tot.dat"))
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -209,7 +209,7 @@ end
         mkpath(analysis_dir)
         cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
            joinpath(analysis_dir, "example_tot.dat"))
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -242,7 +242,7 @@ end
 
     @testset "POST/DELETE /api/exposures/:id/tags → add_tag/remove_tag frames" begin
         tmp    = mktempdir()
-        db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db     = open_prepared_clone(tmp)
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")

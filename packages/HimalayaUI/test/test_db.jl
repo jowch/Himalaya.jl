@@ -756,7 +756,7 @@ end
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Compare page (Plan §Phase 1, Task 1.1): comparisons / comparison_members /
-# comparison_messages schema. See docs/superpowers/specs/2026-05-02-compare-page-design.md.
+# comparison_messages schema. (compare retired; see git history)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @testset "Compare schema: tables and indexes exist after open_db" begin

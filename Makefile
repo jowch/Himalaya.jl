@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean
+.PHONY: all frontend sysimage check-sysimage clean test-parallel
 
 all: frontend sysimage
 
@@ -30,3 +30,23 @@ check-sysimage:
 
 clean:
 	rm -rf $(BUILD_DIR) $(FRONTEND_DIR)/dist
+
+# NOTE: must match the bucket names in packages/HimalayaUI/test/runtests.jl
+# (the GROUPS const). This convenience runner is NOT cross-checked against it;
+# the authoritative serial path (GROUP=All) is drift-guarded in runtests.jl. If
+# you add/rename a bucket there, update this line too or it won't run in parallel.
+GROUPS := db pipeline routes events wire
+test-parallel:
+	@mkdir -p build
+	@echo "Running $(words $(GROUPS)) groups in parallel..."
+	@pids=""; rc=0; \
+	for g in $(GROUPS); do \
+		( GROUP=$$g HIMALAYA_SUITE_PARALLEL=1 julia --project=packages/HimalayaUI \
+			-e 'using Pkg; Pkg.test("HimalayaUI")' > build/test-$$g.log 2>&1 ) & \
+		pids="$$pids $$!"; \
+	done; \
+	for p in $$pids; do wait $$p || rc=1; done; \
+	for g in $(GROUPS); do \
+		echo "== $$g =="; grep -E "Test Summary" build/test-$$g.log | tail -1 || true; \
+	done; \
+	exit $$rc

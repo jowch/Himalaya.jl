@@ -109,7 +109,7 @@ function bytesToHex(buf: Uint8Array): string {
  * stripping the `sha256:` prefix, lowercased. The eager-hash fragment of
  * `[[comparison:N@hash8]]` mention tokens.
  *
- * RETAINED through the 2026-05-29 chat retirement (see `docs/redesign-notes.md`).
+ * RETAINED through the 2026-05-29 chat retirement.
  * Its only callers (the now-deleted MentionPicker emit path and MentionChip
  * drift detector) are gone, but this is the canonical fix for issue #62 — where
  * two diverging slice conventions made every well-formed mention render a

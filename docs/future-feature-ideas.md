@@ -201,24 +201,22 @@ consistency at a glance.
 
 ## Trace plot card — interaction grammar redesign (incl. peak-move)
 
-The single-sample focus trace editor (`TraceViewer.tsx` / `PlotCard.tsx`)
-needs a holistic redesign, not a patch. This was Movement 4 ("redesign the
+The single-sample focus trace editor (`src/print/components/TracePlate.tsx`,
+used by `src/print/pages/FocusPage.tsx`) needs a holistic redesign, not a patch. This was Movement 4 ("redesign the
 trace grammar") of the 2026-05-29 functional-traversal remediation; M1–M3
 shipped, M4 was **deferred here** by owner decision because the headline
 verb (peak-move) is a backend data-model problem, not a plot interaction.
-See the round-4 audit synthesis and the program entry in
-[`redesign-notes.md`](redesign-notes.md).
 
 **What's wrong with the current grammar (verified against live source).**
 - **One click verb, three blind outcomes** decided only by what's under the
-  cursor (`TraceViewer.tsx:264-291`): empty area → add manual peak; on a
+  cursor (live grammar in `src/print/components/TracePlate.tsx` /
+  `src/print/pages/FocusPage.tsx`): empty area → add manual peak; on a
   manual peak → delete; on an auto peak → toggle exclusion. No mode, no
   modifier, no cursor change to say which.
-- **The `+ Peak` toggle is a false mode** — `addArmed` has no behavioral
-  effect; empty-click always adds regardless (`PlotCard.tsx:498-513`).
-- **Two conflicting "reset" verbs** — dblclick does a true full reset
-  (x+y → null); the ZoomIndicator labeled "reset" actually calls
-  `onFitFeatures` (auto-fit to features), not a reset (`PlotCard.tsx:480`).
+- **Two conflicting "reset" verbs** — double-click does a true full reset
+  (`onReset`, x+y → null), while the "Auto-fit" button (`onAutoFit`, sets
+  `xDomain` to null to fit features) is a different verb wearing similar
+  affordance.
 - **No peak-move at all** — q is immutable; only add / remove(manual) /
   exclude(auto) exist.
 
@@ -238,18 +236,19 @@ DESIGN.md's "The Print":
   peak is a hand-edit, so it reads as manual (peak-manual magenta). The color
   is the audit trail of "you touched this."
 - **Reconcile the resets** — relabel the fit verb "fit"; reserve "reset" for
-  true full-range. **Kill the false `+ Peak` mode.**
+  true full-range. (The `+ Peak` mode is now a real armed mode with an Escape
+  disarm handler — `addArmed` in `FocusPage.tsx` — so it no longer needs killing.)
 - **Focus editor first**, then propagate the proven grammar to the
-  series-builder (`MultiTracePlot`'s shipped-but-inert `onPeakClick`); the
-  Focus trace is *the plate*, the builder is a read-leaning secondary surface
-  with its own view-state-persistence gap.
+  series-builder (`src/print/components/BuilderRail.tsx` + the d3 plot under
+  `src/print/plot`); the Focus trace is *the plate*, the builder is a
+  read-leaning secondary surface with its own view-state-persistence gap.
 - Motion per canon: 120ms ease-out, no bounce; the drag is a quiet snap, with
   an optional subtle snap-to-local-max assist.
 
 **Why later — the hard backend blocker.** Peaks are stored as two tables
-([db.jl:97-130](packages/HimalayaUI/src/db.jl:97)): `auto_peaks` (analysis
+([db.jl:100-122](packages/HimalayaUI/src/db.jl:100)): `auto_peaks` (analysis
 output, **regenerated on every reanalysis**) and `peak_curations` (the manual
-delta layer, `kind IN ('add','exclude',…)`). Critically, **curations are
+delta layer, `kind IN ('exclude','add')`). Critically, **curations are
 keyed by q, not by a stable peak identity**: an exclude curation suppresses
 "whatever auto peak sits at q=X" (`events.jl:328`, `comparisons.jl:230`); the
 effective list is `auto_peaks LEFT JOIN peak_curations` with adds unioned in.
@@ -267,25 +266,17 @@ that reanalysis honors. That backend design is the real prerequisite, and is
 why this is one redesign (plot card + curation model), not a `PATCH /peaks/:id
 {q}` bolt-on. Pick it up when the curation/reanalysis model is on the table.
 
-**Folded into this redesign (deferred here 2026-05-29).** Two smaller items
-were intentionally deferred to this redesign rather than done piecemeal, because
-both sit in its blast radius and a pre-redesign change would just be redone:
+**Folded into this redesign (deferred here 2026-05-29).** A smaller item
+was intentionally deferred to this redesign rather than done piecemeal, because
+it sits in its blast radius and a pre-redesign change would just be redone:
 
-- **Rename `MultiTracePlot` off its Compare-era identity** (backlog #23). The
-  multi-trace Series render core (`MultiTracePlot.tsx`, ex-Compare-page plot;
-  exports `MultiTracePlot`, `MultiTracePlotProps`, `COMPARE_PLOT_ASPECT`) is
-  referenced across ~26 files incl. 2 `vi.mock` string-paths
-  (`test/SeriesBuilderPage.test.tsx`, `test/SeriesBuilderPage.edit.test.tsx`).
-  Settle the name
-  *during* the redesign, when the component boundaries are redrawn anyway — and
-  it **must stay unambiguous vs the single-trace `TraceViewer`** (the
-  redesign's own `TraceViewer`-vs-multi-trace decision should pick the name).
 - **Gate the "Track reflections" cross-trace toggle.** The checkbox
-  (`SeriesBuilderRail.tsx`) is a no-op when no member has a confirmed phase (the
-  `CrossTraceTrackingLayer` self-empties). The clean predicate is now available
-  on the builder — `members.some(m => m.snapshot?.confirmed_index != null)` —
-  so disable/hint the control when there's nothing to connect. It lives on the
-  multi-trace plot's rail, so it rides with the redesign of that surface.
+  (`src/print/components/BuilderRail.tsx`) is a no-op when no member has a
+  confirmed phase (the cross-trace tracking layer self-empties). Disable/hint
+  the control when there's nothing to connect. It lives on the multi-trace
+  plot's rail, so it rides with the redesign of that surface. (Re-verify the
+  member-snapshot predicate against the current snapshot shape — the
+  `confirmed_index` semantics shifted in the plotting redesign, PR #280.)
 
 ---
 
@@ -298,12 +289,20 @@ good / bad / maybe rating. The current Index page auto-picks the first
 exposure by id; this page would let the user curate which exposure the
 analysis runs on.
 
-### Tag editing UI
+### Tag editing — known gaps
 
-Backend (`sample_tags`) and routes (`routes_tags.jl`) are intact, but the
-UI was dropped from the three-card redesign. Re-introduce when we know
-what tag-driven workflows actually look like — probably alongside the
-summary table or the cross-experiment comparison page.
+A full tag-editing UI now exists (`TagEditor`, `TagList`, `TagPill`,
+`TagSuggest` primitives + the `ManageTagsModal` composite; routes nested
+under `routes_samples.jl`). The remaining work is coherence + bug-fixes
+across the three surfaces it appears on:
+
+- **Modal add-row ignores Enter (A1).** In `ManageTagsModal` the `onCommit`
+  on the key/value `TagSuggest` fields only updates local state — it never
+  calls `handleAdd`; the user must click **Add**. Enter should commit.
+- **`SamplesPage` renders an `editable` `TagList` with no handlers wired
+  (A3).** It passes no `onAddTag`/`onRemoveTag` to `SampleTableRow`, so the
+  edit affordance is a lie on the contact sheet — either wire it or render
+  read-only there.
 
 ### Stale-indices banner
 
@@ -313,13 +312,31 @@ covers most cases now, but a manual fallback is useful for batch edits.
 
 ---
 
-## Compare page (currently a placeholder)
+## Series page / cross-sample comparison
 
-### Stacked / waterfall comparison
+(The standalone Compare page was retired into Series; `/compare*` deep-links
+redirect to the Series surface.)
 
-Multi-sample trace overlay with configurable I-offset between traces.
-Publication-quality SVG export. Useful for visualizing phase transitions
-across a sample series.
+### Waterfall comparison — deferred enhancements
+
+The core waterfall shipped (the Series builder's `WaterfallChart`: per-member
+stacked traces with a configurable I-offset, plus PNG/SVG figure export).
+Deferred:
+
+- **Cross-stack reflection connector + ghost rings.** Hovering an anchor
+  would draw a dashed connector to the *same* reflection across the stacked
+  members, with ghost rings for predicted-but-absent reflections. Blocked
+  on the data model: `MemberSnapshotPeak` carries no `ratio_position` or
+  `phase` field, so the connector would misalign whenever a reflection drops
+  out. Needs a snapshot-schema change first.
+- **Heatmap toggle (YAGNI for now).** A continuous intensity-colour LUT
+  competes with the "colour = phase meaning" rule and stacked traces are
+  more legible at typical 6–8-exposure titration density. If built, it
+  should be a separate renderer triggered only at high member counts.
+- **Default offset tuning (awaiting owner decision).** The default
+  trace-offset of 1.20× opens ~28px inter-row gaps (step h·1.20 = 168px >
+  band h = 140px). The only honest lever is lowering the default toward
+  ~1.0–1.05 to close them; left as-is pending a call.
 
 ### Summary table
 
@@ -344,7 +361,7 @@ JOIN across them via SQLite's `ATTACH` mechanism.
 **Decided 2026-06-03 (greenfield rebuild):** there is **no conflict modal** and
 no optimistic-concurrency conflict UI — the `If-Match` + `409`-retry model
 (Plan 7 R5b) is **cancelled**, not deferred (see `docs/event-log.md`
-§"Conflict resolution", `docs/redesign-notes.md` 2026-06-03 entry). Commit
+§"Conflict resolution"). Commit
 conflicts should never surface as friction. Multiplayer stays last-write-wins.
 
 The positive replacement, to design during **Layer 4** (where the real commit
@@ -359,11 +376,11 @@ part of the figure-export build.
 
 ### Cross-tab SSE URL invalidation — live integration coverage
 
-The slug-disappearance branch in `useUrlFromState.ts` (a previously-resolved
-slug going `defined → undefined` because the entity was deleted from cache)
-is exercised by the unit suite via synthetic cache manipulation. The
-end-to-end SSE → cache update → URL invalidation contract is *not* pinned
-by an integration test. A live-integration spec was scaffolded during the
+The greenfield cutover simplified URL state to numeric IDs — `useStateFromUrl.ts`
+no longer resolves slugs, and no current hook carries the old
+"slug going `defined → undefined` because the entity was deleted from cache"
+branch. The broader end-to-end SSE → cache update → URL invalidation contract
+is still *not* pinned by an integration test. A live-integration spec was scaffolded during the
 permalinks PR and removed as placeholder code; re-introducing it requires:
 
 - A `DELETE /api/samples/{id}` route (and matching event-log/SSE wiring).
@@ -371,7 +388,7 @@ permalinks PR and removed as placeholder code; re-introducing it requires:
   `AlreadyDeletedSample` / experiment `E2ETest`, plus concrete ids the
   spec can reference.
 - A two-tab Playwright spec asserting tab A's URL → StaleUrlPage transition
-  after tab B's delete (per spec §8.3).
+  after tab B's delete.
 
 Pick this up when cross-tab delete becomes a real UX surface. The current
 multiplayer model treats deletes as low-volume; the unit-level coverage
@@ -391,9 +408,11 @@ support both review and onboarding ("show me what alice has been doing").
 
 ### Chat: mentions, threads, reactions
 
-Current ChatCard is intentionally a flat per-sample list. Wait for usage
-data before adding `@user`, threading, or emoji reactions — these are
-expensive to design well and easy to design badly.
+The chat card presentation was retired 2026-05-29 (the @-mention subsystem
+deleted, the message data plane parked). If chat is revived, it would be a
+flat per-sample list; wait for usage data before adding `@user`, threading,
+or emoji reactions — these are expensive to design well and easy to design
+badly.
 
 ### Avatars
 
@@ -446,17 +465,60 @@ page when that lands.
 
 ---
 
+## Interaction & accessibility residuals
+
+Open gaps surfaced by the greenfield holistic audit (work itself shipped to
+GOLD; these were the deliberately-deferred tail).
+
+### Sample doors are not real links
+
+Every sample door (name, frames, "Index") in `SampleTableRow` is a
+`<button onClick>` (`onOpenLoupe` / `onOpenFocus` → `navigate()`), never an
+`<a href>`. So Cmd-click / middle-click / open-in-new-tab is impossible
+anywhere in the corpus contact sheet — a real cost for a tool whose primary
+workflow is comparing samples side by side. Wants real hrefs on the doors.
+
+### Keyboard-accessible reorder in Scoping
+
+The Scoping worksheet reorders via drag handle only — no ▲▼ move buttons,
+so it has a WCAG 2.1.1 gap the Series builder doesn't (Builder has explicit
+Move up / Move down via `useReorderShortcuts`). The undo history already
+records `reorder` entries, so wiring keyboard moves is low-risk.
+
+### Cross-surface keyboard consistency
+
+Two parallel sample-switchers exist — `[`/`]` on Loupe and `,`/`.` on the
+Focus stepper — neither shown on both surfaces (B4: unify into one set).
+The Samples contact-sheet X/K legend only appears once exposures are
+selected, so a first-timer never discovers the gesture (B5: show a resting
+hint). Also a `kept` frame in the Loupe `Verdict` shows a no-op **Restore**
+button alongside **Drop** — only Drop is meaningful when not dropped.
+
 ## Frontend infrastructure
 
 ### Code splitting
 
 Vite warns the bundle is >500 kB. Probably split: NavModal +
-OnboardingFlow + ComparePage as lazy chunks; pull `@observablehq/plot`
-out of the main bundle if possible.
+OnboardingFlow + the Series builder page as lazy chunks.
 
-### `ResizeObserver` on TraceViewer
+### Virtualize the samples contact sheet
 
-Currently the plot's container width is read at render time. Window
+`SamplesPage` mounts every sample row with no windowing (fine at the
+~139-sample dev corpus, flagged as the highest-leverage perf item at
+~678 thumbnails). Adding `react-virtual` (or similar) is also the
+prerequisite for an accurate `aria-rowcount` on the roving grid.
+
+### Semantic spacing / density scale
+
+There's no `@theme` spacing-token system — the named grid constants
+(`LOUPE_BODY_GRID`, `FOCUS_PAGE_GRID`, `FOCUS_SPLIT_GRID`) are single-sourced
+but still literal Tailwind class strings. A semantic spacing scale would let
+density be tuned coherently app-wide rather than per-surface.
+
+### `ResizeObserver` on the trace plot
+
+The live trace surface is `src/print/components/TracePlate.tsx` over the d3
+plot under `src/print/plot`. Currently the plot's container width is read at render time. Window
 resizes don't re-run the effect unless data changes. Add a `ResizeObserver`
 when this becomes a noticeable problem.
 

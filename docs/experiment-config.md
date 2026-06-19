@@ -38,7 +38,7 @@ $EDITOR /data/ssrl-2025-oct/lipid-a/experiment.toml
 himalaya init /data/ssrl-2025-oct/lipid-a
 
 # 4. Later, after editing the manifest or fixing the config:
-himalaya reingest /data/ssrl-2025-oct/lipid-a
+himalaya reingest -e /data/ssrl-2025-oct/lipid-a
 ```
 
 The experiment directory is expected to contain at least:
@@ -136,8 +136,9 @@ The `[manifest].name` column is the **stable scientific identifier** (e.g. `JC00
 rename happens through the manifest CSV + reingest.
 
 The `[manifest].display_name` column is the **friendly user-facing label** (e.g. `DOPC + cholesterol`).
-It is initialised from the manifest at first ingest and editable via the UI thereafter; reingest never
-clobbers it.
+It is initialised from the manifest at first ingest and editable via the UI; note that **reingest
+refreshes it from the manifest** (alongside `notes`), so a UI edit to `display_name` is overwritten on
+the next reingest unless the manifest carries the same value (`cli.jl` `_reingest_inner!`).
 
 Migrating an existing `experiment.toml` from the legacy `label/name` shape to the new
 `name/display_name` shape: run `himalaya migrate-toml <experiment-dir>`. Section-aware
@@ -258,13 +259,12 @@ This invariant is enforced by code review and by a regression test:
 ## Re-ingestion
 
 If the manifest is corrected, the config edited, or new exposures
-arrive on disk, run `himalaya reingest <experiment_dir>` to update the
+arrive on disk, run `himalaya reingest -e <experiment_dir>` to update the
 DB. Reingestion is **safe to run repeatedly** and preserves curation
 work:
 
 - Existing samples are matched by `(experiment_id, name)` and updated
-  in place — `display_name` is **not** clobbered on reingest (user edits are preserved);
-  notes get refreshed.
+  in place — both `display_name` and `notes` are **refreshed from the manifest** on reingest.
 - Exposures are matched by `(sample_id, filename)`. **Existing exposures
   are never deleted or modified by reingest** — their `accepted` /
   `rejected` status, manual peaks, and analysis results are preserved.
@@ -339,7 +339,7 @@ himalaya init <experiment_dir>
     the experiment in the DB. Discovers exposures by filesystem prefix
     scan against the configured integration pattern.
 
-himalaya reingest <experiment_dir>
+himalaya reingest -e <experiment_dir>
     Re-read experiment.toml + manifest.csv and update the DB.
     Idempotent on stable input. Preserves curated exposures.
 
@@ -347,7 +347,7 @@ himalaya migrate-toml <experiment_dir>
     Upgrade experiment.toml from the legacy label/name column shape to the new
     name/display_name shape. Section-aware, regex-anchored; idempotent (safe to
     re-run on an already-migrated file). Required once per experiment dir when
-    deploying the issue #88 schema change.
+    deploying the label/name → name/display_name schema change.
 ```
 
 ## Storage
@@ -369,7 +369,5 @@ optimisation for queries that don't want to parse TOML.
 
 ## Further reading
 
-- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](superpowers/specs/2026-04-28-experiment-config-design.md) — design spec
-- [docs/superpowers/plans/2026-04-28-experiment-config.md](superpowers/plans/2026-04-28-experiment-config.md) — implementation plan
 - [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl) — the implementation
 - [packages/HimalayaUI/configs/simple.toml](../packages/HimalayaUI/configs/simple.toml) — the default template

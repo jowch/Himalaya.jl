@@ -24,7 +24,7 @@ function _setup_full_fixture(tmp::String)
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -48,7 +48,7 @@ end
 @testset "Validation routing: every mutating route returns 4xx on malformed body" begin
     mktempdir() do tmp
         ctx = _setup_full_fixture(tmp)
-        with_test_server(ctx.db) do port, base
+        with_inproc_routes(ctx.db) do call
             base_headers = ["Content-Type" => "application/json",
                             "X-Username"   => "alice"]
 
@@ -92,10 +92,9 @@ end
 
             for (method, path, body, label) in cases
                 @testset "$label" begin
-                    r = HTTP.request(method, "$base$path";
-                        body = JSON3.write(body),
+                    r = call(method, path;
                         headers = base_headers,
-                        status_exception = false)
+                        body = Vector{UInt8}(JSON3.write(body)))
                     @test 400 <= r.status < 500
                 end
             end

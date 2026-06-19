@@ -63,15 +63,15 @@ You can use `?Phase` to see the list of available phases (`?` enters [help mode]
 ```bash
 # 1. Initialize a SQLite DB from the manifest and experiment layout
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  init /path/to/experiment --manifest manifest.csv
+  init /path/to/experiment
 
 # 2. Run batch analysis (peak-finding + indexing + auto-grouping, all samples)
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  analyze /path/to/experiment
+  analyze -e /path/to/experiment
 
 # 3. Start the web UI (default port 8080; open http://localhost:8080)
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  serve /path/to/experiment --port 8080
+  serve --port 8080
 ```
 
 The UI shows a trace viewer (log-log I(q) with σ ribbon), a Miller-index scatter with linear fit, and a phase-assignment panel with per-exposure auto-picked and alternative candidates. Peaks can be added or removed by clicking the trace; indices can be confirmed or excluded from the active group. All edits are attributed and audited via a username header.

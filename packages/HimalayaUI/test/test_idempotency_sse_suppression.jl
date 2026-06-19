@@ -1,5 +1,5 @@
 using Test, HTTP, JSON3, SQLite, DBInterface, Tables
-using HimalayaUI: with_idempotency, open_db, InTransaction, apply_event!
+using HimalayaUI: with_idempotency, InTransaction, apply_event!
 
 # SSE suppression on rollback / 4xx (issue #125 items 2 & 4).
 #
@@ -65,7 +65,7 @@ end
 
     @testset "no-op-id path: throw clears queue, zero frames delivered" begin
         mktempdir() do tmp
-            db = open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             exp_id = _seed_exposure(db)
             # Header set deliberately omits X-Client-Op-Id → with_idempotency
             # takes the no-op-id branch (line 91 in idempotency.jl).
@@ -97,7 +97,7 @@ end
 
     @testset "op-id path: throw clears queue, zero frames delivered" begin
         mktempdir() do tmp
-            db = open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             exp_id = _seed_exposure(db)
             req = HTTP.Request("POST", "/",
                 ["X-Client-Id" => "tab-A", "X-Username" => "alice",
@@ -137,7 +137,7 @@ end
         # 4xx routes validate before any apply_event!), but the suppression
         # mechanism must hold even if a route mis-orders its writes.
         mktempdir() do tmp
-            db = open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             exp_id = _seed_exposure(db)
             req = HTTP.Request("POST", "/",
                 ["X-Client-Id" => "tab-A",
@@ -174,7 +174,7 @@ end
     # responsible for calling _clear_post_commit_broadcasts! (in production,
     # `with_idempotency` does this; tests must mirror it explicitly).
     mktempdir() do tmp
-        db = open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         exp_id = _seed_exposure(db)
         req = HTTP.Request("POST", "/",
             ["X-Client-Id" => "tab-A", "X-Username" => "alice"], UInt8[])
