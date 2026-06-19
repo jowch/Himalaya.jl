@@ -5,6 +5,7 @@ using Test
     include("test_db.jl")
     include("test_migrate_comparisons_to_series.jl")
     include("test_ingestion_schema.jl")
+    include("test_ingestion_scan_api.jl")
     include("test_datfile.jl")
     include("test_hash.jl")
     include("test_hash_peak_set_memoization.jl")
