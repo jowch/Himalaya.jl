@@ -202,6 +202,269 @@ function scan_and_group!(
 end
 
 """
+    regroup_experiment!(db, experiment_id) -> NamedTuple
+
+Retrofit-persist: make a pre-rework experiment's `loads`/`samples`/`exposures`
+rows match the NEW auto-grouping partition (`scan_directory` → `group_into_samples`)
+*while preserving curation*. Unlike `scan_and_group!` (insert-only ingest of a
+fresh directory), this ADOPTS existing rows: it relinks existing exposures
+(keeping their ids → all exposure-keyed curation survives), greedily reuses
+existing sample rows (keeping their human names/notes), creates new sample rows
+only for extra derived cells, carries displaced-sample metadata onto the
+absorbing owner, then deletes the now-empty displaced rows.
+
+**No exposure is ever deleted or re-inserted** — only `UPDATE`/relink. The only
+sample deletes are genuinely-displaced empty rows, whose metadata is carried
+first (dedup-then-repoint, mirroring the merge route §9.3). Idempotent: a second
+run is a no-op (loads dedup on `(experiment_id, load_index)`, owners already
+claimed by lowest id, every UPDATE re-writes the same value).
+
+Returns a NamedTuple summary:
+`(status, loads_created, cells, samples_retrofitted, samples_created,
+  samples_displaced, exposures_relinked, exposures_no_file, reshoot_loads,
+  geometry, discrepancies)`. On an empty scan returns `(status=:empty, …)` and
+writes nothing.
+"""
+function regroup_experiment!(db::SQLite.DB, experiment_id::Int)
+    # -----------------------------------------------------------------------
+    # 1. Derive (read-only) — mirror scan_and_group! lines 68-98.
+    # -----------------------------------------------------------------------
+    exp_row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern FROM experiments WHERE id = ?", [experiment_id])))
+    data_dir     = String(exp_row.data_dir)
+    analysis_dir = String(exp_row.analysis_dir)
+    tif_pattern  = coalesce(exp_row.image_pattern,       "{name}.tif")
+    prp_pattern  = coalesce(exp_row.metadata_pattern,    "{name}.prp")
+    dat_pattern  = coalesce(exp_row.integration_pattern, "{name}.dat")
+
+    metas = scan_directory(data_dir, analysis_dir;
+        tif_pattern = tif_pattern, prp_pattern = prp_pattern, dat_pattern = dat_pattern)
+
+    isempty(metas) && return (
+        status = :empty, loads_created = 0, cells = 0, samples_retrofitted = 0,
+        samples_created = 0, samples_displaced = 0, exposures_relinked = 0,
+        exposures_no_file = 0, reshoot_loads = 0,
+        geometry = nothing, discrepancies = String[])
+
+    prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
+    setup_files = isdir(analysis_dir) ?
+        String[joinpath(analysis_dir, f)
+                for f in readdir(analysis_dir)
+                if startswith(f, "setup_info_") && endswith(f, ".txt")] :
+        String[]
+    geo, disc = derive_geometry(prp_paths, setup_files)
+
+    result = group_into_samples(metas)
+
+    # -----------------------------------------------------------------------
+    # 2. Build the cell list + byfile map (keyed on ge.stem == exposures.filename).
+    # -----------------------------------------------------------------------
+    cells = NamedTuple[]  # (load_index, slot_index, name, name_source, grouping_source, frame_count, stems)
+    byfile = Dict{String, NamedTuple}()
+    load_frame_count = Dict{Int, Int}()
+    for gl in result.loads
+        load_frame_count[gl.load_index] = gl.frame_count
+        for gs in gl.samples
+            push!(cells, (load_index = gl.load_index, slot_index = gs.slot_index,
+                          name = gs.name, name_source = gs.name_source,
+                          grouping_source = gs.grouping_source,
+                          stems = String[ge.stem for ge in gs.exposures]))
+            for ge in gs.exposures
+                byfile[ge.stem] = (load_index = gl.load_index, slot_index = gs.slot_index,
+                    prp_path = ge.prp_path, timestamp = ge.timestamp,
+                    exposure_time = ge.exposure_time_s,
+                    horizontal_position = ge.horizontal_position_mm,
+                    scan_id = ge.scan_id, frame_no = ge.frame_no)
+            end
+        end
+    end
+    # Deterministic, stable claim order: (load_index, slot_index).
+    sort!(cells; by = c -> (c.load_index, c.slot_index))
+
+    reshoot_loads = length(result.loads)
+
+    # -----------------------------------------------------------------------
+    # 3. Retrofit persist — all writes in ONE lock + transaction (atomic rollback).
+    # -----------------------------------------------------------------------
+    samples_retrofitted = 0
+    samples_created     = 0
+    samples_displaced   = 0
+    exposures_relinked  = 0
+    exposures_no_file   = 0
+    loads_created       = 0
+
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            # 3a. Loads — dedup on (experiment_id, load_index); reuse on re-run.
+            load_id_of = Dict{Int, Int}()
+            for (li, fc) in load_frame_count
+                existing = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id FROM loads WHERE experiment_id = ? AND load_index = ?",
+                    [experiment_id, li]))
+                if isempty(existing)
+                    lid = create_load!(db; experiment_id = experiment_id,
+                                       load_index = li, frame_count = fc)
+                    loads_created += 1
+                else
+                    lid = Int(first(existing).id)
+                    # Keep frame_count fresh (idempotent re-write of the derived value).
+                    DBInterface.execute(db,
+                        "UPDATE loads SET frame_count = ? WHERE id = ?", [fc, lid])
+                end
+                load_id_of[li] = lid
+            end
+
+            # 3b. Assign each cell a sample row — greedy reuse, lowest-id owner.
+            claimed     = Set{Int}()
+            cell_owner  = Vector{Int}(undef, length(cells))
+            for (ci, cell) in enumerate(cells)
+                lid = load_id_of[cell.load_index]
+                # Distinct existing sample_ids of this cell's stems, minus claimed.
+                candidates = Int[]
+                if !isempty(cell.stems)
+                    placeholders = join(fill("?", length(cell.stems)), ", ")
+                    rows = Tables.rowtable(DBInterface.execute(db,
+                        "SELECT DISTINCT sample_id FROM exposures " *
+                        "WHERE experiment_id = ? AND sample_id IS NOT NULL AND filename IN ($placeholders)",
+                        vcat([experiment_id], cell.stems)))
+                    candidates = sort(Int[Int(r.sample_id) for r in rows if !(Int(r.sample_id) in claimed)])
+                end
+                if !isempty(candidates)
+                    owner = first(candidates)  # lowest id
+                    push!(claimed, owner)
+                    DBInterface.execute(db,
+                        "UPDATE samples SET load_id = ?, slot_index = ?, name_source = 'user' WHERE id = ?",
+                        [lid, cell.slot_index, owner])
+                    samples_retrofitted += 1
+                else
+                    owner = create_sample!(db; experiment_id = experiment_id,
+                        name = cell.name, grouping_source = cell.grouping_source,
+                        load_id = lid, slot_index = cell.slot_index)
+                    push!(claimed, owner)
+                    samples_created += 1
+                end
+                cell_owner[ci] = owner
+            end
+
+            # Stem → owner lookup for the relink.
+            owner_of_stem = Dict{String, Int}()
+            for (ci, cell) in enumerate(cells)
+                for s in cell.stems
+                    owner_of_stem[s] = cell_owner[ci]
+                end
+            end
+
+            # 3c. Relink exposures. Capture old_sample_id → absorbing-owner tally
+            # BEFORE sample_id is overwritten (it can't be reconstructed after).
+            absorb_tally = Dict{Int, Dict{Int, Int}}()  # old_sid => (owner => count)
+            for stem in keys(byfile)
+                bf  = byfile[stem]
+                own = owner_of_stem[stem]
+                # Old sample_id(s) currently on this stem's exposures (pre-overwrite).
+                olds = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id, sample_id FROM exposures WHERE experiment_id = ? AND filename = ?",
+                    [experiment_id, stem]))
+                for r in olds
+                    if r.sample_id !== missing && r.sample_id !== nothing
+                        osid = Int(r.sample_id)
+                        if osid != own
+                            d = get!(absorb_tally, osid, Dict{Int, Int}())
+                            d[own] = get(d, own, 0) + 1
+                        end
+                    end
+                end
+                DBInterface.execute(db, """
+                    UPDATE exposures SET sample_id = ?, load_id = ?, prp_path = ?,
+                        timestamp = ?, exposure_time = ?, horizontal_position = ?,
+                        scan_id = ?, frame_no = ?
+                    WHERE experiment_id = ? AND filename = ?
+                """, [own, load_id_of[bf.load_index],
+                      ismissing(bf.prp_path) ? nothing : bf.prp_path,
+                      ismissing(bf.timestamp) ? nothing : Dates.format(bf.timestamp, "yyyy-mm-ddTHH:MM:SS"),
+                      ismissing(bf.exposure_time) ? nothing : bf.exposure_time,
+                      ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
+                      ismissing(bf.scan_id) ? nothing : bf.scan_id,
+                      ismissing(bf.frame_no) ? nothing : bf.frame_no,
+                      experiment_id, stem])
+                exposures_relinked += length(olds)
+            end
+
+            # Exposures with a row but no on-disk file (no byfile entry): leave, count.
+            allrows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
+                [experiment_id]))
+            exposures_no_file = count(r -> !haskey(byfile, String(r.filename)), allrows)
+
+            # 3d. Displaced old samples — those whose every exposure was absorbed by a
+            # lower-id sibling (so they now hold none). Restrict to ids we actually
+            # absorbed FROM (a row emptied by some other cause is not ours to reap).
+            now_empty = Set(Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+                """SELECT id FROM samples
+                   WHERE experiment_id = ? AND merged_into_id IS NULL
+                     AND id NOT IN (SELECT DISTINCT sample_id FROM exposures
+                                    WHERE sample_id IS NOT NULL)""", [experiment_id])))
+            for (old_sid, owners) in absorb_tally
+                (old_sid in now_empty) || continue
+                # Absorbing owner = the one that took the most of this old sample's exposures.
+                owner = first(sort(collect(owners); by = p -> (-p.second, p.first))).first
+                # Carry metadata (dedup-then-repoint, mirroring routes_grouping.jl:150-203).
+                # series_samples: drop displaced membership where owner already in that series.
+                DBInterface.execute(db,
+                    """DELETE FROM series_samples
+                       WHERE sample_id = ?
+                         AND series_id IN (SELECT series_id FROM series_samples WHERE sample_id = ?)""",
+                    [old_sid, owner])
+                # sample_tags: drop displaced tag where owner already holds the key.
+                DBInterface.execute(db,
+                    """DELETE FROM sample_tags
+                       WHERE sample_id = ?
+                         AND key IN (SELECT key FROM sample_tags WHERE sample_id = ?)""",
+                    [old_sid, owner])
+                # Re-point the survivors of the dedup.
+                DBInterface.execute(db,
+                    "UPDATE series_samples SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
+                DBInterface.execute(db,
+                    "UPDATE sample_tags SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
+                DBInterface.execute(db,
+                    "UPDATE sample_messages SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
+                # notes (a column on the samples row — NOT touched by the block above).
+                dnote = first(Tables.rowtable(DBInterface.execute(db,
+                    "SELECT notes FROM samples WHERE id = ?", [old_sid]))).notes
+                if dnote !== missing && dnote !== nothing
+                    DBInterface.execute(db,
+                        "UPDATE samples SET notes = COALESCE(notes, ?) WHERE id = ?", [dnote, owner])
+                end
+                # Delete the now-empty displaced row.
+                DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [old_sid])
+                samples_displaced += 1
+            end
+
+            # 3e. Geometry (never-clobber 'user').
+            _update_geometry_if_not_user!(db, experiment_id, geo)
+
+            # 3f. Mark the experiment complete.
+            DBInterface.execute(db,
+                "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
+                [Dates.format(Dates.now(), "yyyy-mm-ddTHH:MM:SS"), experiment_id])
+        end
+    end
+
+    return (
+        status              = :ok,
+        loads_created       = loads_created,
+        cells               = length(cells),
+        samples_retrofitted = samples_retrofitted,
+        samples_created     = samples_created,
+        samples_displaced   = samples_displaced,
+        exposures_relinked  = exposures_relinked,
+        exposures_no_file   = exposures_no_file,
+        reshoot_loads       = reshoot_loads,
+        geometry            = geo,
+        discrepancies       = disc,
+    )
+end
+
+"""
     cheap_change_check(db, experiment_id) -> Bool
 
 Cheap "has the directory changed since the last ingest?" probe for the Phase-C

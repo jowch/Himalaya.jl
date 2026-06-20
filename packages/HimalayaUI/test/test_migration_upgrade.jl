@@ -496,3 +496,276 @@ end
         end
     end
 end
+
+# ---------------------------------------------------------------------------
+# Task 2: regroup_experiment! — apply the auto-grouping partition, retrofit rows.
+#
+# IMPORTANT (real grouping behavior, verified against group_into_samples):
+#   * Load segmentation needs a *bimodal* gap distribution to split — a couple of
+#     widely-spaced single frames stay ONE load (the unimodal fallback). To force
+#     two loads a fixture must cluster several close frames, then a large gap,
+#     then several more close frames.
+#   * Slot clustering can't distinguish jitter from slot spacing for pure
+#     single-frame round-robin acquisitions, so co-timed single frames collapse
+#     to ONE slot (the documented Phase-B "single-frame" limitation).
+# The Task-0 build_legacy_db fixtures, scanned together in one dir, therefore
+# derive to ONE (load, slot) cell — exercised by the collision/curation test
+# below. The reshoot (two-loads) and many-old→one-cell shapes need purpose-built
+# bimodal/co-timed fixtures, built here via build_focused_db.
+# ---------------------------------------------------------------------------
+
+"Build a legacy DB at <dir>/legacy.db and run migrate_schema! (incl. Task 1 dedup)."
+function build_migrated_db(dir::AbstractString)
+    path, info = build_legacy_db(dir)
+    with_migration_db(path) do db
+        HimalayaUI.migrate_schema!(db)
+    end
+    return path, info
+end
+
+"""
+    build_focused_db(dir; samples, exposures) -> path
+
+Build a focused legacy DB (then migrate it) from explicit `samples` and
+`exposures` specs so the derived (load, slot) partition is deterministic.
+
+`samples`   :: Vector of (id, name) — the legacy sample rows (display_name=name).
+`exposures` :: Vector of (id, sample_id, stem, hpos, ts::DateTime) — each writes
+               its on-disk .tif/.prp/.dat triplet and a legacy exposures row.
+"""
+function build_focused_db(dir::AbstractString; samples, exposures)
+    data_dir = joinpath(dir, "data"); mkpath(data_dir)
+    analysis_dir = joinpath(dir, "analysis"); mkpath(analysis_dir)
+    write_setup_dir!(analysis_dir)
+    for e in exposures
+        write_stem_fixtures!(data_dir, analysis_dir, e.stem;
+            horizontal_position_mm = e.hpos, timestamp = e.ts)
+    end
+    path = joinpath(dir, "legacy.db")
+    db = SQLite.DB(path)
+    HimalayaUI.create_schema!(db)
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'focus',?,?,?)",
+        [dir, data_dir, analysis_dir])
+    for s in samples
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (?,1,?,?)",
+            [s.id, s.name, s.name])
+    end
+    for e in exposures
+        DBInterface.execute(db,
+            "INSERT INTO exposures (id, sample_id, filename, image_path) VALUES (?,?,?,?)",
+            [e.id, e.sample_id, e.stem, joinpath(data_dir, "$(e.stem).tif")])
+    end
+    SQLite.close(db)
+    with_migration_db(path) do db
+        HimalayaUI.migrate_schema!(db)
+    end
+    return path
+end
+
+@testset "Task 2 regroup_experiment!" begin
+    @testset "1:1 retrofit + curation preserved (collision survivor)" begin
+        # build_legacy_db's 5 stems derive to ONE cell; sample 10 (lowest id,
+        # carries the surviving auto curation chain) claims it; 11/20/30/31 are
+        # displaced. The survivor's row id + human label + curation must ride through.
+        path, info = build_migrated_db(mktempdir())
+        before = with_migration_db(path) do db; count_curation(db); end
+        with_migration_db(path) do db
+            summary = HimalayaUI.regroup_experiment!(db, info.experiment_id)
+            @test summary.status == :ok
+
+            # Survivor (sample 10) reused in place: id + label kept, load/slot set.
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, name, load_id, slot_index, name_source FROM samples WHERE id = 10")))
+            @test row.name == "JC C04"
+            @test row.load_id !== missing && row.load_id !== nothing
+            @test row.slot_index !== missing && row.slot_index !== nothing
+            @test row.name_source == "user"
+
+            # The survivor's curation exposure (100) stayed put with a load_id.
+            ex = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id, load_id FROM exposures WHERE id = 100")))
+            @test ex.sample_id == 10
+            @test ex.load_id !== missing && ex.load_id !== nothing
+        end
+        # count_curation identical before/after — NO exposure deleted/re-inserted.
+        after = with_migration_db(path) do db; count_curation(db); end
+        @test before == after
+    end
+
+    @testset "reshoot → two loads (earliest cell keeps old id+name, later is new auto)" begin
+        # Bimodal gap fixture: load A = 3 close frames, +2h gap, load B = 3 close
+        # frames, all at one slot position. One legacy sample (20) spans both.
+        base = DateTime(2026, 4, 26, 23, 0, 0)
+        exps = NamedTuple[]
+        for i in 1:3
+            push!(exps, (id = 200 + i, sample_id = 20, stem = "RS_A_$(i)_001",
+                         hpos = 70.0, ts = base + Dates.Second(2i)))
+        end
+        for i in 1:3
+            push!(exps, (id = 210 + i, sample_id = 20, stem = "RS_B_$(i)_001",
+                         hpos = 70.0, ts = base + Dates.Hour(2) + Dates.Second(2i)))
+        end
+        path = build_focused_db(mktempdir();
+            samples = [(id = 20, name = "HA90 label")], exposures = exps)
+
+        with_migration_db(path) do db
+            summary = HimalayaUI.regroup_experiment!(db, 1)
+            @test summary.loads_created == 2
+
+            # Frames split across two loads / two samples.
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, load_id FROM exposures WHERE experiment_id = 1 ORDER BY id"))
+            loadids = unique(Int.(getproperty.(rows, :load_id)))
+            sampids = unique(Int.(getproperty.(rows, :sample_id)))
+            @test length(loadids) == 2
+            @test length(sampids) == 2
+
+            # Sample 20 reused for one cell (lowest id), label kept; the other cell
+            # is a brand-new 'auto' row.
+            @test 20 in sampids
+            old = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name, name_source FROM samples WHERE id = 20")))
+            @test old.name == "HA90 label"
+            @test old.name_source == "user"
+            other = first(setdiff(sampids, [20]))
+            osrc = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name_source FROM samples WHERE id = ?", [other]))).name_source
+            @test osrc == "auto"
+
+            # get_loads_rollup: each load carries its own three exposures.
+            roll = HimalayaUI.get_loads_rollup(db, 1)
+            @test length(roll) == 2
+            for ld in roll
+                @test sum(length(sm.exposures) for sm in ld.samples) == 3
+            end
+        end
+    end
+
+    @testset "many-old → one-cell: lowest-id owns, sibling displaced+deleted, metadata carried" begin
+        # Two legacy samples, one co-timed single frame each → ONE (load, slot) cell.
+        ts0 = DateTime(2026, 4, 26, 23, 40, 0)
+        exps = [(id = 300, sample_id = 30, stem = "OC_a_001", hpos = 63.0, ts = ts0),
+                (id = 301, sample_id = 31, stem = "OC_b_001", hpos = 63.0,
+                 ts = ts0 + Dates.Second(19))]
+        path = build_focused_db(mktempdir();
+            samples = [(id = 30, name = "HA60a"), (id = 31, name = "HA60b")],
+            exposures = exps)
+        owner_id, displaced_id = 30, 31
+
+        with_migration_db(path) do db
+            # Hang metadata on the soon-to-be-displaced sibling (31): notes + a tag
+            # whose key the owner lacks (carries) + a tag whose key the owner holds
+            # (must dedup, not throw on sample_tags_unique_key).
+            DBInterface.execute(db, "UPDATE samples SET notes = 'displaced note' WHERE id = ?", [displaced_id])
+            DBInterface.execute(db, "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'only_displaced', 'v1')", [displaced_id])
+            DBInterface.execute(db, "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'shared', 'displaced_val')", [displaced_id])
+            DBInterface.execute(db, "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'shared', 'owner_val')", [owner_id])
+        end
+
+        with_migration_db(path) do db
+            summary = HimalayaUI.regroup_experiment!(db, 1)
+            @test summary.samples_displaced == 1
+
+            # Both frames now point at the owner (30) under one load.
+            exs = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, load_id FROM exposures WHERE id IN (300, 301) ORDER BY id"))
+            @test all(e.sample_id == owner_id for e in exs)
+            @test exs[1].load_id == exs[2].load_id
+
+            # Displaced sibling (31) deleted.
+            @test isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM samples WHERE id = ?", [displaced_id])))
+
+            # Owner inherited the displaced note via COALESCE (it had none).
+            note = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT notes FROM samples WHERE id = ?", [owner_id]))).notes
+            @test note == "displaced note"
+
+            # Tag carry: 'only_displaced' migrated; 'shared' kept OWNER's value
+            # (dedup-DELETE dropped the displaced dup — no UNIQUE throw).
+            tags = Dict(String(r.key) => String(r.value) for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT key, value FROM sample_tags WHERE sample_id = ?", [owner_id])))
+            @test tags["only_displaced"] == "v1"
+            @test tags["shared"] == "owner_val"
+            @test isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM sample_tags WHERE sample_id = ?", [displaced_id])))
+        end
+    end
+
+    @testset "every file-present exposure gets non-NULL load_id + a sample" begin
+        path, info = build_migrated_db(mktempdir())
+        with_migration_db(path) do db
+            HimalayaUI.regroup_experiment!(db, info.experiment_id)
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, load_id FROM exposures WHERE experiment_id = ?",
+                [info.experiment_id]))
+            for r in rows
+                @test r.load_id !== missing && r.load_id !== nothing
+                @test r.sample_id !== missing && r.sample_id !== nothing
+            end
+        end
+    end
+
+    @testset "geometry populated + discrepancies surfaced in the summary" begin
+        path, info = build_migrated_db(mktempdir())
+        with_migration_db(path) do db
+            summary = HimalayaUI.regroup_experiment!(db, info.experiment_id)
+            @test haskey(summary, :discrepancies)
+            @test summary.discrepancies isa AbstractVector
+            @test summary.geometry !== nothing
+            g = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT flight_path_m, flight_path_m_source FROM experiments WHERE id = ?",
+                [info.experiment_id])))
+            @test g.flight_path_m !== missing && g.flight_path_m !== nothing
+            @test g.flight_path_m_source != "default"
+        end
+    end
+
+    @testset "re-running regroup_experiment! is a no-op" begin
+        path, info = build_migrated_db(mktempdir())
+        snap(db) = (cur = count_curation(db),
+            loads = Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?", [info.experiment_id]))).c),
+            samples = Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", [info.experiment_id]))).c),
+            rollup = HimalayaUI.get_loads_rollup(db, info.experiment_id))
+        flatten(roll) = sort([(e.id, sm.sample_id, ld.load_id)
+            for ld in roll for sm in ld.samples for e in sm.exposures])
+
+        with_migration_db(path) do db; HimalayaUI.regroup_experiment!(db, info.experiment_id); end
+        s1 = with_migration_db(path) do db; snap(db); end
+        with_migration_db(path) do db; HimalayaUI.regroup_experiment!(db, info.experiment_id); end
+        s2 = with_migration_db(path) do db; snap(db); end
+
+        @test s1.cur == s2.cur
+        @test s1.loads == s2.loads
+        @test s1.samples == s2.samples
+        @test flatten(s1.rollup) == flatten(s2.rollup)
+    end
+
+    @testset "empty-metas returns :empty and writes nothing" begin
+        dir = mktempdir()
+        empty_data = joinpath(dir, "empty_data"); mkpath(empty_data)
+        empty_analysis = joinpath(dir, "empty_analysis"); mkpath(empty_analysis)
+        path = joinpath(dir, "empty.db")
+        db = SQLite.DB(path)
+        HimalayaUI.create_schema!(db)
+        DBInterface.execute(db,
+            "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'empty',?,?,?)",
+            [dir, empty_data, empty_analysis])
+        SQLite.close(db)
+        with_migration_db(path) do db
+            HimalayaUI.migrate_schema!(db)
+        end
+        with_migration_db(path) do db
+            summary = HimalayaUI.regroup_experiment!(db, 1)
+            @test summary.status == :empty
+            @test Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = 1"))).c) == 0
+            @test Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = 1"))).c) == 0
+        end
+    end
+end
