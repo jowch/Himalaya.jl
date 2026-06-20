@@ -562,11 +562,14 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
         # Collisions that were legal under the old (sample_id, filename) key would otherwise
         # make the CREATE UNIQUE INDEX below throw SQLite's terse "UNIQUE constraint failed"
         # on every open_db. Resolve them in two ways:
-        #   * A group whose rows all share ONE image_path is a redundant duplicate (the
-        #     real-data case: same physical frame re-attached under two samples). Keep one
-        #     survivor and DELETE the rest (+ their FK children) — safe, no data loss.
-        #   * A group whose rows span DISTINCT image_paths is genuinely-distinct files; we
-        #     cannot pick a survivor without losing data, so fail loudly (absent in real data).
+        #   * A group whose rows share EXACTLY ONE non-NULL image_path (np == 1) is a proven
+        #     redundant duplicate (the real-data case: same physical frame re-attached under
+        #     two samples). Keep one survivor and DELETE the rest (+ their FK children) — safe.
+        #   * Any other group cannot be proven redundant, so we fail loudly rather than risk
+        #     deleting real data. Two cases (both absent in real data, both fail the proof):
+        #       - np > 1: rows span DISTINCT image_paths — genuinely-distinct files.
+        #       - np == 0: ALL image_paths NULL — no evidence the rows are the same frame, so
+        #         a silent delete could drop a distinct exposure. (np counts only non-NULLs.)
         # filename IS NOT NULL: a UNIQUE index treats multiple NULLs as distinct, so NULL
         # filenames are not collisions and must be excluded from the GROUP BY.
         dupes = Tables.rowtable(DBInterface.execute(db, """
@@ -577,18 +580,19 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
              GROUP BY experiment_id, filename HAVING n > 1
         """))
 
-        distinct = filter(d -> d.np > 1, dupes)
-        isempty(distinct) || error(
-            "migrate_exposures_experiment_id!: $(length(distinct)) (experiment_id, filename) groups " *
-            "have duplicate exposures with DISTINCT image_paths (genuinely-distinct files, legal " *
-            "under the old (sample_id, filename) key) — manual merge required before the unique " *
-            "index can be enforced. groups: " *
-            join(["(exp=$(d.experiment_id), $(d.filename))" for d in distinct], ", "))
+        # Dedup only groups proven redundant by a single shared non-NULL image_path (np == 1).
+        unproven = filter(d -> d.np != 1, dupes)
+        isempty(unproven) || error(
+            "migrate_exposures_experiment_id!: $(length(unproven)) (experiment_id, filename) groups " *
+            "have duplicate exposures that cannot be proven redundant (DISTINCT image_paths, or " *
+            "all image_paths NULL) — legal under the old (sample_id, filename) key. Manual merge " *
+            "required before the unique index can be enforced. groups: " *
+            join(["(exp=$(d.experiment_id), $(d.filename))" for d in unproven], ", "))
 
         # Same-image_path collisions: pick a survivor per group and delete the rest.
         # Survivor = analyzed-first (trace_hash present), lowest-id tiebreak.
         nonsurvivors = Int[]
-        for d in dupes  # only same-path groups remain (distinct ones errored above)
+        for d in dupes  # only np==1 (proven-redundant) groups remain (the rest errored above)
             rows = Tables.rowtable(DBInterface.execute(db, """
                 SELECT id FROM exposures
                  WHERE experiment_id IS ? AND filename = ?
