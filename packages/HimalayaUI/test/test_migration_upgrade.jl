@@ -769,3 +769,166 @@ end
         end
     end
 end
+
+# ---------------------------------------------------------------------------
+# Task 3: upgrade-grouping CLI command — dry-run / apply / idempotency
+# ---------------------------------------------------------------------------
+
+"Snapshot all row-level data for loads/samples/exposures in experiment_id."
+function snap_experiment(db::SQLite.DB, experiment_id::Int)
+    loads = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, load_index, frame_count FROM loads WHERE experiment_id = ? ORDER BY id",
+        [experiment_id]))
+    samples = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, name, load_id, slot_index, name_source FROM samples WHERE experiment_id = ? ORDER BY id",
+        [experiment_id]))
+    exposures = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, sample_id, load_id, filename FROM exposures WHERE experiment_id = ? ORDER BY id",
+        [experiment_id]))
+    (loads = loads, samples = samples, exposures = exposures,
+     curation = count_curation(db))
+end
+
+@testset "Task 3 upgrade-grouping CLI" begin
+    # Helper: run cli_upgrade_grouping with HIMALAYA_DB_PATH pointing at `path`.
+    # Captures stdout to a temp file and returns it as a String.
+    function run_upgrade(path, args)
+        tmpf = tempname()
+        open(tmpf, "w") do io
+            redirect_stdout(io) do
+                withenv("HIMALAYA_DB_PATH" => path) do
+                    HimalayaUI.cli_upgrade_grouping(args)
+                end
+            end
+        end
+        out = read(tmpf, String)
+        rm(tmpf; force = true)
+        out
+    end
+
+    @testset "dry-run leaves data unchanged (regroup_experiment! kwarg proof)" begin
+        # Unit-level proof: call regroup_experiment! with dry_run=true directly,
+        # assert the DB state is row-identical to before.
+        path, info = build_migrated_db(mktempdir())
+        before = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        with_migration_db(path) do db
+            summary = HimalayaUI.regroup_experiment!(db, info.experiment_id; dry_run = true)
+            # Summary is populated (what would have happened).
+            @test summary.status == :ok
+            @test summary.loads_created > 0 || summary.samples_retrofitted > 0 ||
+                  summary.samples_created > 0
+        end
+
+        after = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        # Every row-level field must be identical — nothing was committed.
+        @test length(before.loads) == length(after.loads)
+        @test length(before.samples) == length(after.samples)
+        @test length(before.exposures) == length(after.exposures)
+        # No loads should have been created (dry-run rolled back).
+        @test isempty(after.loads)
+        # Curation untouched.
+        @test before.curation == after.curation
+        # Exposure sample_ids unchanged (all still as set by migrate_schema!).
+        bsids = sort(Int[Int(e.sample_id) for e in before.exposures if e.sample_id !== missing])
+        asids = sort(Int[Int(e.sample_id) for e in after.exposures if e.sample_id !== missing])
+        @test bsids == asids
+    end
+
+    @testset "cli_upgrade_grouping dry-run (default) leaves DB unchanged" begin
+        # Exercise arg-parsing + multi-experiment loop via cli_upgrade_grouping
+        # called in dry-run mode (no --apply flag).
+        path, info = build_migrated_db(mktempdir())
+        before = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        out = run_upgrade(path, String[])   # no --apply → dry-run
+
+        after = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        @test isempty(after.loads)      # no loads committed
+        @test length(before.samples) == length(after.samples)
+        @test length(before.exposures) == length(after.exposures)
+        @test before.curation == after.curation
+        # Output mentions dry-run.
+        @test occursin("DRY-RUN", out) || occursin("dry-run", out)
+    end
+
+    @testset "--apply produces the Task 2 end state (loads > 0, partition applied)" begin
+        path, info = build_migrated_db(mktempdir())
+
+        out = run_upgrade(path, ["--apply", "--experiment", string(info.experiment_id)])
+
+        with_migration_db(path) do db
+            # loads created.
+            n_loads = Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?",
+                [info.experiment_id]))).c)
+            @test n_loads > 0
+
+            # Every exposure has a load_id + sample_id.
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, load_id FROM exposures WHERE experiment_id = ?",
+                [info.experiment_id]))
+            for r in rows
+                @test r.load_id !== missing && r.load_id !== nothing
+                @test r.sample_id !== missing && r.sample_id !== nothing
+            end
+
+            # Output mentions "apply" or status=ok.
+            @test occursin("APPLY", out) || occursin("ok", out)
+        end
+    end
+
+    @testset "--apply twice is a no-op (idempotency)" begin
+        path, info = build_migrated_db(mktempdir())
+        exp_arg = ["--apply", "--experiment", string(info.experiment_id)]
+
+        # First apply.
+        run_upgrade(path, exp_arg)
+        snap1 = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        # Second apply — must produce identical state.
+        run_upgrade(path, exp_arg)
+        snap2 = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        @test length(snap1.loads) == length(snap2.loads)
+        @test length(snap1.samples) == length(snap2.samples)
+        @test length(snap1.exposures) == length(snap2.exposures)
+        @test snap1.curation == snap2.curation
+
+        # Every exposure still has the same sample_id and load_id after the second run.
+        s1map = Dict(Int(e.id) => (Int(e.sample_id), Int(e.load_id)) for e in snap1.exposures)
+        s2map = Dict(Int(e.id) => (Int(e.sample_id), Int(e.load_id)) for e in snap2.exposures)
+        @test s1map == s2map
+    end
+
+    @testset "cli_upgrade_grouping --experiment resolves by name" begin
+        # Smoke: --experiment <name> is accepted (arg-parse + _resolve_experiment).
+        path, info = build_migrated_db(mktempdir())
+        out = run_upgrade(path, ["--experiment", "legacy"])
+        # Should not error; dry-run output produced.
+        @test occursin("DRY-RUN", out) || occursin("dry-run", out)
+    end
+
+    @testset "unreachable data_dir skips with a message" begin
+        path, info = build_migrated_db(mktempdir())
+        # Point the experiment at a non-existent dir.
+        with_migration_db(path) do db
+            DBInterface.execute(db,
+                "UPDATE experiments SET data_dir = ? WHERE id = ?",
+                ["/nonexistent/path/$(rand(1:999999))", info.experiment_id])
+        end
+
+        out = run_upgrade(path, ["--apply", "--experiment", string(info.experiment_id)])
+
+        # No loads created — the skip path fired.
+        with_migration_db(path) do db
+            n = Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?",
+                [info.experiment_id]))).c)
+            @test n == 0
+        end
+        @test occursin("SKIP", out)
+    end
+end

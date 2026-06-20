@@ -202,7 +202,20 @@ function scan_and_group!(
 end
 
 """
-    regroup_experiment!(db, experiment_id) -> NamedTuple
+    _DryRunRollback
+
+Private sentinel thrown at the end of `regroup_experiment!`'s write transaction
+when `dry_run=true`. SQLite.transaction rolls back on any throw, so all DB
+writes in that transaction are undone. The sentinel is caught by the outer
+`try/catch` in `regroup_experiment!` itself and swallowed (only real errors
+propagate). The counters declared OUTSIDE the transaction closure survive the
+rollback and are returned unchanged, so the caller sees what WOULD have
+happened without any persistent effect.
+"""
+struct _DryRunRollback <: Exception end
+
+"""
+    regroup_experiment!(db, experiment_id; dry_run=false) -> NamedTuple
 
 Retrofit-persist: make a pre-rework experiment's `loads`/`samples`/`exposures`
 rows match the NEW auto-grouping partition (`scan_directory` → `group_into_samples`)
@@ -219,13 +232,17 @@ first (dedup-then-repoint, mirroring the merge route §9.3). Idempotent: a secon
 run is a no-op (loads dedup on `(experiment_id, load_index)`, owners already
 claimed by lowest id, every UPDATE re-writes the same value).
 
+When `dry_run=true` the transaction is rolled back via `_DryRunRollback` after
+all writes — the DB is left untouched but the returned summary reflects what a
+real run would have done.
+
 Returns a NamedTuple summary:
 `(status, loads_created, cells, samples_retrofitted, samples_created,
   samples_displaced, exposures_relinked, exposures_no_file, reshoot_loads,
   geometry, discrepancies)`. On an empty scan returns `(status=:empty, …)` and
 writes nothing.
 """
-function regroup_experiment!(db::SQLite.DB, experiment_id::Int)
+function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = false)
     # -----------------------------------------------------------------------
     # 1. Derive (read-only) — mirror scan_and_group! lines 68-98.
     # -----------------------------------------------------------------------
@@ -293,6 +310,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int)
     exposures_no_file   = 0
     loads_created       = 0
 
+    try
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             # 3a. Loads — dedup on (experiment_id, load_index); reuse on re-run.
@@ -446,7 +464,15 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int)
             DBInterface.execute(db,
                 "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
                 [Dates.format(Dates.now(), "yyyy-mm-ddTHH:MM:SS"), experiment_id])
+
+            # Dry-run rollback: throw the sentinel AFTER all writes so the
+            # transaction rolls back everything, but the counters (declared
+            # outside this closure) are already populated for the return value.
+            dry_run && throw(_DryRunRollback())
         end
+    end
+    catch e
+        e isa _DryRunRollback || rethrow()
     end
 
     return (

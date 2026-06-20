@@ -300,6 +300,143 @@ function cli_migrate_toml(args::Vector{<:AbstractString})
     nothing
 end
 
+"""
+    cli_upgrade_grouping(args)
+
+Retrofit the `loads`/`samples`/`exposures` partition for one or all experiments
+to match the current auto-grouping algorithm (`scan_directory` → `group_into_samples`).
+Dry-run by default — pass `--apply` to write changes.
+
+The SCHEMA half (`open_db` migrations, incl. Task 1 dedup) is always applied and
+is NOT rolled back under dry-run — migrations are idempotent and sentinel-gated,
+so a dry-run will still record `schema_migrations` rows. Only the DATA half
+(`regroup_experiment!`) is rolled back under dry-run.
+"""
+function cli_upgrade_grouping(args)
+    s = ArgParseSettings(prog = "himalaya upgrade-grouping")
+    @add_arg_table! s begin
+        "--apply"
+            help   = "commit changes to the DB (default: dry-run, rolls back)"
+            action = :store_true
+        "--experiment", "-e"
+            help    = "experiment id or name (default: ALL experiments)"
+            default = nothing
+    end
+    p = parse_args(args, s; as_symbols = true)
+
+    apply    = p[:apply]
+    dry_run  = !apply
+    exp_key  = p[:experiment]
+
+    db_path = default_db_path()
+    isfile(db_path) || error("no database at $db_path — ingest an experiment via the HTTP scan API first")
+
+    println("NOTE: Back up the DB file before running with --apply.")
+    if dry_run
+        println("DRY-RUN mode — data changes will be computed but NOT committed.")
+        println("  (Schema migrations from open_db are applied and kept — they are idempotent.)")
+    else
+        println("APPLY mode — changes will be committed to $db_path")
+    end
+    println()
+
+    # open_db runs schema migrations (idempotent; incl. Task 1 dedup).
+    db = open_db(db_path)
+
+    # Determine target experiments.
+    targets = if exp_key !== nothing
+        row = _resolve_experiment(db, exp_key)
+        [(id = Int(row.id), name = String(row.name),
+          data_dir = String(first(Tables.rowtable(DBInterface.execute(db,
+              "SELECT data_dir FROM experiments WHERE id = ?", [Int(row.id)]))).data_dir))]
+    else
+        [( id       = Int(r.id),
+           name     = String(r.name),
+           data_dir = String(r.data_dir) )
+         for r in Tables.rowtable(DBInterface.execute(db,
+             "SELECT id, name, data_dir FROM experiments ORDER BY id"))]
+    end
+
+    if isempty(targets)
+        println("No experiments registered.")
+        return
+    end
+
+    for t in targets
+        println("── Experiment [$(t.id)] $(t.name) ──")
+
+        if !isdir(t.data_dir)
+            println("  SKIP: data_dir not reachable: $(t.data_dir)")
+            println()
+            continue
+        end
+
+        before_cur = count_curation_cli(db, t.id)
+
+        local summary
+        try
+            summary = regroup_experiment!(db, t.id; dry_run = dry_run)
+        catch e
+            println("  ERROR: $(sprint(showerror, e))")
+            println()
+            continue
+        end
+
+        after_cur = dry_run ? before_cur : count_curation_cli(db, t.id)
+
+        if summary.status == :empty
+            println("  status          : empty (no files found in data_dir)")
+            println()
+            continue
+        end
+
+        mode_tag = dry_run ? " (dry-run)" : ""
+        @printf "  status          : %s%s\n" String(summary.status) mode_tag
+        @printf "  loads created   : %d\n" summary.loads_created
+        @printf "  cells derived   : %d\n" summary.cells
+        @printf "  reshoot loads   : %d\n" summary.reshoot_loads
+        @printf "  samples         : retrofitted=%d  created=%d  displaced=%d\n" summary.samples_retrofitted summary.samples_created summary.samples_displaced
+        @printf "  exposures       : relinked=%d  no_file=%d\n" summary.exposures_relinked summary.exposures_no_file
+
+        # Geometry summary.
+        if summary.geometry !== nothing
+            g = summary.geometry
+            @printf "  geometry        : energy=%.4f keV (%s)  flight=%.4f m (%s)\n" coalesce(g.energy_kev, NaN) coalesce(g.energy_kev_source, "?") coalesce(g.flight_path_m, NaN) coalesce(g.flight_path_m_source, "?")
+        end
+        if !isempty(summary.discrepancies)
+            println("  discrepancies   :")
+            for d in summary.discrepancies
+                println("    - $d")
+            end
+        end
+
+        # Curation counts before/after (after == before under dry-run).
+        if dry_run
+            println("  curation (pre)  : samples=$(before_cur.samples) " *
+                    "peaks=$(before_cur.auto_peaks)  indices=$(before_cur.indices)")
+            println("  curation (post) : [unchanged — dry-run]")
+        else
+            println("  curation (pre)  : samples=$(before_cur.samples) " *
+                    "peaks=$(before_cur.auto_peaks)  indices=$(before_cur.indices)")
+            println("  curation (post) : samples=$(after_cur.samples) " *
+                    "peaks=$(after_cur.auto_peaks)  indices=$(after_cur.indices)")
+        end
+        println()
+    end
+end
+
+"""
+    count_curation_cli(db, experiment_id) -> NamedTuple
+
+Lightweight per-experiment curation snapshot for the upgrade-grouping summary.
+"""
+function count_curation_cli(db::SQLite.DB, experiment_id::Int)
+    n(q, args=[]) = Int(first(Tables.rowtable(DBInterface.execute(db, q, args))).c)
+    (samples    = n("SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?",   [experiment_id]),
+     auto_peaks = n("SELECT COUNT(*) AS c FROM auto_peaks ap JOIN exposures e ON ap.exposure_id = e.id WHERE e.experiment_id = ?", [experiment_id]),
+     indices    = n("SELECT COUNT(*) AS c FROM indices ix JOIN exposures e ON ix.exposure_id = e.id WHERE e.experiment_id = ?",    [experiment_id]))
+end
+
 const _USAGE = """
 Usage: himalaya <command> [options]
 
@@ -309,6 +446,9 @@ Commands:
   analyze   -e <experiment> [-s <label>]    Run peak-finding + indexing
   show     [-e <experiment>] -s <label>     Print stored analysis for one sample
   serve    [--port N] [--host H]            Start the web server
+  upgrade-grouping [--apply] [-e <exp>]     Retrofit loads/samples/exposures
+                                              to the current auto-grouping
+                                              (dry-run by default)
 
 Ingestion is performed via the HTTP scan API (`POST /api/experiments/{id}/scan`),
 not the CLI. `-e <experiment>` accepts an id, name, or path. Required for
@@ -335,6 +475,8 @@ function main(args = copy(ARGS))
         cli_config(args)
     elseif cmd == "migrate-toml"
         cli_migrate_toml(args)
+    elseif cmd == "upgrade-grouping"
+        cli_upgrade_grouping(args)
     else
         println("Unknown command: $cmd")
         println()
