@@ -121,7 +121,7 @@ function lastCbs(mock: ReturnType<typeof vi.fn>): MutateCbs {
 beforeEach(() => {
   vi.clearAllMocks();
   state.samples = [{
-    id: 42, experiment_id: 1, name: "JC042", display_name: "JC042 — LL37",
+    id: 42, experiment_id: 1, name: "JC042",
     notes: null, q_units: "A-1",
     tags: [{ id: 100, key: "LL37", value: "", source: "user" }],
   }];
@@ -136,7 +136,7 @@ describe("LoupePage", () => {
   it("renders the headline, frame, side panel and filmstrip", () => {
     renderAt(42);
     expect(screen.getByTestId("loupe-page")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /JC042 — LL37/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /JC042/ })).toBeInTheDocument();
     expect(screen.getByTestId("big-frame")).toBeInTheDocument();
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
   });
@@ -159,7 +159,7 @@ describe("LoupePage", () => {
     renderAt(42);
     // WCAG 1.3.1 / 2.4.6: the loupe has no outer h1 from a shell, so PlateHeader
     // must be promoted to h1 so assistive technology can navigate to the page topic.
-    expect(screen.getByRole("heading", { level: 1, name: /JC042 — LL37/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /JC042/ })).toBeInTheDocument();
   });
 
   it("opens on the representative exposure (id 1)", () => {
@@ -613,7 +613,7 @@ describe("LoupePage", () => {
 
   it("removing the second of two byte-identical dose pills deletes tag id 7, not id 3 (LO-TAGDUP)", async () => {
     state.samples = [{
-      id: 42, experiment_id: 1, name: "JC042", display_name: "JC042 — LL37",
+      id: 42, experiment_id: 1, name: "JC042",
       notes: null, q_units: "A-1",
       tags: [
         { id: 3, key: "dose", value: "10", source: "manual" },
@@ -728,9 +728,9 @@ describe("LoupePage", () => {
 
 describe("LoupePage · LO-NEXT sample navigation", () => {
   const THREE = [
-    { id: 10, experiment_id: 1, name: "S10", display_name: "Sample 10", notes: null, q_units: "A-1", tags: [] },
-    { id: 11, experiment_id: 1, name: "S11", display_name: "Sample 11", notes: null, q_units: "A-1", tags: [] },
-    { id: 12, experiment_id: 1, name: "S12", display_name: "Sample 12", notes: null, q_units: "A-1", tags: [] },
+    { id: 10, experiment_id: 1, name: "S10", notes: null, q_units: "A-1", tags: [] },
+    { id: 11, experiment_id: 1, name: "S11", notes: null, q_units: "A-1", tags: [] },
+    { id: 12, experiment_id: 1, name: "S12", notes: null, q_units: "A-1", tags: [] },
   ];
   beforeEach(() => {
     state.samples = THREE;

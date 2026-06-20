@@ -329,7 +329,7 @@ export function SeriesScopingPage(): JSX.Element {
     if (!isLoading && proposal.orderingKey === undefined && seed !== null && rows.length === 0) {
       const names = new Map<number, string>();
       for (const s of pickerQ.data ?? [])
-        names.set(s.sample.id, s.sample.display_name ?? s.sample.name ?? "");
+        names.set(s.sample.id, s.sample.name);
       setColdRows(
         buildColdAssignRows(
           (seed ?? []).map((id) => ({ sampleId: id, sampleName: names.get(id) ?? `smp_${id}` })),

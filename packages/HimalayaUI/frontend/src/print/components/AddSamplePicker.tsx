@@ -14,7 +14,7 @@ export interface AddSamplePickerProps {
 }
 
 function sampleLabel(s: CorpusSample): string {
-  return s.display_name ?? s.name ?? `Sample ${s.id}`;
+  return s.name || `Sample ${s.id}`;
 }
 
 /**

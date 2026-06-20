@@ -4,9 +4,9 @@
  * documented fallback chain (issue #52, extended for #69):
  *
  *   1. `member.label_override` (user-set, wins outright)
- *   2. `${sample.display_name || sample.name} · ${exposure.filename}`
+ *   2. `${sample.name} · ${exposure.filename}`
  *   3. `exposure.filename` alone
- *   4. `sample.display_name || sample.name` alone
+ *   4. `sample.name` alone
  *   5. `Exposure #N` legacy fallback (still loading / cache cold)
  *   6. `(deleted exposure)` when `member.exposure_id === null`
  *
@@ -33,9 +33,9 @@ export function resolveDisplayLabels(
     }
     const exposure = exposures.get(m.exposure_id);
     const sample = exposure ? samples.get(exposure.sample_id) : undefined;
-    // `||` (not `??`) so an empty-string display_name/name falls through to the
-    // next fallback rather than rendering as a leading separator like " · run.dat".
-    const sampleName = sample ? (sample.display_name || sample.name || null) : null;
+    // `||` (not `??`) so an empty-string name falls through to the next
+    // fallback rather than rendering as a leading separator like " · run.dat".
+    const sampleName = sample ? (sample.name || null) : null;
     const filename = exposure?.filename || null;
     if (sampleName && filename) {
       map.set(m.id, `${sampleName} · ${filename}`);

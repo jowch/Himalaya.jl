@@ -80,7 +80,6 @@ function corpusSample(id: number, name: string): CorpusSample {
     id,
     experiment_id: 1,
     name,
-    display_name: null,
     notes: null,
     tags: [],
     q_units: "Å⁻¹",

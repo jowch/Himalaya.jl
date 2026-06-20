@@ -341,11 +341,11 @@ export function FocusPage(): JSX.Element {
     ? activeExposure.filename.replace(/\.[^.]+$/, "")
     : null;
   const sampleName =
-    corpusSample?.display_name ?? corpusSample?.name ?? "—";
+    corpusSample?.name ?? "—";
   // FO-RESCORE2 F14: name the browser tab after the sample (was static
   // "Himalaya"). Raw name (null while loading) so the placeholder "—" never
   // leaks into the tab. Hooks-safe: above the not-found early return.
-  useDocumentTitle(corpusSample?.display_name ?? corpusSample?.name ?? null);
+  useDocumentTitle(corpusSample?.name ?? null);
   // sanitizeDashes: upstream experiment/sample names may carry em dashes that
   // no source-level guard can catch (FO-SUBTITLE-EMDASH). Fold them out.
   const subtitle = sanitizeDashes(

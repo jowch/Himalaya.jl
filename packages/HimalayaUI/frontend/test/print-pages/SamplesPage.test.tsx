@@ -65,7 +65,7 @@ import { useFloatingDock } from "../../src/print/shell/floatingDock";
 // ── fixtures ──────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
   return {
-    id: 1, experiment_id: 1, name: "JC001", display_name: "JC001 — buffer",
+    id: 1, experiment_id: 1, name: "JC001",
     notes: null, q_units: "A-1", tags: [], phase: null, ...over,
   } as CorpusSample;
 }
@@ -83,9 +83,9 @@ function experiment(over: Partial<Experiment> = {}): Experiment {
 function seed(): void {
   state.experiments = [experiment({ id: 1, name: "BL-19 April" })];
   state.samples = [
-    corpus({ id: 1, experiment_id: 1, name: "JC001", display_name: "Buffer" }),
-    corpus({ id: 2, experiment_id: 1, name: "JC002", display_name: "Lipid 1-2", phase: "Pn3m" }),
-    corpus({ id: 3, experiment_id: 2, name: "JC003", display_name: "Other beamtime" }),
+    corpus({ id: 1, experiment_id: 1, name: "Buffer" }),
+    corpus({ id: 2, experiment_id: 1, name: "Lipid 1-2", phase: "Pn3m" }),
+    corpus({ id: 3, experiment_id: 2, name: "Other beamtime" }),
   ];
   state.byId = new Map<number, Exposure[]>([
     [1, [

@@ -394,7 +394,7 @@ export function LoupePage(): JSX.Element {
         </div>
         <PlateHeader
           as="h1"
-          title={sample?.display_name ?? sample?.name ?? "—"}
+          title={sample?.name ?? "—"}
           subtitle={`${sample?.name ?? "—"} · ${exposurePosition}`}
           className="mb-5"
         />
@@ -453,7 +453,7 @@ export function LoupePage(): JSX.Element {
                 />
                 <ManageTagsModal
                   open={manageOpen}
-                  sampleName={sample.display_name ?? sample.name ?? ""}
+                  sampleName={sample.name ?? ""}
                   tags={toLoupeTags(sample.tags)}
                   keyOptions={keyOptions}
                   valueOptionsFor={valueOptionsFor}

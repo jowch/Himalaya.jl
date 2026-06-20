@@ -344,7 +344,7 @@ export function useMemberExposures(exposureIds: number[]): Map<number, api.Expos
 /**
  * Hydrates per-member SAMPLE rows. Used together with `useMemberExposures`
  * by the Compare review-mode label resolver — a member's display label is
- * `${sample.display_name || sample.name} · ${exposure.filename}` (issue #52).
+ * `${sample.name} · ${exposure.filename}` (issue #52).
  */
 export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
   return useStableQueryMap(sampleIds, (id) => ({

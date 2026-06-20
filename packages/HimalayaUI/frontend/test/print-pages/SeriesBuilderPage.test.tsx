@@ -133,7 +133,7 @@ function seriesSample(id: number, sampleId: number, position: number): SeriesSam
 
 function corpusSample(id: number, name: string): CorpusSample {
   return {
-    id, experiment_id: 1, name, display_name: name, notes: "", tags: [], q_units: "Å⁻¹",
+    id, experiment_id: 1, name, notes: "", tags: [], q_units: "Å⁻¹",
   };
 }
 

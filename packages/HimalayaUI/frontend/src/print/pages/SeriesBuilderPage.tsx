@@ -218,7 +218,7 @@ export function SeriesBuilderPage(): JSX.Element {
     const nameByExposure = new Map<number, string>();
     const expByExposure = new Map<number, number>();
     for (const r of pickerQ.data ?? []) {
-      const nm = r.sample.display_name ?? r.sample.name ?? `Sample ${r.sample.id}`;
+      const nm = r.sample.name ?? `Sample ${r.sample.id}`;
       if (r.indexing_exposure_id != null) {
         nameByExposure.set(r.indexing_exposure_id, nm);
         expByExposure.set(r.indexing_exposure_id, r.sample.experiment_id);
@@ -1106,6 +1106,6 @@ function RecipeRow({
 
 function sampleNameMap(corpus: api.CorpusSample[]): Record<number, string> {
   const out: Record<number, string> = {};
-  for (const s of corpus) out[s.id] = s.display_name ?? s.name ?? `Sample ${s.id}`;
+  for (const s of corpus) out[s.id] = s.name || `Sample ${s.id}`;
   return out;
 }

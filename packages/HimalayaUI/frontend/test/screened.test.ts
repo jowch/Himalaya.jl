@@ -7,7 +7,6 @@ function sample(over: Partial<CorpusSample> = {}): CorpusSample {
     id: 1,
     experiment_id: 1,
     name: "s",
-    display_name: null,
     notes: null,
     tags: [],
     q_units: "A-1",

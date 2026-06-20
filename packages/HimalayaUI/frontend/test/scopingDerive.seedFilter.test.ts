@@ -5,7 +5,7 @@ import type { PickerSampleRow } from "../src/api";
 
 function row(id: number): PickerSampleRow {
   return {
-    sample: { id, experiment_id: 1, name: `s${id}`, display_name: null, notes: null, tags: [] },
+    sample: { id, experiment_id: 1, name: `s${id}`, notes: null, tags: [] },
     indexing_exposure_id: null,
     all_exposures: [],
   };

@@ -9,11 +9,11 @@ import * as queries from "../src/queries";
 
 // Minimal corpus: two samples, no exposures.
 const SAMPLE_A = {
-  id: 10, experiment_id: 1, name: "A", display_name: null,
+  id: 10, experiment_id: 1, name: "A",
   notes: null, tags: [], q_units: "A-1",
 };
 const SAMPLE_B = {
-  id: 11, experiment_id: 1, name: "B", display_name: null,
+  id: 11, experiment_id: 1, name: "B",
   notes: null, tags: [], q_units: "A-1",
 };
 

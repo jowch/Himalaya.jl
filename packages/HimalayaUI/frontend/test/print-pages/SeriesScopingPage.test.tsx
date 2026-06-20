@@ -24,7 +24,7 @@ function tag(key: string, value: string): SampleTag {
   return { id: 1, key, value, source: "manual" };
 }
 function sample(id: number, name: string, tags: SampleTag[]): Sample {
-  return { id, experiment_id: 1, name, display_name: name, notes: "", tags };
+  return { id, experiment_id: 1, name, notes: "", tags };
 }
 function pickerRow(s: Sample, exposureId: number): PickerSampleRow {
   return { sample: s, indexing_exposure_id: exposureId, all_exposures: [] };

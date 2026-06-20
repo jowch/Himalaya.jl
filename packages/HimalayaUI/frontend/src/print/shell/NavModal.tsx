@@ -114,7 +114,7 @@ export function NavModal(): JSX.Element | null {
     if (!query) return list;
     const needle = query.toLowerCase();
     return list.filter((s) =>
-      [s.name ?? "", s.display_name ?? ""].some(h => h.toLowerCase().includes(needle)),
+      s.name.toLowerCase().includes(needle),
     );
   }, [samplesQ.data, query]);
 
@@ -125,7 +125,7 @@ export function NavModal(): JSX.Element | null {
     if (step !== "experiment" || !query) return [];
     const needle = query.toLowerCase();
     return (corpusQ.data ?? []).filter((s) =>
-      [s.name ?? "", s.display_name ?? ""].some(h => h.toLowerCase().includes(needle)),
+      s.name.toLowerCase().includes(needle),
     );
   }, [step, query, corpusQ.data]);
 
@@ -144,8 +144,8 @@ export function NavModal(): JSX.Element | null {
         }))
       : filteredSamples.map((s) => ({
           id: s.id,
-          primary: s.display_name || s.name || `Sample ${s.id}`,
-          secondary: s.name && s.display_name && s.name !== s.display_name ? s.name : "",
+          primary: s.name || `Sample ${s.id}`,
+          secondary: "",
         }));
 
   // One flat highlight order across both groups, experiments first (SA-F4).
@@ -254,7 +254,7 @@ export function NavModal(): JSX.Element | null {
   const sampChipLabel = (() => {
     if (pendingSamp === undefined) return null;
     const samp = samplesQ.data?.find((s) => s.id === pendingSamp);
-    return `Sample ${samp?.display_name || samp?.name || pendingSamp}`;
+    return `Sample ${samp?.name || pendingSamp}`;
   })();
 
   return (
@@ -368,7 +368,7 @@ export function NavModal(): JSX.Element | null {
                           }
                         >
                           <span className="font-medium">
-                            {s.display_name || s.name || `Sample ${s.id}`}
+                            {s.name || `Sample ${s.id}`}
                           </span>
                           <span className="text-ink-soft text-sm font-sans">
                             {experimentName(s.experiment_id)}

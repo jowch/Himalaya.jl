@@ -81,7 +81,7 @@ export interface RecipeRowView {
 
 /**
  * Derive the display name + position for one recipe row.
- * `sampleNameById` is the caller's pre-built lookup (id → display_name ?? name ?? "Sample <id>").
+ * `sampleNameById` is the caller's pre-built lookup (id → name ?? "Sample <id>").
  * Falls back to `"Sample <sample_id>"` when the id is absent from the map.
  */
 export function recipeRowView(
