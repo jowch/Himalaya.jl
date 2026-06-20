@@ -55,7 +55,15 @@ export type OpKind =
   // backend route emits two events (speculative_created + assignment_add), so
   // there is no `custom_index_commit` event kind on the wire — it lives only in
   // resolveMutator (outbound).
-  | "custom_index_commit";
+  | "custom_index_commit"
+  // Ingestion grouping-review structural edits (Phase E2). `move_exposure`,
+  // `rename_sample`, and `dismiss_grouping_flag` are single-entity (surgical
+  // cache splice); `merge_samples` and `split_sample` are route-level
+  // orchestrations (optimistic tree edit, invalidate-only confirm). The OpKind
+  // names the user GESTURE; the wire event kinds are exposure_moved /
+  // sample_renamed / sample_created+sample_split / grouping_flag_dismissed —
+  // and a merge emits NO sample_merged kind (it fans out as exposure_moved).
+  | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

@@ -267,6 +267,28 @@ export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
 export const editSampleTag = (id: number, tag_id: number, patch: { key?: string; value?: string }, opts?: AuthOpts) =>
   request<SampleTag>("PATCH", `/api/samples/${id}/tags/${tag_id}`, patch, opts);
 
+// Structural sample/exposure edits (Phase E2 grouping-review surface)
+export const renameSample = (id: number, name: string, opts?: AuthOpts): Promise<Sample> =>
+  request<Sample>("PATCH", `/api/samples/${id}/name`, { name }, opts);
+
+export const moveExposure = (exposureId: number, sampleId: number, opts?: AuthOpts): Promise<Exposure> =>
+  request<Exposure>("POST", `/api/exposures/${exposureId}/move`, { sample_id: sampleId }, opts);
+
+export interface MergeSamplesResponse { loser_id: number; survivor_id: number }
+export const mergeSamples = (loserId: number, survivorId: number, opts?: AuthOpts): Promise<MergeSamplesResponse> =>
+  request<MergeSamplesResponse>("POST", `/api/samples/${loserId}/merge`, { survivor_id: survivorId }, opts);
+
+export interface SplitSampleResponse { new_sample_id: number }
+export const splitSample = (sampleId: number, exposureIds: number[], name: string, opts?: AuthOpts): Promise<SplitSampleResponse> =>
+  request<SplitSampleResponse>("POST", `/api/samples/${sampleId}/split`, { exposure_ids: exposureIds, name }, opts);
+
+/** "Keep separate" — durable dismissal of a backend-produced grouping flag
+ *  (spec §9.3: grouping_flag_dismissed; suppressed in get_loads_rollup, so it
+ *  stays gone across rescans). */
+export interface DismissGroupingFlagBody { flag_kind: "merge" | "split"; merge_with_sample_id?: number }
+export const dismissGroupingFlag = (sampleId: number, body: DismissGroupingFlagBody, opts?: AuthOpts): Promise<void> =>
+  request<void>("POST", `/api/samples/${sampleId}/dismiss-flag`, body, opts);
+
 // Exposures
 export interface ExposureTag {
   id: number;
