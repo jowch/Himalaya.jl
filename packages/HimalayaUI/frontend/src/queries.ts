@@ -50,6 +50,8 @@ export const queryKeys = {
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
+  loads:      (id: number | undefined) =>
+    ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "exposures"] as const,
   trace:      (exposureId: number | undefined) =>
@@ -116,6 +118,17 @@ export function useExperiment(id: number) {
     // Callers pass `id ?? 0` when no experiment is active; gate the fetch so
     // we don't hit GET /api/experiments/0 → 404 (and retries) on every chip
     // mount before the user picks an experiment.
+    enabled: id > 0,
+  });
+}
+
+/** The Load ▸ Sample ▸ Exposures roll-up (grouping-review + Configuration
+ *  acquisition timeline read off this; spec §9.2/§9.6). Gated id>0 like
+ *  useExperiment so a zero/undefined experiment never hits /loads. */
+export function useLoads(id: number) {
+  return useQuery({
+    queryKey: queryKeys.loads(id),
+    queryFn: () => api.listLoads(id),
     enabled: id > 0,
   });
 }
