@@ -320,4 +320,94 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
             @test resp.status == 422   # cross-experiment forbidden
         end
     end
+
+    @testset "POST /api/samples/{id}/merge — basic re-point + retire" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        with_inproc_routes(db) do call
+            # Merge s2 (loser) into s1 (survivor).
+            resp = call("POST", "/api/samples/$(s2_id)/merge";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-merge-1"],
+                body = Vector{UInt8}(JSON3.write(Dict(:survivor_id => s1_id))))
+            @test resp.status == 200
+
+            # e2 (was in s2) now belongs to s1.
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id FROM exposures WHERE id = ?", [e2_id])))
+            @test Int(row.sample_id) == s1_id
+
+            # s2 is retired, not deleted.
+            s2_row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT merged_into_id FROM samples WHERE id = ?", [s2_id])))
+            @test Int(s2_row.merged_into_id) == s1_id
+
+            # exposure_moved events were recorded for the moved exposures.
+            evts = Tables.rowtable(DBInterface.execute(db,
+                "SELECT action FROM user_actions WHERE entity_type='exposure' AND entity_id=?", [e2_id]))
+            @test any(r -> String(r.action) == "exposure_moved", evts)
+        end
+    end
+
+    @testset "POST /api/samples/{id}/merge — series_samples dedup: drops loser membership" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        # Create a series containing both s1 and s2.
+        series_id = DBInterface.lastrowid(DBInterface.execute(db,
+            "INSERT INTO series DEFAULT VALUES"))
+        DBInterface.execute(db,
+            "INSERT INTO series_samples (series_id, sample_id, position) VALUES (?, ?, 1)",
+            [series_id, s1_id])
+        DBInterface.execute(db,
+            "INSERT INTO series_samples (series_id, sample_id, position) VALUES (?, ?, 2)",
+            [series_id, s2_id])
+
+        with_inproc_routes(db) do call
+            resp = call("POST", "/api/samples/$(s2_id)/merge";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-merge-dedup-ss"],
+                body = Vector{UInt8}(JSON3.write(Dict(:survivor_id => s1_id))))
+            @test resp.status == 200
+
+            # s2's membership in the series where s1 already appears must be dropped.
+            surviving = Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id FROM series_samples WHERE series_id = ?", [series_id]))
+            remaining_ids = Set(Int(r.sample_id) for r in surviving)
+            @test s2_id ∉ remaining_ids   # loser's duplicate membership dropped
+            @test s1_id in remaining_ids  # survivor's membership intact
+        end
+    end
+
+    @testset "POST /api/samples/{id}/merge — sample_tags dedup: survivor wins" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        # Both samples have a tag with key "condition"; values differ.
+        DBInterface.execute(db,
+            "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'condition', 'acid')", [s1_id])
+        DBInterface.execute(db,
+            "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'condition', 'base')", [s2_id])
+        # s2 has a unique tag that should survive the merge.
+        DBInterface.execute(db,
+            "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'ph', '8.0')", [s2_id])
+
+        with_inproc_routes(db) do call
+            resp = call("POST", "/api/samples/$(s2_id)/merge";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-merge-tags"],
+                body = Vector{UInt8}(JSON3.write(Dict(:survivor_id => s1_id))))
+            @test resp.status == 200
+
+            tags = Tables.rowtable(DBInterface.execute(db,
+                "SELECT key, value FROM sample_tags WHERE sample_id = ?", [s1_id]))
+            tag_map = Dict(String(t.key) => String(t.value) for t in tags)
+            @test tag_map["condition"] == "acid"  # survivor wins on collision
+            @test tag_map["ph"] == "8.0"          # loser's unique tag transferred
+        end
+    end
 end
