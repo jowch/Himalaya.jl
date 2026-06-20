@@ -36,6 +36,13 @@ export const LS_KEY = "himalaya-ui:state";
 
 export type NavModalStep = "experiment" | "sample";
 
+export type IngestProgressStatus = "scanning" | "analyzing" | "complete" | "failed";
+export interface IngestProgress {
+  processed: number;
+  total: number;
+  status: IngestProgressStatus;
+}
+
 export type StaleUrlContext =
   | {
       kind: "not_found";
@@ -81,6 +88,11 @@ export interface AppState {
    *  never an SSE event. Omitted from partialize (a momentary tab-local cue);
    *  cleared on hover-leave/blur so a stale ghost never masks the real cart. */
   previewIndexId: number | undefined;
+  /** Per-experiment live-ingest progress (spec §9.3/§9.6). Ephemeral — written
+   *  by the App.tsx SSE listener on `ingest_*` frames, read by the experiment
+   *  header + LiveIngestUnfold. NOT persisted (omitted from partialize); a
+   *  reload re-derives terminal state from the experiment's `ingest_status`. */
+  ingestInFlight: Record<number, IngestProgress> | null;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
   /**
@@ -170,6 +182,8 @@ export interface AppState {
   setHoveredPeak: (id: number | undefined) => void;
   setHoveredQ: (q: number | undefined) => void;
   setPreviewIndex: (id: number | undefined) => void;
+  setIngestProgress: (experimentId: number, progress: IngestProgress) => void;
+  clearIngestProgress: (experimentId: number) => void;
   setTutorialSeen: (seen: boolean) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
@@ -285,6 +299,7 @@ export const useAppState = create<AppState>()(
         hoveredPeakId: undefined,
         hoveredQ: undefined,
         previewIndexId: undefined,
+        ingestInFlight: null,
         navModalOpen: false,
         navModalStep: "experiment",
         notesDrawerOpen: false,
@@ -333,6 +348,17 @@ export const useAppState = create<AppState>()(
         setHoveredPeak: (hoveredPeakId) => set({ hoveredPeakId }),
         setHoveredQ: (hoveredQ) => set({ hoveredQ }),
         setPreviewIndex: (previewIndexId) => set({ previewIndexId }),
+        setIngestProgress: (experimentId, progress) =>
+          set((s) => ({
+            ingestInFlight: { ...(s.ingestInFlight ?? {}), [experimentId]: progress },
+          })),
+        clearIngestProgress: (experimentId) =>
+          set((s) => {
+            if (s.ingestInFlight === null) return {};
+            const next = { ...s.ingestInFlight };
+            delete next[experimentId];
+            return { ingestInFlight: Object.keys(next).length === 0 ? null : next };
+          }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
