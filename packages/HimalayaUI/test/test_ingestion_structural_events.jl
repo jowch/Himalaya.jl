@@ -281,4 +281,43 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
         # rebuild_views_from_log! with entity_type="sample" must not throw.
         @test_nowarn HimalayaUI.rebuild_views_from_log!(db, s1_id; entity_type="sample")
     end
+
+    @testset "POST /api/exposures/{id}/move — moves exposure + records event" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        with_inproc_routes(db) do call
+            resp = call("POST", "/api/exposures/$(e1_id)/move";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-move-1"],
+                body = Vector{UInt8}(JSON3.write(Dict(:sample_id => s2_id))))
+            @test resp.status == 200
+
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id FROM exposures WHERE id = ?", [e1_id])))
+            @test Int(row.sample_id) == s2_id
+
+            evts = Tables.rowtable(DBInterface.execute(db,
+                "SELECT action FROM user_actions WHERE entity_type='exposure' AND entity_id=?", [e1_id]))
+            @test any(r -> String(r.action) == "exposure_moved", evts)
+        end
+    end
+
+    @testset "POST /api/exposures/{id}/move — rejects cross-experiment move" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        # Create a sample in a different experiment.
+        exp2_id = HimalayaUI.create_experiment!(db; path="/d2", data_dir="/d2", analysis_dir="/a2")
+        s_other = HimalayaUI.create_sample!(db; experiment_id=exp2_id, name="Other")
+
+        with_inproc_routes(db) do call
+            resp = call("POST", "/api/exposures/$(e1_id)/move";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-move-2"],
+                body = Vector{UInt8}(JSON3.write(Dict(:sample_id => s_other))))
+            @test resp.status == 422   # cross-experiment forbidden
+        end
+    end
 end
