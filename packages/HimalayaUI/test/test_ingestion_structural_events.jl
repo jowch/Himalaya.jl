@@ -163,24 +163,47 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
         end
     end
 
-    @testset "get_loads_rollup attaches a present merge flag, and suppresses a dismissed one" begin
+    @testset "get_loads_rollup attaches a present flag, and suppresses a dismissed one" begin
         # Phase B Task 12's derive_sample_flags is the authority for `flag`.
         # Phase B is a documented prerequisite; derive_sample_flags must exist on-branch.
+        #
+        # Use a fresh seed (not seed_two_samples) so ALL exposures on s1 have an
+        # explicit horizontal_position — the grouping.jl SplitFlag path calls
+        # Float64(p) which errors on `missing` (the SQLite NULL representation).
         db = fresh_db()
-        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        exp_id = HimalayaUI.create_experiment!(db; path="/d", data_dir="/d", analysis_dir="/a")
+        load_id = DBInterface.lastrowid(DBInterface.execute(db,
+            "INSERT INTO loads (experiment_id, load_index) VALUES (?, 1)", [exp_id]))
+        s1_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, load_id=load_id,
+            slot_index=1, name="HA85 (S01P01)")
+        s2_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, load_id=load_id,
+            slot_index=2, name="HA85 (S01P02)")
+        # s2 gets one exposure (position-less is fine; s2 has only one so no gap check).
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id,
+            filename="f02.tif")
+        # s1 gets two exposures with a > 0.5 mm gap → SplitFlag.
+        # Explicit frame_no ensures ORDER BY frame_no, id produces 0.0 mm before 2.0 mm.
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s1_id,
+            filename="f01a.tif", horizontal_position=0.0, frame_no=10)
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s1_id,
+            filename="f01b.tif", horizontal_position=2.0, frame_no=11)
 
-        # Record a non-undone grouping_flag_dismissed event on s1 directly.
+        # Before any dismiss: derive_sample_flags emits the split flag for s1.
+        r0 = HimalayaUI.get_loads_rollup(db, exp_id)
+        s1_before = first(filter(s -> s.sample_id == s1_id, first(r0).samples))
+        @test s1_before.flag !== nothing      # proves the flag is really there to suppress
+
+        # Record a non-undone grouping_flag_dismissed event on s1.
         req = user_req()
         SQLite.transaction(db) do
             HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
                 kind = "grouping_flag_dismissed", entity_type = "sample", entity_id = s1_id,
-                payload = Dict(:flag_kind => "merge", :merge_with_sample_id => s2_id,
-                               :experiment_id => exp_id))
+                payload = Dict(:flag_kind => "split", :experiment_id => exp_id))
         end
 
-        rollup2 = HimalayaUI.get_loads_rollup(db, exp_id)
-        s1b = first(filter(s -> s.sample_id == s1_id, first(rollup2).samples))
-        # A dismissed flag is suppressed regardless of what derive_sample_flags returns.
-        @test s1b.flag === nothing
+        # After the dismiss: the same flag is suppressed to nothing.
+        r1 = HimalayaUI.get_loads_rollup(db, exp_id)
+        s1_after = first(filter(s -> s.sample_id == s1_id, first(r1).samples))
+        @test s1_after.flag === nothing       # proves the dismiss is what cleared it
     end
 end
