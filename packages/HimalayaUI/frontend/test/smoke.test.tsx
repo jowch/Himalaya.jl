@@ -77,18 +77,18 @@ describe("App smoke", () => {
     });
   });
 
-  it("redirects '/' to the corpus contact sheet under the single shell (#181/#182)", async () => {
-    // I4.4 (#181): the three-card Index at "/" is gone — a cold "/" lands on
-    // the corpus contact sheet (/samples) per §4.1. I5.1 (#182): there is now a
-    // single shell — assert the CorpusShell is mounted (the retired AppShell's
-    // workspace-grid / tab-rocker were deleted, so null-checks on them would be
-    // vacuous; assert the surviving shell instead).
+  it("redirects '/' to the Experiments home (ingestion-redesign IA)", async () => {
+    // Ingestion redesign (E1): the new IA makes "/experiments" the home; a cold
+    // "/" redirects there (was "/samples" under #181/#182). ExperimentsHomePage
+    // sits OUTSIDE CorpusShell (so the experiment chrome never stacks on
+    // CorpusTopbar), so corpus-shell is NOT mounted at "/". The "New experiment"
+    // CTA renders unconditionally, so it is the stable landing assertion.
     renderApp();
     await waitFor(() =>
-      expect(screen.getByTestId("samples-page")).toBeInTheDocument(),
+      expect(screen.getByTestId("new-experiment-cta")).toBeInTheDocument(),
       { timeout: 3000 },
     );
-    expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("corpus-shell")).toBeNull();
     expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
