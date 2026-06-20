@@ -17,6 +17,15 @@ const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
 const _PLAIN_PATCH_FIELDS = ["name", "description"]                                # plain write, NO *_source, NO rescan
 const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]  # plain write + rescan trigger
 
+# Serialize a GroupingFlag (MergeFlag/SplitFlag) to the §8.8 wire shape. The
+# internal structs carry no `kind` field, but the frontend `GroupingFlag` union
+# narrows on `kind` — inject it here at the wire boundary (GET /experiments/:id/loads).
+_flag_json(::Nothing) = nothing
+_flag_json(f::MergeFlag) = Dict(:kind => "merge",
+    :merge_with_sample_id => f.merge_with_sample_id, :merge_with_label => f.merge_with_label)
+_flag_json(f::SplitFlag) = Dict(:kind => "split",
+    :split_at_index => f.split_at_index, :jump_from => f.jump_from, :jump_to => f.jump_to)
+
 """
     _beamline_from_config(cfg_text) -> NamedTuple
 
@@ -286,10 +295,10 @@ function register_experiments_routes!()
         rollup = get_loads_rollup(db, id)
         # Serialize: NamedTuples → JSON-friendly Dict tree.
         # Field names are the §8.8 contract verbatim (Load / LoadSample /
-        # LoadExposure). `flag` serializes the GroupingFlag NamedTuple (or null);
-        # JSON3 emits a NamedTuple as a JSON object, so a
-        # (kind="merge", merge_with_sample_id=…, merge_with_label=…) flag lands
-        # as {"kind":"merge",…} and `nothing` lands as JSON null.
+        # LoadExposure). `flag` is a GroupingFlag struct (MergeFlag/SplitFlag) or
+        # nothing; `_flag_json` injects the `kind` discriminator the frontend
+        # `GroupingFlag` union narrows on (the bare struct has no `kind` field),
+        # emitting {"kind":"merge",…}/{"kind":"split",…} or JSON null.
         out = map(rollup) do ld
             Dict(
                 :load_id     => ld.load_id,
@@ -307,7 +316,7 @@ function register_experiments_routes!()
                         :grouping_source => sm.grouping_source,
                         :name_source     => sm.name_source,
                         :merged_into_id  => sm.merged_into_id,
-                        :flag            => sm.flag,
+                        :flag            => _flag_json(sm.flag),
                         :exposures       => map(sm.exposures) do ex
                             Dict(
                                 :id                  => ex.id,

@@ -520,4 +520,29 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
             @test haskey(ex, :timestamp)
         end
     end
+
+    @testset "GET /api/experiments/{id}/loads — flag carries the `kind` discriminator on the wire" begin
+        # The frontend GroupingFlag union narrows on `kind`, but the internal
+        # MergeFlag/SplitFlag structs have no `kind` field — the route injects it
+        # (_flag_json). Pin that the SERIALIZED flag actually carries kind + fields.
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        # Give s1 a split flag: two exposures with a > 0.5 mm horizontal_position gap.
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s1_id,
+            filename="g1.tif", horizontal_position=0.0, frame_no=10)
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s1_id,
+            filename="g2.tif", horizontal_position=2.0, frame_no=11)
+
+        with_inproc_routes(db) do call
+            resp = call("GET", "/api/experiments/$(exp_id)/loads")
+            @test resp.status == 200
+            data = JSON3.read(String(resp.body))
+            s1 = first(filter(s -> Int(s.sample_id) == s1_id, data[1].samples))
+            @test s1.flag !== nothing
+            @test String(s1.flag.kind) == "split"      # the injected discriminator
+            @test haskey(s1.flag, :split_at_index)
+            @test haskey(s1.flag, :jump_from)
+            @test haskey(s1.flag, :jump_to)
+        end
+    end
 end
