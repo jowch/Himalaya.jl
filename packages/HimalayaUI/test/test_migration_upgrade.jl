@@ -335,6 +335,149 @@ end
         end
     end
 
+    # -----------------------------------------------------------------------
+    # Task 1: in-migration delete-only dedup of (experiment_id, filename)
+    # collisions that all share one image_path (the real-data case). The
+    # build_legacy_db collision fixture (exposures 100 survivor / 101
+    # non-survivor, same image_path) drives (a); (c)/(d) inject their own.
+    # -----------------------------------------------------------------------
+    @testset "Task 1 dedup — same-image_path collision migrates clean" begin
+        path, info = build_legacy_db(mktempdir())
+
+        with_migration_db(path) do db
+            HimalayaUI.migrate_schema!(db)
+        end
+
+        with_migration_db(path) do db
+            # the non-survivor was deleted; the survivor remains.
+            ids = sort(Int.(getproperty.(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE filename = ?",
+                [info.collision.stems[1]])), :id)))
+            @test ids == [info.collision.survivor_exposure_id]
+
+            # the survivor's full curation chain rode through intact. The
+            # non-survivor (exposure 101) held no curation, so the survivor's
+            # one-of-each chain is exactly what remains.
+            c = count_curation(db)
+            @test c.auto_peaks == 1 && c.indices == 1 && c.index_groups == 1
+            @test c.index_group_members == 1 && c.index_peaks == 1
+
+            # no orphaned FK rows pointing at the deleted non-survivor.
+            nsid = info.collision.exposure_ids[2]
+            for (tbl, col) in (("auto_peaks", "exposure_id"),
+                               ("peak_curations", "exposure_id"),
+                               ("indices", "exposure_id"),
+                               ("index_groups", "exposure_id"),
+                               ("assignments", "exposure_id"),
+                               ("assignment_members", "exposure_id"),
+                               ("exposure_tags", "exposure_id"))
+                n = first(Tables.rowtable(DBInterface.execute(db,
+                    "SELECT COUNT(*) AS c FROM $tbl WHERE $col = ?", [nsid]))).c
+                @test n == 0
+            end
+
+            # the unique index exists and the migration sentinel is recorded.
+            idx = Tables.rowtable(DBInterface.execute(db,
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='exposures_unique_filename'"))
+            @test length(idx) == 1
+        end
+    end
+
+    @testset "Task 1 dedup — non-survivor curation is dropped, survivor kept" begin
+        # Make the NON-survivor (lower analyzed priority) carry curation so the
+        # dedup must delete real children — proves count_curation drops by
+        # exactly the non-survivors' redundant rows, not the survivor's.
+        path, info = build_legacy_db(mktempdir())
+        with_migration_db(path) do db
+            # exposure 101 is the non-survivor (NULL trace_hash). Hang an
+            # auto_peak + a peak_curation + an exposure_tag off it.
+            DBInterface.execute(db,
+                "INSERT INTO auto_peaks (id, exposure_id, q, intensity) VALUES (1101, 101, 0.4, 2.0)")
+            DBInterface.execute(db,
+                "INSERT INTO peak_curations (id, exposure_id, kind, q) VALUES (1102, 101, 'add', 0.5)")
+            DBInterface.execute(db,
+                "INSERT INTO exposure_tags (id, exposure_id, key, value) VALUES (1103, 101, 'k', 'v')")
+        end
+
+        # Count the affected tables directly (count_curation also probes tables
+        # the migration adds later, so it can't run pre-migration).
+        cnt(db, t) = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM $t"))).c
+        with_migration_db(path) do db
+            @test cnt(db, "auto_peaks") == 2      # survivor's 1 + non-survivor's 1
+            @test cnt(db, "peak_curations") == 1
+            @test cnt(db, "exposure_tags") == 1
+        end
+
+        with_migration_db(path) do db
+            HimalayaUI.migrate_schema!(db)
+        end
+
+        with_migration_db(path) do db
+            c = count_curation(db)
+            # the non-survivor's redundant children are gone; the survivor's stay.
+            @test c.auto_peaks == 1           # only the survivor's auto_peak
+            @test c.peak_curations == 0
+            @test c.exposure_tags == 0
+            @test c.indices == 1              # survivor's, untouched
+            @test c.index_peaks == 1
+        end
+    end
+
+    @testset "Task 1 dedup — re-running migrate_schema! is a no-op" begin
+        path, _ = build_legacy_db(mktempdir())
+        with_migration_db(path) do db
+            HimalayaUI.migrate_schema!(db)
+        end
+        after_first = with_migration_db(path) do db
+            count_curation(db)
+        end
+        # second run: sentinel already recorded → whole migration skipped.
+        with_migration_db(path) do db
+            @test HimalayaUI.migrate_schema!(db) === nothing
+        end
+        after_second = with_migration_db(path) do db
+            count_curation(db)
+        end
+        @test after_first == after_second
+    end
+
+    @testset "Task 1 dedup — differing image_path collision still errors" begin
+        path, info = build_legacy_db(mktempdir())
+        # Point the non-survivor at a DISTINCT image_path → genuinely-distinct
+        # files; the dedup must refuse and keep the hard error().
+        with_migration_db(path) do db
+            DBInterface.execute(db,
+                "UPDATE exposures SET image_path = ? WHERE id = ?",
+                [joinpath(info.data_dir, "other_image.tif"), info.collision.exposure_ids[2]])
+        end
+        err = nothing
+        @test_throws ErrorException with_migration_db(path) do db
+            try
+                HimalayaUI.migrate_schema!(db)
+            catch e
+                err = e
+                rethrow()
+            end
+        end
+        @test occursin(info.collision.stems[1], sprint(showerror, err))
+    end
+
+    @testset "Task 1 dedup — orphan (NULL sample_id) still trips the orphan error" begin
+        path, info = build_legacy_db(mktempdir())
+        # Drop the collision non-survivor (so the dedup path isn't what fires)
+        # and add an orphan exposure with no derivable experiment_id.
+        with_migration_db(path) do db
+            DBInterface.execute(db, "DELETE FROM exposures WHERE id = ?",
+                [info.collision.exposure_ids[2]])
+            DBInterface.execute(db,
+                "INSERT INTO exposures (id, sample_id, filename) VALUES (999, NULL, 'orphan')")
+        end
+        @test_throws ErrorException with_migration_db(path) do db
+            HimalayaUI.migrate_schema!(db)
+        end
+    end
+
     @testset "count_curation returns the twelve named tables" begin
         path, info = build_legacy_db(mktempdir())
         with_migration_db(path) do db

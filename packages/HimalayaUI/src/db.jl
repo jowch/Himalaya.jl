@@ -559,22 +559,75 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
             join(getproperty.(orphans, :id), ", "))
 
         # PREFLIGHT (dedupe-then-enforce, spec §10): the new key is (experiment_id, filename).
-        # Detect collisions that were legal under the old (sample_id, filename) key and fail
-        # loudly with an actionable message rather than SQLite's terse "UNIQUE constraint failed"
-        # (which would otherwise re-throw on every open_db). Mirrors preflight_index_groups_uniqueness!.
-        # filename IS NOT NULL: a UNIQUE index treats multiple NULLs as distinct, so NULL filenames
-        # are not collisions and must be excluded from the GROUP BY (which would lump them together).
+        # Collisions that were legal under the old (sample_id, filename) key would otherwise
+        # make the CREATE UNIQUE INDEX below throw SQLite's terse "UNIQUE constraint failed"
+        # on every open_db. Resolve them in two ways:
+        #   * A group whose rows all share ONE image_path is a redundant duplicate (the
+        #     real-data case: same physical frame re-attached under two samples). Keep one
+        #     survivor and DELETE the rest (+ their FK children) — safe, no data loss.
+        #   * A group whose rows span DISTINCT image_paths is genuinely-distinct files; we
+        #     cannot pick a survivor without losing data, so fail loudly (absent in real data).
+        # filename IS NOT NULL: a UNIQUE index treats multiple NULLs as distinct, so NULL
+        # filenames are not collisions and must be excluded from the GROUP BY.
         dupes = Tables.rowtable(DBInterface.execute(db, """
-            SELECT experiment_id, filename, COUNT(*) AS n
+            SELECT experiment_id, filename,
+                   COUNT(*) AS n, COUNT(DISTINCT image_path) AS np
               FROM exposures
              WHERE filename IS NOT NULL
              GROUP BY experiment_id, filename HAVING n > 1
         """))
-        isempty(dupes) || error(
-            "migrate_exposures_experiment_id!: $(length(dupes)) (experiment_id, filename) groups " *
-            "have duplicate exposures (legal under the old (sample_id, filename) key) — manual " *
-            "merge required before the unique index can be enforced. groups: " *
-            join(["(exp=$(d.experiment_id), $(d.filename))" for d in dupes], ", "))
+
+        distinct = filter(d -> d.np > 1, dupes)
+        isempty(distinct) || error(
+            "migrate_exposures_experiment_id!: $(length(distinct)) (experiment_id, filename) groups " *
+            "have duplicate exposures with DISTINCT image_paths (genuinely-distinct files, legal " *
+            "under the old (sample_id, filename) key) — manual merge required before the unique " *
+            "index can be enforced. groups: " *
+            join(["(exp=$(d.experiment_id), $(d.filename))" for d in distinct], ", "))
+
+        # Same-image_path collisions: pick a survivor per group and delete the rest.
+        # Survivor = analyzed-first (trace_hash present), lowest-id tiebreak.
+        nonsurvivors = Int[]
+        for d in dupes  # only same-path groups remain (distinct ones errored above)
+            rows = Tables.rowtable(DBInterface.execute(db, """
+                SELECT id FROM exposures
+                 WHERE experiment_id IS ? AND filename = ?
+                 ORDER BY (trace_hash IS NULL), id
+            """, [d.experiment_id, d.filename]))
+            append!(nonsurvivors, Int.(getproperty.(rows[2:end], :id)))  # all but the survivor
+        end
+
+        if !isempty(nonsurvivors)
+            # Delete the non-survivors' FK children in strict child→parent order, scoped to
+            # the non-survivor id set, BEFORE the exposure rows. FK enforcement is ON inside
+            # this transaction (earlier migrations leave PRAGMA foreign_keys=ON and the pragma
+            # cannot change inside an open transaction), so this order is load-bearing.
+            # Mirrors the canonical delete order in routes_experiments.jl.
+            idset = join(nonsurvivors, ", ")  # internal integer ids — safe to interpolate
+            # grandchildren first: index_peaks / index_group_members via indices JOIN exposures
+            DBInterface.execute(db, """
+                DELETE FROM index_peaks WHERE index_id IN
+                  (SELECT id FROM indices WHERE exposure_id IN ($idset))""")
+            DBInterface.execute(db, """
+                DELETE FROM index_group_members WHERE index_id IN
+                  (SELECT id FROM indices WHERE exposure_id IN ($idset))""")
+            # exposure-keyed children
+            for tbl in ("assignment_members", "assignments", "index_groups",
+                        "indices", "auto_peaks", "peak_curations")
+                DBInterface.execute(db,
+                    "DELETE FROM $tbl WHERE exposure_id IN ($idset)")
+            end
+            # exposure_sources keys two exposure columns; clean both.
+            DBInterface.execute(db, """
+                DELETE FROM exposure_sources
+                 WHERE averaged_exposure_id IN ($idset)
+                    OR source_exposure_id IN ($idset)""")
+            DBInterface.execute(db,
+                "DELETE FROM exposure_tags WHERE exposure_id IN ($idset)")
+            # finally the non-survivor exposure rows themselves.
+            DBInterface.execute(db,
+                "DELETE FROM exposures WHERE id IN ($idset)")
+        end
 
         # swap the dedup key: drop old (sample_id, filename), add (experiment_id, filename)
         DBInterface.execute(db, "DROP INDEX IF EXISTS exposures_unique_filename")
