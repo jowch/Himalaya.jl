@@ -367,6 +367,48 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       if (expId !== undefined) invalidateIngestFrameCache(qc, expId, true);
       break;
     }
+    case "sample_renamed": {
+      // Single-entity, payload-derivable: splice the renamed label into the
+      // sample cache + refresh the corpus/experiment listings. entity_id is the
+      // sample id; the new label rides payload.name.
+      const newName = payload?.name as string | undefined;
+      if (newName !== undefined) {
+        qc.setQueryData<Sample>(queryKeys.sample(id), (old) =>
+          old ? { ...old, name: newName } : old);
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+      break;
+    }
+    case "exposure_moved": {
+      // One exposure left from_sample_id for sample_id (the destination).
+      // Invalidate both sides' exposure lists + the loads roll-up (which
+      // re-derives the grouping view).
+      const dest = payload?.sample_id as number | undefined;
+      const from = payload?.from_sample_id as number | undefined;
+      if (from !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(from) });
+      if (dest !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(dest) });
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+      break;
+    }
+    case "sample_created":
+    case "sample_split":
+    case "grouping_flag_dismissed": {
+      // Orchestrations that create sample rows / change grouping whose new ids
+      // aren't worth a surgical splice (the series_created precedent). Refetch
+      // the loads roll-up + both sample listings. MUST be before `default:` so
+      // entity_id (a sample id) never poisons peaks(id)/indices(id). There is
+      // NO sample_merged event — merging is grouping_flag_dismissed + the move.
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) {
+        qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+        qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      break;
+    }
     default: {
       qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
       qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
