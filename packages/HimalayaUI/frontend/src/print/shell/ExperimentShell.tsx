@@ -67,6 +67,7 @@ export function ExperimentShell(): JSX.Element {
   const status = inFlight?.status ?? exp.data?.ingest_status ?? "idle";
   const isProcessing = status === "scanning" || status === "analyzing";
 
+  const expStats = exp.data?.stats;
   const stats: StatBarStat[] = isProcessing
     ? [
         { key: "processed", caption: "Processed",
@@ -74,13 +75,12 @@ export function ExperimentShell(): JSX.Element {
         { key: "span", caption: "Span", value: "pending", pending: true },
       ]
     : [
-        // E1 ledger reads the experiment detail. Real counts (loads/samples/
-        // exposures/sessions) arrive from the extended GET /api/experiments/:id
-        // roll-up (spec §9.2); until then show placeholders the rollup fills.
-        { key: "loads", caption: "Loads", value: "—" },
-        { key: "samples", caption: "Samples", value: "—" },
-        { key: "exposures", caption: "Exposures", value: "—" },
-        { key: "sessions", caption: "Sessions", value: "—" },
+        // E1 ledger reads the experiment detail. Real counts arrive from the
+        // stats roll-up on GET /api/experiments/:id (spec §9.2).
+        { key: "loads", caption: "Loads", value: expStats != null ? String(expStats.loads) : "—" },
+        { key: "samples", caption: "Samples", value: expStats != null ? String(expStats.samples) : "—" },
+        { key: "exposures", caption: "Exposures", value: expStats != null ? String(expStats.exposures) : "—" },
+        { key: "sessions", caption: "Sessions", value: expStats != null ? String(expStats.sessions) : "—" },
       ];
 
   return (

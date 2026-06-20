@@ -31,6 +31,7 @@ const EXP: api.Experiment = {
   beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
   last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "complete",
   image_pattern: null, metadata_pattern: null, integration_pattern: null,
+  stats: { loads: 4, samples: 12, exposures: 48, sessions: 2 },
 };
 
 describe("ExperimentShell (Phase E1)", () => {
@@ -63,6 +64,20 @@ describe("ExperimentShell (Phase E1)", () => {
     renderAt("/experiments/7/corpus");
     await screen.findByTestId("experiment-header-name");
     expect(screen.queryByTestId("corpus-topbar")).toBeNull();
+  });
+
+  it("StatBar shows real counts from stats when available (not placeholder dashes)", async () => {
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    // The stats fixture has loads=4, samples=12, exposures=48, sessions=2.
+    // None of these are "—" — the StatBar must surface the real numbers.
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("48")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    // Placeholder dashes must not appear in the stat bar.
+    const statBar = screen.getByRole("group", { name: /experiment stats/i });
+    expect(statBar).not.toHaveTextContent("—");
   });
 
   it("commits name on blur: calls updateExperiment with trimmed value", async () => {

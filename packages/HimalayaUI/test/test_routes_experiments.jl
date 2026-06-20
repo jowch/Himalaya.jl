@@ -147,3 +147,25 @@ end
         @test JSON3.read(String(rq.body))[1].q_units == "A-1"
     end
 end
+
+@testset "GET /experiments/:id stats includes sessions count" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data", analysis_dir="analysis")
+
+    # Insert 3 loads across 2 distinct sessions (one load has session_id=nothing).
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=1, session_id=10)
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=2, session_id=10)
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=3, session_id=20)
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=4, session_id=nothing)
+
+    with_inproc_routes(db) do call
+        r = call("GET", "/api/experiments/$exp_id")
+        @test r.status == 200
+        body = JSON3.read(String(r.body))
+        @test haskey(body, :stats)
+        @test body.stats.loads == 4
+        # sessions = COUNT(DISTINCT session_id) WHERE session_id IS NOT NULL = 2 (10 and 20)
+        @test body.stats.sessions == 2
+    end
+end

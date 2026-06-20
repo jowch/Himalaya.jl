@@ -3,7 +3,7 @@ import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 
-export type GeometrySource = "prp" | "setup" | "user" | "default";
+export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
 
 export interface GeometryRow {
   key: string;
@@ -38,6 +38,7 @@ const SOURCE_LABEL: Record<GeometrySource, string> = {
   setup: "setup files",
   user: "edited",
   default: "unset",
+  computed: "computed",
 };
 
 // SourceChip: a small presentational badge for the provenance of a geometry

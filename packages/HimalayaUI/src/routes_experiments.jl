@@ -78,7 +78,10 @@ function _experiment_stats(db::SQLite.DB, exp_id::Integer)
         "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", [exp_id]))[1].c
     exposures = Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM exposures WHERE experiment_id = ?", [exp_id]))[1].c
-    (loads = Int(loads), samples = Int(samples), exposures = Int(exposures))
+    sessions = Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(DISTINCT session_id) AS c FROM loads WHERE experiment_id = ? AND session_id IS NOT NULL",
+        [exp_id]))[1].c
+    (loads = Int(loads), samples = Int(samples), exposures = Int(exposures), sessions = Int(sessions))
 end
 
 """

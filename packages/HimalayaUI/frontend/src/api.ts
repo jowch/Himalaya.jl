@@ -5,7 +5,7 @@ export interface User {
   last_name: string | null;
 }
 
-export type GeometrySource = "prp" | "setup" | "user" | "default";
+export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
 export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
 
 export interface Experiment {
@@ -38,6 +38,8 @@ export interface Experiment {
   image_pattern: string | null;
   metadata_pattern: string | null;
   integration_pattern: string | null;
+  // Roll-up counts returned by GET /api/experiments/:id (not the list endpoint).
+  stats?: { loads: number; samples: number; exposures: number; sessions: number };
 }
 
 export interface SampleTag {

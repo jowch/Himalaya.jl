@@ -21,4 +21,14 @@ describe("AcquisitionTimeline", () => {
     render(<AcquisitionTimeline sessions={[]} />);
     expect(screen.queryAllByTestId("acq-bar")).toHaveLength(0);
   });
+  it("SVG carries an explicit height attribute to prevent container-fill stretch", () => {
+    render(<AcquisitionTimeline sessions={SESSIONS} />);
+    // The SVG must have a fixed height attribute so it does not scale to fill
+    // the grid cell height (walkthrough bug: 132px viewBox stretched to ~1300px).
+    const svg = screen.getByRole("img", { name: /acquisition timeline/i });
+    expect(svg).toHaveAttribute("height");
+    const h = Number(svg.getAttribute("height"));
+    expect(h).toBeGreaterThan(0);
+    expect(h).toBeLessThanOrEqual(200); // sanity: must be compact, not viewport-filling
+  });
 });

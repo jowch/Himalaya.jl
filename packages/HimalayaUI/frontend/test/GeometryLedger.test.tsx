@@ -134,6 +134,15 @@ describe("GeometryLedger", () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
+  it("source='computed' renders a non-empty provenance chip label", () => {
+    const computedRows: GeometryRow[] = [
+      { key: "beam_center_x", label: "Beam center X", value: "421.4 px", source: "computed" },
+    ];
+    render(<GeometryLedger rows={computedRows} {...cb} />);
+    // Must show a non-empty label (not "—"), using the "computed" entry in SOURCE_LABEL.
+    expect(screen.getByText("computed")).toBeInTheDocument();
+  });
+
   it("non-editing rows still show their text value when a different row is being edited", () => {
     render(
       <GeometryLedger

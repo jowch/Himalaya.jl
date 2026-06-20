@@ -41,6 +41,7 @@ export function AcquisitionChart({ sessions, className }: AcquisitionChartProps)
     <svg
       className={className}
       width="100%"
+      height={H}
       viewBox={`0 0 ${Math.max(width, 1)} ${H}`}
       role="img"
       aria-label="Acquisition timeline -- exposures per load, grouped by session"
