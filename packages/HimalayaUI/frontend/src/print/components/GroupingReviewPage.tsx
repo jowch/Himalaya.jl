@@ -26,6 +26,12 @@ interface ConfirmState {
   survivorLabel: string;
 }
 
+interface BulkMergeConfirmState {
+  survivorId: number;
+  survivorLabel: string;
+  loserIds: number[];
+}
+
 interface UndoEntry {
   label: string;
   undo: () => void;
@@ -51,6 +57,8 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
 
   // Confirm modal state (merge only for now; split confirm added if needed)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  // Bulk-merge confirm modal state
+  const [bulkMergeConfirm, setBulkMergeConfirm] = useState<BulkMergeConfirmState | null>(null);
 
   // Mutation hooks — one instance per experiment, entity ids ride in mutate() input
   const { mutate: mergeMutate } = useMergeSamples(experimentId);
@@ -194,7 +202,26 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
     });
   };
 
-  const noop = () => {};
+  const openBulkMergeConfirm = () => {
+    if (selection.length < 2) return;
+    const [survivorId, ...loserIds] = selection;
+    // Find survivor label
+    let survivorLabel = String(survivorId);
+    for (const l of loads) {
+      const s = l.samples.find((x) => x.sample_id === survivorId);
+      if (s) { survivorLabel = s.name; break; }
+    }
+    setBulkMergeConfirm({ survivorId, survivorLabel, loserIds });
+  };
+
+  const handleConfirmBulkMerge = () => {
+    if (!bulkMergeConfirm) return;
+    const { survivorId, survivorLabel, loserIds } = bulkMergeConfirm;
+    loserIds.forEach((loserId) => mergeMutate({ loserId, survivorId }));
+    setSelection([]);
+    setBulkMergeConfirm(null);
+    showToast(`Merged ${loserIds.length + 1} samples into ${survivorLabel}`, "info");
+  };
 
   return (
     <div className={`mx-auto max-w-[1180px] px-10 pb-32 pt-8${className ? ` ${className}` : ""}`}>
@@ -256,7 +283,7 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
         ))
       )}
 
-      {/* Merge confirm modal */}
+      {/* Merge confirm modal (single-entity) */}
       <ModalShell
         open={confirm?.kind === "merge"}
         onClose={() => setConfirm(null)}
@@ -276,13 +303,34 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
         </div>
       </ModalShell>
 
-      {selection.length > 0 ? (
+      {/* Bulk-merge confirm modal */}
+      <ModalShell
+        open={bulkMergeConfirm !== null}
+        onClose={() => setBulkMergeConfirm(null)}
+        size="sm"
+        aria-label="Confirm bulk merge"
+        testId="bulk-merge-confirm"
+      >
+        <div className="p-6">
+          <p className="text-sm text-ink">
+            Merge {bulkMergeConfirm ? bulkMergeConfirm.loserIds.length + 1 : 0} samples
+            into <b className="text-ink">{bulkMergeConfirm?.survivorLabel}</b>?
+            All exposures will be moved to the surviving sample. This cannot be undone automatically.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setBulkMergeConfirm(null)}>Cancel</Button>
+            <Button variant="outline" onClick={handleConfirmBulkMerge}>Merge</Button>
+          </div>
+        </div>
+      </ModalShell>
+
+      {selection.length > 0 && !bulkMergeConfirm ? (
         <GroupingBulkBar
           count={selection.length}
           noun="sample"
           primaryLabel="Merge"
           primaryEnabled={selection.length >= 2}
-          onPrimary={noop}
+          onPrimary={openBulkMergeConfirm}
           onClear={() => setSelection([])}
         />
       ) : null}
