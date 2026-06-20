@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
@@ -37,7 +37,12 @@ import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
 import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
+import {
+  moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
+  splitSampleMutator, dismissGroupingFlagMutator,
+} from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
+import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
 
@@ -829,6 +834,56 @@ export function useSeriesTraces(seriesId: number | undefined) {
     queryKey: queryKeys.seriesTraces(seriesId),
     queryFn: () => api.getSeriesTraces(seriesId as number),
     enabled: seriesId !== undefined,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Structural-edit hooks (spec §9.6) — one hook per experiment, not per row.
+// Entity ids (sampleId / exposureId) ride in the mutate() input, NOT the scope.
+// This lets Task 14 instantiate each hook once and dispatch to any row.
+// ---------------------------------------------------------------------------
+
+export function useRenameSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(renameSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useMoveExposure(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(moveExposureMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+// merge: scope = experiment + identity ONLY; the caller passes { loserId, survivorId }
+// as the mutate() input (MergeSamplesInput, decided in Task 5) — no `as never`.
+export function useMergeSamples(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(mergeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useSplitSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(splitSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useDismissGroupingFlag(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(dismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+/** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
+ *  read hooks for experiments). Wraps E1's `updateExperiment(id, patch)` fetcher;
+ *  this is a plain TanStack mutation (not a queue mutator — geometry override is
+ *  not part of the structural-edit event log) that invalidates the experiment
+ *  detail on success so the provenance chips re-render. */
+export function useUpdateExperiment(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: api.ExperimentPatch) =>
+      api.updateExperiment(experimentId, patch, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
   });
 }
 
