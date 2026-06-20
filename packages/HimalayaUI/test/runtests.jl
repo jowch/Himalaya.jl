@@ -39,6 +39,7 @@ const GROUPS = [
                   "test_comparison_pins.jl"]),
     ("wire",     ["test_http.jl","test_routes_health.jl","test_routes_status.jl",
                   "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl"]),
+    ("migration", ["test_http.jl","test_migration_upgrade.jl"]),
 ]
 
 # Single source of truth for the serial bisect order — the exact historical
@@ -67,7 +68,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_comparisons.jl","test_routes_series.jl","test_picker_routes.jl",
                    "test_picker_samples_route.jl","test_routes_resolve.jl",
                    "test_comparison_pins.jl","test_migrate_toml.jl",
-                   "test_spa_fallback.jl"]
+                   "test_spa_fallback.jl","test_migration_upgrade.jl"]
 
 # Drift guard: the buckets and ALL_ORDER must cover the identical file set, so a
 # parallel / GROUP=<name> run can never silently skip (or double-run) a file
