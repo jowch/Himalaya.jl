@@ -350,8 +350,16 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                 if !isempty(candidates)
                     owner = first(candidates)  # lowest id
                     push!(claimed, owner)
+                    # Stamp name_source='user' ONLY on a genuine first adoption — a
+                    # pre-rework manifest sample carries a human label and has load_id
+                    # NULL (no loads existed before regroup). A sample THIS migration
+                    # auto-created on a prior run already has load_id set; re-claiming it
+                    # must NOT flip its 'auto' label to 'user' (idempotency). SQLite reads
+                    # the pre-update load_id in the CASE, so this is the right discriminator.
                     DBInterface.execute(db,
-                        "UPDATE samples SET load_id = ?, slot_index = ?, name_source = 'user' WHERE id = ?",
+                        "UPDATE samples SET load_id = ?, slot_index = ?, " *
+                        "name_source = CASE WHEN load_id IS NULL THEN 'user' ELSE name_source END " *
+                        "WHERE id = ?",
                         [lid, cell.slot_index, owner])
                     samples_retrofitted += 1
                 else

@@ -1333,30 +1333,14 @@ end
         @test isequal(snap1.exposures, snap2.exposures)
         @test snap1.curation == snap2.curation
 
-        # Samples: identity holds on every column EXCEPT name_source — see the
-        # KNOWN FINDING below. Assert the stable projection equal, and the full
-        # row equal as @test_broken so the residual is tracked, not hidden.
-        proj(snap) = [(r.id, r.name, r.load_id, r.slot_index) for r in snap.samples]
-        @test isequal(proj(snap1), proj(snap2))
-
-        # KNOWN FINDING (Task 4 capstone — production defect in regroup_experiment!,
-        # ingest.jl:354, NOT a test artifact): regroup_experiment! is not perfectly
-        # idempotent for the samples.name_source column. The first --apply
-        # AUTO-CREATES the reshoot's later cell (create_sample! defaults
-        # name_source='auto'). On a SECOND --apply that auto sample now owns its
-        # cell's exposures, so it becomes a retrofit CANDIDATE and the retrofit
-        # branch's unconditional `SET name_source = 'user'` flips it 'auto'→'user'.
-        # Effect: a re-run freezes an auto-named reshoot cell as if user-authored,
-        # so a future re-derivation won't re-auto-name it. Narrow (only reshoot/
-        # displaced cells that were auto-created by a prior regroup) and benign for
-        # the one-shot operator flow (the runbook applies once), but it violates
-        # the "second --apply is byte-identical" idempotency contract. The earlier
-        # Task 2/3 idempotency tests missed it: their one-cell fixture creates no
-        # auto sample to reclaim. The fix belongs in Task 2 production code (e.g.
-        # only stamp name_source='user' when the reused row's source is already
-        # 'user'/human, or skip the stamp for rows whose source is 'auto'); out of
-        # scope for this test-only task. Tracked here so the capstone records it.
-        @test_broken isequal(snap1.samples, snap2.samples)
+        # Samples: full row identity, including name_source. The capstone originally
+        # caught a name_source idempotency defect here (a second --apply flipped a
+        # regroup-auto-created reshoot cell 'auto'→'user' because the retrofit branch
+        # stamped 'user' unconditionally). Fixed in regroup_experiment! (ingest.jl):
+        # the stamp is now `CASE WHEN load_id IS NULL THEN 'user' ELSE name_source END`
+        # — 'user' only on a genuine first adoption of a pre-rework manifest sample
+        # (load_id NULL); re-claiming a sample regroup already placed leaves it 'auto'.
+        @test isequal(snap1.samples, snap2.samples)
 
         # cheap_change_check confirms no-op (false): every on-disk image is already
         # persisted. NOTE: post-dedup `persisted` can differ from the on-disk .tif
