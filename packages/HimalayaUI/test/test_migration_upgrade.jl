@@ -21,6 +21,43 @@
 # packages/HimalayaUI/test/test_migration_upgrade.jl`) the includes below pull
 # in the shared fixture writers from test_ingestion_core.jl. Under the suite
 # they are already in scope; the isdefined guards make the re-include a no-op.
+#
+# ===========================================================================
+# OPERATOR RUNBOOK — the manual verify-by-rendering gate (Task 4, NOT CI)
+# ===========================================================================
+# These automated tests prove the migration on SYNTHETIC fixtures only (they
+# never touch /Volumes). The capstone's "real data renders" guarantee is a
+# manual gate an operator runs ONCE against a copy of the production dev-db
+# before merging. Steps (do NOT automate — the source volumes are host-mounted):
+#
+#   1. Copy the real dev-db to a scratch path so the original is never mutated:
+#        cp /path/to/prod/himalaya.db /tmp/upgrade-smoke.db
+#   2. Dry-run first and eyeball the summary (NOTHING is committed):
+#        HIMALAYA_DB_PATH=/tmp/upgrade-smoke.db bin/himalaya upgrade-grouping
+#      Expect (per the regress.db ground truth): ~28 reshoot loads across the 3
+#      experiments, ~0 many-old→one-cell displacements, every curation count
+#      identical pre/post (the dedup drops only the 30 non-survivors' redundant
+#      children — all 30 collisions share one image_path, so it is a safe merge).
+#   3. Apply for real (back up first — the command prints this reminder):
+#        HIMALAYA_DB_PATH=/tmp/upgrade-smoke.db bin/himalaya upgrade-grouping --apply
+#   4. Serve the upgraded copy and walk EVERY surface with the browser console
+#      open, confirming real data renders with ZERO console errors:
+#        HIMALAYA_DB_PATH=/tmp/upgrade-smoke.db bin/himalaya serve --port 8080
+#      Surfaces to walk:
+#        - Experiment corpus  (loads + samples render under each load)
+#        - Experiment grouping-review (fold tree, reshoot flags, structural edits)
+#        - Experiment config  (geometry ledger shows derived flight_path / energy
+#                              with provenance chips; acquisition timeline renders)
+#        - Legacy /samples contact sheet  (thumbnails, phase calls)
+#        - Legacy /sample/:id Focus  (trace plate, peaks, assignment rail)
+#        - Legacy /series  (folio/scoping/builder overlays)
+#        - Legacy /loupe (Inspect)  (detector image, thumbnail gallery, metadata)
+#   5. Idempotency by hand: re-run `upgrade-grouping --apply` — the summary must
+#      show loads/samples unchanged (loads dedup, owners already claimed). A
+#      manual rescan via POST /api/experiments/{id}/scan must be a clean no-op
+#      (every derived cell already exists → no new/phantom samples). `serve()`
+#      arms no schedulers, so nothing auto-fires while you walk.
+# ===========================================================================
 
 using Test
 using SQLite, DBInterface, Tables
@@ -117,10 +154,10 @@ upgrade. Also lays down the on-disk fixture triplets (.tif/.prp/.dat +
 setup_info) under `<dir>/data` and `<dir>/analysis` so later derivation tasks
 have real files; `experiments.data_dir`/`analysis_dir` point at those dirs.
 
-The fixture embeds the three shapes later tasks must exercise:
+The fixture embeds the `(experiment_id, filename)` COLLISION that Task 1's dedup
+must exercise:
 
-  (a) `(experiment_id, filename)` COLLISION sharing one `image_path`: two
-      exposures with the same bare-stem `filename` but distinct `sample_id`
+  (a) two exposures with the same bare-stem `filename` but distinct `sample_id`
       (legal under the legacy `(sample_id, filename)` key). One carries a
       `trace_hash` + an `auto` index_groups/auto_peaks curation chain; the other
       is empty. Both point at the SAME `image_path` (the real-data dedup case).
@@ -128,15 +165,27 @@ The fixture embeds the three shapes later tasks must exercise:
       key is Task 1's job, so `build_legacy_db` deliberately leaves the two rows
       un-deduped and the migration is NOT run here.
 
-  (b) RESHOOT: one old sample whose two stems sit at the same slot position but
-      are separated by a large timestamp gap — so a re-derivation lands them in
-      TWO different loads.
+PARTITION SHAPE WHEN SCANNED WHOLE (important — verified by probe + the
+"build_legacy_db derives to ONE cell when scanned whole" testset below):
+**these five single-frame stems derive to ONE load / ONE (load, slot) cell.**
+The `reshoot_stems` / `onecell_stems` carry suggestive names and timestamps, but
+when `scan_directory` reads the WHOLE dir the gap distribution is unimodal (max
+gap < `10×median`, so `_segment_loads` returns a single load) AND the frames are
+pure single-frame acquisitions (no multi-frame bursts, so `_cluster_slots` can't
+distinguish slot spacing from jitter → one slot). So scanned whole there is no
+reshoot split and no many-old→one-cell *separation*; all five frames collapse
+into one cell, exercised by the Task 2 "1:1 retrofit + curation preserved" test.
 
-  (c) MANY-OLD -> ONE-CELL: two old samples whose single stems share both
-      timestamp-load AND horizontal position — so a re-derivation lands them in
-      ONE (load, slot) cell.
+The reshoot (two-loads) and many-old→one-cell shapes are reachable only in
+ISOLATION (a fixture that genuinely clusters bursts + a bimodal time gap). Task 2
+exercises them via the purpose-built bimodal/co-timed `build_focused_db`; Task 4's
+end-to-end round-trip composes ALL of them in one scanned-whole fixture via
+`build_legacy_db_full`. `build_legacy_db` is the COLLISION/curation harness, not
+a reshoot/many-old harness.
 
 Returns the path plus an `info` NamedTuple of the seeded ids/stems for tests.
+The `reshoot`/`one_cell` keys name the seeded sample rows (their stems still
+collapse to one cell when scanned whole — see above).
 """
 function build_legacy_db(dir::AbstractString)
     data_dir     = joinpath(dir, "data");     mkpath(data_dir)
@@ -823,17 +872,20 @@ end
         after = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
 
         # Every row-level field must be identical — nothing was committed.
-        @test length(before.loads) == length(after.loads)
-        @test length(before.samples) == length(after.samples)
-        @test length(before.exposures) == length(after.exposures)
+        # Full row-state equality (the brief's "byte-identical / full row-state"
+        # bar): snap_experiment returns Vector{NamedTuple} for each table. Use
+        # `isequal` not `==` — rows hold SQLite NULLs as `missing`, and `==`
+        # propagates `missing` (three-valued logic) for any NULL field; `isequal`
+        # treats `missing === missing` as true and returns a real Bool. This
+        # proves no column of any loads/samples/exposures row drifted under the
+        # dry-run rollback.
+        @test isequal(before.loads, after.loads)
+        @test isequal(before.samples, after.samples)
+        @test isequal(before.exposures, after.exposures)
         # No loads should have been created (dry-run rolled back).
         @test isempty(after.loads)
         # Curation untouched.
         @test before.curation == after.curation
-        # Exposure sample_ids unchanged (all still as set by migrate_schema!).
-        bsids = sort(Int[Int(e.sample_id) for e in before.exposures if e.sample_id !== missing])
-        asids = sort(Int[Int(e.sample_id) for e in after.exposures if e.sample_id !== missing])
-        @test bsids == asids
     end
 
     @testset "cli_upgrade_grouping dry-run (default) leaves DB unchanged" begin
@@ -930,5 +982,388 @@ end
             @test n == 0
         end
         @test occursin("SKIP", out)
+    end
+end
+
+# ---------------------------------------------------------------------------
+# Task 4: end-to-end round-trip — collisions + curation + reshoot + many-old →
+# one-cell, ALL composed in one fixture that GENUINELY produces those shapes
+# when the CLI scans its data_dir whole. (build_legacy_db can't: scanned whole
+# its 5 single-frame stems collapse to one cell — see the carried-finding
+# discussion in build_legacy_db's docstring. So Task 4 owns build_legacy_db_full,
+# whose bimodal time gap + multi-frame bursts make the derivation produce two
+# loads with a reshoot split and a many-old→one-cell collapse.)
+#
+# Asserted partition (verified before any migration assertion below):
+#   Load 1, slot 1 (pos 60.0): OC_a + OC_b + collision-survivor stem  (3 frames)
+#   Load 1, slot 2 (pos 70.0): reshoot batch 1                        (2 frames)
+#   Load 2, slot 1 (pos 70.0): reshoot batch 2                        (2 frames)
+# → 2 loads, 3 cells.  Sample assignment in build_legacy_db_full:
+#   - collision: sample 10 (survivor, curation chain) + 11 (non-survivor, same
+#     image_path) share filename COLLIDE; the survivor's frame sits in cell(1,1).
+#   - many-old → one-cell: samples 30/31 own OC_a/OC_b → both land in cell(1,1).
+#     With the collision survivor that is THREE old samples in one cell; lowest
+#     id (10) owns, 30 & 31 are displaced+deleted (metadata carried).
+#   - reshoot: sample 20 owns BOTH reshoot batches → cell(1,2) keeps id 20+name,
+#     cell(2,1) becomes a new 'auto' sample.
+# ---------------------------------------------------------------------------
+
+"""
+    build_legacy_db_full(dir) -> (path, info)
+
+Like `build_legacy_db`, but the on-disk fixture is engineered so that when
+`scan_directory` reads the WHOLE data_dir the derivation produces the full set
+of migration shapes at once (bimodal time gap → two loads; multi-frame bursts →
+≥2 slots; a reshoot specimen split across loads; three old samples collapsing
+into one cell). See the block comment above for the exact asserted partition.
+
+The collision (same `image_path`, two distinct `sample_id`) is folded INTO the
+many-old cell: the surviving collision exposure (id 100, carrying the curation
+chain) is one of cell(1,1)'s three frames, so after Task 1's dedup + Task 4's
+regroup, sample 10 owns cell(1,1) and carries both the survived curation and the
+absorbed siblings' metadata.
+
+`info` mirrors build_legacy_db's shape plus a `nonsurvivor_curation` count of the
+curation children hung off the collision non-survivor (exposure 101) — the exact
+amount `count_curation` must drop across the dedup.
+"""
+function build_legacy_db_full(dir::AbstractString)
+    data_dir     = joinpath(dir, "data");      mkpath(data_dir)
+    analysis_dir = joinpath(dir, "analysis");   mkpath(analysis_dir)
+    write_setup_dir!(analysis_dir)
+
+    base = DateTime(2026, 4, 26, 23, 0, 0)
+    S(n) = Dates.Second(n)
+
+    collide_stem  = "HA_85_422_S2404_0_001"
+    collide_image = joinpath(data_dir, "$collide_stem.tif")
+
+    # (stem, hpos, timestamp). One on-disk frame each (the collision is two
+    # exposure ROWS sharing collide_stem's single on-disk file).
+    onecell_stems = ["OC_a_S2600_0_001", "OC_b_S2601_0_001"]
+    reshoot_stems = ["RS_S2500_0_001", "RS_S2500_0_002", "RS_S2501_0_001", "RS_S2501_0_002"]
+    disk = [
+        # Load 1, slot 1 (pos 60.0): many-old trio (OC_a, OC_b, collision survivor)
+        (onecell_stems[1], 60.0, base + S(0)),
+        (onecell_stems[2], 60.0, base + S(20)),
+        (collide_stem,     60.0, base + S(25)),
+        # Load 1, slot 2 (pos 70.0): reshoot batch 1 (burst)
+        (reshoot_stems[1], 70.0, base + S(40)),
+        (reshoot_stems[2], 70.0, base + S(42)),
+        # Load 2 (pos 70.0): reshoot batch 2 (burst), +2h gap
+        (reshoot_stems[3], 70.0, base + Dates.Hour(2) + S(0)),
+        (reshoot_stems[4], 70.0, base + Dates.Hour(2) + S(2)),
+    ]
+    for (stem, hpos, ts) in disk
+        write_stem_fixtures!(data_dir, analysis_dir, stem;
+            horizontal_position_mm = hpos, timestamp = ts)
+    end
+
+    path = joinpath(dir, "legacy.db")
+    db = SQLite.DB(path)
+    HimalayaUI.create_schema!(db)
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacyfull',?,?,?)",
+        [dir, data_dir, analysis_dir])
+
+    # samples: 10 collision survivor (human label), 11 collision non-survivor,
+    # 20 reshoot specimen, 30/31 many-old pair.
+    for (id, name, dname) in [(10,"JC001","JC C04"), (11,"JC002","JC C05"),
+                              (20,"HA090","HA90 (S01P02)"),
+                              (30,"HA060a","HA60a"), (31,"HA060b","HA60b")]
+        DBInterface.execute(db,
+            "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (?,1,?,?)",
+            [id, name, dname])
+    end
+
+    # collision survivor (100, sample 10) + a full auto curation chain.
+    DBInterface.execute(db, """
+        INSERT INTO exposures (id, sample_id, filename, image_path, trace_hash)
+        VALUES (100, 10, ?, ?, 'deadbeef')""", [collide_stem, collide_image])
+    DBInterface.execute(db,
+        "INSERT INTO auto_peaks (id, exposure_id, q, intensity) VALUES (1000, 100, 0.123, 5.0)")
+    DBInterface.execute(db,
+        "INSERT INTO indices (id, exposure_id, phase, basis, kind) VALUES (2000, 100, 'Pn3m', 0.123, 'auto')")
+    DBInterface.execute(db,
+        "INSERT INTO index_groups (id, exposure_id, kind, active) VALUES (3000, 100, 'auto', 1)")
+    DBInterface.execute(db,
+        "INSERT INTO index_group_members (group_id, index_id) VALUES (3000, 2000)")
+    DBInterface.execute(db,
+        "INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position) VALUES (2000, 1000, 'auto', 1)")
+
+    # collision NON-survivor (101, sample 11): same (filename, image_path). Hang
+    # curation on it so the dedup must drop REAL children (a meaningful
+    # count_curation delta, not a vacuous pre==post). nonsurvivor_curation tracks
+    # the exact drop: 1 auto_peak + 1 peak_curation + 1 exposure_tag = 3 rows.
+    DBInterface.execute(db, """
+        INSERT INTO exposures (id, sample_id, filename, image_path)
+        VALUES (101, 11, ?, ?)""", [collide_stem, collide_image])
+    DBInterface.execute(db,
+        "INSERT INTO auto_peaks (id, exposure_id, q, intensity) VALUES (1101, 101, 0.4, 2.0)")
+    DBInterface.execute(db,
+        "INSERT INTO peak_curations (id, exposure_id, kind, q) VALUES (1102, 101, 'add', 0.5)")
+    DBInterface.execute(db,
+        "INSERT INTO exposure_tags (id, exposure_id, key, value) VALUES (1103, 101, 'k', 'v')")
+    nonsurvivor_curation = (auto_peaks = 1, peak_curations = 1, exposure_tags = 1)
+
+    # reshoot specimen 20: all four reshoot frames.
+    for (i, stem) in enumerate(reshoot_stems)
+        DBInterface.execute(db,
+            "INSERT INTO exposures (id, sample_id, filename, image_path) VALUES (?, 20, ?, ?)",
+            [200 + i, stem, joinpath(data_dir, "$stem.tif")])
+    end
+    # many-old pair: 30 owns OC_a, 31 owns OC_b.
+    DBInterface.execute(db,
+        "INSERT INTO exposures (id, sample_id, filename, image_path) VALUES (300, 30, ?, ?)",
+        [onecell_stems[1], joinpath(data_dir, "$(onecell_stems[1]).tif")])
+    DBInterface.execute(db,
+        "INSERT INTO exposures (id, sample_id, filename, image_path) VALUES (301, 31, ?, ?)",
+        [onecell_stems[2], joinpath(data_dir, "$(onecell_stems[2]).tif")])
+
+    SQLite.close(db)
+
+    info = (path = path, dir = dir, data_dir = data_dir, analysis_dir = analysis_dir,
+            experiment_id = 1,
+            collide_stem = collide_stem,
+            survivor_exposure_id = 100, nonsurvivor_exposure_id = 101,
+            survivor_sample_id = 10, nonsurvivor_sample_id = 11,
+            reshoot_sample_id = 20, reshoot_stems = reshoot_stems,
+            onecell_sample_ids = [30, 31], onecell_stems = onecell_stems,
+            nonsurvivor_curation = nonsurvivor_curation)
+    return path, info
+end
+
+"Run cli_upgrade_grouping with HIMALAYA_DB_PATH=path, capturing stdout to a String."
+function run_upgrade_capture(path, args)
+    tmpf = tempname()
+    open(tmpf, "w") do io
+        redirect_stdout(io) do
+            withenv("HIMALAYA_DB_PATH" => path) do
+                HimalayaUI.cli_upgrade_grouping(args)
+            end
+        end
+    end
+    out = read(tmpf, String)
+    rm(tmpf; force = true)
+    out
+end
+
+@testset "Task 4 end-to-end round-trip" begin
+    @testset "fixture derives the asserted multi-shape partition when scanned whole" begin
+        # FIRST prove the fixture shape (not assume it): run the pure derivation
+        # the CLI runs, and assert two loads / three cells with the exact frame
+        # membership. Everything downstream depends on this partition.
+        path, info = build_legacy_db_full(mktempdir())
+        metas = HimalayaUI.scan_directory(info.data_dir, info.analysis_dir)
+        @test length(metas) == 7
+        result = HimalayaUI.group_into_samples(metas)
+        @test length(result.loads) == 2
+
+        l1, l2 = result.loads[1], result.loads[2]
+        @test l1.frame_count == 5
+        @test l2.frame_count == 2
+        @test length(l1.samples) == 2          # slot 1 (many-old trio) + slot 2 (reshoot b1)
+        @test length(l2.samples) == 1          # reshoot b2
+
+        # cell(1,1) holds the many-old trio (OC_a, OC_b, collision survivor stem)
+        cell11 = Set(e.stem for e in l1.samples[1].exposures)
+        @test cell11 == Set([info.onecell_stems[1], info.onecell_stems[2], info.collide_stem])
+        # cell(1,2) + cell(2,1) hold the reshoot's two bursts.
+        cell12 = Set(e.stem for e in l1.samples[2].exposures)
+        cell21 = Set(e.stem for e in l2.samples[1].exposures)
+        @test cell12 == Set(info.reshoot_stems[1:2])
+        @test cell21 == Set(info.reshoot_stems[3:4])
+    end
+
+    @testset "build → migrate_schema! (schema + dedup) → upgrade-grouping --apply" begin
+        path, info = build_legacy_db_full(mktempdir())
+
+        # curation BEFORE the migration (probe the affected tables directly —
+        # count_curation also reads tables migrate_schema! adds, so it can't run
+        # pre-migration). Both the survivor (100) and non-survivor (101) carry
+        # a one-each chain at this point.
+        cnt(db, t) = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM $t"))).c)
+        before_raw = with_migration_db(path) do db
+            (auto_peaks = cnt(db, "auto_peaks"),
+             peak_curations = cnt(db, "peak_curations"),
+             exposure_tags = cnt(db, "exposure_tags"),
+             indices = cnt(db, "indices"),
+             index_peaks = cnt(db, "index_peaks"))
+        end
+        @test before_raw.auto_peaks == 2          # survivor 1 + non-survivor 1
+        @test before_raw.peak_curations == 1      # non-survivor's
+        @test before_raw.exposure_tags == 1       # non-survivor's
+
+        # --- schema half: migrate_schema! upgrades + runs Task 1's dedup ---
+        with_migration_db(path) do db
+            @test HimalayaUI.migrate_schema!(db) === nothing  # opens/migrates clean
+        end
+
+        # curation AFTER the dedup but BEFORE regroup.
+        after_dedup = with_migration_db(path) do db; count_curation(db); end
+        # The dedup dropped exactly the non-survivor's redundant children.
+        @test after_dedup.auto_peaks     == before_raw.auto_peaks - info.nonsurvivor_curation.auto_peaks
+        @test after_dedup.peak_curations == before_raw.peak_curations - info.nonsurvivor_curation.peak_curations
+        @test after_dedup.exposure_tags  == before_raw.exposure_tags - info.nonsurvivor_curation.exposure_tags
+        # The survivor's chain is intact.
+        @test after_dedup.auto_peaks == 1 && after_dedup.indices == 1 && after_dedup.index_peaks == 1
+        # The collision is deduped to the survivor only.
+        with_migration_db(path) do db
+            ids = sort(Int.(getproperty.(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE filename = ?", [info.collide_stem])), :id)))
+            @test ids == [info.survivor_exposure_id]
+        end
+
+        # --- data half: exercise the CLI --apply path (Task 3 wrapper) ---
+        out = run_upgrade_capture(path, ["--apply", "--experiment", string(info.experiment_id)])
+        @test occursin("APPLY", out)
+        @test occursin("ok", out)
+
+        with_migration_db(path) do db
+            # opens clean (no error from open_db on the upgraded DB).
+            @test true
+
+            # loads > 0 with correct frame_counts (5 / 2 from the partition).
+            loads = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, load_index, frame_count FROM loads WHERE experiment_id = ? ORDER BY load_index",
+                [info.experiment_id]))
+            @test length(loads) == 2
+            @test loads[1].frame_count == 5
+            @test loads[2].frame_count == 2
+
+            # Partition: one sample per derived cell → 3 live cells under 2 loads.
+            roll = HimalayaUI.get_loads_rollup(db, info.experiment_id)
+            @test length(roll) == 2
+            cells_per_load = sort([length(ld.samples) for ld in roll])
+            @test cells_per_load == [1, 2]
+
+            # Reshoot: sample 20 keeps the EARLIEST cell (id + human name); the
+            # later cell is a NEW 'auto' sample.
+            r20 = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name, name_source, load_id, slot_index FROM samples WHERE id = 20")))
+            @test r20.name == "HA90 (S01P02)"
+            @test r20.name_source == "user"
+            # The reshoot's later cell is a fresh auto sample (id ∉ the seeded set).
+            seeded = Set([10, 11, 20, 30, 31])
+            reshoot_stem_sids = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT DISTINCT sample_id FROM exposures WHERE filename IN (?, ?)",
+                [info.reshoot_stems[3], info.reshoot_stems[4]])))
+            @test 20 ∉ reshoot_stem_sids                        # later batch moved off 20
+            new_reshoot = first(setdiff(reshoot_stem_sids, seeded))
+            nr = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name_source FROM samples WHERE id = ?", [new_reshoot])))
+            @test nr.name_source == "auto"
+
+            # Many-old → one cell: lowest id (10) owns cell(1,1); 30 & 31 deleted.
+            @test isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM samples WHERE id IN (30, 31)")))
+            owner_sids = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT DISTINCT sample_id FROM exposures WHERE filename IN (?, ?, ?)",
+                [info.onecell_stems[1], info.onecell_stems[2], info.collide_stem])))
+            @test owner_sids == Set([info.survivor_sample_id])  # all three frames now on sample 10
+            @test first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name FROM samples WHERE id = 10"))).name == "JC C04"  # human label kept
+
+            # Every file-present exposure relinked: non-NULL load_id + a sample.
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, load_id FROM exposures WHERE experiment_id = ?",
+                [info.experiment_id]))
+            for r in rows
+                @test r.load_id   !== missing && r.load_id   !== nothing
+                @test r.sample_id !== missing && r.sample_id !== nothing
+            end
+
+            # count_curation post-regroup == post-dedup (regroup deletes/re-inserts
+            # NO exposure → exposure-keyed curation is untouched by the data half).
+            @test count_curation(db) == after_dedup
+
+            # Geometry derived from PRP/setup (flight_path from setup_info).
+            g = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT flight_path_m, flight_path_m_source, energy_kev, energy_kev_source, " *
+                "q_units, q_units_source FROM experiments WHERE id = ?", [info.experiment_id])))
+            @test g.flight_path_m !== missing && g.flight_path_m !== nothing
+            @test g.flight_path_m_source != "default"
+            @test g.energy_kev !== missing && g.energy_kev !== nothing
+            @test g.energy_kev_source != "default"
+            # q_units has no writer → stays NULL/'default' (DO NOT assert populated).
+            @test g.q_units === missing || g.q_units === nothing
+            @test g.q_units_source == "default"
+        end
+    end
+
+    @testset "summary reshoot/displaced counts match the fixture's known shape" begin
+        # Record the summary counts so a future real-dev-db run can be eyeballed
+        # against ≈28 reshoots / ≈0 many-old→one-cell. On THIS fixture: 2 loads
+        # (one reshoot split), 3 cells, 2 retrofitted (10 + 20), 1 created (the
+        # reshoot later cell), 2 displaced (30 + 31 → the many-old collapse).
+        path, info = build_legacy_db_full(mktempdir())
+        with_migration_db(path) do db; HimalayaUI.migrate_schema!(db); end
+        summary = with_migration_db(path) do db
+            HimalayaUI.regroup_experiment!(db, info.experiment_id)
+        end
+        @test summary.status == :ok
+        @test summary.loads_created == 2
+        @test summary.reshoot_loads == 2
+        @test summary.cells == 3
+        @test summary.samples_retrofitted == 2
+        @test summary.samples_created == 1     # the reshoot's later cell
+        @test summary.samples_displaced == 2   # many-old collapse (30, 31)
+        @test summary.exposures_no_file == 0
+        # Every on-disk frame relinked (7 exposures: 1 collision survivor + 4
+        # reshoot + 2 many-old; the non-survivor was deduped away pre-regroup).
+        @test summary.exposures_relinked == 7
+    end
+
+    @testset "a second --apply is a clean no-op (idempotency)" begin
+        path, info = build_legacy_db_full(mktempdir())
+        with_migration_db(path) do db; HimalayaUI.migrate_schema!(db); end
+        exp_arg = ["--apply", "--experiment", string(info.experiment_id)]
+
+        run_upgrade_capture(path, exp_arg)
+        snap1 = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        run_upgrade_capture(path, exp_arg)
+        snap2 = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
+
+        # Full row-state identity across loads/exposures + curation.
+        # `isequal` (not `==`) for the row vectors — NULL columns surface as
+        # `missing` and `==` would propagate `missing` instead of a Bool.
+        @test isequal(snap1.loads, snap2.loads)
+        @test isequal(snap1.exposures, snap2.exposures)
+        @test snap1.curation == snap2.curation
+
+        # Samples: identity holds on every column EXCEPT name_source — see the
+        # KNOWN FINDING below. Assert the stable projection equal, and the full
+        # row equal as @test_broken so the residual is tracked, not hidden.
+        proj(snap) = [(r.id, r.name, r.load_id, r.slot_index) for r in snap.samples]
+        @test isequal(proj(snap1), proj(snap2))
+
+        # KNOWN FINDING (Task 4 capstone — production defect in regroup_experiment!,
+        # ingest.jl:354, NOT a test artifact): regroup_experiment! is not perfectly
+        # idempotent for the samples.name_source column. The first --apply
+        # AUTO-CREATES the reshoot's later cell (create_sample! defaults
+        # name_source='auto'). On a SECOND --apply that auto sample now owns its
+        # cell's exposures, so it becomes a retrofit CANDIDATE and the retrofit
+        # branch's unconditional `SET name_source = 'user'` flips it 'auto'→'user'.
+        # Effect: a re-run freezes an auto-named reshoot cell as if user-authored,
+        # so a future re-derivation won't re-auto-name it. Narrow (only reshoot/
+        # displaced cells that were auto-created by a prior regroup) and benign for
+        # the one-shot operator flow (the runbook applies once), but it violates
+        # the "second --apply is byte-identical" idempotency contract. The earlier
+        # Task 2/3 idempotency tests missed it: their one-cell fixture creates no
+        # auto sample to reclaim. The fix belongs in Task 2 production code (e.g.
+        # only stamp name_source='user' when the reused row's source is already
+        # 'user'/human, or skip the stamp for rows whose source is 'auto'); out of
+        # scope for this test-only task. Tracked here so the capstone records it.
+        @test_broken isequal(snap1.samples, snap2.samples)
+
+        # cheap_change_check confirms no-op (false): every on-disk image is already
+        # persisted. NOTE: post-dedup `persisted` can differ from the on-disk .tif
+        # count only if data_dir holds stray un-persisted .tif (e.g. calibration
+        # frames); this fixture writes none, so on_disk == persisted → false.
+        with_migration_db(path) do db
+            @test HimalayaUI.cheap_change_check(db, info.experiment_id) == false
+        end
     end
 end
