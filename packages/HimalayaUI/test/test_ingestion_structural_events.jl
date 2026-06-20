@@ -497,4 +497,27 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
             @test isempty(suppressed)
         end
     end
+
+    @testset "GET /api/experiments/{id}/loads — returns §8.8 load tree with flag field" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        with_inproc_routes(db) do call
+            resp = call("GET", "/api/experiments/$(exp_id)/loads")
+            @test resp.status == 200
+
+            data = JSON3.read(String(resp.body))
+            @test length(data) == 1
+            @test Int(data[1].load_id) == load_id
+            @test haskey(data[1], :session_id)
+            @test haskey(data[1], :note)
+            @test length(data[1].samples) == 2
+            sm = data[1].samples[1]
+            @test haskey(sm, :flag)              # GroupingFlag JSON object or null — NEW field
+            ex = sm.exposures[1]
+            @test haskey(ex, :id)                # exposure leaf uses `id`, not `exposure_id`
+            @test haskey(ex, :horizontal_position)
+            @test haskey(ex, :timestamp)
+        end
+    end
 end

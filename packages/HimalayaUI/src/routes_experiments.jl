@@ -261,35 +261,41 @@ function register_experiments_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
 
-        loads_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM loads WHERE experiment_id = ? ORDER BY load_index", [id]))
-
-        result = map(loads_rows) do lr
-            samples_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT * FROM samples WHERE load_id = ? ORDER BY slot_index", [Int(lr.id)]))
-
-            samples = map(samples_rows) do sr
-                exposures_rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id, filename, prp_path, timestamp, exposure_time,
-                            horizontal_position, scan_id, frame_no, status, selected,
-                            image_path, content_fingerprint
-                       FROM exposures WHERE sample_id = ? ORDER BY frame_no, id",
-                    [Int(sr.id)]))
-                d = row_to_json(sr)
-                # exposures.selected is a SQLite 0/1 int; coerce to a JSON bool so this
-                # endpoint matches every other exposure serializer (routes_analysis.jl /
-                # comparisons.jl ~493 use `row_to_json(e; bool_keys=(:selected,))`).
-                d[:exposures] = [row_to_json(e; bool_keys = (:selected,)) for e in exposures_rows]
-                d
-            end
-
-            d = row_to_json(lr)
-            d[:samples] = samples
-            d
+        rollup = get_loads_rollup(db, id)
+        # Serialize: NamedTuples → JSON-friendly Dict tree.
+        # Field names are the §8.8 contract verbatim (Load / LoadSample /
+        # LoadExposure). `flag` serializes the GroupingFlag NamedTuple (or null);
+        # JSON3 emits a NamedTuple as a JSON object, so a
+        # (kind="merge", merge_with_sample_id=…, merge_with_label=…) flag lands
+        # as {"kind":"merge",…} and `nothing` lands as JSON null.
+        out = map(rollup) do ld
+            Dict(
+                :load_id     => ld.load_id,
+                :load_index  => ld.load_index,
+                :session_id  => ld.session_id,
+                :start_time  => ld.start_time,
+                :end_time    => ld.end_time,
+                :frame_count => ld.frame_count,
+                :note        => ld.note,
+                :samples     => map(ld.samples) do sm
+                    Dict(
+                        :sample_id       => sm.sample_id,
+                        :name            => sm.name,
+                        :slot_index      => sm.slot_index,
+                        :grouping_source => sm.grouping_source,
+                        :name_source     => sm.name_source,
+                        :merged_into_id  => sm.merged_into_id,
+                        :flag            => sm.flag,
+                        :exposures       => map(sm.exposures) do ex
+                            Dict(
+                                :id                  => ex.id,
+                                :filename            => ex.filename,
+                                :horizontal_position => ex.horizontal_position,
+                                :timestamp           => ex.timestamp)
+                        end)
+                end)
         end
-
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(result))
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
     @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
