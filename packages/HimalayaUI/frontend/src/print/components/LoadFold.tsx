@@ -12,7 +12,7 @@ export interface LoadFoldProps {
   onToggleLoad: (loadId: number) => void;
   onToggleSampleOpen: (sampleId: number) => void;
   onToggleSelect: (sampleId: number) => void;
-  onRename: (sampleId: number) => void;
+  onRename: (sampleId: number, newName: string) => void;
   onSplit: (sampleId: number) => void;
   onMerge: (loserId: number, survivorId: number) => void;
   onDismissFlag: (sampleId: number) => void;

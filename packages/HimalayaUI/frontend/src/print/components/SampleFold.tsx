@@ -1,7 +1,8 @@
-import type { JSX } from "react";
+import { useState, useRef, useEffect, type JSX } from "react";
 import type { LoadSample } from "../../api";
 import { Checkbox } from "../ui/Checkbox";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import { ExposureLeaf } from "./ExposureLeaf";
 
 export interface SampleFoldProps {
@@ -10,7 +11,8 @@ export interface SampleFoldProps {
   selected: boolean;
   onToggleOpen: (sampleId: number) => void;
   onToggleSelect: (sampleId: number) => void;
-  onRename: (sampleId: number) => void;
+  /** Called with the sample id and trimmed new name when the rename is committed. */
+  onRename: (sampleId: number, newName: string) => void;
   onSplit: (sampleId: number) => void;
   /** Merge this sample (loser) into the flagged partner (survivor). */
   onMerge: (loserId: number, survivorId: number) => void;
@@ -28,6 +30,29 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
     flag?.kind === "split" ? "check split" :
     flag?.kind === "merge" ? "possible reshoot" : null;
 
+  // Inline rename state: null = not editing; string = draft value being edited.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const isRenaming = renameDraft !== null;
+
+  // Focus the input whenever rename mode opens.
+  useEffect(() => {
+    if (isRenaming) renameInputRef.current?.select();
+  }, [isRenaming]);
+
+  const activateRename = () => setRenameDraft(s.name);
+
+  const commitRename = () => {
+    if (renameDraft === null) return;
+    const trimmed = renameDraft.trim();
+    setRenameDraft(null);
+    if (trimmed && trimmed !== s.name) {
+      props.onRename(s.sample_id, trimmed);
+    }
+  };
+
+  const cancelRename = () => setRenameDraft(null);
+
   return (
     <div
       data-testid="sample-fold"
@@ -44,21 +69,44 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
           onChange={() => props.onToggleSelect(s.sample_id)}
           aria-label={`Select ${s.name}`}
         />
-        <button
-          type="button"
-          className="min-w-0 flex-1 text-left"
-          onClick={() => props.onToggleOpen(s.sample_id)}
-        >
-          <span className="text-headline text-ink">{s.name}</span>
-          <span className="ml-2 font-mono text-xs text-ink-faint">
-            {s.exposures.length} exposures · {s.exposures[0]?.timestamp ?? "--"}
-          </span>
-          {flagChip ? (
-            <span className="ml-2 text-xs font-bold uppercase text-warning">{flagChip}</span>
-          ) : null}
-        </button>
+        {isRenaming ? (
+          <div className="min-w-0 flex-1">
+            <Input
+              variant="title"
+              testId="sample-rename-input"
+              value={renameDraft}
+              onValueChange={setRenameDraft}
+              inputRef={renameInputRef}
+              aria-label="Sample name"
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commitRename();
+                  (e.target as HTMLElement).blur();
+                } else if (e.key === "Escape") {
+                  cancelRename();
+                  (e.target as HTMLElement).blur();
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="min-w-0 flex-1 text-left"
+            onClick={() => props.onToggleOpen(s.sample_id)}
+          >
+            <span className="text-headline text-ink">{s.name}</span>
+            <span className="ml-2 font-mono text-xs text-ink-faint">
+              {s.exposures.length} exposures · {s.exposures[0]?.timestamp ?? "--"}
+            </span>
+            {flagChip ? (
+              <span className="ml-2 text-xs font-bold uppercase text-warning">{flagChip}</span>
+            ) : null}
+          </button>
+        )}
         <div className="flex items-center gap-1.5">
-          <Button variant="outline" onClick={() => props.onRename(s.sample_id)}>Rename</Button>
+          <Button variant="outline" onClick={activateRename}>Rename</Button>
           <Button variant="outline" onClick={() => props.onSplit(s.sample_id)}>Split...</Button>
         </div>
       </div>

@@ -55,10 +55,65 @@ describe("SampleFold", () => {
     expect(divider.textContent).toMatch(/8\.0 → 36\.0/);
   });
 
-  it("Rename action calls onRename", () => {
-    const onRename = vi.fn();
-    render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
-    fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
-    expect(onRename).toHaveBeenCalledWith(10);
+  describe("inline rename", () => {
+    it("clicking Rename activates an inline Input with the current name", () => {
+      render(<SampleFold sample={sample()} {...baseProps} />);
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
+      expect(input).toBeInTheDocument();
+      expect(input.value).toBe("HA85 (S01P15)");
+    });
+
+    it("Enter commits the trimmed new name and calls onRename", () => {
+      const onRename = vi.fn();
+      render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
+      fireEvent.change(input, { target: { value: "  New Name  " } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(onRename).toHaveBeenCalledWith(10, "New Name");
+    });
+
+    it("blur commits the trimmed new name and calls onRename", () => {
+      const onRename = vi.fn();
+      render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
+      fireEvent.change(input, { target: { value: "Blurred Name" } });
+      fireEvent.blur(input);
+      expect(onRename).toHaveBeenCalledWith(10, "Blurred Name");
+    });
+
+    it("Escape cancels rename without calling onRename", () => {
+      const onRename = vi.fn();
+      render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
+      fireEvent.change(input, { target: { value: "Should Not Save" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(onRename).not.toHaveBeenCalled();
+      // Back to static label
+      expect(screen.getByText("HA85 (S01P15)")).toBeInTheDocument();
+    });
+
+    it("committing the same name (unchanged) does not call onRename", () => {
+      const onRename = vi.fn();
+      render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
+      // No change to value — commit via blur
+      fireEvent.blur(input);
+      expect(onRename).not.toHaveBeenCalled();
+    });
+
+    it("committing an empty name does not call onRename", () => {
+      const onRename = vi.fn();
+      render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
+      fireEvent.change(input, { target: { value: "   " } });
+      fireEvent.blur(input);
+      expect(onRename).not.toHaveBeenCalled();
+    });
   });
 });

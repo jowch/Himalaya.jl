@@ -101,17 +101,13 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
 
   // --- Edit callbacks ---
 
-  const handleRename = (sampleId: number) => {
+  const handleRename = (sampleId: number, newName: string) => {
     // Find current name for undo
     let prevName: string | undefined;
     for (const l of loads) {
       const s = l.samples.find((x) => x.sample_id === sampleId);
       if (s) { prevName = s.name; break; }
     }
-    // Prompt via browser prompt (inline title Input wiring is a future
-    // SampleFold enhancement; for now use a simple prompt so the hook fires)
-    const newName = globalThis.prompt?.("Rename sample:", prevName ?? "") ?? null;
-    if (!newName || newName === prevName) return;
     renameMutate({ sampleId, name: newName });
     if (prevName !== undefined) {
       const prev = prevName;
