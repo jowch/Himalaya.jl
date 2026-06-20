@@ -14,11 +14,12 @@ end
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
-"Open a fresh DB with the full current schema (template-clone; fast)."
+"Open a fresh DB with the full current schema (template-clone; fast).
+Uses block-less `mktempdir()` so the backing dir is cleaned at PROCESS exit,
+not when this function returns — the returned handle must outlive the call
+(the block form `mktempdir() do … end` would rm the dir before any query runs)."
 function fresh_db()
-    mktempdir() do tmp
-        open_prepared_clone(tmp)
-    end
+    open_prepared_clone(mktempdir())
 end
 
 "Seed one experiment + one load + two samples + two exposures (one per sample).
