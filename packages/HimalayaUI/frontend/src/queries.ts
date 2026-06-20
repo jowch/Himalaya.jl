@@ -39,7 +39,7 @@ import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
 import {
   moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
-  splitSampleMutator, dismissGroupingFlagMutator,
+  splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
 } from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
@@ -868,6 +868,11 @@ export function useSplitSample(experimentId: number) {
 export function useDismissGroupingFlag(experimentId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(dismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useUndoDismissGroupingFlag(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(undoDismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 /** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only

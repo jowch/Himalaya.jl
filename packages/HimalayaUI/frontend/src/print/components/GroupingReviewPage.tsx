@@ -1,15 +1,35 @@
 import { useMemo, useState, type JSX } from "react";
-import type { Load } from "../../api";
-import { useLoads } from "../../queries";
+import type { Load, LoadSample } from "../../api";
+import {
+  useLoads,
+  useMergeSamples, useRenameSample, useMoveExposure,
+  useSplitSample, useDismissGroupingFlag, useUndoDismissGroupingFlag,
+} from "../../queries";
 import { LoadFold } from "./LoadFold";
 import { GroupingBulkBar } from "./GroupingBulkBar";
 import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
+import { ModalShell } from "../ui/ModalShell";
+import { Button } from "../ui/Button";
 import { matchSample } from "../../lib/matchSample";
+import { showToast } from "../../lib/toast";
+import { useUndoStack } from "../../hooks/useUndoStack";
 
 type Filter = "attn" | "all";
+
+interface ConfirmState {
+  kind: "merge";
+  loserId: number;
+  survivorId: number;
+  survivorLabel: string;
+}
+
+interface UndoEntry {
+  label: string;
+  undo: () => void;
+}
 
 export interface GroupingReviewPageProps {
   experimentId: number;
@@ -28,6 +48,20 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
   const selectedSet = useMemo(() => new Set(selection), [selection]);
   const [openLoads, setOpenLoads] = useState<Set<number>>(new Set());
   const [openSamples, setOpenSamples] = useState<Set<number>>(new Set());
+
+  // Confirm modal state (merge only for now; split confirm added if needed)
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+
+  // Mutation hooks — one instance per experiment, entity ids ride in mutate() input
+  const { mutate: mergeMutate } = useMergeSamples(experimentId);
+  const { mutate: renameMutate } = useRenameSample(experimentId);
+  const { mutate: moveMutate } = useMoveExposure(experimentId);
+  const { mutate: splitMutate } = useSplitSample(experimentId);
+  const { mutate: dismissMutate } = useDismissGroupingFlag(experimentId);
+  const { mutate: undoDismissMutate } = useUndoDismissGroupingFlag(experimentId);
+
+  // Undo stack for reversible single-entity ops (rename / move)
+  const undoStack = useUndoStack<UndoEntry>();
 
   const q = search.trim();
   const flaggedTotal = useMemo(
@@ -56,6 +90,109 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
 
   const toggleSet = (id: number, set: (u: (p: Set<number>) => Set<number>) => void) =>
     set((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // --- Edit callbacks ---
+
+  const handleRename = (sampleId: number) => {
+    // Find current name for undo
+    let prevName: string | undefined;
+    for (const l of loads) {
+      const s = l.samples.find((x) => x.sample_id === sampleId);
+      if (s) { prevName = s.name; break; }
+    }
+    // Prompt via browser prompt (inline title Input wiring is a future
+    // SampleFold enhancement; for now use a simple prompt so the hook fires)
+    const newName = globalThis.prompt?.("Rename sample:", prevName ?? "") ?? null;
+    if (!newName || newName === prevName) return;
+    renameMutate({ sampleId, name: newName });
+    if (prevName !== undefined) {
+      const prev = prevName;
+      undoStack.push({
+        label: "rename",
+        undo: () => renameMutate({ sampleId, name: prev }),
+      });
+    }
+    showToast("Renamed", "info", {
+      label: "Undo",
+      onClick: () => { const e = undoStack.pop(); if (e) e.undo(); },
+    });
+  };
+
+  const handleSplit = (sampleId: number) => {
+    // Find the sample and its split flag
+    let sample: LoadSample | undefined;
+    for (const l of loads) {
+      const s = l.samples.find((x) => x.sample_id === sampleId);
+      if (s) { sample = s; break; }
+    }
+    if (!sample) return;
+    const flag = sample.flag?.kind === "split" ? sample.flag : null;
+    const splitIdx = flag?.split_at_index ?? Math.floor(sample.exposures.length / 2);
+    const splitExposureIds = sample.exposures.slice(splitIdx).map((e) => e.id);
+    // Use the sample name with a suffix for the split-off portion
+    const splitName = `${sample.name} (split)`;
+    splitMutate({ sampleId, exposureIds: splitExposureIds, name: splitName });
+    showToast("Split sample", "info");
+  };
+
+  const handleMerge = (loserId: number, survivorId: number) => {
+    // Find the survivor label for the confirm dialog
+    let survivorLabel = String(survivorId);
+    for (const l of loads) {
+      const s = l.samples.find((x) => x.sample_id === survivorId);
+      if (s) { survivorLabel = s.name; break; }
+    }
+    setConfirm({ kind: "merge", loserId, survivorId, survivorLabel });
+  };
+
+  const handleConfirmMerge = () => {
+    if (!confirm || confirm.kind !== "merge") return;
+    mergeMutate({ loserId: confirm.loserId, survivorId: confirm.survivorId });
+    showToast(`Merged into ${confirm.survivorLabel}`, "info");
+    // Merge is multi-row — no undo action in v1 (spec §9.3). Flag to Jonathan.
+    setConfirm(null);
+  };
+
+  const handleDismissFlag = (sampleId: number) => {
+    // Capture the original flag for the undo optimistic restore
+    let originalFlag: LoadSample["flag"] = null;
+    for (const l of loads) {
+      const s = l.samples.find((x) => x.sample_id === sampleId);
+      if (s) { originalFlag = s.flag; break; }
+    }
+    if (!originalFlag) return;
+
+    dismissMutate({
+      sampleId,
+      flagKind: originalFlag.kind,
+      ...(originalFlag.kind === "merge" ? { mergeWithSampleId: originalFlag.merge_with_sample_id } : {}),
+    });
+
+    // Undo: re-show the flag via the inverse backend route
+    showToast("Flag dismissed", "info", {
+      label: "Undo",
+      onClick: () => {
+        undoDismissMutate({ sampleId, originalFlag });
+      },
+    });
+  };
+
+  const handleMoveExposure = (sampleId: number, exposureId: number) => {
+    // TODO: open a Menu anchored at the row listing same-load sibling samples.
+    // For now, capture fromSampleId and expose the hook for wiring (full picker
+    // is a follow-up in the SampleFold/ExposureLeaf menu layer).
+    // This stub fires the hook so the pattern is in place.
+    moveMutate({ exposureId, sampleId });
+    const from = sampleId;
+    undoStack.push({
+      label: "move",
+      undo: () => moveMutate({ exposureId, sampleId: from }),
+    });
+    showToast("Moved exposure", "info", {
+      label: "Undo",
+      onClick: () => { const e = undoStack.pop(); if (e) e.undo(); },
+    });
+  };
 
   const noop = () => {};
 
@@ -109,15 +246,35 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
             onToggleLoad={(id) => toggleSet(id, setOpenLoads)}
             onToggleSampleOpen={(id) => toggleSet(id, setOpenSamples)}
             onToggleSelect={toggleSelect}
-            onRename={noop}
-            onSplit={noop}
-            onMerge={noop}
-            onDismissFlag={noop}
-            onMoveExposure={noop}
+            onRename={handleRename}
+            onSplit={handleSplit}
+            onMerge={handleMerge}
+            onDismissFlag={handleDismissFlag}
+            onMoveExposure={handleMoveExposure}
             thumbSrcFor={() => null}
           />
         ))
       )}
+
+      {/* Merge confirm modal */}
+      <ModalShell
+        open={confirm?.kind === "merge"}
+        onClose={() => setConfirm(null)}
+        size="sm"
+        aria-label="Confirm merge"
+        testId="merge-confirm"
+      >
+        <div className="p-6">
+          <p className="text-sm text-ink">
+            Merge this sample into <b className="text-ink">{confirm?.survivorLabel}</b>?
+            All exposures will be moved to the surviving sample. This cannot be undone automatically.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setConfirm(null)}>Cancel</Button>
+            <Button variant="outline" onClick={handleConfirmMerge}>Merge</Button>
+          </div>
+        </div>
+      </ModalShell>
 
       {selection.length > 0 ? (
         <GroupingBulkBar

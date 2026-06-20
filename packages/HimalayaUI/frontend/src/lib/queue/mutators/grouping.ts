@@ -222,3 +222,31 @@ export const dismissGroupingFlagMutator: Mutator<DismissFlagInput, DismissFlagSc
   ),
   onSuccess: (p, _response, qc) => invalidateLoads(qc, p.experimentId),
 };
+
+// ---------------------------------------------------------------------------
+// undo_dismiss_grouping_flag  (DURABLE inverse of dismiss; re-shows the flag)
+// Symmetric with dismissGroupingFlagMutator: suppress ↔ re-show.
+// The optimistic patch restores the flag from the input (the page supplies the
+// original flag snapshot from the server roll-up before dismiss fired); on
+// success we invalidate loads to pick up the server-authoritative flag state.
+// ---------------------------------------------------------------------------
+export interface UndoDismissFlagInput {
+  sampleId: number;
+  /** The original flag to restore optimistically while the request is in-flight. */
+  originalFlag: LoadSample["flag"];
+}
+type UndoDismissFlagScope = BaseScope;
+
+export const undoDismissGroupingFlagMutator: Mutator<UndoDismissFlagInput, UndoDismissFlagScope, void> = {
+  kind: "undo_dismiss_grouping_flag",
+  onMutate: (p, qc): RollbackContext =>
+    patchLoads(qc, p.experimentId, (loads) => {
+      for (const ld of loads) {
+        const s = ld.samples.find((x) => x.sample_id === p.sampleId);
+        if (s) { s.flag = p.originalFlag; break; } // optimistic: re-show the flag
+      }
+      return loads;
+    }),
+  request: (p) => api.undoDismissGroupingFlag(p.sampleId, buildAuthOpts(p)),
+  onSuccess: (p, _response, qc) => invalidateLoads(qc, p.experimentId),
+};

@@ -31,7 +31,7 @@ import {
   setAssignmentStateMutator,
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
-import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator } from "./mutators/grouping";
+import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator } from "./mutators/grouping";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -134,6 +134,7 @@ export function resolveMutator(
     case "merge_samples":          return mergeSamplesMutator;
     case "split_sample":           return splitSampleMutator;
     case "dismiss_grouping_flag":  return dismissGroupingFlagMutator;
+    case "undo_dismiss_grouping_flag": return undoDismissGroupingFlagMutator;
     default:
       return undefined;
   }

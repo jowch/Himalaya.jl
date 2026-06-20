@@ -289,6 +289,12 @@ export interface DismissGroupingFlagBody { flag_kind: "merge" | "split"; merge_w
 export const dismissGroupingFlag = (sampleId: number, body: DismissGroupingFlagBody, opts?: AuthOpts): Promise<void> =>
   request<void>("POST", `/api/samples/${sampleId}/dismiss-flag`, body, opts);
 
+/** Undo a previous dismissal — re-shows the flag so the sample re-enters
+ *  "Needs review". The backend route is POST /api/samples/:id/dismiss-flag/undo.
+ *  Symmetric inverse of dismissGroupingFlag (re-show ↔ suppress). */
+export const undoDismissGroupingFlag = (sampleId: number, opts?: AuthOpts): Promise<void> =>
+  request<void>("POST", `/api/samples/${sampleId}/dismiss-flag/undo`, {}, opts);
+
 // Exposures
 export interface ExposureTag {
   id: number;

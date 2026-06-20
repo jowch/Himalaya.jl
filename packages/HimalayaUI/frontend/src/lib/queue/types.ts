@@ -63,7 +63,9 @@ export type OpKind =
   // names the user GESTURE; the wire event kinds are exposure_moved /
   // sample_renamed / sample_created+sample_split / grouping_flag_dismissed —
   // and a merge emits NO sample_merged kind (it fans out as exposure_moved).
-  | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag";
+  | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag"
+  // Symmetric undo of dismiss: re-shows the flag so the sample re-enters review.
+  | "undo_dismiss_grouping_flag";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style
