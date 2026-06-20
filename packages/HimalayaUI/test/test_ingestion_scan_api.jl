@@ -237,13 +237,12 @@ end
                 status_exception = false)
             @test r4.status == 400
 
-            # name stays read-only here — rename lands in Phase E1 (derived-name
-            # contract preserved until then).
+            # name is now editable (Phase E1: name/description became writable via PATCH).
             r5 = HTTP.patch("$base/api/experiments/$exp_id";
                 body    = JSON3.write(Dict(:name => "Renamed")),
                 headers = ["Content-Type" => "application/json"],
                 status_exception = false)
-            @test r5.status == 400
+            @test r5.status == 200
 
             # A body with no recognized patchable (geometry) field → 400, matching
             # the codebase PATCH-validation convention (test_route_validation_routing.jl).

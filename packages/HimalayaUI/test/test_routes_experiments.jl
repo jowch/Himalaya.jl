@@ -24,13 +24,12 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.id == exp_id
         @test body.name == "E1"
 
-        # PATCH name is no longer allowed — experiments.name is derived from
-        # experiment.toml and must change via reingest.
+        # PATCH name is now allowed (Phase E1: name became editable).
         r = call("PATCH", "/api/experiments/$exp_id";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
             body = Vector{UInt8}(JSON3.write(Dict(:name => "E1-renamed"))))
-        @test r.status == 400
+        @test r.status == 200
 
         # POST analyze
         r = call("POST", "/api/experiments/$exp_id/analyze";
@@ -88,7 +87,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 end
 
-@testset "PATCH /api/experiments/:id no longer accepts name" begin
+@testset "PATCH /api/experiments/:id accepts name (Phase E1)" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)
     eid = HimalayaUI.init_experiment!(db;
@@ -101,7 +100,9 @@ end
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
             body = Vector{UInt8}(JSON3.write(Dict(:name => "newname"))))
-        @test r.status == 400
+        @test r.status == 200
+        rb = call("GET", "/api/experiments/$eid")
+        @test JSON3.read(String(rb.body)).name == "newname"
     end
 end
 

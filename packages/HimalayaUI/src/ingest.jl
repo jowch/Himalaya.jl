@@ -50,11 +50,17 @@ function scan_and_group!(
     prp_pattern  ::String = "{name}.prp",
     dat_pattern  ::String = "{name}.dat",
 )
-    # Resolve data_dir and analysis_dir from the experiment row.
+    # Resolve data_dir, analysis_dir, and per-experiment pattern overrides from the row.
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir, analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
+        "SELECT data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern FROM experiments WHERE id = ?", [experiment_id])))
     data_dir     = String(exp_row.data_dir)
     analysis_dir = String(exp_row.analysis_dir)
+
+    # Prefer DB columns (set via PATCH /api/experiments/:id); fall back to
+    # caller kwargs (which default to the legacy {name}.<ext> patterns).
+    tif_pattern = coalesce(exp_row.image_pattern,       tif_pattern)
+    prp_pattern = coalesce(exp_row.metadata_pattern,    prp_pattern)
+    dat_pattern = coalesce(exp_row.integration_pattern, dat_pattern)
 
     # -----------------------------------------------------------------------
     # 1. Scan: enumerate TIF+PRP+DAT triplets

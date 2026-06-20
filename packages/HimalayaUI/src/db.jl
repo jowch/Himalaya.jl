@@ -16,6 +16,9 @@ const MIGRATION_SAMPLES_NAME_COLLAPSE   = "samples_name_collapse_v1"
 # Sentinel marker name for the ingestion-redesign Phase D merged_into_id column.
 const MIGRATION_SAMPLES_MERGED_INTO = "samples_merged_into_v1"
 
+# Sentinel marker name for the ingestion-redesign Phase E1 editable config columns.
+const MIGRATION_EXPERIMENTS_CONFIG_COLS = "experiments_config_cols_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table. Mirrors the inlined pattern in
 # `migrate_assignments!` / `migrate_comparisons_to_series!`.
@@ -493,6 +496,10 @@ function migrate_schema!(db::SQLite.DB)
     # soft-retire on merge (spec §9.3). Run AFTER migrate_samples_name_collapse!
     # so the samples table is fully settled before this column is added.
     migrate_samples_merged_into!(db)
+
+    # Ingestion redesign (Phase E1): editable config columns on experiments
+    # (description + 3 pattern fields). Additive; no dependency on Phase D.
+    migrate_experiments_config_cols!(db)
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────
@@ -649,6 +656,26 @@ function migrate_samples_merged_into!(db::SQLite.DB)
             "ALTER TABLE samples ADD COLUMN merged_into_id INTEGER REFERENCES samples(id)")
         _record_migration!(db, MIGRATION_SAMPLES_MERGED_INTO)
     end
+end
+
+function migrate_experiments_config_cols!(db::SQLite.DB)
+    # Phase E1: editable config columns on experiments (description + 3 pattern fields).
+    # Additive — safe to run against old DBs (ADD COLUMN does not rewrite existing rows).
+    _migrated(db, MIGRATION_EXPERIMENTS_CONFIG_COLS) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "experiments")
+        for (name, decl) in [
+            ("description",         "TEXT"),
+            ("image_pattern",       "TEXT"),
+            ("metadata_pattern",    "TEXT"),
+            ("integration_pattern", "TEXT"),
+        ]
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE experiments ADD COLUMN $name $decl")
+        end
+        _record_migration!(db, MIGRATION_EXPERIMENTS_CONFIG_COLS)
+    end
+    nothing
 end
 
 """
