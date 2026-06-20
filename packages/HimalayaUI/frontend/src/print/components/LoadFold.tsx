@@ -16,7 +16,7 @@ export interface LoadFoldProps {
   onSplit: (sampleId: number) => void;
   onMerge: (loserId: number, survivorId: number) => void;
   onDismissFlag: (sampleId: number) => void;
-  onMoveExposure: (sampleId: number, exposureId: number) => void;
+  onMoveExposure: (sampleId: number, exposureId: number, anchorEl: HTMLElement) => void;
   thumbSrcFor: (exposureId: number) => string | null;
   className?: string;
 }

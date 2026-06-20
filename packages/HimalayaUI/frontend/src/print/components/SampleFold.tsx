@@ -17,7 +17,7 @@ export interface SampleFoldProps {
   /** Merge this sample (loser) into the flagged partner (survivor). */
   onMerge: (loserId: number, survivorId: number) => void;
   onDismissFlag: (sampleId: number) => void;
-  onMoveExposure: (sampleId: number, exposureId: number) => void;
+  onMoveExposure: (sampleId: number, exposureId: number, anchorEl: HTMLElement) => void;
   /** Per-exposure thumbnail URL resolver (page supplies; Thumbnail takes a src). */
   thumbSrcFor: (exposureId: number) => string | null;
   className?: string;
@@ -160,7 +160,7 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
               <ExposureLeaf
                 exposure={e}
                 thumbSrc={props.thumbSrcFor(e.id)}
-                onMove={(eid) => props.onMoveExposure(s.sample_id, eid)}
+                onMove={(eid, anchorEl) => props.onMoveExposure(s.sample_id, eid, anchorEl)}
               />
             </div>
           ))}

@@ -8,8 +8,9 @@ export interface ExposureLeafProps {
   /** Detector thumbnail URL for this exposure, or null (Thumbnail draws a
    *  placeholder). The page derives it; Thumbnail takes `src`, NOT an id. */
   thumbSrc: string | null;
-  /** Opens the Move... picker for this exposure. */
-  onMove: (exposureId: number) => void;
+  /** Opens the Move... picker for this exposure.
+   *  `anchorEl` is the trigger button — the page uses it to position the menu. */
+  onMove: (exposureId: number, anchorEl: HTMLElement) => void;
   className?: string;
 }
 
@@ -28,7 +29,7 @@ export function ExposureLeaf({ exposure, thumbSrc, onMove, className }: Exposure
         {h === null ? "—" : `H ${h.toFixed(1)} mm`}
       </span>
       <span className="w-20 shrink-0 font-mono text-xs text-ink-faint">{exposure.timestamp ?? "—"}</span>
-      <IconButton label="Move to another sample" onClick={() => onMove(exposure.id)}>&#x22EF;</IconButton>
+      <IconButton label="Move to another sample" onClick={(e) => onMove(exposure.id, e.currentTarget)}>&#x22EF;</IconButton>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
 import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
+import { Menu } from "../ui/Menu";
 import { matchSample } from "../../lib/matchSample";
 import { showToast } from "../../lib/toast";
 import { useUndoStack } from "../../hooks/useUndoStack";
@@ -30,6 +31,18 @@ interface BulkMergeConfirmState {
   survivorId: number;
   survivorLabel: string;
   loserIds: number[];
+}
+
+/** State for the Move picker Menu: which exposure is being moved and which
+ *  same-load sibling samples are available as destinations. */
+interface MovePickerState {
+  exposureId: number;
+  /** Current owner (excluded from the destination list). */
+  fromSampleId: number;
+  /** All sibling samples in the same load (current owner excluded). */
+  siblings: LoadSample[];
+  /** The Move button element — used to position the relative wrapper. */
+  anchorEl: HTMLElement;
 }
 
 interface UndoEntry {
@@ -59,6 +72,8 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   // Bulk-merge confirm modal state
   const [bulkMergeConfirm, setBulkMergeConfirm] = useState<BulkMergeConfirmState | null>(null);
+  // Move picker state: open when an exposure's Move button is activated.
+  const [movePicker, setMovePicker] = useState<MovePickerState | null>(null);
 
   // Mutation hooks — one instance per experiment, entity ids ride in mutate() input
   const { mutate: mergeMutate } = useMergeSamples(experimentId);
@@ -181,16 +196,27 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
     });
   };
 
-  const handleMoveExposure = (sampleId: number, exposureId: number) => {
-    // TODO: open a Menu anchored at the row listing same-load sibling samples.
-    // For now, capture fromSampleId and expose the hook for wiring (full picker
-    // is a follow-up in the SampleFold/ExposureLeaf menu layer).
-    // This stub fires the hook so the pattern is in place.
-    moveMutate({ exposureId, sampleId });
-    const from = sampleId;
+  const handleMoveExposure = (sampleId: number, exposureId: number, anchorEl: HTMLElement) => {
+    // Find the load that owns this sample and collect its siblings (every
+    // sample in the same load except the current owner).
+    let siblings: LoadSample[] = [];
+    for (const l of loads) {
+      if (l.samples.some((s) => s.sample_id === sampleId)) {
+        siblings = l.samples.filter((s) => s.sample_id !== sampleId);
+        break;
+      }
+    }
+    setMovePicker({ exposureId, fromSampleId: sampleId, siblings, anchorEl });
+  };
+
+  const handlePickDestination = (destSampleId: number) => {
+    if (!movePicker) return;
+    const { exposureId, fromSampleId } = movePicker;
+    setMovePicker(null);
+    moveMutate({ exposureId, sampleId: destSampleId });
     undoStack.push({
       label: "move",
-      undo: () => moveMutate({ exposureId, sampleId: from }),
+      undo: () => moveMutate({ exposureId, sampleId: fromSampleId }),
     });
     showToast("Moved exposure", "info", {
       label: "Undo",
@@ -319,6 +345,48 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
           </div>
         </div>
       </ModalShell>
+
+      {/* Move picker: a floating Menu of same-load sibling samples. Rendered
+          as a fixed overlay anchored to the trigger element's bounding rect so
+          the absolute Menu finds its relative parent without disrupting layout.
+          Close on Escape (Menu handles this) or outside-click (overlay backdrop). */}
+      {movePicker !== null ? (() => {
+        const rect = movePicker.anchorEl.getBoundingClientRect();
+        const pickerOptions = movePicker.siblings.map((s) => ({
+          value: String(s.sample_id),
+          label: s.name,
+        }));
+        return (
+          <>
+            {/* Invisible backdrop to catch outside-clicks */}
+            <div
+              aria-hidden="true"
+              style={{ position: "fixed", inset: 0, zIndex: 19 }}
+              onClick={() => setMovePicker(null)}
+            />
+            {/* Anchor wrapper: positioned at the trigger element */}
+            <div
+              style={{
+                position: "fixed",
+                top: rect.bottom,
+                left: rect.left,
+                zIndex: 20,
+              }}
+            >
+              <div className="relative">
+                <Menu<string>
+                  open
+                  options={pickerOptions}
+                  onSelect={(value) => handlePickDestination(Number(value))}
+                  onClose={() => setMovePicker(null)}
+                  aria-label="Move exposure to sample"
+                  className="right-0 top-0"
+                />
+              </div>
+            </div>
+          </>
+        );
+      })() : null}
 
       {selection.length > 0 && !bulkMergeConfirm ? (
         <GroupingBulkBar

@@ -15,11 +15,16 @@ describe("ExposureLeaf", () => {
     expect(screen.getByText(/8\.4/)).toBeInTheDocument();
     expect(screen.getByText(/10:02/)).toBeInTheDocument();
   });
-  it("Move button calls onMove with the exposure id", () => {
+  it("Move button calls onMove with the exposure id and the button element as anchor", () => {
     const onMove = vi.fn();
     render(<ExposureLeaf exposure={exp} thumbSrc={null} onMove={onMove} />);
-    fireEvent.click(screen.getByRole("button", { name: /move/i }));
-    expect(onMove).toHaveBeenCalledWith(100);
+    const btn = screen.getByRole("button", { name: /move/i });
+    fireEvent.click(btn);
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const [calledId, calledEl] = onMove.mock.calls[0]!;
+    expect(calledId).toBe(100);
+    // anchorEl must be the button element itself
+    expect(calledEl).toBe(btn);
   });
   it("renders an em-dash when horizontal_position is null", () => {
     render(<ExposureLeaf exposure={{ ...exp, horizontal_position: null }} thumbSrc={null} onMove={() => {}} />);
