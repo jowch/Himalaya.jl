@@ -1,6 +1,7 @@
 // test/ExperimentShell.test.tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExperimentShell } from "../src/print/shell/ExperimentShell";
@@ -62,5 +63,32 @@ describe("ExperimentShell (Phase E1)", () => {
     renderAt("/experiments/7/corpus");
     await screen.findByTestId("experiment-header-name");
     expect(screen.queryByTestId("corpus-topbar")).toBeNull();
+  });
+
+  it("commits name on blur: calls updateExperiment with trimmed value", async () => {
+    // Spy on updateExperiment before rendering so we capture all calls.
+    const updateSpy = vi.spyOn(api, "updateExperiment").mockResolvedValue(EXP);
+
+    renderAt("/experiments/7/corpus");
+
+    // Wait for the Input to appear (it is suppressed during loading).
+    const wrapper = await screen.findByTestId("experiment-header-name");
+    const input = wrapper.querySelector("input") as HTMLInputElement;
+    expect(input).not.toBeNull();
+
+    // Simulate the user editing the field: fire a change event with surrounding
+    // whitespace (proves the component trims before calling the API), then fire
+    // blur to trigger commitName → updateExperiment.
+    // fireEvent.change directly sets input.value and fires onChange, which wires
+    // through onValueChange → setLocalEdit(true) + setPendingDraft(v).
+    fireEvent.change(input, { target: { value: "  BL 7.3.3 SMB  " } });
+    fireEvent.blur(input); // triggers onBlur → commitName
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith(
+      7,                         // expId parsed from the URL param
+      { name: "BL 7.3.3 SMB" }, // trimmed
+      {},                        // authOpts(undefined, undefined) with no username set
+    );
   });
 });
