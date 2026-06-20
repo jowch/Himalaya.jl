@@ -16,7 +16,11 @@ let activeImpl: (msg: string, kind: ToastKind, action?: ToastAction) => void = (
 };
 
 export function showToast(msg: string, kind: ToastKind = "info", action?: ToastAction): void {
-  activeImpl(msg, kind, action);
+  // Only forward `action` when present so the impl is still called with the
+  // 2-arg (msg, kind) shape for the common no-action case — keeps existing
+  // toast-impl spies (toHaveBeenCalledWith(msg, kind)) exact, no trailing undefined.
+  if (action !== undefined) activeImpl(msg, kind, action);
+  else activeImpl(msg, kind);
 }
 
 /**
