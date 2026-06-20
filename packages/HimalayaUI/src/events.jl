@@ -398,6 +398,15 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    if kind == "exposure_moved"
+        # payload.sample_id: the destination sample. UPDATE is naturally idempotent —
+        # replaying sets the same value, so rebuild_views_from_log! is safe.
+        DBInterface.execute(db,
+            "UPDATE exposures SET sample_id = ? WHERE id = ?",
+            [Int(payload.sample_id), Int(entity_id)])
+        return nothing
+    end
+
     # M2.1 trivial-route migrations: routes write to view tables directly,
     # so the dispatcher is a no-op for these kinds. Branches exist for
     # exhaustiveness so the rebuild_views_from_log! property test treats
