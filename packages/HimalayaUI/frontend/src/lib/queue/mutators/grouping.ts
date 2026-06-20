@@ -4,6 +4,7 @@ import type { Load, LoadSample } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";          // src/lib/authOpts.ts — the shared helper
 import type { Mutator, RollbackContext } from "../types";
+import { nextOptimisticId } from "../optimisticId";   // negative placeholder id
 
 // The shared scope every grouping mutator carries (experiment + identity).
 // merge/split overlap input and scope; see Task 5.
@@ -111,4 +112,100 @@ export const renameSampleMutator: Mutator<RenameSampleInput, RenameSampleScope, 
     });
     invalidateLoads(qc, p.experimentId);
   },
+};
+
+// ---------------------------------------------------------------------------
+// merge_samples  (orchestration; NO sample_merged event — the backend fans it
+// out as exposure_moved frames. Optimistic tree edit, invalidate-only confirm.)
+// ---------------------------------------------------------------------------
+type MergeSamplesInput = { loserId: number; survivorId: number };
+type MergeSamplesScope = BaseScope;
+
+export const mergeSamplesMutator: Mutator<MergeSamplesInput, MergeSamplesScope, api.MergeSamplesResponse> = {
+  kind: "merge_samples",
+  onMutate: (p, qc): RollbackContext =>
+    patchLoads(qc, p.experimentId, (loads) => {
+      // Gather the loser's exposures, drop the loser sample, then append those
+      // exposures onto the survivor (preserving order).
+      let loserExps: LoadSample["exposures"] = [];
+      for (const ld of loads) {
+        const li = ld.samples.findIndex((s) => s.sample_id === p.loserId);
+        if (li >= 0) { loserExps = ld.samples[li]!.exposures; ld.samples.splice(li, 1); break; }
+      }
+      for (const ld of loads) {
+        const surv = ld.samples.find((s) => s.sample_id === p.survivorId);
+        if (surv) {
+          surv.exposures.push(...loserExps);
+          surv.grouping_source = "user_merged";
+          break;
+        }
+      }
+      return loads;
+    }),
+  request: (p) => api.mergeSamples(p.loserId, p.survivorId, buildAuthOpts(p)),
+  // Invalidate-only confirm: the re-derived flags aren't response-derivable, and
+  // the own-op path never calls applyRemoteToCache — so refetch loads(id) here.
+  onSuccess: (p, _response, qc) => invalidateLoads(qc, p.experimentId),
+};
+
+// ---------------------------------------------------------------------------
+// split_sample  (orchestration → sample_created + sample_split; invalidate-only)
+// sampleId (source) in Input, NOT scope — one hook per experiment, not per row.
+// ---------------------------------------------------------------------------
+type SplitSampleInput = { sampleId: number; exposureIds: number[]; name: string };
+type SplitSampleScope = BaseScope;
+
+export const splitSampleMutator: Mutator<SplitSampleInput, SplitSampleScope, api.SplitSampleResponse> = {
+  kind: "split_sample",
+  onMutate: (p, qc): RollbackContext =>
+    patchLoads(qc, p.experimentId, (loads) => {
+      const ids = new Set(p.exposureIds);
+      for (const ld of loads) {
+        const src = ld.samples.find((s) => s.sample_id === p.sampleId);
+        if (!src) continue;
+        const moved = src.exposures.filter((e) => ids.has(e.id));        // §8.8: `.id`
+        src.exposures = src.exposures.filter((e) => !ids.has(e.id));
+        const created: LoadSample = {
+          sample_id: nextOptimisticId(), // NEGATIVE placeholder until SSE confirms
+          name: p.name, slot_index: src.slot_index, grouping_source: "manual",
+          name_source: "user", merged_into_id: null, flag: null, exposures: moved,
+        };
+        const srcIdx = ld.samples.indexOf(src);
+        ld.samples.splice(srcIdx + 1, 0, created);
+        break;
+      }
+      return loads;
+    }),
+  request: (p) => api.splitSample(p.sampleId, p.exposureIds, p.name, buildAuthOpts(p)),
+  // Invalidate-only: the real new sample id arrives only via the refetch; the
+  // own-op path never calls applyRemoteToCache, so we must invalidate here or
+  // the negative-id placeholder is never reconciled (404 on a follow-up op).
+  onSuccess: (p, _response, qc) => invalidateLoads(qc, p.experimentId),
+};
+
+// ---------------------------------------------------------------------------
+// dismiss_grouping_flag  (single-entity, DURABLE → grouping_flag_dismissed)
+// sampleId in Input, NOT scope — one hook per experiment, not per row.
+// ---------------------------------------------------------------------------
+type DismissFlagInput = { sampleId: number; flagKind: "merge" | "split"; mergeWithSampleId?: number };
+type DismissFlagScope = BaseScope;
+
+export const dismissGroupingFlagMutator: Mutator<DismissFlagInput, DismissFlagScope, void> = {
+  kind: "dismiss_grouping_flag",
+  onMutate: (p, qc): RollbackContext =>
+    patchLoads(qc, p.experimentId, (loads) => {
+      for (const ld of loads) {
+        const s = ld.samples.find((x) => x.sample_id === p.sampleId);
+        if (s) { s.flag = null; break; } // optimistic: clear the suggestion
+      }
+      return loads;
+    }),
+  request: (p) => api.dismissGroupingFlag(
+    p.sampleId,
+    p.mergeWithSampleId !== undefined
+      ? { flag_kind: p.flagKind, merge_with_sample_id: p.mergeWithSampleId }
+      : { flag_kind: p.flagKind },
+    buildAuthOpts(p),
+  ),
+  onSuccess: (p, _response, qc) => invalidateLoads(qc, p.experimentId),
 };

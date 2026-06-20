@@ -31,7 +31,7 @@ import {
   setAssignmentStateMutator,
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
-import { moveExposureMutator, renameSampleMutator } from "./mutators/grouping";
+import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator } from "./mutators/grouping";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -131,6 +131,9 @@ export function resolveMutator(
       return customIndexMutator;
     case "move_exposure": return moveExposureMutator;
     case "rename_sample": return renameSampleMutator;
+    case "merge_samples":          return mergeSamplesMutator;
+    case "split_sample":           return splitSampleMutator;
+    case "dismiss_grouping_flag":  return dismissGroupingFlagMutator;
     default:
       return undefined;
   }
@@ -206,6 +209,13 @@ export function resolveMutatorForEvent(
     // share on the wire. See brief §Step 4 note.
     case "exposure_moved":  return moveExposureMutator;
     case "sample_renamed":  return renameSampleMutator;
+    // split emits sample_created (new sample) + sample_split (source update).
+    // The own-tab deferred resolves on sample_split (the source-sample frame).
+    // sample_created has no own-op mutator — it routes through applyRemoteToCache.
+    case "sample_split":             return splitSampleMutator;
+    case "grouping_flag_dismissed":  return dismissGroupingFlagMutator;
+    // merge_samples fans out as exposure_moved frames (no sample_merged kind exists);
+    // own-op confirmation uses the exposure_moved arm above.
     // Event kinds with no queue mutator fall through here (handled entirely by
     // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".
