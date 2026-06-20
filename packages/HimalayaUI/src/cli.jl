@@ -396,7 +396,7 @@ function cli_upgrade_grouping(args)
         @printf "  cells derived   : %d\n" summary.cells
         @printf "  reshoots (split): %d\n" summary.reshoots
         @printf "  samples         : retrofitted=%d  created=%d  displaced=%d\n" summary.samples_retrofitted summary.samples_created summary.samples_displaced
-        @printf "  exposures       : relinked=%d  no_file=%d\n" summary.exposures_relinked summary.exposures_no_file
+        @printf "  exposures       : relinked=%d  inserted=%d  no_file=%d\n" summary.exposures_relinked summary.exposures_inserted summary.exposures_no_file
 
         # Geometry summary.
         if summary.geometry !== nothing

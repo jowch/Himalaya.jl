@@ -219,18 +219,23 @@ struct _DryRunRollback <: Exception end
 
 Retrofit-persist: make a pre-rework experiment's `loads`/`samples`/`exposures`
 rows match the NEW auto-grouping partition (`scan_directory` → `group_into_samples`)
-*while preserving curation*. Unlike `scan_and_group!` (insert-only ingest of a
-fresh directory), this ADOPTS existing rows: it relinks existing exposures
-(keeping their ids → all exposure-keyed curation survives), greedily reuses
-existing sample rows (keeping their human names/notes), creates new sample rows
-only for extra derived cells, carries displaced-sample metadata onto the
-absorbing owner, then deletes the now-empty displaced rows.
+*while preserving curation*. The goal is a result indistinguishable from a fresh
+`scan_and_group!` of the same directory. It ADOPTS existing rows where they map to
+the partition: relinks existing exposures (keeping their ids → all exposure-keyed
+curation survives; rewriting `filename` to the full scan stem so future rescans
+dedup correctly), greedily reuses existing sample rows (keeping their human
+names/notes), and for derived cells with NO existing row it INSERTS exposures +
+creates samples exactly as `scan_and_group!` would (un-manifested files become
+real, analyzed samples). Displaced-sample metadata is carried onto the absorbing
+owner, then the now-empty displaced rows are deleted.
 
-**No exposure is ever deleted or re-inserted** — only `UPDATE`/relink. The only
-sample deletes are genuinely-displaced empty rows, whose metadata is carried
-first (dedup-then-repoint, mirroring the merge route §9.3). Idempotent: a second
-run is a no-op (loads dedup on `(experiment_id, load_index)`, owners already
-claimed by lowest id, every UPDATE re-writes the same value).
+**No existing exposure is ever deleted** — adopted rows are `UPDATE`/relinked,
+un-manifested files are `INSERT`ed (then analyzed outside the write transaction,
+unless `analyze=false`). The only sample deletes are genuinely-displaced empty
+rows, whose metadata is carried first (dedup-then-repoint, mirroring the merge
+route §9.3). Idempotent: a second run is a no-op (loads dedup on
+`(experiment_id, load_index)`, owners already claimed by lowest id, inserted
+files now have rows so they relink, every UPDATE re-writes the same value).
 
 When `dry_run=true` the transaction is rolled back via `_DryRunRollback` after
 all writes — the DB is left untouched but the returned summary reflects what a
@@ -238,12 +243,13 @@ real run would have done.
 
 Returns a NamedTuple summary:
 `(status, loads_created, cells, samples_retrofitted, samples_created,
-  samples_displaced, exposures_relinked, exposures_no_file, reshoots,
-  geometry, discrepancies)` where `reshoots` = old samples split across ≥2 cells.
+  samples_displaced, exposures_relinked, exposures_inserted, exposures_no_file,
+  reshoots, geometry, discrepancies)` where `reshoots` = old samples split across
+≥2 cells and `exposures_inserted` = un-manifested files newly ingested.
 On an empty scan returns `(status=:empty, …)` and
 writes nothing.
 """
-function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = false)
+function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = false, analyze::Bool = true)
     # -----------------------------------------------------------------------
     # 1. Derive (read-only) — mirror scan_and_group! lines 68-98.
     # -----------------------------------------------------------------------
@@ -261,7 +267,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     isempty(metas) && return (
         status = :empty, loads_created = 0, cells = 0, samples_retrofitted = 0,
         samples_created = 0, samples_displaced = 0, exposures_relinked = 0,
-        exposures_no_file = 0, reshoots = 0,
+        exposures_inserted = 0, exposures_no_file = 0, reshoots = 0,
         geometry = nothing, discrepancies = String[])
 
     prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
@@ -279,9 +285,10 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     # -----------------------------------------------------------------------
     cells = NamedTuple[]  # (load_index, slot_index, name, name_source, grouping_source, frame_count, stems)
     byfile = Dict{String, NamedTuple}()
-    load_frame_count = Dict{Int, Int}()
+    load_meta = Dict{Int, NamedTuple}()  # load_index => (frame_count, start_time, end_time)
     for gl in result.loads
-        load_frame_count[gl.load_index] = gl.frame_count
+        load_meta[gl.load_index] = (frame_count = gl.frame_count,
+                                    start_time = gl.start_time, end_time = gl.end_time)
         for gs in gl.samples
             push!(cells, (load_index = gl.load_index, slot_index = gs.slot_index,
                           name = gs.name, name_source = gs.name_source,
@@ -289,7 +296,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                           stems = String[ge.stem for ge in gs.exposures]))
             for ge in gs.exposures
                 byfile[ge.stem] = (load_index = gl.load_index, slot_index = gs.slot_index,
-                    prp_path = ge.prp_path, timestamp = ge.timestamp,
+                    tif_path = ge.tif_path, prp_path = ge.prp_path, timestamp = ge.timestamp,
                     exposure_time = ge.exposure_time_s,
                     horizontal_position = ge.horizontal_position_mm,
                     scan_id = ge.scan_id, frame_no = ge.frame_no)
@@ -299,21 +306,46 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     # Deterministic, stable claim order: (load_index, slot_index).
     sort!(cells; by = c -> (c.load_index, c.slot_index))
 
+    # Match each scan stem to the DB filename that represents it. The manifest-era
+    # pipeline stored `exposures.filename` as the on-disk stem with the trailing
+    # `_<rep>_<frame>` suffix STRIPPED (real dev-db: scan stem minus `_0_001`);
+    # scan_directory keeps the suffix. A row may therefore be stored under the full
+    # stem (a fresh scan or a prior post-fix re-run) OR its truncated form (manifest
+    # era) — match either. On relink (3c) we rewrite `filename` to the full stem so
+    # future rescans dedup on the same `(experiment_id, filename)` key.
+    # ponytail: assumes one DB row per scan stem (curated dev-db is uniform
+    # single-frame, verified 1:1). Multi-frame collapse (several full stems →
+    # one truncated key) would need per-frame disambiguation; add when real data shows it.
+    manifest_key(s) = replace(s, r"_\d+_\d+$" => "")
+    existing_fn = Set(String(r.filename) for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT DISTINCT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
+        [experiment_id])))
+    dbkey_of_stem = Dict{String, String}()  # scan stem => DB filename, only for stems with a row
+    for s in keys(byfile)
+        if s in existing_fn
+            dbkey_of_stem[s] = s
+        else
+            mk = manifest_key(s)
+            mk in existing_fn && (dbkey_of_stem[s] = mk)
+        end
+    end
+
     # Reshoot count (read-only): old samples whose stems span ≥2 derived cells — a
     # specimen the fresh-scan partition splits across loads. This is the
     # operator-eyeball metric (≈28 on the dev-db), NOT the total-load count.
-    stem_cell = Dict{String, Int}()
+    cell_of_dbkey = Dict{String, Int}()   # DB filename => cell index (via dbkey_of_stem)
     for (ci, cell) in enumerate(cells), s in cell.stems
-        stem_cell[s] = ci
+        dk = get(dbkey_of_stem, s, nothing)
+        dk === nothing || (cell_of_dbkey[dk] = ci)
     end
     old_cells = Dict{Int, Set{Int}}()   # old sample_id => set of cell indices its stems touch
-    if !isempty(stem_cell)
-        ph = join(fill("?", length(stem_cell)), ", ")
+    if !isempty(cell_of_dbkey)
+        ph = join(fill("?", length(cell_of_dbkey)), ", ")
         for r in Tables.rowtable(DBInterface.execute(db,
                 "SELECT filename, sample_id FROM exposures " *
                 "WHERE experiment_id = ? AND sample_id IS NOT NULL AND filename IN ($ph)",
-                vcat(Any[experiment_id], collect(keys(stem_cell)))))
-            ci = get(stem_cell, String(r.filename), 0)
+                vcat(Any[experiment_id], collect(keys(cell_of_dbkey)))))
+            ci = get(cell_of_dbkey, String(r.filename), 0)
             ci == 0 && continue
             push!(get!(old_cells, Int(r.sample_id), Set{Int}()), ci)
         end
@@ -327,27 +359,35 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     samples_created     = 0
     samples_displaced   = 0
     exposures_relinked  = 0
+    exposures_inserted  = 0
     exposures_no_file   = 0
     loads_created       = 0
+    new_exposure_ids    = Int[]   # un-manifested files inserted this run (analyzed post-txn)
 
     try
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             # 3a. Loads — dedup on (experiment_id, load_index); reuse on re-run.
+            # Persist frame_count + start/end times so a migrated load is identical
+            # to a freshly-scanned one (scan_and_group! sets the same fields).
+            fmt(t) = ismissing(t) ? nothing : Dates.format(t, "yyyy-mm-ddTHH:MM:SS")
             load_id_of = Dict{Int, Int}()
-            for (li, fc) in load_frame_count
+            for (li, m) in load_meta
+                st = fmt(m.start_time); et = fmt(m.end_time)
                 existing = Tables.rowtable(DBInterface.execute(db,
                     "SELECT id FROM loads WHERE experiment_id = ? AND load_index = ?",
                     [experiment_id, li]))
                 if isempty(existing)
                     lid = create_load!(db; experiment_id = experiment_id,
-                                       load_index = li, frame_count = fc)
+                                       load_index = li, frame_count = m.frame_count,
+                                       start_time = st, end_time = et)
                     loads_created += 1
                 else
                     lid = Int(first(existing).id)
-                    # Keep frame_count fresh (idempotent re-write of the derived value).
+                    # Keep derived values fresh (idempotent re-write).
                     DBInterface.execute(db,
-                        "UPDATE loads SET frame_count = ? WHERE id = ?", [fc, lid])
+                        "UPDATE loads SET frame_count = ?, start_time = ?, end_time = ? WHERE id = ?",
+                        [m.frame_count, st, et, lid])
                 end
                 load_id_of[li] = lid
             end
@@ -358,13 +398,15 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
             for (ci, cell) in enumerate(cells)
                 lid = load_id_of[cell.load_index]
                 # Distinct existing sample_ids of this cell's stems, minus claimed.
+                # Match on the DB filename each stem maps to (full or truncated).
                 candidates = Int[]
-                if !isempty(cell.stems)
-                    placeholders = join(fill("?", length(cell.stems)), ", ")
+                cell_dbkeys = String[dbkey_of_stem[s] for s in cell.stems if haskey(dbkey_of_stem, s)]
+                if !isempty(cell_dbkeys)
+                    placeholders = join(fill("?", length(cell_dbkeys)), ", ")
                     rows = Tables.rowtable(DBInterface.execute(db,
                         "SELECT DISTINCT sample_id FROM exposures " *
                         "WHERE experiment_id = ? AND sample_id IS NOT NULL AND filename IN ($placeholders)",
-                        vcat([experiment_id], cell.stems)))
+                        vcat([experiment_id], cell_dbkeys)))
                     candidates = sort(Int[Int(r.sample_id) for r in rows if !(Int(r.sample_id) in claimed)])
                 end
                 if !isempty(candidates)
@@ -376,15 +418,20 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                     # auto-created on a prior run already has load_id set; re-claiming it
                     # must NOT flip its 'auto' label to 'user' (idempotency). SQLite reads
                     # the pre-update load_id in the CASE, so this is the right discriminator.
+                    # Re-derive grouping_source too (symmetric with the create branch
+                    # below) so a retrofitted sample is indistinguishable from a fresh one.
                     DBInterface.execute(db,
-                        "UPDATE samples SET load_id = ?, slot_index = ?, " *
+                        "UPDATE samples SET load_id = ?, slot_index = ?, grouping_source = ?, " *
                         "name_source = CASE WHEN load_id IS NULL THEN 'user' ELSE name_source END " *
                         "WHERE id = ?",
-                        [lid, cell.slot_index, owner])
+                        [lid, cell.slot_index, cell.grouping_source, owner])
                     samples_retrofitted += 1
                 else
+                    # Mirror scan_and_group! exactly (incl. name_source) so a created
+                    # cell is indistinguishable from a freshly-scanned one.
                     owner = create_sample!(db; experiment_id = experiment_id,
                         name = cell.name, grouping_source = cell.grouping_source,
+                        name_source = cell.name_source,
                         load_id = lid, slot_index = cell.slot_index)
                     push!(claimed, owner)
                     samples_created += 1
@@ -406,10 +453,27 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
             for stem in keys(byfile)
                 bf  = byfile[stem]
                 own = owner_of_stem[stem]
+                dk = get(dbkey_of_stem, stem, nothing)
+                if dk === nothing
+                    # Scanned file with no pre-rework row — INSERT it so it becomes a
+                    # real sample (ingest-everything), exactly as scan_and_group! would.
+                    eid = create_exposure!(db; experiment_id = experiment_id,
+                        sample_id = own, filename = stem, image_path = bf.tif_path,
+                        prp_path = ismissing(bf.prp_path) ? nothing : bf.prp_path,
+                        timestamp = ismissing(bf.timestamp) ? nothing : Dates.format(bf.timestamp, "yyyy-mm-ddTHH:MM:SS"),
+                        exposure_time = ismissing(bf.exposure_time) ? nothing : bf.exposure_time,
+                        horizontal_position = ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
+                        scan_id = ismissing(bf.scan_id) ? nothing : bf.scan_id,
+                        frame_no = ismissing(bf.frame_no) ? nothing : bf.frame_no,
+                        load_id = load_id_of[bf.load_index])
+                    push!(new_exposure_ids, eid)
+                    exposures_inserted += 1
+                    continue
+                end
                 # Old sample_id(s) currently on this stem's exposures (pre-overwrite).
                 olds = Tables.rowtable(DBInterface.execute(db,
                     "SELECT id, sample_id FROM exposures WHERE experiment_id = ? AND filename = ?",
-                    [experiment_id, stem]))
+                    [experiment_id, dk]))
                 for r in olds
                     if r.sample_id !== missing && r.sample_id !== nothing
                         osid = Int(r.sample_id)
@@ -419,23 +483,27 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                         end
                     end
                 end
+                # Rewrite filename to the full scan stem so future rescans dedup on
+                # the same (experiment_id, filename) key (manifest era stored it truncated).
                 DBInterface.execute(db, """
-                    UPDATE exposures SET sample_id = ?, load_id = ?, prp_path = ?,
+                    UPDATE exposures SET sample_id = ?, load_id = ?, filename = ?, prp_path = ?,
                         timestamp = ?, exposure_time = ?, horizontal_position = ?,
                         scan_id = ?, frame_no = ?
                     WHERE experiment_id = ? AND filename = ?
-                """, [own, load_id_of[bf.load_index],
+                """, [own, load_id_of[bf.load_index], stem,
                       ismissing(bf.prp_path) ? nothing : bf.prp_path,
                       ismissing(bf.timestamp) ? nothing : Dates.format(bf.timestamp, "yyyy-mm-ddTHH:MM:SS"),
                       ismissing(bf.exposure_time) ? nothing : bf.exposure_time,
                       ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
                       ismissing(bf.scan_id) ? nothing : bf.scan_id,
                       ismissing(bf.frame_no) ? nothing : bf.frame_no,
-                      experiment_id, stem])
+                      experiment_id, dk])
                 exposures_relinked += length(olds)
             end
 
-            # Exposures with a row but no on-disk file (no byfile entry): leave, count.
+            # Exposures with a row but no on-disk file: leave, count. Relinked rows
+            # now carry the full scan stem (== a byfile key); only truly-gone files
+            # keep a non-matching filename.
             allrows = Tables.rowtable(DBInterface.execute(db,
                 "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
                 [experiment_id]))
@@ -503,6 +571,19 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         e isa _DryRunRollback || rethrow()
     end
 
+    # Analyze inserted exposures OUTSIDE the write transaction (same contract as
+    # scan_and_group!: a crash mid-analyze must not roll back the retrofit). Skipped
+    # on dry-run — those inserts were rolled back, so the ids no longer exist.
+    if analyze && !dry_run
+        for eid in new_exposure_ids
+            try
+                analyze_exposure!(db, eid)
+            catch e
+                @warn "regroup_experiment!: analyze_exposure! failed" exposure_id=eid exception=e
+            end
+        end
+    end
+
     return (
         status              = :ok,
         loads_created       = loads_created,
@@ -511,6 +592,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         samples_created     = samples_created,
         samples_displaced   = samples_displaced,
         exposures_relinked  = exposures_relinked,
+        exposures_inserted  = exposures_inserted,
         exposures_no_file   = exposures_no_file,
         reshoots            = reshoots,
         geometry            = geo,

@@ -1353,3 +1353,233 @@ end
         end
     end
 end
+
+# ---------------------------------------------------------------------------
+# Real-data shape: manifest-era filename is the on-disk stem with the trailing
+# `_<rep>_<frame>` suffix STRIPPED (live dev-db: every curated `exposures.filename`
+# = scan stem minus `_0_001`). scan_directory keeps the suffix, so a relink that
+# matches `filename == scan_stem` finds NOTHING and orphans all curation.
+# build_legacy_db's fixtures hide this by setting filename = the full disk stem;
+# this fixture sets filename to the TRUNCATED form, the way production stores it.
+# ---------------------------------------------------------------------------
+@testset "regroup relinks manifest-era truncated filenames (P0-a)" begin
+    dir          = mktempdir()
+    data_dir     = joinpath(dir, "data");      mkpath(data_dir)
+    analysis_dir = joinpath(dir, "analysis");  mkpath(analysis_dir)
+    write_setup_dir!(analysis_dir)
+
+    # On disk: the FULL stem (what scan_directory enumerates).
+    # In the DB:  the TRUNCATED stem (what the manifest pipeline stored).
+    full_stem   = "JC_C01_1_S2453_0_001"
+    db_filename = "JC_C01_1_S2453"
+    write_stem_fixtures!(data_dir, analysis_dir, full_stem;
+        horizontal_position_mm = 58.9, timestamp = DateTime(2026, 4, 26, 23, 14, 8))
+
+    path = joinpath(dir, "legacy.db")
+    db = SQLite.DB(path)
+    HimalayaUI.create_schema!(db)
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacy',?,?,?)",
+        [dir, data_dir, analysis_dir])
+    DBInterface.execute(db,
+        "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (10, 1, 'JC001', 'JC C01')")
+    DBInterface.execute(db,
+        "INSERT INTO exposures (id, sample_id, filename, image_path, trace_hash) VALUES (100, 10, ?, ?, 'deadbeef')",
+        [db_filename, joinpath(data_dir, "$full_stem.tif")])
+    # Curation hanging off the exposure — must survive the relink.
+    DBInterface.execute(db,
+        "INSERT INTO auto_peaks (id, exposure_id, q, intensity) VALUES (1000, 100, 0.123, 5.0)")
+    SQLite.close(db)
+
+    with_migration_db(path) do db
+        HimalayaUI.migrate_schema!(db)
+    end
+
+    summary = with_migration_db(path) do db
+        HimalayaUI.regroup_experiment!(db, 1; dry_run = false)
+    end
+
+    # The curated exposure must be RELINKED (retrofit in place), not orphaned.
+    @test summary.exposures_relinked == 1
+    @test summary.samples_retrofitted == 1
+
+    with_migration_db(path) do db
+        # Same exposure id, with its curation still attached.
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename, sample_id, load_id FROM exposures WHERE id = 100")))
+        @test row.sample_id == 10           # retrofitted onto the existing sample
+        @test row.load_id !== missing       # placed under a load
+        # filename rewritten to the full scan stem so future rescans dedup correctly.
+        @test row.filename == full_stem
+        # curation preserved.
+        @test first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM auto_peaks WHERE exposure_id = 100"))).c == 1
+    end
+end
+
+# ---------------------------------------------------------------------------
+# Ingest-everything: a scanned file with NO pre-rework DB row (an un-manifested
+# sample — the live dev-db has hundreds: HA_/RY_ series + calibration) must be
+# INSERTED as a real exposure so it surfaces as a sample, not minted as an empty
+# sample row. (Decision 2026-06-20: experiment == directory, ingest everything.)
+# ---------------------------------------------------------------------------
+@testset "regroup inserts exposures for un-manifested scanned files (ingest-everything)" begin
+    dir          = mktempdir()
+    data_dir     = joinpath(dir, "data");      mkpath(data_dir)
+    analysis_dir = joinpath(dir, "analysis");  mkpath(analysis_dir)
+    write_setup_dir!(analysis_dir)
+
+    # One curated file (DB row, truncated filename) + one un-manifested file (on
+    # disk only). Distinct horizontal positions → two slots, one load.
+    curated_full = "JC_C01_1_S2453_0_001"
+    curated_db   = "JC_C01_1_S2453"
+    newfile_full = "HA_5_010_S1965_0_001"   # no DB row — a fresh-scan-only file
+    write_stem_fixtures!(data_dir, analysis_dir, curated_full;
+        horizontal_position_mm = 58.9, timestamp = DateTime(2026, 4, 26, 23, 14, 8))
+    write_stem_fixtures!(data_dir, analysis_dir, newfile_full;
+        horizontal_position_mm = 70.85, timestamp = DateTime(2026, 4, 26, 23, 14, 20))
+
+    path = joinpath(dir, "legacy.db")
+    db = SQLite.DB(path)
+    HimalayaUI.create_schema!(db)
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacy',?,?,?)",
+        [dir, data_dir, analysis_dir])
+    DBInterface.execute(db,
+        "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (10, 1, 'JC001', 'JC C01')")
+    DBInterface.execute(db,
+        "INSERT INTO exposures (id, sample_id, filename, image_path) VALUES (100, 10, ?, ?)",
+        [curated_db, joinpath(data_dir, "$curated_full.tif")])
+    SQLite.close(db)
+
+    with_migration_db(path) do db
+        HimalayaUI.migrate_schema!(db)
+    end
+
+    # analyze=false: fixtures carry fake tif/dat; isolate the insert from peak-finding.
+    summary = with_migration_db(path) do db
+        HimalayaUI.regroup_experiment!(db, 1; dry_run = false, analyze = false)
+    end
+
+    @test summary.exposures_relinked == 1     # curated file relinked
+    @test summary.exposures_inserted == 1     # un-manifested file inserted
+
+    with_migration_db(path) do db
+        # The new file now has a real exposure row with a usable image_path.
+        new = Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename, sample_id, load_id, image_path FROM exposures WHERE filename = ?",
+            [newfile_full]))
+        @test length(new) == 1
+        @test new[1].sample_id !== missing
+        @test new[1].load_id !== missing
+        @test new[1].image_path !== missing   # image route filters WHERE image_path IS NOT NULL
+        # No empty samples: every sample owns ≥1 exposure.
+        empties = first(Tables.rowtable(DBInterface.execute(db,
+            """SELECT COUNT(*) AS c FROM samples s
+               WHERE s.experiment_id = 1
+                 AND NOT EXISTS (SELECT 1 FROM exposures e WHERE e.sample_id = s.id)"""))).c
+        @test empties == 0
+    end
+end
+
+# ---------------------------------------------------------------------------
+# Indistinguishable-from-fresh-scan (Jonathan's bar, 2026-06-20): a migrated
+# experiment must look exactly like a freshly-ingested one. Direct proof — run
+# scan_and_group! on a fresh DB and regroup_experiment! on a legacy DB built from
+# the SAME directory, then compare the persisted loads/samples/exposures.
+#
+# The bar applies to STRUCTURE (load partition + start/end/frame_count, slot/load
+# placement, grouping_source, and every exposure field) — NOT to preserved
+# CURATION. A migrated sample keeps its human label (the real dev-db's
+# `display_name`, e.g. "2-2 + LL37 1:1", collapses into `name` with
+# name_source='user'); a fresh scan auto-derives "JC_C01_1 (S01P01)"/'auto'. That
+# difference is the whole point of preserving curation, so name/name_source are
+# excluded from the structural comparison and asserted separately below.
+# ---------------------------------------------------------------------------
+@testset "migrated experiment == fresh scan (structural equivalence)" begin
+    # Shared on-disk fixture: a bimodal-gap set → 2 loads, several slots.
+    src          = mktempdir()
+    data_dir     = joinpath(src, "data");      mkpath(data_dir)
+    analysis_dir = joinpath(src, "analysis");  mkpath(analysis_dir)
+    write_setup_dir!(analysis_dir)
+    stems = ["JC_C01_1_S2453_0_001", "JC_C01_2_S2454_0_001", "JC_C01_3_S2455_0_001",
+             "JC_C02_1_S2460_0_001", "JC_C02_2_S2461_0_001"]
+    # First three co-timed (one load), +2h gap, last two co-timed (second load).
+    base = DateTime(2026, 4, 26, 23, 0, 0)
+    ts   = [base, base + Second(20), base + Second(40),
+            base + Hour(2), base + Hour(2) + Second(20)]
+    hpos = [58.9, 63.5, 70.8, 58.9, 63.5]
+    for (i, s) in enumerate(stems)
+        write_stem_fixtures!(data_dir, analysis_dir, s;
+            horizontal_position_mm = hpos[i], timestamp = ts[i])
+    end
+
+    # Snapshot the structural (non-id, non-curation) shape of an experiment.
+    function shape(db, eid)
+        loads = Tables.rowtable(DBInterface.execute(db,
+            "SELECT load_index, frame_count, start_time, end_time FROM loads WHERE experiment_id = ? ORDER BY load_index", [eid]))
+        samples = Tables.rowtable(DBInterface.execute(db,
+            """SELECT l.load_index, s.slot_index, s.grouping_source
+               FROM samples s JOIN loads l ON s.load_id = l.id
+               WHERE s.experiment_id = ? ORDER BY l.load_index, s.slot_index""", [eid]))
+        exposures = Tables.rowtable(DBInterface.execute(db,
+            """SELECT e.filename, l.load_index, s.slot_index, e.timestamp,
+                      e.horizontal_position, e.scan_id, e.frame_no
+               FROM exposures e JOIN samples s ON e.sample_id = s.id JOIN loads l ON e.load_id = l.id
+               WHERE e.experiment_id = ? ORDER BY e.filename""", [eid]))
+        (loads = loads, samples = samples, exposures = exposures)
+    end
+
+    # (a) Fresh scan.
+    fresh_path = joinpath(src, "fresh.db")
+    fdb = SQLite.DB(fresh_path); HimalayaUI.create_schema!(fdb)
+    DBInterface.execute(fdb,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'fresh',?,?,?)",
+        [src, data_dir, analysis_dir])
+    SQLite.close(fdb)
+    fresh = with_migration_db(fresh_path) do db
+        HimalayaUI.migrate_schema!(db)
+        HimalayaUI.scan_and_group!(db, 1; analyze = false)
+        shape(db, 1)
+    end
+
+    # (b) Legacy DB from the same dir: every stem a manifest-era row (truncated
+    # filename, one legacy sample), then migrate + regroup.
+    leg_path = joinpath(src, "legacy.db")
+    ldb = SQLite.DB(leg_path); HimalayaUI.create_schema!(ldb)
+    DBInterface.execute(ldb,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacy',?,?,?)",
+        [src, data_dir, analysis_dir])
+    for (i, s) in enumerate(stems)
+        sid = 100 + i
+        # Distinct grouping_source → the retrofit must re-derive it to match a fresh
+        # scan ('auto_position'), not keep the stale legacy value.
+        DBInterface.execute(ldb,
+            "INSERT INTO samples (id, experiment_id, name, display_name, grouping_source) VALUES (?, 1, ?, ?, 'legacy_manual')",
+            [sid, "M$i", "Manifest $i"])
+        DBInterface.execute(ldb,
+            "INSERT INTO exposures (experiment_id, sample_id, filename, image_path) VALUES (1, ?, ?, ?)",
+            [sid, replace(s, r"_\d+_\d+$" => ""), joinpath(data_dir, "$s.tif")])
+    end
+    SQLite.close(ldb)
+    migrated = with_migration_db(leg_path) do db
+        HimalayaUI.migrate_schema!(db)
+        HimalayaUI.regroup_experiment!(db, 1; dry_run = false, analyze = false)
+        shape(db, 1)
+    end
+
+    @test isequal(fresh.loads, migrated.loads)
+    @test isequal(fresh.samples, migrated.samples)        # structure only (no name)
+    @test isequal(fresh.exposures, migrated.exposures)
+
+    # Curation IS preserved (the deliberate, correct divergence): the migrated
+    # samples keep their human manifest labels with name_source='user', while the
+    # fresh scan auto-derives names with name_source='auto'.
+    mig_names = with_migration_db(leg_path) do db
+        Tables.rowtable(DBInterface.execute(db,
+            """SELECT s.name, s.name_source FROM samples s JOIN loads l ON s.load_id = l.id
+               WHERE s.experiment_id = 1 ORDER BY l.load_index, s.slot_index"""))
+    end
+    @test all(r -> r.name_source == "user", mig_names)
+    @test startswith(mig_names[1].name, "Manifest")       # human label kept, not auto-derived
+end
