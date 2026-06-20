@@ -178,16 +178,80 @@ export const createUser = (
   opts?: AuthOpts,
 ) => request<User>("POST", "/api/users", { username, ...fields }, opts);
 
+/** Canonical PATCH body for `PATCH /api/experiments/:id`. **E1 DEFINES,
+ *  E2 IMPORTS — never redefine.** All fields are optional; the backend
+ *  writes what is present:
+ *  - name/description: plain writes, NO *_source stamp, NO rescan.
+ *  - Geometry ×6: each field written + *_source stamped 'user' server-side
+ *    (already built in Phase C — this widens the same route).
+ *  - File patterns ×3: plain write + scan_signature invalidated server-side
+ *    so the next scan re-discovers with the new glob.
+ *  - data_dir/analysis_dir/path are READ-ONLY (400 if sent). */
+export interface ExperimentPatch {
+  name?: string;
+  description?: string;
+  energy_kev?: number;
+  flight_path_m?: number;
+  beam_center_x?: number;
+  beam_center_y?: number;
+  pixel_size_um?: number;
+  q_units?: string;
+  image_pattern?: string;
+  metadata_pattern?: string;
+  integration_pattern?: string;
+}
+
 // Experiments
 export const listExperiments = () =>
   request<Experiment[]>("GET", "/api/experiments");
 export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
+
 export const updateExperiment = (
   id: number,
-  patch: Record<string, never>,
+  patch: ExperimentPatch,
   opts?: AuthOpts,
 ) => request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
+
+/** Create-from-directory (spec §9.2). Returns the new experiment id
+ *  immediately; the first scan runs async with progress over SSE. */
+export interface CreateExperimentBody {
+  path: string;
+  name?: string;
+  patterns?: { image?: string; metadata?: string; integration?: string };
+}
+export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
+  request<Experiment>("POST", "/api/experiments", body, opts);
+
+export const deleteExperiment = (id: number, opts?: AuthOpts) =>
+  request<void>("DELETE", `/api/experiments/${id}`, undefined, opts);
+
+/** Rescan: cheap change-check then additive ingest of new files. Idempotent. */
+export const triggerScan = (id: number, opts?: AuthOpts) =>
+  request<Experiment>("POST", `/api/experiments/${id}/scan`, {}, opts);
+
+/** The Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface
+ *  (spec §9.2 — a dedicated endpoint, distinct from the flat corpus samples). */
+export const listLoads = (id: number) =>
+  request<Load[]>("GET", `/api/experiments/${id}/loads`);
+
+/** Directory-picker path autocomplete (spec §9.2, read-only). */
+export interface PathSuggestResponse { suggestions: string[] }
+export const suggestPaths = (prefix: string) =>
+  request<PathSuggestResponse>(
+    "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+
+/** Directory-picker validate-path probe (spec §9.2). `matched`/`scanned` drive
+ *  the validation line; `ok=false` + `message` powers the failed-scan preview. */
+export interface ValidatePathResponse {
+  ok: boolean;
+  matched: number;
+  scanned: number;
+  message: string | null;
+}
+export const validatePath = (path: string) =>
+  request<ValidatePathResponse>(
+    "GET", `/api/fs/validate?path=${encodeURIComponent(path)}`);
 
 // Samples
 export const listSamples    = (experiment_id: number) =>
