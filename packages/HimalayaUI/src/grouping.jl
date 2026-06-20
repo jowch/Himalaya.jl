@@ -460,7 +460,10 @@ function derive_sample_flags(load_rows;
             for i in 2:length(xs)
                 p_prev = xs[i-1].horizontal_position
                 p_curr = xs[i].horizontal_position
-                (p_prev === nothing || p_curr === nothing) && continue
+                # Skip unless BOTH positions are real numbers. `isa Real` catches
+                # `nothing` AND SQLite NULL (`missing`) in one guard — a bare
+                # `=== nothing` would let `missing` through and Float64(missing) throws.
+                (p_prev isa Real && p_curr isa Real) || continue
                 if abs(Float64(p_curr) - Float64(p_prev)) > min_slot_separation_mm
                     flags[Int(sm.sample_id)] = SplitFlag(
                         i, Float64(p_prev), Float64(p_curr))

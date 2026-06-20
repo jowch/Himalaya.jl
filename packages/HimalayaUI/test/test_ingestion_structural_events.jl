@@ -206,4 +206,21 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
         s1_after = first(filter(s -> s.sample_id == s1_id, first(r1).samples))
         @test s1_after.flag === nothing       # proves the dismiss is what cleared it
     end
+
+    @testset "get_loads_rollup tolerates NULL horizontal_position (no Float64(missing) throw)" begin
+        # Real PRP-partial data: a sample whose exposures mix a measured position
+        # with a NULL one. SQLite returns NULL as `missing`, and derive_sample_flags'
+        # `=== nothing` gap-guard does NOT catch `missing` — so Float64(missing)
+        # would throw and 500 the grouping page. This pins the boundary.
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s1_id,
+            filename="p1.tif", horizontal_position=1.0, frame_no=10)
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s1_id,
+            filename="p2.tif", frame_no=11)   # horizontal_position defaults to NULL
+
+        r = HimalayaUI.get_loads_rollup(db, exp_id)   # must not throw
+        s1 = first(filter(s -> s.sample_id == s1_id, first(r).samples))
+        @test s1.flag === nothing             # a lone positioned/NULL pair yields no split
+    end
 end
