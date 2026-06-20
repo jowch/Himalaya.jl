@@ -10,6 +10,7 @@ import { MemoryRouter, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
 import { AppRoutes } from "../src/print/shell/AppRoutes";
+import * as api from "../src/api";
 import type { ResolveSuccess } from "../src/api";
 
 function makeQc() {
@@ -138,14 +139,16 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
       staleUrlContext: null,
       resolving: false,
     });
+    // / now redirects to /experiments; mock the list so the home page renders.
+    vi.spyOn(api, "listExperiments").mockResolvedValue([]);
   });
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("bare / redirects to the corpus contact sheet (/samples)", async () => {
+  it("bare / redirects to the experiments home (/experiments)", async () => {
     renderRoutes("/");
-    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+    expect(await screen.findByText("Your beamtimes")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
@@ -202,31 +205,35 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
   });
 });
 
-describe("AppRoutes — bare / always lands on the corpus (#77 / I4.4)", () => {
+describe("AppRoutes — bare / always lands on experiments home (#77 / I4.4 / E1)", () => {
   beforeEach(() => {
     useAppState.setState({
       activeExperimentId: undefined,
       staleUrlContext: null,
       resolving: false,
     });
+    // / redirects to /experiments; mock the list so the home page renders.
+    vi.spyOn(api, "listExperiments").mockResolvedValue([]);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  // I4.4 (#181): the #77 "empty PageBody at /" risk is eliminated differently
-  // now. Bare `/` is a standalone redirect to /samples, so a cold `/` can never
-  // strand the user on an empty body. (I5.1, #182: the dual-nav `activePage`
-  // model that the old "/ bounces to a compare URL" bridge relied on is gone.)
+  // E1 ingestion redesign: bare `/` now redirects to /experiments (the
+  // experiments gallery) instead of /samples. Bare `/` can never strand the
+  // user on an empty body. (I5.1, #182: the dual-nav `activePage` model is gone.)
 
-  it("bare / lands on the corpus contact sheet", async () => {
+  it("bare / lands on the experiments home gallery", async () => {
     useAppState.setState({ activeExperimentId: undefined });
     renderRoutes("/");
-    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+    expect(await screen.findByText("Your beamtimes")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
-  it("bare / lands on the corpus even with an active experiment set", async () => {
+  it("bare / lands on the experiments home even with an active experiment set", async () => {
     useAppState.setState({ activeExperimentId: 7 });
     renderRoutes("/");
-    expect(await screen.findByTestId("samples-page")).toBeInTheDocument();
+    expect(await screen.findByText("Your beamtimes")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 

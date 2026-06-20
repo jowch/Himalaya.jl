@@ -2,12 +2,17 @@ import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
+import { ExperimentShell } from "./ExperimentShell";
 import { SamplesPage } from "../pages/SamplesPage";
 import { LoupePage } from "../pages/LoupePage";
 import { FocusPage } from "../pages/FocusPage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
 import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
 import { SeriesScopingPage } from "../pages/SeriesScopingPage";
+import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
+import { NewExperimentPage } from "../pages/NewExperimentPage";
+import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
+import { ConfigurationPage } from "../pages/ConfigurationPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
@@ -113,7 +118,7 @@ export function AppRoutes(): JSX.Element {
           and the sampleless legacy Index URLs land on the corpus contact sheet;
           a slug-bearing `/index/:exp/:sample` resolves to the focus workspace
           via IndexSlugRedirect (preserving old permalink deep-links). */}
-      <Route path="/" element={<Navigate to="/samples" replace />} />
+      <Route path="/" element={<Navigate to="/experiments" replace />} />
       <Route path="/index" element={<Navigate to="/samples" replace />} />
       <Route path="/index/:experiment" element={<Navigate to="/samples" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
@@ -125,6 +130,21 @@ export function AppRoutes(): JSX.Element {
           branches stay forever for event replay; only the UI + routes are gone. */}
       <Route path="/experiments/:eid/compare/*" element={<Navigate to="/series" replace />} />
       <Route path="/compare/all/*" element={<Navigate to="/series" replace />} />
+      {/* Ingestion redesign (spec §7/§9.6): the experiments tree sits OUTSIDE
+          CorpusShell so ExperimentShell's own chrome never stacks on
+          CorpusTopbar. */}
+      <Route path="/experiments" element={<ExperimentsHomePage />} />
+      <Route path="/experiments/new" element={<NewExperimentPage />} />
+      <Route path="/experiments/:id" element={<ExperimentShell />}>
+        <Route index element={<Navigate to="corpus" replace />} />
+        <Route path="corpus" element={<ExperimentCorpusPage />} />
+        <Route path="config" element={<ConfigurationPage />} />
+        {/* E2 GroupingReviewPage mounts here. E1 routes to a placeholder. */}
+        <Route
+          path="grouping"
+          element={<div data-testid="grouping-review-placeholder">Grouping review (E2)</div>}
+        />
+      </Route>
     </Routes>
   );
 }
