@@ -19,6 +19,11 @@
    * its old `--color-*` custom property no longer resolves.
    */
   --color-accent: oklch(0.555 0.150 38);      /* terracotta */
+  /* Accent wash -- a very light tint of the accent hue used for provenance
+     chips (GeometryLedger "edited" chip) and similar accent-toned badges that
+     must not carry full accent saturation. Named token so bg-accent-wash is a
+     sanctioned utility (not an arbitrary bracket escape). */
+  --color-accent-wash: oklch(0.940 0.030 38); /* ~12% accent tint on paper */
   /* Status tokens, paper-tuned for AA on plate (DESIGN.md `colors:` /
      §Status). R0c (#223) corrected `success` from the drifted mint
      (oklch(0.72 0.08 155)) to the canonical sage — the same value the loupe
