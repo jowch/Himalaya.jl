@@ -10,7 +10,7 @@ This phase owns the optimistic **send** path (the five mutators + their `onSucce
 
 **Architecture:**
 
-- **E2 IMPORTS E1's contract; it never redefines it.** The roll-up types (`Load`, `LoadSample`, `LoadExposure`, `GroupingFlag`), the `listLoads`/`renameSample`/`moveExposure`/`mergeSamples`/`splitSample`/`dismissGroupingFlag` fetchers, the read hooks (`useLoads`, `useExperimentDetail`, `useUpdateExperiment`), and `queryKeys.loads(id)` are **pinned once in E1's `api.ts`/`queries.ts` and imported here** (spec §8.8: "pinned once in `api.ts`/`queries.ts` by Phase E1 and imported (never redefined) by Phase E2"). The canonical `queryKeys.loads(id)` is **`["experiment", id ?? "none", "loads"]`** (mirrors the live `queryKeys.samples` family — an experiment-prefix invalidation also refreshes loads), NOT a bare `["loads", id]`. The canonical `Load` is the **nested §8.8 shape** (`Load.samples[].exposures[]`, keyed `load_id`; exposures keyed `.id`). E2 adds only the *send-path* artifacts (mutators, structural `OpKind`s, the structural-edit mutation hooks, undo extraction) and the surface components — the `applyRemoteToCache` structural RECEIVE arms are **E1-owned** (E2 only verifies them, Task 7). **If a test or fixture in this plan hard-codes `["loads", id]`, it is wrong — use E1's `queryKeys.loads(id)`.**
+- **E2 IMPORTS E1's contract; it never redefines it.** The roll-up types (`Load`, `LoadSample`, `LoadExposure`, `GroupingFlag`), the `listLoads`/`renameSample`/`moveExposure`/`mergeSamples`/`splitSample`/`dismissGroupingFlag` fetchers, the read hooks (`useLoads`, `useExperiment`, `useUpdateExperiment`), and `queryKeys.loads(id)` are **pinned once in E1's `api.ts`/`queries.ts` and imported here** (spec §8.8: "pinned once in `api.ts`/`queries.ts` by Phase E1 and imported (never redefined) by Phase E2"). The canonical `queryKeys.loads(id)` is **`["experiment", id ?? "none", "loads"]`** (mirrors the live `queryKeys.samples` family — an experiment-prefix invalidation also refreshes loads), NOT a bare `["loads", id]`. The canonical `Load` is the **nested §8.8 shape** (`Load.samples[].exposures[]`, keyed `load_id`; exposures keyed `.id`). E2 adds only the *send-path* artifacts (mutators, structural `OpKind`s, the structural-edit mutation hooks, undo extraction) and the surface components — the `applyRemoteToCache` structural RECEIVE arms are **E1-owned** (E2 only verifies them, Task 7). **If a test or fixture in this plan hard-codes `["loads", id]`, it is wrong — use E1's `queryKeys.loads(id)`.**
 - **Reuse, don't rebuild.** The fold tree composes the shipped `Card`, `Checkbox`, `Input variant="title"`, `Thumbnail`, `FlagButton`, `IconButton`, `Menu`, `SearchInput`, `ModalShell`, `EmptyState` primitives. New appearance-carrying leaves (`LoadFold`, `SampleFold`, `ExposureLeaf`, `GeometryLedger`, `SourcesCard`) live under `print/components/` (which is **NOT** design-guard-exempt — only `print/ui/`, `print/plot/`, `print/detector/`, `print/comb/`, `print/export/` are) and carry only placement/layout `className`; any literal appearance they need goes in a `print/ui/` primitive or an existing token utility, so `scripts/check-design.mjs` (the `lint:design` build step) stays green.
 - **Undo is a shared hook.** `useUndoStack<T>()` is extracted from `SeriesScopingPage`'s inline `HistoryEntry[]` so grouping-review and scoping share one undo implementation. Single-row edits (rename, one move) carry a session-local re-issue-the-inverse undo via the toast action; multi-row edits (merge, split, bulk-merge) are session-local undo only (and v1 shows the toast WITHOUT an undo action — one stamp cannot reverse a multi-row reassignment server-side, spec §9.3). Undo surfaces through the bottom-center toast — an `action` slot is added to the **imperative `showToast` API** (the `Toast`/`lib/toast.ts` singleton is NO-PROP; there is no `toasts` prop to extend).
 - **Mutators wire the optimistic send path.** Five new mutators (`moveExposure`, `renameSample`, `mergeSamples`, `splitSample`, `dismissGroupingFlag`) register in `mutatorRegistry`. `moveExposure`/`renameSample`/`dismissGroupingFlag` splice the `loads(id)` cache surgically in `onMutate`; `mergeSamples`/`splitSample` do an optimistic tree edit but reconcile invalidate-only (ids/rows aren't payload-derivable — the `series_save` invalidate-only precedent in `saveSeries.ts`). **All five MUST invalidate `loads(experimentId)` in their `onSuccess`** (the `saveSeries.ts` precedent): the replay coordinator's own-op path resolves the deferred + aborts the HTTP request and **never calls `applyRemoteToCache`**, so an SSE-arm-only reconcile would leave split's negative-id placeholder unreconciled (a 404 on the next op). The complementary `applyRemoteToCache` structural arms (E1-owned) cover FOREIGN tabs. All five call through `useQueueMutation`, minting the `client_op_id` inside `mutationFn`.
@@ -22,7 +22,7 @@ This phase owns the optimistic **send** path (the five mutators + their `onSucce
 **Spec:** `docs/superpowers/specs/2026-06-15-ingestion-redesign-design.md` — §8.2 (grouping-review surface), §8.1 (Configuration tab), §8.6 (component reuse map), §8.7 (new components), §8.8 (the pinned `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag` shapes + `queryKeys.loads(id)` = `["experiment", id ?? "none", "loads"]`), §9.3 (event kinds — **no `sample_merged`; merge fans out as `exposure_moved`; split emits `sample_created` + `sample_split`; `grouping_flag_dismissed` is durable**; merge/split SSE reconcile is invalidate-only; undo is session-local for multi-row), §9.6 (frontend wiring — the hook names `useMoveExposure`/`useRenameSample`/`useMergeSamples`/`useSplitSample`/`useDismissGroupingFlag`, `display_name → name` sweep). Read §8.2, §8.8, and §9.3/§9.6 in full before starting.
 
 **Depends on (HARD — E1 must land first):**
-- **Phase E1** (`docs/superpowers/plans/2026-06-18-ingestion-phase-e1-shell-routing.md`): provides `AppRoutes` with `/experiments/:id/{corpus,grouping,config}`, `ExperimentShell`, `ExperimentCorpusPage`, `ExperimentConfigurationPage` (shell only — this plan fills its body), the `ingestInFlight` store + `ingest_*` SSE receive arms, `PageFrame` `home`/`experiment` width keys, **and the pinned `api.ts` additions: the nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag` types (§8.8), `listLoads`, `createExperiment`, `triggerScan`, the widened `updateExperiment(id, patch: ExperimentGeometryPatch)`, the per-field geometry `*_source` columns + `ingest_status`/`scan_signature`/`last_scanned_at` on `Experiment`, the `Sample.display_name → name` collapse, and the `queryKeys.loads(id)` key + `useLoads`/`useExperimentDetail` read hooks.** E2 imports all of these — it does not redefine any of them.
+- **Phase E1** (`docs/superpowers/plans/2026-06-18-ingestion-phase-e1-shell-routing.md`): provides `AppRoutes` with `/experiments/:id/{corpus,grouping,config}`, `ExperimentShell`, `ExperimentCorpusPage`, `ExperimentConfigurationPage` (shell only — this plan fills its body), the `ingestInFlight` store + `ingest_*` SSE receive arms, `PageFrame` `home`/`experiment` width keys, **and the pinned `api.ts` additions: the nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag` types (§8.8), `listLoads`, `createExperiment`, `triggerScan`, the widened `updateExperiment(id, patch: ExperimentPatch)` (the canonical frontend patch type, renamed from `ExperimentGeometryPatch` — DECISION), the per-field geometry `*_source` columns + `ingest_status`/`scan_signature`/`last_scanned_at` on `Experiment`, `description TEXT` additive column + `image_pattern`/`metadata_pattern`/`integration_pattern` typed columns on `Experiment` (DECISION: additive migration in E1), editable `name`/`description` in `ExperimentShell`, editable pattern rows in the Sources surface, the `Sample.display_name → name` collapse, and the `queryKeys.loads(id)` key + `useLoads`/`useExperiment` read hooks.** E2 imports all of these — it does not redefine any of them.
 
   > ⚠ **Contract reconciliation note for the implementer (read before Task 2):** E1's plan currently shows a *flat* `Load` in its Task 1 (`{id, experiment_id, load_index, session_id, …}` with **no** `samples`). That contradicts spec §8.8, which pins the **nested** shape (`Load.samples[].exposures[]`, keyed `load_id`). The nested shape is the contract (it mirrors `get_loads_rollup`'s JSON and is what every E2 mutator/component consumes). **E1 must ship the nested §8.8 shape**; if E1 lands the flat one, that is an E1 bug to fix in E1 — do not work around it by redefining `Load` in E2. Coordinate with the E1 owner.
 
@@ -38,7 +38,7 @@ This phase owns the optimistic **send** path (the five mutators + their `onSucce
 | File | Responsibility | This plan |
 |---|---|---|
 | `src/api.ts` | `renameSample`/`moveExposure`/`mergeSamples`/`splitSample`/`dismissGroupingFlag` fetchers (the types `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag` + `listLoads` are E1's — IMPORTED) | MODIFY (Task 3) |
-| `src/queries.ts` | structural-edit hooks `useMoveExposure`/`useRenameSample`/`useMergeSamples`/`useSplitSample`/`useDismissGroupingFlag` + `useUpdateExperiment` (E1 ships read hooks `useLoads`/`useExperimentDetail` + `queryKeys.loads` — IMPORTED) | MODIFY (Task 6, 9) |
+| `src/queries.ts` | structural-edit hooks `useMoveExposure`/`useRenameSample`/`useMergeSamples`/`useSplitSample`/`useDismissGroupingFlag` + `useUpdateExperiment` (E1 ships read hooks `useLoads`/`useExperiment` + `queryKeys.loads` — IMPORTED) | MODIFY (Task 6, 9) |
 | `src/lib/queue/types.ts` | add the five structural `OpKind`s | MODIFY (Task 3) |
 | `src/lib/queue/mutators/grouping.ts` | `moveExposure`/`renameSample`/`mergeSamples`/`splitSample`/`dismissGroupingFlag` mutators | CREATE (Tasks 4, 5) |
 | `src/lib/queue/mutatorRegistry.ts` | register the five mutators (outbound + event) | MODIFY (Tasks 4, 5) |
@@ -59,7 +59,7 @@ This phase owns the optimistic **send** path (the five mutators + their `onSucce
 | `src/styles.css` | `--color-accent-wash` token (if used by GeometryLedger) | MODIFY (Task 16, conditional) |
 | `test/*.test.tsx` / `e2e/*.spec.ts` | per-task tests | CREATE (all tasks) |
 
-**Out of scope (other plans):** E1's routing/shell/`ingestInFlight`/`ingest_*` receive arms/**the `applyRemoteToCache` structural RECEIVE arms (all five structural kinds — E1-owned; E2 only verifies, Task 7)**/`createExperiment` flow/`DirectoryPickerField`/`LiveIngestUnfold`/`ExperimentsHomePage`/`FailedScanPage`/the `StatBar` primitive/the `Dropdown` primitive/the `Load` & geometry-source types/`listLoads`/`queryKeys.loads`/`useLoads`/`useExperimentDetail`/the `display_name → name` collapse + `SCHEMA_VERSION` bump; Phase D's backend; the auto-rescan scheduler.
+**Out of scope (other plans):** E1's routing/shell/`ingestInFlight`/`ingest_*` receive arms/**the `applyRemoteToCache` structural RECEIVE arms (all five structural kinds — E1-owned; E2 only verifies, Task 7)**/`createExperiment` flow/`DirectoryPickerField`/`LiveIngestUnfold`/`ExperimentsHomePage`/`FailedScanPage`/the `StatBar` primitive/the `Dropdown` primitive/the `Load` & geometry-source types/`listLoads`/`queryKeys.loads`/`useLoads`/`useExperiment`/the `display_name → name` collapse + `SCHEMA_VERSION` bump; Phase D's backend; the auto-rescan scheduler.
 
 ---
 
@@ -99,30 +99,7 @@ grep -n "^export const SCHEMA_VERSION" src/lib/queue/persistence.ts   # expect =
 
 > **Live state at plan-authoring time (2026-06-18, E1 UNMERGED):** `src/api.ts:31-38` still declares `Sample.display_name: string | null`; `trivial.ts:41` `UpdateSampleInput = { display_name?; notes? }`; `trivial.ts:86` `onSuccess` still copies `response.display_name`; `applyRemoteToCache.ts:314-318` `update_sample` arm does `qc.setQueryData(queryKeys.sample(id), old => ({ ...old, ...(payload ?? {}) }))` (an untyped spread — the cross-version `display_name` hazard the spec §9.6 flags; the fix is E1's); `persistence.ts:14` `SCHEMA_VERSION = 4`. **All of these are E1's to change**, not E2's.
 
-- [ ] **Step 2 (optional): Add a guard test documenting the invariant**
-
-Only if useful as a regression floor — create `test/labelCollapse.test.ts`:
-```ts
-import { describe, it, expect } from "vitest";
-import type { Sample } from "../src/api";
-
-describe("label collapse invariant (E1-owned; E2 consumes)", () => {
-  it("Sample carries a single non-null `name` label and no `display_name`", () => {
-    const s: Sample = { id: 1, experiment_id: 1, name: "HA85 (S01P15)", notes: null, tags: [] };
-    // @ts-expect-error display_name is removed from Sample (E1 collapse)
-    void s.display_name;
-    expect(s.name).toBe("HA85 (S01P15)");
-  });
-});
-```
-If `tsc` reports the `@ts-expect-error` is unused, E1's collapse is in place (the directive has nothing to suppress because `display_name` is gone) — that is the expected green state; keep the directive (it documents the contract and will re-fire if `display_name` ever returns). If `tsc` instead errors that `display_name` exists, E1 has NOT landed the collapse → see Step 1's STOP.
-
-- [ ] **Step 3: Commit (only if Step 2's test was added)**
-```bash
-git add test/labelCollapse.test.ts
-git commit -m "test(label): guard the E1-owned display_name→name collapse invariant"
-```
-Otherwise this task produces no commit.
+This task produces no commit (verification-only).
 
 ---
 
@@ -321,36 +298,7 @@ export interface Load {
 > **NOTE the exact field names** — every fixture in Tasks 4/5/10–15 uses these: an exposure leaf key is **`id`** (NOT `exposure_id`, NOT `frame_no`/`status`); a sample has **`merged_into_id`** and `grouping_source`/`name_source` typed as plain `string`; a load is keyed **`load_id`** (no top-level `id`/`experiment_id`); `queryKeys.loads(id)` = **`["experiment", id ?? "none", "loads"]`**. The earlier E2-draft fixtures used `exposure_id`/`frame_no`/`status`/top-level `Load.id`/`["loads", id]` — **all wrong**; the §8.8 shapes above are authoritative. The fixtures in this plan have been rewritten to §8.8; if you see a stray `exposure_id` or `["loads",` anywhere, treat it as a bug.
 - If E1's shapes are FLAT (no `samples`) or keyed differently, STOP — that is an E1 contract bug to fix in E1 (see the dependency note up top), not to route around here.
 
-- [ ] **Step 2 (optional): a compile-only import guard**
-
-Create `test/loadsTypes.test.ts`:
-```ts
-import { describe, it, expect } from "vitest";
-import { listLoads, type Load } from "../src/api";
-
-describe("E1 Load contract is importable in E2 (§8.8)", () => {
-  it("constructs a §8.8 Load and exposes listLoads", () => {
-    const l: Load = {
-      load_id: 1, load_index: 1, session_id: null, start_time: "10:02", end_time: "10:38",
-      frame_count: 96, note: null,
-      samples: [{
-        sample_id: 10, name: "HA62 (S01P01)", slot_index: 1,
-        grouping_source: "auto_position", name_source: "auto", merged_into_id: null, flag: null,
-        exposures: [{ id: 100, filename: "HA_0241_001.tif", horizontal_position: 8.4, timestamp: "10:02:00" }],
-      }],
-    };
-    expect(l.samples[0]!.exposures[0]!.id).toBe(100);
-    expect(typeof listLoads).toBe("function");
-  });
-});
-```
-Run: `npm test -- test/loadsTypes.test.ts` + `npx tsc --noEmit -p tsconfig.json` → PASS only if E1's shapes match.
-
-- [ ] **Step 3: Commit (only if Step 2 added)**
-```bash
-git add test/loadsTypes.test.ts
-git commit -m "test(api): guard the imported E1 Load contract (§8.8)"
-```
+This task produces no commit (verification-only).
 
 ---
 
@@ -525,8 +473,9 @@ describe("moveExposureMutator", () => {
   it("onMutate moves the exposure between samples in the loads cache; restore reverts", () => {
     const qc = new QueryClient();
     seedLoads(qc, 7);
+    // exposureId + sampleId are in the Input (not scope) — one hook per experiment
     const ctx = moveExposureMutator.onMutate(
-      { kind: "move_exposure", clientOpId: "op", payload: { sampleId: 20 },
+      { kind: "move_exposure", clientOpId: "op", payload: { exposureId: 100, sampleId: 20 },
         experimentId: 7, exposureId: 100, sampleId: 20,
         username: "alice", clientId: "c" } as never, qc);
     const after = qc.getQueryData<Load[]>(queryKeys.loads(7))!;
@@ -555,8 +504,9 @@ describe("renameSampleMutator", () => {
   it("onMutate rewrites the sample name + sets name_source=user; restore reverts", () => {
     const qc = new QueryClient();
     seedLoads(qc, 7);
+    // sampleId is in the Input (not scope) — one hook per experiment
     const ctx = renameSampleMutator.onMutate(
-      { kind: "rename_sample", clientOpId: "op", payload: { name: "Renamed" },
+      { kind: "rename_sample", clientOpId: "op", payload: { sampleId: 10, name: "Renamed" },
         experimentId: 7, sampleId: 10, name: "Renamed",
         username: "alice", clientId: "c" } as never, qc);
     const after = qc.getQueryData<Load[]>(queryKeys.loads(7))!;
@@ -626,9 +576,10 @@ function patchLoads(
 
 // ---------------------------------------------------------------------------
 // move_exposure  (single-entity → exposure_moved)
+// Entity ids in Input, NOT scope — one hook instance per experiment, not per row.
 // ---------------------------------------------------------------------------
-type MoveExposureInput = { sampleId: number };
-type MoveExposureScope = BaseScope & { exposureId: number };
+type MoveExposureInput = { exposureId: number; sampleId: number };
+type MoveExposureScope = BaseScope;
 
 export const moveExposureMutator: Mutator<MoveExposureInput, MoveExposureScope, api.Exposure> = {
   kind: "move_exposure",
@@ -659,9 +610,10 @@ export const moveExposureMutator: Mutator<MoveExposureInput, MoveExposureScope, 
 
 // ---------------------------------------------------------------------------
 // rename_sample  (single-entity → sample_renamed)
+// Entity id in Input, NOT scope — one hook instance per experiment, not per row.
 // ---------------------------------------------------------------------------
-type RenameSampleInput = { name: string };
-type RenameSampleScope = BaseScope & { sampleId: number };
+type RenameSampleInput = { sampleId: number; name: string };
+type RenameSampleScope = BaseScope;
 
 export const renameSampleMutator: Mutator<RenameSampleInput, RenameSampleScope, api.Sample> = {
   kind: "rename_sample",
@@ -727,7 +679,7 @@ git commit -m "feat(queue): move_exposure + rename_sample mutators (surgical loa
 
 `merge`/`split` are orchestrations: `onMutate` does an OPTIMISTIC tree edit (merge re-points the loser's exposures onto the survivor and retires the loser; split creates a new sample with a negative placeholder id and moves the chosen exposures into it), and confirmation is **invalidate-only** — the real survivor/new-sample rows aren't payload-derivable (spec §9.3), and the own-op path never calls `applyRemoteToCache`, so `onSuccess` invalidates `loads(id)` itself (the `saveSeries.ts` precedent). `dismissGroupingFlag` is single-entity (surgical splice clears `sample.flag`) and DURABLE (spec §9.3: it writes a `grouping_flag_dismissed` event, suppressed in `get_loads_rollup`, so it stays gone across rescans — NOT session-local `Set` state).
 
-> **`MergeSamplesInput = { loserId; survivorId }` (decided here, ONCE).** Both ids arrive in the per-call mutate() input; the scope carries only experiment + identity (`MergeSamplesScope = BaseScope`). This removes the `as never` cast in the hook (Task 9). `splitSample`'s input is `{ exposureIds; name }` and its scope carries `sampleId` (the source) — no overlap, no cast.
+> **`MergeSamplesInput = { loserId; survivorId }` (decided here, ONCE).** Both ids arrive in the per-call mutate() input; the scope carries only experiment + identity (`MergeSamplesScope = BaseScope`). This removes the `as never` cast in the hook (Task 9). `splitSample`'s input is `{ sampleId; exposureIds; name }` — `sampleId` (the source sample to split) moves into Input, not scope, consistent with the hook-arity decision that all row-entity ids travel in the Input. `dismissGroupingFlag`'s input is `{ sampleId; flagKind; mergeWithSampleId? }` for the same reason.
 
 **Files:**
 - Modify: `src/lib/queue/mutators/grouping.ts`
@@ -787,8 +739,9 @@ describe("splitSampleMutator", () => {
     loads[0]!.samples[0]!.exposures.push({ id: 101, filename: "a2.tif", horizontal_position: 30, timestamp: null });
     qc.setQueryData(queryKeys.loads(7), loads);
 
+    // sampleId is in the Input (not scope) — one hook per experiment, not per row
     const ctx = splitSampleMutator.onMutate(
-      { kind: "split_sample", clientOpId: "op", payload: { exposureIds: [101], name: "survivorb" },
+      { kind: "split_sample", clientOpId: "op", payload: { sampleId: 10, exposureIds: [101], name: "survivorb" },
         experimentId: 7, sampleId: 10, exposureIds: [101], name: "survivorb",
         username: "a", clientId: "c" } as never, qc);
     const after = qc.getQueryData<Load[]>(queryKeys.loads(7))!;
@@ -823,9 +776,10 @@ function seed(qc: QueryClient) {
 describe("dismissGroupingFlagMutator (durable 'Keep separate')", () => {
   it("onMutate clears sample.flag optimistically; restore reverts", () => {
     const qc = new QueryClient(); seed(qc);
+    // sampleId is in the Input (not scope) — one hook per experiment, not per row
     const ctx = dismissGroupingFlagMutator.onMutate(
       { kind: "dismiss_grouping_flag", clientOpId: "op",
-        payload: { flagKind: "merge", mergeWithSampleId: 10 },
+        payload: { sampleId: 20, flagKind: "merge", mergeWithSampleId: 10 },
         experimentId: 7, sampleId: 20, flagKind: "merge", mergeWithSampleId: 10,
         username: "a", clientId: "c" } as never, qc);
     expect(qc.getQueryData<Load[]>(queryKeys.loads(7))![0]!.samples[0]!.flag).toBeNull();
@@ -887,9 +841,10 @@ export const mergeSamplesMutator: Mutator<MergeSamplesInput, MergeSamplesScope, 
 
 // ---------------------------------------------------------------------------
 // split_sample  (orchestration → sample_created + sample_split; invalidate-only)
+// sampleId (source) in Input, NOT scope — one hook per experiment, not per row.
 // ---------------------------------------------------------------------------
-type SplitSampleInput = { exposureIds: number[]; name: string };
-type SplitSampleScope = BaseScope & { sampleId: number };
+type SplitSampleInput = { sampleId: number; exposureIds: number[]; name: string };
+type SplitSampleScope = BaseScope;
 
 export const splitSampleMutator: Mutator<SplitSampleInput, SplitSampleScope, api.SplitSampleResponse> = {
   kind: "split_sample",
@@ -921,9 +876,10 @@ export const splitSampleMutator: Mutator<SplitSampleInput, SplitSampleScope, api
 
 // ---------------------------------------------------------------------------
 // dismiss_grouping_flag  (single-entity, DURABLE → grouping_flag_dismissed)
+// sampleId in Input, NOT scope — one hook per experiment, not per row.
 // ---------------------------------------------------------------------------
-type DismissFlagInput = { flagKind: "merge" | "split"; mergeWithSampleId?: number };
-type DismissFlagScope = BaseScope & { sampleId: number };
+type DismissFlagInput = { sampleId: number; flagKind: "merge" | "split"; mergeWithSampleId?: number };
+type DismissFlagScope = BaseScope;
 
 export const dismissGroupingFlagMutator: Mutator<DismissFlagInput, DismissFlagScope, void> = {
   kind: "dismiss_grouping_flag",
@@ -1000,28 +956,7 @@ grep -n "export function useLoads" src/queries.ts
 ```
 Confirm `queryKeys.loads(7)` deep-equals `["experiment", 7, "loads"]` and `queryKeys.loads(undefined)` deep-equals `["experiment", "none", "loads"]`. If E1 shipped `["loads", id]`, STOP — that's an E1 contract bug (see the dependency note); every E2 cache arm + mutator + fixture in this plan assumes the experiment-prefixed key.
 
-- [ ] **Step 2 (optional): a guard test**
-
-Create `test/loadsKey.test.ts`:
-```ts
-import { describe, it, expect } from "vitest";
-import { queryKeys } from "../src/queries";
-
-describe("E1 queryKeys.loads contract (§8.8)", () => {
-  it("is experiment-prefixed and distinct from samples", () => {
-    expect(queryKeys.loads(7)).toEqual(["experiment", 7, "loads"]);
-    expect(queryKeys.loads(undefined)).toEqual(["experiment", "none", "loads"]);
-    expect(queryKeys.loads(7)).not.toEqual(queryKeys.samples(7));
-  });
-});
-```
-`npm test -- test/loadsKey.test.ts` → PASS only if E1's key matches.
-
-- [ ] **Step 3: Commit (only if Step 2 added)**
-```bash
-git add test/loadsKey.test.ts
-git commit -m "test(queries): guard the imported E1 queryKeys.loads contract"
-```
+This task produces no commit (verification-only).
 
 ---
 
@@ -1045,43 +980,7 @@ Confirm ALL of the following against the live file:
 - Each arm is **invalidate-only** on `queryKeys.loads(payload.experiment_id)` (+ the flat `queryKeys.samples(payload.experiment_id)` listing), reads **`payload.experiment_id`** (NOT `remote.entity_id`, which `applyRemoteToCache.ts:105` reads unconditionally as the sample/exposure id), and is placed **BEFORE the `default:` arm** (`:334`, which fires the poisoning `peaks(id)`/`indices(id)` invalidations).
 - If any kind is missing, shaped wrong (surgical instead of invalidate-only, or scoped on `entity_id`), or placed after `default:`: **STOP and escalate to the E1 owner.** Do not add or fix the arm here — it is E1's.
 
-- [ ] **Step 2 (optional): a guard test mirroring E1's contract**
-
-E1 ships the authoritative `applyRemoteToCache` structural test. E2 may ADD a thin guard (only if it does not duplicate E1's file name) asserting the foreign-receive contract its own SSE-replay flows depend on — e.g. `test/applyRemoteToCache.structural.e2guard.test.ts`:
-```ts
-import { describe, it, expect, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
-import { queryKeys } from "../src/queries";
-import { applyRemoteToCache } from "../src/lib/queue/applyRemoteToCache";
-import type { SseEvent } from "../src/lib/queue/types";
-
-function frame(kind: string, experimentId: number, entity_id = 0): SseEvent {
-  return { id: 1, kind, entity_type: "sample", entity_id, payload: { experiment_id: experimentId } };
-}
-
-describe("E1 structural RECEIVE arms — E2 consumer contract (§9.3)", () => {
-  for (const kind of ["exposure_moved", "sample_renamed", "sample_created", "sample_split", "grouping_flag_dismissed"]) {
-    it(`${kind} invalidates loads(payload.experiment_id), never entity_id, never peaks/indices`, () => {
-      const qc = new QueryClient();
-      const inv = vi.spyOn(qc, "invalidateQueries");
-      applyRemoteToCache(frame(kind, 7, 5), qc);
-      const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
-      expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
-      expect(keys).not.toContain(JSON.stringify(queryKeys.loads(5)));
-      expect(keys.some((k) => k.includes("peaks"))).toBe(false);
-      expect(keys.some((k) => k.includes("indices"))).toBe(false);
-    });
-  }
-});
-```
-`npm test -- test/applyRemoteToCache.structural.e2guard.test.ts` → PASS only if E1's arms are correct. (Skip this step entirely if it would collide with E1's own test file.)
-
-- [ ] **Step 3: Commit (only if Step 2 added)**
-```bash
-git add test/applyRemoteToCache.structural.e2guard.test.ts
-git commit -m "test(queue): guard E1's structural RECEIVE arms (E2 consumer contract)"
-```
-Otherwise this task produces no commit.
+This task produces no commit (verification-only).
 
 ---
 
@@ -1203,11 +1102,13 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("structural-edit + experiment hooks expose mutate()", () => {
-  it("useRenameSample", () => { expect(typeof renderHook(() => useRenameSample(7, 10), { wrapper }).result.current.mutate).toBe("function"); });
-  it("useMoveExposure", () => { expect(typeof renderHook(() => useMoveExposure(7, 100), { wrapper }).result.current.mutate).toBe("function"); });
+  // All row-scoped hooks take only experimentId; entity ids (sampleId/exposureId)
+  // go in the mutate() input (one hook instance per experiment, not per row).
+  it("useRenameSample", () => { expect(typeof renderHook(() => useRenameSample(7), { wrapper }).result.current.mutate).toBe("function"); });
+  it("useMoveExposure", () => { expect(typeof renderHook(() => useMoveExposure(7), { wrapper }).result.current.mutate).toBe("function"); });
   it("useMergeSamples", () => { expect(typeof renderHook(() => useMergeSamples(7), { wrapper }).result.current.mutate).toBe("function"); });
-  it("useSplitSample", () => { expect(typeof renderHook(() => useSplitSample(7, 10), { wrapper }).result.current.mutate).toBe("function"); });
-  it("useDismissGroupingFlag", () => { expect(typeof renderHook(() => useDismissGroupingFlag(7, 20), { wrapper }).result.current.mutate).toBe("function"); });
+  it("useSplitSample", () => { expect(typeof renderHook(() => useSplitSample(7), { wrapper }).result.current.mutate).toBe("function"); });
+  it("useDismissGroupingFlag", () => { expect(typeof renderHook(() => useDismissGroupingFlag(7), { wrapper }).result.current.mutate).toBe("function"); });
   it("useUpdateExperiment", () => { expect(typeof renderHook(() => useUpdateExperiment(7), { wrapper }).result.current.mutate).toBe("function"); });
 });
 ```
@@ -1226,14 +1127,20 @@ import {
 } from "./lib/queue/mutators/grouping";
 // CLIENT_ID, useAppState, useQueueMutation, useQueryClient, api are already in queries.ts.
 
-export function useRenameSample(experimentId: number, sampleId: number) {
+// Row-scoped hooks take ONLY experimentId.
+// The entity id (sampleId / exposureId) is carried in the mutate() call input,
+// NOT in the hook's scope arg — one hook instance per experiment, not per row.
+// This resolves the Tasks 9 ↔ 14 arity conflict: Task 14 can instantiate each hook
+// once and pass the per-row id at call time, with no per-row hook construction.
+
+export function useRenameSample(experimentId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(renameSampleMutator, { experimentId, sampleId, username, clientId: CLIENT_ID });
+  return useQueueMutation(renameSampleMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useMoveExposure(experimentId: number, exposureId: number) {
+export function useMoveExposure(experimentId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(moveExposureMutator, { experimentId, exposureId, username, clientId: CLIENT_ID });
+  return useQueueMutation(moveExposureMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 // merge: scope = experiment + identity ONLY; the caller passes { loserId, survivorId }
@@ -1243,14 +1150,14 @@ export function useMergeSamples(experimentId: number) {
   return useQueueMutation(mergeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useSplitSample(experimentId: number, sampleId: number) {
+export function useSplitSample(experimentId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(splitSampleMutator, { experimentId, sampleId, username, clientId: CLIENT_ID });
+  return useQueueMutation(splitSampleMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useDismissGroupingFlag(experimentId: number, sampleId: number) {
+export function useDismissGroupingFlag(experimentId: number) {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(dismissGroupingFlagMutator, { experimentId, sampleId, username, clientId: CLIENT_ID });
+  return useQueueMutation(dismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 /** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
@@ -1262,7 +1169,7 @@ export function useUpdateExperiment(experimentId: number) {
   const username = useAppState((s) => s.username);
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: api.ExperimentGeometryPatch) =>
+    mutationFn: (patch: api.ExperimentPatch) =>
       api.updateExperiment(experimentId, patch, { username, clientId: CLIENT_ID }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
@@ -1271,14 +1178,14 @@ export function useUpdateExperiment(experimentId: number) {
 }
 ```
 
-> **Confirm `useMutation`/`useQueryClient` imports** are present in `queries.ts` (TanStack) — add to the existing `@tanstack/react-query` import if not. `api.ExperimentGeometryPatch` is E1's (Task 2 of E1). `updateExperiment` is E1's widened fetcher.
+> **Confirm `useMutation`/`useQueryClient` imports** are present in `queries.ts` (TanStack) — add to the existing `@tanstack/react-query` import if not. `api.ExperimentPatch` is E1's (DECISION: renamed from `ExperimentGeometryPatch`; covers name/description/geometry ×6/patterns ×3). `updateExperiment` is E1's widened fetcher.
 
 - [ ] **Step 4: Run test → PASS + type-check (no `as never` left)**
 ```bash
 npm test -- test/structuralHooks.test.tsx test/groupingMutators.merge-split.test.ts test/groupingMutators.dismiss.test.ts
 npx tsc --noEmit -p tsconfig.json
 ```
-→ PASS. `tsc` must accept `useMergeSamples` WITHOUT an `as never` (the scope is `BaseScope`, the input carries both ids — Task 5).
+→ PASS. `tsc` must accept all hooks WITHOUT an `as never` (all entity ids are in the mutate() inputs, not the scope).
 
 - [ ] **Step 5: Commit**
 ```bash
@@ -1742,7 +1649,7 @@ The page wires `useLoads`, the `Needs review`/`All loads` filter, the fuzzy/glob
 
 **Files:**
 - Create: `src/print/components/GroupingReviewPage.tsx`
-- Create: `src/lib/grouping/matchSample.ts` (the glob/fuzzy matcher — pure, separately testable)
+- Create: `src/lib/matchSample.ts` (the glob/fuzzy matcher — pure, separately testable)
 - Test: `test/matchSample.test.ts`, `test/GroupingReviewPage.filter.test.tsx`
 
 - [ ] **Step 1: Write the failing matcher test**
@@ -1750,7 +1657,7 @@ The page wires `useLoads`, the `Needs review`/`All loads` filter, the fuzzy/glob
 Create `test/matchSample.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { matchSample } from "../src/lib/grouping/matchSample";
+import { matchSample } from "../src/lib/matchSample";
 import type { LoadSample } from "../src/api";
 
 const s: LoadSample = {
@@ -1773,9 +1680,9 @@ describe("matchSample", () => {
 
 - [ ] **Step 3: Implement the matcher**
 
-Create `src/lib/grouping/matchSample.ts` (port the prototype's `matchSample` glob logic):
+Create `src/lib/matchSample.ts` (matches the flat layout of existing `experimentFilter.ts`/`seriesRatio.ts`):
 ```ts
-import type { LoadSample } from "../../api";
+import type { LoadSample } from "../api";
 
 /** Fuzzy/glob match against a sample's name and exposure filenames.
  *  `*` → any run, `?` → one char (anchored at start); otherwise substring. */
@@ -1903,7 +1810,7 @@ import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
-import { matchSample } from "../../lib/grouping/matchSample";
+import { matchSample } from "../../lib/matchSample";
 
 type Filter = "attn" | "all";
 
@@ -2044,11 +1951,9 @@ npx tsc --noEmit -p tsconfig.json
 
 - [ ] **Step 9: Commit**
 ```bash
-git add src/print/components/GroupingReviewPage.tsx src/print/components/GroupingBulkBar.tsx src/lib/grouping/matchSample.ts test/GroupingReviewPage.filter.test.tsx test/matchSample.test.ts
+git add src/print/components/GroupingReviewPage.tsx src/print/components/GroupingBulkBar.tsx src/lib/matchSample.ts test/GroupingReviewPage.filter.test.tsx test/matchSample.test.ts
 git commit -m "feat(grouping): GroupingReviewPage filter + persistent ordered selection + glob matcher + bulk bar"
 ```
-
-> **Add a `GroupingBulkBar` unit test** (own file `test/GroupingBulkBar.test.tsx`) asserting: renders the count + noun (pluralized), the primary button is disabled when `primaryEnabled={false}`, `onPrimary`/`onClear` fire. Stage it in this commit. (FIX 7 requires the new bar carry its own test.)
 
 ---
 
@@ -2082,14 +1987,15 @@ const LOADS: Load[] = [
 
 vi.mock("../src/queries", async (orig) => {
   const actual = await orig<typeof import("../src/queries")>();
+  // Hooks now take only experimentId (settled in Task 9 — entity ids go in mutate input).
   return {
     ...actual,
     useLoads: () => ({ data: LOADS, isLoading: false }),
-    useMergeSamples: () => ({ mutate: mergeMutate, isPending: false }),
-    useRenameSample: () => ({ mutate: renameMutate, isPending: false }),
-    useMoveExposure: () => ({ mutate: vi.fn(), isPending: false }),
-    useSplitSample: () => ({ mutate: vi.fn(), isPending: false }),
-    useDismissGroupingFlag: () => ({ mutate: vi.fn(), isPending: false }),
+    useMergeSamples: (_experimentId: number) => ({ mutate: mergeMutate, isPending: false }),
+    useRenameSample: (_experimentId: number) => ({ mutate: renameMutate, isPending: false }),
+    useMoveExposure: (_experimentId: number) => ({ mutate: vi.fn(), isPending: false }),
+    useSplitSample: (_experimentId: number) => ({ mutate: vi.fn(), isPending: false }),
+    useDismissGroupingFlag: (_experimentId: number) => ({ mutate: vi.fn(), isPending: false }),
   };
 });
 
@@ -2118,13 +2024,13 @@ describe("GroupingReviewPage edits", () => {
 
 In `GroupingReviewPage.tsx`:
 - Import `useMergeSamples`, `useRenameSample`, `useMoveExposure`, `useSplitSample`, `useDismissGroupingFlag`, `ModalShell`, `Button`, `Menu`, `Input`, `showToast` (from `lib/toast`), and `useUndoStack`.
-- Instantiate the hooks scoped to `experimentId` (`useRenameSample`/`useMoveExposure`/`useDismissGroupingFlag` also take their entity id — but those are per-row; instantiate the row-scoped ones lazily or use the experiment-scoped variant that takes the id at call time. Simplest: the merge/split/dismiss/rename/move hooks all key off `experimentId`; pass the per-row sample/exposure id through the mutate INPUT, not the hook arg, where the mutator scope allows it. Re-check Task 9's hook arities — `useRenameSample(experimentId, sampleId)` is per-sample, so instantiate it inside `SampleFold` or hoist a single experiment-scoped rename hook. **Decide once:** make the row-scoped hooks take only `experimentId` and carry `sampleId`/`exposureId` in the mutate input (adjust Task 9 + the mutator scope accordingly), so the page instantiates each hook ONCE.)
+- Instantiate all five hooks scoped to `experimentId` only (SETTLED in Task 9 — row-scoped hooks take ONLY `experimentId`; entity ids travel in the `mutate()` input, so the page holds one instance of each hook and passes `sampleId`/`exposureId` at call time): `const renameMutate = useRenameSample(experimentId).mutate`, `const moveMutate = useMoveExposure(experimentId).mutate`, etc.
 - Add local state: `confirm: { kind: "merge"|"split"; … } | null`, `renamingId: number | null`, `movePicker: { sampleId; exposureId; anchorEl } | null`, and `const undoStack = useUndoStack<{ label: string; undo: () => void }>()`.
 - Replace `onMerge` noop: open a merge confirm; on confirm, `mergeMutate({ loserId, survivorId })` and `showToast(\`Merged into …\`, "info")` WITHOUT an undo action (merge is multi-row — one stamp can't reverse it server-side; spec §9.3 "undo is session-local" and v1 omits the merge undo action; flag to Jonathan in Self-Review).
-- Replace `onRename` noop: set `renamingId`; render the sample name as `Input variant="title"` in `SampleFold` when `renamingId === sample_id` (thread `renaming`/`onCommitRename` props into `SampleFold`); on commit, capture `prev = sample.name`, call `renameMutate({ name })`, then `undoStack.push({ label: "rename", undo: () => renameMutate({ name: prev }) })` and `showToast("Renamed", "info", { label: "Undo", onClick: () => { const e = undoStack.pop(); if (e) e.undo(); } })`.
+- Replace `onRename` noop: set `renamingId`; render the sample name as `Input variant="title"` in `SampleFold` when `renamingId === sample_id` (thread `renaming`/`onCommitRename` props into `SampleFold`); on commit, capture `prev = sample.name`, call `renameMutate({ sampleId, name })`, then `undoStack.push({ label: "rename", undo: () => renameMutate({ sampleId, name: prev }) })` and `showToast("Renamed", "info", { label: "Undo", onClick: () => { const e = undoStack.pop(); if (e) e.undo(); } })`.
 - Replace `onMoveExposure` noop: open a `Menu` anchored at the row listing same-load sibling samples; on pick, capture `fromSampleId`, call `moveMutate({ exposureId, sampleId: destId })`, push an undo that moves it back (`moveMutate({ exposureId, sampleId: fromSampleId })`), and show the toast with the Undo action.
-- Replace `onSplit` noop: open a split confirm previewing the two-way split at `flag.split_at_index` (or the midpoint for a manual split); on confirm, `splitMutate({ exposureIds, name })` + a no-action toast (multi-row).
-- Replace `onDismissFlag` noop: **a DURABLE mutation** — `dismissMutate({ flagKind: flag.kind, mergeWithSampleId: flag.kind === "merge" ? flag.merge_with_sample_id : undefined })` (spec §9.3: "Keep separate" writes `grouping_flag_dismissed`, suppressed in the roll-up across rescans — **NOT** a session-local `Set`). The optimistic mutator clears `sample.flag`, so the sample drops from "Needs review" immediately; the durable event keeps it gone. Show a toast with an Undo action that re-issues an inverse only if Phase D exposes an un-dismiss path; otherwise omit the action (the dismiss carries `undoes_event_id` server-side per §9.3, so a future un-dismiss is possible — for v1, omit the action and note it).
+- Replace `onSplit` noop: open a split confirm previewing the two-way split at `flag.split_at_index` (or the midpoint for a manual split); on confirm, `splitMutate({ sampleId, exposureIds, name })` + a no-action toast (multi-row).
+- Replace `onDismissFlag` noop: **a DURABLE mutation** — `dismissMutate({ sampleId, flagKind: flag.kind, mergeWithSampleId: flag.kind === "merge" ? flag.merge_with_sample_id : undefined })` (spec §9.3: "Keep separate" writes `grouping_flag_dismissed`, suppressed in the roll-up across rescans — **NOT** a session-local `Set`). The optimistic mutator clears `sample.flag`, so the sample drops from "Needs review" immediately; the durable event keeps it gone. Show a toast with an Undo action that re-issues an inverse only if Phase D exposes an un-dismiss path; otherwise omit the action (the dismiss carries `undoes_event_id` server-side per §9.3, so a future un-dismiss is possible — for v1, omit the action and note it).
 
 > **The "Needs review"/flagged counts derive from `sample.flag != null`** (the backend-produced flag), NOT a client-side `deriveFlag`. There is NO client-side flag derivation anywhere in this plan — `sample.flag` is read straight off the roll-up (spec §8.8/§9.3: the frontend is a pure consumer; the grouper computes the flag). Dismiss flips `flag` to null durably; it never recomputes it.
 
@@ -2180,11 +2086,14 @@ const LOADS: Load[] = [
 ];
 vi.mock("../src/queries", async (orig) => {
   const actual = await orig<typeof import("../src/queries")>();
+  // Hooks take only experimentId (settled in Task 9 — entity ids go in mutate input).
   return {
     ...actual, useLoads: () => ({ data: LOADS, isLoading: false }),
-    useMergeSamples: () => ({ mutate: mergeMutate, isPending: false }),
-    useRenameSample: () => ({ mutate: vi.fn() }), useMoveExposure: () => ({ mutate: vi.fn() }),
-    useSplitSample: () => ({ mutate: vi.fn() }), useDismissGroupingFlag: () => ({ mutate: vi.fn() }),
+    useMergeSamples: (_experimentId: number) => ({ mutate: mergeMutate, isPending: false }),
+    useRenameSample: (_experimentId: number) => ({ mutate: vi.fn() }),
+    useMoveExposure: (_experimentId: number) => ({ mutate: vi.fn() }),
+    useSplitSample: (_experimentId: number) => ({ mutate: vi.fn() }),
+    useDismissGroupingFlag: (_experimentId: number) => ({ mutate: vi.fn() }),
   };
 });
 const wrap = (n: ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{n}</QueryClientProvider>);
@@ -2253,7 +2162,7 @@ import { GeometryLedger, type GeometryRow } from "../src/print/components/Geomet
 
 const ROWS: GeometryRow[] = [
   { key: "beam_energy", label: "Beam energy", value: "9.00 keV", source: "prp" },
-  { key: "beam_center", label: "Beam center", value: "(421.4, 836.9)", source: "setup" },
+  { key: "beam_center_x", label: "Beam center X", value: "421.4 px", source: "setup" },
   { key: "flight_path", label: "Flight path", value: "1.81 m", source: "user" },
 ];
 
@@ -2405,7 +2314,7 @@ git commit -m "feat(config): GeometryLedger with provenance chips + override/rev
 
 ## Task 17: `SourcesCard` component
 
-Editable `{role, path}` rows (data dir, analysis dir, image/metadata/integration patterns) via edit-in-place, plus the "edits apply on the next rescan" hint and a Rescan-now affordance slot. Presentational; the page owns the values + onEdit.
+Renders the directory + pattern rows. The 3 pattern fields (`image_pattern`, `metadata_pattern`, `integration_pattern`) are NOW DEFINITE typed columns on `experiments` (E1 adds them via additive migration — DECISION); render them as EDITABLE (edit-in-place, triggers a rescan — backend handles rescan on pattern write; the frontend just PATCHes via `ExperimentPatch`). `data_dir` and `analysis_dir` are READ-ONLY (DECISION: the directory is fixed at create; do NOT add an edit affordance for them). Plus the "edits apply on the next rescan" hint and a Rescan-now affordance slot. Presentational; the page owns the values + onEdit.
 
 **Files:**
 - Create: `src/print/components/SourcesCard.tsx`
@@ -2509,6 +2418,8 @@ export function SourcesCard(p: SourcesCardProps): JSX.Element {
 ```
 
 > **Verified:** `Input` requires `value` + `onValueChange` and extends `InputHTMLAttributes` (omitting `size`), so `onKeyDown`/`onBlur`/`autoFocus` pass through; it has `mono`. `Button` has **no `size` prop** (removed `size="sm"`). `px-4.5` replaced with `px-4` (a real step). The edit-in-place value is a `<button>` that swaps to `Input` — appearance stays in the primitive. Run the guard.
+>
+> **DECISION: which rows are editable vs read-only.** `data_dir` and `analysis_dir` pass `editable={false}` (or are rendered as plain `<span>`s with no click-to-edit). The 3 pattern rows (`image_pattern`, `metadata_pattern`, `integration_pattern`) are editable (the DECISION adds them as typed `experiments` columns; editing a pattern writes via `ExperimentPatch` and the backend triggers a rescan). Do NOT render an edit affordance for `data_dir`/`analysis_dir` — the directory is fixed at create. If E1 has not yet landed the pattern columns, the implementer should STOP and confirm with the E1 owner before proceeding.
 
 - [ ] **Step 4: Run → PASS + guard + tsc**
 ```bash
@@ -2702,7 +2613,7 @@ git commit -m "feat(config): AcquisitionTimeline on the trace-plot render layer"
 
 ## Task 19: `ConfigurationBody` — compose the Configuration tab internals
 
-Fills the body of E1's `ExperimentConfigurationPage` shell: a two-column Geometry + Acquisition grid, then the Sources card. Owns the geometry override/undo state (via `useUndoStack`), the geometry override → `PATCH /api/experiments/{id}` mutation (`updateExperiment`), and the field-revert (revert to the derived value). Derives the geometry rows from the experiment detail (`*_source` fields) and the acquisition sessions from `useLoads`.
+Fills the body of E1's `ExperimentConfigurationPage` shell. The Configuration tab shows, in order: **editable description** (E1 owns the `description TEXT` column, the `ExperimentShell` name/description edit-in-place, and the `ExperimentPatch.description` field — E2 RENDERS the description here via `useExperiment` and `updateMutate`, consuming E1's work; no longer "unowned/missing"), **Geometry** (Override/Revert ledger), **Acquisition** (read-only timeline), **Sources** (editable patterns + read-only dirs). Owns the geometry override/undo state (via `useUndoStack`), the geometry override → `PATCH /api/experiments/{id}` mutation (`updateExperiment`), and the field-revert (revert to the derived value). Derives the geometry rows from the experiment detail (`*_source` fields) and the acquisition sessions from `useLoads`.
 
 **Files:**
 - Create: `src/print/components/ConfigurationBody.tsx`
@@ -2728,9 +2639,12 @@ vi.mock("../src/queries", async (orig) => {
     // beam_center_source): energy_kev_source, flight_path_m_source,
     // beam_center_x_source, beam_center_y_source, pixel_size_um_source,
     // q_units_source — plus ingest_status/scan_signature/last_scanned_at.
-    useExperimentDetail: () => ({
+    useExperiment: () => ({
       data: {
-        id: 7, name: "SSRL · 1p7m", path: "/d", data_dir: "/d", analysis_dir: "/d/analysis",
+        id: 7, name: "SSRL · 1p7m",
+        description: "April 2026 beamtime at SSRL 1p7m",
+        path: "/d", data_dir: "/d", analysis_dir: "/d/analysis",
+        image_pattern: "{name}.tiff", metadata_pattern: "{name}.prp", integration_pattern: "{name}.dat",
         manifest_path: null, created_at: "2026-04-12", q_units: "A^-1",
         energy_kev: 9.0, energy_kev_source: "prp",
         flight_path_m: 1.81, flight_path_m_source: "setup",
@@ -2749,8 +2663,10 @@ vi.mock("../src/queries", async (orig) => {
 const wrap = (n: ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{n}</QueryClientProvider>);
 
 describe("ConfigurationBody", () => {
-  it("renders the Geometry, Acquisition, and Sources cards", () => {
+  it("renders the description, Geometry, Acquisition, and Sources cards", () => {
     wrap(<ConfigurationBody experimentId={7} />);
+    // description (DECISION: E1-owned column; E2 renders it here)
+    expect(screen.getByText(/April 2026 beamtime/)).toBeInTheDocument();
     expect(screen.getByText("Geometry")).toBeInTheDocument();
     expect(screen.getByText("Acquisition")).toBeInTheDocument();
     expect(screen.getByText("Sources")).toBeInTheDocument();
@@ -2760,30 +2676,36 @@ describe("ConfigurationBody", () => {
     expect(screen.getByText("Beam energy")).toBeInTheDocument();
     expect(screen.getByText("setup files")).toBeInTheDocument(); // flight path + beam center source
   });
+  it("renders the 3 pattern rows as editable (E1 columns: image/metadata/integration_pattern)", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    expect(screen.getByText("{name}.tiff")).toBeInTheDocument();  // image_pattern
+  });
 });
 ```
 
-> **Adapt to E1's actual `Experiment` shape (verify before writing).** The mock mirrors E1's Task 1 `Experiment` extension: **per-field `*_source` columns** (`energy_kev_source`, `flight_path_m_source`, `beam_center_x_source`, `beam_center_y_source`, `pixel_size_um_source`, `q_units_source`) — there is **NO combined `beam_center_source`** and **NO `geometry_discrepancies` field**. The detail hook is `useExperimentDetail` (E1 Task 4); if E1 named it `useExperiment`, use that. **The file/source patterns** (`image_pattern`/`metadata_pattern`/`integration_pattern`) are NOT on the live `Experiment` type today — confirm whether E1/Phase-A added them; if not, the `SourcesCard` rows come from `data_dir`/`analysis_dir` only (+ patterns when available). Source `discrepancyCount` from a REAL derivation (see Step 3), not an invented `geometry_discrepancies`.
+> **Adapt to E1's actual `Experiment` shape (verify before writing).** The mock mirrors E1's `Experiment` extension: **per-field `*_source` columns** (`energy_kev_source`, `flight_path_m_source`, `beam_center_x_source`, `beam_center_y_source`, `pixel_size_um_source`, `q_units_source`) — there is **NO combined `beam_center_source`** and **NO `geometry_discrepancies` field**. The detail hook is `useExperiment` (E1). **Per the DECISION:** E1 adds `description TEXT` (nullable) and the 3 typed pattern columns (`image_pattern`, `metadata_pattern`, `integration_pattern`) via additive migration — E2 COUNTS on them existing. If E1 has not landed these columns yet, STOP and coordinate. `discrepancyCount` is `0` for v1 (DECISION: deferred, no backend field exists in Phase A–C — see Step 3).
 
 - [ ] **Step 2: Run → FAIL.** `npm test -- test/ConfigurationBody.test.tsx`
 
 - [ ] **Step 3: Implement**
 
 Create `src/print/components/ConfigurationBody.tsx`:
-- Read `useExperimentDetail(experimentId)` + `useLoads(experimentId)`; instantiate `useUpdateExperiment(experimentId)`.
-- Build `GeometryRow[]` from the typed fields, **each with its own per-field `*_source`** (NOT a combined source):
+- Read `useExperiment(experimentId)` + `useLoads(experimentId)`; instantiate `useUpdateExperiment(experimentId)`.
+- Build `GeometryRow[]` from the typed fields, **each with its own per-field `*_source`** (spec §8.1/§8.7 mandate per-field provenance):
   - `energy_kev` → "Beam energy" (`energy_kev_source`), value `\`${e.energy_kev?.toFixed(2)} keV\``
   - `flight_path_m` → "Flight path" (`flight_path_m_source`)
-  - **beam center → ONE row** "Beam center", value `\`(${bx}, ${by})\``, with a source that is `user` if EITHER `beam_center_x_source` or `beam_center_y_source` is `user`, else the (matching) derived source. (The two fields share a row visually but each carries its own provenance — surface the combined provenance: `x_source === y_source ? x_source : "user"` is the simple rule; refine if they can legitimately diverge.)
+  - `beam_center_x` → "Beam center X" (`beam_center_x_source`), value `\`${e.beam_center_x?.toFixed(1)} px\``
+  - `beam_center_y` → "Beam center Y" (`beam_center_y_source`), value `\`${e.beam_center_y?.toFixed(1)} px\``
   - `pixel_size_um` → "Pixel pitch" (`pixel_size_um_source`)
   - `q_units` → "q units" (`q_units_source`)
 - Use `useUndoStack<{ key; prevValue: number | string; prevSource }>` to back both per-field Revert AND the header "Undo last change". On Override commit: push `{ key, prevValue, prevSource }`, then `updateMutate({ <patchKey>: parsed })`. On Revert/Undo: `pop()` → re-`updateMutate` to the prev value (or, if Phase D supports it, clear the user source so the next scan re-derives — confirm).
-- **`discrepancyCount`**: derive it from a REAL signal, NOT an invented `geometry_discrepancies` field. Per spec §9.6, a multi-setup discrepancy is FLAGGED when constant geometry fields varied across PRPs. If E1/Phase-A exposes a `geometry_discrepancy_*` flag or a count on the experiment/loads, source it from there; otherwise compute it client-side from the data you have (e.g. count fields whose `*_source === "default"` meaning unresolved, or omit the banner for v1 and pass `discrepancyCount={0}`). **Do not pass a field that doesn't exist.** Document the chosen source inline.
+- **`discrepancyCount`**: no discrepancy field exists in Phase A–C; pass `discrepancyCount={0}` for v1 and add a `// TODO(Phase-D/E1): source from geometry_discrepancy when the field lands` comment. The banner is deferred. Do NOT invent a `geometry_discrepancies` field on `Experiment` or compute it client-side — the spec §9.6 discrepancy detection lives in the backend scan path (not yet built in A–C) and E1's `Experiment` type carries no such column.
 - Build `AcqSession[]` from `loads`: group by `start_time`'s date → session label; `loadFrameCounts` = each load's `frame_count`.
-- Build `SourceRow[]` from `data_dir`/`analysis_dir` (+ patterns IF E1 added them to `Experiment`); on edit, `updateMutate({ <field> })` (confirm `ExperimentGeometryPatch` accepts the field, or whether patterns need a different PATCH route — they may not be in the geometry patch).
-- Compose: a two-column grid (`grid grid-cols-2 gap-4` — layout utilities) with `GeometryLedger` + a `Card` wrapping `<h3>Acquisition</h3>` + `AcquisitionTimeline`, then `SourcesCard` full-width below.
+- Build `SourceRow[]` with `data_dir`/`analysis_dir` as read-only rows (no edit affordance — DECISION: directory is fixed at create) and `image_pattern`/`metadata_pattern`/`integration_pattern` as editable rows (DECISION: E1 adds these as typed columns; editing a pattern calls `updateMutate({ image_pattern: … })` via `ExperimentPatch` and the backend handles the rescan). The `ExperimentPatch` type (DECISION rename from `ExperimentGeometryPatch`) covers all three pattern fields; no separate PATCH route needed.
+- **Render the editable description** (DECISION: E1 owns the `description TEXT` column and the `ExperimentShell` name/description edit-in-place; E2 CONSUMES it here): read `experiment.description` from `useExperiment` and render it as a plain editable text area (or reuse E1's pattern if it exposed a standalone description editor) at the TOP of the Configuration body — before Geometry. On commit, call `updateMutate({ description })` (no rescan). If `experiment.description` is null/empty, show a placeholder ("Add a description…"). This is a plain write with no rescan (DECISION).
+- Compose, in order: (1) editable description at the top, (2) a two-column grid (`grid grid-cols-2 gap-4` — layout utilities) with `GeometryLedger` + a `Card` wrapping `<h3>Acquisition</h3>` + `AcquisitionTimeline`, (3) `SourcesCard` full-width below.
 
-> **Override mutation:** `updateExperiment`'s patch type is E1's `ExperimentGeometryPatch`. Map each geometry row key → its patch key + parse the display string back to a number ("9.00 keV" → `9.0`). Tolerant parsing; if unparseable, don't mutate (keep the inline edit open / mark invalid).
+> **Override mutation:** `updateExperiment`'s patch type is E1's `ExperimentPatch` (DECISION rename from `ExperimentGeometryPatch`; covers name/description/geometry ×6/patterns ×3). Map each geometry row key → its patch key + parse the display string back to a number ("9.00 keV" → `9.0`). Tolerant parsing; if unparseable, don't mutate (keep the inline edit open / mark invalid).
 
 - [ ] **Step 4: Run → PASS + guard + tsc**
 ```bash
@@ -2861,7 +2783,7 @@ git commit -m "test(e2e): grouping-review merge/split/move/undo + filter-then-se
 - **spec §8.8 shapes (authoritative, replacing the earlier E2 draft):** exposure key `.id` (not `exposure_id`); no `frame_no`/`status`; sample has `merged_into_id`, `grouping_source`/`name_source: string`; load keyed `load_id` (no top-level `id`/`experiment_id`). ALL fixtures rewritten to this.
 - **spec §9.3 event kinds (FIX 2):** **no `sample_merged`** (merge fans out as `exposure_moved`); split emits `sample_created` + `sample_split`; `grouping_flag_dismissed` is durable. The cache arms, the registry event map, and the dismiss-as-mutation all reflect this.
 
-**Fixes applied (mapped to the team-lead list):** 1 (E2 imports E1's `Load`/`queryKeys.loads`, all fixtures on `["experiment",id,"loads"]`, nested §8.8 shape) · 2 (no `deriveFlag`; reads `sample.flag`; dismiss is a durable `useDismissGroupingFlag` mutator + arm) · 3 (all five mutators invalidate `loads` in `onSuccess` for own-op reconcile; the foreign-tab `applyRemoteToCache` arms are E1-owned, Task 7 verifies them) · 4 (`request<T>` + `CLIENT_ID`) · 5 (imperative `showToast` action slot) · 6 (SearchInput `onChange`/`ariaLabel`, IconButton `label`, Checkbox `role=checkbox`) · 7 (local `GroupingBulkBar` + its own test) · 8 (`--color-accent-wash` token or primitive; no `bg-[color-mix]`) · 9 (`useUpdateExperiment` added; per-field `*_source` rows; real discrepancy source) · 10 (`MergeSamplesInput = {loserId,survivorId}`, no `as never`) · 11 (Task 0 verification-only; `update_sample` arm + SCHEMA bump are E1's) · 12 (real `AcquisitionChart.tsx` code, exempt prefix) · 13 (StrictMode-safe `pop()` hook; `px-4.5`→`px-4`; renamed `response.name` guard documented as own-op partial) · 14 (spec §9.6 hook names throughout).
+**Fixes applied (mapped to the team-lead list):** 1 (E2 imports E1's `Load`/`queryKeys.loads`, all fixtures on `["experiment",id,"loads"]`, nested §8.8 shape) · 2 (no `deriveFlag`; reads `sample.flag`; dismiss is a durable `useDismissGroupingFlag` mutator + arm) · 3 (all five mutators invalidate `loads` in `onSuccess` for own-op reconcile; the foreign-tab `applyRemoteToCache` arms are E1-owned, Task 7 verifies them) · 4 (`request<T>` + `CLIENT_ID`) · 5 (imperative `showToast` action slot) · 6 (SearchInput `onChange`/`ariaLabel`, IconButton `label`, Checkbox `role=checkbox`) · 7 (local `GroupingBulkBar`; coverage via page-level filter test `getByTestId('bulk-bar')`) · 8 (`--color-accent-wash` token or primitive; no `bg-[color-mix]`) · 9 (`useUpdateExperiment` uses `ExperimentPatch` (DECISION rename); per-field `*_source` rows; `discrepancyCount={0}` v1 deferred) · 10 (`MergeSamplesInput = {loserId,survivorId}`, no `as never`) · 11 (Task 0 verification-only; `update_sample` arm + SCHEMA bump are E1's) · 12 (real `AcquisitionChart.tsx` code, exempt prefix) · 13 (StrictMode-safe `pop()` hook; `px-4.5`→`px-4`; renamed `response.name` guard documented as own-op partial) · 14 (spec §9.6 hook names throughout). **DECISION revisions (2026-06-19):** description is E1-owned/E2-renders (Task 19); SourcesCard pattern rows DEFINITE editable (E1 adds columns); `data_dir`/`analysis_dir` READ-ONLY; `discrepancyCount={0}` v1 (deferred); `ExperimentGeometryPatch` renamed `ExperimentPatch` throughout. **Hook-arity fix (2026-06-19, MUST-FIX 1):** all row-scoped hooks (`useRenameSample`, `useMoveExposure`, `useSplitSample`, `useDismissGroupingFlag`) now take ONLY `experimentId`; entity ids (`sampleId`/`exposureId`) moved into the corresponding mutator Input types and the `mutate()` call — one hook instance per experiment, not per row. Task 14's re-decision paragraph removed; it now references the settled fact. **Optional guard tests removed (CUT 1):** Tasks 0/2/6/7 Step-2 guard test files (`labelCollapse.test.ts`, `loadsTypes.test.ts`, `loadsKey.test.ts`, `applyRemoteToCache.structural.e2guard.test.ts`) removed — the Step-1 grep/Read verification is the actual gate; these files tested E1's contracts, not E2 behavior.
 
 **Live APIs that DIFFERED from the original E2 draft's assumptions (the substantive corrections):**
 - `request<T>` is the only fetcher helper (draft assumed `getJSON`/`postJSON`/`patchJSON`).
@@ -2876,7 +2798,7 @@ git commit -m "test(e2e): grouping-review merge/split/move/undo + filter-then-se
 **Open questions the implementer must still resolve against E1/Phase-D:**
 1. **E1 must ship the NESTED §8.8 `Load`** (its Task 1 currently shows a flat one) — flagged as an E1 bug to fix in E1, not to route around. Tasks 0/2/6 are verification gates that STOP if E1's contract is wrong.
 2. **Phase D route paths + bodies** for merge/split/dismiss + the split event burst ordering (which frame of `sample_created`/`sample_split` carries the op's `client_op_id`) — trace before finalizing Tasks 3/5.
-3. **Real discrepancy source** for the geometry banner (Task 19) — use a real E1/Phase-A field or compute client-side; do not invent `geometry_discrepancies`.
+3. **Discrepancy banner** (Task 19) — **RESOLVED: pass `discrepancyCount={0}` for v1, deferred** (no backend discrepancy field exists in Phase A–C; the banner does not render). No open question.
 4. **`thumbSrcFor`** — reuse the existing detector-image-URL helper if one exists; `() => null` (placeholder) acceptable for v1.
 5. **Merge/split undo** — v1 shows their toasts WITHOUT an undo action (one stamp can't reverse a multi-row reassignment; spec §9.3); only rename/move get the undo action. Flag to Jonathan if product wants more.
 6. **`structuredClone`** in the test env — assumed present (Node 18+/JSDOM); verify.

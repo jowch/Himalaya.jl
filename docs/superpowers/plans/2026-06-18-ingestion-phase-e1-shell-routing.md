@@ -16,11 +16,13 @@
 
 ## Scope boundary (E1 vs E2)
 
-**E1 (this plan) owns:** IA/routing/chrome, the four page skeletons, the directory picker field, `Dropdown` + `StatBar` primitives, `api.ts` fetchers + the **canonical nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag` types + `queryKeys.loads` + `useLoads`** (E2 imports these, must NOT redefine), the `display_name → name` collapse + consumer sweep (Task 1b), the `ingestInFlight` store slice, the `ingest_*` SSE handling (App-listener short-circuit: store write + inline cache invalidation, with the canonical `applyRemoteToCache` arm as the tested copy), and the SSE RECEIVE path for the structural event kinds (`sample_renamed`, `exposure_moved`, `sample_created`, `sample_split`, `grouping_flag_dismissed` — **there is no `sample_merged`**).
+**E1 (this plan) owns:** IA/routing/chrome, the four page skeletons, the directory picker field, `Dropdown` + `StatBar` primitives, `api.ts` fetchers + the **canonical nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag` types + `queryKeys.loads` + `useLoads`** (E2 imports these, must NOT redefine), the `display_name → name` collapse + consumer sweep (Task 1b), the `ingestInFlight` store slice, the `ingest_*` SSE handling (App-listener short-circuit: store write + shared `invalidateIngestFrameCache` helper call; the canonical arms in `applyRemoteToCache` are the tested path for non-App callers), and the SSE RECEIVE path for the structural event kinds (`sample_renamed`, `exposure_moved`, `sample_created`, `sample_split`, `grouping_flag_dismissed` — **there is no `sample_merged`**).
 
 **E2 (a later plan) owns:** the grouping-review surface internals — `GroupingReviewPage`, `LoadFold`/`SampleFold`/`ExposureLeaf`, the bulk-select bar wiring, `GeometryLedger`, `AcquisitionTimeline`, `SourcesCard`, the `useUndoStack` extraction, and the structural MUTATIONS (merge/split/rename/move mutators + `useQueueMutation` wiring). Where this plan slots an E2 component, it renders a clearly-labelled placeholder and cross-references the E2 component by name. **Do not build E2's components here.**
 
-**Out of scope entirely (other phases):** the Julia backend (`prp.jl`/`geometry.jl`/`grouping.jl`/`scan_and_group!` = Phase B; scan/rescan routes + SSE + scheduler = Phase C; structural-edit event kinds backend = Phase D; the schema migrations = Phase A). This plan consumes those endpoints/frames; it does not implement them. Against a backend that has not shipped them, the new hooks simply return empty/loading — the tests here mock `fetch`/the API layer, so they never depend on a live backend.
+**E1 also owns (backend, Task 1c):** the additive migration (`description`/`image_pattern`/`metadata_pattern`/`integration_pattern` columns on experiments) + widening `PATCH /api/experiments/:id` to accept `name`/`description`/patterns (dropping them from `_READONLY_FIELDS`; rescan-on-pattern-change via `scan_signature = NULL`). This is the minimum backend that makes the ExperimentShell name/description edit-in-place and the E2 SourcesCard pattern rows work against a real backend. Geometry ×6 were already built in Phase C.
+
+**Out of scope entirely (other phases):** `prp.jl`/`geometry.jl`/`grouping.jl`/`scan_and_group!` = Phase B; scan/rescan routes + SSE + scheduler = Phase C; structural-edit event kinds backend = Phase D; the Phase A schema migrations (loads table, exposure grouping cols, dedup key). This plan consumes those endpoints/frames; it does not implement them. Against a backend that has not shipped them, the new hooks simply return empty/loading — the tests here mock `fetch`/the API layer, so they never depend on a live backend.
 
 ---
 
@@ -28,6 +30,10 @@
 
 | File | Responsibility | This plan |
 |---|---|---|
+| `packages/HimalayaUI/src/db.jl` (or migration runner) | additive `description`/`*_pattern` columns | MODIFY (Task 1c) |
+| `packages/HimalayaUI/src/routes_experiments.jl` | widen PATCH: drop name/description from `_READONLY_FIELDS`; pattern rescan | MODIFY (Task 1c) |
+| `packages/HimalayaUI/src/ingest.jl` (or scan entry) | scanner reads pattern cols with TOML fallback | MODIFY (Task 1c) |
+| `packages/HimalayaUI/test/test_experiments_patch.jl` | backend PATCH widening tests | CREATE (Task 1c) |
 | `src/api.ts` | fetchers + types (incl. nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag`) | MODIFY (Tasks 1, 1b, 2) |
 | `src/lib/sample/displayName.ts`, `lib/comparison/labels.ts`, `lib/scoping/proposeOrdering.ts`, `lib/queue/mutators/trivial.ts`, `print/components/AddSamplePicker.tsx`, `print/pages/{FocusPage,LoupePage,SeriesBuilderPage,SeriesScopingPage,builderAdapters}.tsx`, `print/shell/NavModal.tsx` | `display_name → name` consumer sweep | MODIFY (Task 1b) |
 | `src/state.ts` | Zustand store | MODIFY (Task 3) |
@@ -77,9 +83,10 @@ import { describe, it, expect } from "vitest";
 import type { Experiment, Sample, Load, GroupingFlag } from "../src/api";
 
 describe("ingestion api types (Phase E1)", () => {
-  it("Experiment carries typed geometry source tags + scan columns", () => {
+  it("Experiment carries typed geometry source tags + scan columns + E1 additive fields", () => {
     const e: Experiment = {
-      id: 1, name: "SSRL", path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
+      id: 1, name: "SSRL", description: "AgBe SAXS run", path: "/d",
+      data_dir: "/d/data", analysis_dir: "/d/an",
       manifest_path: null, created_at: "2026-04-12", q_units: "A^-1",
       beam_center_x: 421.4, beam_center_y: 836.9, pixel_size_um: 172, energy_kev: 9,
       flight_path_m: 1.8095,
@@ -87,9 +94,12 @@ describe("ingestion api types (Phase E1)", () => {
       beam_center_x_source: "setup", beam_center_y_source: "setup",
       pixel_size_um_source: "prp", q_units_source: "prp",
       last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "idle",
+      image_pattern: "*.tif", metadata_pattern: null, integration_pattern: null,
     };
     expect(e.flight_path_m_source).toBe("setup");
     expect(e.ingest_status).toBe("idle");
+    expect(e.description).toBe("AgBe SAXS run");
+    expect(e.image_pattern).toBe("*.tif");
   });
 
   it("Sample has a single non-null `name` label and no `display_name`", () => {
@@ -136,7 +146,7 @@ describe("ingestion api types (Phase E1)", () => {
 
 > The test imports `GroupingFlag` alongside `Experiment, Sample, Load` (add it to the import line). `Load` is the **nested** roll-up E2 consumes — E1 OWNS this shape; E2 must NOT redefine it. The flat-row shape an earlier draft used is wrong (it can't drive `LoadFold`/`SampleFold`/`ExposureLeaf`); the nested shape below is canonical (pinned in spec §8.8).
 
-- [ ] **Step 2: Run it red** — `npm test -- test/apiTypes.ingestion.test.ts` → FAIL (`Load` not exported; `*_source`/`ingest_status` missing on `Experiment`; `name` not required / `display_name` still present on `Sample`; the `@ts-expect-error` may even fail to compile the suite).
+- [ ] **Step 2: Run it red** — `npm test -- test/apiTypes.ingestion.test.ts` → FAIL (`Load` not exported; `*_source`/`ingest_status`/`description`/`image_pattern` missing on `Experiment`; `name` not required / `display_name` still present on `Sample`; the `@ts-expect-error` may even fail to compile the suite).
 
 - [ ] **Step 3: Implement**
 
@@ -149,6 +159,7 @@ export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "fai
 export interface Experiment {
   id: number;
   name: string | null;
+  description: string | null;     // Phase E1 additive column (Task 1c migration)
   path: string;
   data_dir: string;
   analysis_dir: string;
@@ -170,6 +181,11 @@ export interface Experiment {
   last_scanned_at: string | null;
   scan_signature: string | null;
   ingest_status: IngestStatus;
+  // Phase E1 additive columns: editable file-pattern globs (Task 1c migration).
+  // NULL = use legacy experiment.toml fallback.
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
 }
 ```
 
@@ -314,9 +330,172 @@ git commit -m "refactor: collapse samples.display_name into non-null name (all c
 
 ---
 
-## Task 2: `api.ts` — scan/ingest/experiment/loads fetchers + `ExperimentGeometryPatch`
+## Task 1c: Backend — additive migration + widen `PATCH /api/experiments/:id`
 
-Add the create-from-directory, rescan, loads roll-up, geometry PATCH, and directory-picker fetchers (spec §9.2). Widen `updateExperiment` from `Record<string, never>` to a typed geometry partial.
+**Before writing any frontend code for name/description/pattern editing (Tasks 2 and 10), the backend must be widened here.** This task is pure Julia; it touches no frontend files.
+
+**Background:** Phase C built `PATCH /api/experiments/:id` for geometry-only overrides and put `name` and `description` in `_READONLY_FIELDS` because no `description` column existed and the Phase-E1 migration hadn't landed. This task:
+
+1. Adds the missing columns via an additive migration (geometry-cols pattern — safe, backward-compat).
+2. Drops `name` and `description` from `_READONLY_FIELDS` so they are plain-writable (no `*_source` stamp — these are identity/documentation fields, not geometry).
+3. Makes `image_pattern`, `metadata_pattern`, `integration_pattern` patchable, where each write invalidates `scan_signature` (setting it to `NULL`) so the next scan re-discovers with the new glob.
+4. Keeps `data_dir`, `analysis_dir`, `manifest_path`, `path`, `id`, `created_at` read-only.
+
+**Files:**
+- Modify: `packages/HimalayaUI/src/db.jl` (or the migration runner, whichever applies the additive DDL) — add `description TEXT`, `image_pattern TEXT`, `metadata_pattern TEXT`, `integration_pattern TEXT` columns to `experiments`
+- Modify: `packages/HimalayaUI/src/routes_experiments.jl` — drop `"name"`, `"description"` from `_READONLY_FIELDS`; add `"image_pattern"`, `"metadata_pattern"`, `"integration_pattern"` as patchable with rescan-on-change (set `scan_signature = NULL`); keep `"data_dir"`, `"analysis_dir"`, `"manifest_path"`, `"path"`, `"id"`, `"created_at"` read-only
+- Modify: `packages/HimalayaUI/src/ingest.jl` (or the scan entry point) — scanner reads `image_pattern`/`metadata_pattern`/`integration_pattern` from the DB row first, falling back to the legacy `config` TOML blob when the column is `NULL` (experiment.toml is being retired)
+- Test: `packages/HimalayaUI/test/test_experiments_patch.jl` (CREATE or extend existing) — register in `runtests.jl` `ALL_ORDER` + one `GROUPS` bucket
+
+> **Test harness (as-built, must match):** route tests dispatch in-process: `with_inproc_routes(db) do call ... end`; fresh DB from `open_prepared_clone(tmp)`. Body bytes: `Vector{UInt8}(JSON3.write(Dict(...)))`. Headers: `["Content-Type"=>"application/json", "X-Username"=>"alice"]`. `call` never throws on 4xx/5xx; no `status_exception=false` needed.
+
+> **Geometry ×6 already work** — Phase C built those (field + `*_source = 'user'` write). This task only widens the route further; do NOT re-spec or re-implement the geometry arm.
+
+- [ ] **Step 1: Write the failing test**
+
+```julia
+# packages/HimalayaUI/test/test_experiments_patch.jl
+using Test, JSON3, HimalayaUI
+using HimalayaUI: with_inproc_routes, open_prepared_clone
+
+@testset "PATCH /api/experiments/:id — widened fields" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            # seed a minimal experiment row
+            body_create = Vector{UInt8}(JSON3.write(Dict("path" => tmp, "name" => "test")))
+            r = call("POST", "/api/experiments"; headers=["Content-Type"=>"application/json","X-Username"=>"alice"], body=body_create)
+            exp_id = JSON3.read(r.body)["id"]
+
+            # name is patchable (not in _READONLY_FIELDS)
+            r2 = call("PATCH", "/api/experiments/$exp_id";
+                headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
+                body=Vector{UInt8}(JSON3.write(Dict("name" => "renamed"))))
+            @test r2.status == 200
+            r2b = call("GET", "/api/experiments/$exp_id")
+            @test JSON3.read(r2b.body)["name"] == "renamed"
+
+            # description is patchable
+            r3 = call("PATCH", "/api/experiments/$exp_id";
+                headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
+                body=Vector{UInt8}(JSON3.write(Dict("description" => "AgBe SAXS run"))))
+            @test r3.status == 200
+            r3b = call("GET", "/api/experiments/$exp_id")
+            @test JSON3.read(r3b.body)["description"] == "AgBe SAXS run"
+
+            # image_pattern is patchable AND resets scan_signature
+            r4 = call("PATCH", "/api/experiments/$exp_id";
+                headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
+                body=Vector{UInt8}(JSON3.write(Dict("image_pattern" => "*.tif"))))
+            @test r4.status == 200
+            r4b = call("GET", "/api/experiments/$exp_id")
+            exp4 = JSON3.read(r4b.body)
+            @test exp4["image_pattern"] == "*.tif"
+            @test ismissing(exp4["scan_signature"]) || exp4["scan_signature"] === nothing
+
+            # data_dir stays read-only (400)
+            r5 = call("PATCH", "/api/experiments/$exp_id";
+                headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
+                body=Vector{UInt8}(JSON3.write(Dict("data_dir" => "/other"))))
+            @test r5.status == 400
+        end
+    end
+end
+```
+
+- [ ] **Step 2: Run it red** — `julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' 2>&1 | grep -A5 "widened"` → FAIL (name/description 400, pattern fields unknown column or 400, scan_signature not reset).
+
+- [ ] **Step 3: Implement**
+
+**Migration (additive, geometry-cols precedent):** In the migration runner / `db.jl`, add:
+
+```julia
+# Phase E1: editable config columns on experiments
+# Additive — safe to run against old DBs (ADD COLUMN does not rewrite existing rows).
+for col in [
+    "description TEXT",
+    "image_pattern TEXT",
+    "metadata_pattern TEXT",
+    "integration_pattern TEXT",
+]
+    try
+        DBInterface.execute(db, "ALTER TABLE experiments ADD COLUMN $col")
+    catch
+        # column already exists (idempotent)
+    end
+end
+```
+
+**Route widening (`routes_experiments.jl`):** Change `_READONLY_FIELDS` from:
+
+```julia
+const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
+                           "id", "created_at", "name", "description"]
+```
+
+to (drop `"name"` and `"description"`):
+
+```julia
+const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
+                           "id", "created_at"]
+```
+
+**Extend the SET-clause builder.** The live handler (`routes_experiments.jl:222-248`) builds `set_clauses::Vector{String}` + `params::Vector{Any}` by looping **only over `_GEOMETRY_PATCH_FIELDS`** (geometry value `+` `<field>_source = 'user'`), then 400s if `isempty(set_clauses)`. Dropping `name`/`description` from `_READONLY_FIELDS` is **necessary but not sufficient** — without writing them into `set_clauses` they fall through to that 400. Add two more module consts and two append loops **after** the geometry loop, writing into the **same** `set_clauses`/`params` arrays:
+
+```julia
+# (module top, beside _GEOMETRY_PATCH_FIELDS / _READONLY_FIELDS)
+const _PLAIN_PATCH_FIELDS = ["name", "description"]                                # plain write, NO *_source, NO rescan
+const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]  # plain write + rescan trigger
+```
+
+```julia
+# ... after the existing `for field in _GEOMETRY_PATCH_FIELDS ... end` loop,
+#     reusing the SAME set_clauses / params that the geometry loop appended to:
+
+# Plain identity fields: no *_source stamp, no rescan.
+for field in _PLAIN_PATCH_FIELDS
+    val = get(body, Symbol(field), get(body, field, nothing))
+    val === nothing && continue
+    push!(set_clauses, "$field = ?"); push!(params, val)
+end
+
+# Pattern fields: plain write + invalidate scan_signature so the next scan re-discovers.
+pattern_touched = false
+for field in _PATTERN_FIELDS
+    val = get(body, Symbol(field), get(body, field, nothing))
+    val === nothing && continue
+    push!(set_clauses, "$field = ?"); push!(params, val)
+    pattern_touched = true
+end
+pattern_touched && push!(set_clauses, "scan_signature = NULL")
+```
+
+Now a `name`/`description`/pattern-only body produces non-empty `set_clauses`, so the existing `isempty(set_clauses) && return 400` check passes and the existing `UPDATE experiments SET $(join(set_clauses, ", ")) WHERE id = ?` writes the new fields under `_DB_WRITE_LOCK` + transaction — no other handler changes needed. Also widen the no-patchable-fields 400 message to mention the new accepted fields (currently it names only the geometry fields).
+
+> `name` and `description` are plain writes with no `*_source` stamp and NO rescan trigger; the 3 pattern fields are plain writes that additionally NULL `scan_signature` (one trigger regardless of how many patterns changed). Geometry fields keep their `<field>_source = 'user'` stamp (unchanged).
+
+**Scanner fallback (`ingest.jl` / `scan.jl`):** When reading glob patterns, prefer the DB columns over the legacy TOML blob:
+
+```julia
+image_pat = coalesce(exp.image_pattern, get(config, "image_pattern", "*.tif"))
+metadata_pat = coalesce(exp.metadata_pattern, get(config, "metadata_pattern", "*.prp"))
+integration_pat = coalesce(exp.integration_pattern, get(config, "integration_pattern", "*.dat"))
+```
+
+- [ ] **Step 4: Run it green** — suite green on the new test.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/HimalayaUI/src/ packages/HimalayaUI/test/test_experiments_patch.jl packages/HimalayaUI/test/runtests.jl
+git commit -m "feat(backend): additive migration + widen PATCH /api/experiments/:id (name/description/patterns; rescan-on-pattern-change)"
+```
+
+---
+
+## Task 2: `api.ts` — scan/ingest/experiment/loads fetchers + `ExperimentPatch`
+
+Add the create-from-directory, rescan, loads roll-up, experiment PATCH, and directory-picker fetchers (spec §9.2). Widen `updateExperiment` from `Record<string, never>` to the canonical typed `ExperimentPatch`. **E2 imports `ExperimentPatch` from here and must NOT redefine it.**
 
 **Files:**
 - Modify: `src/api.ts` (after the existing Experiments block ~118-127)
@@ -376,11 +555,23 @@ describe("ingestion fetchers (Phase E1)", () => {
 
   it("updateExperiment PATCHes a geometry partial", async () => {
     const spy = mockFetchSpy({ id: 7, flight_path_m: 1.81, flight_path_m_source: "user" });
-    const patch: api.ExperimentGeometryPatch = { flight_path_m: 1.81 };
+    const patch: api.ExperimentPatch = { flight_path_m: 1.81 };
     await api.updateExperiment(7, patch, { username: "u" });
     expect(spy.mock.calls[0]![0]).toBe("/api/experiments/7");
     expect((spy.mock.calls[0]![1] as RequestInit).method).toBe("PATCH");
     expect(JSON.parse((spy.mock.calls[0]![1] as RequestInit).body as string)).toEqual({ flight_path_m: 1.81 });
+  });
+
+  it("updateExperiment accepts name + description + file patterns", async () => {
+    const spy = mockFetchSpy({ id: 7, name: "renamed" });
+    const patch: api.ExperimentPatch = {
+      name: "renamed", description: "AgBe run",
+      image_pattern: "*.tif", metadata_pattern: "*.prp", integration_pattern: "*.dat",
+    };
+    await api.updateExperiment(7, patch, { username: "u" });
+    const sent = JSON.parse((spy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(sent.name).toBe("renamed");
+    expect(sent.image_pattern).toBe("*.tif");
   });
 
   it("suggestPaths GETs /api/fs/suggest?prefix=…", async () => {
@@ -413,11 +604,16 @@ function mockFetchSpy(body: unknown) {
 - [ ] **Step 3: Implement** — append to `src/api.ts` (after the Experiments block, ~line 127). Replace the existing `updateExperiment` (lines 123-127) and add the rest:
 
 ```ts
-/** Typed PATCH body for `PATCH /api/experiments/:id`. Replaces the read-only
- *  `Record<string,never>` stub. Any geometry field set here is written + its
- *  `*_source` is stamped `user` server-side (spec §9.2). Name/description are
- *  also editable in place (Configuration header). */
-export interface ExperimentGeometryPatch {
+/** Canonical PATCH body for `PATCH /api/experiments/:id`. **E1 DEFINES,
+ *  E2 IMPORTS — never redefine.** All fields are optional; the backend
+ *  writes what is present:
+ *  - name/description: plain writes, NO *_source stamp, NO rescan.
+ *  - Geometry ×6: each field written + *_source stamped 'user' server-side
+ *    (already built in Phase C — this widens the same route).
+ *  - File patterns ×3: plain write + scan_signature invalidated server-side
+ *    so the next scan re-discovers with the new glob.
+ *  - data_dir/analysis_dir/path are READ-ONLY (400 if sent). */
+export interface ExperimentPatch {
   name?: string;
   description?: string;
   energy_kev?: number;
@@ -426,11 +622,14 @@ export interface ExperimentGeometryPatch {
   beam_center_y?: number;
   pixel_size_um?: number;
   q_units?: string;
+  image_pattern?: string;
+  metadata_pattern?: string;
+  integration_pattern?: string;
 }
 
 export const updateExperiment = (
   id: number,
-  patch: ExperimentGeometryPatch,
+  patch: ExperimentPatch,
   opts?: AuthOpts,
 ) => request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
 
@@ -603,9 +802,9 @@ git commit -m "feat(state): ephemeral ingestInFlight slice + setters (not persis
 
 ## Task 4: `queries.ts` — `queryKeys` + read hooks for experiment detail / loads
 
-Add `queryKeys.loads(id)` (distinct from `queryKeys.samples(experimentId)`, and shaped like it — `id ?? "none"`-tolerant), plus the read hooks `useExperimentDetail`, `useLoads`. (Mutation hooks — `useStartIngest`, `useSaveGeometryOverride`, the structural-edit hooks — are E2 / deferred; this plan adds only the read hooks the skeleton pages need.)
+Add `queryKeys.loads(id)` (distinct from `queryKeys.samples(experimentId)`, and shaped like it — `id ?? "none"`-tolerant), plus the read hook `useLoads`. (Mutation hooks — `useStartIngest`, `useSaveGeometryOverride`, the structural-edit hooks — are E2 / deferred; this plan adds only the read hook the skeleton pages need. The Configuration page calls `useExperiment` directly.)
 
-> **`experimentConfig` dropped (was a no-op):** the Configuration page reads the experiment detail off `useExperimentDetail` (= `queryKeys.experiment(id)`), not a separate `config` cache row — there is no `/config` endpoint and nothing invalidates a `config` key. Minting `queryKeys.experimentConfig` would be a dead key. If E2 later adds a distinct config resource it can mint the key then. **`useExperimentDetail` is an explicit thin alias of the existing `useExperiment(id)`** (already in `queries.ts:112`, same `enabled: id > 0` gate) — kept as a separate call-site name only so the new surfaces read intent-fully; it could equally just import `useExperiment`.
+> **Spec deviation — `queryKeys.experimentConfig` / `useExperimentConfig` / `useExperimentDetail` are NOT implemented (spec §9.6 names them).** The Configuration page reads from `useExperiment` (= `queryKeys.experiment(id)`, the same experiment detail row), not a separate `/config` resource and not an alias wrapper. There is no `/api/experiments/:id/config` endpoint in the as-built backend, and nothing invalidates a `config` key separately. Minting `queryKeys.experimentConfig` would produce a dead cache key that is never populated or invalidated. Decision: the Configuration page and ExperimentShell call `useExperiment` directly (same key, same `enabled: id > 0` gate). If E2 later requires a distinct config resource (e.g. pattern-set read from a new endpoint), it can mint the key then. The spec §9.6 references to `queryKeys.experimentConfig` and `useExperimentDetail` are superseded by this plan's scope.
 
 **Files:**
 - Modify: `src/queries.ts` (`queryKeys` object ~48-103; add hooks after `useExperiment` ~120)
@@ -618,7 +817,7 @@ Add `queryKeys.loads(id)` (distinct from `queryKeys.samples(experimentId)`, and 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { queryKeys, useExperimentDetail, useLoads } from "../src/queries";
+import { queryKeys, useLoads } from "../src/queries";
 import * as api from "../src/api";
 
 function wrapper() {
@@ -641,13 +840,6 @@ describe("ingestion queryKeys + hooks (Phase E1)", () => {
     expect(queryKeys.loads(undefined)).toEqual(["experiment", "none", "loads"]);
   });
 
-  it("useExperimentDetail fetches getExperiment, gated on id>0", async () => {
-    const spy = vi.spyOn(api, "getExperiment").mockResolvedValue({ id: 7 } as api.Experiment);
-    const { result } = renderHook(() => useExperimentDetail(7), { wrapper: wrapper() });
-    await waitFor(() => expect(result.current.data?.id).toBe(7));
-    expect(spy).toHaveBeenCalledWith(7);
-  });
-
   it("useLoads fetches listLoads", async () => {
     const spy = vi.spyOn(api, "listLoads").mockResolvedValue([]);
     const { result } = renderHook(() => useLoads(7), { wrapper: wrapper() });
@@ -657,7 +849,7 @@ describe("ingestion queryKeys + hooks (Phase E1)", () => {
 });
 ```
 
-- [ ] **Step 2: Run it red** — `npm test -- test/queriesIngestion.test.tsx` → FAIL (`queryKeys.loads`/`useExperimentDetail`/`useLoads` undefined).
+- [ ] **Step 2: Run it red** — `npm test -- test/queriesIngestion.test.tsx` → FAIL (`queryKeys.loads`/`useLoads` undefined).
 
 - [ ] **Step 3: Implement**
 
@@ -668,14 +860,9 @@ Add to the `queryKeys` object (after `samples:` ~line 52, mirroring its `id ?? "
     ["experiment", id ?? "none", "loads"] as const,
 ```
 
-Add the hooks after `useExperiment` (~line 121). `useExperimentDetail` is an explicit alias (`useExperiment` already exists at line 112 with the same gate):
+Add `useLoads` after `useExperiment` (~line 121). Callers that previously used `useExperimentDetail` call `useExperiment` directly — no alias is needed:
 
 ```ts
-/** Experiment detail incl. typed geometry + ingest status. Explicit alias of
- *  `useExperiment` (same key + `enabled: id > 0` gate) — a distinct call-site
- *  name for the new ingestion surfaces. */
-export const useExperimentDetail = useExperiment;
-
 /** The Load ▸ Sample ▸ Exposures roll-up (grouping-review + Configuration
  *  acquisition timeline read off this; spec §9.2/§9.6). Gated id>0 like
  *  useExperiment so a zero/undefined experiment never hits /loads. */
@@ -694,7 +881,7 @@ export function useLoads(id: number) {
 
 ```bash
 git add packages/HimalayaUI/frontend/src/queries.ts packages/HimalayaUI/frontend/test/queriesIngestion.test.tsx
-git commit -m "feat(queries): loads key + useExperimentDetail (alias) / useLoads hooks"
+git commit -m "feat(queries): loads key + useLoads hook"
 ```
 
 ---
@@ -1161,9 +1348,10 @@ describe("DirectoryPickerField (Phase E1)", () => {
 - [ ] **Step 3: Implement** — create `src/print/components/DirectoryPickerField.tsx`:
 
 ```tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "../ui/Input";
+import { Popover } from "../ui/Popover";
 import type { ValidatePathResponse } from "../../api";
 
 export interface DirectoryPickerFieldProps {
@@ -1179,10 +1367,19 @@ export interface DirectoryPickerFieldProps {
 }
 
 /**
- * DirectoryPickerField — path input + suggestion list + Tab/↑↓/↵ completion +
- * a validation line. No full file browser (spec §8.7). Composes `Input` and
- * design-system token utilities only (no inline appearance); the suggestion
- * list is a token-styled panel anchored under the field.
+ * DirectoryPickerField — path input + suggestion list (via Popover) +
+ * Tab/↑↓/↵ completion + a validation line. No full file browser (spec §8.7).
+ * Composes `Input`, `Popover`, and design-system token utilities only
+ * (no inline appearance); the suggestion list is anchored inside Popover,
+ * which provides outside-pointerdown dismiss, Escape close, and focus-return
+ * to the trigger — the functional gaps of a hand-rolled `<ul role=listbox>`.
+ *
+ * Popover trigger: the Input itself (its inner `<input>` receives the
+ * `onValueChange` + keyboard handlers via `...rest`; the Popover clone adds
+ * `aria-haspopup="dialog"` + `aria-expanded` without conflicting with those).
+ * The popover stays open whenever `suggestions.length > 0` — Popover's
+ * outside-pointerdown close matches the user expectation of clicking away to
+ * dismiss. Escape resets focus to the input (Popover handles it).
  */
 export function DirectoryPickerField({
   value,
@@ -1192,6 +1389,7 @@ export function DirectoryPickerField({
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
   const [active, setActive] = useState(0);
+  const inputFocusRef = useRef<HTMLInputElement>(null);
 
   const complete = (path: string): void => {
     onChange(path);
@@ -1217,43 +1415,59 @@ export function DirectoryPickerField({
     }
   };
 
+  // The Input is the Popover trigger. Popover's cloneElement adds
+  // aria-haspopup/aria-expanded/onClick to it; onValueChange and onKeyDown
+  // pass through Input's ...rest spread onto the inner <input>. The Popover
+  // open state is driven externally by whether suggestions is non-empty —
+  // we control `open` to avoid Popover's click-toggle interfering with the
+  // keyboard-driven flow (suggestions appear while typing, not on click).
+  // Popover's outside-pointerdown effect and Escape handler both fire when open.
+  const hasSuggestions = suggestions.length > 0;
+
   return (
     <div className={`flex flex-col gap-2 ${className}`.trim()}>
-      <Input
-        testId="dirpicker-input"
-        value={value}
-        onValueChange={onChange}
-        onKeyDown={onKeyDown}
-        mono
-        placeholder="/Volumes/data/ssrl/2026_04/…"
-        aria-label="Data directory"
-      />
-      {suggestions.length > 0 && (
-        <ul
-          data-testid="dirpicker-suggestions"
-          role="listbox"
-          aria-label="Directory suggestions"
-          className="rounded-sm border border-hair bg-plate py-1"
-        >
-          {suggestions.map((s, i) => (
-            <li key={s}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={i === active}
-                data-active={i === active ? "true" : undefined}
-                onClick={() => complete(s)}
-                className={
-                  "flex w-full px-3 py-1.5 text-left font-mono text-sm transition-colors " +
-                  (i === active ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink hover:bg-paper-sunk")
-                }
-              >
-                {s}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <Popover
+        trigger={
+          <Input
+            testId="dirpicker-input"
+            value={value}
+            onValueChange={onChange}
+            onKeyDown={onKeyDown}
+            mono
+            placeholder="/Volumes/data/ssrl/2026_04/…"
+            aria-label="Data directory"
+          />
+        }
+        label="Directory suggestions"
+        className="w-full"
+      >
+        {hasSuggestions && (
+          <ul
+            data-testid="dirpicker-suggestions"
+            role="listbox"
+            aria-label="Directory suggestions"
+            className="py-1"
+          >
+            {suggestions.map((s, i) => (
+              <li key={s}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  data-active={i === active ? "true" : undefined}
+                  onClick={() => complete(s)}
+                  className={
+                    "flex w-full px-3 py-1.5 text-left font-mono text-sm transition-colors " +
+                    (i === active ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink hover:bg-paper-sunk")
+                  }
+                >
+                  {s}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Popover>
       {validation && (
         <div
           data-testid="dirpicker-validation"
@@ -1270,7 +1484,7 @@ export function DirectoryPickerField({
 }
 ```
 
-> `text-error` is a token utility (`--color-error` exists in `styles.css:28`; `Input` itself uses the `border-error` family). The suggestion list + validation line use only token colour utilities (`bg-plate`, `text-ink*`, `bg-paper-sunk`, `border-hair`) and named scale roles (`text-sm`) — no inline appearance literals, so the design guard passes. `rounded-sm` is the 5px step. **`onKeyDown` flows through `Input`'s `...rest` onto the inner `<input>`** (confirmed `Input.tsx:84-95`), so the test fires keydown on `getByTestId("dirpicker-input").querySelector("input")`, not the wrapper.
+> `text-error` is a token utility (`--color-error` exists in `styles.css:28`; `Input` itself uses the `border-error` family). The suggestion list + validation line use only token colour utilities (`bg-plate`, `text-ink*`, `bg-paper-sunk`, `border-hair`) and named scale roles (`text-sm`) — no inline appearance literals, so the design guard passes. `rounded-sm` is the 5px step. **`onKeyDown` flows through `Input`'s `...rest` onto the inner `<input>`** (confirmed `Input.tsx:84-95`), so the test fires keydown on `getByTestId("dirpicker-input").querySelector("input")`, not the wrapper. **`Popover` provides the outside-pointerdown close, Escape close, and focus-return that the previous hand-rolled `<ul role=listbox>` lacked** (Popover.tsx:58-68 confirmed — the `useEffect` binds `pointerdown` to `document` only while open, and Escape fires `close()` which calls `triggerRef.current?.focus()`). Note: `Popover`'s `trigger` clone adds `onClick` (toggle) onto the Input — in jsdom this is harmless since the suggestions panel is conditionally rendered by `hasSuggestions`, but in production the Input receives a click-toggle in addition to its normal focus/change handlers. If this proves intrusive, the Popover open state can be lifted to a `useState(false)` driven by Input `onFocus`/`onBlur` — but test the simple composition first.
 
 - [ ] **Step 4: Run it green** — `npm test -- test/DirectoryPickerField.test.tsx` → PASS.
 
@@ -1398,7 +1612,7 @@ git commit -m "feat(shell): ExperimentTopNav (Experiments | Series axes)"
 
 ## Task 10: `ExperimentShell` (`src/print/shell/ExperimentShell.tsx`)
 
-The `/experiments/:id` layout route. Renders its own top chrome (wordmark + `ExperimentTopNav` + experiment header with edit-in-place name/description, rescan/ingest status, `StatBar` ledger) and the `Corpus | Configuration` tab bar above an `<Outlet>`. Sits **outside** `CorpusShell` (spec §9.6). Pulls the experiment from `useExperimentDetail(:id)`; rescan/ingest status reads `experiment.ingest_status` + `ingestInFlight[id]`. Name/description edit-in-place uses `Input variant="title"` wired to `updateExperiment` — for E1 the inline edit can be a controlled local draft that calls `updateExperiment` on commit (the PATCH route is widened in api Task 2; the backend route is Phase D, so against a stub it no-ops gracefully — the test mocks the API).
+The `/experiments/:id` layout route. Renders its own top chrome (wordmark + `ExperimentTopNav` + experiment header with edit-in-place name/description, rescan/ingest status, `StatBar` ledger) and the `Corpus | Configuration` tab bar above an `<Outlet>`. Sits **outside** `CorpusShell` (spec §9.6). Pulls the experiment from `useExperiment(:id)` (called directly — no alias); rescan/ingest status reads `experiment.ingest_status` + `ingestInFlight[id]`. Name/description edit-in-place uses `Input variant="title"` wired to `updateExperiment` — for E1 the inline edit is a controlled local draft that calls `updateExperiment` on commit (`PATCH /api/experiments/:id` is widened by Task 1c — `name` and `description` are live-writable on the real backend; the test mocks the API). **Do NOT add a DirectoryPickerField or path autocomplete to this shell** — the data directory is fixed at creation; spec §13's directory-edit / FS-sandboxing open question is moot for v1.
 
 **Files:**
 - Create: `src/print/shell/ExperimentShell.tsx`
@@ -1432,12 +1646,13 @@ function renderAt(path: string) {
 }
 
 const EXP: api.Experiment = {
-  id: 7, name: "SSRL · 1p7m", path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
+  id: 7, name: "SSRL · 1p7m", description: null, path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
   manifest_path: null, created_at: "2026-04-12", q_units: "A^-1",
   beam_center_x: 1, beam_center_y: 1, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8,
   energy_kev_source: "prp", flight_path_m_source: "setup", beam_center_x_source: "setup",
   beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
   last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "complete",
+  image_pattern: null, metadata_pattern: null, integration_pattern: null,
 };
 
 describe("ExperimentShell (Phase E1)", () => {
@@ -1447,7 +1662,10 @@ describe("ExperimentShell (Phase E1)", () => {
   it("renders own chrome (top nav) + the experiment header name", async () => {
     renderAt("/experiments/7/corpus");
     expect(screen.getByTestId("experiment-top-nav")).toBeInTheDocument();
-    expect(await screen.findByTestId("experiment-header-name")).toHaveTextContent("SSRL · 1p7m");
+    // The header name is an Input variant='title' (edit-in-place). Its wrapper
+    // div carries data-testid; the inner <input> carries the value attribute.
+    const nameWrapper = await screen.findByTestId("experiment-header-name");
+    expect(nameWrapper.querySelector("input")?.value).toBe("SSRL · 1p7m");
   });
 
   it("renders the Corpus | Configuration tab bar with the active tab", async () => {
@@ -1477,10 +1695,14 @@ describe("ExperimentShell (Phase E1)", () => {
 
 ```tsx
 import { Link, Outlet, useLocation, useParams } from "react-router-dom";
-import { useExperimentDetail } from "../../queries";
+import { useState } from "react";
+import { useExperiment } from "../../queries";
 import { useAppState } from "../../state";
+import * as api from "../../api";
+import { authOpts } from "../../lib/authOpts";
 import { Wordmark } from "../ui/Wordmark";
 import { Kicker } from "../ui/Kicker";
+import { Input } from "../ui/Input";
 import { StatBar } from "../ui/StatBar";
 import type { StatBarStat } from "../ui/StatBar";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -1508,10 +1730,32 @@ export function ExperimentShell(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
   const { pathname } = useLocation();
-  const exp = useExperimentDetail(expId);
+  const exp = useExperiment(expId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
+  const username = useAppState((s) => s.username);
 
-  const name = exp.data?.name ?? `Experiment ${expId}`;
+  // Controlled draft for the edit-in-place name field. Initialized from the
+  // loaded experiment; resets when the server data changes (e.g. after a
+  // commit from another tab). The commit handler calls updateExperiment PATCH
+  // (Task 1c widens the route to accept name as a plain-write field).
+  const serverName = exp.data?.name ?? "";
+  const [nameDraft, setNameDraft] = useState(serverName);
+  // Sync draft when server data first loads or changes externally.
+  // (useState initializer only runs once; use an effect for subsequent changes.)
+  const [lastServerId, setLastServerId] = useState(expId);
+  if (expId !== lastServerId) {
+    setLastServerId(expId);
+    setNameDraft(exp.data?.name ?? "");
+  }
+
+  const commitName = (): void => {
+    const trimmed = nameDraft.trim();
+    if (trimmed === serverName) return; // no-op
+    // authOpts omits undefined keys (exactOptionalPropertyTypes: true).
+    void api.updateExperiment(expId, { name: trimmed }, authOpts(username, undefined));
+  };
+
+  const name = serverName || `Experiment ${expId}`;
   const status = inFlight?.status ?? exp.data?.ingest_status ?? "idle";
   const isProcessing = status === "scanning" || status === "analyzing";
 
@@ -1549,9 +1793,20 @@ export function ExperimentShell(): JSX.Element {
         <div className="flex items-start justify-between gap-6">
           <div className="min-w-0">
             <Kicker>Experiment</Kicker>
-            <h1 data-testid="experiment-header-name" className="text-display text-ink truncate">
-              {name}
-            </h1>
+            {/* Edit-in-place name: Input variant='title' controlled by a local
+                draft; commits on blur / Enter via updateExperiment PATCH (Task
+                1c widens the route to accept name as a plain-write field). The
+                test spies on api.getExperiment so experiment-header-name is
+                populated by the resolved exp.data.name. */}
+            <Input
+              variant="title"
+              testId="experiment-header-name"
+              value={nameDraft || name}
+              onValueChange={setNameDraft}
+              onBlur={commitName}
+              onKeyDown={(e) => { if (e.key === "Enter") { commitName(); (e.target as HTMLElement).blur(); } }}
+              aria-label="Experiment name"
+            />
             {exp.data?.data_dir && (
               <p className="text-sm text-ink-soft font-mono mt-1 truncate">{exp.data.data_dir}</p>
             )}
@@ -1606,7 +1861,7 @@ export function ExperimentShell(): JSX.Element {
 }
 ```
 
-> `ProgressBar`'s API (confirmed against `src/print/ui/ProgressBar.tsx`): props are `value: number`, `total: number` (REQUIRED — NOT `max`), and optional `label`. The `pct` is `value/total`. All colours are `@theme` tokens; `border-b-2 border-accent` is a 2px tab underline (not a side-stripe — the guard only flags `border-l/r` > 1px), so the design guard passes.
+> `ProgressBar`'s API (confirmed against `src/print/ui/ProgressBar.tsx`): props are `value: number`, `total: number` (REQUIRED — NOT `max`), and optional `label`. The `pct` is `value/total`. All colours are `@theme` tokens; `border-b-2 border-accent` is a 2px tab underline (not a side-stripe — the guard only flags `border-l/r` > 1px), so the design guard passes. `Input variant="title"` is confirmed in `Input.tsx` as a valid variant (renders a styled headline-scale input). The wrapper div carries `data-testid`; `onBlur`/`onKeyDown` flow through `...rest` onto the inner `<input>` — the same `...rest` spread that `DirectoryPickerField` relies on. The `updateExperiment` call on commit threads `username` from Zustand (same pattern as other PATCH callers).
 
 - [ ] **Step 4: Run it green** — `npm test -- test/ExperimentShell.test.tsx` → PASS.
 
@@ -1654,12 +1909,13 @@ function renderPage() {
 }
 
 const EXP = (over: Partial<api.Experiment>): api.Experiment => ({
-  id: 7, name: "SSRL · 1p7m", path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
+  id: 7, name: "SSRL · 1p7m", description: null, path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
   manifest_path: null, created_at: "2026-04-12", q_units: "A^-1", beam_center_x: 1,
   beam_center_y: 1, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8,
   energy_kev_source: "prp", flight_path_m_source: "setup", beam_center_x_source: "setup",
   beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
-  last_scanned_at: null, scan_signature: null, ingest_status: "complete", ...over,
+  last_scanned_at: null, scan_signature: null, ingest_status: "complete",
+  image_pattern: null, metadata_pattern: null, integration_pattern: null, ...over,
 });
 
 describe("ExperimentsHomePage (Phase E1)", () => {
@@ -2024,23 +2280,45 @@ The Corpus tab body: reuses the shipped contact-sheet `SheetTable` scoped to the
 
 ```tsx
 // test/ExperimentCorpusPage.test.tsx
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExperimentCorpusPage } from "../src/print/pages/ExperimentCorpusPage";
 import { useAppState } from "../src/state";
+import * as api from "../src/api";
+import type { Load } from "../src/api";
 
-function renderAt(needReview: number, processing = false) {
+// Minimal load stub with a flagged merge discrepancy.
+const LOAD_WITH_FLAG: Load = {
+  load_id: 1, load_index: 1, session_id: null, start_time: null, end_time: null,
+  frame_count: 4, note: null,
+  samples: [
+    { sample_id: 9, name: "HA85", slot_index: 1, grouping_source: "computed",
+      name_source: "computed", merged_into_id: null,
+      flag: { kind: "merge", merge_with_sample_id: 10, merge_with_label: "HA86" },
+      exposures: [] },
+    { sample_id: 10, name: "HA86", slot_index: 2, grouping_source: "computed",
+      name_source: "computed", merged_into_id: null, flag: null, exposures: [] },
+    { sample_id: 11, name: "HA87", slot_index: 3, grouping_source: "computed",
+      name_source: "computed", merged_into_id: null,
+      flag: { kind: "split", split_at_index: 2, jump_from: 12.4, jump_to: 48.1 },
+      exposures: [] },
+    { sample_id: 12, name: "HA88", slot_index: 4, grouping_source: "computed",
+      name_source: "computed", merged_into_id: null, flag: null, exposures: [] },
+  ],
+};
+
+function renderAt(loads: Load[], processing = false) {
   if (processing) useAppState.setState({ ingestInFlight: { 7: { processed: 10, total: 100, status: "scanning" } } });
   else useAppState.setState({ ingestInFlight: null });
+  vi.spyOn(api, "listLoads").mockResolvedValue(loads);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/experiments/7/corpus"]}>
         <Routes>
-          <Route path="/experiments/:id/corpus"
-            element={<ExperimentCorpusPage __testReviewCount={needReview} />} />
+          <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -2048,28 +2326,32 @@ function renderAt(needReview: number, processing = false) {
 }
 
 describe("ExperimentCorpusPage (Phase E1)", () => {
+  beforeEach(() => vi.restoreAllMocks());
   afterEach(() => { useAppState.setState({ ingestInFlight: null }); vi.restoreAllMocks(); });
 
-  it("shows the grouping-review banner with the count + link when reviews are pending", () => {
-    renderAt(4);
-    const banner = screen.getByTestId("grouping-review-banner");
-    expect(banner).toHaveTextContent("4");
+  it("shows the grouping-review banner with the count + link when reviews are pending", async () => {
+    renderAt([LOAD_WITH_FLAG]);
+    // 2 flagged samples: LOAD_WITH_FLAG.samples[0] (merge) + [2] (split)
+    const banner = await screen.findByTestId("grouping-review-banner");
+    expect(banner).toHaveTextContent("2");
     expect(screen.getByTestId("grouping-review-link")).toHaveAttribute("href", "/experiments/7/grouping");
   });
 
-  it("hides the banner when nothing needs review", () => {
-    renderAt(0);
+  it("hides the banner when nothing needs review", async () => {
+    // Load with no flagged samples.
+    const cleanLoad: Load = { ...LOAD_WITH_FLAG,
+      samples: LOAD_WITH_FLAG.samples.map((s) => ({ ...s, flag: null })) };
+    renderAt([cleanLoad]);
+    await waitFor(() => expect(api.listLoads).toHaveBeenCalled());
     expect(screen.queryByTestId("grouping-review-banner")).toBeNull();
   });
 
-  it("renders the live-ingest placeholder while processing", () => {
-    renderAt(0, true);
+  it("renders the live-ingest placeholder while processing", async () => {
+    renderAt([], true);
     expect(screen.getByTestId("live-ingest-slot")).toBeInTheDocument();
   });
 });
 ```
-
-> `__testReviewCount` is an OPTIONAL override prop the test uses to force the count deterministically. In production it is `undefined` and the page derives the real count from `useLoads(expId)` — the number of `LoadSample`s across all loads whose `flag` is non-null (`flag` is a real backend field per the canonical contract, so no separate roll-up endpoint is needed). The test passes the prop to avoid mocking the loads query; production never sets it. This is a thin testing override, not a permanent fake — it can stay (it's `?`-optional and inert in prod) or be dropped once a `useLoads`-mocking test replaces it.
 
 - [ ] **Step 2: Run it red** — `npm test -- test/ExperimentCorpusPage.test.tsx` → FAIL (no page).
 
@@ -2081,12 +2363,6 @@ import { useAppState } from "../../state";
 import { useLoads } from "../../queries";
 import { Badge } from "../ui/Badge";
 
-export interface ExperimentCorpusPageProps {
-  /** OPTIONAL test override for the review count, so the test need not mock the
-   *  loads query. Undefined in production — the count derives from useLoads. */
-  __testReviewCount?: number;
-}
-
 /**
  * ExperimentCorpusPage — the Corpus tab body. Reuses the shipped SheetTable
  * contact sheet scoped to the experiment (E2 wires the table), with a sticky
@@ -2094,19 +2370,19 @@ export interface ExperimentCorpusPageProps {
  * (/experiments/:id/grouping). The live-ingest unfold (E2 LiveIngestUnfold)
  * replaces the table while ingestInFlight[id] is active.
  */
-export function ExperimentCorpusPage({ __testReviewCount }: ExperimentCorpusPageProps): JSX.Element {
+export function ExperimentCorpusPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const loads = useLoads(expId);
 
-  // Real review count: LoadSamples across all loads whose `flag` is non-null
-  // (a flagged merge/split discrepancy). The optional test prop overrides it.
-  const derivedReviewCount = (loads.data ?? []).reduce(
+  // Review count: LoadSamples across all loads whose `flag` is non-null
+  // (a flagged merge/split discrepancy). Derived from useLoads — tests mock
+  // api.listLoads via vi.spyOn, same pattern as Tasks 11–14.
+  const reviewCount = (loads.data ?? []).reduce(
     (n, l) => n + l.samples.filter((s) => s.flag !== null).length,
     0,
   );
-  const reviewCount = __testReviewCount ?? derivedReviewCount;
   const processing = inFlight?.status === "scanning" || inFlight?.status === "analyzing";
 
   return (
@@ -2148,7 +2424,7 @@ export function ExperimentCorpusPage({ __testReviewCount }: ExperimentCorpusPage
 }
 ```
 
-> `NoticePill` has only `new`/`draft` tones (`NoticePillTone` in `NoticePill.tsx`) — there is NO `warning` tone, so it cannot carry the review count. Use `Badge` (the inline mono count primitive) inside the banner span instead; the banner itself is a token-styled div (`bg-paper-sunk` + `border-hair-strong`). The scoped `SheetTable` reuse + the corpus-samples query plumbing belong to E2 (it owns the grouping-review data plane); E1 lands the banner (count derived from `useLoads`) + the slots. All colours are tokens; `rounded-sm` is the 5px step.
+> `NoticePill` has only `new`/`draft` tones (`NoticePillTone` in `NoticePill.tsx`) — there is NO `warning` tone, so it cannot carry the review count. Use `Badge` (the inline mono count primitive) inside the banner span instead; the banner itself is a token-styled div (`bg-paper-sunk` + `border-hair-strong`). The scoped `SheetTable` reuse + the corpus-samples query plumbing belong to E2 (it owns the grouping-review data plane); E1 lands the banner (count derived from `useLoads`) + the slots. All colours are tokens; `rounded-sm` is the 5px step. The test uses `vi.spyOn(api, "listLoads")` — the same QueryClient wrapper pattern used by Tasks 11–14 — rather than a test-only prop, keeping `ExperimentCorpusPage`'s public API free of production seams.
 
 - [ ] **Step 4: Run it green** — `npm test -- test/ExperimentCorpusPage.test.tsx` → PASS.
 
@@ -2163,7 +2439,12 @@ git commit -m "feat(pages): ExperimentCorpusPage banner + live-ingest/sheet slot
 
 ## Task 14: `ConfigurationPage` shell (`src/print/pages/ConfigurationPage.tsx`)
 
-The Configuration tab body shell: editable description region, a **Geometry** ledger region, and a **Sources** region. The internals — `GeometryLedger`, `AcquisitionTimeline`, `SourcesCard` — are **E2 components**; this page lays out the three regions and slots them as labelled placeholders, reading the experiment via `useExperimentDetail`.
+The Configuration tab body shell: editable description region, a **Geometry** ledger region, and a **Sources** region. The internals — `GeometryLedger`, `AcquisitionTimeline`, `SourcesCard` — are **E2 components**; this page lays out the three regions and slots them as labelled placeholders, reading the experiment via `useExperiment` (called directly).
+
+> **E2 ownership of SourcesCard:** E2 builds `SourcesCard` with the following field layout (DECISION):
+> - `image_pattern`, `metadata_pattern`, `integration_pattern` — **EDITABLE** edit-in-place rows wired to `updateExperiment` (patch triggers a rescan server-side via `scan_signature` invalidation).
+> - `data_dir`, `analysis_dir` — **READ-ONLY** display rows. The directory is fixed at experiment creation. **Do NOT add a DirectoryPickerField, path autocomplete, or validate-path backend call here** — spec §13's directory-edit / FS-sandboxing open question is moot for v1.
+> - Acquisition timeline: read-only / derived from the loads roll-up.
 
 **Files:**
 - Create: `src/print/pages/ConfigurationPage.tsx`
@@ -2181,12 +2462,13 @@ import { ConfigurationPage } from "../src/print/pages/ConfigurationPage";
 import * as api from "../src/api";
 
 const EXP: api.Experiment = {
-  id: 7, name: "SSRL", path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
+  id: 7, name: "SSRL", description: null, path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
   manifest_path: null, created_at: "2026-04-12", q_units: "A^-1", beam_center_x: 421,
   beam_center_y: 836, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095,
   energy_kev_source: "prp", flight_path_m_source: "setup", beam_center_x_source: "setup",
   beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
   last_scanned_at: null, scan_signature: null, ingest_status: "complete",
+  image_pattern: null, metadata_pattern: null, integration_pattern: null,
 };
 
 function renderPage() {
@@ -2220,7 +2502,7 @@ describe("ConfigurationPage (Phase E1 shell)", () => {
 
 ```tsx
 import { useParams } from "react-router-dom";
-import { useExperimentDetail } from "../../queries";
+import { useExperiment } from "../../queries";
 import { Card } from "../ui/Card";
 import { Kicker } from "../ui/Kicker";
 
@@ -2234,7 +2516,7 @@ import { Kicker } from "../ui/Kicker";
 export function ConfigurationPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
-  const exp = useExperimentDetail(expId);
+  const exp = useExperiment(expId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -2256,7 +2538,13 @@ export function ConfigurationPage(): JSX.Element {
 
       <Card padding="md" data-testid="config-sources-region">
         <Kicker>Sources</Kicker>
-        {/* E2 SourcesCard: editable {role, path} rows + file patterns. */}
+        {/* E2 SourcesCard: editable pattern rows + read-only directory rows.
+            DECISION (E1→E2 contract):
+            - image_pattern / metadata_pattern / integration_pattern: EDITABLE
+              edit-in-place rows wired to updateExperiment (rescan-on-change).
+            - data_dir / analysis_dir: READ-ONLY display rows (directory is
+              fixed at creation; no DirectoryPickerField / path-validation here).
+            E1 shows the static read-only dirs as a placeholder. */}
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
           <dt className="text-ink-soft">Data</dt>
           <dd className="font-mono text-ink truncate">{exp.data?.data_dir ?? "—"}</dd>
@@ -2487,6 +2775,8 @@ git commit -m "feat(shell): add Experiments stage tab to CorpusTopbar"
 
 Per spec §9.3/§9.6: add the four `ingest_*` cache arms in `applyRemoteToCache` that discriminate on the top-level `kind`, read `payload.experiment_id` (NEVER `remote.entity_id`), and invalidate the experiment's loads/samples caches — placed **before** the `default:` arm so they never reach the poisoning peaks/indices invalidation. The arms do **cache invalidation only**; the `ingestInFlight` store writes live in the separate `App.tsx` listener (Task 20), keeping `applyRemoteToCache` pure.
 
+Also **export a shared `invalidateIngestFrameCache(qc, expId, isComplete)` helper** (~6 lines) so Task 20's App listener can call it instead of duplicating the `invalidateQueries` calls inline. This eliminates the drift risk the self-review flags (open question #4). The helper is pure (no Zustand); store writes stay in the App listener.
+
 > **`SseEvent.kind` is ALREADY `string`** (confirmed `types.ts:148` — `kind: string`, not a literal union). So there is NOTHING to extend on the kind union — the new arms just add `case "ingest_progress":` etc. to the switch. `payload` is typed `unknown` (`types.ts:155`); the arms read it via the existing `payload?.experiment_id as number | undefined` cast idiom (same as every other arm). The ingest frame is **payload-wrapped** — `{ kind, payload: { experiment_id, processed, total } }` riding the "curation" event — so read `payload.experiment_id`, NOT `remote.entity_id`.
 
 **Files:**
@@ -2506,11 +2796,13 @@ import { queryKeys } from "../src/queries";
 import type { SseEvent } from "../src/lib/queue/types";
 
 function ingestFrame(kind: string, experiment_id: number, extra: Record<string, unknown> = {}): SseEvent {
-  // Per spec §9.3 the frame rides the curation channel; entity_id is a positive
-  // experiment id, kind discriminates, counts ride the payload.
+  // broadcast_progress! (events.jl:1158-1186) emits kind + payload at top-level;
+  // it does NOT emit a top-level entity_id. The payload sub-object carries
+  // experiment_id, processed, total. entity_id is -1 sentinel here (not emitted
+  // by the real backend for ingest frames; the arms read payload.experiment_id).
   return {
     kind,
-    entity_id: experiment_id,
+    entity_id: -1,
     entity_type: "experiment",
     payload: { experiment_id, ...extra },
   } as unknown as SseEvent;
@@ -2553,7 +2845,30 @@ describe("ingest_* cache arms (Phase E1)", () => {
 
 - [ ] **Step 4: (no types.ts change needed)** — `SseEvent.kind` is already `string` (confirmed). The new `case` labels below compile against it directly. Skip straight to adding the arms.
 
-- [ ] **Step 5: Add the `ingest_*` arms** in `applyRemoteToCache.ts`, **before** the `default:` case (line 334):
+- [ ] **Step 5: Add the `invalidateIngestFrameCache` helper and the `ingest_*` arms** in `applyRemoteToCache.ts`.
+
+First, export the shared helper **near the top of the file** (before the `applyRemoteToCache` function), so both the switch arms and the App listener can call it without duplicating the `invalidateQueries` calls:
+
+```ts
+/**
+ * Shared cache-invalidation helper for ingest-frame side-effects. Exported so
+ * `App.tsx`'s SSE listener can call the same invalidations without duplicating
+ * them inline (the listener still owns the Zustand store write; this helper is
+ * pure cache-only). `isComplete=true` also refetches the experiment detail row
+ * (so `ingest_status` transitions from "analyzing" → "complete").
+ */
+export function invalidateIngestFrameCache(
+  qc: QueryClient,
+  expId: number,
+  isComplete: boolean,
+): void {
+  qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+  qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  if (isComplete) qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
+}
+```
+
+Then add the `ingest_*` arms **before** the `default:` case (line 334), calling the helper:
 
 ```ts
     case "ingest_started":
@@ -2565,19 +2880,14 @@ describe("ingest_* cache arms (Phase E1)", () => {
       // is invalidation-only (the ingestInFlight store write lives in the
       // separate App.tsx listener — applyRemoteToCache stays pure).
       const expId = payload?.experiment_id as number | undefined;
-      if (expId === undefined) break;
-      qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
-      qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, false);
       break;
     }
     case "ingest_complete": {
       // Authoritative terminal frame (the 64-slot channel may drop progress
       // frames at 680-exposure scale; treat complete as the source of truth).
       const expId = payload?.experiment_id as number | undefined;
-      if (expId === undefined) break;
-      qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
-      qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
-      qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, true);
       break;
     }
 ```
@@ -2742,12 +3052,12 @@ git commit -m "feat(queue): structural grouping SSE receive (rename splice; move
 Per spec §9.3/§9.6: the `ingest_*` store writes go in the `App.tsx` SSE listener (Zustand is NOT imported in `applyRemoteToCache`, which stays pure). On an `ingest_*` frame:
 
 1. write/clear the `ingestInFlight` store entry, then
-2. invalidate the experiment's loads/samples caches **inline** (the same effect Task 18's arm would have), then
+2. call `invalidateIngestFrameCache(qc, expId, isComplete)` (exported from `applyRemoteToCache.ts` in Task 18 — NOT an inline duplicate), then
 3. **`return` — do NOT fall through to `handleRemoteEvent`**.
 
 The short-circuit matters: `handleRemoteEvent` runs the full queue reconciliation (own-op deferred match → otherwise rollback-and-rerun every pending mutation). An `ingest_*` frame is broadcast-only — it is no tab's own op — so feeding it to `handleRemoteEvent` would needlessly roll back and re-run the user's in-flight peak/tag edits on every progress tick (hundreds of frames at 680-exposure scale). Returning early avoids that.
 
-> **Consequence for Task 18:** with the App listener short-circuiting `ingest_*`, the cache invalidation must happen in the App listener (step 2 above) since `handleRemoteEvent`→`applyRemoteToCache` is no longer reached for those frames. Task 18's `applyRemoteToCache` arms still exist as the canonical/tested cache effect AND as the path for any non-App caller; the App listener duplicates the same `invalidateQueries(loads/samples)` inline. Keep the two in sync (both read `payload.experiment_id`). The STRUCTURAL frames (Task 19) are NOT short-circuited — they DO flow through `handleRemoteEvent` (they can be own-ops in E2), so their cache effect stays in `applyRemoteToCache`.
+> **On Task 18 / Task 20 coordination:** Task 20 calls `invalidateIngestFrameCache` (the exported helper from Task 18) — there is NO duplication of `invalidateQueries` calls between the two. The App listener owns the store write (Zustand stays out of `applyRemoteToCache`); the cache invalidation is a single function defined once in `applyRemoteToCache.ts` and called from both the switch arm (the path for any non-App caller) and the App listener. The STRUCTURAL frames (Task 19) are NOT short-circuited — they DO flow through `handleRemoteEvent` (they can be own-ops in E2), so their cache effect stays in `applyRemoteToCache`.
 
 **Files:**
 - Modify: `src/print/App.tsx` (the SSE `useEffect` ~31-42)
@@ -2836,10 +3146,11 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
 
 - [ ] **Step 2: Run it red** — `npm test -- test/App.ingestListener.test.tsx` → FAIL (no store write happens).
 
-- [ ] **Step 3: Implement** — in `src/print/App.tsx`, extend the SSE `useEffect`. Import the store and read the two setters at the top of `PrintApp`:
+- [ ] **Step 3: Implement** — in `src/print/App.tsx`, extend the SSE `useEffect`. Import the store, the helper, and the two setters:
 
 ```tsx
 import { useAppState } from "../state";
+import { invalidateIngestFrameCache } from "../lib/queue/applyRemoteToCache";
 ```
 
 Inside `PrintApp`, before the SSE effect:
@@ -2849,7 +3160,7 @@ Inside `PrintApp`, before the SSE effect:
   const clearIngestProgress = useAppState((s) => s.clearIngestProgress);
 ```
 
-Replace the SSE listener body (lines 33-40) to short-circuit `ingest_*` (store write + inline cache invalidation + RETURN), then run the queue path for everything else:
+Replace the SSE listener body (lines 33-40) to short-circuit `ingest_*` (store write + shared cache helper + RETURN), then run the queue path for everything else:
 
 ```tsx
     es.addEventListener("curation", (e) => {
@@ -2859,9 +3170,9 @@ Replace the SSE listener body (lines 33-40) to short-circuit `ingest_*` (store w
         // it HERE and RETURN — do NOT feed it to handleRemoteEvent, whose queue
         // reconciliation would roll back + re-run every pending edit on each
         // progress tick. The store write lives here (Zustand is NOT imported in
-        // applyRemoteToCache, which stays pure); the cache invalidation is
-        // duplicated inline (Task 18's applyRemoteToCache arm is the canonical
-        // copy + the path for non-App callers).
+        // applyRemoteToCache, which stays pure); the cache invalidation delegates
+        // to the shared invalidateIngestFrameCache helper (defined + tested in
+        // applyRemoteToCache.ts, Task 18) — no duplication.
         if (
           parsed.kind === "ingest_started" || parsed.kind === "ingest_progress" ||
           parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed"
@@ -2883,11 +3194,10 @@ Replace the SSE listener body (lines 33-40) to short-circuit `ingest_*` (store w
               // experiment's ingest_status (refetched below) is the resting truth.
               clearIngestProgress(expId);
             }
-            qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
-            qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
-            if (parsed.kind === "ingest_complete") {
-              qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
-            }
+            // Delegate cache invalidation to the shared helper (defined in
+            // applyRemoteToCache.ts) — the single source of truth for which
+            // query keys the ingest frames affect.
+            invalidateIngestFrameCache(qc, expId, parsed.kind === "ingest_complete");
           }
           return; // do NOT run the queue reconciler for a broadcast-only frame
         }
@@ -2898,7 +3208,7 @@ Replace the SSE listener body (lines 33-40) to short-circuit `ingest_*` (store w
     });
 ```
 
-Add the `queryKeys` import at the top of `App.tsx` (`import { queryKeys } from "../queries";`) and add `setIngestProgress, clearIngestProgress` to the effect's dependency array (both stable selector results, so the EventSource lifetime is unchanged):
+Add `setIngestProgress, clearIngestProgress` to the effect's dependency array (both stable selector results, so the EventSource lifetime is unchanged):
 
 ```tsx
   }, [qc, mc, setIngestProgress, clearIngestProgress]);
@@ -2955,24 +3265,24 @@ git commit -m "test/build: green full suite + production build for ingestion E1 
 ## Self-Review
 
 **What I verified against live source (read in full; every API below is confirmed, not assumed):**
-- `api.ts` — `Experiment` (8-22, no `*_source`/scan cols yet → Task 1 adds them), `Sample` (31-38, carries BOTH `name: string|null` AND `display_name: string|null` → Task 1 collapses to non-null `name`), `updateExperiment`'s `Record<string,never>` stub (123-127 → Task 2 widens to `ExperimentGeometryPatch`), `updateSample`'s `display_name` patch key (134), `request<T>(method, path, body, opts)`.
+- `api.ts` — `Experiment` (8-22, no `*_source`/scan cols yet → Task 1 adds them), `Sample` (31-38, carries BOTH `name: string|null` AND `display_name: string|null` → Task 1 collapses to non-null `name`), `updateExperiment`'s `Record<string,never>` stub (123-127 → Task 2 widens to `ExperimentPatch` — **NOT** `ExperimentGeometryPatch`; the canonical name is `ExperimentPatch`, E2 imports it), `updateSample`'s `display_name` patch key (134), `request<T>(method, path, body, opts)`.
 - `lib/authOpts.ts` — **`authOpts` lives HERE, not in `queries.ts`**; signature `authOpts(username, clientId, clientOpId?)` with clientId POSITIONAL (Fix #4 applied: Task 12 imports from `../../lib/authOpts` and threads `CLIENT_ID`).
 - `state.ts` — `partialize` (500-508), Zustand persist `version: 5` (499, NOT bumped), `LS_KEY = "himalaya-ui:state"` (24, = the persist `name` → the Task 3 test's literal key is correct), the `set((s)=>…)` idiom.
-- `queries.ts` — `queryKeys.samples` = `["experiment", id ?? "none", "samples"]` (51-52); **so `loads` MUST be `["experiment", id ?? "none", "loads"]`** (Fix #7 applied — the plan's earlier `["experiment", 7, "loads"]` was right only for id=7 but the SIGNATURE must be `id ?? "none"`-tolerant). `experiment(id)` = `["experiment", id]` (50, no "config" segment → Fix #10: `experimentConfig` dropped as a dead key). `useExperiment` exists (112, `enabled: id>0`) → `useExperimentDetail` is an explicit alias.
+- `queries.ts` — `queryKeys.samples` = `["experiment", id ?? "none", "samples"]` (51-52); **so `loads` MUST be `["experiment", id ?? "none", "loads"]`** (Fix #7 applied — the plan's earlier `["experiment", 7, "loads"]` was right only for id=7 but the SIGNATURE must be `id ?? "none"`-tolerant). `experiment(id)` = `["experiment", id]` (50, no "config" segment → Fix #10: `experimentConfig` dropped as a dead key, `useExperimentDetail` alias dropped — callers use `useExperiment` directly). `useExperiment` exists (112, `enabled: id>0`).
 - `ProgressBar.tsx` — props are `value` + **`total` (REQUIRED, NOT `max`)** + optional `label` (Fix #1 applied, Task 10).
 - `Dot.tsx` — `DotTone = accent|success|muted|neutral` (NO `ok`/`danger`) (Fix #2 applied: failed→muted, scanning/analyzing→accent, complete→success, returns `DotTone`).
 - `NoticePill.tsx` — `NoticePillTone = new|draft` ONLY (NO `warning`) (Fix #3 applied: Task 13 uses `Badge` for the review count instead).
 - `Menu.tsx` (`open`/`options`/`onSelect`/`onClose`/`activeValue`/`className`, owner returns trigger focus), `Input.tsx` (`variant="title"`, `testId`, `value`/`onValueChange`, `...rest` carries `onKeyDown`/`aria-label`; note the wrapper div holds `data-testid`, the inner `<input>` gets the keydown — the tests' bubbling/`querySelector("input")` both work), `Card.tsx` (`as`/`interactive`/`padding` own-props; `onClick`/`data-testid` via `...rest`), `Button.tsx` (`accent`/`ghost` real; `data-testid` via `...props`), `EmptyState.tsx` (`title`/`body`/`action`/`as`), `Badge.tsx` (inline mono count), `PageFrame.tsx`, `ui/index.ts` — all confirmed.
 - `applyRemoteToCache.ts` — `payload = remote.payload as Record<string,unknown>|undefined` (106), `default:` fires `peaks(id)`/`indices(id)` off `entity_id` (334-337); the existing `update_sample` arm (314-318) does `{...old, ...payload}` (handles a `name` patch unchanged). New `ingest_*`/structural arms placed before `default:`, reading `payload.experiment_id`.
 - `lib/queue/types.ts` — **`SseEvent.kind` is already `string`** (148), `payload: unknown` (155). Fix #10 applied: NO kind-union edit; the `case` labels compile directly (Task 18 Step 4 reduced to a no-op note; Task 18 no longer touches `types.ts`).
-- `App.tsx` — single `addEventListener("curation", …)` (33-40); `handleRemoteEvent` imported from `replayCoordinator` (8); Zustand NOT imported. Fix #9 applied: Task 20 short-circuits `ingest_*` (store write + inline invalidate + `return`) BEFORE `handleRemoteEvent`, with a spy test proving the reconciler isn't called for an ingest frame.
+- `App.tsx` — single `addEventListener("curation", …)` (33-40); `handleRemoteEvent` imported from `replayCoordinator` (8); Zustand NOT imported. Fix #9 applied: Task 20 short-circuits `ingest_*` (store write + `invalidateIngestFrameCache` call + `return`) BEFORE `handleRemoteEvent`, with a spy test proving the reconciler isn't called for an ingest frame. The cache invalidation delegates to the shared helper (no duplication).
 - `CorpusTopbar.tsx` (`STAGES` two entries + `stage-tab-${id}` + `startsWith`), `AppRoutes.tsx` (`/`→`/samples` at 116, outside-shell redirects). Live-test breakage confirmed: `CorpusTopbar.test.tsx:70` asserts "two stage-tabs"; `AppRoutes.test.tsx` asserts `/`→`samples-page` — both updated in Task 22.
 - `persistence.ts` — `SCHEMA_VERSION = 4` (14) → bumped to 5 in Task 1b (Task 21 folded).
 - **Fix #5 (Task 17):** `git grep -n "PhaseStrip\|phase-bar\|phaseDistribution\|nav-home-phase" src/print/shell/` returns NOTHING; NavModal references `phase` only via `display_name`/`name` search predicates. **Task 17 DROPPED** (a removal test for a never-rendered element is vacuous). The `PhaseStrip` primitive exists in `src/print/ui/` but no shell file consumes it.
 - **Fix #6 (Task 1b):** the full `display_name → name` consumer list was captured via `git grep -n display_name src/` (12 non-test source files) and promoted to a single dedicated sequenced task (1b) that converts every consumer + bumps `SCHEMA_VERSION`, leaving `tsc` green at its commit (Task 1 + 1b are an intentional red→green pair).
 
 **Canonical contract (E1 OWNS; E2 consumes; pinned spec §8.8):**
-- `api.ts`: `GroupingFlag` (merge/split/null), `LoadExposure`, `LoadSample` (the (load,slot) coord + `flag`), nested `Load { load_id, …, samples: LoadSample[] }` — **Fix #7 applied: the plan's earlier FLAT `Load` is replaced by this nested shape.** `Sample.name` non-null. `updateExperiment` patch widened to `ExperimentGeometryPatch`.
+- `api.ts`: `GroupingFlag` (merge/split/null), `LoadExposure`, `LoadSample` (the (load,slot) coord + `flag`), nested `Load { load_id, …, samples: LoadSample[] }` — **Fix #7 applied: the plan's earlier FLAT `Load` is replaced by this nested shape.** `Sample.name` non-null. `updateExperiment` patch widened to `ExperimentPatch` (canonical name; includes name, description, geometry ×6, file patterns ×3 — **E2 imports `ExperimentPatch` from `api.ts`, must NOT redefine it**).
 - `queryKeys.loads(id)` = `["experiment", id ?? "none", "loads"]`; `useLoads(id)` gated `id>0`.
 - Ingest SSE frame = payload-wrapped `{ kind, payload:{experiment_id, processed, total} }`; arms read top-level `kind` + `payload.experiment_id`.
 - Structural payloads: `exposure_moved {sample_id, from_sample_id, experiment_id}`, `sample_renamed {name, experiment_id}`, `sample_created {experiment_id}`, `sample_split {new_sample_id, exposure_ids, experiment_id}`, `grouping_flag_dismissed {flag_kind, merge_with_sample_id?, experiment_id}`. **NO `sample_merged`** (Fix #8 applied: dropped; the prior `to_sample_id` field corrected to `sample_id`; `sample_created` arm added before `default:`).
@@ -2980,7 +3290,7 @@ git commit -m "test/build: green full suite + production build for ingestion E1 
 **Honest open questions / call-outs (decisions a reviewer should confirm):**
 1. **`/` → `/experiments` is more disruptive than one assertion.** `AppRoutes.test.tsx` has ≥1 spec hard-asserting `/`→`samples-page`, plus two more `renderRoutes("/")` call sites in stale-path specs. Task 22 flags them; a reviewer should confirm the experiments-home renders a stable testid for those updated assertions (Task 11 should expose one — see #2).
 2. **`ExperimentsHomePage` testid for "Your beamtimes".** The AppRoutes/Home tests assert on the literal text "Your beamtimes". If that copy changes, add an explicit page testid (e.g. `experiments-home`) and assert on it instead — text-coupling is brittle. (Left as-is to match the existing AppRoutes test idiom, which asserts `samples-page` by testid; consider adding `data-testid="experiments-home"` to the Home PageFrame.)
-3. **`__testReviewCount` (Task 13) is now an inert optional override**, not a permanent fake: production derives the count from `useLoads` (`LoadSample.flag !== null`), the prop only short-circuits the test. The Task 13 test relies on `retry:false` so the un-mocked `listLoads(7)` fetch fails silently and the override wins — a reviewer may prefer mocking `api.listLoads` for clarity.
-4. **App-listener vs `applyRemoteToCache` duplication (Fix #9).** Because the App listener short-circuits `ingest_*`, the cache invalidation is duplicated (App inline + the canonical `applyRemoteToCache` arm). The arm stays as the tested/canonical copy and the path for any non-App caller; the two must be kept in sync. A reviewer might prefer the App listener to call a shared helper — flagged, not done (keeps the diff small).
+3. **Task 13 test uses `vi.spyOn(api, "listLoads")` — no test-only prop** (`__testReviewCount` removed). The `ExperimentCorpusPage` component has no production seam; the review count derives purely from `useLoads(expId)` which the test controls via the spy. The `retry: false` QueryClient ensures the mock resolves cleanly without retries.
+4. **App-listener / `applyRemoteToCache` cache invalidation: single shared helper.** Task 18 exports `invalidateIngestFrameCache(qc, expId, isComplete)`; Task 20's App listener calls it. There is no duplication — the function is defined once and called from two sites. The store write stays exclusively in the App listener.
 5. **`/series` axis** stays the existing folio surface (spec §7). `ExperimentTopNav`'s Series link points at `/series` under `CorpusShell`, so clicking it from inside an experiment leaves `ExperimentShell` — intended IA (Series is cross-cutting).
-6. **No-placeholder check:** every referenced type (`IngestProgress`, nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag`, `ExperimentGeometryPatch`, `GeometrySource`, `IngestStatus`, `ValidatePathResponse`, `PathSuggestResponse`, `DropdownProps`, `StatBarStat`, `ExperimentCorpusPageProps`) is defined in some task; every E2-deferred slot names the E2 component + renders a labelled placeholder; every step shows the command + expected red/green.
+6. **No-placeholder check:** every referenced type (`IngestProgress`, nested `Load`/`LoadSample`/`LoadExposure`/`GroupingFlag`, `ExperimentPatch` [canonical — E2 imports this, not `ExperimentGeometryPatch`], `GeometrySource`, `IngestStatus`, `ValidatePathResponse`, `PathSuggestResponse`, `DropdownProps`, `StatBarStat`, `DirectoryPickerFieldProps`) is defined in some task; every E2-deferred slot names the E2 component + renders a labelled placeholder; every step shows the command + expected red/green.
