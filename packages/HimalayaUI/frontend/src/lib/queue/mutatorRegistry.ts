@@ -31,6 +31,7 @@ import {
   setAssignmentStateMutator,
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
+import { moveExposureMutator, renameSampleMutator } from "./mutators/grouping";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -128,6 +129,8 @@ export function resolveMutator(
       return setAssignmentStateMutator;
     case "custom_index_commit":
       return customIndexMutator;
+    case "move_exposure": return moveExposureMutator;
+    case "rename_sample": return renameSampleMutator;
     default:
       return undefined;
   }
@@ -198,6 +201,11 @@ export function resolveMutatorForEvent(
       // was retired with the Compare page. `entityType` ("sample_message") is
       // not discriminated on, but the param is kept for arm-shape parity.
       return postSampleMessageMutator;
+    // Ingestion grouping-review structural edits (Phase E2). A merge fans out as
+    // exposure_moved frames — so exposure_moved is the only SSE kind move AND merge
+    // share on the wire. See brief §Step 4 note.
+    case "exposure_moved":  return moveExposureMutator;
+    case "sample_renamed":  return renameSampleMutator;
     // Event kinds with no queue mutator fall through here (handled entirely by
     // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".
