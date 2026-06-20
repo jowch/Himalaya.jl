@@ -75,3 +75,5 @@ export { ComposeBar } from "./ComposeBar";
 export type { ComposeBarProps } from "./ComposeBar";
 export { TagSuggest } from "./TagSuggest";
 export type { TagSuggestOption, TagSuggestProps } from "./TagSuggest";
+export { StatBar } from "./StatBar";
+export type { StatBarProps, StatBarStat } from "./StatBar";
