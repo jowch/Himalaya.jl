@@ -93,6 +93,23 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
 }
 
 /**
+ * Shared cache-invalidation helper for ingest-frame side-effects. Exported so
+ * `App.tsx`'s SSE listener can call the same invalidations without duplicating
+ * them inline (the listener still owns the Zustand store write; this helper is
+ * pure cache-only). `isComplete=true` also refetches the experiment detail row
+ * (so `ingest_status` transitions from "analyzing" → "complete").
+ */
+export function invalidateIngestFrameCache(
+  qc: QueryClient,
+  expId: number,
+  isComplete: boolean,
+): void {
+  qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+  qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  if (isComplete) qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
+}
+
+/**
  * Apply a remote SSE event to the local query cache. Per-kind logic mirrors
  * the spec's "replay-without-refetch where post_state covers it; refetch
  * fallback where the event payload is insufficient or update is rare."
@@ -329,6 +346,25 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "analyze_run": {
       applyPostState();
+      break;
+    }
+    case "ingest_started":
+    case "ingest_progress":
+    case "ingest_failed": {
+      // Broadcast-only progress (spec §9.3): rides the curation channel, carries
+      // a positive experiment_id in the payload (NEVER a sentinel entity_id).
+      // Read experiment_id from the payload, not remote.entity_id. Cache effect
+      // is invalidation-only (the ingestInFlight store write lives in the
+      // separate App.tsx listener — applyRemoteToCache stays pure).
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, false);
+      break;
+    }
+    case "ingest_complete": {
+      // Authoritative terminal frame (the 64-slot channel may drop progress
+      // frames at 680-exposure scale; treat complete as the source of truth).
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, true);
       break;
     }
     default: {
