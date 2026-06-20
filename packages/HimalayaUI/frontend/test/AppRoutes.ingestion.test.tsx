@@ -40,9 +40,12 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
     expect(screen.queryByTestId("corpus-topbar")).toBeNull();
   });
 
-  it("/experiments/:id/grouping mounts the grouping route element", async () => {
+  it("/experiments/:id/grouping mounts GroupingReviewPage (E2)", async () => {
+    vi.spyOn(api, "listLoads").mockResolvedValue([]);
     renderAt("/experiments/7/grouping");
-    expect(await screen.findByTestId("grouping-review-placeholder")).toBeInTheDocument();
+    // GroupingReviewPage renders the "Check the grouping" heading + filter bar.
+    expect(await screen.findByText("Check the grouping")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Filter samples" })).toBeInTheDocument();
   });
 
   it("/ redirects to /experiments", async () => {

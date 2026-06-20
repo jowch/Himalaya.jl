@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
 import { CorpusShell } from "./CorpusShell";
@@ -13,10 +13,24 @@ import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
 import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
 import { ConfigurationPage } from "../pages/ConfigurationPage";
+import { GroupingReviewPage } from "../components/GroupingReviewPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
+
+/** Thin wrapper that reads :id from the route and passes it to GroupingReviewPage. */
+function GroupingReviewRoute(): JSX.Element {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const experimentId = id ? Number(id) : 0;
+  return (
+    <GroupingReviewPage
+      experimentId={experimentId}
+      onBack={() => navigate("../corpus")}
+    />
+  );
+}
 
 /**
  * PageBody — the `*` catch-all body. After I5.1 (#182) it mounts under the
@@ -139,11 +153,8 @@ export function AppRoutes(): JSX.Element {
         <Route index element={<Navigate to="corpus" replace />} />
         <Route path="corpus" element={<ExperimentCorpusPage />} />
         <Route path="config" element={<ConfigurationPage />} />
-        {/* E2 GroupingReviewPage mounts here. E1 routes to a placeholder. */}
-        <Route
-          path="grouping"
-          element={<div data-testid="grouping-review-placeholder">Grouping review (E2)</div>}
-        />
+        {/* E2: GroupingReviewPage mounts here (Task 20). */}
+        <Route path="grouping" element={<GroupingReviewRoute />} />
       </Route>
     </Routes>
   );
