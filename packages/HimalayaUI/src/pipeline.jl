@@ -881,6 +881,31 @@ function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
 end
 
 """
+    resolve_trace_path(analysis_dir, integration_pattern, filename) -> String | nothing
+
+Resolve an exposure's integration `.dat` under `analysis_dir`. Tries the exact
+per-frame name (`integration_pattern` with `{name}` => `filename`) first, then
+falls back to the per-acquisition name with the trailing `_<rep>_<frame>` suffix
+dropped: the real beamline `_tot.dat` total integration is named by the
+acquisition stem and shared across that acquisition's per-frame exposures. The
+migration rewrites `exposures.filename` to the full per-frame stem (for rescan
+dedup), so every `.dat` consumer — analyze, the trace route, series traces — must
+resolve through here. Returns the path if found, else `nothing`.
+"""
+function resolve_trace_path(analysis_dir::AbstractString,
+                            integration_pattern::AbstractString,
+                            filename::AbstractString)
+    exact = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
+    isfile(exact) && return exact
+    stripped = replace(filename, r"_\d+_\d+$" => "")
+    if stripped != filename
+        alt = joinpath(analysis_dir, replace(integration_pattern, "{name}" => stripped))
+        isfile(alt) && return alt
+    end
+    return nothing
+end
+
+"""
     analyze_exposure!(db, exposure_id; kwargs...)
 
 2-arg convenience overload: resolves `analysis_dir` via `_resolve_analysis_dir`
@@ -936,8 +961,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     experiment_id = rows[1].experiment_id
 
     cfg = config_from_db(db, experiment_id)
-    pattern_filename = replace(cfg.integration_pattern, "{name}" => filename)
-    dat_path = joinpath(analysis_dir, pattern_filename)
+    dat_path = joinpath(analysis_dir, replace(cfg.integration_pattern, "{name}" => filename))
 
     # DB-only reads first so the fast path can short-circuit before any file I/O.
     stored_trace_hash  = read_trace_hash(db, exposure_id)
@@ -963,20 +987,11 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         end
     end
 
-    # Slow path: from here on, behavior mirrors the pre-refactor implementation.
-    # The per-acquisition `_tot.dat` total integration is named by the acquisition
-    # stem with the frame suffix dropped and is shared across that acquisition's
-    # per-frame exposures; fall back to it when the exact per-frame `{filename}`
-    # name is absent (real beamline naming — the production migration relies on
-    # this so newly-ingested per-frame exposures resolve their trace).
-    if !isfile(dat_path)
-        stripped = replace(String(filename), r"_\d+_\d+$" => "")
-        if stripped != String(filename)
-            alt = joinpath(analysis_dir, replace(cfg.integration_pattern, "{name}" => stripped))
-            isfile(alt) && (dat_path = alt)
-        end
-    end
-    isfile(dat_path) || error("dat file not found: $dat_path")
+    # Slow path: resolve the trace (per-frame name, else the shared per-acquisition
+    # `_tot.dat` — see resolve_trace_path).
+    resolved = resolve_trace_path(analysis_dir, cfg.integration_pattern, String(filename))
+    resolved === nothing && error("dat file not found: $dat_path")
+    dat_path = resolved
 
     if new_trace_hash === nothing
         new_trace_hash = hash_trace_file(dat_path)
