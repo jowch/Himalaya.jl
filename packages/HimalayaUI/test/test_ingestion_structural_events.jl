@@ -103,4 +103,26 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
             "SELECT sample_id FROM exposures WHERE id = ?", [e1_id])))
         @test Int(row.sample_id) == s2_id
     end
+
+    @testset "samples.merged_into_id column exists after migration" begin
+        db = fresh_db()
+        col_names = String.(getproperty.(Tables.rowtable(
+            DBInterface.execute(db, "PRAGMA table_info(samples)")), :name))
+        @test "merged_into_id" in col_names
+    end
+
+    @testset "retire_sample! sets merged_into_id" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        HimalayaUI.retire_sample!(db, s2_id; merged_into_id=s1_id)
+
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT merged_into_id FROM samples WHERE id = ?", [s2_id])))
+        @test Int(row.merged_into_id) == s1_id
+
+        # The loser row still exists (no hard delete).
+        @test !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM samples WHERE id = ?", [s2_id])))
+    end
 end

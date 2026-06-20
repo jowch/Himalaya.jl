@@ -13,6 +13,9 @@ const MIGRATION_EXPOSURES_EXPERIMENT_ID = "exposures_experiment_id_v1"
 const MIGRATION_EXPERIMENTS_GEOMETRY    = "experiments_geometry_v1"
 const MIGRATION_SAMPLES_NAME_COLLAPSE   = "samples_name_collapse_v1"
 
+# Sentinel marker name for the ingestion-redesign Phase D merged_into_id column.
+const MIGRATION_SAMPLES_MERGED_INTO = "samples_merged_into_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table. Mirrors the inlined pattern in
 # `migrate_assignments!` / `migrate_comparisons_to_series!`.
@@ -485,6 +488,11 @@ function migrate_schema!(db::SQLite.DB)
     migrate_exposures_experiment_id!(db)
     migrate_experiments_geometry!(db)
     migrate_samples_name_collapse!(db)
+
+    # Ingestion redesign (Phase D): nullable merged_into_id on samples for
+    # soft-retire on merge (spec §9.3). Run AFTER migrate_samples_name_collapse!
+    # so the samples table is fully settled before this column is added.
+    migrate_samples_merged_into!(db)
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────
@@ -631,6 +639,16 @@ function migrate_samples_name_collapse!(db::SQLite.DB)
         _record_migration!(db, MIGRATION_SAMPLES_NAME_COLLAPSE)
     end
     nothing
+end
+
+function migrate_samples_merged_into!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLES_MERGED_INTO) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "samples")
+        "merged_into_id" in existing || DBInterface.execute(db,
+            "ALTER TABLE samples ADD COLUMN merged_into_id INTEGER REFERENCES samples(id)")
+        _record_migration!(db, MIGRATION_SAMPLES_MERGED_INTO)
+    end
 end
 
 """
@@ -2054,6 +2072,21 @@ function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractStr
         VALUES (?,?,?,?,?,?,?)
     """, [experiment_id, name, notes, load_id, slot_index, grouping_source, name_source])
     return Int(DBInterface.lastrowid(res))
+end
+
+"""
+    retire_sample!(db, loser_id; merged_into_id)
+
+Mark a sample as retired by pointing its `merged_into_id` at the survivor.
+Does NOT hard-delete the row — FKs from `series_samples` etc. are re-pointed
+before this is called (see merge route). Sets `merged_into_id` only; no SSE.
+"""
+function retire_sample!(db::SQLite.DB, loser_id::Integer;
+                         merged_into_id::Integer)
+    DBInterface.execute(db,
+        "UPDATE samples SET merged_into_id = ? WHERE id = ?",
+        [Int(merged_into_id), Int(loser_id)])
+    nothing
 end
 
 function create_exposure!(db::SQLite.DB;
