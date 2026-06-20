@@ -5,9 +5,13 @@ export interface User {
   last_name: string | null;
 }
 
+export type GeometrySource = "prp" | "setup" | "user" | "default";
+export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
+
 export interface Experiment {
   id: number;
   name: string | null;
+  description: string | null;     // Phase E1 additive column (Task 1c migration)
   path: string;
   data_dir: string;
   analysis_dir: string;
@@ -19,6 +23,21 @@ export interface Experiment {
   pixel_size_um: number | null;
   energy_kev: number | null;
   flight_path_m: number | null;
+  // Phase A typed-geometry per-field provenance + scan bookkeeping.
+  energy_kev_source: GeometrySource;
+  flight_path_m_source: GeometrySource;
+  beam_center_x_source: GeometrySource;
+  beam_center_y_source: GeometrySource;
+  pixel_size_um_source: GeometrySource;
+  q_units_source: GeometrySource;
+  last_scanned_at: string | null;
+  scan_signature: string | null;
+  ingest_status: IngestStatus;
+  // Phase E1 additive columns: editable file-pattern globs (Task 1c migration).
+  // NULL = use legacy experiment.toml fallback.
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
 }
 
 export interface SampleTag {
@@ -31,10 +50,54 @@ export interface SampleTag {
 export interface Sample {
   id: number;
   experiment_id: number;
-  name: string | null;
-  display_name: string | null;
+  name: string;            // non-null after the collapse (was `string | null` + `display_name`)
   notes: string | null;
   tags: SampleTag[];
+}
+
+/** A merge/split discrepancy flag the auto-grouper raised on a slot (spec §8.8).
+ *  `null` when the slot is clean. The structural-edit dismissal arm
+ *  (`grouping_flag_dismissed`, Phase D) clears it. */
+export type GroupingFlag =
+  | { kind: "merge"; merge_with_sample_id: number; merge_with_label: string }
+  | { kind: "split"; split_at_index: number; jump_from: number; jump_to: number }
+  | null;
+
+/** One exposure leaf under a load's sample slot. */
+export interface LoadExposure {
+  id: number;
+  filename: string;
+  horizontal_position: number | null;
+  timestamp: string | null;
+}
+
+/** One sample slot inside a load (a (load, slot) coordinate). `name_source`/
+ *  `grouping_source` are provenance tags ("user" | "computed" | …);
+ *  `merged_into_id` is non-null when this slot was merged into a sibling. */
+export interface LoadSample {
+  sample_id: number;
+  name: string;
+  slot_index: number;
+  grouping_source: string;
+  name_source: string;
+  merged_into_id: number | null;
+  flag: GroupingFlag;
+  exposures: LoadExposure[];
+}
+
+/** One rack-load roll-up (Phase A `loads` table), returned NESTED by
+ *  `GET /api/experiments/:id/loads` (see Task 2): Load ▸ Sample ▸ Exposures.
+ *  Drives E2's LoadFold/SampleFold/ExposureLeaf + the grouping-review count
+ *  (samples whose `flag` is non-null). */
+export interface Load {
+  load_id: number;
+  load_index: number;
+  session_id: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  frame_count: number;
+  note: string | null;
+  samples: LoadSample[];
 }
 
 // Corpus samples carry q_units (resolved from the owning experiment's
@@ -131,7 +194,7 @@ export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
 export const listCorpusSamples = (): Promise<CorpusSample[]> =>
   request<CorpusSample[]>("GET", "/api/samples");
-export const updateSample   = (id: number, patch: { display_name?: string; notes?: string }, opts?: AuthOpts) =>
+export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
 export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
   request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
