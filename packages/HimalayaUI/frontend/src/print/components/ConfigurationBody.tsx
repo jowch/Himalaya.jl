@@ -7,7 +7,7 @@ import { AcquisitionTimeline, type AcqSession } from "./AcquisitionTimeline";
 import { SourcesCard, type SourceRow } from "./SourcesCard";
 import type { ExperimentPatch } from "../../api";
 
-/** Undo entry: records the field key, its previous display value, and its
+/** Undo entry: records the field key, its previous raw value, and its
  *  previous source so Revert/Undo can replay the inverse write. */
 interface UndoEntry {
   key: string;
@@ -25,12 +25,36 @@ const GEOM_PATCH_KEY: Record<string, keyof ExperimentPatch> = {
   q_units:        "q_units",
 };
 
-/** Parse a display string like "9.00 keV" or "1.81 m" back to a number (or
- *  string for q_units). Returns undefined when unparseable. */
-function parseDisplayValue(key: string, display: string): number | string | undefined {
-  if (key === "q_units") return display.trim();
-  // Strip trailing unit suffix and parse the numeric part.
-  const numeric = parseFloat(display);
+/** Return the raw (number | string) value of a geometry field from the
+ *  experiment, for seeding the inline editor and comparing on commit. */
+function rawGeoValue(
+  exp: NonNullable<ReturnType<typeof useExperiment>["data"]>,
+  key: string,
+): number | string | undefined {
+  switch (key) {
+    case "energy_kev":    return exp.energy_kev    ?? undefined;
+    case "flight_path_m": return exp.flight_path_m ?? undefined;
+    case "beam_center_x": return exp.beam_center_x ?? undefined;
+    case "beam_center_y": return exp.beam_center_y ?? undefined;
+    case "pixel_size_um": return exp.pixel_size_um ?? undefined;
+    case "q_units":       return exp.q_units       ?? undefined;
+    default:              return undefined;
+  }
+}
+
+/** Convert a raw geometry value to a draft string for the inline editor.
+ *  Numeric fields: String(n) (plain number, no units).
+ *  String fields (q_units): the string itself. */
+function rawToDraft(raw: number | string): string {
+  return String(raw);
+}
+
+/** Parse the user's draft string back to a raw value (number | string).
+ *  Returns undefined when the string cannot be parsed as a number for
+ *  numeric fields. */
+function parseDraft(key: string, draft: string): number | string | undefined {
+  if (key === "q_units") return draft.trim() || undefined;
+  const numeric = parseFloat(draft);
   if (Number.isNaN(numeric)) return undefined;
   return numeric;
 }
@@ -47,9 +71,11 @@ export interface ConfigurationBodyProps {
  *   2. Two-column grid: GeometryLedger (left) + Acquisition card (right).
  *   3. SourcesCard (full width).
  *
- * Owns the geometry override/undo state via useUndoStack. On Override commit
- * it pushes {key, prevValue, prevSource} and calls updateMutate. On Revert
- * or Undo it pops the entry and re-calls updateMutate with the previous value.
+ * Owns the geometry override/undo state via useUndoStack. Override opens an
+ * inline editor (no PATCH yet). On commit, if the parsed new value differs
+ * from the current raw value, pushes undo + calls updateMutate. If the value
+ * is unchanged, the edit is discarded silently (no PATCH, no mis-stamp of
+ * source='user'). Escape always discards.
  *
  * TODO(Phase-D/E1): source discrepancyCount from geometry_discrepancy when
  * the backend field lands (spec sec 9.6 detection lives in the scan path;
@@ -65,6 +91,10 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
   // Description editing state.
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState("");
+
+  // Geometry inline-edit state.
+  const [editingKey, setEditingKey] = useState<string | undefined>(undefined);
+  const [editDraft, setEditDraft] = useState("");
 
   // --- Build geometry rows ---
   const geometryRows: GeometryRow[] = exp
@@ -139,31 +169,44 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
       ]
     : [];
 
-  // --- Handlers ---
+  // --- Geometry override handlers ---
+
+  /** Activate inline editing for a row. Seeds the draft with the raw numeric
+   *  (or string) value -- no units suffix -- so the user edits a clean number. */
   const handleOverride = (key: string) => {
     if (!exp) return;
-    const row = geometryRows.find((r) => r.key === key);
-    if (!row) return;
-    // For simplicity, prompt-less override: the GeometryLedger calls onOverride
-    // when the user clicks Override. This body opens an inline editing flow
-    // using the existing row value as the starting draft.
-    // NOTE: the GeometryLedger does not yet render an inline input; the
-    // Override button triggers this callback and a future E2 task will add the
-    // inline input. For now we record the intent in the undo stack so the
-    // callback contract is satisfied.
-    //
-    // Derive the raw previous value from the row value string.
-    const prevRaw = parseDisplayValue(key, row.value);
-    if (prevRaw === undefined) return;
+    const raw = rawGeoValue(exp, key);
+    if (raw === undefined) return;
+    setEditingKey(key);
+    setEditDraft(rawToDraft(raw));
+  };
 
-    undoStack.push({ key, prevValue: prevRaw, prevSource: row.source });
-    // Mutate using the SAME value (no-op geometry change) to stamp source=user
-    // so the source chip updates correctly. A real override will pass the user's
-    // edited value once inline-editing lands.
-    const patchKey = GEOM_PATCH_KEY[key];
-    if (patchKey) {
-      updateMutate({ [patchKey]: prevRaw } as ExperimentPatch);
+  /** Commit an inline edit. Parses the draft; if the value is unchanged (or
+   *  unparseable), exits edit mode without a PATCH. Only when the value
+   *  actually changes: push undo + PATCH (backend stamps *_source='user'). */
+  const handleEditCommit = () => {
+    if (!exp || !editingKey) {
+      setEditingKey(undefined);
+      return;
     }
+    const newRaw = parseDraft(editingKey, editDraft);
+    const prevRaw = rawGeoValue(exp, editingKey);
+    const row = geometryRows.find((r) => r.key === editingKey);
+    // Exit edit mode first to prevent double-commit on blur after Enter.
+    setEditingKey(undefined);
+    if (newRaw === undefined || newRaw === prevRaw || !row) return;
+    const patchKey = GEOM_PATCH_KEY[editingKey];
+    if (!patchKey) return;
+    // Record undo entry BEFORE the PATCH so Undo can restore the old value.
+    if (prevRaw !== undefined) {
+      undoStack.push({ key: editingKey, prevValue: prevRaw, prevSource: row.source });
+    }
+    updateMutate({ [patchKey]: newRaw });
+  };
+
+  /** Cancel inline edit -- no PATCH. */
+  const handleEditCancel = () => {
+    setEditingKey(undefined);
   };
 
   const handleRevert = (key: string) => {
@@ -171,7 +214,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
     if (!entry) return;
     const patchKey = GEOM_PATCH_KEY[entry.key];
     if (patchKey) {
-      updateMutate({ [patchKey]: entry.prevValue } as ExperimentPatch);
+      updateMutate({ [patchKey]: entry.prevValue });
     }
     void key; // key identifies the row; entry.key matches it
   };
@@ -181,13 +224,13 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
     if (!entry) return;
     const patchKey = GEOM_PATCH_KEY[entry.key];
     if (patchKey) {
-      updateMutate({ [patchKey]: entry.prevValue } as ExperimentPatch);
+      updateMutate({ [patchKey]: entry.prevValue });
     }
   };
 
   const handleSourceEdit = (key: string, value: string) => {
     const patchKey = key as keyof ExperimentPatch;
-    updateMutate({ [patchKey]: value } as ExperimentPatch);
+    updateMutate({ [patchKey]: value });
   };
 
   const handleRescan = () => {
@@ -205,7 +248,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
 
   const commitDesc = () => {
     const trimmed = descDraft.trim();
-    updateMutate({ description: trimmed || null } as ExperimentPatch);
+    updateMutate({ description: trimmed || null });
     setEditingDesc(false);
   };
 
@@ -253,6 +296,10 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
           onUndo={handleUndo}
           canUndo={undoStack.canUndo}
           discrepancyCount={0}
+          {...(editingKey !== undefined ? { editingKey, editDraft } : {})}
+          onEditDraftChange={setEditDraft}
+          onEditCommit={handleEditCommit}
+          onEditCancel={handleEditCancel}
           // TODO(Phase-D/E1): source from geometry_discrepancy when field lands
         />
 

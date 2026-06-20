@@ -42,4 +42,111 @@ describe("GeometryLedger", () => {
     fireEvent.click(screen.getByRole("button", { name: /undo last change/i }));
     expect(onUndo).toHaveBeenCalled();
   });
+
+  // --- inline edit-in-place tests ---
+
+  it("when editingKey matches a row, that row shows an input seeded with editDraft", () => {
+    render(
+      <GeometryLedger
+        rows={ROWS}
+        {...cb}
+        editingKey="beam_energy"
+        editDraft="9.00 keV"
+        onEditDraftChange={() => {}}
+        onEditCommit={() => {}}
+        onEditCancel={() => {}}
+      />
+    );
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    expect(inp).toBeInTheDocument();
+    expect((inp as HTMLInputElement).value).toBe("9.00 keV");
+  });
+
+  it("onEditDraftChange fires when the inline input changes", () => {
+    const onChange = vi.fn();
+    render(
+      <GeometryLedger
+        rows={ROWS}
+        {...cb}
+        editingKey="beam_energy"
+        editDraft="9.00 keV"
+        onEditDraftChange={onChange}
+        onEditCommit={() => {}}
+        onEditCancel={() => {}}
+      />
+    );
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10.00 keV" } });
+    expect(onChange).toHaveBeenCalledWith("10.00 keV");
+  });
+
+  it("onEditCommit fires on Enter in the inline input", () => {
+    const onCommit = vi.fn();
+    render(
+      <GeometryLedger
+        rows={ROWS}
+        {...cb}
+        editingKey="beam_energy"
+        editDraft="9.00 keV"
+        onEditDraftChange={() => {}}
+        onEditCommit={onCommit}
+        onEditCancel={() => {}}
+      />
+    );
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    expect(onCommit).toHaveBeenCalled();
+  });
+
+  it("onEditCommit fires on blur from the inline input", () => {
+    const onCommit = vi.fn();
+    render(
+      <GeometryLedger
+        rows={ROWS}
+        {...cb}
+        editingKey="beam_energy"
+        editDraft="9.00 keV"
+        onEditDraftChange={() => {}}
+        onEditCommit={onCommit}
+        onEditCancel={() => {}}
+      />
+    );
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.blur(inp);
+    expect(onCommit).toHaveBeenCalled();
+  });
+
+  it("onEditCancel fires on Escape in the inline input", () => {
+    const onCancel = vi.fn();
+    render(
+      <GeometryLedger
+        rows={ROWS}
+        {...cb}
+        editingKey="beam_energy"
+        editDraft="9.00 keV"
+        onEditDraftChange={() => {}}
+        onEditCommit={() => {}}
+        onEditCancel={onCancel}
+      />
+    );
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.keyDown(inp, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("non-editing rows still show their text value when a different row is being edited", () => {
+    render(
+      <GeometryLedger
+        rows={ROWS}
+        {...cb}
+        editingKey="beam_energy"
+        editDraft="9.00 keV"
+        onEditDraftChange={() => {}}
+        onEditCommit={() => {}}
+        onEditCancel={() => {}}
+      />
+    );
+    expect(screen.getByText("421.4 px")).toBeInTheDocument();
+    expect(screen.getByText("1.81 m")).toBeInTheDocument();
+  });
 });

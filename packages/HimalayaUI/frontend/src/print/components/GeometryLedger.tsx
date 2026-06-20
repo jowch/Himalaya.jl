@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 export type GeometrySource = "prp" | "setup" | "user" | "default";
 
@@ -19,6 +20,16 @@ export interface GeometryLedgerProps {
   canUndo: boolean;
   discrepancyCount?: number;
   className?: string;
+  /** Key of the row currently being inline-edited (undefined = not editing). */
+  editingKey?: string;
+  /** Controlled draft value for the row being edited. */
+  editDraft?: string;
+  /** Called when the user types into the inline input. */
+  onEditDraftChange?: (value: string) => void;
+  /** Called on Enter or blur -- parent decides whether to PATCH. */
+  onEditCommit?: () => void;
+  /** Called on Escape -- parent cancels the edit, no PATCH. */
+  onEditCancel?: () => void;
 }
 
 // Source label display strings -- no em dashes.
@@ -78,32 +89,56 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
       ) : null}
 
       <div className="px-4 pb-3.5">
-        {p.rows.map((r) => (
-          <div
-            key={r.key}
-            className="flex items-center gap-3 border-b border-hair py-2.5 last:border-b-0"
-          >
-            <span className="w-32 shrink-0 text-xs text-ink-soft">{r.label}</span>
-            <span className="font-mono text-sm font-medium text-ink">{r.value}</span>
-            <SourceChip source={r.source} />
-            {r.source === "user" ? (
-              <Button
-                variant="ghost"
-                aria-label={`Revert ${r.label}`}
-                onClick={() => p.onRevert(r.key)}
-              >
-                Revert
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              aria-label={`Override ${r.label}`}
-              onClick={() => p.onOverride(r.key)}
+        {p.rows.map((r) => {
+          const isEditing = p.editingKey === r.key;
+          return (
+            <div
+              key={r.key}
+              className="flex items-center gap-3 border-b border-hair py-2.5 last:border-b-0"
             >
-              {r.source === "user" ? "Edit" : "Override"}
-            </Button>
-          </div>
-        ))}
+              <span className="w-32 shrink-0 text-xs text-ink-soft">{r.label}</span>
+
+              {isEditing ? (
+                <Input
+                  mono
+                  inputSize="sm"
+                  value={p.editDraft ?? ""}
+                  onValueChange={p.onEditDraftChange ?? (() => {})}
+                  aria-label={`Override ${r.label}`}
+                  className="w-36"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); p.onEditCommit?.(); }
+                    if (e.key === "Escape") { e.preventDefault(); p.onEditCancel?.(); }
+                  }}
+                  onBlur={() => p.onEditCommit?.()}
+                />
+              ) : (
+                <span className="font-mono text-sm font-medium text-ink">{r.value}</span>
+              )}
+
+              <SourceChip source={r.source} />
+              {r.source === "user" ? (
+                <Button
+                  variant="ghost"
+                  aria-label={`Revert ${r.label}`}
+                  onClick={() => p.onRevert(r.key)}
+                >
+                  Revert
+                </Button>
+              ) : null}
+              {!isEditing && (
+                <Button
+                  variant="ghost"
+                  aria-label={`Override ${r.label}`}
+                  onClick={() => p.onOverride(r.key)}
+                >
+                  {r.source === "user" ? "Edit" : "Override"}
+                </Button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </Card>
   );

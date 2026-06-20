@@ -189,7 +189,7 @@ export const createUser = (
  *  - data_dir/analysis_dir/path are READ-ONLY (400 if sent). */
 export interface ExperimentPatch {
   name?: string;
-  description?: string;
+  description?: string | null;
   energy_kev?: number;
   flight_path_m?: number;
   beam_center_x?: number;

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { ConfigurationBody } from "../src/print/components/ConfigurationBody";
@@ -38,6 +38,8 @@ vi.mock("../src/queries", async (orig) => {
 const wrap = (n: ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{n}</QueryClientProvider>);
 
 describe("ConfigurationBody", () => {
+  beforeEach(() => { updateMutate.mockClear(); });
+
   it("renders the description, Geometry, Acquisition, and Sources cards", () => {
     wrap(<ConfigurationBody experimentId={7} />);
     // description (DECISION: E1-owned column; E2 renders it here)
@@ -55,5 +57,53 @@ describe("ConfigurationBody", () => {
   it("renders the 3 pattern rows as editable (E1 columns: image/metadata/integration_pattern)", () => {
     wrap(<ConfigurationBody experimentId={7} />);
     expect(screen.getByText("{name}.tiff")).toBeInTheDocument();  // image_pattern
+  });
+
+  // --- inline override: real-change triggers PATCH ---
+  it("Override activates inline input seeded with raw numeric value; typing a new value + Enter fires PATCH", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+
+    // Click Override for "Beam energy" (first override button)
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+
+    // An inline input should appear seeded with the raw numeric string (no units)
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    expect((inp as HTMLInputElement).value).toBe("9");
+
+    // Change the value and commit via Enter
+    fireEvent.change(inp, { target: { value: "10" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+
+    // updateMutate must have been called with the NEW parsed value
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ energy_kev: 10 })
+    );
+  });
+
+  // --- inline override: no-change does NOT fire PATCH ---
+  it("Override + commit with the SAME value does NOT call updateMutate (no mis-stamp)", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    // The draft is seeded to "9" (raw value). Do NOT change it -- commit with Enter.
+    expect((inp as HTMLInputElement).value).toBe("9");
+    fireEvent.keyDown(inp, { key: "Enter" });
+
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  // --- Escape cancels without PATCH ---
+  it("Override + Escape cancels without calling updateMutate", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.keyDown(inp, { key: "Escape" });
+
+    expect(updateMutate).not.toHaveBeenCalled();
+    // The value display should be back (no input visible)
+    expect(screen.queryByRole("textbox", { name: /override beam energy/i })).toBeNull();
   });
 });
