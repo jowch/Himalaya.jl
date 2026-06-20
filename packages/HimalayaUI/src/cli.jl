@@ -394,7 +394,7 @@ function cli_upgrade_grouping(args)
         @printf "  status          : %s%s\n" String(summary.status) mode_tag
         @printf "  loads created   : %d\n" summary.loads_created
         @printf "  cells derived   : %d\n" summary.cells
-        @printf "  reshoot loads   : %d\n" summary.reshoot_loads
+        @printf "  reshoots (split): %d\n" summary.reshoots
         @printf "  samples         : retrofitted=%d  created=%d  displaced=%d\n" summary.samples_retrofitted summary.samples_created summary.samples_displaced
         @printf "  exposures       : relinked=%d  no_file=%d\n" summary.exposures_relinked summary.exposures_no_file
 

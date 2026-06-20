@@ -1297,6 +1297,8 @@ end
         # against ≈28 reshoots / ≈0 many-old→one-cell. On THIS fixture: 2 loads
         # (one reshoot split), 3 cells, 2 retrofitted (10 + 20), 1 created (the
         # reshoot later cell), 2 displaced (30 + 31 → the many-old collapse).
+        # `reshoots` = old samples whose stems span ≥2 cells; here ONLY sample 20
+        # (its two bursts fall in cell(1,2) + cell(2,1)) → 1.
         path, info = build_legacy_db_full(mktempdir())
         with_migration_db(path) do db; HimalayaUI.migrate_schema!(db); end
         summary = with_migration_db(path) do db
@@ -1304,7 +1306,7 @@ end
         end
         @test summary.status == :ok
         @test summary.loads_created == 2
-        @test summary.reshoot_loads == 2
+        @test summary.reshoots == 1            # sample 20 spans 2 cells (the only split)
         @test summary.cells == 3
         @test summary.samples_retrofitted == 2
         @test summary.samples_created == 1     # the reshoot's later cell

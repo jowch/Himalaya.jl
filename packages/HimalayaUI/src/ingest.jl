@@ -238,8 +238,9 @@ real run would have done.
 
 Returns a NamedTuple summary:
 `(status, loads_created, cells, samples_retrofitted, samples_created,
-  samples_displaced, exposures_relinked, exposures_no_file, reshoot_loads,
-  geometry, discrepancies)`. On an empty scan returns `(status=:empty, …)` and
+  samples_displaced, exposures_relinked, exposures_no_file, reshoots,
+  geometry, discrepancies)` where `reshoots` = old samples split across ≥2 cells.
+On an empty scan returns `(status=:empty, …)` and
 writes nothing.
 """
 function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = false)
@@ -260,7 +261,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     isempty(metas) && return (
         status = :empty, loads_created = 0, cells = 0, samples_retrofitted = 0,
         samples_created = 0, samples_displaced = 0, exposures_relinked = 0,
-        exposures_no_file = 0, reshoot_loads = 0,
+        exposures_no_file = 0, reshoots = 0,
         geometry = nothing, discrepancies = String[])
 
     prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
@@ -298,7 +299,26 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     # Deterministic, stable claim order: (load_index, slot_index).
     sort!(cells; by = c -> (c.load_index, c.slot_index))
 
-    reshoot_loads = length(result.loads)
+    # Reshoot count (read-only): old samples whose stems span ≥2 derived cells — a
+    # specimen the fresh-scan partition splits across loads. This is the
+    # operator-eyeball metric (≈28 on the dev-db), NOT the total-load count.
+    stem_cell = Dict{String, Int}()
+    for (ci, cell) in enumerate(cells), s in cell.stems
+        stem_cell[s] = ci
+    end
+    old_cells = Dict{Int, Set{Int}}()   # old sample_id => set of cell indices its stems touch
+    if !isempty(stem_cell)
+        ph = join(fill("?", length(stem_cell)), ", ")
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT filename, sample_id FROM exposures " *
+                "WHERE experiment_id = ? AND sample_id IS NOT NULL AND filename IN ($ph)",
+                vcat(Any[experiment_id], collect(keys(stem_cell)))))
+            ci = get(stem_cell, String(r.filename), 0)
+            ci == 0 && continue
+            push!(get!(old_cells, Int(r.sample_id), Set{Int}()), ci)
+        end
+    end
+    reshoots = count(cs -> length(cs) > 1, values(old_cells))
 
     # -----------------------------------------------------------------------
     # 3. Retrofit persist — all writes in ONE lock + transaction (atomic rollback).
@@ -492,7 +512,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         samples_displaced   = samples_displaced,
         exposures_relinked  = exposures_relinked,
         exposures_no_file   = exposures_no_file,
-        reshoot_loads       = reshoot_loads,
+        reshoots            = reshoots,
         geometry            = geo,
         discrepancies       = disc,
     )
