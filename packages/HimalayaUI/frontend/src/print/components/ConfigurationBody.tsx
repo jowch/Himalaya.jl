@@ -308,7 +308,13 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
             <h3 className="text-headline text-ink">Acquisition</h3>
           </div>
           <div className="px-4 py-3">
-            <AcquisitionTimeline sessions={acquisitionSessions} />
+            {acquisitionSessions.length === 0 ? (
+              <p data-testid="acquisition-empty" className="text-sm text-ink-soft">
+                No acquisition timeline yet. Rescan this experiment to record session timing.
+              </p>
+            ) : (
+              <AcquisitionTimeline sessions={acquisitionSessions} />
+            )}
           </div>
         </Card>
       </div>

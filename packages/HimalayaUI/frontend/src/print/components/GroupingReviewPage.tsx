@@ -276,13 +276,29 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
             value={search}
             onChange={setSearch}
             ariaLabel="Filter samples"
-            placeholder="Filter samples -- name or glob, e.g. HA8* or JC C0?"
+            placeholder="Filter samples by name or glob, e.g. HA8* or JC C0?"
           />
         </div>
       </div>
 
       {isLoading ? null : visible.length === 0 ? (
-        <EmptyState title={`No samples match "${q}"`} />
+        // Three distinct empty cases. Collapsing them all to `No samples match
+        // ""` (the old bug) read as an error even in the all-clear case.
+        q ? (
+          <EmptyState title={`No samples match "${q}"`} />
+        ) : totalSamples === 0 ? (
+          <EmptyState
+            title="No loads yet"
+            body="Rescan this experiment to group its exposures into samples."
+          />
+        ) : filter === "attn" ? (
+          <EmptyState
+            title="Nothing needs review"
+            body="Every sample looks correctly grouped. Switch to All loads to see them all."
+          />
+        ) : (
+          <EmptyState title="No samples in this experiment" />
+        )
       ) : (
         visible.map(({ load, samples }) => (
           <LoadFold
