@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { setToastImpl, type ToastKind } from "../../lib/toast";
+import { setToastImpl, type ToastAction, type ToastKind } from "../../lib/toast";
 import { IconButton } from "./IconButton";
 
 interface ToastItem {
   id: number;
   msg: string;
   kind: ToastKind;
+  action?: ToastAction;
 }
 
 const DURATIONS: Record<ToastKind, number> = {
@@ -63,11 +64,11 @@ export function ToastContainer(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    setToastImpl((msg, kind) => {
+    setToastImpl((msg, kind, action) => {
       idRef.current += 1;
       const id = idRef.current;
       const ttl = DURATIONS[kind] ?? 3000;
-      setItems((curr) => [...curr, { id, msg, kind }]);
+      setItems((curr) => [...curr, { id, msg, kind, ...(action !== undefined ? { action } : {}) }]);
       const handle = setTimeout(() => {
         timersRef.current.delete(id);
         setItems((curr) => curr.filter((t) => t.id !== id));
@@ -117,6 +118,15 @@ export function ToastContainer(): JSX.Element {
             <span className="font-semibold">{KIND_WORD[t.kind]}</span>{" "}
             {t.msg}
           </span>
+          {t.action ? (
+            <button
+              type="button"
+              className="ml-3 text-xs font-bold text-accent"
+              onClick={t.action.onClick}
+            >
+              {t.action.label}
+            </button>
+          ) : null}
           <IconButton label="Dismiss" dismiss tone="ghost" onClick={() => dismiss(t.id)} />
         </div>
       ))}
