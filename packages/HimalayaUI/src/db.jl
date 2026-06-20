@@ -2136,6 +2136,101 @@ function get_exposures(db::SQLite.DB, sample_id::Int)
 end
 
 """
+    get_loads_rollup(db, experiment_id) -> Vector{NamedTuple}
+
+Return the Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface,
+in the exact nested shape spec §8.8 pins (field names are load-bearing — the
+frontend `Load`/`LoadSample`/`LoadExposure` interfaces mirror them verbatim).
+
+Each Load NamedTuple:
+    (load_id, load_index, session_id, start_time, end_time, frame_count, note, samples)
+each LoadSample NamedTuple:
+    (sample_id, name, slot_index, grouping_source, name_source,
+     merged_into_id, flag, exposures)
+each LoadExposure NamedTuple:
+    (id, filename, horizontal_position, timestamp)
+
+`flag` is the per-sample merge/split suggestion: it is NOT a stored column —
+it is produced by Phase B Task 12's `derive_sample_flags` (§9.1) over the nested
+rows this function just read, THEN any flag whose sample has a non-undone
+`grouping_flag_dismissed` event is suppressed to `nothing`. Phase B is a
+prerequisite; `derive_sample_flags` must be present or this call throws loudly.
+
+Only non-retired samples (merged_into_id IS NULL) are included.
+Re-derived from (load_id, slot_index) — NOT replayed from the event log.
+"""
+function get_loads_rollup(db::SQLite.DB, experiment_id::Integer)
+    loads = Tables.rowtable(DBInterface.execute(db,
+        """SELECT id AS load_id, load_index, session_id,
+                  start_time, end_time, frame_count, note
+           FROM loads
+           WHERE experiment_id = ?
+           ORDER BY load_index""", [Int(experiment_id)]))
+
+    # Samples whose flag is dismissed by a NON-UNDONE grouping_flag_dismissed
+    # event. A *dismiss* is a grouping_flag_dismissed row with NO undoes_event_id
+    # (an undo is also a grouping_flag_dismissed row but CARRIES undoes_event_id,
+    # so `ua.undoes_event_id IS NULL` excludes undo rows from being counted as
+    # dismisses-of-their-own — Task 8b). A dismiss is "undone" iff a later event
+    # carries `undoes_event_id = <dismiss id>`; the NOT EXISTS drops those.
+    # (entity_type='sample', so this never collides with exposure-keyed events.)
+    dismissed_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT DISTINCT ua.entity_id AS sample_id
+           FROM user_actions ua
+           JOIN samples s ON s.id = ua.entity_id
+           WHERE ua.action = 'grouping_flag_dismissed'
+             AND ua.entity_type = 'sample'
+             AND ua.undoes_event_id IS NULL
+             AND s.experiment_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM user_actions u2
+               WHERE u2.undoes_event_id = ua.id
+             )""", [Int(experiment_id)]))
+    dismissed = Set(Int(r.sample_id) for r in dismissed_rows)
+
+    nested = map(loads) do ld
+        samples = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id AS sample_id, name, slot_index,
+                      grouping_source, name_source, merged_into_id
+               FROM samples
+               WHERE load_id = ? AND (merged_into_id IS NULL)
+               ORDER BY slot_index""", [Int(ld.load_id)]))
+
+        samples_with_exposures = map(samples) do sm
+            exposures = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id, filename, horizontal_position, timestamp
+                   FROM exposures
+                   WHERE sample_id = ?
+                   ORDER BY frame_no, id""", [Int(sm.sample_id)]))
+            # `flag` is filled in below from derive_sample_flags; seed nothing.
+            merge(sm, (flag = nothing, exposures = exposures))
+        end
+
+        merge(ld, (samples = samples_with_exposures,))
+    end
+
+    # Attach the derived per-sample flag (Phase B §9.1). derive_sample_flags
+    # is pure over the nested rows above and returns
+    # Dict{Int sample_id => GroupingFlag (a NamedTuple) | nothing}. We pass it
+    # the load rows it needs (each sample's slot_index/name + its exposures'
+    # horizontal_position/timestamp/filename) — exactly the nested shape it
+    # documents. Suppress any flag whose sample is in the dismissed set.
+    # Phase B is a prerequisite; a missing derive_sample_flags should throw loudly,
+    # not be silently swallowed.
+    flags = derive_sample_flags(nested)        # Dict{Int, Any}
+    nested = map(nested) do ld
+        new_samples = map(ld.samples) do sm
+            f = get(flags, Int(sm.sample_id), nothing)
+            Int(sm.sample_id) in dismissed && (f = nothing)
+            merge(sm, (flag = f,))
+        end
+        merge(ld, (samples = new_samples,))
+    end
+
+    return nested
+end
+
+"""
     default_db_path() -> String
 
 Resolve the canonical Himalaya DB path. Reads `HIMALAYA_DB_PATH` from
