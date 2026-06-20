@@ -10,10 +10,10 @@ import { useAppState } from "../src/state";
 // Ordering of the stepper is the corpus-sample order filtered to the active
 // sample's experiment.
 const SAMPLES = [
-  { id: 1, experiment_id: 1, name: "smp_01", display_name: "Lipid A", notes: null, tags: [], q_units: "A-1" },
-  { id: 2, experiment_id: 1, name: "smp_02", display_name: "Lipid B", notes: null, tags: [], q_units: "A-1" },
-  { id: 3, experiment_id: 1, name: "smp_03", display_name: "Lipid C", notes: null, tags: [], q_units: "A-1" },
-  { id: 9, experiment_id: 2, name: "smp_09", display_name: "Other",  notes: "a note", tags: [], q_units: "A-1" },
+  { id: 1, experiment_id: 1, name: "Lipid A", notes: null, tags: [], q_units: "A-1" },
+  { id: 2, experiment_id: 1, name: "Lipid B", notes: null, tags: [], q_units: "A-1" },
+  { id: 3, experiment_id: 1, name: "Lipid C", notes: null, tags: [], q_units: "A-1" },
+  { id: 9, experiment_id: 2, name: "Other",   notes: "a note", tags: [], q_units: "A-1" },
 ];
 const EXPERIMENTS = [
   { id: 1, name: "SSRL Apr 2026", path: "/e1", data_dir: "/d1", analysis_dir: "/a1",
