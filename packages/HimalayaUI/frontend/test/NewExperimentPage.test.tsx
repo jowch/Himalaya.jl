@@ -47,4 +47,22 @@ describe("NewExperimentPage (Phase E1)", () => {
     renderPage();
     expect(screen.getByTestId("create-submit")).toBeDisabled();
   });
+
+  it("blocks submit and warns when the directory is already an experiment", async () => {
+    vi.spyOn(api, "validatePath").mockResolvedValue({ ok: true, matched: 682, scanned: 700, message: null });
+    vi.spyOn(api, "listExperiments").mockResolvedValue([
+      { id: 3, name: "Existing", data_dir: "/Volumes/data/ssrl/2026_04/1p7m" } as api.Experiment,
+    ]);
+    const createSpy = vi.spyOn(api, "createExperiment");
+    renderPage();
+    fireEvent.change(screen.getByTestId("dirpicker-input").querySelector("input")!, {
+      target: { value: "/Volumes/data/ssrl/2026_04/1p7m" },
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/already (an experiment|uses this directory)/i)).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("create-submit"));
+    expect(createSpy).not.toHaveBeenCalled();
+  });
 });

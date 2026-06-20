@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppState } from "../../state";
+import { useExperiments } from "../../queries";
 import * as api from "../../api";
 import { authOpts } from "../../lib/authOpts";
 import { getClientId } from "../../lib/clientId";
@@ -24,11 +25,21 @@ export function NewExperimentPage(): JSX.Element {
   const username = useAppState((s) => s.username);
   const setActiveExperiment = useAppState((s) => s.setActiveExperiment);
 
+  const { data: experiments } = useExperiments();
+
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [validation, setValidation] = useState<ValidatePathResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  // One experiment per directory: warn (and block) if this dir is already taken.
+  const trimmedPath = path.trim();
+  const duplicateOf =
+    trimmedPath === ""
+      ? undefined
+      : (experiments ?? []).find((e) => e.data_dir.trim() === trimmedPath);
 
   // Debounced suggestion + validation fetch on path change.
   useEffect(() => {
@@ -45,11 +56,12 @@ export function NewExperimentPage(): JSX.Element {
     return () => { live = false; clearTimeout(t); };
   }, [path]);
 
-  const canSubmit = validation?.ok === true && !submitting;
+  const canSubmit = validation?.ok === true && duplicateOf === undefined && !submitting;
 
   const submit = async (): Promise<void> => {
     if (!canSubmit) return;
     setSubmitting(true);
+    setServerError(null);
     try {
       const exp = await api.createExperiment(
         { path, ...(name.trim() ? { name: name.trim() } : {}) },
@@ -57,6 +69,13 @@ export function NewExperimentPage(): JSX.Element {
       );
       setActiveExperiment(exp.id);
       navigate(`/experiments/${exp.id}/corpus`);
+    } catch (err) {
+      // Server-side fallback for the one-experiment-per-directory rule (409).
+      setServerError(
+        err instanceof Error && /409|already uses this directory/i.test(err.message)
+          ? "An experiment already uses this directory."
+          : "Could not create the experiment. Please try again.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -89,6 +108,15 @@ export function NewExperimentPage(): JSX.Element {
             suggestions={suggestions}
             validation={validation}
           />
+          {duplicateOf !== undefined && (
+            <p className="text-sm text-error mt-1.5" role="alert">
+              This directory is already an experiment
+              {duplicateOf.name ? ` (“${duplicateOf.name}”)` : ""}. Each experiment is one directory.
+            </p>
+          )}
+          {serverError !== null && (
+            <p className="text-sm text-error mt-1.5" role="alert">{serverError}</p>
+          )}
         </div>
 
         <div>

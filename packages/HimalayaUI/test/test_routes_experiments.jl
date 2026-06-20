@@ -169,3 +169,25 @@ end
         @test body.stats.sessions == 2
     end
 end
+
+@testset "POST /api/experiments rejects a duplicate data_dir (409)" begin
+    tmp = mktempdir()
+    data_dir = joinpath(tmp, "data"); mkpath(data_dir)
+    db = open_prepared_clone(tmp)
+    # An experiment already uses this directory.
+    HimalayaUI.init_experiment!(db; name = "E1", path = tmp,
+        data_dir = data_dir, analysis_dir = data_dir)
+
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/experiments";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:path => data_dir))))
+        @test r.status == 409
+        body = JSON3.read(String(r.body))
+        @test occursin("director", lowercase(String(body.error)))
+        # No second experiment was created for that directory.
+        n = Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM experiments WHERE data_dir = ?", [data_dir]))[1].c
+        @test n == 1
+    end
+end
