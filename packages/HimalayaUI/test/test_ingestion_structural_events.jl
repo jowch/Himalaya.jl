@@ -410,4 +410,46 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
             @test tag_map["ph"] == "8.0"          # loser's unique tag transferred
         end
     end
+
+    @testset "POST /api/samples/{id}/split — creates new sample + moves exposures" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        # Add a second exposure to s1 so we have two to split.
+        e3_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id,
+            sample_id=s1_id, filename="f03.tif")
+
+        with_inproc_routes(db) do call
+            # Split: move e3 out of s1 into a new sample.
+            resp = call("POST", "/api/samples/$(s1_id)/split";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-split-1"],
+                body = Vector{UInt8}(JSON3.write(Dict(:exposure_ids => [e3_id], :name => "HA85 (S01P01b)"))))
+            @test resp.status == 201
+
+            resp_body = JSON3.read(String(resp.body))
+            new_sample_id = Int(resp_body.new_sample_id)
+
+            # e3 now belongs to the new sample.
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id FROM exposures WHERE id = ?", [e3_id])))
+            @test Int(row.sample_id) == new_sample_id
+
+            # e1 still belongs to s1.
+            row2 = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id FROM exposures WHERE id = ?", [e1_id])))
+            @test Int(row2.sample_id) == s1_id
+
+            # New sample has the given name.
+            new_row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name, experiment_id FROM samples WHERE id = ?", [new_sample_id])))
+            @test String(new_row.name) == "HA85 (S01P01b)"
+            @test Int(new_row.experiment_id) == exp_id
+
+            # exposure_moved event recorded for each moved exposure.
+            evts = Tables.rowtable(DBInterface.execute(db,
+                "SELECT action FROM user_actions WHERE entity_type='exposure' AND entity_id=?", [e3_id]))
+            @test any(r -> String(r.action) == "exposure_moved", evts)
+        end
+    end
 end

@@ -226,4 +226,102 @@ function register_grouping_routes!()
         end
     end
 
+    # ── Split a sample: move a subset of exposures to a new sample ───────────
+    # POST /api/samples/{id}/split
+    # Body: { "exposure_ids": [Int], "name"?: String }
+    # Creates a new sample in the same experiment+load (inherits slot_index = NULL),
+    # moves the specified exposures to it, records an audit event per move.
+    # Returns 201 with { new_sample_id: Int }.
+    @post "/api/samples/{id}/split" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        if !haskey(body, :exposure_ids) || !(body.exposure_ids isa AbstractVector)
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "exposure_ids (array) is required")))
+        end
+        exposure_ids = Int.(body.exposure_ids)
+        isempty(exposure_ids) && return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "exposure_ids must not be empty")))
+
+        # Validate source sample exists.
+        src_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT experiment_id, load_id FROM samples WHERE id = ?", [id]))
+        isempty(src_rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "sample not found")))
+        src = first(src_rows)
+        exp_id  = Int(src.experiment_id)
+        load_id = ismissing(src.load_id) ? nothing : Int(src.load_id)
+
+        # Validate all exposures belong to the source sample (not a foreign sample).
+        # The IN-list is string-interpolated rather than parameterized. This is
+        # injection-SAFE: `exposure_ids = Int.(body.exposure_ids)` above coerces
+        # every element to Int (a non-Int element throws before we get here), so
+        # the interpolated text is a comma-joined list of integer literals — no
+        # user string ever reaches the SQL. The `?` placeholder still binds
+        # `sample_id` via the parameter array.
+        owned = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM exposures WHERE sample_id = ? AND id IN ($(join(exposure_ids, ',')))",
+            [id]))
+        length(owned) != length(exposure_ids) && return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "one or more exposure_ids do not belong to this sample")))
+
+        new_name = (haskey(body, :name) && body.name isa AbstractString) ?
+            strip(String(body.name)) : nothing
+
+        return with_idempotency(db, req) do
+            # Mint the new sample row (route owns the id — comparison_created precedent).
+            new_sample_id = create_sample!(db;
+                experiment_id    = exp_id,
+                load_id          = load_id,
+                name             = something(new_name, "Split from sample $(id)"),
+                grouping_source  = "manual",
+                name_source      = isnothing(new_name) ? "auto" : "user")
+
+            # Record a sample_created audit event for the new sample (no view
+            # write — no-op dispatcher). Canonical payload is `{ experiment_id }`
+            # only (spec §9.3): the frontend's sample_created arm does an
+            # invalidate-only refresh keyed on experiment_id and does not read
+            # any other field. (Split is the emitter; merge does NOT emit it.)
+            created_result = apply_event!(InTransaction(), db, req;
+                kind        = "sample_created",
+                entity_type = "sample",
+                entity_id   = new_sample_id,
+                payload     = Dict(:experiment_id => exp_id))
+            _enqueue_broadcast_from_result!(created_result, "sample_created", "sample", new_sample_id)
+
+            # Move each exposure (source = the original sample `id`).
+            # Each per-exposure call is distinct in the idempotency index via its
+            # differing entity_id under the (client_op_id, action, entity_id)
+            # partial UNIQUE — the outer with_idempotency owns retry-replay.
+            for ex_id in exposure_ids
+                result = apply_event!(InTransaction(), db, req;
+                    kind        = "exposure_moved",
+                    entity_type = "exposure",
+                    entity_id   = ex_id,
+                    payload     = Dict(:sample_id => new_sample_id,
+                                       :from_sample_id => id,
+                                       :experiment_id => exp_id))
+                _enqueue_broadcast_from_result!(result, "exposure_moved", "exposure", ex_id)
+            end
+
+            # Record a sample_split audit event on the source.
+            split_result = apply_event!(InTransaction(), db, req;
+                kind        = "sample_split",
+                entity_type = "sample",
+                entity_id   = id,
+                payload     = Dict(:new_sample_id => new_sample_id,
+                                   :exposure_ids  => exposure_ids,
+                                   :experiment_id => exp_id))
+            _enqueue_broadcast_from_result!(split_result, "sample_split", "sample", id)
+
+            HTTP.Response(201,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:new_sample_id => new_sample_id)))
+        end
+    end
+
 end  # register_grouping_routes!
