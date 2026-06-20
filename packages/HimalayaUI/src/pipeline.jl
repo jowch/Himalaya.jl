@@ -964,6 +964,18 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     end
 
     # Slow path: from here on, behavior mirrors the pre-refactor implementation.
+    # The per-acquisition `_tot.dat` total integration is named by the acquisition
+    # stem with the frame suffix dropped and is shared across that acquisition's
+    # per-frame exposures; fall back to it when the exact per-frame `{filename}`
+    # name is absent (real beamline naming — the production migration relies on
+    # this so newly-ingested per-frame exposures resolve their trace).
+    if !isfile(dat_path)
+        stripped = replace(String(filename), r"_\d+_\d+$" => "")
+        if stripped != String(filename)
+            alt = joinpath(analysis_dir, replace(cfg.integration_pattern, "{name}" => stripped))
+            isfile(alt) && (dat_path = alt)
+        end
+    end
     isfile(dat_path) || error("dat file not found: $dat_path")
 
     if new_trace_hash === nothing

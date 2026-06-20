@@ -314,3 +314,30 @@ end
         end
     end
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Per-acquisition trace resolution: real beamline `_tot.dat` totals are named by
+# the acquisition stem with the frame suffix dropped (e.g. HA_5_010_S1965_tot.dat),
+# shared across that acquisition's per-frame exposures (filename HA_5_010_S1965_0_001).
+# analyze_exposure! must fall back to the frame-suffix-stripped name when the exact
+# per-frame `{filename}_tot.dat` is absent. (Production migration relies on this so
+# fresh-ingested exposures get analyzed; see ingest.jl regroup_experiment!.)
+# ──────────────────────────────────────────────────────────────────────────────
+@testset "analyze_exposure! resolves the per-acquisition _tot.dat (frame-suffix fallback)" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis"); mkpath(analysis_dir)
+    fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    # Trace named by the ACQUISITION stem (no frame suffix), not the per-frame name.
+    cp(fixture, joinpath(analysis_dir, "HA_5_010_S1965_tot.dat"); force = true)
+
+    db = open_db(joinpath(tmp, "h.db"))
+    seeded = seed_experiment!(db, tmp; name = "E", analysis_dir = analysis_dir,
+        stems  = ["HA_5_010_S1965_0_001"],            # per-frame full stem = exposures.filename
+        config = "[files]\nintegration = \"{name}_tot.dat\"\n")
+    eid = seeded.exposure_ids[1]
+
+    analyze_exposure!(db, eid, analysis_dir)
+    npeaks = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS c FROM auto_peaks WHERE exposure_id = ?", [eid]))).c
+    @test npeaks > 0
+end

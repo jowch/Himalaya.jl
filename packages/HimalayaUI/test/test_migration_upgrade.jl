@@ -1583,3 +1583,47 @@ end
     @test all(r -> r.name_source == "user", mig_names)
     @test startswith(mig_names[1].name, "Manifest")       # human label kept, not auto-derived
 end
+
+# ---------------------------------------------------------------------------
+# Production trace naming: a real pre-rework DB's integration traces are the
+# per-acquisition `_tot.dat` totals, named by the stem with the frame suffix
+# dropped (HA_5_010_S1965_tot.dat) and shared across that acquisition's per-frame
+# exposures (filename HA_5_010_S1965_0_001). The migration's analyze step must
+# resolve them so newly-ingested exposures get peaks — not just exist image-only.
+# ---------------------------------------------------------------------------
+@testset "migration analyzes inserted exposures via per-acquisition _tot.dat" begin
+    dir          = mktempdir()
+    data_dir     = joinpath(dir, "data");      mkpath(data_dir)
+    analysis_dir = joinpath(dir, "analysis");  mkpath(analysis_dir)
+    write_setup_dir!(analysis_dir)
+
+    full = "HA_5_010_S1965_0_001"   # per-frame stem (becomes exposures.filename)
+    write_stem_fixtures!(data_dir, analysis_dir, full;
+        horizontal_position_mm = 58.9, timestamp = DateTime(2026, 4, 26, 23, 14, 8))
+    # Real trace bytes named by the ACQUISITION stem (frame suffix dropped).
+    fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(fixture, joinpath(analysis_dir, "HA_5_010_S1965_tot.dat"); force = true)
+
+    path = joinpath(dir, "legacy.db")
+    db = SQLite.DB(path)
+    HimalayaUI.create_schema!(db)
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir, config) VALUES (1,'legacy',?,?,?,?)",
+        [dir, data_dir, analysis_dir, "[files]\nintegration = \"{name}_tot.dat\"\n"])
+    SQLite.close(db)
+
+    with_migration_db(path) do db
+        HimalayaUI.migrate_schema!(db)
+    end
+    with_migration_db(path) do db
+        HimalayaUI.regroup_experiment!(db, 1; dry_run = false, analyze = true)
+    end
+
+    with_migration_db(path) do db
+        eid = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM exposures WHERE filename = ?", [full]))).id
+        npeaks = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM auto_peaks WHERE exposure_id = ?", [eid]))).c
+        @test npeaks > 0   # inserted exposure got analyzed via the frame-suffix fallback
+    end
+end
