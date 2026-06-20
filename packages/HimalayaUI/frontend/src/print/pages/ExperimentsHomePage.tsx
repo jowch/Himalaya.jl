@@ -58,7 +58,7 @@ export function ExperimentsHomePage(): JSX.Element {
       {experiments.isSuccess && list.length === 0 ? (
         <EmptyState
           title="No experiments yet"
-          body="Point Himalaya at a directory of exposures and it scans, groups them into samples, and derives the geometry — no manifest."
+          body="Point Himalaya at a directory of exposures and it scans, groups them into samples, and derives the geometry. No manifest needed."
           action={
             <Button variant="accent" onClick={() => navigate("/experiments/new")}>
               + New experiment
