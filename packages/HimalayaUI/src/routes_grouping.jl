@@ -324,4 +324,87 @@ function register_grouping_routes!()
         end
     end
 
+    # ── Dismiss a grouping flag ("Keep separate") ────────────────────────────
+    # POST /api/samples/{id}/dismiss-flag
+    # Body: { "flag_kind": "merge"|"split", "merge_with_sample_id"?: Int }
+    # Durable, undoable. No view write — get_loads_rollup suppresses the flag
+    # at read time by joining non-undone dismiss events (Task 4).
+    # The dispatcher is a deliberate no-op (default at events.jl:516–517).
+    @post "/api/samples/{id}/dismiss-flag" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        flag_kind = haskey(body, :flag_kind) && body.flag_kind isa AbstractString ?
+                    String(body.flag_kind) : nothing
+        if flag_kind === nothing || !(flag_kind in ("merge", "split"))
+            return HTTP.Response(400,
+                ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "flag_kind must be \"merge\" or \"split\"")))
+        end
+
+        exp_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT experiment_id FROM samples WHERE id = ?", [id]))
+        isempty(exp_rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "sample not found")))
+        exp_id = Int(exp_rows[1].experiment_id)
+
+        payload = Dict{Symbol, Any}(:flag_kind => flag_kind, :experiment_id => exp_id)
+        if haskey(body, :merge_with_sample_id) && body.merge_with_sample_id !== nothing
+            payload[:merge_with_sample_id] = Int(body.merge_with_sample_id)
+        end
+
+        return with_idempotency(db, req) do
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "grouping_flag_dismissed",
+                entity_type = "sample",
+                entity_id   = id,
+                payload     = payload)
+            _enqueue_broadcast_from_result!(result, "grouping_flag_dismissed", "sample", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:sample_id => id, :flag_kind => flag_kind)))
+        end
+    end
+
+    # ── Undo a grouping-flag dismiss ─────────────────────────────────────────
+    # POST /api/samples/{id}/dismiss-flag/undo
+    # Records a grouping_flag_dismissed event stamped with undoes_event_id
+    # pointing at the latest non-undone dismiss for this sample, un-suppressing
+    # the flag. Mirrors the peak_excluded→peak_unexcluded undo precedent
+    # (routes_peaks.jl:296–313).
+    @post "/api/samples/{id}/dismiss-flag/undo" function(req::HTTP.Request, id::Int)
+        db = current_db()
+
+        exp_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT experiment_id FROM samples WHERE id = ?", [id]))
+        isempty(exp_rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "sample not found")))
+        exp_id = Int(exp_rows[1].experiment_id)
+
+        # Find the latest non-undone dismiss to reverse.
+        prior = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id FROM user_actions ua
+               WHERE ua.action = 'grouping_flag_dismissed'
+                 AND ua.entity_type = 'sample' AND ua.entity_id = ?
+                 AND ua.undoes_event_id IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM user_actions u2 WHERE u2.undoes_event_id = ua.id)
+               ORDER BY ua.id DESC LIMIT 1""", [id]))
+        isempty(prior) && return HTTP.Response(409,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "no active grouping-flag dismiss to undo")))
+        undoes = Int(prior[1].id)
+
+        return with_idempotency(db, req) do
+            result = apply_event!(InTransaction(), db, req;
+                kind            = "grouping_flag_dismissed",
+                entity_type     = "sample",
+                entity_id       = id,
+                payload         = Dict(:experiment_id => exp_id, :undo => true),
+                undoes_event_id = undoes)
+            _enqueue_broadcast_from_result!(result, "grouping_flag_dismissed", "sample", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:sample_id => id, :undone_event_id => undoes)))
+        end
+    end
+
 end  # register_grouping_routes!

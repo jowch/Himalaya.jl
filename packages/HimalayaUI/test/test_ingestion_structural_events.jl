@@ -452,4 +452,49 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
             @test any(r -> String(r.action) == "exposure_moved", evts)
         end
     end
+
+    @testset "POST /api/samples/{id}/dismiss-flag — suppresses flag; undo re-shows" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        with_inproc_routes(db) do call
+            # Dismiss a merge flag on s1.
+            resp = call("POST", "/api/samples/$(s1_id)/dismiss-flag";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-dismiss-1"],
+                body = Vector{UInt8}(JSON3.write(Dict(:flag_kind => "merge", :merge_with_sample_id => s2_id))))
+            @test resp.status == 200
+
+            # A non-undone dismiss event exists on s1.
+            evts = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, action FROM user_actions WHERE entity_type='sample' AND entity_id=?", [s1_id]))
+            @test any(r -> String(r.action) == "grouping_flag_dismissed", evts)
+
+            # The rollup suppresses s1's flag.
+            s1 = first(filter(s -> s.sample_id == s1_id,
+                              first(HimalayaUI.get_loads_rollup(db, exp_id)).samples))
+            @test s1.flag === nothing
+
+            # Undo the dismiss.
+            resp2 = call("POST", "/api/samples/$(s1_id)/dismiss-flag/undo";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-dismiss-undo-1"],
+                body = Vector{UInt8}(JSON3.write(Dict())))
+            @test resp2.status == 200
+
+            # The dismiss is now undone — the suppression set no longer contains s1.
+            # (s1.flag is whatever derive_sample_flags returns; absent Phase B it is
+            # nothing, but it is no longer suppressed-by-dismiss — assert via the
+            # suppression query directly so the test is independent of Phase B.)
+            suppressed = Tables.rowtable(DBInterface.execute(db,
+                """SELECT 1 FROM user_actions ua
+                   WHERE ua.action='grouping_flag_dismissed' AND ua.entity_type='sample'
+                     AND ua.entity_id=? AND ua.undoes_event_id IS NULL
+                     AND NOT EXISTS (SELECT 1 FROM user_actions u2 WHERE u2.undoes_event_id=ua.id)""",
+                [s1_id]))
+            @test isempty(suppressed)
+        end
+    end
 end
