@@ -14,17 +14,19 @@ import { TopBar } from "../ui/TopBar";
 import { Wordmark } from "../ui/Wordmark";
 
 interface Stage {
-  id: "samples" | "series";
+  id: "experiments" | "samples" | "series";
   label: string;
   /** Absolute path the tab links to. */
   to: string;
 }
 
-// Samples (#160) and Series (#173) are the two navigable workflow surfaces. The
-// focus workspace at `/sample/:id` is NOT a top-level stage — it is reached only
-// by opening a sample from the contact sheet, so it has no tab (the right-side
+// Experiments (#E1) is the top-level entry point (the experiments home). Samples
+// (#160) and Series (#173) are the two navigable corpus-scoped workflow surfaces.
+// The focus workspace at `/sample/:id` is NOT a top-level stage -- it is reached
+// only by opening a sample from the contact sheet, so it has no tab (the right-side
 // sample stepper carries the on-focus context instead).
 const STAGES: readonly Stage[] = [
+  { id: "experiments", label: "Experiments", to: "/experiments" },
   { id: "samples", label: "Samples", to: "/samples" },
   { id: "series", label: "Series", to: "/series" },
 ];
