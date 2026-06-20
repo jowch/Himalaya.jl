@@ -129,6 +129,7 @@ function register_routes!()
     register_series_routes!()
     register_picker_routes!()
     register_resolve_routes!()
+    register_grouping_routes!()
 end
 
 const GC_TIMER = Ref{Union{Timer, Nothing}}(nothing)

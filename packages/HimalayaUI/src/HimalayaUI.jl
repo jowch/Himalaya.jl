@@ -29,6 +29,7 @@ include("routes_export.jl")
 include("routes_series.jl")
 include("routes_picker.jl")
 include("routes_resolve.jl")
+include("routes_grouping.jl")
 include("server.jl")
 include("ingest.jl")
 

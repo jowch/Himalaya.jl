@@ -223,4 +223,62 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
         s1 = first(filter(s -> s.sample_id == s1_id, first(r).samples))
         @test s1.flag === nothing             # a lone positioned/NULL pair yields no split
     end
+
+    @testset "PATCH /api/samples/{id}/name — renames and records event" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+
+        # Drive the real registered route via in-process dispatch (no socket).
+        # with_inproc_routes binds `db` so the handler's current_db() resolves to it,
+        # ensures routes are registered, and passes a call closure. Do NOT call
+        # register_grouping_routes!() here — registration happens inside
+        # with_inproc_routes → _ensure_inproc_routes! → register_routes!.
+        with_inproc_routes(db) do call
+            resp = call("PATCH", "/api/samples/$(s1_id)/name";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-rename-1"],
+                body = Vector{UInt8}(JSON3.write(Dict(:name => "JC C04 (S01P01)"))))
+            @test resp.status == 200
+
+            row = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT name, name_source FROM samples WHERE id = ?", [s1_id])))
+            @test String(row.name) == "JC C04 (S01P01)"
+            @test String(row.name_source) == "user"
+
+            # A sample_renamed event was written.
+            evts = Tables.rowtable(DBInterface.execute(db,
+                "SELECT action FROM user_actions WHERE entity_type='sample' AND entity_id=?", [s1_id]))
+            @test any(r -> String(r.action) == "sample_renamed", evts)
+        end
+    end
+
+    # Folded from Task 2: pin that rebuild_views_from_log! tolerates entity_type="sample".
+    # rebuild_views_from_log! (events.jl:1148) already declares entity_type::String = "exposure"
+    # and threads it into the WHERE clause — no events.jl edit required. This assertion
+    # prevents a future refactor from silently breaking the sample-partition path.
+    @testset "sample_renamed — event durable + rebuild_views_from_log! tolerates entity_type='sample'" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        req = user_req()
+
+        result = SQLite.transaction(db) do
+            HimalayaUI.apply_event!(HimalayaUI.InTransaction(), db, req;
+                kind        = "sample_renamed",
+                entity_type = "sample",
+                entity_id   = s1_id,
+                payload     = Dict(:name => "JC C04 (S01P01)", :experiment_id => exp_id))
+        end
+        @test result.event_id > 0
+
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT action, entity_type, entity_id FROM user_actions WHERE id = ?",
+            [result.event_id])))
+        @test String(row.action) == "sample_renamed"
+        @test String(row.entity_type) == "sample"
+        @test Int(row.entity_id) == s1_id
+
+        # rebuild_views_from_log! with entity_type="sample" must not throw.
+        @test_nowarn HimalayaUI.rebuild_views_from_log!(db, s1_id; entity_type="sample")
+    end
 end
