@@ -5,6 +5,8 @@ export { EmptyState } from "./EmptyState";
 export type { ButtonVariant } from "./Button";
 export { Dot } from "./Dot";
 export type { DotTone, DotSize } from "./Dot";
+export { Dropdown } from "./Dropdown";
+export type { DropdownProps } from "./Dropdown";
 export { HintText } from "./HintText";
 export { KbKey } from "./KbKey";
 export { KbLegend } from "./KbLegend";
