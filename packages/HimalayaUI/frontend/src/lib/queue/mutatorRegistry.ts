@@ -210,8 +210,8 @@ export function resolveMutatorForEvent(
     case "exposure_moved":  return moveExposureMutator;
     case "sample_renamed":  return renameSampleMutator;
     // split emits sample_created (new sample) + sample_split (source update).
-    // The own-tab deferred resolves on sample_split (the source-sample frame).
-    // sample_created has no own-op mutator — it routes through applyRemoteToCache.
+    // The own-tab deferred resolves on sample_created (the first-emitted frame).
+    // sample_split has no own-op mutator — it routes through applyRemoteToCache.
     case "sample_split":             return splitSampleMutator;
     case "grouping_flag_dismissed":  return dismissGroupingFlagMutator;
     // merge_samples fans out as exposure_moved frames (no sample_merged kind exists);

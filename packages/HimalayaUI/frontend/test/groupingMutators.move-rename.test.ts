@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../src/queries";
-import type { Load } from "../src/api";
+import type { Load, Sample } from "../src/api";
 import { moveExposureMutator, renameSampleMutator } from "../src/lib/queue/mutators/grouping";
 
 function seedLoads(qc: QueryClient, experimentId: number) {
@@ -47,6 +47,17 @@ describe("moveExposureMutator", () => {
     const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
   });
+
+  it("onSuccess invalidates corpusSamples so the contact sheet refreshes on own-tab edits (mirrors foreign applyRemoteToCache arms)", () => {
+    const qc = new QueryClient();
+    seedLoads(qc, 7);
+    const inv = vi.spyOn(qc, "invalidateQueries");
+    moveExposureMutator.onSuccess(
+      { experimentId: 7, exposureId: 100, sampleId: 20 } as never,
+      { id: 100 } as never, qc);
+    const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
+    expect(keys).toContain(JSON.stringify(queryKeys.corpusSamples));
+  });
 });
 
 describe("renameSampleMutator", () => {
@@ -64,5 +75,36 @@ describe("renameSampleMutator", () => {
     expect(a.name_source).toBe("user");
     ctx.restore();
     expect(qc.getQueryData<Load[]>(queryKeys.loads(7))![0]!.samples.find((s) => s.sample_id === 10)!.name).toBe("A");
+  });
+
+  it("onSuccess invalidates corpusSamples (own-op mirrors foreign sample_renamed arm)", () => {
+    const qc = new QueryClient();
+    seedLoads(qc, 7);
+    const inv = vi.spyOn(qc, "invalidateQueries");
+    renameSampleMutator.onSuccess(
+      { experimentId: 7, sampleId: 10, name: "NewName" } as never,
+      { id: 10, name: "NewName" } as Partial<Sample> as never, qc);
+    const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
+    expect(keys).toContain(JSON.stringify(queryKeys.corpusSamples));
+  });
+
+  it("onSuccess surgically patches sample(id) cache with new name (mirrors applyRemoteToCache sample_renamed setQueryData)", () => {
+    const qc = new QueryClient();
+    seedLoads(qc, 7);
+    // Pre-seed the sample-entity cache so the setQueryData old=>new merge has something to mutate
+    const existing: Sample = { id: 10, name: "OldName", notes: "some note", experiment_id: 7, tags: [] };
+    qc.setQueryData(queryKeys.sample(10), existing);
+
+    renameSampleMutator.onSuccess(
+      { experimentId: 7, sampleId: 10, name: "NewName" } as never,
+      { id: 10, name: "NewName" } as Partial<Sample> as never, qc);
+
+    // The surgical patch must update the sample-entity cache immediately (not just
+    // after the background invalidate refetch) so the sample-detail page converges.
+    const patched = qc.getQueryData<Sample>(queryKeys.sample(10));
+    expect(patched?.name).toBe("NewName");
+    // Other fields must be preserved — not stomped to undefined
+    expect(patched?.notes).toBe("some note");
+    expect(patched?.experiment_id).toBe(7);
   });
 });

@@ -33,4 +33,12 @@ describe("dismissGroupingFlagMutator (durable 'Keep separate')", () => {
     const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
   });
+
+  it("onSuccess invalidates corpusSamples (own-op mirrors foreign grouping_flag_dismissed arm)", () => {
+    const qc = new QueryClient(); seed(qc);
+    const inv = vi.spyOn(qc, "invalidateQueries");
+    dismissGroupingFlagMutator.onSuccess({ experimentId: 7, sampleId: 20 } as never, undefined as never, qc);
+    const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
+    expect(keys).toContain(JSON.stringify(queryKeys.corpusSamples));
+  });
 });

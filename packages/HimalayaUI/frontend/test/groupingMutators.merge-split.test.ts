@@ -37,6 +37,14 @@ describe("mergeSamplesMutator", () => {
     const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
   });
+
+  it("onSuccess invalidates corpusSamples (own-op mirrors foreign grouping_flag_dismissed arm)", () => {
+    const qc = new QueryClient(); seed(qc);
+    const inv = vi.spyOn(qc, "invalidateQueries");
+    mergeSamplesMutator.onSuccess({ experimentId: 7, loserId: 20, survivorId: 10 } as never, { loser_id: 20, survivor_id: 10 } as never, qc);
+    const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
+    expect(keys).toContain(JSON.stringify(queryKeys.corpusSamples));
+  });
 });
 
 describe("splitSampleMutator", () => {

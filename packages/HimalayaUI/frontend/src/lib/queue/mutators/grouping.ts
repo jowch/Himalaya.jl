@@ -29,10 +29,15 @@ function buildAuthOpts(p: {
  *  (replayCoordinator.ts case-1), so the SSE arm alone would not reconcile an
  *  own-op edit — the saveSeries.ts `series_save` precedent invalidates in
  *  onSuccess for exactly this reason. E1's applyRemoteToCache structural arms
- *  (E1-owned; E2 verifies in Task 7) cover FOREIGN tabs. */
+ *  (E1-owned; E2 verifies in Task 7) cover FOREIGN tabs.
+ *
+ *  corpusSamples is included to match the foreign arms in applyRemoteToCache
+ *  (sample_created / sample_split / grouping_flag_dismissed / sample_renamed all
+ *  invalidate corpusSamples) so the contact sheet refreshes on own-tab edits. */
 function invalidateLoads(qc: QueryClient, experimentId: number): void {
   qc.invalidateQueries({ queryKey: queryKeys.loads(experimentId) });
   qc.invalidateQueries({ queryKey: queryKeys.samples(experimentId) });
+  qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
 }
 
 /** Snapshot the loads cache, run `mutate`, return a restore closure. Shared by
@@ -103,13 +108,21 @@ export const renameSampleMutator: Mutator<RenameSampleInput, RenameSampleScope, 
     // (replayCoordinator resolves the deferred with a frame-derived stub, not
     // the HTTP body — feedback_queue_sse_wins_partial), so guard it before
     // splicing; then invalidate to re-derive flags / refresh the flat samples.
+    const newName = response?.name;
     patchLoads(qc, p.experimentId, (loads) => {
       for (const ld of loads) {
         const s = ld.samples.find((x) => x.sample_id === p.sampleId);
-        if (s && response?.name) s.name = response.name;
+        if (s && newName) s.name = newName;
       }
       return loads;
     });
+    // Mirror the foreign arm's surgical patch (applyRemoteToCache sample_renamed):
+    // update the sample-entity cache so the originating tab's sample-detail page
+    // converges without waiting for the background refetch.
+    if (newName !== undefined) {
+      qc.setQueryData<api.Sample>(queryKeys.sample(p.sampleId), (old) =>
+        old ? { ...old, name: newName } : old);
+    }
     invalidateLoads(qc, p.experimentId);
   },
 };
