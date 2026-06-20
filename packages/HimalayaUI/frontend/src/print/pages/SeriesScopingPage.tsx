@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useUndoStack } from "../../hooks/useUndoStack";
 import type { ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
@@ -309,12 +310,13 @@ export function SeriesScopingPage(): JSX.Element {
   const [rows, setRows] = useState<OrderingRow[]>([]);
   const [loose, setLoose] = useState<OrderingRow[]>([]);
   const [order, setOrder] = useState<number[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const undoStack = useUndoStack<HistoryEntry>();
   useEffect(() => {
     setRows(split.members);
     setLoose(split.looseMatches);
     setOrder(seededOrder);
-    setHistory([]);
+    undoStack.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [split.members, split.looseMatches, seededOrder]);
 
   // ── Cold path (no variable proposable FROM THE SEED, user arrived with one) ──
@@ -356,7 +358,7 @@ export function SeriesScopingPage(): JSX.Element {
       const changed =
         next.length !== order.length || next.some((id, i) => id !== order[i]);
       if (!changed) return;
-      setHistory((h) => [...h, { type: "reorder", prevOrder: order, label: "reorder" }]);
+      undoStack.push({ type: "reorder", prevOrder: order, label: "reorder" });
       setOrder(next);
     },
     [order],
@@ -447,7 +449,7 @@ export function SeriesScopingPage(): JSX.Element {
   const toggleFlag = (id: number): void => {
     const m = rows.find((r) => r.sampleId === id);
     if (!m) return;
-    setHistory((h) => [...h, { type: "flag", id, prev: m.flagged, label: `smp_${id}` }]);
+    undoStack.push({ type: "flag", id, prev: m.flagged, label: `smp_${id}` });
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, flagged: !r.flagged } : r)));
   };
 
@@ -457,7 +459,7 @@ export function SeriesScopingPage(): JSX.Element {
   const editValue = (id: number, value: string): void => {
     const m = rows.find((r) => r.sampleId === id);
     if (!m || value === m.value) return;
-    setHistory((h) => [...h, { type: "value", id, prev: m.value, label: `smp_${id}` }]);
+    undoStack.push({ type: "value", id, prev: m.value, label: `smp_${id}` });
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, value } : r)));
   };
 
@@ -475,7 +477,7 @@ export function SeriesScopingPage(): JSX.Element {
     if (v === "") return;
     const c = loose.find((r) => r.sampleId === id);
     if (!c) return;
-    setHistory((h) => [...h, { type: "add", id, prevLoose: c, label: `smp_${id}` }]);
+    undoStack.push({ type: "add", id, prevLoose: c, label: `smp_${id}` });
     setLoose((cur) => cur.filter((r) => r.sampleId !== id));
     // include:true is load-bearing — loose matches carry include:false, and the
     // commit gate (isKept) drops a non-included row, so a spread that kept the
@@ -490,28 +492,26 @@ export function SeriesScopingPage(): JSX.Element {
   };
 
   const undo = useCallback((): void => {
-    setHistory((h) => {
-      const e = h[h.length - 1];
-      if (!e) return h;
-      if (e.type === "flag") {
-        setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
-      } else if (e.type === "value") {
-        // value: restore the pre-edit read.
-        setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, value: e.prev } : r)));
-      } else if (e.type === "add") {
-        // add: drop the seated member + its order slot, restore the candidate to
-        // the FRONT of the loose pool — undo should pop it back where you grabbed
-        // it (visible above the preview cap), not bury it past the hidden tail.
-        setRows((cur) => cur.filter((r) => r.sampleId !== e.id));
-        setOrder((cur) => cur.filter((oid) => oid !== e.id));
-        setLoose((cur) => [e.prevLoose, ...cur]);
-      } else {
-        // reorder: restore the whole prior display order.
-        setOrder(e.prevOrder);
-      }
-      return h.slice(0, -1);
-    });
-  }, []);
+    const e = undoStack.pop();
+    if (!e) return;
+    if (e.type === "flag") {
+      setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: e.prev } : r)));
+    } else if (e.type === "value") {
+      // value: restore the pre-edit read.
+      setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, value: e.prev } : r)));
+    } else if (e.type === "add") {
+      // add: drop the seated member + its order slot, restore the candidate to
+      // the FRONT of the loose pool — undo should pop it back where you grabbed
+      // it (visible above the preview cap), not bury it past the hidden tail.
+      setRows((cur) => cur.filter((r) => r.sampleId !== e.id));
+      setOrder((cur) => cur.filter((oid) => oid !== e.id));
+      setLoose((cur) => [e.prevLoose, ...cur]);
+    } else {
+      // reorder: restore the whole prior display order.
+      setOrder(e.prevOrder);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoStack.pop]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
@@ -601,14 +601,14 @@ export function SeriesScopingPage(): JSX.Element {
   const orderCaption = `${rows.length} samples${skippedCount > 0 ? ` (${skippedCount} skipped)` : ""} · ${isCanonicalOrder ? "low to high" : "custom order"}`;
   const footState = buildFootState(keptCount, skippedCount);
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
-  const lastLabel = history.length ? history[history.length - 1]!.label : undefined;
+  const lastLabel = undoStack.top?.label;
 
   // SC-POLISH2: Discard moved from the page top into each plate foot beside
   // "Confirm & build", and guarded against silently destroying in-progress
   // work. "Work" = any warm gesture recorded in history (reorder/skip) OR a
   // typed cold/custom value. A clean worksheet skips the confirm.
   const hasUnsavedWork =
-    history.length > 0 || coldRows.some((r) => (r.value ?? "").trim() !== "");
+    undoStack.canUndo || coldRows.some((r) => (r.value ?? "").trim() !== "");
   const onDiscardClick = (): void => {
     if (hasUnsavedWork) setConfirmingDiscard(true);
     else navigate("/series");
@@ -952,7 +952,7 @@ export function SeriesScopingPage(): JSX.Element {
               onOrderSelect={onOrderSelect}
               orderNote={`Each value is the sample's stored ${keyLabel} tag. Switch the ordering variable above, or define your own.`}
               count={orderCaption}
-              {...(history.length
+              {...(undoStack.canUndo
                 ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) }
                 : {})}
               rows={sorted.map((r, i) => {
