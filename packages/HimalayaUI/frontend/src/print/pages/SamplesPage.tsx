@@ -192,7 +192,7 @@ export function SamplesPage(): JSX.Element {
 
   function clampSample(d: number): void {
     setCursor((c) => ({
-      sampleIndex: clamp(c.sampleIndex + d, 0, sortedSamples.length - 1),
+      sampleIndex: clamp(c.sampleIndex + d, 0, Math.max(0, sortedSamples.length - 1)),
       frameIndex: 0,
     }));
   }
@@ -392,21 +392,38 @@ export function SamplesPage(): JSX.Element {
       return undefined;
     },
     // ── Screen verbs: drop/keep/restore ──────────────────────────────────────
-    // When a selection is live → act on the whole selection.
-    // When no selection → decline (return false) so keys stay inert.
+    // When a selection is live → act on the whole selection (via batchSet).
+    // When no selection → act on the active frame (the single exposure at the
+    // cursor). If there is genuinely no active frame, return false so the key
+    // stays inert (don't crash on an empty list).
     drop: () => {
-      if (selected.size === 0) return false;
-      batchSet("rejected");
+      if (selected.size > 0) { batchSet("rejected"); return undefined; }
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      const frame = frames[cursor.frameIndex];
+      if (s == null || frame == null) return false;
+      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "rejected" });
+      showToast("1 frame dropped", "success");
       return undefined;
     },
     keep: () => {
-      if (selected.size === 0) return false;
-      batchSet("accepted");
+      if (selected.size > 0) { batchSet("accepted"); return undefined; }
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      const frame = frames[cursor.frameIndex];
+      if (s == null || frame == null) return false;
+      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "accepted" });
+      showToast("1 frame kept", "success");
       return undefined;
     },
     restore: () => {
-      if (selected.size === 0) return false;
-      batchSet(null);
+      if (selected.size > 0) { batchSet(null); return undefined; }
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      const frame = frames[cursor.frameIndex];
+      if (s == null || frame == null) return false;
+      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: null });
+      showToast("1 frame restored", "success");
       return undefined;
     },
     // ── Dismiss: clear selection → Esc ladder continues if nothing to clear ──

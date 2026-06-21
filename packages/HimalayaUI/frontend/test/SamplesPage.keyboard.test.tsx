@@ -41,7 +41,26 @@ const S0 = mkSample(10);
 const S1 = mkSample(11);
 const S2 = mkSample(12);
 
-// ── Setup helper ──────────────────────────────────────────────────────────────
+// ── Exposure fixtures ─────────────────────────────────────────────────────────
+// Two exposures on S0 for frame-level cursor tests.
+const mkExposure = (id: number, sampleId: number): import("../src/api").Exposure => ({
+  id,
+  sample_id: sampleId,
+  filename: `file_${id}.dat`,
+  kind: "file" as const,
+  selected: false,
+  status: null,
+  image_path: null,
+  image_version: "",
+  tags: [],
+  sources: [],
+  trace_hash: null,
+  analysis_inputs_hash: null,
+});
+const E0 = mkExposure(100, S0.id); // S0's first frame
+const E1 = mkExposure(101, S0.id); // S0's second frame
+
+// ── Setup helpers ─────────────────────────────────────────────────────────────
 function renderSamplesPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -80,6 +99,51 @@ function renderSamplesPage() {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/**
+ * Variant render helper that gives S0 real exposures (E0, E1) so the
+ * active-frame fallback cull path can resolve cursor → exposure id.
+ * Returns the batch.mutate spy so tests can assert on it.
+ */
+function renderSamplesPageWithExposures(): { mutateSpy: ReturnType<typeof vi.fn> } {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  vi.spyOn(queries, "useCorpusSamples").mockReturnValue({
+    data: [S0, S1, S2],
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof queries.useCorpusSamples>);
+
+  const byId = new Map<number, import("../src/api").Exposure[]>([
+    [S0.id, [E0, E1]],
+    [S1.id, []],
+    [S2.id, []],
+  ]);
+  vi.spyOn(queries, "useCorpusExposures").mockReturnValue({
+    byId,
+    isLoading: false,
+  });
+  vi.spyOn(queries, "useScreenedProgress").mockReturnValue({ screened: 0, total: 3 });
+  vi.spyOn(queries, "useExperiments").mockReturnValue({
+    data: [],
+    isLoading: false,
+  } as unknown as ReturnType<typeof queries.useExperiments>);
+
+  const mutateSpy = vi.fn();
+  vi.spyOn(queries, "useSetExposureStatusBatch").mockReturnValue({
+    mutate: mutateSpy,
+  } as unknown as ReturnType<typeof queries.useSetExposureStatusBatch>);
+
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={["/samples"]}>
+        <SamplesPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  return { mutateSpy };
 }
 
 describe("SamplesPage — T2.4 page cursor + keyboard map", () => {
@@ -165,5 +229,51 @@ describe("SamplesPage — T2.4 page cursor + keyboard map", () => {
     // Cursor at index 0 → sample id 10.
     fireEvent.keyDown(window, { key: "l" });
     expect(navigate).toHaveBeenCalledWith("/sample/10/loupe");
+  });
+
+  // ── Active-frame fallback (Fix 1 / spec §"selection-else-active-frame") ──────
+  // With NO selection, X (drop) / K (keep) / Backspace (restore) should act on
+  // the exposure at the cursor, not decline. The mutation must fire with the
+  // correct {sampleId, exposureId, status} triple.
+  it("X (drop) with no selection fires mutation on active frame (cursor=0,0)", () => {
+    const { mutateSpy } = renderSamplesPageWithExposures();
+    // Cursor starts at sampleIndex=0 (S0), frameIndex=0 (E0). No selection.
+    fireEvent.keyDown(window, { key: "x" });
+    expect(mutateSpy).toHaveBeenCalledWith({
+      sampleId: S0.id,
+      exposureId: E0.id,
+      status: "rejected",
+    });
+  });
+
+  it("K (keep) with no selection fires mutation on active frame", () => {
+    const { mutateSpy } = renderSamplesPageWithExposures();
+    fireEvent.keyDown(window, { key: "k" });
+    expect(mutateSpy).toHaveBeenCalledWith({
+      sampleId: S0.id,
+      exposureId: E0.id,
+      status: "accepted",
+    });
+  });
+
+  it("ArrowRight moves frame cursor; X then acts on second frame (E1)", () => {
+    const { mutateSpy } = renderSamplesPageWithExposures();
+    // Move frame cursor to frameIndex=1 (E1).
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "x" });
+    expect(mutateSpy).toHaveBeenCalledWith({
+      sampleId: S0.id,
+      exposureId: E1.id,
+      status: "rejected",
+    });
+  });
+
+  it("X with no selection does nothing when sample has no frames", () => {
+    // S1 has no exposures — the key must be inert (mutate not called).
+    const { mutateSpy } = renderSamplesPageWithExposures();
+    // Navigate to S1 (sampleIndex=1).
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "x" });
+    expect(mutateSpy).not.toHaveBeenCalled();
   });
 });
