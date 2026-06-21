@@ -879,7 +879,7 @@ export function SeriesScopingPage(): JSX.Element {
                         ? "No samples in the corpus to scope."
                         : "These samples share no ordering variable yet. Tag them on the contact sheet to propose a series."}
                     </span>
-                    <Button variant="outline" onClick={() => navigate("/samples")}>
+                    <Button variant="outline" onClick={() => navigate("/experiments")}>
                       Open the contact sheet
                     </Button>
                   </div>
@@ -1100,7 +1100,7 @@ export function SeriesScopingPage(): JSX.Element {
                       contact sheet if it belongs here.{" "}
                       <button
                         type="button"
-                        onClick={() => navigate("/samples")}
+                        onClick={() => navigate("/experiments")}
                         className="text-caption font-semibold text-accent hover:underline"
                       >
                         Open the contact sheet

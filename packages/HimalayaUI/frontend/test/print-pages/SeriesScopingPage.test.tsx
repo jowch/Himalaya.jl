@@ -715,7 +715,7 @@ describe("SeriesScopingPage", () => {
     expect(screen.queryByTestId("scope-sample-row")).not.toBeInTheDocument();
     const cta = screen.getByRole("button", { name: /contact sheet/i });
     fireEvent.click(cta);
-    expect(navigateSpy).toHaveBeenCalledWith("/samples");
+    expect(navigateSpy).toHaveBeenCalledWith("/experiments");
   });
 
   it("cold path: names the variable, writes the tags (Op A), creates the series (Op B), navigates to /series/:id", () => {
@@ -1157,12 +1157,12 @@ describe("SeriesScopingPage", () => {
     expect(note.textContent).toMatch(/1 more lacks the ratio/i);
   });
 
-  it("the note's contact-sheet control navigates to /samples", () => {
+  it("the note's contact-sheet control navigates to /experiments", () => {
     seedManyLoose();
     renderPage();
     const note = screen.getByTestId("scope-candidates-note");
     fireEvent.click(within(note).getByRole("button", { name: /open the contact sheet/i }));
-    expect(navigateSpy).toHaveBeenCalledWith("/samples");
+    expect(navigateSpy).toHaveBeenCalledWith("/experiments");
   });
 
   it("renders every candidate and no remainder line when loose fits within the cap", () => {

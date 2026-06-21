@@ -115,7 +115,7 @@ function renderAt(path = "/samples") {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/samples" element={<SamplesPage />} />
-        <Route path="/samples/loupe/:sampleId" element={<LoupeRouteProbe />} />
+        <Route path="/sample/:sampleId/loupe" element={<LoupeRouteProbe />} />
         <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
       </Routes>
     </MemoryRouter>,

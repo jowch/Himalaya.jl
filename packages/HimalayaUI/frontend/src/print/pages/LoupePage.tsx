@@ -87,7 +87,7 @@ function notifySaveFailed(err: unknown): void {
 }
 
 /**
- * LoupePage (greenfield) — the sample loupe at /samples/loupe/:sampleId.
+ * LoupePage (greenfield) — the sample loupe at /sample/:sampleId/loupe.
  * URL-owned: the sample id is the route param, never Zustand `activeSampleId`.
  * Mounts body-only inside the app shell <Outlet> (T3.2).
  */

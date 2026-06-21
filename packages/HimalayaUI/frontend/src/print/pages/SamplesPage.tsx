@@ -447,7 +447,7 @@ export function SamplesPage(): JSX.Element {
     if (experimentId !== undefined) params.set("experiment", String(experimentId));
     if (exposureId !== undefined) params.set("exposure", String(exposureId));
     const qs = params.toString();
-    return `/samples/loupe/${id}${qs ? `?${qs}` : ""}`;
+    return `/sample/${id}/loupe${qs ? `?${qs}` : ""}`;
   }
 
   return (

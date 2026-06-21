@@ -125,7 +125,8 @@ export function AppRoutes(): JSX.Element {
       <Route element={<AppShell />}>
         {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
         <Route path="/samples" element={<Navigate to="/experiments" replace />} />
-        <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
+        {/* T3.2: flat loupe route — /sample/:sampleId/loupe (matches gotoSample + loupeHref). */}
+        <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
         {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
         <Route path="/sample/:sampleId" element={<FocusPage />} />
         {/* I3.3 (#173): series folio — corpus-wide masonry of saved series. */}

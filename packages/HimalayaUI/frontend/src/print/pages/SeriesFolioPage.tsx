@@ -388,7 +388,7 @@ export function SeriesFolioPage(): JSX.Element {
                 title="No series yet"
                 body="The folio holds every comparison you save. New series start from samples selected on the contact sheet."
                 action={
-                  <Button variant="outline" onClick={() => navigate("/samples")}>
+                  <Button variant="outline" onClick={() => navigate("/experiments")}>
                     Open the contact sheet
                   </Button>
                 }

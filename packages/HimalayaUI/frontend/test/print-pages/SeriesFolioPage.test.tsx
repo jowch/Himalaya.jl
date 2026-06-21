@@ -324,7 +324,7 @@ describe("SeriesFolioPage", () => {
     fireEvent.click(
       within(block).getByRole("button", { name: "Open the contact sheet" }),
     );
-    expect(navigateSpy).toHaveBeenCalledWith("/samples");
+    expect(navigateSpy).toHaveBeenCalledWith("/experiments");
   });
 
   it("zero summaries plus a typed search still shows the first-run state (a search over nothing is still nothing saved)", () => {
