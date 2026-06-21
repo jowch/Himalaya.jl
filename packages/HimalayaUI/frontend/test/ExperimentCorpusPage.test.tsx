@@ -46,6 +46,11 @@ function renderAt(loads: Load[], processing = false, experiment?: Experiment) {
   if (processing) useAppState.setState({ ingestInFlight: { 7: { processed: 10, total: 100, status: "scanning" } } });
   else useAppState.setState({ ingestInFlight: null });
   vi.spyOn(api, "listLoads").mockResolvedValue(loads);
+  // The corpus rows now read useCorpusSamples() + useCorpusExposures(); mock
+  // both empty so the sheet renders with no rows (these tests assert the banner
+  // + state machine, not the rows).
+  vi.spyOn(api, "listCorpusSamples").mockResolvedValue([]);
+  vi.spyOn(api, "listExposures").mockResolvedValue([]);
   if (experiment) vi.spyOn(api, "getExperiment").mockResolvedValue(experiment);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
