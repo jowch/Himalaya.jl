@@ -708,4 +708,19 @@ end
             analysis_dir = analysis_dir)
         @test HimalayaUI.cheap_change_check(bad_db, bad_id) == false
     end
+
+    @testset "scan_and_group! on_progress reports per-exposure" begin
+        db = fresh_db()
+        data_dir = mktempdir()
+        for stem in ("e1", "e2", "e3")
+            touch(joinpath(data_dir, "$stem.tif"))
+            write_prp(joinpath(data_dir, "$stem.prp"))      # default kwargs OK; see :20
+        end
+        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir, data_dir=data_dir, analysis_dir=data_dir)
+        ticks = Tuple{Int,Int}[]
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=true, on_progress=(p, t) -> push!(ticks, (p, t)))
+        @test last(ticks) == (3, 3)           # final tick = all done
+        @test issorted(first.(ticks))         # monotonic processed count
+        @test all(t -> t[2] == 3, ticks)      # total stable
+    end
 end

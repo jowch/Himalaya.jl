@@ -19,7 +19,8 @@
 
 """
     scan_and_group!(db, experiment_id; analyze=true,
-                    tif_pattern="{name}.tif", prp_pattern="{name}.prp", dat_pattern="{name}.dat")
+                    tif_pattern="{name}.tif", prp_pattern="{name}.prp", dat_pattern="{name}.dat",
+                    on_progress=nothing)
 
 Full ingest of a beamtime directory into `db` under `experiment_id`. The scan
 root is the experiment's own `data_dir`/`analysis_dir` (resolved from its row).
@@ -49,6 +50,7 @@ function scan_and_group!(
     tif_pattern  ::String = "{name}.tif",
     prp_pattern  ::String = "{name}.prp",
     dat_pattern  ::String = "{name}.dat",
+    on_progress  ::Union{Function,Nothing} = nothing,
 )
     # Resolve data_dir, analysis_dir, and per-experiment pattern overrides from the row.
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
@@ -184,12 +186,16 @@ function scan_and_group!(
     #    as cli_init_with_db!: a crash mid-analyze must not roll back ingest).
     # -----------------------------------------------------------------------
     if analyze
-        for eid in new_exposure_ids
+        total = length(new_exposure_ids)
+        for (i, eid) in enumerate(new_exposure_ids)
             try
                 analyze_exposure!(db, eid)
             catch e
                 @warn "scan_and_group!: analyze_exposure! failed" exposure_id=eid exception=e
             end
+            # Progress fires OUTSIDE the structural txn (already committed above).
+            # ponytail: tick every exposure; the SSE 64-cap drops surplus, terminal frame is authoritative.
+            on_progress === nothing || on_progress(i, total)
         end
     end
 
