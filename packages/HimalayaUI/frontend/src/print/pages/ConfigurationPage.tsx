@@ -6,6 +6,7 @@ import { useDraftExperiment } from "../../lib/draftExperiment";
 import * as api from "../../api";
 import { ProgressBar } from "../ui/ProgressBar";
 import { NoticePill } from "../ui/NoticePill";
+import { Button } from "../ui/Button";
 
 /**
  * ConfigurationPage -- the Configuration tab shell (spec sec 8.1). Extracts
@@ -110,22 +111,20 @@ function ConfigurationFirstRun(): JSX.Element {
       )}
 
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          className="text-sm text-ink-soft hover:text-ink"
+        <Button
+          variant="ghost"
           onClick={() => { clear(); navigate("/experiments/new"); }}
         >
           Back
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="accent"
           data-testid="approve-button"
           disabled={isFetching || !manifest}
           onClick={handleApprove}
-          aria-label="Approve"
         >
           Approve
-        </button>
+        </Button>
       </div>
     </div>
   );
