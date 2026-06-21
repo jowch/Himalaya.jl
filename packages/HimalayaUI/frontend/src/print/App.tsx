@@ -49,17 +49,18 @@ export function PrintApp(): JSX.Element {
           parsed.kind === "ingest_started" || parsed.kind === "ingest_progress" ||
           parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed"
         ) {
-          const p = (parsed as { payload?: { experiment_id?: number; processed?: number; total?: number } }).payload;
+          const p = (parsed as { payload?: { experiment_id?: number; processed?: number; total?: number; phase?: string } }).payload;
           const expId = p?.experiment_id;
           if (expId !== undefined) {
             if (parsed.kind === "ingest_started" || parsed.kind === "ingest_progress") {
-              // E1 maps both pre-terminal frames to "scanning" (advisory header
-              // label); refine to "analyzing" when the backend frame carries a
-              // phase discriminator.
+              // The backend tags a rescan's frames phase:"rescan" (the /{id}/scan
+              // route) → "analyzing" → the inline ProgressBar, since the
+              // experiment's table data is already present. An initial scan (the
+              // create route) sends no phase → "scanning" → GroupingReviewPage.
               setIngestProgress(expId, {
                 processed: p?.processed ?? 0,
                 total: p?.total ?? 0,
-                status: "scanning",
+                status: p?.phase === "rescan" ? "analyzing" : "scanning",
               });
             } else {
               // Terminal (complete/failed): drop the in-flight entry; the

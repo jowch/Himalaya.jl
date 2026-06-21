@@ -51,6 +51,29 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
     });
   });
 
+  it("maps a rescan-phase frame to status=analyzing (the rescanning surface)", () => {
+    // An initial scan (create route) sends no phase → "scanning" → GroupingReviewPage.
+    // A rescan (/{id}/scan) tags its frames phase:"rescan" → "analyzing" → the
+    // inline ProgressBar, since the experiment's table data is already present.
+    mount();
+    FakeES.last!.emit("curation", {
+      kind: "ingest_progress", entity_id: 7, entity_type: "experiment",
+      payload: { experiment_id: 7, processed: 120, total: 400, phase: "rescan" },
+    });
+    expect(useAppState.getState().ingestInFlight?.[7]).toEqual({
+      processed: 120, total: 400, status: "analyzing",
+    });
+  });
+
+  it("a rescan-phase ingest_started also yields status=analyzing", () => {
+    mount();
+    FakeES.last!.emit("curation", {
+      kind: "ingest_started", entity_id: 7, entity_type: "experiment",
+      payload: { experiment_id: 7, processed: 0, total: 0, phase: "rescan" },
+    });
+    expect(useAppState.getState().ingestInFlight?.[7]?.status).toBe("analyzing");
+  });
+
   it("clears ingestInFlight on ingest_complete", () => {
     mount();
     FakeES.last!.emit("curation", { kind: "ingest_started", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7, processed: 0, total: 680 } });

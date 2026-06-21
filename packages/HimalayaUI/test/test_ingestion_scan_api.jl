@@ -70,6 +70,41 @@ end
         end
     end
 
+    @testset "broadcast_progress! carries a phase discriminator in the payload" begin
+        # The rescan route tags its frames phase="rescan" so the frontend can map
+        # them to the "analyzing" (re-analysis) surface vs "scanning" (initial).
+        # broadcast_progress! merges kwargs into the payload, so phase rides through.
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            HimalayaUI.bind_db!(db)
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "RP", path = dir, data_dir = dir, analysis_dir = dir)
+
+            pending = Channel{String}(64)
+            sub = (pending = pending,)
+            lock(HimalayaUI.SSE_LOCK) do
+                push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+            end
+
+            HimalayaUI.broadcast_progress!(exp_id; kind = "ingest_progress",
+                processed = 12, total = 40, phase = "rescan")
+
+            @test isready(pending)
+            frame = take!(pending)
+            data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
+            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            @test obj.kind == "ingest_progress"
+            @test obj.payload.phase == "rescan"
+            @test obj.payload.processed == 12
+
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            HimalayaUI.SSE_SUBSCRIBERS[] = []
+        end
+    end
+
     @testset "create_load! persists a load row" begin
         db, dir, exp_id = scan_test_db()
         lid = HimalayaUI.create_load!(db;

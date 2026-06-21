@@ -401,7 +401,11 @@ function register_experiments_routes!()
             end
         end
 
-        broadcast_progress!(id; kind = "ingest_started", processed = 0, total = 0)
+        # phase="rescan" tags every pre-terminal frame so the frontend maps this to
+        # the "analyzing" surface (inline ProgressBar over the existing table), not
+        # the initial-scan "scanning" surface (GroupingReviewPage). The create route
+        # omits phase → "scanning".
+        broadcast_progress!(id; kind = "ingest_started", processed = 0, total = 0, phase = "rescan")
 
         # Run the cheap change-check + additive scan on a @spawn'd task so this request
         # returns immediately; progress streams over SSE. Both Phase B functions
@@ -411,7 +415,9 @@ function register_experiments_routes!()
             try
                 changed = cheap_change_check(db, id)
                 if changed
-                    scan_and_group!(db, id)
+                    scan_and_group!(db, id;
+                        on_progress = (p, t) -> broadcast_progress!(id;
+                            kind = "ingest_progress", processed = p, total = t, phase = "rescan"))
                     start_rescan_scheduler!(db, id)   # re-arm the fast-tier scheduler
                 end
 
