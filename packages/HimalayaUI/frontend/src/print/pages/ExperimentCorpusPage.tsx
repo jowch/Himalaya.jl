@@ -1,7 +1,8 @@
 import { Link, useParams } from "react-router-dom";
 import { useAppState } from "../../state";
-import { useLoads } from "../../queries";
+import { useExperiment, useLoads } from "../../queries";
 import { Badge } from "../ui/Badge";
+import { ScanFailedPage } from "./ScanFailedPage";
 
 /**
  * ExperimentCorpusPage — the Corpus tab body. Reuses the shipped SheetTable
@@ -15,6 +16,7 @@ export function ExperimentCorpusPage(): JSX.Element {
   const expId = id ? Number(id) : 0;
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const loads = useLoads(expId);
+  const exp = useExperiment(expId);
 
   // Review count: LoadSamples across all loads whose `flag` is non-null
   // (a flagged merge/split discrepancy). Derived from useLoads — tests mock
@@ -24,6 +26,7 @@ export function ExperimentCorpusPage(): JSX.Element {
     0,
   );
   const processing = inFlight?.status === "scanning" || inFlight?.status === "analyzing";
+  const failed = !processing && (inFlight?.status === "failed" || exp.data?.ingest_status === "failed");
 
   return (
     <div className="flex flex-col gap-4">
@@ -52,6 +55,16 @@ export function ExperimentCorpusPage(): JSX.Element {
         <div data-testid="live-ingest-slot" className="text-sm text-ink-soft">
           Processing exposures…
         </div>
+      ) : failed ? (
+        // T4.2: scan failed surface — pattern test + ingest-N confirm.
+        // unmatched + parsedCount are ephemeral (lost on reload); T4.3 wires
+        // a persistent source (e.g. ingestInFlight or a dedicated failed-scan
+        // query). Pass empty defaults so the page is renderable before T4.3.
+        <ScanFailedPage
+          experimentId={expId}
+          unmatched={[]}
+          parsedCount={0}
+        />
       ) : (
         // E2 mounts the scoped SheetTable here. E1 renders the labelled slot so
         // the page is assemblable without the corpus query wiring.
