@@ -30,6 +30,7 @@ const GROUPS = [
                   "test_routes_mentions.jl","test_route_response_shapes.jl",
                   "test_route_validation_routing.jl","test_routes_series.jl",
                   "test_picker_routes.jl","test_picker_samples_route.jl","test_routes_resolve.jl",
+                  "test_routes_fs.jl",
                   "test_inproc_equivalence.jl"]),
     ("events",   ["test_http.jl","test_actions.jl","test_events.jl","test_assignment_reattach.jl",
                   "test_ingestion_structural_events.jl",
@@ -67,6 +68,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_concurrent_writes.jl","test_idempotency_sse_suppression.jl",
                    "test_comparisons.jl","test_routes_series.jl","test_picker_routes.jl",
                    "test_picker_samples_route.jl","test_routes_resolve.jl",
+                   "test_routes_fs.jl",
                    "test_comparison_pins.jl","test_migrate_toml.jl",
                    "test_spa_fallback.jl","test_migration_upgrade.jl"]
 

@@ -30,6 +30,7 @@ include("routes_series.jl")
 include("routes_picker.jl")
 include("routes_resolve.jl")
 include("routes_grouping.jl")
+include("routes_fs.jl")
 include("server.jl")
 include("ingest.jl")
 
