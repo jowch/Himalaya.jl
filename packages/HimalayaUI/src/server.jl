@@ -339,10 +339,20 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
     end
 
     if changed
+        # Drive the corpus "analyzing" surface: phase="rescan" so the frontend maps
+        # these frames to the inline ProgressBar (not the initial-scan GroupingReviewPage).
+        # A terminal frame (complete/failed) MUST follow ingest_started or the surface
+        # would stick — the frontend clears ingestInFlight only on a terminal frame.
+        broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, phase = "rescan")
         try
-            scan_and_group!(db, experiment_id)
+            scan_and_group!(db, experiment_id;
+                on_progress = (p, t) -> broadcast_progress!(experiment_id;
+                    kind = "ingest_progress", processed = p, total = t, phase = "rescan"))
+            broadcast_progress!(experiment_id; kind = "ingest_complete", processed = 0, total = 0)
         catch err
             @warn "scan failed during rescan tick" experiment_id = experiment_id exception = err
+            broadcast_progress!(experiment_id; kind = "ingest_failed",
+                processed = 0, total = 0, error = sprint(showerror, err))
         end
         # Re-arm at fast tier on a detected change.
         lock(_DB_WRITE_LOCK) do

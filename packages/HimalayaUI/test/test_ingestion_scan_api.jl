@@ -424,6 +424,49 @@ end
         end
     end
 
+    @testset "_rescan_tick! emits rescan-phase ingest frames on a detected change" begin
+        # The auto-rescan scheduler is the real rescan trigger (no manual UI rescan
+        # by spec). On a detected change it must drive the corpus "analyzing" surface:
+        # ingest_started(phase=rescan) → … → a terminal frame so the surface clears.
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "RT", path = dir, data_dir = dir, analysis_dir = dir)
+            pending = Channel{String}(64)
+            sub = (pending = pending,)
+            lock(HimalayaUI.SSE_LOCK) do
+                push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+            end
+            try
+                HimalayaUI._rescan_tick!(db, exp_id;
+                    cheap_check_fn = (_, _) -> true,
+                    fast_interval = 3600.0, ticks_before_daily = 3, ticks_before_stop = 2)
+
+                kinds  = String[]
+                phases = String[]
+                while isready(pending)
+                    frame = take!(pending)
+                    data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
+                    obj = JSON3.read(replace(data_line, r"^data: " => ""))
+                    push!(kinds, String(obj.kind))
+                    haskey(obj.payload, :phase) && push!(phases, String(obj.payload.phase))
+                end
+                @test "ingest_started" in kinds
+                @test "ingest_complete" in kinds    # terminal → frontend clears the surface
+                @test "rescan" in phases            # tagged rescan → maps to "analyzing"
+            finally
+                lock(HimalayaUI.SSE_LOCK) do
+                    filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+                end
+                close(pending)
+                HimalayaUI.SSE_SUBSCRIBERS[] = []
+                HimalayaUI.stop_rescan_scheduler!(exp_id)
+                HimalayaUI.stop_all_rescan_timers!()
+                SQLite.close(db)
+            end
+        end
+    end
+
     @testset "POST /api/experiments/{id}/scan no-change is idempotent" begin
         db, dir, exp_id = scan_test_db()
 
