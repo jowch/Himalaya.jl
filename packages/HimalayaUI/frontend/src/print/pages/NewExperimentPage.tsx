@@ -5,19 +5,40 @@ import * as api from "../../api";
 import { useDraftExperiment } from "../../lib/draftExperiment";
 import { PageFrame } from "../components/PageFrame";
 import { DirectoryPickerField } from "../components/DirectoryPickerField";
+import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Kicker } from "../ui/Kicker";
 import type { ValidatePathResponse } from "../../api";
 
+/** One inline pre-flight check in the dual ✓ row (mockup p1-new): a green ✓
+ *  when satisfied, a red ✗ + reason when not, faint while pending. */
+function PreflightCheck({
+  state,
+  pass,
+  fail,
+}: {
+  state: "pass" | "fail" | "pending";
+  pass: string;
+  fail: string;
+}): JSX.Element {
+  if (state === "pending") {
+    return <span className="text-meta text-ink-faint">◦ {pass}</span>;
+  }
+  if (state === "pass") {
+    return <span className="text-meta font-semibold text-success" role="status">✓ {pass}</span>;
+  }
+  return <span className="text-meta font-semibold text-error" role="alert">✗ {fail}</span>;
+}
+
 /**
- * NewExperimentPage — /experiments/new (spec §8.7). Directory picker +
- * suggestions + validation; primary action commits the validated path to a
+ * NewExperimentPage — /experiments/new (spec §8.7, mockup p1-new). Directory
+ * picker + suggestions + two pre-flight checks (directory exists · not already
+ * an experiment). The primary action commits the validated path to a
  * client-side draft and navigates to /experiments/new/config (first-run
  * Configuration). No DB row is created here — creation happens at Approve.
  *
- * T4.0: two-phase funnel handoff. "Review →" replaces the old "Scan and
- * create" action. The dup-dir guard (inline error + disabled submit) is
- * preserved from the pre-T4.0 implementation.
+ * Two-phase funnel handoff (T4.0): "Review →" replaces the old "Scan and
+ * create". The dup-dir guard (inline ✗ + disabled submit) is preserved.
  */
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
@@ -70,41 +91,62 @@ export function NewExperimentPage(): JSX.Element {
     navigate("/experiments");
   };
 
+  // Pre-flight check states. Both are "pending" until a path is entered.
+  const existsState: "pass" | "fail" | "pending" =
+    trimmedPath === "" || validation == null ? "pending" : validation.ok ? "pass" : "fail";
+  const uniqueState: "pass" | "fail" | "pending" =
+    trimmedPath === "" ? "pending" : duplicateOf === undefined ? "pass" : "fail";
+
   return (
-    <PageFrame width="home" className="px-6 py-8">
-      <button
-        type="button"
-        onClick={() => navigate("/experiments")}
-        className="text-sm text-ink-soft hover:text-ink mb-4"
-      >
-        ← Experiments
-      </button>
-      <Kicker>New experiment</Kicker>
-      <h1 className="text-display text-ink mb-1">Point at an experiment directory</h1>
-      <p className="text-base text-ink-soft mb-6">
-        Choose the directory of exposures. Himalaya reads the PRP and setup files,
-        groups the frames into samples, and derives the geometry.
-      </p>
+    <>
+      <PageFrame width="home" className="px-6 py-8 pb-28">
+        <div className="max-w-[760px]">
+          <Kicker tone="accent">New experiment</Kicker>
+          <h1 className="text-display text-ink">Point at a directory</h1>
+          <p className="text-body text-ink-soft mt-2 mb-6 max-w-[60ch]">
+            Pick the folder for this experiment. The next step indexes it and lets
+            you review before anything is created.
+          </p>
 
-      <div className="flex flex-col gap-5 max-w-[680px]">
-        <div>
-          <label htmlFor="dirpicker" className="block text-xs font-bold uppercase tracking-wide text-ink-faint mb-1.5">
-            Data directory
-          </label>
-          <DirectoryPickerField
-            value={path}
-            onChange={setPath}
-            suggestions={suggestions}
-            validation={validation}
-          />
-          {duplicateOf !== undefined && (
-            <p className="text-sm text-error mt-1.5" role="alert">
-              This directory is already an experiment
-              {duplicateOf.name ? ` ("${duplicateOf.name}")` : ""}. Each experiment is one directory.
-            </p>
-          )}
+          <Card padding="lg">
+            <Kicker tone="soft" className="mb-2">Directory</Kicker>
+            <DirectoryPickerField
+              value={path}
+              onChange={setPath}
+              suggestions={suggestions}
+              validation={null}
+            />
+            <div
+              className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5"
+              data-testid="dirpicker-checks"
+            >
+              <PreflightCheck
+                state={existsState}
+                pass="directory exists"
+                fail={validation?.message ?? "directory not found"}
+              />
+              <PreflightCheck
+                state={uniqueState}
+                pass="not already an experiment"
+                fail={
+                  duplicateOf?.name
+                    ? `already an experiment ("${duplicateOf.name}")`
+                    : "already an experiment"
+                }
+              />
+            </div>
+          </Card>
         </div>
+      </PageFrame>
 
+      {/* Sticky funnel footer (p1-new): reassurance + Cancel/Review. */}
+      <footer
+        data-testid="funnel-footer"
+        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 border-t border-hair bg-paper px-8 py-3"
+      >
+        <span className="text-meta text-ink-soft">
+          Nothing is created yet. The next step indexes and lets you review.
+        </span>
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={handleCancel}>Cancel</Button>
           <Button
@@ -116,7 +158,7 @@ export function NewExperimentPage(): JSX.Element {
             Review →
           </Button>
         </div>
-      </div>
-    </PageFrame>
+      </footer>
+    </>
   );
 }
