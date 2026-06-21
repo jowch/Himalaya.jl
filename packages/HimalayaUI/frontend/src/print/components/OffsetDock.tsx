@@ -1,5 +1,6 @@
 /**
- * Dock — floating offset control kept reachable while reading full-bleed.
+ * OffsetDock — floating trace-offset control kept reachable while reading
+ * full-bleed. (Distinct from the contextual bottom nav bar `ui/Dock`.)
  *
  * Presentational contract: NO local state. `offset` and `onOffsetChange` are
  * props; the parent owns the value. Anchored bottom-right.
@@ -15,7 +16,7 @@ function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-export interface DockProps {
+export interface OffsetDockProps {
   /** Current trace offset multiplier. Rendered as `${offset.toFixed(2)}×`. */
   offset: number;
   min?: number;
@@ -26,17 +27,17 @@ export interface DockProps {
   className?: string;
 }
 
-export function Dock({
+export function OffsetDock({
   offset,
   min = 0.4,
   max = 1.4,
   step = 0.05,
   onOffsetChange,
   className,
-}: DockProps): JSX.Element {
+}: OffsetDockProps): JSX.Element {
   return (
     <div
-      data-testid="dock"
+      data-testid="offset-dock"
       className={cx(
         "fixed right-6 bottom-6 z-50 flex items-center gap-3.5",
         "bg-plate border border-hair-strong rounded-xl px-4 py-3 shadow-lg",

@@ -1,14 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { Dock } from "./Dock";
+import { OffsetDock } from "./OffsetDock";
 
 const meta = {
-  title: "components/Dock",
-  component: Dock,
+  title: "components/OffsetDock",
+  component: OffsetDock,
   args: {
     offset: 1.2,
   },
-} satisfies Meta<typeof Dock>;
+} satisfies Meta<typeof OffsetDock>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -22,17 +22,17 @@ export const Default: Story = {
       <p className="text-sm text-ink-soft p-4">
         Full-bleed reading mode — the offset dock floats bottom-right.
       </p>
-      <Dock {...args} />
+      <OffsetDock {...args} />
     </div>
   ),
 };
 
-function InteractiveDock(): JSX.Element {
+function InteractiveOffsetDock(): JSX.Element {
   const [offset, setOffset] = useState(1.2);
   return (
     <div className="bg-paper min-h-screen relative">
       <p className="text-sm text-ink-soft p-4">Drag the slider to change the trace offset.</p>
-      <Dock offset={offset} onOffsetChange={setOffset} />
+      <OffsetDock offset={offset} onOffsetChange={setOffset} />
     </div>
   );
 }
@@ -41,5 +41,5 @@ export const Interactive: Story = {
   args: {
     onOffsetChange: () => {},
   },
-  render: () => <InteractiveDock />,
+  render: () => <InteractiveOffsetDock />,
 };

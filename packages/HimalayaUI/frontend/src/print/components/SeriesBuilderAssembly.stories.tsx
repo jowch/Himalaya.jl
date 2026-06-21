@@ -4,7 +4,7 @@ import { BuilderRail } from "./BuilderRail";
 import { SeriesPlate, type SeriesScale } from "./SeriesPlate";
 import { MemberRow } from "./MemberRow";
 import { RailBack } from "./RailBack";
-import { Dock } from "./Dock";
+import { OffsetDock } from "./OffsetDock";
 import { useDragReorder, reorder } from "./useDragReorder";
 import { TRANSITION } from "../waterfall/waterfall.fixtures";
 
@@ -16,7 +16,7 @@ import { TRANSITION } from "../waterfall/waterfall.fixtures";
  * collapsed/full-bleed mode.
  *
  * When collapsed the rail is UNMOUNTED (the figure goes full-bleed) and the
- * floating `RailBack` tab + `Dock` offset control take over — mirroring the
+ * floating `RailBack` tab + `OffsetDock` offset control take over — mirroring the
  * mockup's full-bleed reading mode.
  *
  * The Layer-4 builder page (plate shell, nav, top bar) is deferred; this story
@@ -111,7 +111,7 @@ function SeriesBuilderView(): JSX.Element {
       {collapsed && (
         <>
           <RailBack onClick={() => setCollapsed(false)} />
-          <Dock offset={offset} onOffsetChange={setOffset} />
+          <OffsetDock offset={offset} onOffsetChange={setOffset} />
         </>
       )}
     </div>
