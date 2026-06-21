@@ -9,7 +9,10 @@ const EXPERIMENT = {
 };
 
 const SAMPLE_WITH_DUP_TAGS = {
-  id: 10, experiment_id: 1, display_name: "JC010", name: "run10",
+  // Post display_name→name collapse: `name` carries the human label the loupe
+  // renders (sampleDisplayName + ManageTagsModal both read `name`). The dialog
+  // is titled by it, so the name IS what the /JC010/ assertions match.
+  id: 10, experiment_id: 1, name: "JC010",
   notes: null, q_units: "A-1",
   tags: [
     { id: 1, key: "lipid", value: "LL37", source: "manual" },
@@ -96,7 +99,7 @@ async function mockLoupe(page: Page, sample = SAMPLE_WITH_DUP_TAGS): Promise<voi
 
 test("Manage button opens the dialog with role=dialog and aria-modal=true", async ({ page }) => {
   await mockLoupe(page);
-  await page.goto(`/samples/loupe/10`);
+  await page.goto(`/sample/10/loupe`);
 
   // Wait for the side panel to load
   await expect(page.getByTestId("loupe-side-panel")).toBeVisible();
@@ -112,7 +115,7 @@ test("Manage button opens the dialog with role=dialog and aria-modal=true", asyn
 
 test("Manage modal shows both duplicate lipid LL37 tags as editable rows", async ({ page }) => {
   await mockLoupe(page);
-  await page.goto(`/samples/loupe/10`);
+  await page.goto(`/sample/10/loupe`);
   await expect(page.getByTestId("loupe-side-panel")).toBeVisible();
   await page.getByTestId("manage-tags-trigger").click();
 
@@ -126,7 +129,7 @@ test("Manage modal shows both duplicate lipid LL37 tags as editable rows", async
 
 test("delete the second duplicate row via its Remove button", async ({ page }) => {
   await mockLoupe(page);
-  await page.goto(`/samples/loupe/10`);
+  await page.goto(`/sample/10/loupe`);
   await expect(page.getByTestId("loupe-side-panel")).toBeVisible();
   await page.getByTestId("manage-tags-trigger").click();
 
@@ -149,7 +152,7 @@ test("delete the second duplicate row via its Remove button", async ({ page }) =
 
 test("edit a tag value via the value TagSuggest and press Enter", async ({ page }) => {
   await mockLoupe(page);
-  await page.goto(`/samples/loupe/10`);
+  await page.goto(`/sample/10/loupe`);
   await expect(page.getByTestId("loupe-side-panel")).toBeVisible();
   await page.getByTestId("manage-tags-trigger").click();
 
@@ -172,7 +175,7 @@ test("edit a tag value via the value TagSuggest and press Enter", async ({ page 
 
 test("Done button closes the modal", async ({ page }) => {
   await mockLoupe(page);
-  await page.goto(`/samples/loupe/10`);
+  await page.goto(`/sample/10/loupe`);
   await expect(page.getByTestId("loupe-side-panel")).toBeVisible();
   await page.getByTestId("manage-tags-trigger").click();
 

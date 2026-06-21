@@ -40,6 +40,8 @@ async function mockCorpus(page: Page): Promise<void> {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPERIMENT]) }));
   await page.route("**/api/experiments/1", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPERIMENT) }));
+  await page.route("**/api/experiments/1/loads", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SAMPLES) }));
   await page.route("**/api/samples/10/exposures*", (r) =>
@@ -81,7 +83,7 @@ test("cull: rejecting a selected exposure via X dims its thumbnail and PATCHes s
     });
   });
 
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   const row = page.getByTestId("sample-table-row").first();
   await expect(row).toBeVisible();
 
@@ -115,7 +117,7 @@ test("keep: selecting a frame and pressing K PATCHes status accepted and hides t
     });
   });
 
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   const row = page.getByTestId("sample-table-row").first();
   await expect(row).toBeVisible();
 
@@ -144,7 +146,7 @@ test("batch-reject: multi-select then reject PATCHes each selected exposure", as
     });
   });
 
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   const row = page.getByTestId("sample-table-row").first();
   await expect(row).toBeVisible();
 
@@ -182,7 +184,7 @@ test("cull bar: clicking Drop moves focus out of the hidden bar with no aria-hid
       body: JSON.stringify({ id: 1, status: "rejected" }),
     }));
 
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   const row = page.getByTestId("sample-table-row").first();
   await expect(row).toBeVisible();
   await row.getByTestId("thumbnail").nth(0).click();
@@ -224,7 +226,7 @@ test("representative: picking a representative in the loupe PATCHes select", asy
     });
   });
 
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
   // Open the loupe on exposure 2 by clicking its strip thumbnail (frameNo 2 →
   // nth(1)). Every greenfield strip thumb shares data-testid="thumbnail".
@@ -251,7 +253,7 @@ test("loupe: dropping the representative shows the rep-dropped warning; restore 
     });
   });
 
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
   // The loupe opens on the representative (exposure 1) — kept, so no warning.
   await expect(page.getByTestId("rep-dropped-warning")).toBeHidden();
@@ -268,7 +270,7 @@ test("loupe: dropping the representative shows the rep-dropped warning; restore 
 
 test("loupe-flip: arrow keys move between exposures in the loupe", async ({ page }) => {
   await mockCorpus(page);
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
   // Loupe opens on the representative (exposure 1, frame 1). The greenfield
   // page has no filename row; assert the active frame via the BigFrame caption.
@@ -304,7 +306,7 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
   await page.route("**/api/samples/11/messages", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
 
-  await page.goto("/samples/loupe/11");
+  await page.goto("/sample/11/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
 
   // The filmstrip genuinely overflows its column (so the guard is meaningful)…
@@ -341,7 +343,7 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
   }));
   await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MANY) }));
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
   await expect(page.getByTestId("thumbnail")).toHaveCount(12);
 
@@ -390,7 +392,7 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
 // non-navigating bespoke button (a strip thumbnail) for the no-ring half.
 test("focus-visible: keyboard focus draws the 2px accent ring on a bespoke button; mouse click draws none", async ({ page }) => {
   await mockCorpus(page);
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
 
   // Tab-walk (bounded) until the bespoke loupe-back button holds focus.
@@ -433,7 +435,7 @@ test("focus-visible: keyboard focus draws the 2px accent ring on a bespoke butto
 test("wide viewport: the sheet does not scroll horizontally (unchanged layout)", async ({ page }) => {
   // Playwright's default 1280×720 viewport is the wide case.
   await mockCorpus(page);
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
   const widths = await page.getByTestId("sheet-scroll").evaluate((el) => ({
     scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
@@ -460,7 +462,7 @@ test("loupe tags: the tag-remove × has a ≥24×24 hit target inside the pill's
       }]),
     }));
 
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
 
   const pill = page.getByTestId("tag-pill").first();

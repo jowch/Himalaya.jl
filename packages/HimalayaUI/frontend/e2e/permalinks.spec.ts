@@ -6,8 +6,9 @@ import { test, expect, type Page } from "@playwright/test";
 // I4.4 (#181): the Index surface is retired. Old `/index/<exp>/<sample>`
 // permalink deep-links are PRESERVED but now redirect to the focus workspace
 // (`/sample/:id`) via IndexSlugRedirect, which resolves the slug pair through
-// `/api/resolve`. Sampleless `/index*` and bare `/` redirect to the corpus
-// contact sheet (`/samples`). A failed resolve also lands on `/samples`.
+// `/api/resolve`. Sampleless `/index*` and bare `/` redirect to the
+// experiments home (`/experiments`). A failed resolve also lands on
+// `/experiments`.
 
 const RESOLVE_RE = /\/api\/resolve\?/;
 
@@ -81,7 +82,7 @@ test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to 
   await expect(page.getByTestId("focus-workspace")).toBeVisible();
 });
 
-test("legacy /index deep-link whose slug 404s falls back to the corpus contact sheet", async ({ page }) => {
+test("legacy /index deep-link whose slug 404s falls back to the experiments home", async ({ page }) => {
   await seedSession(page);
   await page.route(RESOLVE_RE, (route) => {
     route.fulfill({
@@ -93,18 +94,18 @@ test("legacy /index deep-link whose slug 404s falls back to the corpus contact s
     });
   });
   await page.goto("/index/lipid-typo/JC001");
-  await expect(page).toHaveURL(/\/samples$/);
-  await expect(page.getByTestId("samples-page")).toBeVisible();
+  await expect(page).toHaveURL(/\/experiments$/);
+  await expect(page.getByTestId("new-experiment-cta")).toBeVisible();
 });
 
-test("sampleless /index redirects to the corpus contact sheet", async ({ page }) => {
+test("sampleless /index redirects to the experiments home", async ({ page }) => {
   await seedSession(page);
   await page.goto("/index");
-  await expect(page).toHaveURL(/\/samples$/);
-  await expect(page.getByTestId("samples-page")).toBeVisible();
+  await expect(page).toHaveURL(/\/experiments$/);
+  await expect(page.getByTestId("new-experiment-cta")).toBeVisible();
 });
 
-test("bare / cold-mount redirects to the corpus contact sheet (§4.1)", async ({ page }) => {
+test("bare / cold-mount redirects to the experiments home (§4.1)", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {
@@ -118,6 +119,6 @@ test("bare / cold-mount redirects to the corpus contact sheet (§4.1)", async ({
     }));
   });
   await page.goto("/");
-  await expect(page).toHaveURL(/\/samples$/);
-  await expect(page.getByTestId("samples-page")).toBeVisible();
+  await expect(page).toHaveURL(/\/experiments$/);
+  await expect(page.getByTestId("new-experiment-cta")).toBeVisible();
 });
