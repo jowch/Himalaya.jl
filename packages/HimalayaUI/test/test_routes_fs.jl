@@ -82,3 +82,33 @@ end
         end
     end
 end
+
+@testset "GET /api/fs/manifest counts by type without writing" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            dir = mktempdir()
+            touch(joinpath(dir, "s1.tif")); touch(joinpath(dir, "s1.prp")); touch(joinpath(dir, "s1.dat"))
+            touch(joinpath(dir, "s2.tif"))   # missing prp + dat
+            q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
+            resp = call("GET", "/api/fs/manifest?$q")
+            @test resp.status == 200
+            m = JSON3.read(resp.body)
+            @test m.matched.image == 2
+            @test m.matched.metadata == 1
+            @test any(u -> u.miss == "metadata", m.unmatched)   # s2 missing prp
+            @test isempty(Tables.rowtable(DBInterface.execute(db, "SELECT 1 FROM experiments")))  # no row created
+        end
+    end
+end
+
+@testset "GET /api/fs/manifest 400 for missing dir" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            resp = call("GET", "/api/fs/manifest?path=$(HTTP.escapeuri("/no/such/path/xyz"))")
+            @test resp.status == 400
+            @test haskey(JSON3.read(resp.body), :error)
+        end
+    end
+end

@@ -49,5 +49,36 @@ function register_fs_routes!()
         scanned = count(!startswith("."), readdir(path))   # cheap; rich count is /manifest
         _json(200, Dict(:ok => true, :matched => scanned, :scanned => scanned, :message => nothing))
     end
-    # manifest added in Task 1.5
+    @get "/api/fs/manifest" function(req::HTTP.Request)
+        q    = HTTP.queryparams(HTTP.URI(req.target))
+        path = get(q, "path", "")
+        isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
+        pats = (image       = get(q, "image_pattern", "{name}.tif"),
+                metadata    = get(q, "metadata_pattern", "{name}.prp"),
+                integration = get(q, "integration_pattern", "{name}.dat"))
+        files = filter(!startswith("."), readdir(path))
+        # {name}-capture per type, inlined. Do NOT add a module helper — grouping.jl
+        # / config.jl already own pattern matching; if the manifest's needs grow,
+        # call the shared matcher (config.jl `_matches_prefix_with_boundary` /
+        # `resolve_files`) rather than maintaining a second one (ponytail review).
+        function stems(pat)
+            occursin("{name}", pat) || return Set{String}()
+            pre, post = split(pat, "{name}"; limit = 2)
+            out = Set{String}()
+            for f in files
+                (startswith(f, pre) && endswith(f, post) &&
+                    length(f) > length(pre) + length(post)) || continue
+                push!(out, f[nextind(f, lastindex(pre)):prevind(f, lastindex(f) - length(post) + 1)])
+            end
+            out
+        end
+        img, meta, integ = stems(pats.image), stems(pats.metadata), stems(pats.integration)
+        unmatched = Dict{String,String}[]
+        for s in img, (label, set) in (("metadata", meta), ("integration", integ))
+            s in set || push!(unmatched, Dict("file" => s, "miss" => label))
+        end
+        _json(200, Dict(:total => length(files),
+                   :matched => Dict(:image => length(img), :metadata => length(meta), :integration => length(integ)),
+                   :unmatched => unmatched))
+    end
 end
