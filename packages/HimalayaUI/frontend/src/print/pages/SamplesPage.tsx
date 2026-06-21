@@ -734,9 +734,9 @@ export function SamplesPage(): JSX.Element {
 
         <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-        {/* Cull verbs: Drop / Keep / Restore */}
+        {/* Cull verbs: Drop / Keep / Restore — coloured outlines (spec §3.3) */}
         <Button
-          variant="danger"
+          variant="outlineDanger"
           onClick={() => {
             const s = activeSample;
             const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
@@ -749,7 +749,7 @@ export function SamplesPage(): JSX.Element {
           Drop
         </Button>
         <Button
-          variant="success"
+          variant="outlineSuccess"
           onClick={() => {
             const s = activeSample;
             const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];

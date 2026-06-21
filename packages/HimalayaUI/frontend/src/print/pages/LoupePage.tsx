@@ -545,16 +545,16 @@ export function LoupePage(): JSX.Element {
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-          {/* Cull verbs */}
+          {/* Cull verbs — coloured outlines (spec §3.3) */}
           <Button
-            variant="danger"
+            variant="outlineDanger"
             onClick={handleDropToggle}
             data-testid="dock-drop"
           >
             Drop
           </Button>
           <Button
-            variant="success"
+            variant="outlineSuccess"
             onClick={handleKeepToggle}
             data-testid="dock-keep"
           >

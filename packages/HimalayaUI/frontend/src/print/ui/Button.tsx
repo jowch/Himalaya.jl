@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "ghostInverse";
+export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "outlineDanger" | "outlineSuccess" | "ghostInverse";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -32,6 +32,16 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   outline:
     "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  // Coloured-outline cull verbs (dock Drop/Keep, spec §3.3): the destructive/
+  // constructive hue carried by the border + text on a light plate, filling on
+  // hover. Lighter than the filled `danger`/`success` so they don't read as
+  // primary actions next to the dock's neutral ghost buttons. Status hues only.
+  outlineDanger:
+    "border border-error bg-plate text-error hover:bg-error hover:text-paper " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  outlineSuccess:
+    "border border-success bg-plate text-success hover:bg-success hover:text-paper " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghostInverse:
     "bg-transparent text-paper/70 hover:text-paper border border-transparent " +
