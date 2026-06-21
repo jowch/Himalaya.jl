@@ -32,25 +32,29 @@ describe("shortcut registry", () => {
     }
   });
 
-  it("the sample stepper is [ and ] only (', '.' retired)", () => {
-    expect(SHORTCUTS.prevSample.keys).toEqual(["["]);
-    expect(SHORTCUTS.nextSample.keys).toEqual(["]"]);
-    // , and . must not appear anywhere in the registry
+  it("the sample axis is ↑/↓ and the detail axis is ←/→ (rev-2 axes)", () => {
+    expect(SHORTCUTS.prevSample.keys).toEqual(["ArrowUp"]);
+    expect(SHORTCUTS.nextSample.keys).toEqual(["ArrowDown"]);
+    expect(SHORTCUTS.prevDetail.keys).toEqual(["ArrowLeft"]);
+    expect(SHORTCUTS.nextDetail.keys).toEqual(["ArrowRight"]);
+    // old [ ] bindings must not appear anywhere in the registry
     const all = Object.values(SHORTCUTS).flatMap((d) => d.keys);
+    expect(all).not.toContain("[");
+    expect(all).not.toContain("]");
     expect(all).not.toContain(",");
     expect(all).not.toContain(".");
   });
 });
 
 describe("matchShortcut", () => {
-  it("matches bare letter/bracket keys only when NO modifier is held", () => {
+  it("matches bare letter keys only when NO modifier is held", () => {
     expect(matchShortcut(ev("x"))).toBe("drop");
     expect(matchShortcut(ev("k"))).toBe("keep");
     expect(matchShortcut(ev("r"))).toBe("representative");
-    expect(matchShortcut(ev("["))).toBe("prevSample");
-    expect(matchShortcut(ev("]"))).toBe("nextSample");
-    // a held Mod means it is NOT the page shortcut (e.g. Cmd+] = browser nav)
-    expect(matchShortcut(ev("]", { meta: true }))).toBeNull();
+    // old [ ] are unbound in rev-2; arrows now drive sample/detail nav
+    expect(matchShortcut(ev("["))).toBeNull();
+    expect(matchShortcut(ev("]"))).toBeNull();
+    // a held Mod means it is NOT the page shortcut
     expect(matchShortcut(ev("x", { ctrl: true }))).toBeNull();
   });
 
@@ -59,11 +63,11 @@ describe("matchShortcut", () => {
     expect(matchShortcut(ev("X", { shift: true }))).toBeNull(); // shift held = different combo
   });
 
-  it("matches arrows for the Focus/Loupe sub-entity steps", () => {
-    expect(matchShortcut(ev("ArrowLeft"))).toBe("prevExposure");
-    expect(matchShortcut(ev("ArrowRight"))).toBe("nextExposure");
-    expect(matchShortcut(ev("ArrowUp"))).toBe("prevCandidate");
-    expect(matchShortcut(ev("ArrowDown"))).toBe("nextCandidate");
+  it("matches arrows for the rev-2 sample/detail axes", () => {
+    expect(matchShortcut(ev("ArrowUp"))).toBe("prevSample");
+    expect(matchShortcut(ev("ArrowDown"))).toBe("nextSample");
+    expect(matchShortcut(ev("ArrowLeft"))).toBe("prevDetail");
+    expect(matchShortcut(ev("ArrowRight"))).toBe("nextDetail");
   });
 
   it("matches Mod+Z undo and Mod+Shift+Z redo cross-platform (meta OR ctrl)", () => {
@@ -102,7 +106,7 @@ describe("keyComboLabel (display)", () => {
   });
 
   it("shortcutLabel shows the first binding of an action", () => {
-    expect(shortcutLabel("prevSample", true)).toBe("[");
+    expect(shortcutLabel("prevSample", true)).toBe("↑");
     expect(shortcutLabel("undo", true)).toBe("⌘Z");
   });
 });

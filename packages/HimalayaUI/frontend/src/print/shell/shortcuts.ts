@@ -3,17 +3,25 @@
 // (<KbdLegend>) and aria-keyshortcuts all derive from this registry, so they can
 // never drift apart. Design: print/shell/AGENTS.md §"Keyboard shortcut registry"
 //
-// Locked decisions (Jonathan 2026-06-13): prev/next sample is `[`/`]` ONLY (no
-// more `,`/`.`); Focus is a two-axis model (←→ exposure, ↑↓ candidate preview,
-// Esc un-focus); ⌘Z undo extends to the Builder.
+// Rev-2 axes (2026-06-21): ↑/↓ = sample nav, ←/→ = detail nav (frame on
+// Corpus/Loupe, candidate on Focus — same id, page-interpreted handler).
+// SUPERSEDES the "Locked decisions (Jonathan 2026-06-13)" comment ([ ] sample,
+// ←→ exposure, ↑↓ candidate) — that model has been retired by the ingestion
+// redesign shell unification (M2, T2.1).
 
 export type ShortcutId =
   | "prevSample"
   | "nextSample"
-  | "prevExposure"
-  | "nextExposure"
-  | "prevCandidate"
-  | "nextCandidate"
+  | "prevDetail"
+  | "nextDetail"
+  | "openFocus"
+  | "openLoupe"
+  | "toggleSelect"
+  | "extendPrev"
+  | "extendNext"
+  | "selectAll"
+  | "restore"
+  | "helpOverlay"
   | "drop"
   | "keep"
   | "representative"
@@ -37,13 +45,23 @@ export interface ShortcutDef {
 }
 
 export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
-  // Navigate — the nesting is [ ] sample · ← → exposure · ↑ ↓ candidate.
-  prevSample: { id: "prevSample", keys: ["["], label: "Previous sample", group: "Navigate" },
-  nextSample: { id: "nextSample", keys: ["]"], label: "Next sample", group: "Navigate" },
-  prevExposure: { id: "prevExposure", keys: ["ArrowLeft"], label: "Previous exposure", group: "Navigate" },
-  nextExposure: { id: "nextExposure", keys: ["ArrowRight"], label: "Next exposure", group: "Navigate" },
-  prevCandidate: { id: "prevCandidate", keys: ["ArrowUp"], label: "Previous candidate", group: "Navigate" },
-  nextCandidate: { id: "nextCandidate", keys: ["ArrowDown"], label: "Next candidate", group: "Navigate" },
+  // Navigate — rev-2 axes: ↑/↓ = sample, ←/→ = detail (page-interpreted).
+  prevSample: { id: "prevSample", keys: ["ArrowUp"], label: "Previous sample", group: "Navigate" },
+  nextSample: { id: "nextSample", keys: ["ArrowDown"], label: "Next sample", group: "Navigate" },
+  prevDetail: { id: "prevDetail", keys: ["ArrowLeft"], label: "Previous detail", group: "Navigate" },
+  nextDetail: { id: "nextDetail", keys: ["ArrowRight"], label: "Next detail", group: "Navigate" },
+  openFocus: { id: "openFocus", keys: ["Enter"], label: "Open Focus workspace", group: "Navigate" },
+  openLoupe: { id: "openLoupe", keys: ["l"], label: "Open Loupe", group: "Navigate" },
+  // Select — multi-select verbs.
+  toggleSelect: { id: "toggleSelect", keys: [" "], label: "Toggle selection", group: "Navigate" },
+  extendPrev: { id: "extendPrev", keys: ["Shift+ArrowLeft"], label: "Extend selection left", group: "Navigate" },
+  extendNext: { id: "extendNext", keys: ["Shift+ArrowRight"], label: "Extend selection right", group: "Navigate" },
+  selectAll: { id: "selectAll", keys: ["Mod+a"], label: "Select all", group: "Navigate" },
+  restore: { id: "restore", keys: ["Backspace"], label: "Restore / remove from selection", group: "Navigate" },
+  // General — help + dismiss + find.
+  helpOverlay: { id: "helpOverlay", keys: ["?"], label: "Keyboard shortcuts", group: "General" },
+  dismiss: { id: "dismiss", keys: ["Escape"], label: "Back / dismiss", group: "General" },
+  find: { id: "find", keys: ["Mod+k", "/"], label: "Find a sample", group: "General" },
   // Screen — exposure status verbs.
   drop: { id: "drop", keys: ["x"], label: "Drop", group: "Screen" },
   keep: { id: "keep", keys: ["k"], label: "Keep", group: "Screen" },
@@ -53,9 +71,6 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   redo: { id: "redo", keys: ["Mod+Shift+z"], label: "Redo", group: "Edit" },
   reorderUp: { id: "reorderUp", keys: ["Alt+ArrowUp"], label: "Move up", group: "Edit" },
   reorderDown: { id: "reorderDown", keys: ["Alt+ArrowDown"], label: "Move down", group: "Edit" },
-  // General — dismiss ladder + find.
-  dismiss: { id: "dismiss", keys: ["Escape"], label: "Back / dismiss", group: "General" },
-  find: { id: "find", keys: ["Mod+k", "/"], label: "Find a sample", group: "General" },
 };
 
 /**
@@ -65,6 +80,9 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
  * Shift+X reads `Shift+x`). Named keys (ArrowLeft, Escape) pass through as-is.
  */
 export function eventCombo(e: KeyboardEvent): string {
+  // '?' is Shift+/ on US layouts but layout-variable; emit a stable token so the
+  // help binding is layout-robust (mirrors the single-char lowercasing below).
+  if (e.key === '?') return '?'
   const parts: string[] = [];
   if (e.metaKey || e.ctrlKey) parts.push("Mod");
   if (e.altKey) parts.push("Alt");
