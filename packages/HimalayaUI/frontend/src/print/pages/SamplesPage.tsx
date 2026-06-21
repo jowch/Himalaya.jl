@@ -177,6 +177,36 @@ export function SamplesPage(): JSX.Element {
     [sortedSamples],
   );
 
+  // ── page-level cursor (T2.4) ────────────────────────────────────────────────
+  // Tracks the "active" row (sampleIndex) and detail frame (frameIndex) driven
+  // by ↑/↓/←/→ keyboard navigation via useShortcuts. Default {0,0} = first
+  // sample, first frame. Both indices are clamped (never wrap around).
+  const [cursor, setCursor] = useState<{ sampleIndex: number; frameIndex: number }>(
+    { sampleIndex: 0, frameIndex: 0 },
+  );
+  const activeSample = sortedSamples[cursor.sampleIndex];
+
+  function clamp(v: number, lo: number, hi: number): number {
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+
+  function clampSample(d: number): void {
+    setCursor((c) => ({
+      sampleIndex: clamp(c.sampleIndex + d, 0, sortedSamples.length - 1),
+      frameIndex: 0,
+    }));
+  }
+
+  function clampFrame(d: number): void {
+    setCursor((c) => {
+      const frames = corpusExposures.byId.get(sortedSamples[c.sampleIndex]?.id ?? -1) ?? [];
+      return {
+        ...c,
+        frameIndex: clamp(c.frameIndex + d, 0, Math.max(0, frames.length - 1)),
+      };
+    });
+  }
+
   // ── selection state (page-owned) ────────────────────────────────────────────
   // Exposure-grain cull selection (drives CullBar → Drop/Restore).
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -294,12 +324,76 @@ export function SamplesPage(): JSX.Element {
     anchorRef.current = null;
   }
 
-  // ── keyboard: X drops, K keeps, Esc clears — via the shared shortcut library,
-  //    only while there is a selection to act on. The handlers DECLINE (return
-  //    false) on an empty selection, so x/k stay inert and Esc falls through to
-  //    the grid's own "exit cell". Modifier chords never match the registry's
-  //    bare combos; typing/modal suppression lives inside useShortcuts.
+  // ── keyboard map (T2.4): page cursor + selection + cull verbs ──────────────
+  //
+  // All page-level shortcuts go through the shared registry/useShortcuts hook —
+  // no hand-rolled window keydown switch. Modifier chords (Alt+↑/↓ = reorder,
+  // Shift+←/→ = extend) are DISTINCT combos in the registry, never confused
+  // with the bare-arrow nav. Typing/modal suppression lives in useShortcuts.
+  //
+  // Declining protocol: a handler returns `false` to DECLINE (no preventDefault,
+  // event keeps propagating for the Esc-ladder etc.); returning nothing/undefined
+  // means "I handled it" (preventDefault fires).
+  //
+  // NO `representative` binding on Corpus — that verb is Focus-page only.
   useShortcuts({
+    // ── Navigation: sample-axis ──────────────────────────────────────────────
+    prevSample: () => clampSample(-1),
+    nextSample: () => clampSample(1),
+    // ── Navigation: detail-axis (frame within active sample) ─────────────────
+    prevDetail: () => clampFrame(-1),
+    nextDetail: () => clampFrame(1),
+    // ── Navigation: open Focus / Loupe ───────────────────────────────────────
+    openFocus: () => {
+      if (activeSample == null) return false;
+      navigate(`/sample/${activeSample.id}`);
+      return undefined;
+    },
+    openLoupe: () => {
+      if (activeSample == null) return false;
+      navigate(`/sample/${activeSample.id}/loupe`);
+      return undefined;
+    },
+    // ── Selection: multi-select verbs ────────────────────────────────────────
+    toggleSelect: () => {
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      const frame = frames[cursor.frameIndex];
+      if (s == null || frame == null) return false;
+      toggleSelect(s.id, frame.id);
+      return undefined;
+    },
+    extendPrev: () => {
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      if (cursor.frameIndex > 0) {
+        const frame = frames[cursor.frameIndex - 1];
+        if (s != null && frame != null) toggleSelect(s.id, frame.id);
+      }
+      return undefined;
+    },
+    extendNext: () => {
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      const frame = frames[cursor.frameIndex + 1];
+      if (s != null && frame != null) toggleSelect(s.id, frame.id);
+      return undefined;
+    },
+    selectAll: () => {
+      // Select all frames of the active sample (or all frames in scope).
+      const allFrameIds: number[] = [];
+      for (const sam of sortedSamples) {
+        for (const f of corpusExposures.byId.get(sam.id) ?? []) {
+          allFrameIds.push(f.id);
+        }
+      }
+      if (allFrameIds.length === 0) return false;
+      setSelected(new Set(allFrameIds));
+      return undefined;
+    },
+    // ── Screen verbs: drop/keep/restore ──────────────────────────────────────
+    // When a selection is live → act on the whole selection.
+    // When no selection → decline (return false) so keys stay inert.
     drop: () => {
       if (selected.size === 0) return false;
       batchSet("rejected");
@@ -310,12 +404,21 @@ export function SamplesPage(): JSX.Element {
       batchSet("accepted");
       return undefined;
     },
+    restore: () => {
+      if (selected.size === 0) return false;
+      batchSet(null);
+      return undefined;
+    },
+    // ── Dismiss: clear selection → Esc ladder continues if nothing to clear ──
+    // Returns `false` (declines) when there is nothing to clear, so the Esc
+    // ladder can continue to the next handler.
     dismiss: () => {
       if (selected.size === 0) return false;
       setSelected(new Set());
       anchorRef.current = null;
       return undefined;
     },
+    // NO representative binding on Corpus.
   });
 
   // SA-F2: a double-clicked frame carries its exposure id into the loupe via
@@ -444,13 +547,16 @@ export function SamplesPage(): JSX.Element {
                 />
               }
             >
-              {sortedSamples.map((s) => {
+              {sortedSamples.map((s, rowIndex) => {
                 const loadedExposures = corpusExposures.byId.get(s.id);
                 const m = toSampleRowModel(s, loadedExposures);
                 // SA-ZEROEXP: distinguish a CONFIRMED-empty sample (query resolved
                 // with []) from one still loading (undefined). Only the former
                 // gets the terminal "No exposures" status + suppressed door.
                 const noExposures = loadedExposures !== undefined && loadedExposures.length === 0;
+                // T2.4: pointer click on the row sets the page cursor so keyboard
+                // nav and pointer nav share a single active-item concept.
+                const hasDrop = (m.dropped ?? 0) > 0;
                 return (
                   <SampleTableRow
                     key={s.id}
@@ -468,14 +574,38 @@ export function SamplesPage(): JSX.Element {
                     checked={checkedSamples.has(s.id)}
                     onCheck={() => toggleSampleCheck(s.id)}
                     selectedExposureIds={selected}
-                    onSelectExposure={(id) => toggleSelect(s.id, id)}
-                    onActivateExposure={(id) =>
-                      navigate(loupeHref(s.id, id), { state: { sampleOrder } })
-                    }
-                    onOpenLoupe={() =>
-                      navigate(loupeHref(s.id), { state: { sampleOrder } })
-                    }
-                    onOpenFocus={() => navigate(`/sample/${s.id}`)}
+                    onSelectExposure={(id) => {
+                      setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
+                      toggleSelect(s.id, id);
+                    }}
+                    onActivateExposure={(id) => {
+                      setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
+                      navigate(loupeHref(s.id, id), { state: { sampleOrder } });
+                    }}
+                    onOpenLoupe={() => {
+                      setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
+                      navigate(loupeHref(s.id), { state: { sampleOrder } });
+                    }}
+                    onOpenFocus={() => {
+                      setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
+                      navigate(`/sample/${s.id}`);
+                    }}
+                    {...(hasDrop ? { onRestore: () => {
+                      // T2.4: restore verb applied to this specific sample's
+                      // dropped exposures. Mirrors the CullBar restore (null
+                      // status batchSet) but scoped to one row's drops.
+                      const drops = (corpusExposures.byId.get(s.id) ?? [])
+                        .filter((e) => e.status === "rejected")
+                        .map((e) => e.id);
+                      if (drops.length === 0) return;
+                      for (const id of drops) {
+                        batch.mutate({ sampleId: s.id, exposureId: id, status: null });
+                      }
+                      showToast(
+                        `${drops.length} frame${drops.length === 1 ? "" : "s"} restored`,
+                        "success",
+                      );
+                    }} : {})}
                   />
                 );
               })}
