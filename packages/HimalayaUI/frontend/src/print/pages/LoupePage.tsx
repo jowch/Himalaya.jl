@@ -239,6 +239,19 @@ export function LoupePage(): JSX.Element {
     );
   }, [activeExposure, setStatus]);
 
+  // Restore: set the active frame's status back to null (unscreened). Mirrors
+  // the drop/keep toggle path — same setStatus mutation, status: null payload.
+  const handleRestore = useCallback(() => {
+    if (!activeExposure) return;
+    setStatus.mutate(
+      { exposureId: activeExposure.id, status: null },
+      {
+        onSuccess: () => showToast("Frame restored", "success"),
+        onError: notifySaveFailed,
+      },
+    );
+  }, [activeExposure, setStatus]);
+
   const handleSetRepresentative = useCallback(() => {
     if (!activeExposure) return;
     if (activeExposure.selected) {
@@ -336,11 +349,13 @@ export function LoupePage(): JSX.Element {
   // useShortcuts — so the per-key guards the old ad-hoc handler spelled out are
   // now owned uniformly by the library.
   useShortcuts({
-    prevExposure: () => flip(-1),
-    nextExposure: () => flip(1),
+    // ←/→ = frame (detail) axis — renamed from prevExposure/nextExposure in T2.5.
+    prevDetail: () => flip(-1),
+    nextDetail: () => flip(1),
     drop: () => handleDropToggle(),
     keep: () => handleKeepToggle(),
     representative: () => handleSetRepresentative(),
+    restore: () => handleRestore(),
     prevSample: () => {
       if (prevSampleId !== undefined) gotoSample(prevSampleId);
     },

@@ -50,7 +50,7 @@ import {
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
-import { useAutoPickExposure, acceptableExposures, noUsableExposureState, resolveActiveExposure } from "../../hooks/useAutoPickExposure";
+import { useAutoPickExposure, noUsableExposureState, resolveActiveExposure } from "../../hooks/useAutoPickExposure";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -485,29 +485,17 @@ export function FocusPage(): JSX.Element {
   useShortcuts({
     prevSample: () => prevSibling && navigate(`/sample/${prevSibling.id}`),
     nextSample: () => nextSibling && navigate(`/sample/${nextSibling.id}`),
-    // The exposure axis steps among INDEXABLE (acceptable) exposures only. The
-    // full `exposures` list keeps rejected frames so the filmstrip still shows
-    // them, but landing the active exposure on a rejected one is reverted by
-    // useAutoPickExposure (it yanks any non-acceptable pick back to the
-    // representative) — so the stepper must skip them to move predictably.
-    prevExposure: () => {
-      const pool = acceptableExposures(exposures);
-      const e = stepInList(pool, pool.findIndex((x) => x.id === activeExposureId), -1);
-      if (e) setActiveExposure(e.id);
-    },
-    nextExposure: () => {
-      const pool = acceptableExposures(exposures);
-      const e = stepInList(pool, pool.findIndex((x) => x.id === activeExposureId), 1);
-      if (e) setActiveExposure(e.id);
-    },
-    prevCandidate: () => {
+    // ←/→ = candidate detail axis (renamed from prevCandidate/nextCandidate in T2.5;
+    // exposure stepping now relies on the ThumbnailGallery onSelect filmstrip only).
+    prevDetail: () => {
       const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), -1);
       if (c) setPreviewIndexId(c.id);
     },
-    nextCandidate: () => {
+    nextDetail: () => {
       const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), 1);
       if (c) setPreviewIndexId(c.id);
     },
+    openLoupe: () => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`),
     dismiss: () => {
       // Esc ladder (innermost first). An open modal/popover is already handled
       // upstream (suppressGlobalKeys). Next rung is the armed "+ Peak" mode,

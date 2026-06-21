@@ -738,39 +738,40 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
   });
 
   // The VISUAL stepper now lives in the TopBar (CorpusTopbar's SampleStepper);
-  // see CorpusTopbar.test. The loupe page keeps the `[`/`]` keyboard nav, which
-  // shares resolveSampleOrder with the topbar so the two can't disagree.
-  it("'[' is a no-op on the first sample of the walk", () => {
+  // see CorpusTopbar.test. The loupe page keeps ↑/↓ keyboard nav (rev-2 axes:
+  // prevSample/nextSample), which shares resolveSampleOrder with the topbar so
+  // the two can't disagree.
+  it("↑ is a no-op on the first sample of the walk", () => {
     renderWithOrder(10, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "[" });
+    fireEvent.keyDown(window, { key: "ArrowUp" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
   });
 
-  it("']' is a no-op on the last sample of the walk", () => {
+  it("↓ is a no-op on the last sample of the walk", () => {
     renderWithOrder(12, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "]" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
   });
 
-  it("']' steps to the next sample, '[' steps to the previous (arrows still flip frames)", () => {
+  it("↓ steps to the next sample, ↑ steps to the previous (←/→ still flip frames)", () => {
     renderWithOrder(11, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "]" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
   });
 
-  it("'[' steps to the previous sample", () => {
+  it("↑ steps to the previous sample", () => {
     renderWithOrder(11, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "[" });
+    fireEvent.keyDown(window, { key: "ArrowUp" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
   });
 
   it("falls back to the beamtime-scoped corpus order on a direct URL (no router state)", () => {
     renderAt(11);
-    fireEvent.keyDown(window, { key: "]" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
   });
 
-  it("documents the [ ] sample-step keys in the loupe legend", () => {
+  it("documents the sample-step keys in the loupe legend", () => {
     renderWithOrder(11, [10, 11, 12]);
     expect(screen.getByText("prev / next sample")).toBeInTheDocument();
   });

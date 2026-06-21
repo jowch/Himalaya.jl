@@ -229,12 +229,13 @@ describe("CorpusTopbar — the SAME sample stepper on the Loupe route", () => {
     expect(stepper).toHaveTextContent("Lipid B");
   });
 
-  it("the ‹ › steps the loupe (navigates to the sibling's loupe) + carries the [ ] tooltips", async () => {
+  it("the ‹ › steps the loupe (navigates to the sibling's loupe) + carries the ↑/↓ tooltips", async () => {
     mockFetch();
     renderAt("/samples/loupe/2");
     await screen.findByTestId("sample-stepper");
-    expect(screen.getByTestId("sample-stepper-prev")).toHaveAttribute("title", "Previous sample ([)");
-    expect(screen.getByTestId("sample-stepper-next")).toHaveAttribute("title", "Next sample (])");
+    // Rev-2 axes (T2.5): sample nav is ↑/↓ (ArrowUp/ArrowDown), not [ ].
+    expect(screen.getByTestId("sample-stepper-prev")).toHaveAttribute("title", "Previous sample (ArrowUp)");
+    expect(screen.getByTestId("sample-stepper-next")).toHaveAttribute("title", "Next sample (ArrowDown)");
     fireEvent.click(screen.getByTestId("sample-stepper-next"));
     await waitFor(() =>
       expect(screen.getByTestId("loc")).toHaveTextContent("/samples/loupe/3"),

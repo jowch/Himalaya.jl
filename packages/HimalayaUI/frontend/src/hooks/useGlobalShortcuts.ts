@@ -39,6 +39,15 @@ export function useGlobalShortcuts(): void {
         const s = useAppState.getState();
         const step = s.activeExperimentId === undefined ? "experiment" : "sample";
         s.openNavModal(step);
+        return;
+      }
+
+      // `?` → keyboard shortcut overlay (helpOverlay). Layout-robust: `?` is
+      // Shift+/ on US keyboards but `eventCombo` emits a stable `"?"` token for
+      // e.key === "?" regardless of layout (mirrors the shortcuts.ts special case).
+      if (e.key === "?") {
+        e.preventDefault();
+        useAppState.getState().openHelpOverlay();
       }
     };
     window.addEventListener("keydown", onKeyDown);

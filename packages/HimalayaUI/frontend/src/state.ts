@@ -95,6 +95,7 @@ export interface AppState {
   ingestInFlight: Record<number, IngestProgress> | null;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
+  helpOverlayOpen: boolean;
   /**
    * R5 (#228, F-12): the focus-workspace Notes drawer toggle. Below the `xl`
    * breakpoint the Notes margin column yields to a topbar button + drawer
@@ -187,6 +188,8 @@ export interface AppState {
   setTutorialSeen: (seen: boolean) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
+  openHelpOverlay: () => void;
+  closeHelpOverlay: () => void;
   openNotesDrawer: () => void;
   closeNotesDrawer: () => void;
   toggleNotesDrawer: () => void;
@@ -302,6 +305,7 @@ export const useAppState = create<AppState>()(
         ingestInFlight: null,
         navModalOpen: false,
         navModalStep: "experiment",
+        helpOverlayOpen: false,
         notesDrawerOpen: false,
         speculativeBuilder: null,
         // Rehydrate the draft from sessionStorage at module-init time so
@@ -363,6 +367,8 @@ export const useAppState = create<AppState>()(
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
         closeNavModal: () => set({ navModalOpen: false }),
+        openHelpOverlay: () => set({ helpOverlayOpen: true }),
+        closeHelpOverlay: () => set({ helpOverlayOpen: false }),
         openNotesDrawer: () => set({ notesDrawerOpen: true }),
         closeNotesDrawer: () => set({ notesDrawerOpen: false }),
         toggleNotesDrawer: () => set({ notesDrawerOpen: !get().notesDrawerOpen }),
