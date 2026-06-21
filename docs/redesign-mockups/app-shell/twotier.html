@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --frame-edge:oklch(0.150 0.010 55);
+    --phase-pn3m:oklch(0.570 0.150 58);--phase-im3m:oklch(0.520 0.120 162);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,ui-serif,serif;--font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --shadow-plate-lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+    --shadow-dock:0 -6px 22px -10px rgba(40,30,20,.20);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#cfc8bd;font-family:var(--font-sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .page{width:1180px;background:var(--paper);color:var(--ink);margin:0 auto;display:flex;flex-direction:column}
+  .ftitle{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:7px 40px 0}
+  .text-kicker{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.10em}.text-kicker.acc{color:var(--accent)}
+  .text-display{font-family:var(--font-serif);font-size:26px;line-height:1.15;font-weight:500}
+  .text-label{font-size:11.5px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)}
+  .ink-soft{color:var(--ink-soft)}.ink-faint{color:var(--ink-faint)}
+
+  /* TOP TIER — high-level nav (sections + experiment switcher) */
+  .top{display:flex;align-items:center;gap:16px;height:54px;padding:0 28px;border-bottom:1px solid var(--hair);background:var(--paper);flex:none}
+  .wm{font-family:var(--font-serif);font-weight:600;font-size:17px}.wmt{color:var(--ink-faint);font-weight:400;margin-left:6px;font-size:13px}
+  .sect{display:inline-flex;gap:2px;margin-left:8px}
+  .sect a{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft);padding:5px 10px;border-radius:6px;display:inline-flex;align-items:center;gap:6px}
+  .sect a.on{color:var(--ink);background:var(--paper-sunk)}.sect a .d{width:5px;height:5px;border-radius:9999px;background:var(--accent)}
+  .top .sp{flex:1}
+  .sw{display:inline-flex;align-items:center;gap:8px;padding:5px 11px;border:1px solid var(--hair-strong);background:var(--plate);border-radius:7px;box-shadow:var(--shadow-plate-lift)}
+  .sw .sn{font-family:var(--font-serif);font-size:14px;font-weight:500}.sw .ca,.sw .lt{color:var(--ink-faint);font-size:11px}
+  .gear{width:30px;height:30px;border-radius:7px;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+
+  .tiernote{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);padding:3px 28px 0;background:var(--paper)}
+
+  .body{flex:1;padding:20px 40px 16px;position:relative;min-height:392px}
+
+  /* ghost surface */
+  .ghost{opacity:.5}
+  .gsheet{border:1px solid var(--hair-strong);border-radius:7px;overflow:hidden;background:var(--plate)}
+  .grow{display:grid;grid-template-columns:30px 1.4fr 2fr 90px 120px;gap:14px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--hair)}
+  .grow:last-child{border-bottom:none}.grow.h{background:var(--paper-sunk);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);padding:9px 16px}
+  .grow.sel{background:color-mix(in oklch,var(--accent) 7%,var(--plate))}
+  .cbx{width:14px;height:14px;border-radius:4px;border:1px solid var(--hair-strong);background:var(--plate)}
+  .cbx.on{background:var(--accent);border-color:var(--accent)}
+  .nm{font-size:13px;font-weight:600}.id{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-soft)}
+  .th{width:48px;height:48px;border-radius:5px;background:var(--frame-edge);border:1px solid var(--hair-strong)}
+  .galg{display:flex;gap:5px;align-items:center}
+  .pchip{display:inline-flex;font-family:var(--font-mono);font-size:11px;font-weight:700;border-radius:5px;border:1px solid;padding:2px 8px}
+  .gplot{border:1px solid var(--hair-strong);border-radius:7px;background:var(--plate);padding:14px;height:300px;display:flex;flex-direction:column}
+  .stripnote{position:absolute;right:54px;font-family:var(--font-mono);font-size:9.5px;color:var(--accent);background:color-mix(in oklch,var(--accent) 9%,var(--paper));border:1px dashed color-mix(in oklch,var(--accent) 45%,white);border-radius:5px;padding:2px 7px}
+
+  /* BOTTOM TIER — the dock: in-context nav + cull */
+  .dock{flex:none;display:flex;align-items:center;gap:9px;padding:9px 18px;background:var(--plate);border-top:1px solid var(--hair-strong);box-shadow:var(--shadow-dock)}
+  .back{font-size:12px;font-weight:600;color:var(--accent);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .step{display:inline-flex;align-items:center;gap:3px}.step .sb{width:24px;height:24px;border:1px solid var(--hair-strong);background:var(--paper);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:12px}
+  .step .pos{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft);padding:0 6px}.step .lbl{font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-right:4px}
+  .ddiv{width:1px;height:22px;background:var(--hair);margin:0 5px}
+  .dsp{flex:1}
+  .selpill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap}.selpill .p{width:7px;height:7px;border-radius:2px;background:var(--accent)}
+  .dbtn{font-size:11.5px;font-weight:600;border-radius:6px;padding:5px 11px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .dbtn.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
+  .dbtn.accent{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  .dbtn.danger{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 40%,white)}
+  .dbtn.ok{color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)}
+  .kb{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-faint);border:1px solid var(--hair);border-radius:4px;padding:0 4px;margin-left:3px}
+  .hintdock{color:var(--ink-soft);font-size:12px}
+
+  .note{display:flex;gap:24px;padding:13px 40px 20px;border-top:1px dashed var(--hair-strong);background:var(--paper-sunk);flex:none}
+  .note .n{display:flex;gap:9px;max-width:330px}
+  .note .k{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--paper);background:var(--accent);border-radius:5px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  .note .t{font-size:11.5px;color:var(--ink);line-height:1.45}.note .t b{font-weight:700}
+</style></head>
+<body>
+
+<!-- ===== CORPUS ===== -->
+<section id="t1" class="page">
+  <div class="ftitle">Two-tier · Corpus — top: sections + experiment · bottom: cull (selection-aware)</div>
+  <div class="tiernote">▲ top tier — high-level nav</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span>
+    <span class="sp"></span>
+    <span class="sw"><span class="lt">‹</span><span class="sn">SSRL April 2026 · 1p7m</span><span class="ca">▾</span></span>
+    <span class="gear">⚙</span>
+  </header>
+  <div class="body">
+    <div class="text-kicker acc">Experiment · Corpus</div>
+    <div class="text-display" style="margin:3px 0 12px">SSRL April 2026 · 1p7m</div>
+    <span class="stripnote" style="top:26px">click row → Focus · headers sort (surface, untouched)</span>
+    <div class="gsheet ghost">
+      <div class="grow h"><span></span><span>Sample</span><span>Exposures</span><span>Kept</span><span>Phase</span></div>
+      <div class="grow sel"><span class="cbx on"></span><div><div class="nm">2-2 + LL37 1:1</div><div class="id">S2453 · slot 5</div></div><div class="galg"><span class="th"></span><span class="th"></span><span class="th"></span></div><div class="id">3 / 8</div><span class="pchip" style="color:var(--phase-pn3m);background:color-mix(in oklch,var(--phase-pn3m) 12%,white);border-color:color-mix(in oklch,var(--phase-pn3m) 35%,white)">Pn3m</span></div>
+      <div class="grow"><span class="cbx"></span><div><div class="nm">CM1 Only</div><div class="id">S2461 · slot 6</div></div><div class="galg"><span class="th"></span><span class="th"></span></div><div class="id">2 / 4</div><span class="pchip" style="color:var(--phase-im3m);background:color-mix(in oklch,var(--phase-im3m) 12%,white);border-color:color-mix(in oklch,var(--phase-im3m) 35%,white)">Im3m</span></div>
+      <div class="grow"><span class="cbx"></span><div><div class="nm">P2 + CMTM3 1:1</div><div class="id">S2470 · slot 7</div></div><div class="galg"><span class="th"></span><span class="th"></span><span class="th"></span></div><div class="id">4 / 12</div><span class="ink-faint" style="font-size:10.5px">not indexed</span></div>
+    </div>
+  </div>
+  <div class="tiernote" style="text-align:left;color:var(--accent)">▼ bottom tier — the dock (in-context nav + cull)</div>
+  <div class="dock">
+    <span class="selpill"><span class="p"></span>3 frames selected · across 2 samples</span>
+    <div class="ddiv"></div>
+    <span class="dbtn danger">Drop<span class="kb">X</span></span>
+    <span class="dbtn ok">Keep<span class="kb">K</span></span>
+    <span class="dbtn ghost">Restore</span>
+    <span class="dbtn ghost">Clear<span class="kb">Esc</span></span>
+    <div class="dsp"></div>
+    <span class="dbtn accent">Open 2-2 + LL37 1:1 in Focus →</span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">▲</span><span class="t"><b>Top tier = high-level nav.</b> Sections (Experiments / Series) + the experiment switcher + ⚙ Config. "Where am I, where can I go."</span></div>
+    <div class="n"><span class="k">▼</span><span class="t"><b>Bottom tier = the dock.</b> Here it's the <b>cull</b> (Drop / Keep / Restore / Clear — its origin, X/K/Esc) + the way <b>into Focus</b>. Idle (nothing selected): a quiet "select frames to cull" hint + Select all.</span></div>
+    <div class="n"><span class="k">✓</span><span class="t"><b>Surface untouched:</b> click a row, sort a header, the checkboxes — all stay on the sheet.</span></div>
+  </div>
+</section>
+
+<!-- ===== FOCUS ===== -->
+<section id="t2" class="page">
+  <div class="ftitle">Two-tier · Focus — bottom dock: switch sample + cull this sample's frames</div>
+  <div class="tiernote">▲ top tier — high-level nav (unchanged)</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span>
+    <span class="sp"></span>
+    <span class="sw"><span class="lt">‹</span><span class="sn">SSRL April 2026 · 1p7m</span><span class="ca">▾</span></span>
+    <span class="gear">⚙</span>
+  </header>
+  <div class="body">
+    <div class="text-kicker acc">Focus · 2-2 + LL37 1:1</div>
+    <span class="stripnote" style="top:22px">scale / auto-fit / +peak / export = on the plate (unchanged)</span>
+    <div class="gplot ghost" style="margin-top:10px">
+      <div class="text-label">Integration · S2453 · representative</div>
+      <svg viewBox="0 0 900 250" style="width:100%;flex:1" preserveAspectRatio="none">
+        <polyline fill="none" stroke="var(--ink-soft)" stroke-width="1.5" points="0,210 80,200 150,105 180,48 210,108 300,190 360,150 410,70 460,120 560,190 650,158 700,135 780,190 850,200 900,204"/>
+        <g stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3"><line x1="180" y1="14" x2="180" y2="236"/><line x1="410" y1="14" x2="410" y2="236"/></g>
+      </svg>
+    </div>
+  </div>
+  <div class="tiernote" style="text-align:left;color:var(--accent)">▼ bottom tier — the dock (in-context nav + cull)</div>
+  <div class="dock">
+    <span class="back">‹ Back to Corpus</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Sample</span><span class="sb">‹</span><span class="pos">3 / 170</span><span class="sb">›</span></span>
+    <div class="ddiv"></div>
+    <span class="selpill" style="font-weight:500;color:var(--ink-soft)">Frame 2 / 8</span>
+    <span class="dbtn danger">Drop<span class="kb">X</span></span>
+    <span class="dbtn ok">Keep<span class="kb">K</span></span>
+    <span class="dbtn ghost">Set representative<span class="kb">R</span></span>
+    <div class="dsp"></div>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">↩</span><span class="t"><b>Centralized at last:</b> 'Back to Corpus' + the <b>sample stepper</b> (moved out of the top chrome) now live in the dock — the "Focus is too hidden / no way back" fix.</span></div>
+    <div class="n"><span class="k">▼</span><span class="t"><b>Cull travels here too:</b> same Drop / Keep verbs, now acting on the current sample's frames (+ Set representative, like the Loupe). Same bar, same grammar.</span></div>
+    <div class="n"><span class="k">✓</span><span class="t"><b>The plate is exactly as refined:</b> scale, auto-fit, +Peak, export, the assignment sidebar — none of it moved.</span></div>
+  </div>
+</section>
+
+<!-- ===== SERIES ===== -->
+<section id="t3" class="page">
+  <div class="ftitle">Two-tier · Series — dock adapts: nav only, no cull here</div>
+  <div class="tiernote">▲ top tier — high-level nav</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a>Experiments</a><a class="on"><span class="d"></span>Series</a></span>
+    <span class="sp"></span>
+    <span class="hintdock ink-faint" style="font-size:11px">cross-experiment</span>
+  </header>
+  <div class="body">
+    <div class="text-kicker acc">Series · LL37 dose response</div>
+    <div class="text-display" style="margin:3px 0 12px">LL37 dose response</div>
+    <span class="stripnote" style="top:26px">overlay / offset / export = on the plate (unchanged)</span>
+    <div class="gplot ghost">
+      <div class="text-label">6 members · overlaid · from 3 experiments</div>
+      <svg viewBox="0 0 900 230" style="width:100%;flex:1" preserveAspectRatio="none">
+        <polyline fill="none" stroke="var(--phase-pn3m)" stroke-width="1.5" points="0,195 120,185 170,80 200,35 230,85 330,165 420,62 520,165 640,138 760,175 900,185"/>
+        <polyline fill="none" stroke="var(--phase-im3m)" stroke-width="1.5" points="0,208 120,200 180,110 210,68 240,115 340,180 430,100 530,180 650,158 770,190 900,196"/>
+      </svg>
+    </div>
+  </div>
+  <div class="tiernote" style="text-align:left;color:var(--accent)">▼ bottom tier — the dock (in-context nav · cull absent — adapts)</div>
+  <div class="dock">
+    <span class="back">‹ Back to Series</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Member</span><span class="sb">‹</span><span class="pos">1 / 6</span><span class="sb">›</span></span>
+    <div class="dsp"></div>
+    <span class="dbtn accent">Open 2-2 + LL37 1:1 in Focus →</span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">↻</span><span class="t"><b>The dock adapts.</b> No exposures to cull in a series, so the cull verbs drop away — the bar shows only member-stepping + the one-click into Focus.</span></div>
+    <div class="n"><span class="k">→</span><span class="t"><b>Series → Focus, one click.</b> 'Open … in Focus' is the missing path; from Focus the dock will read 'Back to Series' and step the series (1/6).</span></div>
+    <div class="n"><span class="k">▲</span><span class="t"><b>Top tier flips to Series</b> (cross-experiment), so the experiment switcher steps aside — the section, not an experiment, is the scope.</span></div>
+  </div>
+</section>
+
+</body></html>

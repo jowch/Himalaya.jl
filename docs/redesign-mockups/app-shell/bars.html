@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,ui-serif,serif;--font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --shadow-plate-lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+    --shadow-dock:0 -7px 24px -10px rgba(40,30,20,.22);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#cfc8bd;font-family:var(--font-sans);font-size:13px;-webkit-font-smoothing:antialiased}
+  .page{width:1180px;background:var(--paper);color:var(--ink);margin:0 auto;display:flex;flex-direction:column}
+  .ftitle{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:8px 32px 4px}
+
+  /* TOP BAR (lean: identity + sections + config) */
+  .top{display:flex;align-items:center;gap:18px;height:58px;padding:0 30px;border-bottom:1px solid var(--hair);background:var(--paper);flex:none}
+  .wm{font-family:var(--font-serif);font-weight:600;font-size:18px}.wmt{color:var(--ink-faint);font-weight:400;margin-left:6px;font-size:14px}
+  .sect{display:inline-flex;gap:3px;margin-left:10px}
+  .sect a{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);padding:6px 12px;border-radius:6px;display:inline-flex;align-items:center;gap:7px}
+  .sect a.on{color:var(--ink);background:var(--paper-sunk)}.sect a .d{width:5px;height:5px;border-radius:9999px;background:var(--accent)}
+  .top .sp{flex:1}
+  .gear{width:32px;height:32px;border-radius:8px;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+
+  /* surface gap (unchanged, not the subject) */
+  .gap{flex:1;min-height:150px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:11px;letter-spacing:.04em;background:repeating-linear-gradient(135deg,transparent,transparent 11px,rgba(120,110,95,.05) 11px,rgba(120,110,95,.05) 22px)}
+
+  /* BOTTOM DOCK */
+  .dock{flex:none;display:flex;align-items:center;gap:10px;height:54px;padding:0 16px;background:var(--plate);border-top:1px solid var(--hair-strong);box-shadow:var(--shadow-dock)}
+  /* switcher = left root */
+  .swc{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border:1px solid var(--hair-strong);background:var(--paper);border-radius:8px}
+  .swc .ic{color:var(--ink-soft);display:flex}.swc .nm{font-family:var(--font-serif);font-size:14px;font-weight:500}.swc .ca{color:var(--ink-faint);font-size:10px}
+  .up{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent)}
+  .ddiv{width:1px;height:24px;background:var(--hair);margin:0 3px}
+  .step{display:inline-flex;align-items:center;gap:4px}
+  .step .lbl{font-size:12px;font-weight:500;color:var(--ink-faint);margin-right:5px}
+  .step .sb{width:26px;height:26px;border:1px solid var(--hair-strong);background:var(--paper);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:13px}
+  .step .pos{font-family:var(--font-mono);font-size:12px;color:var(--ink);padding:0 4px;font-weight:600}
+  .step .pos small{color:var(--ink-faint);font-weight:400}
+  .sp{flex:1}
+  .grain{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft);margin-right:4px}
+  .cull{display:inline-flex;align-items:center;gap:6px}
+  .v{font-size:12px;font-weight:600;border-radius:7px;padding:6px 12px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .v.drop{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 38%,white)}
+  .v.keep{color:var(--success);border-color:color-mix(in oklch,var(--success) 38%,white)}
+  .v.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
+  .v.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  /* key chip: currentColor + centered glyph (flex + line-height:1). Plain by
+     default (letters, neutral + colour-outline buttons); .frost adds the
+     translucent fill — used ONLY on filled colour buttons (the Focus primary). */
+  .kb{font-family:var(--font-mono);font-size:11px;line-height:1;color:currentColor;
+      border:1px solid color-mix(in oklch,currentColor 32%,transparent);background:transparent;border-radius:4px;
+      display:inline-flex;align-items:center;justify-content:center;height:16px;min-width:16px;padding:0 4px;margin-left:5px}
+  .kb.frost{font-size:12.5px;background:color-mix(in oklch,currentColor 16%,transparent);border-color:color-mix(in oklch,currentColor 45%,transparent)}
+  .selcount{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}.selcount .p{width:8px;height:8px;border-radius:2px;background:var(--accent)}
+  .idlehint{font-size:12px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:8px}
+
+  .note{display:flex;gap:26px;padding:14px 32px 22px;border-top:1px dashed var(--hair-strong);background:var(--paper-sunk);flex:none}
+  .note .n{display:flex;gap:9px;max-width:340px}
+  .note .k{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--paper);background:var(--ink);border-radius:5px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  .note .t{font-size:11.5px;color:var(--ink);line-height:1.45}.note .t b{font-weight:700}
+  .homeic{width:15px;height:15px}
+</style></head>
+<body>
+
+<!-- CORPUS -->
+<section id="b1" class="page">
+  <div class="ftitle">Corpus · dock = 2D cursor (↑/↓ rows · ‹/› exposures) · cull · Loupe + Focus</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span>
+    <span class="sp"></span>
+    <span class="gear">⚙</span>
+  </header>
+  <div class="gap">— contact sheet (unchanged) —</div>
+  <div class="dock">
+    <span class="up">‹ Experiments</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Sample</span><span class="sb">↑</span><span class="pos">3<small> / 170</small></span><span class="sb">↓</span></span>
+    <span class="step" style="margin-left:10px"><span class="lbl">Frame</span><span class="sb">‹</span><span class="pos">2<small> / 8</small></span><span class="sb">›</span></span>
+    <div class="ddiv"></div>
+    <div class="cull">
+      <span class="v drop">Drop<span class="kb">X</span></span>
+      <span class="v keep">Keep<span class="kb">K</span></span>
+      <span class="v ghost">Restore</span>
+    </div>
+    <div class="sp"></div>
+    <span class="v">Loupe<span class="kb">L</span></span>
+    <span class="v primary">Focus<span class="kb frost">↵</span></span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>2D cursor, first-class.</b> ↑/↓ moves the sample row, ‹/› steps the exposures within it — the nav the sheet already has, now primary (no tab-in). The two steppers literally show the two axes.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>Cull acts on the current frame</b> (Drop X / Keep K / Restore), with Shift-select still batching across frames (then a count appears). The verbs sit between the cursor and the destinations.</span></div>
+    <div class="n"><span class="k">3</span><span class="t"><b>Destinations for the current row, right side:</b> <b>Focus</b> (primary, Enter) and <b>Loupe</b> (L). Whole sheet now drivable from the keyboard: ↑↓ rows · ‹› frames · X/K cull · Enter Focus · L loupe.</span></div>
+  </div>
+</section>
+
+<!-- FOCUS -->
+<section id="b2" class="page">
+  <div class="ftitle">Focus · dock = ‹ Corpus · sample stepper (↑/↓) · Loupe — no cull</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span>
+    <span class="sp"></span>
+    <span class="gear">⚙</span>
+  </header>
+  <div class="gap">— Focus plate + assignment sidebar (unchanged) —</div>
+  <div class="dock">
+    <span class="up">‹ Corpus</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Sample</span><span class="sb">↑</span><span class="pos">3<small> / 170</small></span><span class="sb">↓</span></span>
+    <div class="sp"></div>
+    <span class="v">Loupe<span class="kb">L</span></span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>Sample-level only.</b> ↑/↓ switches samples (same gesture as the sheet's row cursor); ‹ Corpus goes back up to the sheet. The stepper has left the top chrome for good.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>No cull here.</b> Keep / reject / set-representative are frame-level work and live in the Loupe. Focus is for indexing the representative trace — the plate + assignment sidebar own that, untouched.</span></div>
+    <div class="n"><span class="k">3</span><span class="t"><b>One destination:</b> Loupe (L) for this sample's frames. Drawn as a quiet button, not accent — on the Focus page the indexing IS the work, so the dock stays understated. Bump it to primary if you'd rather it lead.</span></div>
+  </div>
+</section>
+
+<!-- SERIES -->
+<section id="b3" class="page">
+  <div class="ftitle">Series · dock = ‹ All series · sample cursor (↑/↓) naming the current sample · Focus</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a>Experiments</a><a class="on"><span class="d"></span>Series</a></span>
+    <span class="sp"></span>
+    <span class="gear">⚙</span>
+  </header>
+  <div class="gap">— overlaid series plate (unchanged) —</div>
+  <div class="dock">
+    <span class="up">‹ All series</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Sample</span><span class="sb">↑</span><span class="pos">1<small> / 6</small></span><span class="sb">↓</span></span>
+    <span style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;margin-left:8px">
+      <span style="width:10px;height:10px;border-radius:3px;background:var(--phase-pn3m)"></span>2-2 + LL37 1:1
+      <span style="font-family:var(--font-mono);font-size:10px;color:var(--ink-faint);font-weight:400">from 1p7m</span>
+    </span>
+    <div class="sp"></div>
+    <span class="v primary">Focus<span class="kb frost">↵</span></span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>Up/down steps samples</b> (a vertical list, same gesture and label as the corpus). No in-dock series switcher — switching series goes through the Series folio; ‹ All series goes back up.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>"Which sample?" made explicit.</b> The cursor highlights the current sample's trace on the overlay AND names it in the dock — swatch + name + which experiment it's from. So you always see exactly what "Focus" will open.</span></div>
+    <div class="n"><span class="k">→</span><span class="t"><b>Focus</b> opens that current sample; from Focus the dock would read ‹ Series and step 1/6. No cull here (nothing to keep/reject in a series).</span></div>
+  </div>
+</section>
+
+<!-- LOUPE -->
+<section id="b4" class="page">
+  <div class="ftitle">Loupe · dock = 2D cursor (↑/↓ samples · ‹/› frames) + cull (frame work lives here) + Focus</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span>
+    <span class="sp"></span>
+    <span class="gear">⚙</span>
+  </header>
+  <div class="gap">— big frame + reject/tags side panel (unchanged) —</div>
+  <div class="dock">
+    <span class="up">‹ Corpus</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Sample</span><span class="sb">↑</span><span class="pos">3<small> / 170</small></span><span class="sb">↓</span></span>
+    <span class="step" style="margin-left:10px"><span class="lbl">Frame</span><span class="sb">‹</span><span class="pos">2<small> / 8</small></span><span class="sb">›</span></span>
+    <div class="ddiv"></div>
+    <div class="cull">
+      <span class="v drop">Drop<span class="kb">X</span></span>
+      <span class="v keep">Keep<span class="kb">K</span></span>
+      <span class="v">Set representative<span class="kb">R</span></span>
+    </div>
+    <div class="sp"></div>
+    <span class="v primary">Focus<span class="kb frost">↵</span></span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>The frame-cull surface.</b> This is where Drop / Keep / Set-rep moved out of Focus to — you're looking at one frame big, so culling it is the point. Same verbs, same X/K/R keys.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>Same 2D cursor as Corpus.</b> ‹/› steps frames (the filmstrip), ↑/↓ jumps to the prev/next sample's loupe. One consistent gesture across sheet ↔ loupe.</span></div>
+    <div class="n"><span class="k">→</span><span class="t"><b>Focus is the forward step</b> (primary, Enter): once a sample's frames are culled, go index its representative. ‹ Corpus returns to the sheet.</span></div>
+  </div>
+</section>
+
+</body></html>

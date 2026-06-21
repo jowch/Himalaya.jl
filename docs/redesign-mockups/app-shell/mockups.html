@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --frame-edge:oklch(0.150 0.010 55);
+    --phase-pn3m:oklch(0.570 0.150 58);--phase-im3m:oklch(0.520 0.120 162);--phase-lamellar:oklch(0.505 0.150 264);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,ui-serif,serif;--font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --shadow-plate-lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#cfc8bd;font-family:var(--font-sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;padding:0}
+  .page{width:1180px;background:var(--paper);color:var(--ink);margin:0 auto}
+  .text-display{font-family:var(--font-serif);font-size:31px;line-height:1.15;font-weight:500;color:var(--ink)}
+  .text-headline-lg{font-family:var(--font-serif);font-size:26px;line-height:1.15;font-weight:500;color:var(--ink)}
+  .text-caption{font-size:10.5px;line-height:1.4;color:var(--ink-soft)}
+  .text-kicker{font-size:11.5px;line-height:1.4;font-weight:700;text-transform:uppercase;letter-spacing:.10em}
+  .text-kicker.acc{color:var(--accent)}.text-kicker.soft{color:var(--ink-soft)}
+  .text-label{font-size:11.5px;line-height:1.4;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)}
+  .text-body{font-size:13px;line-height:1.5;color:var(--ink)}
+  .ink-soft{color:var(--ink-soft)}.ink-faint{color:var(--ink-faint)}
+
+  /* top bar — unified single chrome: wordmark + experiment switcher + Series + gear */
+  .top{display:flex;align-items:center;gap:18px;height:56px;padding:0 28px;border-bottom:1px solid var(--hair);background:var(--paper)}
+  .wm{font-family:var(--font-serif);font-weight:600;font-size:18px}.wmt{color:var(--ink-faint);font-weight:400;margin-left:6px;font-size:14px}
+  .sw{display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border:1px solid var(--hair-strong);background:var(--plate);border-radius:7px;cursor:pointer;box-shadow:var(--shadow-plate-lift)}
+  .sw .sn{font-family:var(--font-serif);font-size:15px;font-weight:500}.sw .ca{color:var(--ink-faint);font-size:10px}.sw .lt{color:var(--ink-faint);font-size:14px}
+  .top .sp{flex:1}
+  .tlink{font-size:11.5px;font-weight:600;letter-spacing:.025em;text-transform:uppercase;color:var(--ink-soft);display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+  .tlink .dot{width:5px;height:5px;border-radius:9999px;background:var(--accent)}
+  .gear{width:30px;height:30px;border-radius:7px;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft);cursor:pointer}
+
+  .main{padding:26px 40px 30px}.frame{max-width:1100px;margin:0 auto}
+  .btn{font-size:11.5px;font-weight:600;border-radius:5px;padding:5px 11px;cursor:pointer;border:1px solid transparent;font-family:var(--font-sans);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+  .btn.outline{border-color:var(--hair-strong);background:var(--plate);color:var(--ink)}
+  .btn.accent{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  .btn.ghost{color:var(--ink-soft);background:transparent}
+  .dot{display:inline-block;flex:none;border-radius:9999px;width:6px;height:6px}
+  .dot.accent{background:var(--accent)}.dot.neutral{background:var(--hair-strong)}.dot.success{background:var(--success)}
+
+  /* experiment header */
+  .hrow{display:flex;align-items:flex-end;gap:18px;margin-top:6px}
+  .resc{margin-left:auto;display:flex;align-items:center;gap:11px;white-space:nowrap;padding-bottom:5px}
+  .masthead{display:flex;margin-top:16px}
+  .masthead .m{padding:0 18px;border-right:1px solid var(--hair);display:flex;flex-direction:column;gap:3px}.masthead .m:first-child{padding-left:0}.masthead .m:last-child{border-right:none}
+  .masthead .mv{font-family:var(--font-mono);font-weight:600;font-size:15px;color:var(--ink)}
+
+  /* STAGE RAIL — the pipeline: Set up -> Grouping -> Corpus (active) */
+  .rail{display:flex;align-items:center;gap:0;margin:20px 0 0;border-bottom:1px solid var(--hair)}
+  .stg{display:inline-flex;align-items:center;gap:9px;padding:9px 16px 11px;cursor:pointer;position:relative}
+  .stg .num{width:18px;height:18px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;font-family:var(--font-mono)}
+  .stg.done .num{background:var(--success);color:var(--paper)}
+  .stg.active .num{background:var(--accent);color:var(--paper)}
+  .stg.todo .num{background:var(--paper-sunk);border:1px solid var(--hair-strong);color:var(--ink-faint)}
+  .stg .lb{font-size:11.5px;font-weight:600;letter-spacing:.025em;text-transform:uppercase;color:var(--ink-soft)}
+  .stg.active .lb{color:var(--ink)}.stg.active{border-bottom:2px solid var(--accent);margin-bottom:-1px}
+  .stg .badge{font-size:9.5px;font-weight:700;font-family:var(--font-mono);color:var(--paper);background:var(--warning);border-radius:9999px;padding:0 5px;line-height:15px;height:15px}
+  .arr{color:var(--hair-strong);font-size:12px;padding:0 2px}
+
+  /* grouping todo banner (Gradescope) */
+  .review{display:flex;align-items:center;gap:12px;margin:18px 0 0;padding:11px 15px;border:1px solid var(--hair-strong);background:var(--paper-sunk);border-radius:5px}
+  .review .ic{color:var(--warning);flex:none;display:flex}
+  .review .act{margin-left:auto}.review .ar{color:var(--accent)}
+
+  /* PERMANENT corpus toolbar (the fixture) */
+  .toolbar{display:flex;align-items:center;gap:10px;margin:18px 0 0;padding:8px 12px;border:1px solid var(--hair-strong);border-bottom:none;background:var(--paper-sunk);border-radius:7px 7px 0 0}
+  .toolbar .selstat{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
+  .toolbar .pip{width:7px;height:7px;border-radius:2px;background:var(--accent)}
+  .toolbar .div{width:1px;height:18px;background:var(--hair-strong);margin:0 3px}
+  .toolbar .sp{flex:1}
+  .ctl{font-size:11.5px;font-weight:600;color:var(--ink-soft);display:inline-flex;align-items:center;gap:5px;cursor:pointer;padding:4px 8px;border-radius:5px}
+  .ctl .ca{font-size:9px;color:var(--ink-faint)}
+  .ctl.kbd-d{color:var(--ink)}
+
+  /* contact sheet */
+  .sheet{background:var(--plate);border:1px solid var(--hair-strong);border-radius:0 0 7px 7px;box-shadow:var(--shadow-plate-lift);overflow:hidden}
+  .grid{display:grid;grid-template-columns:34px minmax(210px,1.4fr) minmax(300px,2fr) 92px minmax(130px,1fr) 132px}
+  .ghead{background:var(--paper-sunk);border-bottom:1px solid var(--hair-strong)}
+  .ghead .hc{padding:9px 14px;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
+  .ghead .hc.ck{padding:0;justify-content:center}
+  .row{border-bottom:1px solid var(--hair);background:var(--paper-sunk)}
+  .row.sel{background:color-mix(in oklch,var(--accent) 7%,var(--paper-sunk))}
+  .row:last-child{border-bottom:none}
+  .cell{display:flex;align-items:center;padding:0 14px;height:86px;min-width:0}
+  .cell.ck{padding:0;justify-content:center}
+  .cbx{width:15px;height:15px;border-radius:4px;border:1px solid var(--hair-strong);background:var(--plate)}
+  .cbx.on{background:var(--accent);border-color:var(--accent);position:relative}
+  .cbx.on:after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid var(--paper);border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .nm{font-size:13px;font-weight:600;color:var(--ink);line-height:1.25}
+  .idrow{display:flex;align-items:center;gap:8px;margin-top:3px}
+  .id{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)}
+  .chip{display:inline-flex;align-items:center;font-size:10px;font-weight:600;color:var(--ink-soft);background:var(--paper-sunk);border:1px solid var(--hair-strong);border-radius:9999px;padding:1px 8px;white-space:nowrap}
+  .gal{display:flex;gap:5px;align-items:center}
+  .th{width:56px;height:56px;border-radius:5px;background:var(--frame-edge);border:1px solid var(--hair-strong);flex:none}
+  .galmore{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);padding-left:3px}
+  .kept .kv{font-size:11.5px;color:var(--ink);font-weight:600;font-family:var(--font-mono)}.kept .kt{font-size:11.5px;color:var(--ink-soft);font-family:var(--font-mono)}
+  .pchip{display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:11px;font-weight:700;border-radius:5px;border:1px solid;padding:2px 8px}
+  .open{font-size:10.5px;font-weight:600;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+
+  /* FOCUS back/context bar */
+  .ctxbar{display:flex;align-items:center;gap:14px;margin-top:4px;padding:11px 0;border-bottom:1px solid var(--hair)}
+  .back{font-size:12px;font-weight:600;color:var(--accent);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+  .crumb{font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:8px}
+  .crumb b{color:var(--ink);font-weight:600}.crumb .sl{color:var(--ink-faint)}
+  .stepper{margin-left:auto;display:inline-flex;align-items:center;gap:4px}
+  .stepper .pos{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-soft);padding:0 8px}
+  .sbtn{width:28px;height:28px;border:1px solid var(--hair-strong);background:var(--plate);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);cursor:pointer}
+
+  /* focus workspace */
+  .work{display:grid;grid-template-columns:1fr 280px;gap:18px;margin-top:18px}
+  .plot{background:var(--plate);border:1px solid var(--hair-strong);border-radius:7px;box-shadow:var(--shadow-plate-lift);padding:16px;height:430px;display:flex;flex-direction:column}
+  .plot .pt{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .srail{display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--plate);border:1px solid var(--hair-strong);border-radius:7px;box-shadow:var(--shadow-plate-lift);padding:14px}
+  .card .ct{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:10px}
+  .assign{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--hair);font-family:var(--font-mono);font-size:12px}.assign:last-child{border-bottom:none}
+
+  /* series view */
+  .secthead{display:flex;align-items:flex-end;gap:16px;margin-top:6px}
+  .mlist{margin-top:18px;background:var(--plate);border:1px solid var(--hair-strong);border-radius:7px;box-shadow:var(--shadow-plate-lift);overflow:hidden}
+  .mrow{display:grid;grid-template-columns:18px 1fr 150px 96px 92px;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid var(--hair)}
+  .mrow:last-child{border-bottom:none}
+  .swatch{width:11px;height:11px;border-radius:3px}
+  .mrow .from{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-soft)}
+  .twoup{display:grid;grid-template-columns:1fr 44px 1fr;align-items:center;gap:0;margin-top:6px}
+  .bigarrow{font-size:26px;color:var(--accent);text-align:center}
+
+  /* annotation footer */
+  .note{display:flex;gap:26px;padding:16px 40px 22px;border-top:1px dashed var(--hair-strong);background:var(--paper-sunk)}
+  .note .n{display:flex;gap:9px;max-width:340px}
+  .note .k{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--paper);background:var(--accent);border-radius:5px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  .note .t{font-size:11.5px;color:var(--ink);line-height:1.45}.note .t b{font-weight:700}
+  .ftitle{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:7px 40px 0}
+</style></head>
+<body>
+
+<!-- ===================== FRAME 1 — CORPUS ===================== -->
+<section id="f1" class="page">
+  <div class="ftitle">Frame 1 · Inside an experiment — Corpus (home base)</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sw"><span class="lt">‹</span><span class="sn">SSRL April 2026 · 1p7m</span><span class="ca">▾</span></span>
+    <span class="sp"></span>
+    <span class="tlink"><span class="dot"></span>Series</span>
+    <span class="gear"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+  </header>
+  <div class="main"><div class="frame">
+    <div class="text-kicker acc">Experiment</div>
+    <div class="hrow">
+      <h1 class="text-display">SSRL April 2026 · 1p7m</h1>
+      <div class="resc"><span class="text-caption"><span class="dot success"></span> scanned 2 min ago · up to date</span><button class="btn outline">Rescan</button></div>
+    </div>
+    <div class="masthead">
+      <div class="m"><span class="mv">13</span><span class="text-caption">loads</span></div>
+      <div class="m"><span class="mv">170</span><span class="text-caption">samples</span></div>
+      <div class="m"><span class="mv">682</span><span class="text-caption">exposures</span></div>
+      <div class="m"><span class="mv">30.8&thinsp;h</span><span class="text-caption">span</span></div>
+      <div class="m"><span class="mv">4</span><span class="text-caption">sessions</span></div>
+    </div>
+
+    <!-- STAGE RAIL : the pipeline -->
+    <div class="rail">
+      <span class="stg done"><span class="num">✓</span><span class="lb">Set up</span></span>
+      <span class="arr">›</span>
+      <span class="stg todo"><span class="num">2</span><span class="lb">Grouping</span><span class="badge">3</span></span>
+      <span class="arr">›</span>
+      <span class="stg active"><span class="num">3</span><span class="lb">Corpus</span></span>
+    </div>
+
+    <!-- grouping todo (Gradescope, self-announcing) -->
+    <div class="review">
+      <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+      <div class="tx text-body"><b style="font-weight:600">3 samples need a grouping check.</b> <span class="ink-soft">Two stage-position jumps and one counter reset were ambiguous during the scan.</span></div>
+      <button class="btn outline act">Review grouping <span class="ar">→</span></button>
+    </div>
+
+    <!-- PERMANENT toolbar (the fixture) — shown with a selection active -->
+    <div class="toolbar">
+      <span class="selstat"><span class="pip"></span>3 exposures selected</span>
+      <span class="div"></span>
+      <button class="btn ghost">Keep</button>
+      <button class="btn ghost">Remove</button>
+      <button class="btn ghost">Set representative</button>
+      <span class="sp"></span>
+      <span class="ctl">Sort <span class="ca">▾</span></span>
+      <span class="ctl">Filter <span class="ca">▾</span></span>
+      <span class="ctl">Select all</span>
+    </div>
+
+    <div class="sheet">
+      <div class="grid ghead">
+        <div class="hc ck"><span class="cbx"></span></div>
+        <div class="hc">Sample</div><div class="hc">Exposures</div><div class="hc">Kept</div><div class="hc">Phase</div><div class="hc"></div>
+      </div>
+      <div class="grid row sel">
+        <div class="cell ck"><span class="cbx on"></span></div>
+        <div class="cell"><div><div class="nm">2-2 + LL37 1:1</div><div class="idrow"><span class="id">S2453</span><span class="chip">slot 5</span></div></div></div>
+        <div class="cell"><div class="gal"><span class="th"></span><span class="th"></span><span class="th"></span><span class="galmore">+5</span></div></div>
+        <div class="cell"><div class="kept"><span class="kv">3</span> <span class="kt">/ 8</span></div></div>
+        <div class="cell"><span class="pchip" style="color:var(--phase-pn3m);background:color-mix(in oklch,var(--phase-pn3m) 12%,white);border-color:color-mix(in oklch,var(--phase-pn3m) 35%,white)">Pn3m</span></div>
+        <div class="cell"><span class="open">Open ›</span></div>
+      </div>
+      <div class="grid row">
+        <div class="cell ck"><span class="cbx"></span></div>
+        <div class="cell"><div><div class="nm">CM1 Only</div><div class="idrow"><span class="id">S2461</span><span class="chip">slot 6</span></div></div></div>
+        <div class="cell"><div class="gal"><span class="th"></span><span class="th"></span><span class="galmore">+2</span></div></div>
+        <div class="cell"><div class="kept"><span class="kv">2</span> <span class="kt">/ 4</span></div></div>
+        <div class="cell"><span class="pchip" style="color:var(--phase-im3m);background:color-mix(in oklch,var(--phase-im3m) 12%,white);border-color:color-mix(in oklch,var(--phase-im3m) 35%,white)">Im3m</span></div>
+        <div class="cell"><span class="open">Open ›</span></div>
+      </div>
+      <div class="grid row">
+        <div class="cell ck"><span class="cbx"></span></div>
+        <div class="cell"><div><div class="nm">P2 + CMTM3 1:1</div><div class="idrow"><span class="id">S2470</span><span class="chip">slot 7</span></div></div></div>
+        <div class="cell"><div class="gal"><span class="th"></span><span class="th"></span><span class="th"></span><span class="galmore">+9</span></div></div>
+        <div class="cell"><div class="kept"><span class="kv">4</span> <span class="kt">/ 12</span></div></div>
+        <div class="cell"><span class="text-caption ink-faint">not indexed</span></div>
+        <div class="cell"><span class="open">Open ›</span></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>One unified bar, no sidebar.</b> The experiment <b>switcher</b> ('SSRL April… ▾') is how you jump experiments or go home. Series + ⚙ Configuration sit to the right.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>The pipeline is visible.</b> Set&nbsp;up → Grouping → Corpus, with gates. Grouping carries a self-announcing <b>todo badge</b>; Corpus is the active working stage.</span></div>
+    <div class="n"><span class="k">3</span><span class="t"><b>Permanent toolbar (your idea).</b> Always present: idle shows Sort / Filter / Select all; a selection swaps in Keep / Remove / Set representative. No pop-in.</span></div>
+    <div class="n"><span class="k">4</span><span class="t"><b>Focus is one click.</b> Any row's 'Open ›' (or the name) drops into Focus over this set.</span></div>
+  </div>
+</section>
+
+<!-- ===================== FRAME 2 — FOCUS ===================== -->
+<section id="f2" class="page">
+  <div class="ftitle">Frame 2 · Focus — the detail lens over the set</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sw"><span class="lt">‹</span><span class="sn">SSRL April 2026 · 1p7m</span><span class="ca">▾</span></span>
+    <span class="sp"></span>
+    <span class="tlink"><span class="dot"></span>Series</span>
+    <span class="gear"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg></span>
+  </header>
+  <div class="main"><div class="frame">
+    <div class="ctxbar">
+      <span class="back">‹ Back to Corpus</span>
+      <span class="crumb"><b>1p7m</b><span class="sl">/</span>Corpus<span class="sl">/</span><b>2-2 + LL37 1:1</b></span>
+      <span class="stepper">
+        <span class="sbtn">‹</span><span class="pos">3 / 170</span><span class="sbtn">›</span>
+      </span>
+    </div>
+
+    <div class="work">
+      <div class="plot">
+        <div class="pt"><span class="text-label">Integration · S2453 (representative)</span><span class="text-caption">log&nbsp;·&nbsp;q&nbsp;Å⁻¹</span></div>
+        <svg viewBox="0 0 640 360" style="width:100%;flex:1" preserveAspectRatio="none">
+          <g stroke="var(--hair)" stroke-width="1">
+            <line x1="0" y1="90" x2="640" y2="90"/><line x1="0" y1="180" x2="640" y2="180"/><line x1="0" y1="270" x2="640" y2="270"/>
+          </g>
+          <polyline fill="none" stroke="var(--ink-soft)" stroke-width="1.5" points="0,300 40,295 80,250 120,150 140,70 160,150 200,240 240,210 280,120 300,90 320,150 360,250 400,235 440,180 460,160 480,200 520,265 560,275 600,285 640,288"/>
+          <g stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3">
+            <line x1="140" y1="20" x2="140" y2="340"/><line x1="300" y1="20" x2="300" y2="340"/><line x1="380" y1="20" x2="380" y2="340"/>
+          </g>
+        </svg>
+      </div>
+      <div class="srail">
+        <div class="card">
+          <div class="ct">Phase call</div>
+          <span class="pchip" style="color:var(--phase-pn3m);background:color-mix(in oklch,var(--phase-pn3m) 12%,white);border-color:color-mix(in oklch,var(--phase-pn3m) 35%,white);font-size:13px">Pn3m</span>
+          <div class="text-caption" style="margin-top:9px">a = 14.2 nm · coverage 0.92 · 5 of 5 peaks</div>
+        </div>
+        <div class="card">
+          <div class="ct">Assignment</div>
+          <div class="assign"><span>√2</span><span class="ink-soft">0.094</span></div>
+          <div class="assign"><span>√3</span><span class="ink-soft">0.115</span></div>
+          <div class="assign"><span>√4</span><span class="ink-soft">0.133</span></div>
+          <div class="assign"><span>√6</span><span class="ink-soft">0.163</span></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>Experiment context never drops.</b> Same top bar + switcher. You always know which experiment this trace lives in.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>'Back to Corpus' is the thread.</b> Dive-and-return lands you back on the sheet you came from — no browser back, no stranding.</span></div>
+    <div class="n"><span class="k">3</span><span class="t"><b>Both motions, one place.</b> Step ‹ 3/170 › to <b>work-the-run</b>; the breadcrumb / back is your <b>targeted</b> jump. No mode switch.</span></div>
+  </div>
+</section>
+
+<!-- ===================== FRAME 3 — SERIES → FOCUS ===================== -->
+<section id="f3" class="page">
+  <div class="ftitle">Frame 3 · Series (cross-experiment) → Focus, in one click</div>
+  <header class="top">
+    <span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sp"></span>
+    <span class="tlink" style="color:var(--ink)"><span class="dot"></span>Series</span>
+    <span style="width:18px"></span>
+    <span class="tlink">Experiments</span>
+  </header>
+  <div class="main"><div class="frame">
+    <div class="twoup">
+      <!-- left: series -->
+      <div>
+        <div class="text-kicker acc">Series · cross-experiment</div>
+        <div class="secthead"><h1 class="text-headline-lg">LL37 dose response</h1></div>
+        <div class="text-caption" style="margin-top:5px">6 members · drawn from 3 experiments</div>
+        <div class="mlist">
+          <div class="mrow" style="background:color-mix(in oklch,var(--accent) 7%,var(--paper-sunk))">
+            <span class="swatch" style="background:var(--phase-pn3m)"></span>
+            <div><div class="nm">2-2 + LL37 1:1</div><div class="from">from SSRL April · 1p7m</div></div>
+            <span class="pchip" style="color:var(--phase-pn3m);background:color-mix(in oklch,var(--phase-pn3m) 12%,white);border-color:color-mix(in oklch,var(--phase-pn3m) 35%,white)">Pn3m</span>
+            <span class="id" style="font-family:var(--font-mono);font-size:11px">S2453</span>
+            <span class="open">Open ›</span>
+          </div>
+          <div class="mrow">
+            <span class="swatch" style="background:var(--phase-im3m)"></span>
+            <div><div class="nm">2-2 + LL37 1:4</div><div class="from">from SSRL March · 1p7m</div></div>
+            <span class="pchip" style="color:var(--phase-im3m);background:color-mix(in oklch,var(--phase-im3m) 12%,white);border-color:color-mix(in oklch,var(--phase-im3m) 35%,white)">Im3m</span>
+            <span class="id" style="font-family:var(--font-mono);font-size:11px">S1981</span>
+            <span class="open">Open ›</span>
+          </div>
+          <div class="mrow">
+            <span class="swatch" style="background:var(--phase-lamellar)"></span>
+            <div><div class="nm">2-2 + LL37 1:8</div><div class="from">from SSRL Jan · 0p7m</div></div>
+            <span class="pchip" style="color:var(--phase-lamellar);background:color-mix(in oklch,var(--phase-lamellar) 12%,white);border-color:color-mix(in oklch,var(--phase-lamellar) 35%,white)">Lα</span>
+            <span class="id" style="font-family:var(--font-mono);font-size:11px">S0820</span>
+            <span class="open">Open ›</span>
+          </div>
+        </div>
+      </div>
+      <div class="bigarrow">→</div>
+      <!-- right: focus opened from the series -->
+      <div>
+        <div class="ctxbar" style="border-top:1px solid var(--hair);margin-top:34px">
+          <span class="back">‹ Back to Series</span>
+          <span class="crumb"><span class="sl">“LL37 dose”</span><span class="sl">/</span><b>2-2 + LL37 1:1</b></span>
+          <span class="stepper"><span class="sbtn">‹</span><span class="pos">1 / 6</span><span class="sbtn">›</span></span>
+        </div>
+        <div class="plot" style="height:300px;margin-top:14px">
+          <div class="pt"><span class="text-label">Focus · S2453 · from 1p7m</span></div>
+          <svg viewBox="0 0 640 280" style="width:100%;flex:1" preserveAspectRatio="none">
+            <polyline fill="none" stroke="var(--ink-soft)" stroke-width="1.5" points="0,235 60,225 110,120 130,55 150,120 210,200 260,160 290,80 320,130 380,205 440,170 470,150 520,205 580,220 640,225"/>
+            <g stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3"><line x1="130" y1="15" x2="130" y2="265"/><line x1="290" y1="15" x2="290" y2="265"/></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="note">
+    <div class="n"><span class="k">1</span><span class="t"><b>Series spans experiments.</b> Members carry a 'from &lt;experiment&gt;' tag — the cross-experiment reality is explicit.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>One click to Focus.</b> 'Open ›' on any member drops straight into that trace's Focus — the missing Series→Focus path.</span></div>
+    <div class="n"><span class="k">3</span><span class="t"><b>The set follows you.</b> Back thread reads 'Back to Series'; the stepper walks the <b>series</b> (1/6), not the experiment. Same gesture, different set.</span></div>
+  </div>
+</section>
+
+</body></html>

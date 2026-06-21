@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --frame-edge:oklch(0.150 0.010 55);
+    --phase-pn3m:oklch(0.570 0.150 58);--phase-im3m:oklch(0.520 0.120 162);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,serif;--font-mono:ui-monospace,Menlo,monospace;
+    --shadow-plate-lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+    --shadow-dock:0 -7px 24px -10px rgba(40,30,20,.22);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#cfc8bd;font-family:var(--font-sans);font-size:13px;-webkit-font-smoothing:antialiased}
+  .page{width:1180px;height:668px;background:var(--paper);color:var(--ink);margin:0 auto;display:flex;flex-direction:column}
+  .ftitle{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:8px 30px 4px;flex:none}
+  /* top bar */
+  .top{display:flex;align-items:center;gap:18px;height:54px;padding:0 28px;border-bottom:1px solid var(--hair);flex:none}
+  .wm{font-family:var(--font-serif);font-weight:600;font-size:18px}.wmt{color:var(--ink-faint);font-weight:400;margin-left:6px;font-size:14px}
+  .sect{display:inline-flex;gap:3px;margin-left:10px}
+  .sect a{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);padding:6px 12px;border-radius:6px;display:inline-flex;align-items:center;gap:7px}
+  .sect a.on{color:var(--ink);background:var(--paper-sunk)}.sect a .d{width:5px;height:5px;border-radius:9999px;background:var(--accent)}
+  .top .sp{flex:1}
+  .gear{width:32px;height:32px;border-radius:8px;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+  .main{flex:1;min-height:0;overflow:auto;padding:22px 40px 18px}.frame{max-width:1080px;margin:0 auto}
+  .kicker{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.10em;color:var(--accent)}
+  .hrow{display:flex;align-items:flex-end;gap:18px;margin-top:5px}
+  .disp{font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.1}
+  .resc{margin-left:auto;display:flex;align-items:center;gap:11px;white-space:nowrap;padding-bottom:4px}
+  .dot{width:6px;height:6px;border-radius:9999px;display:inline-block}.dot.ok{background:var(--success)}
+  .btn{font-size:12px;font-weight:600;border-radius:7px;padding:6px 12px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .dir{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-soft);margin-top:5px}
+  .masthead{display:flex;margin-top:15px}
+  .masthead .m{padding:0 18px;border-right:1px solid var(--hair);display:flex;flex-direction:column;gap:3px}.masthead .m:first-child{padding-left:0}.masthead .m:last-child{border-right:none}
+  .mv{font-family:var(--font-mono);font-weight:600;font-size:15px}.mc{font-size:10.5px;color:var(--ink-soft)}
+  /* review banner */
+  .review{display:flex;align-items:center;gap:12px;margin:18px 0 0;padding:11px 15px;border:1px solid color-mix(in oklch,var(--warning) 45%,var(--hair-strong));background:color-mix(in oklch,var(--warning) 7%,var(--paper-sunk));border-radius:7px}
+  .review .ic{color:var(--warning);flex:none;display:flex}
+  .review .act{margin-left:auto;color:var(--accent);font-weight:600;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+  /* sheet */
+  .sheet{margin-top:16px;background:var(--plate);border:1px solid var(--hair-strong);border-radius:9px;box-shadow:var(--shadow-plate-lift);overflow:hidden}
+  .grid{display:grid;grid-template-columns:34px minmax(210px,1.4fr) minmax(300px,2fr) 92px minmax(130px,1fr) 110px}
+  .ghead{background:var(--paper-sunk);border-bottom:1px solid var(--hair-strong)}
+  .ghead .hc{padding:9px 14px;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
+  .ghead .hc.ck{padding:0;justify-content:center}
+  .row{border-bottom:1px solid var(--hair);background:var(--paper-sunk)}.row:last-child{border-bottom:none}
+  .row.cursor{background:color-mix(in oklch,var(--accent) 10%,var(--paper-sunk))}
+  .cell{display:flex;align-items:center;padding:0 14px;height:90px;min-width:0}.cell.ck{padding:0;justify-content:center}
+  .cbx{width:15px;height:15px;border-radius:4px;border:1px solid var(--hair-strong);background:var(--plate)}
+  .nm{font-size:13px;font-weight:600;color:var(--ink);line-height:1.25}
+  .idrow{display:flex;align-items:center;gap:8px;margin-top:3px}.id{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)}
+  .chip{display:inline-flex;align-items:center;font-size:10px;font-weight:600;color:var(--ink-soft);background:var(--paper-sunk);border:1px solid var(--hair-strong);border-radius:9999px;padding:1px 8px;white-space:nowrap}
+  .gal{display:flex;gap:5px;align-items:center}
+  .th{width:56px;height:56px;border-radius:5px;background:var(--frame-edge);border:1px solid var(--hair-strong);flex:none}
+  .th.sel{outline:2px solid var(--accent);outline-offset:1px}
+  .th.drop{opacity:.4}
+  .galmore{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);padding-left:3px}
+  .kept .kv{font-size:11.5px;color:var(--ink);font-weight:600;font-family:var(--font-mono)}.kept .kt{font-size:11.5px;color:var(--ink-soft);font-family:var(--font-mono)}
+  .pchip{display:inline-flex;align-items:center;font-family:var(--font-mono);font-size:11px;font-weight:700;border-radius:5px;border:1px solid;padding:2px 8px}
+  .open{font-size:10.5px;font-weight:600;color:var(--accent);display:inline-flex;align-items:center;gap:4px}
+  /* dock */
+  .dock{flex:none;display:flex;align-items:center;gap:9px;height:54px;padding:0 16px;background:var(--plate);border-top:1px solid var(--hair-strong);box-shadow:var(--shadow-dock)}
+  .up{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent)}
+  .step{display:inline-flex;align-items:center;gap:4px}.step .lbl{font-size:12px;font-weight:500;color:var(--ink-faint);margin-right:5px}
+  .step .sb{width:26px;height:26px;border:1px solid var(--hair-strong);background:var(--paper);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:13px}
+  .step .pos{font-family:var(--font-mono);font-size:12px;color:var(--ink);padding:0 4px;font-weight:600}.step .pos small{color:var(--ink-faint);font-weight:400}
+  .ddiv{width:1px;height:24px;background:var(--hair);margin:0 5px}.dsp{flex:1}
+  .selcount{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}.selcount .p{width:8px;height:8px;border-radius:2px;background:var(--accent)}
+  .v{font-size:12px;font-weight:600;border-radius:7px;padding:6px 12px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .v.drop{background:transparent;color:var(--accent);border-color:color-mix(in oklch,var(--accent) 40%,white)}
+  .v.keep{background:transparent;color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)}
+  .v.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
+  .v.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  .kb{font-family:var(--font-mono);font-size:11px;line-height:1;color:currentColor;border:1px solid color-mix(in oklch,currentColor 32%,transparent);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;height:16px;min-width:16px;padding:0 4px;margin-left:5px}
+  .kb.frost{font-size:12.5px;background:color-mix(in oklch,currentColor 16%,transparent);border-color:color-mix(in oklch,currentColor 45%,transparent)}
+</style></head>
+<body>
+<section class="page">
+  <div class="ftitle">New surface · Corpus assembly — the daily-loop home (chrome + sheet + dock)</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span><span class="sp"></span><span class="gear">⚙</span></header>
+  <div class="main"><div class="frame">
+    <div class="kicker">Experiment</div>
+    <div class="hrow">
+      <h1 class="disp">SSRL April 2026 · 1p7m</h1>
+      <div class="resc"><span style="font-size:11px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px"><span class="dot ok"></span>scanned 2 min ago · up to date</span><button class="btn">Rescan</button></div>
+    </div>
+    <div class="dir">/Volumes/data/ssrl/2026_04/1p7m</div>
+    <div class="masthead">
+      <div class="m"><span class="mv">13</span><span class="mc">loads</span></div>
+      <div class="m"><span class="mv">170</span><span class="mc">samples</span></div>
+      <div class="m"><span class="mv">682</span><span class="mc">exposures</span></div>
+      <div class="m"><span class="mv">30.8&thinsp;h</span><span class="mc">span</span></div>
+      <div class="m"><span class="mv">4</span><span class="mc">sessions</span></div>
+    </div>
+    <div class="review">
+      <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+      <div style="font-size:13px"><b style="font-weight:600">3 samples need a grouping check.</b> <span style="color:var(--ink-soft)">Two stage-position jumps and one counter reset were ambiguous.</span></div>
+      <span class="act">Review grouping →</span>
+    </div>
+    <div class="sheet">
+      <div class="grid ghead">
+        <div class="hc ck"><span class="cbx"></span></div><div class="hc">Sample</div><div class="hc">Exposures</div><div class="hc">Kept</div><div class="hc">Phase</div><div class="hc"></div>
+      </div>
+      <div class="grid row cursor">
+        <div class="cell ck"><span class="cbx"></span></div>
+        <div class="cell"><div><div class="nm">2-2 + LL37 1:1</div><div class="idrow"><span class="id">S2453</span><span class="chip">slot 5</span></div></div></div>
+        <div class="cell"><div class="gal"><span class="th"></span><span class="th sel"></span><span class="th"></span><span class="th drop"></span><span class="galmore">+4</span></div></div>
+        <div class="cell"><div class="kept"><span class="kv">3</span> <span class="kt">/ 8</span></div></div>
+        <div class="cell"><span class="pchip" style="color:var(--phase-pn3m);background:color-mix(in oklch,var(--phase-pn3m) 12%,white);border-color:color-mix(in oklch,var(--phase-pn3m) 35%,white)">Pn3m</span></div>
+        <div class="cell"><span class="open">Open ›</span></div>
+      </div>
+      <div class="grid row">
+        <div class="cell ck"><span class="cbx"></span></div>
+        <div class="cell"><div><div class="nm">CM1 Only</div><div class="idrow"><span class="id">S2461</span><span class="chip">slot 6</span></div></div></div>
+        <div class="cell"><div class="gal"><span class="th"></span><span class="th"></span><span class="galmore">+2</span></div></div>
+        <div class="cell"><div class="kept"><span class="kv">2</span> <span class="kt">/ 4</span></div></div>
+        <div class="cell"><span class="pchip" style="color:var(--phase-im3m);background:color-mix(in oklch,var(--phase-im3m) 12%,white);border-color:color-mix(in oklch,var(--phase-im3m) 35%,white)">Im3m</span></div>
+        <div class="cell"><span class="open">Open ›</span></div>
+      </div>
+      <div class="grid row">
+        <div class="cell ck"><span class="cbx"></span></div>
+        <div class="cell"><div><div class="nm">P2 + CMTM3 1:1</div><div class="idrow"><span class="id">S2470</span><span class="chip">slot 7</span></div></div></div>
+        <div class="cell"><div class="gal"><span class="th"></span><span class="th"></span><span class="th"></span><span class="galmore">+9</span></div></div>
+        <div class="cell"><div class="kept"><span class="kv">4</span> <span class="kt">/ 12</span></div></div>
+        <div class="cell"><span style="font-size:10.5px;color:var(--ink-faint)">not indexed</span></div>
+        <div class="cell"><span class="open">Open ›</span></div>
+      </div>
+    </div>
+  </div></div>
+  <!-- dock: the current row (cursor) drives it; a frame is selected → cull shows -->
+  <div class="dock">
+    <span class="up">‹ Experiments</span>
+    <div class="ddiv"></div>
+    <span class="step"><span class="lbl">Sample</span><span class="sb">↑</span><span class="pos">3<small> / 170</small></span><span class="sb">↓</span></span>
+    <span class="step" style="margin-left:10px"><span class="lbl">Frame</span><span class="sb">‹</span><span class="pos">2<small> / 8</small></span><span class="sb">›</span></span>
+    <div class="ddiv"></div>
+    <span class="selcount"><span class="p"></span>1 frame</span>
+    <span class="v drop" style="margin-left:6px">Drop<span class="kb">X</span></span>
+    <span class="v keep">Keep<span class="kb">K</span></span>
+    <span class="v ghost">Restore</span>
+    <div class="dsp"></div>
+    <span class="v">Loupe<span class="kb">L</span></span>
+    <span class="v primary">Focus<span class="kb frost">↵</span></span>
+  </div>
+</section>
+</body></html>
