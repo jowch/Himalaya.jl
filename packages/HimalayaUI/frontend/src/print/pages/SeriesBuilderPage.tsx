@@ -6,6 +6,7 @@ import { SeriesPlate } from "../components/SeriesPlate";
 import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
 import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
+import { Dock } from "../ui/Dock";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
 import { useReorderShortcuts } from "../shell/useReorderShortcuts";
@@ -475,6 +476,7 @@ export function SeriesBuilderPage(): JSX.Element {
         : "Confirming…";
 
   return (
+    <>
     <Skeleton
       name="series-builder"
       // Full-height flex column so the builder grid stretches to the bottom of the
@@ -527,6 +529,20 @@ export function SeriesBuilderPage(): JSX.Element {
         />
       )}
     </Skeleton>
+    {/* ── Contextual bottom dock (Series grammar §3.3) ──────────────────────────
+        ‹ All series · Sample↑↓ · Focus
+        The builder shows the member list; Sample↑↓ is left out (no cursor
+        over members in the current session model). */}
+    <Dock>
+      <button
+        onClick={() => navigate("/series")}
+        className="text-meta font-semibold text-print-accent hover:underline mr-1"
+        data-testid="dock-up-link"
+      >
+        ‹ All series
+      </button>
+    </Dock>
+    </>
   );
 }
 

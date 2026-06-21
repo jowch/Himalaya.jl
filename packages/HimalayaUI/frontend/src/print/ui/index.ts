@@ -77,3 +77,5 @@ export { TagSuggest } from "./TagSuggest";
 export type { TagSuggestOption, TagSuggestProps } from "./TagSuggest";
 export { StatBar } from "./StatBar";
 export type { StatBarProps, StatBarStat } from "./StatBar";
+export { Dock } from "./Dock";
+export type { DockProps } from "./Dock";

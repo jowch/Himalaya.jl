@@ -5,7 +5,8 @@ import { PageFrame } from "../components/PageFrame";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { CullBar } from "../components/CullBar";
-import { Kicker, KbLegend, ProgressBar, ComposeBar, EmptyState, Button, HintText } from "../ui";
+import { Kicker, KbLegend, ProgressBar, ComposeBar, EmptyState, Button, HintText, IconButton } from "../ui";
+import { Dock } from "../ui/Dock";
 import { KbdLegend } from "../shell/KbdLegend";
 import {
   useCorpusSamples,
@@ -15,7 +16,6 @@ import {
   useSetExposureStatusBatch,
 } from "../../queries";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
-import { useFloatingDock } from "../shell/floatingDock";
 import {
   resolveExperimentFilter,
   UNKNOWN_EXPERIMENT_LABEL,
@@ -239,17 +239,10 @@ export function SamplesPage(): JSX.Element {
     anchorRef.current = null;
   }, [experimentId]);
 
-  // LA-COLLIDE: the CullBar / ComposeBar are opaque, fixed, bottom-centre and
-  // sit above the global InfrastructureBanner's z-index — so while either shows
-  // it would paint over a "Saving…" banner. Publish the dock-lane occupancy so
-  // the banner steps aside to a corner; release it on unmount so leaving the
-  // sheet recentres the banner.
-  const setCenterLaneOccupied = useFloatingDock((s) => s.setCenterLaneOccupied);
-  const dockLaneOccupied = selected.size > 0 || checkedSamples.size > 0;
-  useEffect(() => {
-    setCenterLaneOccupied(dockLaneOccupied);
-    return () => setCenterLaneOccupied(false);
-  }, [dockLaneOccupied, setCenterLaneOccupied]);
+  // LA-COLLIDE: the bottom Dock is always mounted and permanently claims the
+  // dock lane via its own useEffect (Dock.tsx). CullBar / ComposeBar are opaque
+  // transient bars that float above the Dock; the lane is always occupied while
+  // this page is mounted, so no additional lane claim is needed here.
 
   useEffect(() => {
     function onShiftDown(e: KeyboardEvent): void {
@@ -676,6 +669,136 @@ export function SamplesPage(): JSX.Element {
         onNewSeries={() => navigateToNewSeries(checkedSamples, navigate)}
         onClear={() => setCheckedSamples(new Set())}
       />
+
+      {/* ── Contextual bottom dock (Corpus grammar §3.3) ─────────────────────────
+          ‹ Experiments · Sample↑↓ · Frame‹› · Drop · Keep · Restore · Loupe · Focus
+          NO Set-representative on Corpus (keyboard comment above confirms this).
+          Each verb calls the SAME callback the keyboard shortcut uses — no divergence. */}
+      <Dock>
+        {/* Up-link */}
+        <a
+          href="/experiments"
+          onClick={(e) => { e.preventDefault(); navigate("/experiments"); }}
+          className="text-meta font-semibold text-print-accent hover:underline mr-1"
+          data-testid="dock-up-link"
+        >
+          ‹ Experiments
+        </a>
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Sample↑↓ stepper */}
+        <IconButton
+          label="Previous sample"
+          tone="ghost"
+          disabled={cursor.sampleIndex === 0}
+          onClick={() => clampSample(-1)}
+          data-testid="dock-prev-sample"
+        >
+          ↑
+        </IconButton>
+        <IconButton
+          label="Next sample"
+          tone="ghost"
+          disabled={cursor.sampleIndex >= sortedSamples.length - 1}
+          onClick={() => clampSample(1)}
+          data-testid="dock-next-sample"
+        >
+          ↓
+        </IconButton>
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Frame‹› stepper */}
+        <IconButton
+          label="Previous frame"
+          tone="ghost"
+          disabled={cursor.frameIndex === 0}
+          onClick={() => clampFrame(-1)}
+          data-testid="dock-prev-frame"
+        >
+          ‹
+        </IconButton>
+        <IconButton
+          label="Next frame"
+          tone="ghost"
+          disabled={(() => {
+            const frames = corpusExposures.byId.get(sortedSamples[cursor.sampleIndex]?.id ?? -1) ?? [];
+            return cursor.frameIndex >= frames.length - 1;
+          })()}
+          onClick={() => clampFrame(1)}
+          data-testid="dock-next-frame"
+        >
+          ›
+        </IconButton>
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Cull verbs: Drop / Keep / Restore */}
+        <Button
+          variant="danger"
+          onClick={() => {
+            const s = activeSample;
+            const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+            const frame = frames[cursor.frameIndex];
+            if (s == null || frame == null) return;
+            batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "rejected" });
+          }}
+          data-testid="dock-drop"
+        >
+          Drop
+        </Button>
+        <Button
+          variant="success"
+          onClick={() => {
+            const s = activeSample;
+            const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+            const frame = frames[cursor.frameIndex];
+            if (s == null || frame == null) return;
+            batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "accepted" });
+          }}
+          data-testid="dock-keep"
+        >
+          Keep
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            const s = activeSample;
+            const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+            const frame = frames[cursor.frameIndex];
+            if (s == null || frame == null) return;
+            batch.mutate({ sampleId: s.id, exposureId: frame.id, status: null });
+          }}
+          data-testid="dock-restore"
+        >
+          Restore
+        </Button>
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Destination buttons */}
+        <Button
+          variant="ghost"
+          onClick={() => {
+            if (activeSample == null) return;
+            navigate(`/sample/${activeSample.id}/loupe`);
+          }}
+          data-testid="dock-loupe"
+        >
+          Loupe
+        </Button>
+        <Button
+          variant="accent"
+          onClick={() => {
+            if (activeSample == null) return;
+            navigate(`/sample/${activeSample.id}`);
+          }}
+          data-testid="dock-focus"
+        >
+          Focus
+        </Button>
+      </Dock>
     </PageFrame>
   );
 }

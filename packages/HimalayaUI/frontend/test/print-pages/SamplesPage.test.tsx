@@ -152,13 +152,10 @@ describe("SamplesPage", () => {
     expect(within(bar).getByText("1")).toBeInTheDocument();
   });
 
-  it("publishes the floating-dock lane as occupied while a selection bar shows, and frees it on unmount (LA-COLLIDE)", () => {
+  it("Dock claims the floating-dock lane on mount and frees it on unmount (LA-COLLIDE)", () => {
+    // The bottom Dock is always mounted — it permanently claims the lane so the
+    // InfrastructureBanner steps aside while this page is active (§3.3 Dock.tsx).
     const { unmount } = renderAt("/samples?experiment=1");
-    // No selection → lane is free, banner stays centred.
-    expect(useFloatingDock.getState().centerLaneOccupied).toBe(false);
-    // Selecting a frame raises the CullBar → the dock lane is now occupied.
-    fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
-    expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
     expect(useFloatingDock.getState().centerLaneOccupied).toBe(true);
     // Leaving the page must release the lane (else the banner stays cornered).
     unmount();
@@ -170,7 +167,8 @@ describe("SamplesPage", () => {
     // first row (sample 1) → first thumb = exposure 100
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!);
-    fireEvent.click(screen.getByRole("button", { name: /Drop/ }));
+    // Scope to the CullBar since the Dock also has a "Drop" button.
+    fireEvent.click(within(screen.getByTestId("cull-bar")).getByRole("button", { name: /Drop/ }));
     expect(batchMutate).toHaveBeenCalledWith({
       sampleId: 1,
       exposureId: 100,
@@ -182,7 +180,7 @@ describe("SamplesPage", () => {
     renderAt("/samples?experiment=1");
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!);
-    fireEvent.click(screen.getByRole("button", { name: /Keep/ }));
+    fireEvent.click(within(screen.getByTestId("cull-bar")).getByRole("button", { name: /Keep/ }));
     expect(batchMutate).toHaveBeenCalledWith({
       sampleId: 1,
       exposureId: 100,
@@ -196,7 +194,7 @@ describe("SamplesPage", () => {
     renderAt("/samples?experiment=1");
     // Fixture exposure 100 is status "accepted" — Restore must still null it.
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
-    fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
+    fireEvent.click(within(screen.getByTestId("cull-bar")).getByRole("button", { name: /Restore/ }));
     expect(batchMutate).toHaveBeenCalledWith({
       sampleId: 1,
       exposureId: 100,
@@ -329,8 +327,9 @@ describe("SamplesPage", () => {
       renderAt("/samples?experiment=1");
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!);
-      // The CullBar Restore button routes through batchSet(null).
-      fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
+      // The CullBar Restore button routes through batchSet(null). Scope to
+      // the CullBar since the Dock also has a Restore button.
+      fireEvent.click(within(screen.getByTestId("cull-bar")).getByRole("button", { name: /Restore/ }));
       expect(toast).toHaveBeenCalledWith("1 frame restored", "success");
     } finally {
       setToastImpl(null);
@@ -368,7 +367,8 @@ describe("SamplesPage", () => {
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!); // sample 1 → exposure 100
       fireEvent.click(thumbs[3]!); // sample 2 → exposure 200
-      fireEvent.click(screen.getByRole("button", { name: /Drop/ }));
+      // Scope to CullBar since the Dock also has a "Drop" button.
+      fireEvent.click(within(screen.getByTestId("cull-bar")).getByRole("button", { name: /Drop/ }));
       // The receipt matches the bar's promise: both frames, both samples.
       expect(toast).toHaveBeenCalledWith(
         "2 frames dropped across 2 samples",
@@ -393,7 +393,8 @@ describe("SamplesPage", () => {
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!);
       fireEvent.click(thumbs[1]!);
-      fireEvent.click(screen.getByRole("button", { name: /Drop/ }));
+      // Scope to CullBar since the Dock also has a "Drop" button.
+      fireEvent.click(within(screen.getByTestId("cull-bar")).getByRole("button", { name: /Drop/ }));
       expect(toast).toHaveBeenCalledWith("2 frames dropped", "success");
     } finally {
       setToastImpl(null);
@@ -718,5 +719,36 @@ describe("SamplesPage", () => {
     } finally {
       dialog.remove();
     }
+  });
+});
+
+describe("SamplesPage dock composition (§3.3)", () => {
+  it("Corpus dock = up-link, steppers, Drop/Keep/Restore, destinations — no Set-rep", () => {
+    seed();
+    renderAt("/samples?experiment=1");
+    // Up-link to Experiments
+    expect(screen.getByTestId("dock-up-link")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-up-link").textContent).toMatch(/experiments/i);
+    // Cull verb buttons
+    expect(screen.getByTestId("dock-drop")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-keep")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-restore")).toBeInTheDocument();
+    // Destination buttons
+    expect(screen.getByTestId("dock-loupe")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-focus")).toBeInTheDocument();
+    // NO Set-representative on Corpus
+    expect(screen.queryByTestId("dock-set-representative")).toBeNull();
+  });
+
+  it("dock Drop/Keep/Restore call batchMutate on the active frame (cursor driven)", () => {
+    seed();
+    renderAt("/samples?experiment=1");
+    // At mount cursor is {sampleIndex:0, frameIndex:0} = sample 1 / exposure 100
+    fireEvent.click(screen.getByTestId("dock-drop"));
+    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 1, exposureId: 100, status: "rejected" });
+    fireEvent.click(screen.getByTestId("dock-keep"));
+    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 1, exposureId: 100, status: "accepted" });
+    fireEvent.click(screen.getByTestId("dock-restore"));
+    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 1, exposureId: 100, status: null });
   });
 });

@@ -13,7 +13,8 @@ import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText, EmptyState, Button } from "../ui";
+import { HintText, EmptyState, Button, IconButton } from "../ui";
+import { Dock } from "../ui/Dock";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
@@ -851,6 +852,65 @@ export function FocusPage(): JSX.Element {
       </Skeleton>
 
       {modals}
+
+      {/* ── Contextual bottom dock (Focus grammar §3.3) ──────────────────────────
+          ‹ Corpus|Series · Sample↑↓ · Loupe
+          Up-link reads the `from=series` marker (T3.2) to choose between
+          ‹ Series and ‹ Corpus. Each verb calls the SAME callback the keyboard
+          shortcut uses — no divergence between key and button. */}
+      <Dock>
+        {/* Up-link: Series when from=series, else Corpus */}
+        {searchParams.get("from") === "series" ? (
+          <button
+            onClick={() => navigate("/series")}
+            className="text-meta font-semibold text-print-accent hover:underline mr-1"
+            data-testid="dock-up-link"
+          >
+            ‹ Series
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate(`/experiments/${experimentId}/corpus`)}
+            className="text-meta font-semibold text-print-accent hover:underline mr-1"
+            data-testid="dock-up-link"
+          >
+            ‹ Corpus
+          </button>
+        )}
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Sample↑↓ stepper */}
+        <IconButton
+          label="Previous sample"
+          tone="ghost"
+          disabled={prevSibling === undefined}
+          onClick={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
+          data-testid="dock-prev-sample"
+        >
+          ↑
+        </IconButton>
+        <IconButton
+          label="Next sample"
+          tone="ghost"
+          disabled={nextSibling === undefined}
+          onClick={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
+          data-testid="dock-next-sample"
+        >
+          ↓
+        </IconButton>
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Loupe destination */}
+        <Button
+          variant="ghost"
+          onClick={() => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`)}
+          data-testid="dock-loupe"
+        >
+          Loupe
+        </Button>
+      </Dock>
     </>
   );
 }

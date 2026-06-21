@@ -147,8 +147,8 @@ describe("LoupePage", () => {
     const caps = within(legend).getAllByTestId("kbkey").map((k) => k.textContent);
     // the screen verbs (X/K/R) come straight from the registry
     expect(caps).toEqual(expect.arrayContaining(["X", "K", "R"]));
-    // LO-STEPDEDUP: the sample steps ([ ]) are advertised by the shared
-    // SampleStepper's tooltips in the TopBar now, so they don't repeat here.
+    // LO-STEPDEDUP: the sample steps ([ ]) are advertised by the Dock's
+    // stepper buttons, so they don't repeat in the inline kbd legend.
     expect(caps).not.toContain("[");
     expect(caps).not.toContain("]");
     // LO-TERM: the loupe speaks "frame", so no "exposure"-worded entry leaks in
@@ -737,10 +737,9 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
     state.exposures = [exp({ id: 1, selected: true })];
   });
 
-  // The VISUAL stepper now lives in the TopBar (CorpusTopbar's SampleStepper);
-  // see CorpusTopbar.test. The loupe page keeps ↑/↓ keyboard nav (rev-2 axes:
-  // prevSample/nextSample), which shares resolveSampleOrder with the topbar so
-  // the two can't disagree.
+  // The VISUAL stepper lives in the Dock (§3.3). The loupe page keeps
+  // ↑/↓ keyboard nav (rev-2 axes: prevSample/nextSample), which shares
+  // resolveSampleOrder with the Dock so the two can't disagree.
   it("↑ is a no-op on the first sample of the walk", () => {
     renderWithOrder(10, [10, 11, 12]);
     fireEvent.keyDown(window, { key: "ArrowUp" });
@@ -774,5 +773,54 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
   it("documents the sample-step keys in the loupe legend", () => {
     renderWithOrder(11, [10, 11, 12]);
     expect(screen.getByText("prev / next sample")).toBeInTheDocument();
+  });
+});
+
+describe("LoupePage dock composition (§3.3)", () => {
+  beforeEach(() => {
+    state.samples = [{
+      id: 42, experiment_id: 1, name: "JC042",
+      notes: null, q_units: "A-1",
+      tags: [],
+    }];
+    state.exposures = [exp({ id: 1, selected: true }), exp({ id: 2, status: "rejected" })];
+    state.loading = false;
+  });
+
+  it("Loupe dock includes Set representative AND Restore", () => {
+    renderAt(42);
+    expect(screen.getByTestId("dock-set-representative")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-restore")).toBeInTheDocument();
+  });
+
+  it("Loupe dock has the corpus up-link, Drop, Keep, and Focus destination", () => {
+    renderAt(42);
+    expect(screen.getByTestId("dock-up-link").textContent).toMatch(/corpus/i);
+    expect(screen.getByTestId("dock-drop")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-keep")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-focus")).toBeInTheDocument();
+  });
+
+  it("dock Drop calls setStatus.mutate with rejected for the active frame", () => {
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("dock-drop"));
+    expect(setStatusMutate).toHaveBeenCalledWith(
+      { exposureId: 1, status: "rejected" },
+      expect.any(Object),
+    );
+  });
+
+  it("dock Set representative calls selectMutate for the active frame when not already representative", () => {
+    // Use exposure id=2 which is NOT the representative (selected: false).
+    // The default (id=1, selected: true) is already the representative —
+    // clicking it calls `announce` instead of mutating.
+    state.exposures = [
+      exp({ id: 1, selected: false, status: "accepted" }),
+      exp({ id: 2, selected: false, status: null }),
+    ];
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("dock-set-representative"));
+    // id=1 is the accepted default; Set representative calls selectMutate for it.
+    expect(selectMutate).toHaveBeenCalledWith(1, expect.any(Object));
   });
 });

@@ -13,7 +13,8 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button } from "../ui";
+import { EmptyState, Button, IconButton } from "../ui";
+import { Dock } from "../ui/Dock";
 import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
@@ -399,9 +400,9 @@ export function LoupePage(): JSX.Element {
   return (
     <PageFrame width="loupe" className="px-8 py-7">
       <div data-testid="loupe-page">
-        {/* The inter-sample stepper lives in the TopBar (the SAME SampleStepper
-            the Focus workspace uses, same location); the loupe's own `[`/`]`
-            keyboard nav still steps via gotoSample, sharing resolveSampleOrder. */}
+        {/* The inter-sample stepper lives in the Dock (§3.3); the loupe's own
+            `[`/`]` keyboard nav still steps via gotoSample, sharing
+            resolveSampleOrder. */}
         <div className="mb-3.5 flex items-center gap-3">
           <button data-testid="loupe-back" onClick={goBack} className="text-sm font-semibold text-print-accent hover:underline">
             ← Back to the sheet
@@ -443,8 +444,8 @@ export function LoupePage(): JSX.Element {
                       the screen verbs ALONE — the frame arrows are conventional
                       (and their registry label says "exposure", which LO-TERM
                       keeps off the loupe), and the sample steps ([ ]) are
-                      advertised by the shared SampleStepper's tooltips in the
-                      TopBar (LO-STEPDEDUP), so repeating them here is redundant. */}
+                      advertised by the Dock's stepper buttons (LO-STEPDEDUP),
+                      so repeating them here is redundant. */}
                   <KbdLegend
                     ids={["drop", "keep", "representative"]}
                     testId="loupe-kbd-legend"
@@ -484,6 +485,115 @@ export function LoupePage(): JSX.Element {
             )}
           </div>
         </Skeleton>
+
+        {/* ── Contextual bottom dock (Loupe grammar §3.3) ──────────────────────────
+            ‹ Corpus · Sample↑↓ · Frame‹› · Drop · Keep · Set representative · Restore · Focus
+            Each verb calls the SAME callback the keyboard shortcut uses. */}
+        <Dock>
+          {/* Up-link back to corpus */}
+          <button
+            onClick={goBack}
+            className="text-meta font-semibold text-print-accent hover:underline mr-1"
+            data-testid="dock-up-link"
+          >
+            ‹ Corpus
+          </button>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Sample↑↓ stepper */}
+          <IconButton
+            label="Previous sample"
+            tone="ghost"
+            disabled={prevSampleId === undefined}
+            onClick={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
+            data-testid="dock-prev-sample"
+          >
+            ↑
+          </IconButton>
+          <IconButton
+            label="Next sample"
+            tone="ghost"
+            disabled={nextSampleId === undefined}
+            onClick={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
+            data-testid="dock-next-sample"
+          >
+            ↓
+          </IconButton>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Frame‹› stepper */}
+          <IconButton
+            label="Previous frame"
+            tone="ghost"
+            disabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
+            onClick={() => flip(-1)}
+            data-testid="dock-prev-frame"
+          >
+            ‹
+          </IconButton>
+          <IconButton
+            label="Next frame"
+            tone="ghost"
+            disabled={activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1}
+            onClick={() => flip(1)}
+            data-testid="dock-next-frame"
+          >
+            ›
+          </IconButton>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Cull verbs */}
+          <Button
+            variant="danger"
+            onClick={handleDropToggle}
+            data-testid="dock-drop"
+          >
+            Drop
+          </Button>
+          <Button
+            variant="success"
+            onClick={handleKeepToggle}
+            data-testid="dock-keep"
+          >
+            Keep
+          </Button>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Set representative (Loupe-only — NOT on Corpus) */}
+          <Button
+            variant="ghost"
+            onClick={handleSetRepresentative}
+            data-testid="dock-set-representative"
+          >
+            Set representative
+          </Button>
+
+          {/* Restore */}
+          <Button
+            variant="ghost"
+            onClick={handleRestore}
+            data-testid="dock-restore"
+          >
+            Restore
+          </Button>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Focus destination */}
+          <Button
+            variant="accent"
+            onClick={() => {
+              if (hasValidId) navigate(`/sample/${sampleId}`);
+            }}
+            data-testid="dock-focus"
+          >
+            Focus
+          </Button>
+        </Dock>
       </div>
     </PageFrame>
   );
