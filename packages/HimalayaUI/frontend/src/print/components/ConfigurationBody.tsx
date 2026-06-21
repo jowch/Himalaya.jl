@@ -1,5 +1,5 @@
 import { useState, type JSX } from "react";
-import { useExperiment, useLoads, useUpdateExperiment } from "../../queries";
+import { useExperiment, useLoads, useUpdateExperiment, useTriggerScan } from "../../queries";
 import { useUndoStack } from "../../hooks/useUndoStack";
 import { Card } from "../ui/Card";
 import { GeometryLedger, type GeometryRow } from "./GeometryLedger";
@@ -85,6 +85,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
   const { data: exp } = useExperiment(experimentId);
   const { data: loads } = useLoads(experimentId);
   const { mutate: updateMutate } = useUpdateExperiment(experimentId);
+  const { mutate: rescanMutate } = useTriggerScan(experimentId);
 
   const undoStack = useUndoStack<UndoEntry>();
 
@@ -234,10 +235,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
   };
 
   const handleRescan = () => {
-    // Rescan is triggered via the ExperimentShell toolbar (scan button). The
-    // SourcesCard "Rescan now" button is a convenience shortcut -- it calls
-    // the same triggerScan API via the shell. For now this is a no-op
-    // placeholder; wiring to useTriggerScan is a future Phase C/E task.
+    rescanMutate();
   };
 
   // --- Description edit handlers ---

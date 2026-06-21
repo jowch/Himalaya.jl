@@ -1,11 +1,12 @@
 import { Link, Outlet, useLocation, useParams } from "react-router-dom";
 import { useState } from "react";
-import { useExperiment } from "../../queries";
+import { useExperiment, useTriggerScan } from "../../queries";
 import { useAppState } from "../../state";
 import * as api from "../../api";
 import { authOpts } from "../../lib/authOpts";
 import { Kicker } from "../ui/Kicker";
 import { Input } from "../ui/Input";
+import { Button } from "../ui/Button";
 import { StatBar } from "../ui/StatBar";
 import type { StatBarStat } from "../ui/StatBar";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -65,6 +66,8 @@ export function ExperimentShell(): JSX.Element {
   const status = inFlight?.status ?? exp.data?.ingest_status ?? "idle";
   const isProcessing = status === "scanning" || status === "analyzing";
 
+  const triggerScan = useTriggerScan(expId);
+
   const expStats = exp.data?.stats;
   const stats: StatBarStat[] = isProcessing
     ? [
@@ -121,17 +124,27 @@ export function ExperimentShell(): JSX.Element {
               </p>
             )}
           </div>
-          <div
-            data-testid="experiment-rescan-status"
-            className="text-sm text-ink-soft shrink-0"
-          >
-            {isProcessing
-              ? status === "scanning"
-                ? "Scanning…"
-                : "Analyzing…"
-              : status === "failed"
-                ? "Scan failed"
-                : "Up to date"}
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              data-testid="experiment-rescan-status"
+              className="text-sm text-ink-soft"
+            >
+              {isProcessing
+                ? status === "scanning"
+                  ? "Scanning…"
+                  : "Analyzing…"
+                : status === "failed"
+                  ? "Scan failed"
+                  : "Up to date"}
+            </div>
+            <Button
+              variant="outline"
+              data-testid="experiment-rescan-button"
+              disabled={isProcessing}
+              onClick={() => triggerScan.mutate()}
+            >
+              Rescan
+            </Button>
           </div>
         </div>
 

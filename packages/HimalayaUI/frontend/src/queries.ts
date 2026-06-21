@@ -875,6 +875,22 @@ export function useUndoDismissGroupingFlag(experimentId: number) {
   return useQueueMutation(undoDismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
+/** Trigger a rescan of a single experiment (cheap change-check then additive
+ *  ingest of new files). Plain TanStack mutation — not a queue mutator because
+ *  the scan is idempotent and emits its own SSE progress frames. Invalidates
+ *  the experiment detail on success so the header stats / status chip refresh. */
+export function useTriggerScan(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
+  });
+}
+
 /** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
  *  read hooks for experiments). Wraps E1's `updateExperiment(id, patch)` fetcher;
  *  this is a plain TanStack mutation (not a queue mutator — geometry override is

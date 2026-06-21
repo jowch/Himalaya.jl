@@ -5,11 +5,13 @@ import type { ReactNode } from "react";
 import { ConfigurationBody } from "../src/print/components/ConfigurationBody";
 
 const updateMutate = vi.fn();
+const triggerScanMutate = vi.fn();
 
 vi.mock("../src/queries", async (orig) => {
   const actual = await orig<typeof import("../src/queries")>();
   return {
     ...actual,
+    useTriggerScan: () => ({ mutate: triggerScanMutate, isPending: false }),
     // E1's Experiment carries PER-FIELD *_source columns (NOT a combined
     // beam_center_source): energy_kev_source, flight_path_m_source,
     // beam_center_x_source, beam_center_y_source, pixel_size_um_source,
@@ -38,7 +40,7 @@ vi.mock("../src/queries", async (orig) => {
 const wrap = (n: ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{n}</QueryClientProvider>);
 
 describe("ConfigurationBody", () => {
-  beforeEach(() => { updateMutate.mockClear(); });
+  beforeEach(() => { updateMutate.mockClear(); triggerScanMutate.mockClear(); });
 
   it("renders the description, Geometry, Acquisition, and Sources cards", () => {
     wrap(<ConfigurationBody experimentId={7} />);
@@ -105,5 +107,13 @@ describe("ConfigurationBody", () => {
     expect(updateMutate).not.toHaveBeenCalled();
     // The value display should be back (no input visible)
     expect(screen.queryByRole("textbox", { name: /override beam energy/i })).toBeNull();
+  });
+
+  // --- SourcesCard "Rescan now" button wires through to triggerScan ---
+  it("SourcesCard Rescan now button calls useTriggerScan().mutate()", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    const rescanBtn = screen.getByRole("button", { name: /rescan now/i });
+    fireEvent.click(rescanBtn);
+    expect(triggerScanMutate).toHaveBeenCalledTimes(1);
   });
 });

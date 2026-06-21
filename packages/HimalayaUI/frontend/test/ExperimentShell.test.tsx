@@ -1,11 +1,11 @@
 // test/ExperimentShell.test.tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExperimentShell } from "../src/print/shell/ExperimentShell";
 import * as api from "../src/api";
+import { useAppState } from "../src/state";
 
 function renderAt(path: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -109,5 +109,43 @@ describe("ExperimentShell (Phase E1)", () => {
       { name: "BL 7.3.3 SMB" }, // trimmed
       {},                        // authOpts(undefined, undefined) with no username set
     );
+  });
+
+  // --- Rescan button ---
+
+  it("renders a Rescan button when not processing", async () => {
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    expect(screen.getByTestId("experiment-rescan-button")).toBeInTheDocument();
+  });
+
+  it("Rescan button calls api.triggerScan on click", async () => {
+    const scanSpy = vi.spyOn(api, "triggerScan").mockResolvedValue(EXP);
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    fireEvent.click(screen.getByTestId("experiment-rescan-button"));
+    await waitFor(() => expect(scanSpy).toHaveBeenCalledWith(7, expect.anything()));
+  });
+
+  it("Rescan button is disabled when isProcessing (status=scanning)", async () => {
+    // Inject an in-flight scanning state for experiment 7.
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "scanning", processed: 5, total: 20 } },
+    });
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    expect(screen.getByTestId("experiment-rescan-button")).toBeDisabled();
+    // Reset state for subsequent tests.
+    useAppState.setState({ ingestInFlight: null });
+  });
+
+  it("Rescan button is disabled when isProcessing (status=analyzing)", async () => {
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "analyzing", processed: 20, total: 20 } },
+    });
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    expect(screen.getByTestId("experiment-rescan-button")).toBeDisabled();
+    useAppState.setState({ ingestInFlight: null });
   });
 });
