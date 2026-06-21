@@ -82,6 +82,36 @@ describe("ingestion fetchers (Phase E1)", () => {
     expect(out.matched).toBe(682);
     expect(spy.mock.calls[0]![0]).toContain("/api/fs/validate?");
   });
+
+  it("fetchManifest single-encodes path with slashes and spaces", async () => {
+    const spy = mockFetchSpy({
+      total: 0, matched: { image: 0, metadata: 0, integration: 0 }, unmatched: [],
+    });
+    await api.fetchManifest("/data/run 42");
+    const url = spy.mock.calls[0]![0] as string;
+    // URLSearchParams encodes '/' as %2F and ' ' as '+' (or %20).
+    // Double-encoding would produce %252F for every slash — a clear signature.
+    expect(url).toContain("/api/fs/manifest?");
+    expect(url).not.toContain("%252F"); // no double-encoding
+    // The path must be present in encoded form — either %2F or %2f for '/'
+    expect(url.toLowerCase()).toContain("path=%2fdata%2frun");
+  });
+
+  it("fetchManifest single-encodes optional pattern params", async () => {
+    const spy = mockFetchSpy({
+      total: 0, matched: { image: 0, metadata: 0, integration: 0 }, unmatched: [],
+    });
+    await api.fetchManifest("/data/run 42", {
+      image: "*.tif",
+      metadata: "*.prp",
+      integration: "*.dat",
+    });
+    const url = spy.mock.calls[0]![0] as string;
+    expect(url).not.toContain("%252F");
+    expect(url).toContain("image_pattern=");
+    expect(url).toContain("metadata_pattern=");
+    expect(url).toContain("integration_pattern=");
+  });
 });
 
 function mockFetchSpy(body: unknown) {

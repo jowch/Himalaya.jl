@@ -259,10 +259,10 @@ export const fetchManifest = (
   path: string,
   patterns: { image?: string; metadata?: string; integration?: string } = {},
 ): Promise<ManifestResponse> => {
-  const params = new URLSearchParams({ path: encodeURIComponent(path) });
-  if (patterns.image)       params.set("image_pattern",       encodeURIComponent(patterns.image));
-  if (patterns.metadata)    params.set("metadata_pattern",    encodeURIComponent(patterns.metadata));
-  if (patterns.integration) params.set("integration_pattern", encodeURIComponent(patterns.integration));
+  const params = new URLSearchParams({ path });
+  if (patterns.image)       params.set("image_pattern",       patterns.image);
+  if (patterns.metadata)    params.set("metadata_pattern",    patterns.metadata);
+  if (patterns.integration) params.set("integration_pattern", patterns.integration);
   return request<ManifestResponse>("GET", `/api/fs/manifest?${params.toString()}`);
 };
 
