@@ -458,4 +458,24 @@ end
             SQLite.close(db)
         end
     end
+
+    @testset "POST /api/experiments persists patterns from the nested body" begin
+        db = HimalayaUI.open_db(joinpath(mktempdir(), "h.db"))
+        with_inproc_routes(db) do call
+            dir = mktempdir(); touch(joinpath(dir, "s.tif"))
+            body = Vector{UInt8}(JSON3.write(Dict(
+                "path"     => dir,
+                "patterns" => Dict("image" => "{name}.tiff"))))
+            resp = call("POST", "/api/experiments";
+                headers = ["Content-Type" => "application/json"], body = body)
+            @test resp.status == 202
+            id  = JSON3.read(resp.body).id
+            row = only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT image_pattern FROM experiments WHERE id = ?", [id])))
+            @test row.image_pattern == "{name}.tiff"
+            # Let the async scan task finish before with_inproc_routes closes the DB.
+            sleep(1.0)
+        end
+        SQLite.close(db)
+    end
 end

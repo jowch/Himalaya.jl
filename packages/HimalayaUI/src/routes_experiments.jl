@@ -160,14 +160,23 @@ function register_experiments_routes!()
             isdir(ad) ? ad : data_dir
         end
 
+        # Patterns are edited on Configuration before Approve; persisted to the row
+        # so scan_and_group! (which reads the row + coalesces) uses them. Nested
+        # under `patterns` to match the frontend CreateExperimentBody.
+        pats = get(body, :patterns, get(body, "patterns", Dict()))
+        ppat(k) = (v = get(pats, k, get(pats, string(k), nothing)); v === nothing ? nothing : String(v))
+
         exp_id = lock(_DB_WRITE_LOCK) do
             SQLite.transaction(db) do
                 create_experiment!(db;
-                    name         = exp_name,
-                    path         = data_dir,
-                    data_dir     = data_dir,
-                    analysis_dir = analysis_dir,
-                    ingest_status = "scanning")
+                    name              = exp_name,
+                    path              = data_dir,
+                    data_dir          = data_dir,
+                    analysis_dir      = analysis_dir,
+                    image_pattern     = ppat(:image),
+                    metadata_pattern  = ppat(:metadata),
+                    integration_pattern = ppat(:integration),
+                    ingest_status     = "scanning")
             end
         end
 
@@ -178,7 +187,9 @@ function register_experiments_routes!()
             try
                 # scan_and_group! (Phase B, ingest.jl) resolves data_dir from the row
                 # and is idempotent (dedup INSERT keys), so first-scan == rescan.
-                scan_and_group!(db, exp_id)
+                scan_and_group!(db, exp_id;
+                    on_progress = (p, t) -> broadcast_progress!(exp_id;
+                        kind = "ingest_progress", processed = p, total = t))
                 lock(_DB_WRITE_LOCK) do
                     SQLite.transaction(db) do
                         DBInterface.execute(db,

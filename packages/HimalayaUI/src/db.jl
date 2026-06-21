@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS experiments (
     manifest_path   TEXT,
     config          TEXT,
     experiment_type TEXT,
+    image_pattern        TEXT,
+    metadata_pattern     TEXT,
+    integration_pattern  TEXT,
     energy_kev      REAL,
     flight_path_m   REAL,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -2108,6 +2111,9 @@ function create_experiment!(db::SQLite.DB;
         manifest_path::Union{String,Nothing} = nothing,
         config::Union{String,Nothing} = nothing,
         experiment_type::Union{String,Nothing} = nothing,
+        image_pattern::Union{String,Nothing} = nothing,
+        metadata_pattern::Union{String,Nothing} = nothing,
+        integration_pattern::Union{String,Nothing} = nothing,
         energy_kev::Union{Float64,Nothing} = nothing,
         flight_path_m::Union{Float64,Nothing} = nothing,
         # --- new (Phase A) ---
@@ -2120,12 +2126,14 @@ function create_experiment!(db::SQLite.DB;
     result = DBInterface.execute(db, """
         INSERT INTO experiments
             (name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
+             image_pattern, metadata_pattern, integration_pattern,
              energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
              beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
              pixel_size_um, pixel_size_um_source, q_units, q_units_source,
              last_scanned_at, scan_signature, ingest_status)
-        VALUES (?,?,?,?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?)
+        VALUES (?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?)
     """, [name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
+          image_pattern, metadata_pattern, integration_pattern,
           energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
           beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
           pixel_size_um, pixel_size_um_source, q_units, q_units_source,
