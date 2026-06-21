@@ -10,6 +10,9 @@ export interface ScanFailedPageProps {
   unmatched: ManifestUnmatched[];
   /** Number of files that parsed successfully and can be ingested. */
   parsedCount: number;
+  /** Called when the user confirms "Ingest N that parsed". Wired by the parent
+   *  to trigger a forced scan via useTriggerScan. */
+  onIngestParsed?: () => void;
 }
 
 type MissType = "metadata" | "integration";
@@ -37,6 +40,7 @@ export function ScanFailedPage({
   experimentId,
   unmatched,
   parsedCount,
+  onIngestParsed,
 }: ScanFailedPageProps): JSX.Element {
   const navigate = useNavigate();
 
@@ -77,8 +81,8 @@ export function ScanFailedPage({
       setConfirmingIngest(true);
       return;
     }
-    // Actual ingest mutation — T4.3 wires the real API call here.
     setConfirmingIngest(false);
+    onIngestParsed?.();
   };
 
   return (

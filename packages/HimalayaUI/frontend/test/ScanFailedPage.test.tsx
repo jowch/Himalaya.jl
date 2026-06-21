@@ -85,4 +85,30 @@ describe("ScanFailedPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /open configuration/i }));
     expect(navigate).toHaveBeenCalledWith("/experiments/7/config");
   });
+
+  it("calls onIngestParsed after two-stage confirm when prop is provided", () => {
+    const onIngestParsed = vi.fn();
+    render(
+      <MemoryRouter initialEntries={["/experiments/7/corpus"]}>
+        <Routes>
+          <Route
+            path="/experiments/:id/corpus"
+            element={
+              <ScanFailedPage
+                experimentId={7}
+                unmatched={[{ file: "a.prp", miss: "metadata" }]}
+                parsedCount={2}
+                onIngestParsed={onIngestParsed}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    // Arm the confirm.
+    fireEvent.click(screen.getByRole("button", { name: /ingest 2/i }));
+    // Confirm executes the callback.
+    fireEvent.click(screen.getByTestId("ingest-confirm-yes"));
+    expect(onIngestParsed).toHaveBeenCalledTimes(1);
+  });
 });

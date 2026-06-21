@@ -1,12 +1,26 @@
 // test/ExperimentCorpusPage.test.tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExperimentCorpusPage } from "../src/print/pages/ExperimentCorpusPage";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
-import type { Load } from "../src/api";
+import type { Load, Experiment } from "../src/api";
+
+// Minimal Experiment stub for the failed state.
+const FAILED_EXPERIMENT: Experiment = {
+  id: 7, name: "TestExp", description: null, path: "/data/exp1",
+  data_dir: "/data/exp1/raw", analysis_dir: "/data/exp1/analysis",
+  manifest_path: null, created_at: "2026-01-01T00:00:00Z",
+  q_units: null, beam_center_x: null, beam_center_y: null,
+  pixel_size_um: null, energy_kev: null, flight_path_m: null,
+  energy_kev_source: "computed", flight_path_m_source: "computed",
+  beam_center_x_source: "computed", beam_center_y_source: "computed",
+  pixel_size_um_source: "computed", q_units_source: "computed",
+  last_scanned_at: null, scan_signature: null, ingest_status: "failed",
+  image_pattern: "*.tif", metadata_pattern: null, integration_pattern: null,
+};
 
 // Minimal load stub with a flagged merge discrepancy.
 const LOAD_WITH_FLAG: Load = {
@@ -28,10 +42,11 @@ const LOAD_WITH_FLAG: Load = {
   ],
 };
 
-function renderAt(loads: Load[], processing = false) {
+function renderAt(loads: Load[], processing = false, experiment?: Experiment) {
   if (processing) useAppState.setState({ ingestInFlight: { 7: { processed: 10, total: 100, status: "scanning" } } });
   else useAppState.setState({ ingestInFlight: null });
   vi.spyOn(api, "listLoads").mockResolvedValue(loads);
+  if (experiment) vi.spyOn(api, "getExperiment").mockResolvedValue(experiment);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
@@ -81,5 +96,37 @@ describe("ExperimentCorpusPage (Phase E1)", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByTestId("live-ingest-slot")).toBeInTheDocument();
+  });
+
+  it("failed state: passes manifest unmatched + parsedCount from API to ScanFailedPage", async () => {
+    // fetchManifest returns a real unmatched file + 3 parsed images.
+    vi.spyOn(api, "fetchManifest").mockResolvedValue({
+      total: 4,
+      matched: { image: 3, metadata: 0, integration: 0 },
+      unmatched: [{ file: "orphan.prp", miss: "metadata" }],
+    });
+    renderAt([], false, FAILED_EXPERIMENT);
+
+    // The unmatched file should appear in the ScanFailedPage.
+    await screen.findByText("orphan.prp");
+    // The per-type pattern test input for the affected miss type renders.
+    expect(screen.getByRole("textbox", { name: /metadata pattern/i })).toBeInTheDocument();
+  });
+
+  it("failed state: 'Ingest N that parsed' → Confirm calls triggerScan", async () => {
+    vi.spyOn(api, "fetchManifest").mockResolvedValue({
+      total: 5,
+      matched: { image: 3, metadata: 2, integration: 0 },
+      unmatched: [{ file: "x.raw", miss: "integration" }],
+    });
+    const triggerScanSpy = vi.spyOn(api, "triggerScan").mockResolvedValue(undefined as never);
+    renderAt([], false, FAILED_EXPERIMENT);
+
+    // Wait for manifest to resolve so the "Ingest 3 that parsed" button appears.
+    const ingestBtn = await screen.findByRole("button", { name: /ingest 3 that parsed/i });
+    fireEvent.click(ingestBtn);
+    // Confirm stage — mutation is async, wait for the spy to be called.
+    fireEvent.click(screen.getByTestId("ingest-confirm-yes"));
+    await waitFor(() => expect(triggerScanSpy).toHaveBeenCalled());
   });
 });

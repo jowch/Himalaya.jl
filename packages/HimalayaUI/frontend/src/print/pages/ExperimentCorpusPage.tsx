@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../../state";
-import { useExperiment, useLoads } from "../../queries";
+import { useExperiment, useLoads, useTriggerScan } from "../../queries";
+import * as api from "../../api";
 import { Badge } from "../ui/Badge";
 import { ProgressBar } from "../ui/ProgressBar";
 import { ScanFailedPage } from "./ScanFailedPage";
@@ -31,6 +33,7 @@ export function ExperimentCorpusPage(): JSX.Element {
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const loads = useLoads(expId);
   const exp = useExperiment(expId);
+  const triggerScan = useTriggerScan(expId);
 
   // --- State machine derivation ---
   // scanning: initial scan in progress (live-unfold surface)
@@ -43,6 +46,23 @@ export function ExperimentCorpusPage(): JSX.Element {
   const failed =
     !processing &&
     (inFlight?.status === "failed" || exp.data?.ingest_status === "failed");
+
+  // Manifest query — unconditional (hooks rule), enabled only in the failed
+  // branch when data_dir is known. Provides real unmatched + parsedCount for
+  // ScanFailedPage; patterns from the experiment's stored globs (null → omit
+  // so backend uses its defaults).
+  // exactOptionalPropertyTypes: conditional spread keeps absent keys absent.
+  const manifestPatterns = useMemo(() => ({
+    ...(exp.data?.image_pattern != null && { image: exp.data.image_pattern }),
+    ...(exp.data?.metadata_pattern != null && { metadata: exp.data.metadata_pattern }),
+    ...(exp.data?.integration_pattern != null && { integration: exp.data.integration_pattern }),
+  }), [exp.data?.image_pattern, exp.data?.metadata_pattern, exp.data?.integration_pattern]);
+
+  const manifestQuery = useQuery({
+    queryKey: ["manifest", exp.data?.data_dir ?? "", manifestPatterns],
+    queryFn: () => api.fetchManifest(exp.data!.data_dir, manifestPatterns),
+    enabled: failed && !!exp.data?.data_dir,
+  });
 
   // Flatten Load▸Sample tree for review-count + table rows.
   const loadSamples = useMemo(
@@ -80,13 +100,14 @@ export function ExperimentCorpusPage(): JSX.Element {
     );
   }
 
-  // failed → ScanFailedPage (T4.2; preserved exactly)
+  // failed → ScanFailedPage with real manifest data
   if (failed) {
     return (
       <ScanFailedPage
         experimentId={expId}
-        unmatched={[]}
-        parsedCount={0}
+        unmatched={manifestQuery.data?.unmatched ?? []}
+        parsedCount={manifestQuery.data?.matched.image ?? 0}
+        onIngestParsed={() => triggerScan.mutate(true)}
       />
     );
   }
