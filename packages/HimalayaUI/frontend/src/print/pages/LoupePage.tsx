@@ -547,7 +547,7 @@ export function LoupePage(): JSX.Element {
 
           {/* Cull verbs — coloured outlines (spec §3.3) */}
           <Button
-            variant="outlineDanger"
+            variant="outlineAccent"
             onClick={handleDropToggle}
             data-testid="dock-drop"
           >

@@ -731,7 +731,7 @@ describe("SamplesPage dock composition (§3.3)", () => {
     expect(screen.getByTestId("dock-up-link").textContent).toMatch(/experiments/i);
     // Cull verb buttons — coloured OUTLINES (spec §3.3), not filled
     expect(screen.getByTestId("dock-drop")).toBeInTheDocument();
-    expect(screen.getByTestId("dock-drop").getAttribute("data-variant")).toBe("outlineDanger");
+    expect(screen.getByTestId("dock-drop").getAttribute("data-variant")).toBe("outlineAccent");
     expect(screen.getByTestId("dock-keep")).toBeInTheDocument();
     expect(screen.getByTestId("dock-keep").getAttribute("data-variant")).toBe("outlineSuccess");
     expect(screen.getByTestId("dock-restore")).toBeInTheDocument();

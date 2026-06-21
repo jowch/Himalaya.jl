@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "outlineDanger" | "outlineSuccess" | "ghostInverse";
+export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "outlineAccent" | "outlineSuccess" | "ghostInverse";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -33,10 +33,11 @@ const variantClass: Record<ButtonVariant, string> = {
   outline:
     "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-  // Coloured-outline cull verbs (dock Drop/Keep, spec §5): status hue on the
-  // border + text over a light plate, filling on hover.
-  outlineDanger:
-    "border border-error bg-plate text-error hover:bg-error hover:text-paper " +
+  // Coloured-outline cull verbs (dock Drop/Keep, spec §5): the verb's hue
+  // (accent for Drop, success for Keep) on the border + text over a light
+  // plate, filling on hover. Accent Drop matches CullBar (one Drop hue app-wide).
+  outlineAccent:
+    "border border-accent bg-plate text-accent hover:bg-accent hover:text-paper " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   outlineSuccess:
     "border border-success bg-plate text-success hover:bg-success hover:text-paper " +

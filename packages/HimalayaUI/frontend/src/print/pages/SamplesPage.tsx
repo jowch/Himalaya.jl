@@ -736,7 +736,7 @@ export function SamplesPage(): JSX.Element {
 
         {/* Cull verbs: Drop / Keep / Restore — coloured outlines (spec §3.3) */}
         <Button
-          variant="outlineDanger"
+          variant="outlineAccent"
           onClick={() => {
             const s = activeSample;
             const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
