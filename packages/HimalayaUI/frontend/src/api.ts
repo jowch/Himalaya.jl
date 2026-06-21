@@ -243,6 +243,29 @@ export const suggestPaths = (prefix: string) =>
   request<PathSuggestResponse>(
     "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
 
+/** Phase-1 manifest for the Configuration first-run step (spec §6.5).
+ *  `GET /api/fs/manifest` with query params derived from the draft path +
+ *  optional glob overrides. Returns per-type matched counts and the list of
+ *  unmatched files so the user can tune patterns before creating the
+ *  experiment. `patterns` keys are optional — omitting them lets the backend
+ *  use its defaults. */
+export interface ManifestUnmatched { file: string; miss: string }
+export interface ManifestResponse {
+  total: number;
+  matched: { image: number; metadata: number; integration: number };
+  unmatched: ManifestUnmatched[];
+}
+export const fetchManifest = (
+  path: string,
+  patterns: { image?: string; metadata?: string; integration?: string } = {},
+): Promise<ManifestResponse> => {
+  const params = new URLSearchParams({ path: encodeURIComponent(path) });
+  if (patterns.image)       params.set("image_pattern",       encodeURIComponent(patterns.image));
+  if (patterns.metadata)    params.set("metadata_pattern",    encodeURIComponent(patterns.metadata));
+  if (patterns.integration) params.set("integration_pattern", encodeURIComponent(patterns.integration));
+  return request<ManifestResponse>("GET", `/api/fs/manifest?${params.toString()}`);
+};
+
 /** Directory-picker validate-path probe (spec §9.2). `matched`/`scanned` drive
  *  the validation line; `ok=false` + `message` powers the failed-scan preview. */
 export interface ValidatePathResponse {

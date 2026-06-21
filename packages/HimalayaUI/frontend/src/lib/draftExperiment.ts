@@ -1,5 +1,13 @@
 import { create } from "zustand";
 
+/** File-pattern overrides for the Configuration first-run step.
+ *  Shape mirrors `CreateExperimentBody.patterns` (api.ts). */
+export interface DraftPatterns {
+  image?: string;
+  metadata?: string;
+  integration?: string;
+}
+
 /**
  * useDraftExperiment — client-side-only ephemeral store for the two-phase
  * ingest funnel (spec §2/§6.1). The picker (NewExperimentPage) commits a
@@ -9,18 +17,18 @@ import { create } from "zustand";
 export interface DraftExperimentState {
   /** Validated directory path chosen in the picker, or "" if no draft. */
   path: string;
-  /** Future: file-pattern overrides from the Configuration step. */
-  patterns: string[];
+  /** File-pattern overrides (image/metadata/integration globs). */
+  patterns: DraftPatterns;
   /** Commit a validated path (and optionally patterns) into the draft slot. */
-  setDraft: (draft: { path: string; patterns?: string[] }) => void;
+  setDraft: (draft: { path: string; patterns?: DraftPatterns }) => void;
   /** Clear the draft (on Cancel or after successful experiment creation). */
   clear: () => void;
 }
 
 export const useDraftExperiment = create<DraftExperimentState>((set) => ({
   path: "",
-  patterns: [],
+  patterns: {},
   setDraft: ({ path, patterns }) =>
-    set({ path, patterns: patterns ?? [] }),
-  clear: () => set({ path: "", patterns: [] }),
+    set({ path, patterns: patterns ?? {} }),
+  clear: () => set({ path: "", patterns: {} }),
 }));
