@@ -23,11 +23,13 @@ export interface SampleTableRowProps {
   total: number;
   dropped?: number;
   /** The sample's exposures are LOADED and empty (SA-ZEROEXP) — there is nothing
-   *  to index. Renders a terminal "No exposures" status and suppresses the Focus
-   *  door even when `onOpenFocus` is wired. Supplied by the page only once the
-   *  exposure fetch has resolved empty (never inferred from `total === 0`, which
-   *  is also true mid-load). Default false. */
+   *  to index. Renders a terminal "No exposures" status. Supplied by the page only
+   *  once the exposure fetch has resolved empty (never inferred from `total === 0`,
+   *  which is also true mid-load). Default false. */
   noExposures?: boolean;
+  /** Slot coordinate shown as a chip in the identity cell (e.g. "slot 5").
+   *  When undefined, no slot chip renders. */
+  slotIndex?: number;
   tags: Tag[];
   onAddTag?: (t: Tag) => void;
   onRemoveTag?: (t: Tag) => void;
@@ -38,10 +40,6 @@ export interface SampleTableRowProps {
   /** When set, the sample name in the SpecCell becomes a button that opens the
    *  loupe view for this sample. */
   onOpenLoupe?: () => void;
-  /** When set, the status cell becomes a keyboard-accessible Focus door — a
-   *  button that opens the indexing workspace for this sample. Absent → the
-   *  status cell is a plain div (other consumers unaffected). */
-  onOpenFocus?: () => void;
   /** When set, double-clicking a thumbnail fires this with the exposure id,
    *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
   onActivateExposure?: (id: number) => void;
@@ -119,13 +117,13 @@ export function SampleTableRow({
   total,
   dropped,
   noExposures = false,
+  slotIndex,
   tags,
   onAddTag,
   onRemoveTag,
   phase,
   formFactor = false,
   onOpenLoupe,
-  onOpenFocus,
   onActivateExposure,
   onRestore,
   checked,
@@ -135,14 +133,7 @@ export function SampleTableRow({
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
-  // SA-ZEROEXP: a sample CONFIRMED to have zero exposures has nothing to index,
-  // so the status cell is NOT a Focus door — it reads a terminal "No exposures"
-  // status instead of a live door into an empty workspace, and the door is
-  // suppressed even when the page wires onOpenFocus. `noExposures` is supplied by
-  // the page (exposures loaded AND empty); it must NOT be inferred from
-  // `total === 0`, which is also true while a sample's exposures are still
-  // loading — that would flash the empty status across the whole sheet mid-load.
-  const isDoor = onOpenFocus != null && !noExposures;
+
   // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
   // cells). The opaque background must mirror the row's own surface — bg-plate
   // for screened rows (transparent over the Card plate), bg-paper-sunk for the
@@ -189,6 +180,7 @@ export function SampleTableRow({
             sampleId={sampleId}
             screened={screened}
             {...(onOpenLoupe ? { onOpenLoupe } : {})}
+            {...(slotIndex !== undefined ? { slotIndex } : {})}
           />
         </div>
         <div
@@ -229,22 +221,11 @@ export function SampleTableRow({
           role="cell"
           className={CELL}
         >
-          {isDoor ? (
-            <button
-              type="button"
-              onClick={onOpenFocus}
-              aria-label={phase ? `Open indexing for ${name} (${phase})` : `Index ${name}`}
-              className="flex items-center rounded-md px-2 -mx-2 transition-colors hover:bg-plate/60"
-            >
-              <StatusCell door {...(phase !== undefined ? { phase } : {})} {...(formFactor ? { formFactor: true } : {})} />
-            </button>
-          ) : (
-            <StatusCell
+          <StatusCell
               {...(phase !== undefined ? { phase } : {})}
               {...(formFactor ? { formFactor: true } : {})}
               {...(noExposures ? { noExposures: true } : {})}
             />
-          )}
         </div>
       </div>
     </div>

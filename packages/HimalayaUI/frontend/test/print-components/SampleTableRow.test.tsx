@@ -178,22 +178,12 @@ describe("<SampleTableRow> nav seams", () => {
     expect(onActivateExposure).toHaveBeenCalledWith(1);
   });
 
-  it("makes the status cell a Focus door (button) when onOpenFocus is set", () => {
-    const onOpenFocus = vi.fn();
-    render(<SampleTableRow {...baseProps} phase={null} onOpenFocus={onOpenFocus} />);
-    fireEvent.click(screen.getByRole("button", { name: /index/i }));
-    expect(onOpenFocus).toHaveBeenCalled();
-  });
-
-  it("status cell is NOT a button when onOpenFocus is absent", () => {
+  it("status cell is never a button (Focus is accessed via Dock, not the row)", () => {
     render(<SampleTableRow {...baseProps} phase={null} />);
     expect(screen.queryByRole("button", { name: /index/i })).toBeNull();
   });
 
-  it("a confirmed zero-exposure sample suppresses the Index door and reads 'No exposures' (SA-ZEROEXP)", () => {
-    const onOpenFocus = vi.fn();
-    // noExposures (exposures loaded AND empty) — the page still wires
-    // onOpenFocus, but the dead door must not render.
+  it("a confirmed zero-exposure sample (noExposures) reads 'No exposures' in the status cell (SA-ZEROEXP)", () => {
     render(
       <SampleTableRow
         {...baseProps}
@@ -202,24 +192,32 @@ describe("<SampleTableRow> nav seams", () => {
         total={0}
         noExposures
         phase={null}
-        onOpenFocus={onOpenFocus}
       />,
     );
-    // No live Index door into an empty Focus workspace.
-    expect(screen.queryByRole("button", { name: /index/i })).toBeNull();
     // A clear terminal status instead of the "Not indexed" invitation.
     expect(screen.getByText("No exposures")).toBeInTheDocument();
     expect(screen.queryByText("Not indexed")).toBeNull();
   });
 
-  it("total 0 WITHOUT noExposures (exposures still loading) keeps the live Index door — no false empty signal", () => {
-    const onOpenFocus = vi.fn();
+  it("total 0 WITHOUT noExposures (exposures still loading) does NOT show 'No exposures' — no false empty signal", () => {
     render(
-      <SampleTableRow {...baseProps} exposures={[]} kept={0} total={0} phase={null} onOpenFocus={onOpenFocus} />,
+      <SampleTableRow {...baseProps} exposures={[]} kept={0} total={0} phase={null} />,
     );
-    // Door is still live (the sample isn't confirmed empty yet).
-    expect(screen.getByRole("button", { name: /index/i })).toBeInTheDocument();
+    // Status cell reads "Not indexed" (sample isn't confirmed empty yet).
     expect(screen.queryByText("No exposures")).toBeNull();
   });
 });
 
+describe("<SampleTableRow> slot chip", () => {
+  it("renders a slot-chip testid containing 'slot N' when slotIndex is provided", () => {
+    render(<SampleTableRow {...baseProps} slotIndex={5} />);
+    const chip = screen.getByTestId("slot-chip");
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveTextContent("slot 5");
+  });
+
+  it("renders no slot-chip when slotIndex is absent", () => {
+    render(<SampleTableRow {...baseProps} />);
+    expect(screen.queryByTestId("slot-chip")).toBeNull();
+  });
+});

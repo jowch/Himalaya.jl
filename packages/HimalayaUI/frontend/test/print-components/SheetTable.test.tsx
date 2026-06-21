@@ -24,7 +24,7 @@ describe("SheetTable", () => {
   it("renders the five aligned column headers", () => {
     render(<SheetTable>{[row("a")]}</SheetTable>);
     const head = screen.getByTestId("sheet-head");
-    ["Sample", "Exposures", "Frames kept", "Tags", "Status"].forEach((label) =>
+    ["Sample", "Exposures", "Frames kept", "Tags", "Phase"].forEach((label) =>
       expect(head.textContent).toContain(label),
     );
   });
@@ -50,7 +50,7 @@ describe("SheetTable a11y semantics (WCAG 1.3.1 / 4.1.2)", () => {
   it("exposes the five column headers by name (no checkbox column)", () => {
     render(<SheetTable>{[row("a")]}</SheetTable>);
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["Sample", "Exposures", "Frames kept", "Tags", "Status"]);
+    expect(headers).toEqual(["Sample", "Exposures", "Frames kept", "Tags", "Phase"]);
   });
 
   it("column-header kickers use the soft tone (WCAG 1.4.3 on the sunk header band)", () => {
@@ -133,7 +133,7 @@ describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () =>
         {[checkRow("a")]}
       </SheetTable>,
     );
-    for (const label of ["Sample", "Exposures", "Frames kept", "Status"]) {
+    for (const label of ["Sample", "Exposures", "Frames kept", "Phase"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
     // Tags stays a non-button label (multi-valued → not sortable).
@@ -160,7 +160,7 @@ describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () =>
       </SheetTable>,
     );
     expect(getHeader("Sample")).toHaveAttribute("aria-sort", "descending");
-    for (const label of ["Exposures", "Frames kept", "Status"]) {
+    for (const label of ["Exposures", "Frames kept", "Phase"]) {
       expect(getHeader(label)).toHaveAttribute("aria-sort", "none");
     }
   });

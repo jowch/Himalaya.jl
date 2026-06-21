@@ -180,7 +180,7 @@ export function SheetTable({
                   </Kicker>
                   <div role="columnheader" aria-sort={ariaSortFor("status")}>
                     <ColumnSortButton
-                      label="Status"
+                      label="Phase"
                       active={activeDir("status")}
                       onClick={() => onSort("status")}
                     />
@@ -191,7 +191,7 @@ export function SheetTable({
                   <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Exposures</Kicker>
                   <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Frames kept</Kicker>
                   <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Tags</Kicker>
-                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Status</Kicker>
+                  <Kicker tone="soft" role="columnheader" className="px-4 py-2.5">Phase</Kicker>
                 </>
               )}
             </div>

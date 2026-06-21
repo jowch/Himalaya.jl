@@ -106,6 +106,13 @@ export function ExperimentCorpusPage(): JSX.Element {
   // Honest breakdown of WHY review is needed, mirroring the mockup's structure
   // (a "stage-position jump" is a split flag's jump_from→jump_to; a "counter
   // reset" is a merge flag). Only non-zero parts appear.
+  // slotBySample: map from sample_id → slot_index for the slot chip in each row.
+  const slotBySample = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const s of loadSamples) m.set(s.sample_id, s.slot_index);
+    return m;
+  }, [loadSamples]);
+
   const reviewDetail = useMemo(() => {
     const splits = flagged.filter((s) => s.flag?.kind === "split").length;
     const merges = flagged.filter((s) => s.flag?.kind === "merge").length;
@@ -409,6 +416,7 @@ export function ExperimentCorpusPage(): JSX.Element {
                 tags={m.tags}
                 {...(m.phase !== undefined ? { phase: m.phase } : {})}
                 {...(m.formFactor ? { formFactor: true } : {})}
+                {...(slotBySample.has(s.id) ? { slotIndex: slotBySample.get(s.id)! } : {})}
                 checked={checkedSamples.has(s.id)}
                 onCheck={() => toggleSampleCheck(s.id)}
                 selectedExposureIds={selected}
@@ -423,10 +431,6 @@ export function ExperimentCorpusPage(): JSX.Element {
                 onOpenLoupe={() => {
                   setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
                   navigate(loupeHref(s.id), { state: { sampleOrder } });
-                }}
-                onOpenFocus={() => {
-                  setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
-                  navigate(`/sample/${s.id}`);
                 }}
                 {...(hasDrop ? { onRestore: () => {
                   const drops = (corpusExposures.byId.get(s.id) ?? [])

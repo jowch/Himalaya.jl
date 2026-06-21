@@ -5,6 +5,9 @@ export interface SpecCellProps {
   name: string;
   sampleId: string;
   screened?: boolean;
+  /** Slot coordinate shown as a chip in the identity cell (e.g. "slot 5").
+   *  When undefined, no slot chip renders. */
+  slotIndex?: number;
   /** When provided, promotes the name to a keyboard-accessible button that
    *  opens the loupe view for this sample. When absent, the name renders as
    *  a static span (other consumers unaffected). */
@@ -15,15 +18,13 @@ export interface SpecCellProps {
   className?: string;
 }
 
-/** The samples-table identity cell: sample name + id, plus a quiet "Needs
- *  review" chip on UN-screened rows. We flag the EXCEPTION (the actionable,
- *  not-yet-screened state) rather than marking every screened row — a leading
- *  checkbox-in-a-circle reads as row SELECTION (Carbon/Polaris). The chip sits
- *  inline on the id line, right of the id: the id may `truncate` to yield room
- *  while the chip holds its size (`flex-shrink-0`), so the column still scans. */
+/** The samples-table identity cell: sample name + id, plus an optional "slot N"
+ *  chip when a slot coordinate is provided. The chip sits inline on the id line,
+ *  right of the id: the id may `truncate` to yield room while the chip holds its
+ *  size (`flex-shrink-0`), so the column still scans. */
 /** Forwards its ref to the focusable name button when `onOpenLoupe` is provided. */
 export const SpecCell = forwardRef<HTMLButtonElement, SpecCellProps>(function SpecCell(
-  { name, sampleId, screened, onOpenLoupe, tabIndex, className },
+  { name, sampleId, slotIndex, onOpenLoupe, tabIndex, className },
   ref,
 ): JSX.Element {
   return (
@@ -54,10 +55,8 @@ export const SpecCell = forwardRef<HTMLButtonElement, SpecCellProps>(function Sp
         >
           {sampleId}
         </span>
-        {!screened && (
-          <Chip variant="static" size="sm" testId="needs-review" className="flex-shrink-0">
-            Needs review
-          </Chip>
+        {slotIndex !== undefined && (
+          <Chip variant="static" size="sm" testId="slot-chip" className="flex-shrink-0">slot {slotIndex}</Chip>
         )}
       </div>
     </div>
