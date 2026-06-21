@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SHORTCUTS,
+  eventCombo,
   matchShortcut,
   keyComboLabel,
   shortcutLabel,
@@ -87,6 +88,18 @@ describe("matchShortcut", () => {
 
   it("matches Escape to dismiss", () => {
     expect(matchShortcut(ev("Escape"))).toBe("dismiss");
+  });
+
+  it("new verbs are bound: Enter→openFocus, Backspace→restore, Space→toggleSelect", () => {
+    expect(matchShortcut(ev("Enter"))).toBe("openFocus");
+    expect(matchShortcut(ev("Backspace"))).toBe("restore");
+    expect(matchShortcut(ev(" "))).toBe("toggleSelect");
+  });
+});
+
+describe("eventCombo (normalization)", () => {
+  it("? normalizes to a stable token regardless of Shift being held", () => {
+    expect(eventCombo(ev("?", { shift: true }))).toBe("?");
   });
 });
 
