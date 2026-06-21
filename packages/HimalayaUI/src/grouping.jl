@@ -301,12 +301,13 @@ struct GroupedSample
 end
 
 struct GroupedLoad
-    load_index  ::Int
-    frame_count ::Int
-    start_time  ::Union{DateTime, Missing}
-    end_time    ::Union{DateTime, Missing}
-    samples     ::Vector{GroupedSample}
-    flag        ::Symbol   # :ok | :unimodal_fallback | :single_exposure
+    load_index    ::Int
+    frame_count   ::Int
+    start_time    ::Union{DateTime, Missing}
+    end_time      ::Union{DateTime, Missing}
+    samples       ::Vector{GroupedSample}
+    flag          ::Symbol   # :ok | :unimodal_fallback | :single_exposure
+    session_index ::Int
 end
 
 struct GroupingResult
@@ -507,11 +508,41 @@ function derive_sample_flags(load_rows;
     return flags
 end
 
+"""
+    _assign_sessions(start_times; session_gap_hours = 3.0) -> Vector{Int}
+
+Group time-ordered loads into macro-sessions (spec §5): a gap > `session_gap_hours`
+between consecutive load start times begins a new session. 1-based session indices.
+A `missing` start time stays in the current session and does not advance `prev`.
+
+ponytail: 3 h macro-session default (a human break — meal/overnight); reproduces the
+4 sessions of the SSRL 1p7m beamtime. Absolute, not gap-relative: a session boundary
+is an absolute human-time gap, unlike load spacing (§5). Tunable.
+"""
+function _assign_sessions(start_times::AbstractVector; session_gap_hours::Float64 = 3.0)
+    ids = Vector{Int}(undef, length(start_times))
+    s = 1; prev = missing
+    for (i, st) in enumerate(start_times)
+        if !ismissing(st) && !ismissing(prev) && Dates.value(st - prev) / 3.6e6 > session_gap_hours
+            s += 1
+        end
+        ids[i] = s
+        ismissing(st) || (prev = st)
+    end
+    ids
+end
+
 function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
     isempty(metas) && return GroupingResult(GroupedLoad[], String[])
 
     load_groups, seg_flag = _segment_loads_with_flag(metas)
     discrepancies = String[]
+
+    load_starts = map(load_groups) do lg
+        ts = DateTime[m.prp.timestamp for m in lg if m.prp !== nothing && !ismissing(m.prp.timestamp)]
+        isempty(ts) ? missing : minimum(ts)
+    end
+    session_ids = _assign_sessions(load_starts)
 
     # Surface the segmentation fallback durably (spec §5: "unimodal fallback → flag
     # for review"). The flag is a property of the whole segmentation pass, so it is
@@ -567,7 +598,8 @@ function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
             start_time,
             end_time,
             grouped_samples,
-            seg_flag,   # :ok | :unimodal_fallback | :single_exposure — from segmentation (spec §5)
+            seg_flag,        # :ok | :unimodal_fallback | :single_exposure — from segmentation (spec §5)
+            session_ids[li], # macro-session index (spec §5 "multi-hour gaps mark macro-sessions")
         ))
     end
 

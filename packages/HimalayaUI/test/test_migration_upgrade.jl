@@ -1627,3 +1627,58 @@ end
         @test npeaks > 0   # inserted exposure got analyzed via the frame-suffix fallback
     end
 end
+
+# ---------------------------------------------------------------------------
+# backfill_load_sessions! — idempotent backfill of loads.session_id
+# ---------------------------------------------------------------------------
+@testset "backfill_load_sessions! populates session_id from start_times" begin
+    # Build a fresh open_db so migrate_schema! has already run (incl. the backfill
+    # sentinel). Then directly test backfill_load_sessions! on a DB that has loads
+    # with NULL session_id.
+    path = joinpath(mktempdir(), "backfill.db")
+    db = HimalayaUI.open_db(path)
+
+    # Insert one experiment with 3 loads: two within 1 h (session 1), then
+    # a >3 h gap, then one more (session 2).
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'bftest','/t','/d','/a')")
+    t0 = "2026-04-25T10:00:00"
+    t1 = "2026-04-25T10:30:00"
+    t2 = "2026-04-25T14:00:00"   # +4 h gap → new session
+    # Insert loads with NULL session_id directly (bypassing create_load! which sets it).
+    DBInterface.execute(db,
+        "INSERT INTO loads (id, experiment_id, load_index, start_time) VALUES (101, 1, 1, ?)", [t0])
+    DBInterface.execute(db,
+        "INSERT INTO loads (id, experiment_id, load_index, start_time) VALUES (102, 1, 2, ?)", [t1])
+    DBInterface.execute(db,
+        "INSERT INTO loads (id, experiment_id, load_index, start_time) VALUES (103, 1, 3, ?)", [t2])
+
+    # Confirm they all have NULL session_id (the pre-backfill state).
+    loads_pre = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, session_id FROM loads WHERE experiment_id = 1 ORDER BY id"))
+    @test all(ismissing(l.session_id) || l.session_id === nothing for l in loads_pre)
+
+    # Re-run the backfill (the sentinel was already recorded by open_db, so we
+    # need to call the function directly, bypassing the sentinel guard).
+    # To test the function itself, delete the sentinel and re-run migrate_schema!.
+    DBInterface.execute(db,
+        "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_LOAD_SESSIONS_BACKFILL])
+    HimalayaUI.backfill_load_sessions!(db)
+
+    loads_post = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, session_id FROM loads WHERE experiment_id = 1 ORDER BY id"))
+    @test all(!ismissing(l.session_id) && l.session_id !== nothing for l in loads_post)
+    session_ids = Int[Int(l.session_id) for l in loads_post]
+    @test session_ids[1] == 1   # t0 → session 1
+    @test session_ids[2] == 1   # t1 only 30 min later → still session 1
+    @test session_ids[3] == 2   # t2 is 4 h after t1 → new session 2
+    @test length(unique(session_ids)) == 2
+
+    # Idempotency: re-running the backfill does NOT re-run (sentinel guards it).
+    HimalayaUI.backfill_load_sessions!(db)   # sentinel present → no-op
+    loads_idem = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, session_id FROM loads WHERE experiment_id = 1 ORDER BY id"))
+    @test Int[Int(l.session_id) for l in loads_idem] == session_ids
+
+    SQLite.close(db)
+end

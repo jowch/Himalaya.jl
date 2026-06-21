@@ -69,7 +69,11 @@ _q_units_from_config(cfg_text)::String = _beamline_from_config(cfg_text).q_units
 """
     _experiment_stats(db, exp_id) -> NamedTuple
 
-Cheap roll-up of counts for the shared experiment header stat ledger.
+Cheap roll-up of counts for the shared experiment header stat ledger and the
+gallery cards. `span_hours` is the exposure timestamp span; `sessions` is the
+persisted macro-session count from `loads.session_id` (assigned at ingest by
+`_assign_sessions` in grouping.jl, backfilled for existing loads by
+`backfill_load_sessions!` in db.jl — spec §5).
 """
 function _experiment_stats(db::SQLite.DB, exp_id::Integer)
     loads = Tables.rowtable(DBInterface.execute(db,
@@ -78,10 +82,15 @@ function _experiment_stats(db::SQLite.DB, exp_id::Integer)
         "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", [exp_id]))[1].c
     exposures = Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM exposures WHERE experiment_id = ?", [exp_id]))[1].c
+    span = Tables.rowtable(DBInterface.execute(db,
+        "SELECT (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 24 AS h " *
+        "FROM exposures WHERE experiment_id = ? AND timestamp IS NOT NULL", [exp_id]))[1].h
+    span_hours = (span === missing || span === nothing) ? 0.0 : round(Float64(span); digits = 1)
     sessions = Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(DISTINCT session_id) AS c FROM loads WHERE experiment_id = ? AND session_id IS NOT NULL",
         [exp_id]))[1].c
-    (loads = Int(loads), samples = Int(samples), exposures = Int(exposures), sessions = Int(sessions))
+    (loads = Int(loads), samples = Int(samples), exposures = Int(exposures),
+     sessions = Int(sessions), span_hours = span_hours)
 end
 
 """
@@ -226,7 +235,7 @@ function register_experiments_routes!()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM experiments ORDER BY id"))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write([_experiment_row_to_json(r) for r in rows]))
+            JSON3.write([_experiment_row_to_json(r, db) for r in rows]))
     end
 
     @get "/api/experiments/{id}" function(req::HTTP.Request, id::Int)

@@ -128,11 +128,12 @@ function scan_and_group!(
                 if isempty(existing_load)
                     load_id = Int(DBInterface.lastrowid(DBInterface.execute(db, """
                         INSERT INTO loads (experiment_id, load_index, frame_count,
-                                           start_time, end_time)
-                        VALUES (?, ?, ?, ?, ?)
+                                           start_time, end_time, session_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
                     """, [experiment_id, gl.load_index, gl.frame_count,
                           ismissing(gl.start_time) ? nothing : Dates.format(gl.start_time, "yyyy-mm-ddTHH:MM:SS"),
-                          ismissing(gl.end_time)   ? nothing : Dates.format(gl.end_time,   "yyyy-mm-ddTHH:MM:SS")])))
+                          ismissing(gl.end_time)   ? nothing : Dates.format(gl.end_time,   "yyyy-mm-ddTHH:MM:SS"),
+                          gl.session_index])))
                 else
                     load_id = Int(first(existing_load).id)
                 end
@@ -294,7 +295,8 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     load_meta = Dict{Int, NamedTuple}()  # load_index => (frame_count, start_time, end_time)
     for gl in result.loads
         load_meta[gl.load_index] = (frame_count = gl.frame_count,
-                                    start_time = gl.start_time, end_time = gl.end_time)
+                                    start_time = gl.start_time, end_time = gl.end_time,
+                                    session_index = gl.session_index)
         for gs in gl.samples
             push!(cells, (load_index = gl.load_index, slot_index = gs.slot_index,
                           name = gs.name, name_source = gs.name_source,
@@ -386,14 +388,15 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                 if isempty(existing)
                     lid = create_load!(db; experiment_id = experiment_id,
                                        load_index = li, frame_count = m.frame_count,
-                                       start_time = st, end_time = et)
+                                       start_time = st, end_time = et,
+                                       session_id = m.session_index)
                     loads_created += 1
                 else
                     lid = Int(first(existing).id)
                     # Keep derived values fresh (idempotent re-write).
                     DBInterface.execute(db,
-                        "UPDATE loads SET frame_count = ?, start_time = ?, end_time = ? WHERE id = ?",
-                        [m.frame_count, st, et, lid])
+                        "UPDATE loads SET frame_count = ?, start_time = ?, end_time = ?, session_id = ? WHERE id = ?",
+                        [m.frame_count, st, et, m.session_index, lid])
                 end
                 load_id_of[li] = lid
             end

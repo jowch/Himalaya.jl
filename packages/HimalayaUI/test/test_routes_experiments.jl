@@ -106,6 +106,42 @@ end
     end
 end
 
+@testset "experiment stats: span_hours + derived sessions + list parity" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.init_experiment!(db;
+        name = "Stats", path = tmp,
+        data_dir = joinpath(tmp, "data"),
+        analysis_dir = joinpath(tmp, "analysis"))
+    # Two loads 3h apart → 2 macro-sessions. session_id persisted at ingest.
+    l1 = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1,
+        start_time = "2026-04-25T10:00:00", session_id = 1)
+    l2 = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 2,
+        start_time = "2026-04-25T13:00:00", session_id = 2)
+    s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "D1")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l1,
+        filename = "a", timestamp = "2026-04-25T10:00:00")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l2,
+        filename = "b", timestamp = "2026-04-25T13:00:00")
+
+    with_inproc_routes(db) do call
+        # Detail endpoint: stats carry span_hours + derived sessions.
+        body = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+        @test body.stats.loads == 2
+        @test body.stats.exposures == 2
+        @test body.stats.sessions == 2                       # 3h gap > 2h threshold
+        @test isapprox(Float64(body.stats.span_hours), 3.0; atol = 0.05)
+
+        # List endpoint now carries the same stats (was the gap: list omitted stats).
+        list = JSON3.read(String(call("GET", "/api/experiments").body))
+        row = first(filter(e -> e.id == eid, list))
+        @test haskey(row, :stats)
+        @test row.stats.loads == 2
+        @test row.stats.sessions == 2
+        @test isapprox(Float64(row.stats.span_hours), 3.0; atol = 0.05)
+    end
+end
+
 @testset "experiment route surfaces beam center + pixel size" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)

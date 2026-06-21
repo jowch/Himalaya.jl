@@ -19,6 +19,9 @@ const MIGRATION_SAMPLES_MERGED_INTO = "samples_merged_into_v1"
 # Sentinel marker name for the ingestion-redesign Phase E1 editable config columns.
 const MIGRATION_EXPERIMENTS_CONFIG_COLS = "experiments_config_cols_v1"
 
+# Sentinel marker name for the session_id backfill on existing loads.
+const MIGRATION_LOAD_SESSIONS_BACKFILL = "load_sessions_backfill_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table. Mirrors the inlined pattern in
 # `migrate_assignments!` / `migrate_comparisons_to_series!`.
@@ -503,6 +506,10 @@ function migrate_schema!(db::SQLite.DB)
     # Ingestion redesign (Phase E1): editable config columns on experiments
     # (description + 3 pattern fields). Additive; no dependency on Phase D.
     migrate_experiments_config_cols!(db)
+
+    # Session-id backfill: assign macro-session indices to all existing loads whose
+    # session_id is NULL. Run AFTER migrate_loads_table! (the loads table must exist).
+    backfill_load_sessions!(db)
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────
@@ -734,6 +741,58 @@ function migrate_experiments_config_cols!(db::SQLite.DB)
                 "ALTER TABLE experiments ADD COLUMN $name $decl")
         end
         _record_migration!(db, MIGRATION_EXPERIMENTS_CONFIG_COLS)
+    end
+    nothing
+end
+
+"""
+    backfill_load_sessions!(db)
+
+Assign `session_id` to existing loads that still have NULL. For each experiment
+with any NULL-session_id load, reads the ordered load start times, applies
+`_assign_sessions` (spec §5: >3 h gap → new macro-session), and UPDATEs each
+load row. Idempotent: experiments whose loads all already have a non-NULL
+`session_id` are skipped entirely. Sentinel-gated.
+
+Called from `migrate_schema!` after `migrate_loads_table!`.
+"""
+function backfill_load_sessions!(db::SQLite.DB)
+    _migrated(db, MIGRATION_LOAD_SESSIONS_BACKFILL) && return nothing
+    # Tolerate the loads table not yet existing (very old DBs where
+    # migrate_loads_table! hasn't installed it — the sentinel below still fires
+    # so a subsequent open_db doesn't re-run and hit the missing table again).
+    has_loads = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='loads'")))
+    if has_loads
+        # Experiments that have at least one load with NULL session_id.
+        exp_ids = Int[Int(r.experiment_id) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT DISTINCT experiment_id FROM loads WHERE session_id IS NULL"))]
+        for eid in exp_ids
+            # Read ALL of this experiment's loads (no NULL filter): session assignment
+            # is holistic over the ordered start-times, and `_assign_sessions` is a pure
+            # deterministic function of that full set — so re-deriving every load is safe
+            # even if some already held a session_id (a mixed state no writer produces).
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, start_time FROM loads WHERE experiment_id = ? ORDER BY start_time",
+                [eid]))
+            isempty(rows) && continue
+            # Parse start_time strings to DateTime (NULL → missing).
+            parsed = Union{Dates.DateTime, Missing}[
+                (r.start_time === nothing || r.start_time === missing) ?
+                    missing : Dates.DateTime(String(r.start_time), "yyyy-mm-ddTHH:MM:SS")
+                for r in rows]
+            session_ids = _assign_sessions(parsed)
+            SQLite.transaction(db) do
+                for (row, sid) in zip(rows, session_ids)
+                    DBInterface.execute(db,
+                        "UPDATE loads SET session_id = ? WHERE id = ?",
+                        [sid, Int(row.id)])
+                end
+            end
+        end
+    end
+    SQLite.transaction(db) do
+        _record_migration!(db, MIGRATION_LOAD_SESSIONS_BACKFILL)
     end
     nothing
 end

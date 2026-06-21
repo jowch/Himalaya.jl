@@ -709,6 +709,71 @@ end
         @test HimalayaUI.cheap_change_check(bad_db, bad_id) == false
     end
 
+    @testset "_assign_sessions" begin
+        t0 = DateTime(2026, 4, 25, 10, 0, 0)
+
+        # Two loads with a >3 h gap → two distinct session indices.
+        starts_two = [t0, t0 + Dates.Hour(4)]
+        ids_two = HimalayaUI._assign_sessions(starts_two)
+        @test ids_two[1] == 1
+        @test ids_two[2] == 2
+        @test length(unique(ids_two)) == 2
+
+        # All loads close together → all session index 1.
+        starts_close = [t0, t0 + Dates.Hour(1), t0 + Dates.Hour(2)]
+        ids_close = HimalayaUI._assign_sessions(starts_close)
+        @test all(==(1), ids_close)
+
+        # A missing start_time in the middle stays in the current session and
+        # does not advance prev: [real, missing, real_close] → all session 1.
+        starts_miss = Union{DateTime, Missing}[t0, missing, t0 + Dates.Hour(2)]
+        ids_miss = HimalayaUI._assign_sessions(starts_miss)
+        @test ids_miss[1] == 1
+        @test ids_miss[2] == 1   # missing stays in current session
+        @test ids_miss[3] == 1   # 2 h gap (below 3 h) → same session
+
+        # A missing that sits between two real times with a >3 h outer gap: the
+        # session only advances when we see the next real timestamp.
+        starts_miss2 = Union{DateTime, Missing}[t0, missing, t0 + Dates.Hour(5)]
+        ids_miss2 = HimalayaUI._assign_sessions(starts_miss2)
+        @test ids_miss2[1] == 1
+        @test ids_miss2[2] == 1   # missing: stays in session 1
+        @test ids_miss2[3] == 2   # 5 h gap from prev (t0) → new session
+    end
+
+    @testset "scan_and_group! persists non-null session_id on loads" begin
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+
+        # One load (all frames close together), so we expect session_id = 1.
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        for (i, h) in enumerate([58.9, 63.1])
+            stem = "HA_$(i)_S$(lpad(i, 4,'0'))_0_001"
+            write_prp(joinpath(data_dir, "$stem.prp");
+                timestamp = Dates.format(t0 + Second((i-1)*19), "dd u yyyy HH:MM:SS"),
+                beam_energy_ev = 9000.0, pipe_length_mm = 1700,
+                detector = "Pilatus 1M", exposure_time = 15.0,
+                horizontal_position_mm = h)
+            write(joinpath(data_dir, "$stem.tif"), "fake tif")
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+
+        db = fresh_db()
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "session-test", path = dir,
+            data_dir = data_dir, analysis_dir = analysis_dir)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+
+        loads = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, session_id FROM loads WHERE experiment_id = ?", [exp_id]))
+        @test length(loads) >= 1
+        @test all(!ismissing(l.session_id) && l.session_id !== nothing for l in loads)
+        # All frames in one load → one session (session_id = 1).
+        @test all(Int(l.session_id) == 1 for l in loads)
+    end
+
     @testset "scan_and_group! on_progress reports per-exposure" begin
         db = fresh_db()
         data_dir = mktempdir()
