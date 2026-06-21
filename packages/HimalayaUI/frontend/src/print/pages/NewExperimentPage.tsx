@@ -1,38 +1,34 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAppState } from "../../state";
 import { useExperiments } from "../../queries";
 import * as api from "../../api";
-import { authOpts } from "../../lib/authOpts";
-import { getClientId } from "../../lib/clientId";
+import { useDraftExperiment } from "../../lib/draftExperiment";
 import { PageFrame } from "../components/PageFrame";
 import { DirectoryPickerField } from "../components/DirectoryPickerField";
 import { Button } from "../ui/Button";
 import { Kicker } from "../ui/Kicker";
-import { Input } from "../ui/Input";
 import type { ValidatePathResponse } from "../../api";
-
-const CLIENT_ID = getClientId();
 
 /**
  * NewExperimentPage — /experiments/new (spec §8.7). Directory picker +
- * suggestions + validation + optional name + a File-patterns advanced
- * disclosure; submit creates the experiment and routes to its corpus, where the
- * live-ingest unfold runs. No file browser.
+ * suggestions + validation; primary action commits the validated path to a
+ * client-side draft and navigates to /experiments/new/config (first-run
+ * Configuration). No DB row is created here — creation happens at Approve.
+ *
+ * T4.0: two-phase funnel handoff. "Review →" replaces the old "Scan and
+ * create" action. The dup-dir guard (inline error + disabled submit) is
+ * preserved from the pre-T4.0 implementation.
  */
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
-  const username = useAppState((s) => s.username);
-  const setActiveExperiment = useAppState((s) => s.setActiveExperiment);
+  const { setDraft, clear } = useDraftExperiment();
 
   const { data: experiments } = useExperiments();
 
   const [path, setPath] = useState("");
-  const [name, setName] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [validation, setValidation] = useState<ValidatePathResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
 
   // One experiment per directory: warn (and block) if this dir is already taken.
   const trimmedPath = path.trim();
@@ -58,27 +54,20 @@ export function NewExperimentPage(): JSX.Element {
 
   const canSubmit = validation?.ok === true && duplicateOf === undefined && !submitting;
 
-  const submit = async (): Promise<void> => {
+  const handleReview = async (): Promise<void> => {
     if (!canSubmit) return;
     setSubmitting(true);
-    setServerError(null);
     try {
-      const exp = await api.createExperiment(
-        { path, ...(name.trim() ? { name: name.trim() } : {}) },
-        authOpts(username, CLIENT_ID),
-      );
-      setActiveExperiment(exp.id);
-      navigate(`/experiments/${exp.id}/corpus`);
-    } catch (err) {
-      // Server-side fallback for the one-experiment-per-directory rule (409).
-      setServerError(
-        err instanceof Error && /409|already uses this directory/i.test(err.message)
-          ? "An experiment already uses this directory."
-          : "Could not create the experiment. Please try again.",
-      );
+      setDraft({ path: trimmedPath });
+      navigate("/experiments/new/config");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCancel = (): void => {
+    clear();
+    navigate("/experiments");
   };
 
   return (
@@ -111,36 +100,20 @@ export function NewExperimentPage(): JSX.Element {
           {duplicateOf !== undefined && (
             <p className="text-sm text-error mt-1.5" role="alert">
               This directory is already an experiment
-              {duplicateOf.name ? ` (“${duplicateOf.name}”)` : ""}. Each experiment is one directory.
+              {duplicateOf.name ? ` ("${duplicateOf.name}")` : ""}. Each experiment is one directory.
             </p>
           )}
-          {serverError !== null && (
-            <p className="text-sm text-error mt-1.5" role="alert">{serverError}</p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="exp-name" className="block text-xs font-bold uppercase tracking-wide text-ink-faint mb-1.5">
-            Experiment name <span className="font-normal normal-case text-ink-soft">(optional)</span>
-          </label>
-          <Input
-            testId="exp-name"
-            value={name}
-            onValueChange={setName}
-            placeholder="Defaults to the directory name"
-            aria-label="Experiment name"
-          />
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
+          <Button variant="ghost" onClick={handleCancel}>Cancel</Button>
           <Button
             variant="accent"
             data-testid="create-submit"
             disabled={!canSubmit}
-            onClick={() => { void submit(); }}
+            onClick={() => { void handleReview(); }}
           >
-            Scan and create
+            Review →
           </Button>
         </div>
       </div>

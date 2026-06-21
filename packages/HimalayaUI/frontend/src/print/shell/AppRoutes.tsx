@@ -146,6 +146,8 @@ export function AppRoutes(): JSX.Element {
             own header/tabs per spec §3.2 (page content, not a separate chrome). */}
         <Route path="/experiments" element={<ExperimentsHomePage />} />
         <Route path="/experiments/new" element={<NewExperimentPage />} />
+        {/* T4.0: draft Configuration — first-run mode, no :id yet. */}
+        <Route path="/experiments/new/config" element={<ConfigurationPage />} />
         <Route path="/experiments/:id" element={<ExperimentShell />}>
           <Route index element={<Navigate to="corpus" replace />} />
           <Route path="corpus" element={<ExperimentCorpusPage />} />

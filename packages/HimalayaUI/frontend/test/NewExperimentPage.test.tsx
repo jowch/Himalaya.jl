@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NewExperimentPage } from "../src/print/pages/NewExperimentPage";
+import { useDraftExperiment } from "../src/lib/draftExperiment";
 import * as api from "../src/api";
 
 const navigate = vi.fn();
@@ -22,7 +23,10 @@ function renderPage() {
 }
 
 describe("NewExperimentPage (Phase E1)", () => {
-  beforeEach(() => { navigate.mockClear(); });
+  beforeEach(() => {
+    navigate.mockClear();
+    useDraftExperiment.getState().clear();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("renders the directory picker", () => {
@@ -30,22 +34,23 @@ describe("NewExperimentPage (Phase E1)", () => {
     expect(screen.getByTestId("dirpicker-input")).toBeInTheDocument();
   });
 
-  it("creates the experiment and routes to its corpus on submit", async () => {
-    vi.spyOn(api, "validatePath").mockResolvedValue({ ok: true, matched: 682, scanned: 700, message: null });
-    vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 9 } as api.Experiment);
+  it("Review commits the path to a draft and navigates to draft Configuration WITHOUT creating", async () => {
+    const create = vi.spyOn(api, "createExperiment");
+    vi.spyOn(api, "validatePath").mockResolvedValue({ ok: true, matched: 5, scanned: 5, message: null });
     renderPage();
     fireEvent.change(screen.getByTestId("dirpicker-input").querySelector("input")!, {
-      target: { value: "/Volumes/data/ssrl/2026_04/1p7m" },
+      target: { value: "/data/run42" },
     });
-    await waitFor(() => expect(screen.getByTestId("create-submit")).not.toBeDisabled());
-    fireEvent.click(screen.getByTestId("create-submit"));
-    await waitFor(() => expect(api.createExperiment).toHaveBeenCalled());
-    expect(navigate).toHaveBeenCalledWith("/experiments/9/corpus");
+    await waitFor(() => expect(screen.getByRole("button", { name: /review/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: /review/i }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/new/config"));
+    expect(create).not.toHaveBeenCalled();
+    expect(useDraftExperiment.getState().path).toBe("/data/run42");
   });
 
   it("keeps submit disabled until validation is ok", () => {
     renderPage();
-    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    expect(screen.getByRole("button", { name: /review/i })).toBeDisabled();
   });
 
   it("blocks submit and warns when the directory is already an experiment", async () => {
@@ -61,8 +66,15 @@ describe("NewExperimentPage (Phase E1)", () => {
     await waitFor(() =>
       expect(screen.getByText(/already (an experiment|uses this directory)/i)).toBeInTheDocument(),
     );
-    expect(screen.getByTestId("create-submit")).toBeDisabled();
-    fireEvent.click(screen.getByTestId("create-submit"));
+    expect(screen.getByRole("button", { name: /review/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /review/i }));
     expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it("Cancel clears the draft and navigates to /experiments", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(navigate).toHaveBeenCalledWith("/experiments");
+    expect(useDraftExperiment.getState().path).toBe("");
   });
 });
