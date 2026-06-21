@@ -240,10 +240,10 @@ function register_fs_routes!()
     @get "/api/fs/suggest" function (req::HTTP.Request)
         q      = HTTP.queryparams(HTTP.URI(req.target))
         prefix = get(q, "prefix", "")
-        isempty(prefix) && return _json(Dict(:suggestions => String[]))
+        isempty(prefix) && return _json(200, Dict(:suggestions => String[]))
         dir  = isdir(prefix) ? prefix : dirname(prefix)
         base = isdir(prefix) ? "" : basename(prefix)
-        isdir(dir) || return _json(Dict(:suggestions => String[]))
+        isdir(dir) || return _json(200, Dict(:suggestions => String[]))
         kids = String[]
         for name in readdir(dir; sort = true)
             startswith(name, base) || continue
@@ -251,16 +251,15 @@ function register_fs_routes!()
             isdir(full) && push!(kids, full)
             length(kids) >= 20 && break
         end
-        _json(Dict(:suggestions => kids))
+        _json(200, Dict(:suggestions => kids))
     end
     # validate + manifest added in Tasks 1.4 / 1.5
 end
-
-# Small local helper mirroring the JSON response idiom used across routes_*.jl.
-_json(x) = HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(x))
 ```
 
-Add `include("routes_fs.jl")` in `HimalayaUI.jl` (before `server.jl`) and call `register_fs_routes!()` inside `register_routes!` in `server.jl`.
+> **Reuse `_json(status, body)`** — it already exists at module scope (`routes_resolve.jl`); do NOT define a local one (ponytail review). It serializes + sets the content-type header.
+
+Add `include("routes_fs.jl")` in `HimalayaUI.jl` (before `server.jl`) and call `register_fs_routes!()` inside `register_routes!` in `server.jl`. **Register the new test file in BOTH drift guards** (test/AGENTS.md): add `test_routes_fs.jl` to the `routes` GROUP bucket AND to the `ALL_ORDER` list (and the `All` GROUP entry) in `test/runtests.jl`, or the suite errors at load.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -319,21 +318,21 @@ Inside `register_fs_routes!`, before the trailing comment:
         q    = HTTP.queryparams(HTTP.URI(req.target))
         path = get(q, "path", "")
         if isempty(path) || !isdir(path)
-            return _json(Dict(:ok => false, :matched => 0, :scanned => 0,
+            return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
                               :message => "path does not exist or is not a directory"))
         end
         dup = !isempty(DBInterface.execute(current_db(),
             "SELECT 1 FROM experiments WHERE data_dir = ? LIMIT 1", [path]) |> Tables.rowtable)
         if dup
-            return _json(Dict(:ok => false, :matched => 0, :scanned => 0,
+            return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
                               :message => "an experiment already uses this directory"))
         end
         scanned = count(!startswith("."), readdir(path))   # cheap; rich count is /manifest
-        _json(Dict(:ok => true, :matched => scanned, :scanned => scanned, :message => nothing))
+        _json(200, Dict(:ok => true, :matched => scanned, :scanned => scanned, :message => nothing))
     end
 ```
 
-Add `using DBInterface, Tables` to the file head if not already pulled in transitively (match the other routes files).
+(`validate` is kept — it serves the picker's pre-Approve "exists + not-already-an-experiment" gate, a different funnel step than `manifest`, and `api.ts:validatePath` already targets it.) Add `using DBInterface, Tables` to the file head if not already pulled in transitively (match the other routes files).
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -355,7 +354,7 @@ git commit   # "feat(routes): GET /api/fs/validate picker gate" + trailers
 - Test: `packages/HimalayaUI/test/test_routes_fs.jl`
 
 **Interfaces:**
-- Produces: `GET /api/fs/manifest?path=<dir>&image_pattern=&metadata_pattern=&integration_pattern=` → `{ total, matched: {image, metadata, integration}, unmatched: [{file, miss: "image"|"metadata"|"integration", nearest: str|null}] }`. **Patterns come from query params, NOT the DB** (phase-1 is pre-experiment). No PRP parse, no DB write.
+- Produces: `GET /api/fs/manifest?path=<dir>&image_pattern=&metadata_pattern=&integration_pattern=` → `{ total, matched: {image, metadata, integration}, unmatched: [{file, miss: "metadata"|"integration"}] }`. **Patterns come from query params, NOT the DB** (phase-1 is pre-experiment). No PRP parse, no DB write. (No `nearest` field — YAGNI per ponytail review; the stem + miss-type is the actionable fact. Add a near-miss suggester later only if ScanFailedPage proves it wants one.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -391,52 +390,38 @@ Expected: FAIL — 404.
     @get "/api/fs/manifest" function (req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
         path = get(q, "path", "")
-        isdir(path) || return HTTP.Response(400, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "path is not a directory")))
+        isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
         pats = (image       = get(q, "image_pattern", "{name}.tif"),
                 metadata    = get(q, "metadata_pattern", "{name}.prp"),
                 integration = get(q, "integration_pattern", "{name}.dat"))
         files = filter(!startswith("."), readdir(path))
-        # stem set per type via the existing matcher (config.jl). _stem_for returns
-        # the {name} capture or nothing.
-        stems(pat) = Set(filter(!isnothing, [_stem_for(f, pat) for f in files]))
-        img, meta, integ = stems(pats.image), stems(pats.metadata), stems(pats.integration)
-        unmatched = Dict{String,Any}[]
-        for s in img
-            for (label, set) in (("metadata", meta), ("integration", integ))
-                if !(s in set)
-                    push!(unmatched, Dict(:file => s, :miss => label,
-                        :nearest => _nearest_file(s, files)))
-                end
+        # {name}-capture per type, inlined. Do NOT add a module helper — grouping.jl
+        # / config.jl already own pattern matching; if the manifest's needs grow,
+        # call the shared matcher (config.jl `_matches_prefix_with_boundary` /
+        # `resolve_files`) rather than maintaining a second one (ponytail review).
+        function stems(pat)
+            occursin("{name}", pat) || return Set{String}()
+            pre, post = split(pat, "{name}"; limit = 2)
+            out = Set{String}()
+            for f in files
+                (startswith(f, pre) && endswith(f, post) &&
+                    length(f) > length(pre) + length(post)) || continue
+                push!(out, f[nextind(f, lastindex(pre)):prevind(f, lastindex(f) - length(post) + 1)])
             end
+            out
         end
-        _json(Dict(:total => length(files),
+        img, meta, integ = stems(pats.image), stems(pats.metadata), stems(pats.integration)
+        unmatched = Dict{String,String}[]
+        for s in img, (label, set) in (("metadata", meta), ("integration", integ))
+            s in set || push!(unmatched, Dict("file" => s, "miss" => label))
+        end
+        _json(200, Dict(:total => length(files),
                    :matched => Dict(:image => length(img), :metadata => length(meta), :integration => length(integ)),
                    :unmatched => unmatched))
     end
 ```
 
-Add two small private helpers to `routes_fs.jl` (or reuse `config.jl` equivalents if `_stem_for`/`_nearest_file` already exist — grep first; the dossier cites `_matches_prefix_with_boundary`/`resolve_files` as the matcher family):
-
-```julia
-# Extract the {name} capture from a filename given a "{name}.ext" pattern, else nothing.
-function _stem_for(filename::AbstractString, pattern::AbstractString)
-    occursin("{name}", pattern) || return nothing
-    pre, post = split(pattern, "{name}"; limit = 2)
-    (startswith(filename, pre) && endswith(filename, post) &&
-        length(filename) > length(pre) + length(post)) || return nothing
-    filename[nextind(filename, lastindex(pre)):prevind(filename, lastindex(filename) - length(post) + 1)]
-end
-
-# Nearest existing filename to a stem by case-insensitive prefix, for the
-# "did you mean…" pairing in the Scan-failed UI. nothing if none.
-function _nearest_file(stem::AbstractString, files::Vector{<:AbstractString})
-    cands = sort(filter(f -> startswith(lowercase(f), lowercase(stem)), files))
-    isempty(cands) ? nothing : first(cands)
-end
-```
-
-> **Implementer note:** before writing `_stem_for`, grep `config.jl` for an existing stem/pattern extractor (`_matches_prefix_with_boundary`, `resolve_files`). If one already extracts the `{name}` capture, call it instead of duplicating. Keep the matcher single-sourced.
+> **No helper functions** — the `stems` closure is local to the route. `_nearest_file` is cut (YAGNI). If pattern matching gets more complex, call `config.jl`'s `_matches_prefix_with_boundary` / `resolve_files` — do not maintain a second matcher.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -462,64 +447,92 @@ Re-axis the registry, remove the roving grid, add the page-level cursor + per-ro
 
 ### Task 2.1: Re-axis the shortcut registry + `?` normalization
 
+> **Real registry shape (verified live, `shortcuts.ts`):** `ShortcutId` is a **union type** (`:10-25`); `SHORTCUTS` is `Record<ShortcutId, ShortcutDef>` where `ShortcutDef = { id, keys: string[], label, group }` — each entry holds a **`keys` array** of normalized combos (e.g. `find` = `["Mod+k", "/"]`), NOT a `.combo` string. `matchShortcut(e)` returns a **`ShortcutId | null` (a string)**, not an object. Consumers bind handlers via **`useShortcuts({ [id]: () => … })`** maps (one per page) — there is NO global window `keydown` switch, and you must NOT add one. The re-axis is therefore mostly a registry edit + an id migration; the page handlers are edited in T2.4/T2.5.
+
 **Files:**
-- Modify: `frontend/src/print/shell/shortcuts.ts:10-59` (registry), `:67-75` (`eventCombo`)
-- Test: `frontend/test/shortcuts.test.ts` (extend the existing combo test near the CapsLock-X case, `shortcuts.ts:57-60` references it)
+- Modify: `frontend/src/print/shell/shortcuts.ts` — `ShortcutId` union (`:10-25`), `SHORTCUTS` record (`:38-62`), the locked-decision comment (`:6-8`, now false), `eventCombo` (`:67-82`)
+- Test: `frontend/test/shortcuts.test.ts` (mirror the existing CapsLock-X normalization test)
 
-**Interfaces:**
-- Produces: registry IDs (one semantic id per physical key — `matchShortcut` is flat first-wins, so no key maps to two ids):
-  `samplePrev`(`ArrowUp`), `sampleNext`(`ArrowDown`), `detailPrev`(`ArrowLeft`), `detailNext`(`ArrowRight`), `openFocus`(`Enter`), `openLoupe`(`l`), `drop`(`x`), `keep`(`k`), `setRep`(`r`), `toggleSelect`(`Space`), `rangePrev`(`Shift+ArrowLeft`), `rangeNext`(`Shift+ArrowRight`), `selectAll`(`Mod+a`), `restore`(`Backspace`), `reorderUp`(`Alt+ArrowUp`), `reorderDown`(`Alt+ArrowDown`), `helpOverlay`(`?`), `undo`(`Mod+z`), `redo`(`Mod+Shift+z`). Drops `[` / `]`. `eventCombo` emits the literal token `?` for the `?` key regardless of the Shift bit.
+**Interfaces — the id migration (old → new):**
+| old id | change | new `keys` |
+|---|---|---|
+| `prevSample` / `nextSample` | keep id, remap keys (was `[`/`]`) | `["ArrowUp"]` / `["ArrowDown"]` |
+| `prevCandidate` / `nextCandidate` | **rename** → `prevDetail` / `nextDetail` | `["ArrowLeft"]` / `["ArrowRight"]` |
+| `prevExposure` / `nextExposure` | **remove** (exposure-step → filmstrip `onSelect`, T2.5) | — |
+| `drop` `keep` `representative` `undo` `redo` `reorderUp` `reorderDown` `dismiss` `find` | unchanged | unchanged |
+| — | **add** `openFocus` | `["Enter"]` |
+| — | **add** `openLoupe` | `["l"]` |
+| — | **add** `toggleSelect` | `[" "]` (Space; `eventCombo` lowercases the single-char `" "`) |
+| — | **add** `extendPrev` / `extendNext` | `["Shift+ArrowLeft"]` / `["Shift+ArrowRight"]` |
+| — | **add** `selectAll` | `["Mod+a"]` |
+| — | **add** `restore` | `["Backspace"]` |
+| — | **add** `helpOverlay` | `["?"]` |
 
-- [ ] **Step 1: Write the failing tests**
+`eventCombo` emits the literal token `?` for the `?` key regardless of the Shift bit. "Detail" is page-interpreted (frame on Corpus/Loupe, candidate on Focus) — same id, different per-page handler, which the `useShortcuts({id})` model supports natively.
+
+**Consumer updates (this task makes the registry compile; the handler bindings move in T2.4/T2.5):** every reference to a removed/renamed id must change — `FocusPage.tsx` (binds `prevExposure`/`nextExposure`/`prevCandidate`/`nextCandidate`), `LoupePage.tsx` (binds `prevExposure`/`nextExposure`), `KbdLegend.tsx` (renders the registry — auto-updates, but set `label`/`group` for the new ids), any `aria-keyshortcuts`. End the task with `npx tsc --noEmit` showing **zero** references to `prevExposure`/`nextExposure`/`prevCandidate`/`nextCandidate`.
+
+- [ ] **Step 1: Write the failing tests** (real shape: `Object.values(SHORTCUTS)`, `.keys`, string `matchShortcut`)
 
 ```ts
 import { eventCombo, SHORTCUTS, matchShortcut } from '../src/print/shell/shortcuts'
 
 const ev = (init: Partial<KeyboardEvent>) => new KeyboardEvent('keydown', init)
+const keysOf = (id: string) => Object.values(SHORTCUTS).find(d => d.id === id)?.keys ?? []
 
 test('? normalizes to a stable token regardless of Shift', () => {
   expect(eventCombo(ev({ key: '?', shiftKey: true }))).toBe('?')
 })
 
 test('arrows are the sample/detail axis; [ and ] are gone', () => {
-  expect(matchShortcut(ev({ key: 'ArrowUp' }))?.id).toBe('samplePrev')
-  expect(matchShortcut(ev({ key: 'ArrowLeft' }))?.id).toBe('detailPrev')
-  expect(SHORTCUTS.find(s => s.combo === '[')).toBeUndefined()
+  expect(matchShortcut(ev({ key: 'ArrowUp' }))).toBe('prevSample')   // string id, not object
+  expect(matchShortcut(ev({ key: 'ArrowLeft' }))).toBe('prevDetail')
+  const allKeys = Object.values(SHORTCUTS).flatMap(d => d.keys)
+  expect(allKeys).not.toContain('[')
+  expect(allKeys).not.toContain(']')
 })
 
-test('each physical key resolves to exactly one id (flat registry)', () => {
-  const byCombo = new Map<string, number>()
-  for (const s of SHORTCUTS) byCombo.set(s.combo, (byCombo.get(s.combo) ?? 0) + 1)
-  for (const [combo, n] of byCombo) expect(`${combo}:${n}`).toBe(`${combo}:1`)
+test('new verbs are bound', () => {
+  expect(keysOf('openFocus')).toContain('Enter')
+  expect(keysOf('restore')).toContain('Backspace')
+  expect(matchShortcut(ev({ key: ' ' }))).toBe('toggleSelect')
+})
+
+test('every combo resolves to exactly one id (no key bound twice)', () => {
+  const seen = new Map<string, number>()
+  for (const d of Object.values(SHORTCUTS)) for (const k of d.keys) seen.set(k, (seen.get(k) ?? 0) + 1)
+  for (const [k, n] of seen) expect(`${k}:${n}`).toBe(`${k}:1`)
 })
 ```
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `cd packages/HimalayaUI/frontend && npx vitest run shortcuts.test.ts`
-Expected: FAIL — old `[`/`]` ids present; `?` not special-cased.
+Expected: FAIL — `prevSample` still on `[`; `prevDetail`/`openFocus`/`restore`/`toggleSelect` undefined.
 
-- [ ] **Step 3: Implement the re-axis + `?` special-case**
+- [ ] **Step 3: Edit the union + record + comment + `eventCombo`**
 
-Rewrite the registry entries per the Interfaces list. In `eventCombo`, before composing modifiers, add:
+Apply the migration table to the `ShortcutId` union and the `SHORTCUTS` record (`keys` arrays + `label`/`group` for the new ids). Rewrite the stale "Locked decisions (Jonathan 2026-06-13)" comment (`:6-8`) to state the rev-2 axes and that this supersedes the lock. In `eventCombo`, as the first line of the body:
 
 ```ts
   // '?' is Shift+/ on US layouts but layout-variable; emit a stable token so the
-  // help binding is layout-robust (mirrors the CapsLock-X normalization above).
+  // help binding is layout-robust (mirrors the single-char lowercasing below).
   if (e.key === '?') return '?'
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run to verify it passes + tsc gate**
 
-Run: `npx vitest run shortcuts.test.ts`
-Expected: PASS.
+Run: `npx vitest run shortcuts.test.ts && npx tsc --noEmit 2>&1 | grep -E "prevExposure|nextExposure|prevCandidate|nextCandidate" || echo "no dangling refs"`
+Expected: tests PASS; the grep prints `no dangling refs` (T2.4/T2.5 will rebind; if tsc still flags page handlers, that's expected until those tasks — note which files for the next tasks).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add packages/HimalayaUI/frontend/src/print/shell/shortcuts.ts packages/HimalayaUI/frontend/test/shortcuts.test.ts
-git commit   # "feat(keys): re-axis registry to sample/detail; stable ? token" + trailers
+git commit   # "feat(keys): re-axis registry to sample/detail + new verb ids" + trailers
 ```
+
+> **Sequencing note:** Steps 3–5 leave `FocusPage`/`LoupePage` referencing the renamed/removed ids (tsc errors there). Do T2.4/T2.5 in the same work session so the tree is green before any push; each of those tasks ends green on its own page.
 
 ### Task 2.2: Remove the roving grid
 
@@ -558,8 +571,8 @@ In `SheetTable.tsx`: remove the `roving`/`dataRowCount`/`focusOnMountRow` props 
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run SheetTable.test.tsx SampleTableRow.test.tsx` then `npx tsc --noEmit -p tsconfig.json 2>&1 | grep -i grid` (expect no dangling references).
-Expected: PASS; no leftover `useRovingGrid` imports.
+Run: `npx vitest run SheetTable.test.tsx SampleTableRow.test.tsx` then `npx tsc --noEmit` and a text sweep for stragglers: `git grep -nE "roving|useRovingGrid|RovingGrid|requestActivate|onContainerKeyDown|focusOnMountRow|dataRowCount" -- 'frontend/src' 'frontend/test'`.
+Expected: tests PASS; the grep returns nothing (the 3 files are the *modules*, but props/comments/tests reference the removed API too — clear them all, incl. any `roving`/`rowIndex` props passed by callers and stale comments).
 
 - [ ] **Step 5: Commit**
 
@@ -583,9 +596,9 @@ git commit   # "refactor(sheet): remove roving grid → plain table" + trailers
 ```tsx
 test('KeptCell shows a Restore button only when something is dropped', () => {
   const onRestore = vi.fn()
-  const { rerender } = render(<KeptCell kept={3} dropped={0} onRestore={onRestore} />)
+  const { rerender } = render(<KeptCell kept={3} dropped={0} total={3} onRestore={onRestore} />)
   expect(screen.queryByRole('button', { name: /restore/i })).toBeNull()
-  rerender(<KeptCell kept={2} dropped={1} onRestore={onRestore} />)
+  rerender(<KeptCell kept={2} dropped={1} total={3} onRestore={onRestore} />)
   fireEvent.click(screen.getByRole('button', { name: /restore/i }))
   expect(onRestore).toHaveBeenCalledOnce()
 })
@@ -626,28 +639,30 @@ git add packages/HimalayaUI/frontend/src/print/components/KeptCell.tsx packages/
 git commit   # "feat(sheet): per-row Restore on dropped rows" + trailers
 ```
 
-### Task 2.4: Page-level `{sampleIndex, frameIndex}` cursor + rebound handlers (Corpus)
+### Task 2.4: Page-level cursor + Corpus keyboard map (via `useShortcuts`)
+
+> **Architecture (per review):** bind through the existing `useShortcuts({ [id]: handler })` map — do NOT hand-roll a window `keydown` switch (that reintroduces the double-dispatch this redesign kills). No `Alt`-guard is needed: `reorderUp` = `"Alt+ArrowUp"` is a distinct combo from `prevSample` = `"ArrowUp"`, so the registry never confuses them, and `useShortcuts` already suppresses inside inputs/modals.
 
 **Files:**
-- Modify: `frontend/src/print/pages/SamplesPage.tsx:200-289` (state), `:317-339` (keyboard)
-- Test: `frontend/test/SamplesPage.keyboard.test.tsx` (new or extend)
+- Modify: `frontend/src/print/pages/SamplesPage.tsx` — selection-state region (`:200-289`), keyboard block (`:317-339`)
+- Test: `frontend/test/SamplesPage.keyboard.test.tsx` (new)
 
 **Interfaces:**
-- Consumes: registry ids from Task 2.1; `useShortcuts` (`:23-43`, DECLINE pattern) + `suppressGlobalKeys` (`lib/keys.ts:39-64`).
-- Produces: a page-level cursor `{ sampleIndex, frameIndex }` (default `{0,0}`); `↑/↓` step `sampleIndex` (clamped), `←/→` step `frameIndex` within the active sample, `Enter` opens Focus on the active sample, `L` opens Loupe, `Space` toggles the active frame in the selection, `Shift+←/→` extends, `X/K` drop/keep (selection else active frame), `Backspace` restores, `Esc` clears selection then declines. **No `R` on Corpus.** Pointer clicks set the same cursor. The single window handler DECLINEs when `suppressGlobalKeys(e)` or `Alt` is held (so `Alt+arrow` reorder isn't shadowed).
+- Consumes: registry ids from T2.1; the `useShortcuts` hook.
+- Produces: page-level cursor `{ sampleIndex, frameIndex }` (default `{0,0}`), driven by a `useShortcuts` map: `prevSample`/`nextSample` clamp-step the sample (reset `frameIndex` 0), `prevDetail`/`nextDetail` clamp-step the frame within the active sample, `openFocus` → navigate Focus (`/sample/:id`, flat per spec §6.4), `openLoupe` → `/sample/:id/loupe`, `toggleSelect`/`extendPrev`/`extendNext`/`selectAll` drive the existing selection (`selected`/`anchorRef`/`checkedSamples`), `drop`/`keep`/`restore` apply to the selection-else-active-frame, `dismiss` clears the selection then **returns false** (so the Esc ladder continues). **No `representative` binding.** Pointer click on a row/exposure calls the same `setCursor`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests** (helper names illustrative — map to `frontend/test/` setup)
 
 ```tsx
-test('Arrow keys drive the page cursor; Alt is declined', () => {
+test('Arrows drive the page cursor; Alt+Arrow is a separate combo (no cursor move)', () => {
   renderSamplesPage(/* 3 samples, sample0 has 2 frames */)
   fireEvent.keyDown(window, { key: 'ArrowDown' })
   expect(activeSampleIndex()).toBe(1)
-  fireEvent.keyDown(window, { key: 'ArrowUp', altKey: true })   // reorder, not cursor
+  fireEvent.keyDown(window, { key: 'ArrowUp', altKey: true })   // reorderUp id — not bound here
   expect(activeSampleIndex()).toBe(1)                            // unchanged
 })
 
-test('Enter opens Focus for the active sample; R does nothing on Corpus', () => {
+test('Enter opens Focus for the active sample; r does nothing on Corpus', () => {
   const nav = mockNavigate()
   renderSamplesPage()
   fireEvent.keyDown(window, { key: 'Enter' })
@@ -657,47 +672,70 @@ test('Enter opens Focus for the active sample; R does nothing on Corpus', () => 
 })
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [ ] **Step 2: Run to verify it fails** — `npx vitest run SamplesPage.keyboard.test.tsx` → FAIL (no cursor; Enter not wired).
 
-Run: `npx vitest run SamplesPage.keyboard.test.tsx`
-Expected: FAIL — no page cursor / Enter still opens loupe.
+- [ ] **Step 3: Add the cursor + the `useShortcuts` map**
 
-- [ ] **Step 3: Implement the cursor + handler**
+```tsx
+const [cursor, setCursor] = useState({ sampleIndex: 0, frameIndex: 0 })
+const activeSample = samples[cursor.sampleIndex]
+const clampSample = (d: number) =>
+  setCursor((c) => ({ sampleIndex: clamp(c.sampleIndex + d, 0, samples.length - 1), frameIndex: 0 }))
+const clampFrame = (d: number) =>
+  setCursor((c) => ({ ...c, frameIndex: clamp(c.frameIndex + d, 0, (samples[c.sampleIndex]?.frames.length ?? 1) - 1) }))
 
-Add `const [cursor, setCursor] = useState({ sampleIndex: 0, frameIndex: 0 })`. Register one window handler via `useShortcuts` that, after `if (suppressGlobalKeys(e) || e.altKey) return false`, switches on `matchShortcut(e)?.id`: `samplePrev/Next` clamp-step `sampleIndex` (reset `frameIndex` to 0); `detailPrev/Next` clamp-step `frameIndex` within `samples[sampleIndex].frames.length`; `openFocus` → `navigate(focusPath(activeSample))`; `openLoupe` → loupe; `toggleSelect`/`rangePrev`/`rangeNext`/`selectAll` drive the existing selection state (`selected`/`anchorRef`); `drop`/`keep`/`restore` call the existing verb mutators on the selection-or-active-frame; `Escape` clears selection then `return false`. Pointer click handlers (row, exposure) call `setCursor`. Do NOT register `setRep` on this page.
+useShortcuts({
+  prevSample: () => clampSample(-1),
+  nextSample: () => clampSample(1),
+  prevDetail: () => clampFrame(-1),
+  nextDetail: () => clampFrame(1),
+  openFocus:  () => activeSample && navigate(`/sample/${activeSample.id}`),
+  openLoupe:  () => activeSample && navigate(`/sample/${activeSample.id}/loupe`),
+  toggleSelect: () => toggleInSelection(activeFrame()),
+  extendPrev:   () => extendSelection(-1),
+  extendNext:   () => extendSelection(1),
+  selectAll:    () => selectAllFrames(),
+  drop:    () => applyVerb('drop', selectionOrActive()),
+  keep:    () => applyVerb('keep', selectionOrActive()),
+  restore: () => applyVerb('restore', selectionOrActive()),
+  dismiss: () => { if (hasSelection()) { clearSelection(); return undefined } return false },
+  // NO representative on Corpus.
+})
+```
 
-- [ ] **Step 4: Run to verify it passes**
+Wire row/exposure `onClick` → `setCursor(...)`. Reuse the existing selection helpers (`selected`/`anchorRef`) — don't add a new store.
 
-Run: `npx vitest run SamplesPage.keyboard.test.tsx`
-Expected: PASS.
+- [ ] **Step 4: Run to verify it passes** — `npx vitest run SamplesPage.keyboard.test.tsx` → PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add packages/HimalayaUI/frontend/src/print/pages/SamplesPage.tsx packages/HimalayaUI/frontend/test/SamplesPage.keyboard.test.tsx
-git commit   # "feat(corpus): page-level cursor + rebound keyboard" + trailers
+git commit   # "feat(corpus): page cursor + useShortcuts keyboard map" + trailers
 ```
 
-### Task 2.5: Focus + Loupe re-axis
+### Task 2.5: Focus + Loupe re-axis (edit their `useShortcuts` maps)
+
+> **No axis swaps in handler bodies — just rename/remove map keys.** `prevSample`/`nextSample` keep their ids (T2.1 already remapped their keys to `↑/↓`), so those handlers don't change. The candidate handlers move from `prevCandidate`/`nextCandidate` → `prevDetail`/`nextDetail` (same bodies, now on `←/→`). The exposure handlers `prevExposure`/`nextExposure` are **deleted** — exposure-stepping becomes filmstrip-only via the existing `ThumbnailGallery` `onSelect` (the `:814-827` region is that gallery, a click control, NOT a keyboard control; the spec's "rail-scoped" exposure stepping = clicking the filmstrip). No `Alt`-guard needed (registry separates `Alt+Arrow`).
 
 **Files:**
-- Modify: `frontend/src/print/pages/FocusPage.tsx:472-524`, `frontend/src/print/pages/LoupePage.tsx:197-254,338-351`
+- Modify: `frontend/src/print/pages/FocusPage.tsx:485-524` (useShortcuts map), `frontend/src/print/pages/LoupePage.tsx:338-351` (useShortcuts map)
 - Test: `frontend/test/FocusPage.keyboard.test.tsx`, `frontend/test/LoupePage.keyboard.test.tsx`
 
 **Interfaces:**
-- Produces: Focus — `↑/↓` step sample (was candidate), `←/→` step candidate (was `↑/↓`), `Alt`-guarded; `stepInList`/`previewIndexId`/Esc-ladder/`addArmed` DECLINE preserved; exposure-stepping stays in the rail (FO-EXPSKIP, `:814-827`), NOT on bare arrows. Loupe — `↑/↓` step sample, `←/→` step frame (was `[`/`]` for sample), `Backspace` restore, `R` set-representative (Loupe keeps `R`), `Alt`-guarded.
+- Produces: Focus map = `prevSample`/`nextSample` (↑/↓, unchanged bodies) · `prevDetail`/`nextDetail` (←/→, the old candidate steppers) · `openLoupe` (→ `/sample/:id/loupe`) · `dismiss` (unchanged Esc ladder; its return-to-corpus target is finalized in T3.2 with the `from=series` marker). **Removed:** `prevExposure`/`nextExposure`. Loupe map = `prevSample`/`nextSample` (↑/↓) · `prevDetail`/`nextDetail` (←/→, the old frame steppers, renamed from `prevExposure`/`nextExposure`) · `representative` (kept) · `drop`/`keep` (kept) · `restore` (new, Backspace).
 
 - [ ] **Step 1: Write the failing tests**
 
 ```tsx
 // FocusPage
-test('Focus: up/down steps sample, left/right steps candidate', () => {
+test('Focus: ←/→ steps candidate, ↑/↓ steps sample, exposure keys are gone', () => {
   renderFocus()
   fireEvent.keyDown(window, { key: 'ArrowRight' }); expect(candidateIndex()).toBe(1)
   fireEvent.keyDown(window, { key: 'ArrowDown' });  expect(sampleNav).toHaveBeenCalled()
 })
 // LoupePage
-test('Loupe: arrows = sample/frame; R sets representative; Backspace restores', () => {
+test('Loupe: arrows = sample/frame; r sets representative; Backspace restores', () => {
   renderLoupe()
   fireEvent.keyDown(window, { key: 'ArrowRight' }); expect(frameIndex()).toBe(1)
   fireEvent.keyDown(window, { key: 'r' });          expect(setRepresentative).toHaveBeenCalled()
@@ -708,20 +746,22 @@ test('Loupe: arrows = sample/frame; R sets representative; Backspace restores', 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run FocusPage.keyboard.test.tsx LoupePage.keyboard.test.tsx`
-Expected: FAIL — old axes (candidate on ↑/↓; sample on `[`/`]`).
+Expected: FAIL (and these pages currently won't typecheck — T2.1 renamed the ids they bind).
 
-- [ ] **Step 3: Swap the axes in both handlers**
+- [ ] **Step 3: Edit the two maps**
 
-In `FocusPage.tsx:472-524`, repoint candidate prev/next from `ArrowUp/Down` to `detailPrev/detailNext` (`←/→`) and add `samplePrev/sampleNext` (`↑/↓`) → the existing sample-navigation. Add `if (e.altKey) return false` at the top. Leave the FO-EXPSKIP exposure control (`:814-827`) untouched. In `LoupePage.tsx`, move sample-step from `[`/`]` to `↑/↓`, keep frame on `←/→`, add `restore`(Backspace); keep `setRep`(`r`). Add the Alt-guard.
+`FocusPage.tsx` useShortcuts (`:485-524`): **delete** the `prevExposure`/`nextExposure` entries; **rename** `prevCandidate` → `prevDetail` and `nextCandidate` → `nextDetail` (keep their bodies — `stepInList`/`previewIndexId`); keep `prevSample`/`nextSample`/`dismiss` as-is (the `addArmed` DECLINE in `dismiss` stays); **add** `openLoupe: () => navigate(\`/sample/\${sample.id}/loupe\`)`. Exposure stepping now relies on the `ThumbnailGallery` `onSelect` already wired in the detector panel.
+
+`LoupePage.tsx` useShortcuts (`:338-351`): **rename** `prevExposure` → `prevDetail`, `nextExposure` → `nextDetail` (frame steppers); keep `prevSample`/`nextSample`/`representative`/`drop`/`keep`; **add** `restore: () => restoreVerdict(activeFrame())`.
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run FocusPage.keyboard.test.tsx LoupePage.keyboard.test.tsx`
-Expected: PASS.
+Run: `npx vitest run FocusPage.keyboard.test.tsx LoupePage.keyboard.test.tsx && npx tsc --noEmit 2>&1 | grep -E "prevExposure|prevCandidate" || echo clean`
+Expected: tests PASS; `clean`.
 
 - [ ] **Step 5: `?` overlay + full frontend gate + commit**
 
-Add the `?` help overlay: a new `frontend/src/print/shell/KbdOverlay.tsx` modal (reuse `ModalShell` + render `KbdLegend` for the live registry; `KbdLegend.tsx:12-34` is already registry-driven), opened by the `helpOverlay` id in a global handler (`useGlobalShortcuts.ts`). Test it renders the registry and closes on `Esc`.
+Add the `?` help overlay: `frontend/src/print/shell/KbdOverlay.tsx` (reuse `ModalShell` + render `KbdLegend`, which is already registry-driven — `KbdLegend.tsx:12-34`), opened by the `helpOverlay` id. Wire it in `useGlobalShortcuts.ts` alongside the existing `find` special-case (a global, app-wide binding). Test: opening renders the legend; `Esc` closes.
 
 Run: `npm test && npm run build` (lint:design + tsc + vite must pass).
 
@@ -729,6 +769,8 @@ Run: `npm test && npm run build` (lint:design + tsc + vite must pass).
 git add packages/HimalayaUI/frontend/src/print/pages/FocusPage.tsx packages/HimalayaUI/frontend/src/print/pages/LoupePage.tsx packages/HimalayaUI/frontend/src/print/shell/KbdOverlay.tsx packages/HimalayaUI/frontend/src/hooks/useGlobalShortcuts.ts packages/HimalayaUI/frontend/test
 git commit   # "feat(keys): Focus/Loupe re-axis + ? overlay" + trailers
 ```
+
+> **Spec §4.1 reconciliation (minor):** Focus `P` (add-peak) and Series `A`/`⌘Enter` (add/confirm) stay **surface-local button-driven controls** per spec §7 (in-surface command controls untouched) — they are NOT added to the registry, so the `?` overlay lists only the global/navigation keymap. The "one unified set" framing in §4 covers navigation + cull + select; the in-surface verb keys remain with their surfaces.
 
 **M2 done:** one keyboard model across Corpus/Focus/Loupe, the roving grid is gone, per-row Restore exists, and `?` shows the live keymap.
 
@@ -774,16 +816,19 @@ git add packages/HimalayaUI/frontend/src/print/shell/TopNav.tsx packages/Himalay
 git commit   # "feat(shell): unified TopNav" + trailers
 ```
 
-### Task 3.2: Routing collapse — one shell + redirects
+### Task 3.2: Routing collapse — one shell, `/samples` redirect, `from=series` return
+
+> **Flat Focus/Loupe (spec §6.4, rev 2):** Focus/Loupe stay at `/sample/:id` and `/sample/:id/loupe`. NO `LegacySampleRedirect`, NO experiment-scoped nesting — a resolver would always flash a loading screen. The chrome reads the experiment from the loaded sample's `experiment_id`. The only redirect is `/samples` → `/experiments`.
 
 **Files:**
-- Modify: `frontend/src/print/shell/AppRoutes.tsx:94-161`
+- Modify: `frontend/src/print/shell/AppRoutes.tsx:94-161` (one shell; `/samples`→`/experiments`)
 - Remove: `frontend/src/print/shell/CorpusShell.tsx`, `frontend/src/print/shell/CorpusTopbar.tsx`, `frontend/src/print/shell/ExperimentTopNav.tsx`
-- Modify: `frontend/src/print/shell/ExperimentShell.tsx:33-195` (use `TopNav`; header/tabs move into page content per §3.2; mount dock after `<Outlet/>`)
-- Test: `frontend/test/AppRoutes.test.tsx` (extend)
+- Modify: `frontend/src/print/shell/ExperimentShell.tsx:33-195` (use `TopNav`; header/tabs move into page content per §3.2)
+- Modify: `frontend/src/print/pages/FocusPage.tsx` (`dismiss` return target — see Interfaces), and the **Series-member open call site** (add `?from=series`)
+- Test: `frontend/test/AppRoutes.test.tsx`, `frontend/test/FocusPage.return.test.tsx`
 
 **Interfaces:**
-- Produces: a single shell wrapping all routes. Redirects: `/samples` → `/experiments`; `/sample/:id` → `/experiments/:expId/sample/:id` (resolve `expId` from the sample — use the existing sample→experiment query; if not yet loaded, render a resolver that fetches then `<Navigate replace>`). New nested routes: `/experiments/:id/sample/:sampleId` (Focus), `/experiments/:id/sample/:sampleId/loupe` (Loupe). `/series/*` stays top-level.
+- Produces: a single shell wrapping all routes (no `CorpusShell`/`CorpusTopbar`/`ExperimentTopNav`, no beamtime chip). `/samples` `<Navigate replace to="/experiments">`. Focus/Loupe stay flat. A Series member opens Focus with `?from=series` (query param). Focus `dismiss` (the Esc-ladder terminal rung that currently does `navigate("/samples")`) becomes: `from=series` → `navigate("/series")`, else → `navigate(\`/experiments/\${sample.experiment_id}/corpus\`)` (expId from the loaded sample). The dock up-link (T3.3) reads the same marker to label `‹ Series` vs `‹ Corpus`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -792,69 +837,81 @@ test('/samples redirects to /experiments', async () => {
   renderApp({ route: '/samples' })
   await waitFor(() => expect(window.location.pathname).toBe('/experiments'))
 })
-test('legacy /sample/:id redirects to the experiment-scoped Focus route', async () => {
-  renderApp({ route: '/sample/42', seedSampleExperiment: { 42: 7 } })
-  await waitFor(() => expect(window.location.pathname).toBe('/experiments/7/sample/42'))
+test('Focus Esc returns to series when opened from series, else to its experiment corpus', () => {
+  const nav = mockNavigate()
+  renderFocus({ route: '/sample/42?from=series', sample: { id: 42, experiment_id: 7 } })
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(nav).toHaveBeenLastCalledWith('/series')
+  renderFocus({ route: '/sample/42', sample: { id: 42, experiment_id: 7 } })
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(nav).toHaveBeenLastCalledWith('/experiments/7/corpus')
 })
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `npx vitest run AppRoutes.test.tsx` → FAIL.
+- [ ] **Step 2: Run to verify it fails** — `npx vitest run AppRoutes.test.tsx FocusPage.return.test.tsx` → FAIL.
 
-- [ ] **Step 3: Rewrite the route table** — one shell element wrapping `<Outlet/>`; add the redirect routes (a small `LegacySampleRedirect` component that reads `:id`, fetches the sample's experiment, and `<Navigate replace to=...>`); delete the three removed files; point `ExperimentShell` at `TopNav`. Delete the beamtime chip code path entirely.
+- [ ] **Step 3: Collapse + wire the marker** — one shell element wrapping `<Outlet/>`; add the `/samples`→`/experiments` `<Navigate replace>`; delete the three shell files + the beamtime chip path; point `ExperimentShell` at `TopNav`. Update `FocusPage` `dismiss` per Interfaces (read `from` via `useSearchParams`; `experiment_id` from the loaded sample). Add `?from=series` at the Series-member open call site (grep the Series builder/folio for the member-open `navigate`).
 
-- [ ] **Step 4: Run to verify it passes** — `npx vitest run AppRoutes.test.tsx` + `npx tsc --noEmit` (no references to removed files) → PASS.
+- [ ] **Step 4: Run to verify it passes** — `npx vitest run AppRoutes.test.tsx FocusPage.return.test.tsx` + `git grep -nE "CorpusShell|CorpusTopbar|ExperimentTopNav|beamtime" -- frontend/src` (expect nothing) → PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git rm packages/HimalayaUI/frontend/src/print/shell/CorpusShell.tsx packages/HimalayaUI/frontend/src/print/shell/CorpusTopbar.tsx packages/HimalayaUI/frontend/src/print/shell/ExperimentTopNav.tsx
-git add packages/HimalayaUI/frontend/src/print/shell/AppRoutes.tsx packages/HimalayaUI/frontend/src/print/shell/ExperimentShell.tsx packages/HimalayaUI/frontend/test/AppRoutes.test.tsx
-git commit   # "feat(shell): collapse to one shell + legacy redirects" + trailers
+git add packages/HimalayaUI/frontend/src/print/shell/AppRoutes.tsx packages/HimalayaUI/frontend/src/print/shell/ExperimentShell.tsx packages/HimalayaUI/frontend/src/print/pages/FocusPage.tsx packages/HimalayaUI/frontend/test
+git commit   # "feat(shell): collapse to one shell; flat Focus/Loupe + from=series return" + trailers
 ```
 
-### Task 3.3: Contextual bottom dock
+### Task 3.3: Contextual bottom dock (ONE `Dock`, page-composed)
+
+> **One component, no surface enum, no shell state (ponytail review):** build a single `Dock` appearance shell that accepts placement **children**. Each page renders `<Dock>` *inside itself* (below its content), composing its own segments — up-link, steppers, the cull `Button`s it already wires, destination `Button`s — directly from that page's local cursor/callbacks. No `SurfaceDock` switch component, no lifting state up through a new context: the dock lives where the data already is. The §3.3 grammar is just the left-to-right order each page passes its children.
 
 **Files:**
-- Create: `frontend/src/print/ui/Dock.tsx` (the light dock primitive), `frontend/src/print/shell/SurfaceDock.tsx` (per-surface population)
-- Reference: `ComposeBar.tsx:45-82` (float API), `CullBar.tsx:51-105` (verb grammar), `floatingDock.ts:1-30` (`centerLaneOccupied`)
-- Test: `frontend/test/SurfaceDock.test.tsx`
+- Create: `frontend/src/print/ui/Dock.tsx` (appearance-only shell)
+- Modify: `frontend/src/print/pages/SamplesPage.tsx`, `FocusPage.tsx`, `LoupePage.tsx`, and the Series page(s) — each renders its own `<Dock>` composition
+- Reference: `ComposeBar.tsx:45-82` (float API to mirror), `CullBar.tsx:51-105` (verb-button grammar), `floatingDock.ts:1-30` (`centerLaneOccupied` lane coordination)
+- Test: `frontend/test/Dock.test.tsx` + per-page dock assertions in the existing page tests
 
 **Interfaces:**
-- Consumes: the page cursor + verb callbacks from M2; `floatingDock` store for lane coordination.
-- Produces: `<Dock>` (light plate + hairline + soft upward shadow; appearance in the primitive). `<SurfaceDock surface="corpus"|"focus"|"loupe"|"series" ... />` renders the §3.3 grammar: `‹ up-link · cursor steppers · cull (Corpus/Loupe) · destinations`. Buttons are presentational, delegating to the page's existing callbacks (dock owns no state).
+- Produces: `<Dock>{children}</Dock>` — a fixed, **light** bar (plate + hairline + soft upward shadow; all appearance in the `ui/` primitive, placement-only `className`), registering with `floatingDock`'s `centerLaneOccupied` so it doesn't collide with transient floats. Each page composes children in §3.3 order using existing primitives: Corpus = `‹ Experiments · Sample↑↓ · Frame‹› · Drop · Keep · Restore · Loupe · Focus` (**no Set-representative**); Loupe = `‹ Corpus · Sample↑↓ · Frame‹› · Drop · Keep · Set representative · Restore · Focus`; Focus = `‹ Corpus · Sample↑↓ · Loupe`; Series = `‹ All series · Sample↑↓ · Focus`. Button variants: Focus = filled accent + frosted ↵; Loupe = neutral pill; Drop/Keep = coloured outlines; Restore/Set-rep = neutral.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests** (Dock primitive + per-page composition)
 
 ```tsx
-test('Corpus dock shows up-link, steppers, cull verbs (no Set-rep), destinations', () => {
-  render(<SurfaceDock surface="corpus" {...corpusDockProps} />)
+// Dock primitive
+test('Dock renders children in a fixed light bar', () => {
+  render(<Dock><button>seg</button></Dock>)
+  expect(screen.getByRole('button', { name: 'seg' })).toBeInTheDocument()
+})
+// Corpus composition (in SamplesPage test): no Set-rep
+test('Corpus dock = up-link, steppers, Drop/Keep/Restore, destinations — no Set-rep', () => {
+  renderSamplesPage()
   expect(screen.getByRole('link', { name: /experiments/i })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Drop' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Keep' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: /representative/i })).toBeNull()  // Corpus has no R
+  for (const v of ['Drop', 'Keep', 'Restore']) expect(screen.getByRole('button', { name: v })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /representative/i })).toBeNull()
   expect(screen.getByRole('button', { name: /focus/i })).toBeInTheDocument()
 })
+// Loupe composition (in LoupePage test): Set-rep AND Restore
 test('Loupe dock includes Set representative AND Restore', () => {
-  render(<SurfaceDock surface="loupe" {...loupeDockProps} />)
+  renderLoupe()
   expect(screen.getByRole('button', { name: /set representative/i })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()
 })
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `npx vitest run SurfaceDock.test.tsx` → FAIL.
+- [ ] **Step 2: Run to verify it fails** — `npx vitest run Dock.test.tsx SamplesPage LoupePage` → FAIL.
 
-- [ ] **Step 3: Build `Dock` + `SurfaceDock`** — `Dock` is a light fixed bar (appearance only, in `ui/`). `SurfaceDock` switches on `surface` to lay out the grammar, reusing `Button` variants (Focus = filled accent + frosted ↵; Loupe = neutral pill; Drop/Keep = colored outlines; Restore/Set-rep = neutral). Wire `centerLaneOccupied` so it doesn't collide with transient floats. Mount `<SurfaceDock>` in the shell after `<Outlet/>`, fed by the active page's cursor/callbacks (lift via a small context or shell-level state set by each page on mount).
+- [ ] **Step 3: Build `Dock` + compose per page** — `Dock` = the light fixed bar (appearance in `ui/`, registers `centerLaneOccupied`). In each page, render `<Dock>` with its segments built from `Button` + the page's existing cursor/verb callbacks (the same ones M2 wired). The up-link label on Focus reads the `from=series` marker (T3.2) → `‹ Series` else `‹ Corpus`. No new state, no `SurfaceDock`.
 
-- [ ] **Step 4: Run to verify it passes** — `npx vitest run SurfaceDock.test.tsx` → PASS.
+- [ ] **Step 4: Run to verify it passes** — `npx vitest run Dock.test.tsx SamplesPage LoupePage FocusPage` → PASS.
 
 - [ ] **Step 5: lint:design + build + commit**
 
 Run: `npm run build` (lint:design + tsc + vite).
 
 ```bash
-git add packages/HimalayaUI/frontend/src/print/ui/Dock.tsx packages/HimalayaUI/frontend/src/print/shell/SurfaceDock.tsx packages/HimalayaUI/frontend/src/print/shell/ExperimentShell.tsx packages/HimalayaUI/frontend/test/SurfaceDock.test.tsx
-git commit   # "feat(shell): contextual bottom dock" + trailers
+git add packages/HimalayaUI/frontend/src/print/ui/Dock.tsx packages/HimalayaUI/frontend/src/print/pages/SamplesPage.tsx packages/HimalayaUI/frontend/src/print/pages/FocusPage.tsx packages/HimalayaUI/frontend/src/print/pages/LoupePage.tsx packages/HimalayaUI/frontend/test
+git commit   # "feat(shell): one Dock, composed per page" + trailers
 ```
 
 **M3 done:** one chrome (TopNav + dock), the three-chromes problem resolved, `/samples` + beamtime retired.
@@ -863,33 +920,83 @@ git commit   # "feat(shell): contextual bottom dock" + trailers
 
 ## Milestone 4 — Ingest funnel surfaces (depends on M1 endpoints + M2 sheet + M3 shell)
 
-Phase-1 manifest UI on Configuration, the ScanFailedPage, and the per-experiment corpus-sheet wiring.
+The two-phase funnel handoff (picker → draft Configuration → Approve creates), phase-1 manifest UI, the ScanFailedPage, and the per-experiment corpus-sheet wiring.
 
-### Task 4.1: Wire `validatePath`/`suggestPaths` to the live endpoints + Configuration phase-1 manifest fetch
+### Task 4.0: Two-phase funnel handoff — picker commits a path, does NOT create
+
+> **The core of spec §2/§6.1, and it's currently violated:** `NewExperimentPage` today (`:61-71`) has a "Scan and create" button that calls `createExperiment` then navigates to `/corpus` — i.e. it creates on submit. The spec wants the picker to **commit a path only** (no DB row), hand off a **client-side draft** to Configuration, and create **only at Approve**. This task builds that handoff; T4.1 builds the Configuration first-run UI that consumes it.
 
 **Files:**
-- Modify: `frontend/src/api.ts:240-256` (confirm the stubs hit `/api/fs/suggest` + `/api/fs/validate`; add `fetchManifest`), `frontend/src/print/pages/ConfigurationPage.tsx:15-30`
-- Reuse: `ProgressBar`, `NoticePill`, `Field`, `Input` primitives
-- Test: `frontend/test/ConfigurationPage.test.tsx`
+- Create: `frontend/src/lib/draftExperiment.ts` (a tiny Zustand store: `{ path, patterns, setDraft, clear }` — client-side only, no DB)
+- Modify: `frontend/src/print/pages/NewExperimentPage.tsx:23-149` ("Review →" commits path → draft → navigate; remove the create-on-submit)
+- Modify: `frontend/src/print/shell/AppRoutes.tsx` (add the draft route `/experiments/new/config` → `ConfigurationPage` in first-run mode)
+- Test: `frontend/test/NewExperimentPage.test.tsx`
 
 **Interfaces:**
-- Produces: `fetchManifest(path, patterns) → { total, matched: {image,metadata,integration}, unmatched: [...] }` (GET `/api/fs/manifest`); ConfigurationPage first-run mode shows a spinner while the fetch is in flight, then the matched-by-type counts + an unmatched list, with **Approve disabled until the manifest resolves**; editing a pattern re-fetches (debounced).
+- Produces: a `useDraftExperiment` store holding `{ path, patterns }`. `NewExperimentPage`'s primary button is **"Review →"**: it runs the `validatePath` gate (T1.4), and on `ok` calls `setDraft({ path })` + `navigate("/experiments/new/config")` — **never `createExperiment`**. The draft route is how first-run Configuration is addressed **without an `:id`** (no DB row yet — resolving the spec's addressing gap). **Cancel** anywhere pre-Approve calls `clear()` + aborts any in-flight phase-1 fetch + `navigate("/experiments")`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```tsx
-test('Configuration runs the phase-1 manifest and gates Approve', async () => {
-  mockFetchManifest({ total: 4, matched: { image: 2, metadata: 1, integration: 0 }, unmatched: [{ file: 's2', miss: 'metadata', nearest: null }] })
-  renderConfiguration({ firstRun: true })
-  expect(screen.getByRole('button', { name: /approve/i })).toBeDisabled()       // while indexing
-  expect(await screen.findByText(/2 image/i)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: /approve/i })).toBeEnabled()        // after manifest
+test('Review commits the path to a draft and navigates to draft Configuration WITHOUT creating', async () => {
+  const create = vi.spyOn(api, 'createExperiment')
+  const nav = mockNavigate()
+  mockValidatePath({ ok: true, matched: 5, scanned: 5, message: null })
+  renderNewExperiment()
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: '/data/run42' } })
+  fireEvent.click(screen.getByRole('button', { name: /review/i }))
+  await waitFor(() => expect(nav).toHaveBeenCalledWith('/experiments/new/config'))
+  expect(create).not.toHaveBeenCalled()
+  expect(useDraftExperiment.getState().path).toBe('/data/run42')
 })
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `npx vitest run ConfigurationPage.test.tsx` → FAIL.
+- [ ] **Step 2: Run to verify it fails** — `npx vitest run NewExperimentPage.test.tsx` → FAIL (current page calls createExperiment).
 
-- [ ] **Step 3: Add `fetchManifest` + the first-run UI** — add `fetchManifest` to `api.ts` (mirror `suggestPaths` shape). In `ConfigurationPage` first-run mode, `useQuery` the manifest keyed by `(path, patterns)`; render `ProgressBar` while `isFetching`, then counts + unmatched (reuse `NoticePill` for misses); bind `disabled={isFetching}` on Approve; Approve calls `createExperiment({ path, patterns })` (body already carries patterns per `api.ts:218-226`). Geometry table is NOT shown first-run (no PRP parsed yet, §6.5).
+- [ ] **Step 3: Implement the draft store + picker handoff + route** — add `draftExperiment.ts`; change `NewExperimentPage`'s submit to validate → `setDraft` → `navigate("/experiments/new/config")` (delete the `createExperiment` call here); add the `/experiments/new/config` route rendering `ConfigurationPage`. Cancel (a button on the picker + on first-run Configuration) → `clear()` + `navigate("/experiments")`.
+
+- [ ] **Step 4: Run to verify it passes** — `npx vitest run NewExperimentPage.test.tsx` → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/HimalayaUI/frontend/src/lib/draftExperiment.ts packages/HimalayaUI/frontend/src/print/pages/NewExperimentPage.tsx packages/HimalayaUI/frontend/src/print/shell/AppRoutes.tsx packages/HimalayaUI/frontend/test/NewExperimentPage.test.tsx
+git commit   # "feat(funnel): picker commits a path to a client-side draft (no create)" + trailers
+```
+
+### Task 4.1: Configuration first-run mode — phase-1 manifest + Approve creates
+
+**Files:**
+- Modify: `frontend/src/api.ts` (add `fetchManifest`; `validatePath`/`suggestPaths` already target the now-live `/api/fs/*` URLs — no change needed there), `frontend/src/print/pages/ConfigurationPage.tsx:15-30`
+- Consumes: `useDraftExperiment` (T4.0)
+- Reuse: `ProgressBar`, `NoticePill`, `Field`, `Input` primitives
+- Test: `frontend/test/ConfigurationPage.test.tsx`
+
+**Interfaces:**
+- Produces: `fetchManifest(path, patterns) → { total, matched: {image,metadata,integration}, unmatched: [{file, miss}] }` (GET `/api/fs/manifest`, query params). **First-run mode is discriminated by the route**: `/experiments/new/config` (no `:id`) → read path+patterns from `useDraftExperiment`; `/experiments/:id/config` → later-edit mode (existing behaviour). First-run shows a `ProgressBar` while the manifest fetch is in flight, then matched-by-type counts + the unmatched list, with **Approve disabled until the manifest resolves**; editing a pattern updates the draft + re-fetches (debounced). **Geometry/sources region is hidden first-run** (no PRP parsed yet, §6.5); shown only in later-edit mode. **Approve** calls `createExperiment({ path, patterns })`, then `clear()`s the draft and `navigate(\`/experiments/\${created.id}/corpus\`)`.
+
+- [ ] **Step 1: Write the failing test** (first-run via the draft route; geometry absent)
+
+```tsx
+test('Configuration first-run runs the manifest, hides geometry, gates Approve, then creates', async () => {
+  useDraftExperiment.setState({ path: '/data/run42', patterns: {} })
+  mockFetchManifest({ total: 4, matched: { image: 2, metadata: 1, integration: 0 }, unmatched: [{ file: 's2', miss: 'metadata' }] })
+  const create = vi.spyOn(api, 'createExperiment').mockResolvedValue({ id: 9 } as any)
+  const nav = mockNavigate()
+  renderConfiguration({ route: '/experiments/new/config' })   // first-run = draft route, no :id
+  expect(screen.getByRole('button', { name: /approve/i })).toBeDisabled()        // while indexing
+  expect(await screen.findByText(/2 image/i)).toBeInTheDocument()
+  expect(screen.queryByText(/geometry/i)).toBeNull()                              // hidden first-run
+  expect(screen.getByRole('button', { name: /approve/i })).toBeEnabled()
+  fireEvent.click(screen.getByRole('button', { name: /approve/i }))
+  await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ path: '/data/run42' })))
+  await waitFor(() => expect(nav).toHaveBeenCalledWith('/experiments/9/corpus'))
+})
+```
+
+- [ ] **Step 2: Run to verify it fails** — `npx vitest run ConfigurationPage.test.tsx` → FAIL (no first-run mode / no fetchManifest).
+
+- [ ] **Step 3: Add `fetchManifest` + first-run mode** — add `fetchManifest(path, patterns)` to `api.ts` (GET `/api/fs/manifest` with query params; mirror `suggestPaths`). In `ConfigurationPage`, branch on `useParams().id` presence: absent → first-run (read `useDraftExperiment`), present → later-edit. First-run: `useQuery` the manifest keyed by `(path, patterns)`; `ProgressBar` while `isFetching`; counts + unmatched (`NoticePill` per miss); **don't render the geometry/sources region**; `disabled={isFetching}` on Approve; Approve → `createExperiment({ path, patterns })` → `clear()` + `navigate(\`/experiments/\${created.id}/corpus\`)`. Later-edit keeps the geometry/sources table.
 
 - [ ] **Step 4: Run to verify it passes** — `npx vitest run ConfigurationPage.test.tsx` → PASS.
 
@@ -897,7 +1004,7 @@ test('Configuration runs the phase-1 manifest and gates Approve', async () => {
 
 ```bash
 git add packages/HimalayaUI/frontend/src/api.ts packages/HimalayaUI/frontend/src/print/pages/ConfigurationPage.tsx packages/HimalayaUI/frontend/test/ConfigurationPage.test.tsx
-git commit   # "feat(funnel): phase-1 manifest on Configuration" + trailers
+git commit   # "feat(funnel): Configuration first-run manifest + Approve creates" + trailers
 ```
 
 ### Task 4.2: `ScanFailedPage`
@@ -909,16 +1016,17 @@ git commit   # "feat(funnel): phase-1 manifest on Configuration" + trailers
 - Test: `frontend/test/ScanFailedPage.test.tsx`
 
 **Interfaces:**
-- Consumes: the manifest `unmatched` shape (Task 1.5/4.1).
-- Produces: `<ScanFailedPage experimentId={...} />` — **Open Configuration** (primary); a **scrollable** list of all unmatched files grouped by miss type, each paired with its `nearest` file; an **adaptive pattern test** (one `Field` per affected type, clearing independently) → "Apply all in Configuration"; "Ingest N that parsed" = a real `Button` with a two-stage in-place confirm.
+- Consumes: the manifest `unmatched` shape `[{file, miss}]` (Task 1.5/4.1 — no `nearest`).
+- Produces: `<ScanFailedPage experimentId={...} />` — **Open Configuration** (primary); a **scrollable** list of all unmatched files grouped by miss type, each showing its **stem + which sidecar type is missing**; an **adaptive pattern test** (one `Field` per affected type, clearing independently) → "Apply all in Configuration"; "Ingest N that parsed" = a real `Button` with a two-stage in-place confirm.
 
 - [ ] **Step 1: Write the failing test**
 
 ```tsx
 test('ScanFailedPage groups misses, offers per-type test + ingest-N confirm', () => {
-  renderScanFailed({ unmatched: [{ file: 'a', miss: 'metadata', nearest: 'a.PRP' }, { file: 'b', miss: 'integration', nearest: null }], parsedCount: 5 })
+  renderScanFailed({ unmatched: [{ file: 'a', miss: 'metadata' }, { file: 'b', miss: 'integration' }], parsedCount: 5 })
   expect(screen.getByRole('button', { name: /open configuration/i })).toBeInTheDocument()
-  expect(screen.getByText('a.PRP')).toBeInTheDocument()                 // nearest pairing
+  expect(screen.getByText('a')).toBeInTheDocument()                     // unmatched stem
+  expect(screen.getByText(/metadata/i)).toBeInTheDocument()             // miss-type label
   expect(screen.getAllByRole('textbox').length).toBe(2)                 // one field per affected type
   fireEvent.click(screen.getByRole('button', { name: /ingest 5/i }))
   expect(screen.getByText(/confirm/i)).toBeInTheDocument()              // two-stage
@@ -979,12 +1087,13 @@ git commit   # "feat(funnel): wire per-experiment corpus sheet + state machine" 
 
 ---
 
-## Self-Review (spec coverage)
+## Self-Review (spec coverage) — rev 2
 
-- §1 three-chromes → M3 (T3.1–3.3). §3.1 top tier (no ⚙) → T3.1. §3.2/§3.3 dock + grammar → T3.3. §4 keyboard set → M2 (T2.1, 2.4, 2.5). §4.3 roving-grid removal → T2.2; `?` normalization → T2.1; per-row Restore → T2.3. §6.1 funnel/phase-1 → T4.1; create-on-approval = existing POST + patterns → T1.2/T4.1. §6.2 live unfold + on_progress → T1.1/T1.2/T4.3. §6.4 routing + redirects → T3.2. §6.5 surfaces (gallery/picker reuse; Configuration → T4.1; Scan-failed → T4.2; Corpus assembly → T4.3). §7 scope (sheet interaction, FocusPage keys) → M2. §8 net-new backend → M1.
-- **Deferred (not in this plan, per §8):** banner-vs-dock final placement (visual polish during T4.3); hashing `scan_signature` (optional follow-up); experiment-gallery timeline-rail visual refinements (gallery is reused as-is, T-none).
-- **Cross-task type consistency:** the registry ids in T2.1 are the exact strings consumed in T2.4/2.5/3.3; `fetchManifest`'s return shape (T4.1) matches `/api/fs/manifest`'s body (T1.5); `on_progress(p,t)` signature is identical in T1.1 and T1.2.
+- §1 three-chromes → M3 (T3.1–3.2). §3.1 top tier (no ⚙) → T3.1. §3.2/§3.3 dock + grammar → T3.3 (one `Dock`, page-composed). §4 keyboard set → M2 (T2.1 registry + id-migration, T2.4 Corpus, T2.5 Focus/Loupe). §4.3 roving-grid removal → T2.2; `?` normalization → T2.1; per-row Restore → T2.3. §6.1 two-phase funnel (picker commits path → draft Configuration → Approve creates) → **T4.0 + T4.1**; create-on-approval = existing POST + persisted patterns → T1.2. §6.2 live unfold + `on_progress` → T1.1/T1.2/T4.3. §6.4 routing collapse + `/samples` redirect + **flat Focus/Loupe** + `from=series` return → T3.2. §6.5 surfaces (gallery/picker → T4.0; Configuration → T4.1; Scan-failed → T4.2; Corpus assembly → T4.3). §7 scope (sheet interaction, FocusPage keys) → M2. §8 net-new backend → M1.
+- **Deferred (not in this plan, per §8):** banner-vs-dock final placement (polish during T4.3); hashing `scan_signature` (optional follow-up); gallery timeline-rail refinements (gallery reused as-is). Focus `P` / Series `A`/`⌘Enter` stay surface-local per §7 (T2.5 note) — not registry keys.
+- **Cross-task type consistency:** the registry ids in T2.1 (`prevSample`/`nextSample`/`prevDetail`/`nextDetail`/`openFocus`/`openLoupe`/`toggleSelect`/`extendPrev`/`extendNext`/`selectAll`/`restore`/`helpOverlay`) are the exact strings bound in T2.4/2.5; `matchShortcut` returns a string id (not an object) everywhere; `fetchManifest`'s `{file, miss}` unmatched shape (T4.1) matches `/api/fs/manifest` (T1.5); `on_progress(p,t)` identical in T1.1/T1.2; `useDraftExperiment` `{path, patterns}` is produced in T4.0 and consumed in T4.1.
 
-## Open item to confirm with the user before M3
+## Resolved decisions (rev 2)
 
-**Experiment-scoped Focus/Loupe paths** (`/experiments/:id/sample/:sampleId` + `/loupe`) are a routing choice the spec states but the codebase currently serves at flat `/sample/:id`. T3.2 implements the redirect; if you'd rather keep Focus/Loupe at the flat path and only scope Corpus/Config/Grouping, say so and T3.2 drops the nesting (the redirect becomes a no-op). Everything else is unaffected.
+- **`/api/fs/validate` ships** — the picker's pre-Approve gate (different funnel step than `manifest`).
+- **Flat Focus/Loupe** (`/sample/:id`, `/sample/:id/loupe`) — no `LegacySampleRedirect`, no experiment-scoped nesting (a resolver always flashes a loading screen). The chrome resolves the experiment from the loaded sample; the `from=series` marker (T3.2) handles the return target. Spec §6.4 amended to match.
