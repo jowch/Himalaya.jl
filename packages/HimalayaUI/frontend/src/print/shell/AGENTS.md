@@ -47,4 +47,4 @@ The loupe prev/next stepper lives in the bottom `Dock` (`ui/Dock.tsx`, §3.3): `
 ## Anti-patterns
 
 - Don't introspect tooltip text or Tailwind classes in tests — use `data-*` attributes. Tests stay behavioral.
-- Don't add inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colors, side-stripes) here — they fail the `lint:design` guard. Appearance lives in `../ui` primitives; a consumer's `className` is placement-only. Full contract: `../../AGENTS.md` §"Design system"; visual reference `docs/design-system.html`; system `DESIGN.md` (root).
+- Don't add inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colors, side-stripes) here — they fail the `lint:design` guard. Appearance lives in `../ui` primitives; a consumer's `className` is placement-only. Full contract: `../../AGENTS.md` §"Design system"; visual reference Storybook (`npm run storybook`); system `DESIGN.md` (root).

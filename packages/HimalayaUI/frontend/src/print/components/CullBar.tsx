@@ -16,8 +16,7 @@
  *
  * Radius note: uses `rounded-md` (5px) — the single design-system radius step —
  * rather than the mockup's `border-radius: 10px`. The collapsed-radius decision
- * is intentional (see docs/design-system.html and the Toast primitive for the
- * same deviation).
+ * is intentional (see the Toast primitive for the same deviation).
  */
 
 import { useLayoutEffect, useRef } from "react";
