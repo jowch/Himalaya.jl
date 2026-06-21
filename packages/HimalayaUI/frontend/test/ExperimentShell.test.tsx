@@ -124,7 +124,9 @@ describe("ExperimentShell (Phase E1)", () => {
     renderAt("/experiments/7/corpus");
     await screen.findByTestId("experiment-header-name");
     fireEvent.click(screen.getByTestId("experiment-rescan-button"));
-    await waitFor(() => expect(scanSpy).toHaveBeenCalledWith(7, expect.anything()));
+    // triggerScan(id, authOpts, force) — the manual Rescan button is a routine
+    // (additive) rescan, so force=false (a pattern edit passes force=true).
+    await waitFor(() => expect(scanSpy).toHaveBeenCalledWith(7, expect.anything(), false));
   });
 
   it("Rescan button is disabled when isProcessing (status=scanning)", async () => {
