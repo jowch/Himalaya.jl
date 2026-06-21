@@ -33,10 +33,8 @@ const variantClass: Record<ButtonVariant, string> = {
   outline:
     "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-  // Coloured-outline cull verbs (dock Drop/Keep, spec §3.3): the destructive/
-  // constructive hue carried by the border + text on a light plate, filling on
-  // hover. Lighter than the filled `danger`/`success` so they don't read as
-  // primary actions next to the dock's neutral ghost buttons. Status hues only.
+  // Coloured-outline cull verbs (dock Drop/Keep, spec §5): status hue on the
+  // border + text over a light plate, filling on hover.
   outlineDanger:
     "border border-error bg-plate text-error hover:bg-error hover:text-paper " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",

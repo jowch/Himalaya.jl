@@ -82,22 +82,10 @@ describe("<Button> success variant", () => {
   });
 });
 
-describe("<Button> coloured outline variants (dock cull verbs, spec §3.3)", () => {
-  it("outlineDanger carries its data-variant and renders its label (the Drop verb)", () => {
-    render(<Button variant="outlineDanger">Drop</Button>);
-    expect(screen.getByRole("button", { name: "Drop" }).getAttribute("data-variant")).toBe("outlineDanger");
-  });
-  it("outlineSuccess carries its data-variant and renders its label (the Keep verb)", () => {
-    render(<Button variant="outlineSuccess">Keep</Button>);
-    expect(screen.getByRole("button", { name: "Keep" }).getAttribute("data-variant")).toBe("outlineSuccess");
-  });
-  it("outlineDanger fires onClick", () => {
-    const onClick = vi.fn();
-    render(<Button variant="outlineDanger" onClick={onClick}>Drop</Button>);
-    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-});
+// The dock cull-verb variants (outlineDanger/outlineSuccess, spec §5) are
+// type-enforced (exhaustive Record<ButtonVariant,…>) and proven at the call
+// site — SamplesPage/LoupePage dock tests assert data-variant on dock-drop /
+// dock-keep. A primitive-level data-variant echo would add no signal.
 
 describe("<Button> disabled state", () => {
   it("forwards the disabled attribute (gated actions)", () => {
