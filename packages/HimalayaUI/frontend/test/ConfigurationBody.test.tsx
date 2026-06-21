@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { ConfigurationBody } from "../src/print/components/ConfigurationBody";
 
-const updateMutate = vi.fn();
+// updateMutate simulates TanStack's mutate(vars, { onSuccess }) contract:
+// calls onSuccess() synchronously so pattern-field rescan chains are testable.
+const updateMutate = vi.fn((_patch: unknown, opts?: { onSuccess?: () => void }) => {
+  opts?.onSuccess?.();
+});
 const triggerScanMutate = vi.fn();
 
 vi.mock("../src/queries", async (orig) => {
@@ -115,5 +119,35 @@ describe("ConfigurationBody", () => {
     const rescanBtn = screen.getByRole("button", { name: /rescan now/i });
     fireEvent.click(rescanBtn);
     expect(triggerScanMutate).toHaveBeenCalledTimes(1);
+  });
+
+  // --- Pattern field edit: fires PATCH + forced rescan on onSuccess ---
+  it("editing image_pattern calls updateMutate then triggerScanMutate(true)", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    // Click on the image_pattern value button ("{name}.tiff") to begin editing
+    fireEvent.click(screen.getByText("{name}.tiff"));
+    // An input should appear; change the value and commit with Enter
+    const inp = screen.getByRole("textbox", { name: /image pattern/i });
+    fireEvent.change(inp, { target: { value: "{name}.tif" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    // PATCH must be called
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ image_pattern: "{name}.tif" }),
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    // Forced rescan must be called after onSuccess
+    expect(triggerScanMutate).toHaveBeenCalledWith(true);
+  });
+
+  it("editing a NON-pattern (geometry) field does NOT call triggerScanMutate", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    // Override Beam energy (geometry, not a pattern)
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "12" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    // PATCH is called but rescan is NOT
+    expect(updateMutate).toHaveBeenCalled();
+    expect(triggerScanMutate).not.toHaveBeenCalled();
   });
 });

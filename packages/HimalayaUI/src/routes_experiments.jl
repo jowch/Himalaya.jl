@@ -407,13 +407,23 @@ function register_experiments_routes!()
         # omits phase → "scanning".
         broadcast_progress!(id; kind = "ingest_started", processed = 0, total = 0, phase = "rescan")
 
+        # Parse optional `force` flag from the request body. When true, bypass the
+        # cheap file-count check and always run a full scan. Used after pattern-field
+        # edits where the glob changes which files get discovered.
+        req_body = isempty(req.body) ? Dict{String,Any}() : try
+            JSON3.read(req.body)
+        catch
+            Dict{String,Any}()
+        end
+        force_scan = get(req_body, :force, get(req_body, "force", false))
+
         # Run the cheap change-check + additive scan on a @spawn'd task so this request
         # returns immediately; progress streams over SSE. Both Phase B functions
         # (cheap_change_check, scan_and_group!) resolve the experiment's data_dir from
         # the row themselves, and return gracefully on an empty directory.
         Threads.@spawn begin
             try
-                changed = cheap_change_check(db, id)
+                changed = force_scan || cheap_change_check(db, id)
                 if changed
                     scan_and_group!(db, id;
                         on_progress = (p, t) -> broadcast_progress!(id;

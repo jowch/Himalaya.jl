@@ -15,6 +15,10 @@ interface UndoEntry {
   prevSource: string;
 }
 
+/** Pattern field keys that trigger a forced rescan on edit (the set of file
+ *  glob patterns: changing them changes which files get discovered). */
+const PATTERN_KEYS = new Set<string>(["image_pattern", "metadata_pattern", "integration_pattern"]);
+
 /** Geometry key -> patch key mapping. */
 const GEOM_PATCH_KEY: Record<string, keyof ExperimentPatch> = {
   energy_kev:     "energy_kev",
@@ -231,7 +235,12 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
 
   const handleSourceEdit = (key: string, value: string) => {
     const patchKey = key as keyof ExperimentPatch;
-    updateMutate({ [patchKey]: value });
+    if (PATTERN_KEYS.has(key)) {
+      // Pattern field: PATCH then force rescan so the new glob is applied immediately.
+      updateMutate({ [patchKey]: value }, { onSuccess: () => rescanMutate(true) });
+    } else {
+      updateMutate({ [patchKey]: value });
+    }
   };
 
   const handleRescan = () => {

@@ -492,6 +492,32 @@ end
         SQLite.close(db)
     end
 
+    @testset "POST /api/experiments/{id}/scan with force=true returns 200/202 (HTTP contract)" begin
+        # Verifies that passing force=true in the JSON body is accepted and the route
+        # returns the expected status. The scan itself runs async so we test the HTTP
+        # contract only (same pattern as the no-change idempotent test above).
+        db, dir, exp_id = scan_test_db()
+        with_test_server(db) do port, base
+            r = HTTP.post("$base/api/experiments/$exp_id/scan";
+                body    = JSON3.write(Dict(:force => true)),
+                headers = ["Content-Type" => "application/json",
+                           "X-Username"   => "alice"],
+                status_exception = false)
+            @test r.status in (200, 202)
+            body_json = JSON3.read(String(r.body))
+            @test haskey(body_json, :status)
+            @test body_json.status == "scanning"
+
+            # force=false (explicit) also works
+            r2 = HTTP.post("$base/api/experiments/$exp_id/scan";
+                body    = JSON3.write(Dict(:force => false)),
+                headers = ["Content-Type" => "application/json"],
+                status_exception = false)
+            @test r2.status in (200, 202)
+        end
+        SQLite.close(db)
+    end
+
     @testset "POST /api/experiments creates experiment + starts async scan" begin
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "himalaya.db"))

@@ -228,9 +228,11 @@ export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
 export const deleteExperiment = (id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/experiments/${id}`, undefined, opts);
 
-/** Rescan: cheap change-check then additive ingest of new files. Idempotent. */
-export const triggerScan = (id: number, opts?: AuthOpts) =>
-  request<Experiment>("POST", `/api/experiments/${id}/scan`, {}, opts);
+/** Rescan: cheap change-check then additive ingest of new files. Idempotent.
+ *  Pass `force = true` to bypass the cheap change-check and always run a full
+ *  scan — used when a pattern field edit changes what files are discovered. */
+export const triggerScan = (id: number, opts?: AuthOpts, force = false) =>
+  request<Experiment>("POST", `/api/experiments/${id}/scan`, { force }, opts);
 
 /** The Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface
  *  (spec §9.2 — a dedicated endpoint, distinct from the flat corpus samples). */
