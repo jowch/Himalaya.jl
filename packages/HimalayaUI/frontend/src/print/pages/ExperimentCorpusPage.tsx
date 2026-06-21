@@ -13,6 +13,7 @@ import {
 import * as api from "../../api";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
+import { KbKey } from "../ui/KbKey";
 import { ComposeBar } from "../ui/ComposeBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { Dock } from "../ui/Dock";
@@ -367,6 +368,20 @@ export function ExperimentCorpusPage(): JSX.Element {
     );
   }
 
+  // Dock readouts + the cull verbs' target (the cursor's active frame). Derived
+  // once so the steppers' "N / M" counts and the Drop/Keep/Restore buttons read
+  // the SAME cursor truth.
+  const activeFrames = activeSample ? (corpusExposures.byId.get(activeSample.id) ?? []) : [];
+  const activeFrame = activeFrames[cursor.frameIndex];
+  const sampleTotal = scopedSamples.length;
+  const samplePos = sampleTotal > 0 ? cursor.sampleIndex + 1 : 0;
+  const frameTotal = activeFrames.length;
+  const framePos = frameTotal > 0 ? cursor.frameIndex + 1 : 0;
+  const cullActiveFrame = (status: "accepted" | "rejected" | null): void => {
+    if (activeSample == null || activeFrame == null) return;
+    batch.mutate({ sampleId: activeSample.id, exposureId: activeFrame.id, status });
+  };
+
   // ── Corpus sheet + cull/compose/dock ─────────────────────────────────────
   return (
     <div data-testid="experiment-corpus" className="flex flex-col gap-4">
@@ -465,63 +480,71 @@ export function ExperimentCorpusPage(): JSX.Element {
         onClear={() => setCheckedSamples(new Set())}
       />
 
-      {/* Contextual bottom dock (Corpus grammar §3.3):
-          ‹ Experiments · Sample↑↓ · Frame‹› · Drop · Keep · Restore · Loupe · Focus */}
+      {/* Contextual bottom dock (Corpus grammar §3.3, mockup b1):
+          ‹ Experiments │ Sample ‹N/M› │ Frame ‹N/M› │ Drop[X] Keep[K] Restore ──→ Loupe[L] Focus
+          Segments are grouped (each a flex child of the Dock's gap-2 row); a
+          flex-1 spacer right-anchors the destinations. */}
       <Dock>
         <a
           href="/experiments"
           onClick={(e) => { e.preventDefault(); navigate("/experiments"); }}
-          className="text-meta font-semibold text-print-accent hover:underline mr-1"
+          className="text-meta font-semibold text-print-accent hover:underline"
           data-testid="dock-up-link"
         >
           ‹ Experiments
         </a>
-        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-        <IconButton label="Previous sample" tone="ghost" disabled={cursor.sampleIndex === 0}
-          onClick={() => clampSample(-1)} data-testid="dock-prev-sample">↑</IconButton>
-        <IconButton label="Next sample" tone="ghost" disabled={cursor.sampleIndex >= scopedSamples.length - 1}
-          onClick={() => clampSample(1)} data-testid="dock-next-sample">↓</IconButton>
-        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-        <IconButton label="Previous frame" tone="ghost" disabled={cursor.frameIndex === 0}
-          onClick={() => clampFrame(-1)} data-testid="dock-prev-frame">‹</IconButton>
-        <IconButton label="Next frame" tone="ghost"
-          disabled={(() => {
-            const frames = corpusExposures.byId.get(scopedSamples[cursor.sampleIndex]?.id ?? -1) ?? [];
-            return cursor.frameIndex >= frames.length - 1;
-          })()}
-          onClick={() => clampFrame(1)} data-testid="dock-next-frame">›</IconButton>
-        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-        <Button variant="outlineAccent" data-testid="dock-drop"
-          onClick={() => {
-            const s = activeSample;
-            const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
-            const frame = frames[cursor.frameIndex];
-            if (s == null || frame == null) return;
-            batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "rejected" });
-          }}>Drop</Button>
-        <Button variant="outlineSuccess" data-testid="dock-keep"
-          onClick={() => {
-            const s = activeSample;
-            const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
-            const frame = frames[cursor.frameIndex];
-            if (s == null || frame == null) return;
-            batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "accepted" });
-          }}>Keep</Button>
-        <Button variant="ghost" data-testid="dock-restore"
-          onClick={() => {
-            const s = activeSample;
-            const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
-            const frame = frames[cursor.frameIndex];
-            if (s == null || frame == null) return;
-            batch.mutate({ sampleId: s.id, exposureId: frame.id, status: null });
-          }}>Restore</Button>
-        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-        <Button variant="ghost" data-testid="dock-loupe"
-          onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}/loupe`); }}
-        >Loupe</Button>
-        <Button variant="accent" data-testid="dock-focus"
-          onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}`); }}
-        >Focus</Button>
+
+        <span className="w-px self-stretch bg-hair" aria-hidden />
+
+        {/* Sample stepper — ↑/↓ axis, current / total readout */}
+        <div className="flex items-center gap-1">
+          <span className="text-meta text-ink-soft">Sample</span>
+          <IconButton label="Previous sample" tone="ghost" disabled={cursor.sampleIndex === 0}
+            onClick={() => clampSample(-1)} data-testid="dock-prev-sample">↑</IconButton>
+          <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+            data-testid="dock-sample-count">{samplePos} / {sampleTotal}</span>
+          <IconButton label="Next sample" tone="ghost" disabled={cursor.sampleIndex >= scopedSamples.length - 1}
+            onClick={() => clampSample(1)} data-testid="dock-next-sample">↓</IconButton>
+        </div>
+
+        <span className="w-px self-stretch bg-hair" aria-hidden />
+
+        {/* Frame stepper — ‹/› axis within the active sample */}
+        <div className="flex items-center gap-1">
+          <span className="text-meta text-ink-soft">Frame</span>
+          <IconButton label="Previous frame" tone="ghost" disabled={cursor.frameIndex === 0}
+            onClick={() => clampFrame(-1)} data-testid="dock-prev-frame">‹</IconButton>
+          <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
+            data-testid="dock-frame-count">{framePos} / {frameTotal}</span>
+          <IconButton label="Next frame" tone="ghost"
+            disabled={cursor.frameIndex >= frameTotal - 1}
+            onClick={() => clampFrame(1)} data-testid="dock-next-frame">›</IconButton>
+        </div>
+
+        <span className="w-px self-stretch bg-hair" aria-hidden />
+
+        {/* Cull verbs — key-chipped Drop/Keep, plain Restore (acts on the active frame) */}
+        <div className="flex items-center gap-1">
+          <Button variant="outlineAccent" data-testid="dock-drop"
+            onClick={() => cullActiveFrame("rejected")}>Drop<KbKey className="ml-1.5">X</KbKey></Button>
+          <Button variant="outlineSuccess" data-testid="dock-keep"
+            onClick={() => cullActiveFrame("accepted")}>Keep<KbKey className="ml-1.5">K</KbKey></Button>
+          <Button variant="ghost" data-testid="dock-restore"
+            onClick={() => cullActiveFrame(null)}>Restore</Button>
+        </div>
+
+        {/* Spacer — right-anchors the destinations */}
+        <div className="flex-1" />
+
+        {/* Destinations — Loupe (key-chipped) + Focus (the dedicated primary) */}
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" data-testid="dock-loupe"
+            onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}/loupe`); }}
+          >Loupe<KbKey className="ml-1.5">L</KbKey></Button>
+          <Button variant="accent" data-testid="dock-focus"
+            onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}`); }}
+          >Focus</Button>
+        </div>
       </Dock>
     </div>
   );
