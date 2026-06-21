@@ -322,7 +322,7 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
 // SA-RESP (WCAG 1.4.10): the sheet grid's intrinsic min-width (~1054px with the
 // checkbox track) exceeds a 1024px viewport. SheetTable wraps header + rows in
 // ONE shared horizontal scroller with sticky identity columns, so a narrow
-// viewport SCROLLS to the Status column instead of silently clipping it.
+// viewport SCROLLS to the Phase column instead of silently clipping it.
 //
 // The mock sample carries MANY exposures on purpose: the table wrapper is
 // min-w-min, so the scroller's width must stay at the grid's track-min sum
@@ -330,7 +330,7 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
 // max-content wrapper regressed this live: a real 8-exposure corpus unwrapped
 // the flex-nowrap gallery and blew the scroller out to ~3400px — Status ended
 // up 2.3 viewports away. Few-exposure mocks could not see that.)
-test("narrow viewport: Status column is reachable by scrolling; Sample column sticks", async ({ page }) => {
+test("narrow viewport: Phase column is reachable by scrolling; Sample column sticks", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await mockCorpus(page);
   // Registered AFTER mockCorpus → takes precedence (Playwright matches the
@@ -364,12 +364,12 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
     await gallery.evaluate((g) => g.scrollWidth > g.clientWidth + 1),
   ).toBe(true);
 
-  const status = page.getByRole("columnheader", { name: "Status" });
+  const status = page.getByRole("columnheader", { name: "Phase" });
   const sample = page.getByRole("columnheader", { name: "Sample" });
   const sampleBefore = await sample.boundingBox();
   expect(sampleBefore).not.toBeNull();
 
-  // Scroll the container to the far right: the Status column must be REACHABLE
+  // Scroll the container to the far right: the Phase column must be REACHABLE
   // (fully inside the viewport) — the 1.4.10 substance.
   await scroll.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
   const statusBox = await status.boundingBox();
