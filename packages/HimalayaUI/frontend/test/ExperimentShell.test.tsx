@@ -31,7 +31,7 @@ const EXP: api.Experiment = {
   beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
   last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "complete",
   image_pattern: null, metadata_pattern: null, integration_pattern: null,
-  stats: { loads: 4, samples: 12, exposures: 48, sessions: 2 },
+  stats: { loads: 4, samples: 12, exposures: 48, sessions: 2, span_hours: 6.5, started_at: "2026-04-12T10:00:00" },
 };
 
 describe("ExperimentShell (Phase E1)", () => {
@@ -48,17 +48,16 @@ describe("ExperimentShell (Phase E1)", () => {
     expect(nameWrapper.querySelector("input")?.value).toBe("SSRL · 1p7m");
   });
 
-  it("renders the Corpus | Configuration tab bar with the active tab", async () => {
+  it("retires the tab bar; Configuration is reached via the ⚙ gear (M3)", async () => {
     renderAt("/experiments/7/corpus");
     await screen.findByTestId("experiment-header-name");
-    expect(screen.getByTestId("exp-tab-corpus")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByTestId("exp-tab-config")).not.toHaveAttribute("aria-current");
+    expect(screen.queryByTestId("experiment-tab-bar")).toBeNull();
+    expect(screen.getByTestId("experiment-config-gear")).toBeInTheDocument();
   });
 
   it("renders the child route via Outlet", async () => {
     renderAt("/experiments/7/config");
     expect(await screen.findByText("CONFIG BODY")).toBeInTheDocument();
-    expect(screen.getByTestId("exp-tab-config")).toHaveAttribute("aria-current", "page");
   });
 
   it("no corpus-topbar in isolation (T3.2: TopNav lives in outer AppShell)", async () => {

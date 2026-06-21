@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation, useParams } from "react-router-dom";
+import { Outlet, useNavigate, useParams } from "react-router-dom";
 import { useState } from "react";
 import { useExperiment, useTriggerScan } from "../../queries";
 import { useAppState } from "../../state";
@@ -7,32 +7,23 @@ import { authOpts } from "../../lib/authOpts";
 import { Kicker } from "../ui/Kicker";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 import { StatBar } from "../ui/StatBar";
 import type { StatBarStat } from "../ui/StatBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { PageFrame } from "../components/PageFrame";
 
-interface TabDef {
-  id: "corpus" | "config";
-  label: string;
-}
-const TABS: readonly TabDef[] = [
-  { id: "corpus", label: "Corpus" },
-  { id: "config", label: "Configuration" },
-];
-
 /**
  * ExperimentShell — the /experiments/:id layout route. Renders the experiment
- * page content (header + Corpus|Configuration tab bar + Outlet). T3.2: the
- * top chrome (TopNav) is now provided by the outer AppShell — this component
- * is pure page content, not a chrome. The grouping-review route reuses this
- * shell too but hides the tab bar's active state (E2 wires the banner →
- * grouping surface).
+ * page content (header + Outlet). T3.2: the top chrome (TopNav) is provided by
+ * the outer AppShell — this is pure page content, not a chrome. The
+ * Corpus|Configuration tab bar is retired (M3): Corpus is the experiment home
+ * (the index route), and Configuration is reached via the ⚙ in the header.
  */
 export function ExperimentShell(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
-  const { pathname } = useLocation();
+  const navigate = useNavigate();
   const exp = useExperiment(expId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const username = useAppState((s) => s.username);
@@ -81,6 +72,7 @@ export function ExperimentShell(): JSX.Element {
         { key: "loads", caption: "Loads", value: expStats != null ? String(expStats.loads) : "—" },
         { key: "samples", caption: "Samples", value: expStats != null ? String(expStats.samples) : "—" },
         { key: "exposures", caption: "Exposures", value: expStats != null ? String(expStats.exposures) : "—" },
+        { key: "span", caption: "Span", value: expStats != null ? `${expStats.span_hours}h` : "—" },
         { key: "sessions", caption: "Sessions", value: expStats != null ? String(expStats.sessions) : "—" },
       ];
 
@@ -145,6 +137,14 @@ export function ExperimentShell(): JSX.Element {
             >
               Rescan
             </Button>
+            <IconButton
+              label="Configuration"
+              tone="ghost"
+              data-testid="experiment-config-gear"
+              onClick={() => navigate(`/experiments/${expId}/config`)}
+            >
+              ⚙
+            </IconButton>
           </div>
         </div>
 
@@ -158,33 +158,7 @@ export function ExperimentShell(): JSX.Element {
           </div>
         )}
 
-        <StatBar aria-label="Experiment stats" stats={stats} className="my-5" />
-
-        {/* Corpus | Configuration tab bar */}
-        <nav
-          data-testid="experiment-tab-bar"
-          aria-label="Experiment views"
-          className="flex gap-1 border-b border-hair"
-        >
-          {TABS.map((t) => {
-            const to = `/experiments/${expId}/${t.id}`;
-            const isActive = pathname.startsWith(to);
-            return (
-              <Link
-                key={t.id}
-                to={to}
-                data-testid={`exp-tab-${t.id}`}
-                aria-current={isActive ? "page" : undefined}
-                className={
-                  "px-3 py-2 text-sm font-semibold no-underline -mb-px border-b-2 " +
-                  (isActive ? "text-ink border-accent" : "text-ink-soft border-transparent")
-                }
-              >
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <StatBar aria-label="Experiment stats" stats={stats} className="mt-5 mb-2" />
 
         <div className="flex-1 min-h-0 pt-5">
           <Outlet />
