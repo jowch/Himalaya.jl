@@ -1,4 +1,4 @@
-using HTTP, JSON3, Oxygen
+using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Filesystem probes for the ingest funnel (spec §6.1). Read-only — no DB
@@ -33,5 +33,21 @@ function register_fs_routes!()
         end
         _json(200, Dict(:suggestions => kids))
     end
-    # validate + manifest added in Tasks 1.4 / 1.5
+    @get "/api/fs/validate" function(req::HTTP.Request)
+        q    = HTTP.queryparams(HTTP.URI(req.target))
+        path = get(q, "path", "")
+        if isempty(path) || !isdir(path)
+            return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
+                               :message => "path does not exist or is not a directory"))
+        end
+        dup = !isempty(DBInterface.execute(current_db(),
+            "SELECT 1 FROM experiments WHERE data_dir = ? LIMIT 1", [path]) |> Tables.rowtable)
+        if dup
+            return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
+                               :message => "an experiment already uses this directory"))
+        end
+        scanned = count(!startswith("."), readdir(path))   # cheap; rich count is /manifest
+        _json(200, Dict(:ok => true, :matched => scanned, :scanned => scanned, :message => nothing))
+    end
+    # manifest added in Task 1.5
 end
