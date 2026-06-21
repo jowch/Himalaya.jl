@@ -9,9 +9,7 @@ export interface SpecCellProps {
    *  opens the loupe view for this sample. When absent, the name renders as
    *  a static span (other consumers unaffected). */
   onOpenLoupe?: () => void;
-  /** Roving tabindex for the name button (Samples roving grid: the Sample cell's
-   *  single widget is tabbable only when its cell is active). Absent → the
-   *  button's natural tab order (unchanged for other consumers). */
+  /** Override tabIndex on the name button. Absent → the button's natural tab order. */
   tabIndex?: number;
   /** PLACEMENT-ONLY. */
   className?: string;
@@ -23,10 +21,7 @@ export interface SpecCellProps {
  *  checkbox-in-a-circle reads as row SELECTION (Carbon/Polaris). The chip sits
  *  inline on the id line, right of the id: the id may `truncate` to yield room
  *  while the chip holds its size (`flex-shrink-0`), so the column still scans. */
-/** Forwards its ref to the focusable name BUTTON (when `onOpenLoupe` promotes the
- *  name to a button) so the Samples roving grid can register the Sample cell's
- *  single widget and move focus to it; without a button there is nothing to
- *  focus and the ref is unused. */
+/** Forwards its ref to the focusable name button when `onOpenLoupe` is provided. */
 export const SpecCell = forwardRef<HTMLButtonElement, SpecCellProps>(function SpecCell(
   { name, sampleId, screened, onOpenLoupe, tabIndex, className },
   ref,

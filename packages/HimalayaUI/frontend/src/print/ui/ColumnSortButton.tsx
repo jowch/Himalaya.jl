@@ -28,8 +28,7 @@ export interface ColumnSortButtonProps
  * The focus ring is `outline` (not a box-shadow ring) so it is never clipped by
  * the sticky header's own `overflow`/stacking — outline paints outside the box.
  *
- * Forwards its ref to the underlying `<button>` so the Samples roving grid can
- * register a sortable header as a roving cell and move focus to it.
+ * Forwards its ref to the underlying `<button>`.
  */
 export const ColumnSortButton = forwardRef<HTMLButtonElement, ColumnSortButtonProps>(
   function ColumnSortButton({ label, active, className = "", ...props }, ref): JSX.Element {

@@ -104,18 +104,9 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See `docs/contract-testing.md` for canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
 
-## SA-ROVING data grid (contact sheet)
+## Samples contact sheet (`SheetTable`)
 
-The samples contact sheet (`SheetTable`) is an APG roving-tabindex grid. Three-layer split:
-
-- **Pure reducer** `src/lib/grid/rovingGrid.ts` (`nextGridCoord`) — coordinate math, no React.
-- **Hook + provider** `src/lib/grid/useRovingGrid.ts` (`useRovingGrid` / `RovingGridProvider`). The context default is **INERT** (`tabIndexFor` returns `undefined`, `registerCellEl` is a no-op) so a non-roving `SheetTable` carries zero grid behaviour until a `roving` boolean prop opts in.
-- **Wiring** `SheetTable.tsx` via the `roving?: boolean` prop.
-
-Load-bearing details:
-- **SSE focus-yank guard.** The hook only calls `focus()` when a `wantFocus` ref is set — and it is set *only* by user-driven coord changes (keydown / `requestActivate` / enter/exit interaction), consumed in a `useLayoutEffect`. A foreign SSE re-render must never steal focus. (Same discipline as the `RepresentativeBox` switch.)
-- **Interaction mode** for multi-widget cells: `INTERACTION_COLS = new Set([2, 4])` (Exposures/`ThumbnailGallery`, Tags/`TagList`). Enter or F2 enters interaction mode (focus the first inner widget, arrows rove within, Escape returns to the gridcell in navigation mode).
-- **jsdom can't honestly test the multi-listener focus path** — the e2e spec (real Chrome) is the gate, not the Vitest unit tests (see the jsdom-dispatch false-green gotcha: a microtask checkpoint between listeners lets React unmount mid-dispatch).
+`SheetTable` renders a plain `<table>` (`role="table"`, body cells `role="cell"`). The data-grid keyboard system (`src/lib/grid/`) was removed in the ingestion-redesign branch (T2.2); keyboard navigation is now owned at the page level.
 
 ## Anti-patterns
 

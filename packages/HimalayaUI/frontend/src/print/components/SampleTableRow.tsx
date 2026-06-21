@@ -1,4 +1,3 @@
-import { useLayoutEffect, useRef } from "react";
 import { SpecCell } from "./SpecCell";
 import { ThumbnailGallery } from "./ThumbnailGallery";
 import type { GalleryExposure } from "./ThumbnailGallery";
@@ -7,7 +6,6 @@ import { StatusCell } from "./StatusCell";
 import { TagList } from "../ui/TagList";
 import type { Tag } from "../ui/tag";
 import { Checkbox } from "../ui";
-import { useRovingGridContext } from "../../lib/grid/useRovingGrid";
 
 export interface SampleTableRowProps {
   name: string;
@@ -51,11 +49,6 @@ export interface SampleTableRowProps {
   checked?: boolean;
   indeterminate?: boolean;
   onCheck?: () => void;
-  /** This row's grid row index (header = 0, first data row = 1, …). The page
-   *  passes `i+1`. Only consulted when rendered inside a roving SheetTable grid;
-   *  absent / outside the grid context → the row renders unchanged (`role="cell"`,
-   *  natural tab order). */
-  rowIndex?: number;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
 }
@@ -106,65 +99,6 @@ export const SAMPLE_TABLE_COLS = SAMPLE_TABLE_COLS_BASE;
  *  self-bound to the row height. Placement/layout only (design-guard clean). */
 const CELL = "flex items-center px-3 h-[92px] min-w-0";
 
-/** Fixed Samples-grid column indices for the six cells (checkbox is col 0 only
- *  when a checkbox column is present; otherwise Sample is the left-most cell
- *  at col 1 and col 0 is unused for this row). */
-const COL_CHECKBOX = 0;
-const COL_SAMPLE = 1;
-const COL_EXPOSURES = 2;
-const COL_KEPT = 3;
-const COL_TAGS = 4;
-const COL_STATUS = 5;
-
-/**
- * Hook a multi-widget gridcell (Exposures gallery / Tags list) into the roving
- * model: in NAVIGATION mode every focusable descendant is made inert
- * (`tabIndex = -1`) so the cell is a single roving stop; in INTERACTION mode the
- * overrides are removed so the cell's own controls become naturally tabbable
- * again. The gridcell div itself carries the roving tabindex in nav mode.
- *
- * Imperative (a layout effect querying descendants) rather than threading a prop
- * through Thumbnail/TagPill/Chip — those controls do NOT self-set tabIndex
- * (verified), so React never fights the imperative value. `interactionActive` is
- * derived from the roving context, so SSE re-renders re-run the effect
- * idempotently.
- */
-function useMultiWidgetInertness(
-  ref: React.RefObject<HTMLElement>,
-  interactionActive: boolean,
-  roving: boolean,
-  // Re-run when the cell's content can change (exposure/tag counts).
-  ...deps: unknown[]
-): void {
-  useLayoutEffect(() => {
-    if (!roving) return;
-    const el = ref.current;
-    if (el === null) return;
-    // Deliberately NO `[tabindex]` in this selector: the gallery's overflow-x-auto
-    // scroller carries a component-level tabIndex=-1 (BUG D — opt it out of
-    // Chrome's auto Tab-stop) and PRECEDES its thumbnail buttons in document
-    // order. Including `[tabindex]` made the scroller the first match, so
-    // interaction-mode Enter promoted the empty SCROLLER to tabIndex=0 instead of
-    // Frame 1. The cell's real focusables are all <button> (thumbnails / tag
-    // controls), so this selector still covers them; the scroller keeps its -1.
-    const focusables = el.querySelectorAll<HTMLElement>(
-      "button, input, a, select, textarea",
-    );
-    focusables.forEach((f, i) => {
-      if (interactionActive) {
-        // Restore natural tabbing: first widget tabbable, the rest reachable
-        // via Tab (tabIndex 0 keeps DOM order; -1 would drop them). Removing the
-        // attribute returns each to its element-default tab order.
-        if (i === 0) f.tabIndex = 0;
-        else f.removeAttribute("tabindex");
-      } else {
-        f.tabIndex = -1;
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, interactionActive, roving, ...deps]);
-}
-
 /** One full row of the contact-sheet samples table. Composes the cell composites
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a
  *  fixed 5-column grid. Unscreened rows carry a faint resting tint; screened rows
@@ -192,7 +126,6 @@ export function SampleTableRow({
   checked,
   indeterminate,
   onCheck,
-  rowIndex,
   className,
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
@@ -214,85 +147,6 @@ export function SampleTableRow({
   const sticky = `sticky z-10 ${stickyBg} group-hover/row:bg-paper-sunk`;
   const sampleLeft = hasCheckbox ? CHECKBOX_TRACK_PX : 0;
 
-  // ── Roving grid wiring (SA-ROVING). Context is INERT outside a roving
-  // SheetTable, so `tabIndexFor` returns undefined and this row renders exactly
-  // as before (role="cell", natural tab order). ───────────────────────────────
-  const grid = useRovingGridContext();
-  const r = rowIndex ?? -1;
-  // "On" only when both the page supplies a rowIndex AND the grid context is
-  // live (tabIndexFor returns a number, never undefined).
-  const roving = rowIndex !== undefined && grid.tabIndexFor(r, COL_SAMPLE) !== undefined;
-  const cellRole = roving ? "gridcell" : "cell";
-
-  // Roving accessors (undefined when not roving → spread to nothing).
-  const tab = (col: number): number | undefined =>
-    roving ? grid.tabIndexFor(r, col) : undefined;
-  const cellRef =
-    (col: number) =>
-    (el: HTMLElement | null): void => {
-      if (roving) grid.registerCellEl(r, col, el);
-    };
-  // Pointer parity: mousedown makes this the active roving cell WITHOUT forcing
-  // focus (`{ focus: false }`). The native click already focuses the clicked
-  // element; programmatically re-focusing here would yank focus to the cell div.
-  // NOT onFocus — an onFocus latch turned every stray focus during a Tab
-  // transition into a permanent active-cell migration, trapping Tab inside the
-  // grid (BUG D). The active cell is discovered by the container arrow handler,
-  // never by a focus event.
-  const activatePointer = (col: number): (() => void) | undefined =>
-    roving ? () => grid.requestActivate(r, col, { focus: false }) : undefined;
-  // A multi-widget gridcell enters interaction mode on Enter/F2 (the container
-  // also handles this off activeCoord; this keydown handles the case where focus
-  // is on the gridcell div directly).
-  const cellKeyDown =
-    (col: number) =>
-    (e: React.KeyboardEvent): void => {
-      if (!roving) return;
-      if ((e.key === "Enter" || e.key === "F2") && (col === COL_EXPOSURES || col === COL_TAGS)) {
-        e.preventDefault();
-        grid.enterInteraction(r, col);
-      }
-    };
-
-  const exposuresInteraction =
-    roving && grid.interactionCoord?.row === r && grid.interactionCoord?.col === COL_EXPOSURES;
-  const tagsInteraction =
-    roving && grid.interactionCoord?.row === r && grid.interactionCoord?.col === COL_TAGS;
-
-  // Multi-widget cell refs for the imperative inertness effect.
-  const exposuresCellRef = useRef<HTMLElement | null>(null);
-  const tagsCellRef = useRef<HTMLElement | null>(null);
-  // Depend on a CONTENT signature, not the count: a same-length swap (different
-  // ids, same length) mounts fresh focusable <button>s and the effect must
-  // re-run to re-inert them, else a transient extra tab stop appears in nav
-  // mode. Tag has no `label` field — its identity is key(+value).
-  const exposuresSig = exposures.map((e) => e.id).join(",");
-  const tagsSig = tags.map((t) => `${t.key}=${t.value ?? ""}`).join(",");
-  useMultiWidgetInertness(exposuresCellRef, exposuresInteraction, roving, exposuresSig);
-  useMultiWidgetInertness(tagsCellRef, tagsInteraction, roving, tagsSig);
-
-  // Compose two refs (the registry callback + the local ref for inertness).
-  const exposuresRef = (el: HTMLElement | null): void => {
-    exposuresCellRef.current = el;
-    cellRef(COL_EXPOSURES)(el);
-  };
-  const tagsRef = (el: HTMLElement | null): void => {
-    tagsCellRef.current = el;
-    cellRef(COL_TAGS)(el);
-  };
-
-  // The Status door / Kept / multi-widget cells take the roving tabIndex on the
-  // gridcell div (Kept/Exposures/Tags) or the inner widget (Status door, Sample,
-  // checkbox). Spread helper keeps the non-roving render byte-identical.
-  const cellRoving = (col: number) =>
-    roving
-      ? {
-          tabIndex: tab(col),
-          ref: cellRef(col) as React.Ref<HTMLDivElement>,
-          onMouseDown: activatePointer(col),
-        }
-      : {};
-
   return (
     <div
       data-testid="sample-table-row"
@@ -307,46 +161,34 @@ export function SampleTableRow({
       >
         {hasCheckbox && (
           <div
-            role={cellRole}
+            role="cell"
             data-sticky="true"
             className={`${sticky} left-0 flex items-center justify-center px-1 h-[92px]`}
-            {...(roving ? { onMouseDown: activatePointer(COL_CHECKBOX) } : {})}
           >
             <Checkbox
               checked={checked ?? false}
               {...(indeterminate ? { indeterminate: true } : {})}
               onChange={onCheck}
               aria-label="Select sample"
-              {...(roving ? { tabIndex: tab(COL_CHECKBOX) ?? -1, ref: cellRef(COL_CHECKBOX) } : {})}
             />
           </div>
         )}
         <div
-          role={cellRole}
+          role="cell"
           data-sticky="true"
           className={`${CELL} ${sticky} border-r border-hair-strong`}
           style={{ left: sampleLeft }}
-          {...(roving ? { onMouseDown: activatePointer(COL_SAMPLE) } : {})}
         >
           <SpecCell
             name={name}
             sampleId={sampleId}
             screened={screened}
             {...(onOpenLoupe ? { onOpenLoupe } : {})}
-            {...(roving ? { tabIndex: tab(COL_SAMPLE) ?? -1, ref: cellRef(COL_SAMPLE) } : {})}
           />
         </div>
         <div
-          role={cellRole}
+          role="cell"
           className={CELL}
-          {...(roving
-            ? {
-                tabIndex: tab(COL_EXPOSURES),
-                ref: exposuresRef as React.Ref<HTMLDivElement>,
-                onMouseDown: activatePointer(COL_EXPOSURES),
-                onKeyDown: cellKeyDown(COL_EXPOSURES),
-              }
-            : {})}
         >
           <ThumbnailGallery
             size="sm"
@@ -358,7 +200,7 @@ export function SampleTableRow({
             {...(onActivateExposure ? { onActivate: onActivateExposure } : {})}
           />
         </div>
-        <div role={cellRole} className={CELL} {...cellRoving(COL_KEPT)}>
+        <div role="cell" className={CELL}>
           <KeptCell
             kept={kept}
             total={total}
@@ -366,16 +208,8 @@ export function SampleTableRow({
           />
         </div>
         <div
-          role={cellRole}
+          role="cell"
           className={CELL}
-          {...(roving
-            ? {
-                tabIndex: tab(COL_TAGS),
-                ref: tagsRef as React.Ref<HTMLDivElement>,
-                onMouseDown: activatePointer(COL_TAGS),
-                onKeyDown: cellKeyDown(COL_TAGS),
-              }
-            : {})}
         >
           <TagList
             tags={tags}
@@ -386,10 +220,8 @@ export function SampleTableRow({
           />
         </div>
         <div
-          role={cellRole}
+          role="cell"
           className={CELL}
-          {...(roving && !isDoor ? { onMouseDown: activatePointer(COL_STATUS) } : {})}
-          {...(roving && !isDoor ? { tabIndex: tab(COL_STATUS), ref: cellRef(COL_STATUS) as React.Ref<HTMLDivElement> } : {})}
         >
           {isDoor ? (
             <button
@@ -397,9 +229,6 @@ export function SampleTableRow({
               onClick={onOpenFocus}
               aria-label={phase ? `Open indexing for ${name} (${phase})` : `Index ${name}`}
               className="flex items-center rounded-md px-2 -mx-2 transition-colors hover:bg-plate/60"
-              {...(roving
-                ? { tabIndex: tab(COL_STATUS) ?? -1, ref: cellRef(COL_STATUS) as React.Ref<HTMLButtonElement>, onMouseDown: activatePointer(COL_STATUS) }
-                : {})}
             >
               <StatusCell door {...(phase !== undefined ? { phase } : {})} {...(formFactor ? { formFactor: true } : {})} />
             </button>

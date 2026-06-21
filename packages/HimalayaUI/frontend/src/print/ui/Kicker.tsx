@@ -29,8 +29,7 @@ const toneClass: Record<KickerTone, string> = {
   soft: "text-kicker-soft",
 };
 
-/** Forwards its ref to the rendered element so a roving grid can register a
- *  zero-widget header cell (the Tags label) as a roving cell and focus it. */
+/** Forwards its ref to the rendered element. */
 export const Kicker = forwardRef<HTMLElement, KickerProps>(function Kicker(
   { tone = "faint", as: Tag = "div", className = "", children, ...props },
   ref,
