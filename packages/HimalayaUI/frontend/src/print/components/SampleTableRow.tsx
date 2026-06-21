@@ -45,6 +45,10 @@ export interface SampleTableRowProps {
   /** When set, double-clicking a thumbnail fires this with the exposure id,
    *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
   onActivateExposure?: (id: number) => void;
+  /** When provided and `dropped > 0`, a Restore button appears in the Kept
+   *  cell — the pointer target for the Backspace=restore key. Mirrors the
+   *  CullBar restore verb (null-status batchSet on the sample's exposures). */
+  onRestore?: () => void;
   /** When provided, a checkbox column is rendered as the left-most cell. */
   checked?: boolean;
   indeterminate?: boolean;
@@ -123,6 +127,7 @@ export function SampleTableRow({
   onOpenLoupe,
   onOpenFocus,
   onActivateExposure,
+  onRestore,
   checked,
   indeterminate,
   onCheck,
@@ -205,6 +210,7 @@ export function SampleTableRow({
             kept={kept}
             total={total}
             {...(dropped != null ? { dropped } : {})}
+            {...(onRestore ? { onRestore } : {})}
           />
         </div>
         <div
