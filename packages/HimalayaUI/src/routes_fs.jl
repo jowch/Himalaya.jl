@@ -77,8 +77,68 @@ function register_fs_routes!()
         for s in img, (label, set) in (("metadata", meta), ("integration", integ))
             s in set || push!(unmatched, Dict("file" => s, "miss" => label))
         end
+
+        # ── Geometry preview (read-only; mirrors ingest.jl + routes_experiments.jl) ──
+        data_dir     = path
+        analysis_dir = let ad = joinpath(data_dir, "analysis"); isdir(ad) ? ad : data_dir end
+
+        # Reconstruct matched metadata filenames from stems (same pre/post split).
+        _nm(x) = ismissing(x) ? nothing : x
+        geo_missing = (energy_kev = nothing, energy_kev_source = "default",
+                       flight_path_m = nothing, flight_path_m_source = "default",
+                       beam_center_x = nothing, beam_center_x_source = "default",
+                       beam_center_y = nothing, beam_center_y_source = "default",
+                       pixel_size_um = nothing, pixel_size_um_source = "default")
+
+        geo_dict, disc_list = let
+            prp_paths = if occursin("{name}", pats.metadata)
+                meta_pre, meta_post = split(pats.metadata, "{name}"; limit = 2)
+                [joinpath(data_dir, meta_pre * s * meta_post) for s in meta
+                    if isfile(joinpath(data_dir, meta_pre * s * meta_post))]
+            else
+                String[]
+            end
+            setup_files = isdir(analysis_dir) ?
+                [joinpath(analysis_dir, f) for f in readdir(analysis_dir)
+                    if startswith(f, "setup_info_") && endswith(f, ".txt")] :
+                String[]
+            # ponytail: if prp_paths grows to thousands, consider sampling ~100
+            # representative files for geometry preview (geometry is constant per run).
+            geo_result, disc_result = try
+                derive_geometry(prp_paths, setup_files)
+            catch e
+                @warn "manifest: derive_geometry failed" path exception=e
+                (geo_missing, [])
+            end
+            gd = Dict(
+                :energy_kev            => _nm(geo_result.energy_kev),
+                :energy_kev_source     => geo_result.energy_kev_source,
+                :flight_path_m         => _nm(geo_result.flight_path_m),
+                :flight_path_m_source  => geo_result.flight_path_m_source,
+                :beam_center_x         => _nm(geo_result.beam_center_x),
+                :beam_center_x_source  => geo_result.beam_center_x_source,
+                :beam_center_y         => _nm(geo_result.beam_center_y),
+                :beam_center_y_source  => geo_result.beam_center_y_source,
+                :pixel_size_um         => _nm(geo_result.pixel_size_um),
+                :pixel_size_um_source  => geo_result.pixel_size_um_source,
+            )
+            dd = [Dict(:field => d.field, :message => d.message) for d in disc_result]
+            (gd, dd)
+        end
+
+        # ── matched_files: capped sample of image filenames (for "latest files" card) ──
+        matched_files = let
+            img_pre, img_post = occursin("{name}", pats.image) ?
+                split(pats.image, "{name}"; limit = 2) : ("", "")
+            names = sort!([img_pre * s * img_post for s in img])
+            names[1:min(12, length(names))]
+        end
+
         _json(200, Dict(:total => length(files),
                    :matched => Dict(:image => length(img), :metadata => length(meta), :integration => length(integ)),
-                   :unmatched => unmatched))
+                   :unmatched => unmatched,
+                   :geometry => geo_dict,
+                   :discrepancies => disc_list,
+                   :matched_files => matched_files))
     end
 end

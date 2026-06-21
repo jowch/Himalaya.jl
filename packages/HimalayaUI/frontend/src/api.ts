@@ -254,10 +254,21 @@ export const suggestPaths = (prefix: string) =>
  *  experiment. `patterns` keys are optional — omitting them lets the backend
  *  use its defaults. */
 export interface ManifestUnmatched { file: string; miss: string }
+export interface ManifestGeometry {
+  energy_kev: number | null; energy_kev_source: string;
+  flight_path_m: number | null; flight_path_m_source: string;
+  beam_center_x: number | null; beam_center_x_source: string;
+  beam_center_y: number | null; beam_center_y_source: string;
+  pixel_size_um: number | null; pixel_size_um_source: string;
+}
+export interface ManifestDiscrepancy { field: string; message: string }
 export interface ManifestResponse {
   total: number;
   matched: { image: number; metadata: number; integration: number };
   unmatched: ManifestUnmatched[];
+  geometry?: ManifestGeometry;
+  discrepancies?: ManifestDiscrepancy[];
+  matched_files?: string[];
 }
 export const fetchManifest = (
   path: string,
