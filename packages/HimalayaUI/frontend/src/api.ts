@@ -38,8 +38,10 @@ export interface Experiment {
   image_pattern: string | null;
   metadata_pattern: string | null;
   integration_pattern: string | null;
-  // Roll-up counts returned by GET /api/experiments/:id (not the list endpoint).
-  stats?: { loads: number; samples: number; exposures: number; sessions: number };
+  // Roll-up counts returned by both list and detail endpoints.
+  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null };
+  // Count of samples with a pending grouping flag (list endpoint only; absent on detail).
+  review_count?: number;
 }
 
 export interface SampleTag {

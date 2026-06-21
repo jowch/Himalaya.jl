@@ -26,7 +26,7 @@ describe("/inspect* redirect", () => {
       </QueryClientProvider>,
     );
     await waitFor(() =>
-      expect(screen.getByText("Your experiments")).toBeInTheDocument(),
+      expect(screen.getByText("All experiments")).toBeInTheDocument(),
     );
   });
 
@@ -39,7 +39,7 @@ describe("/inspect* redirect", () => {
       </QueryClientProvider>,
     );
     await waitFor(() =>
-      expect(screen.getByText("Your experiments")).toBeInTheDocument(),
+      expect(screen.getByText("All experiments")).toBeInTheDocument(),
     );
   });
 });

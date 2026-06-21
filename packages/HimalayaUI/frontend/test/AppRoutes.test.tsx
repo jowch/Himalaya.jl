@@ -141,18 +141,18 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
 
   it("bare / redirects to the experiments home (/experiments)", async () => {
     renderRoutes("/");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
     expect(screen.queryByTestId("app-shell")).not.toBeNull();
   });
 
   it("/index redirects to /experiments (T3.2)", async () => {
     renderRoutes("/index");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
   });
 
   it("/index/:experiment (no sample) redirects to /experiments (T3.2)", async () => {
     renderRoutes("/index/lipid");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
   });
 
   it("/index/:experiment/:sample resolves the slug then redirects to /sample/:id", async () => {
@@ -187,7 +187,7 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
     );
     renderRoutes("/index/lipid/JC404");
     // T3.2: /samples redirects → /experiments home
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
   });
 
   it("an unknown path renders StaleUrlPage (#181 regression, #177)", async () => {
@@ -214,14 +214,14 @@ describe("AppRoutes — bare / always lands on experiments home (#77 / I4.4 / E1
   it("bare / lands on the experiments home gallery", async () => {
     useAppState.setState({ activeExperimentId: undefined });
     renderRoutes("/");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
   it("bare / lands on the experiments home even with an active experiment set", async () => {
     useAppState.setState({ activeExperimentId: 7 });
     renderRoutes("/");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 

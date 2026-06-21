@@ -24,7 +24,7 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
 
   it("/experiments renders the home gallery", async () => {
     renderAt("/experiments");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
   });
 
   it("/experiments/new renders the directory picker", () => {
@@ -51,6 +51,6 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
 
   it("/ redirects to /experiments", async () => {
     renderAt("/");
-    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
+    expect(await screen.findByText("All experiments")).toBeInTheDocument();
   });
 });

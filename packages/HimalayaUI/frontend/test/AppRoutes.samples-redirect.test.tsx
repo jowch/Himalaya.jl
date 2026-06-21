@@ -31,7 +31,7 @@ describe("AppRoutes T3.2: /samples redirect", () => {
     renderApp({ route: "/samples" });
     // After redirect, the ExperimentsHomePage renders "Your experiments"
     await waitFor(() =>
-      expect(screen.getByText("Your experiments")).toBeInTheDocument(),
+      expect(screen.getByText("All experiments")).toBeInTheDocument(),
     );
     // No SamplesPage (it's been removed from /samples)
     expect(screen.queryByTestId("samples-page")).toBeNull();

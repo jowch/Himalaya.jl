@@ -206,6 +206,80 @@ end
     end
 end
 
+@testset "experiment stats: started_at = min exposure timestamp" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.init_experiment!(db;
+        name = "StartedAt", path = tmp,
+        data_dir = joinpath(tmp, "data"),
+        analysis_dir = joinpath(tmp, "analysis"))
+    l = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1)
+    s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "S1", load_id = l)
+    # Two exposures; the earlier timestamp should be the started_at.
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+        filename = "a", timestamp = "2026-03-01T08:00:00", frame_no = 1)
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+        filename = "b", timestamp = "2026-04-15T12:00:00", frame_no = 2)
+
+    with_inproc_routes(db) do call
+        # Detail endpoint: stats carries started_at.
+        body = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+        @test haskey(body.stats, :started_at)
+        @test startswith(String(body.stats.started_at), "2026-03-01")
+
+        # List endpoint: same started_at propagates.
+        list = JSON3.read(String(call("GET", "/api/experiments").body))
+        row = first(filter(e -> e.id == eid, list))
+        @test haskey(row.stats, :started_at)
+        @test startswith(String(row.stats.started_at), "2026-03-01")
+    end
+end
+
+@testset "experiment list: review_count" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.init_experiment!(db;
+        name = "ReviewCount", path = tmp,
+        data_dir = joinpath(tmp, "data"),
+        analysis_dir = joinpath(tmp, "analysis"))
+
+    with_inproc_routes(db) do call
+        # CLEAN experiment: one load, one sample, two exposures at the SAME
+        # horizontal_position → no split flag → review_count == 0.
+        l = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1)
+        s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "Clean",
+            load_id = l, slot_index = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+            filename = "c1", horizontal_position = 10.0, frame_no = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+            filename = "c2", horizontal_position = 10.1, frame_no = 2)  # ~0.1 mm jitter, no flag
+
+        list = JSON3.read(String(call("GET", "/api/experiments").body))
+        row = first(filter(e -> e.id == eid, list))
+        @test haskey(row, :review_count)
+        @test row.review_count == 0
+
+        # FLAGGED experiment: second experiment, one sample, two exposures with
+        # horizontal_position jump > 0.5 mm → SplitFlag → review_count >= 1.
+        eid2 = HimalayaUI.init_experiment!(db;
+            name = "Flagged", path = mktempdir(),
+            data_dir = joinpath(mktempdir(), "data"),
+            analysis_dir = joinpath(mktempdir(), "analysis"))
+        l2 = HimalayaUI.create_load!(db; experiment_id = eid2, load_index = 1)
+        s2 = HimalayaUI.create_sample!(db; experiment_id = eid2, name = "Split",
+            load_id = l2, slot_index = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid2, sample_id = s2, load_id = l2,
+            filename = "f1", horizontal_position = 10.0, frame_no = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid2, sample_id = s2, load_id = l2,
+            filename = "f2", horizontal_position = 20.0, frame_no = 2)  # 10 mm jump → SplitFlag
+
+        list2 = JSON3.read(String(call("GET", "/api/experiments").body))
+        row2 = first(filter(e -> e.id == eid2, list2))
+        @test haskey(row2, :review_count)
+        @test row2.review_count >= 1
+    end
+end
+
 @testset "POST /api/experiments rejects a duplicate data_dir (409)" begin
     tmp = mktempdir()
     data_dir = joinpath(tmp, "data"); mkpath(data_dir)

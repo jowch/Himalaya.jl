@@ -7,25 +7,71 @@ import { Button } from "../ui/Button";
 import { Kicker } from "../ui/Kicker";
 import { Dot } from "../ui/Dot";
 import { EmptyState } from "../ui/EmptyState";
-import type { DotTone } from "../ui/Dot";
+import { NoticePill } from "../ui/NoticePill";
+import type { NoticePillTone } from "../ui/NoticePill";
 import type { Experiment } from "../../api";
 
-// Dot tones are accent | success | muted | neutral (Dot.tsx — there is NO
-// `ok`/`danger` tone). failed → muted (a quiet hollow ring, NOT a red alarm —
-// the row's "Scan failed" text carries the severity), scanning/analyzing →
-// accent, complete → success.
-function statusTone(s: Experiment["ingest_status"]): DotTone {
-  if (s === "failed") return "muted";
-  if (s === "scanning" || s === "analyzing") return "accent";
-  if (s === "complete") return "success";
-  return "neutral";
+// ─── State chip ─────────────────────────────────────────────────────────────
+
+/** Derive the status chip tone + label for a gallery card. Priority:
+ *  1. scanning/analyzing → "scanning…" (accent tone)
+ *  2. review_count > 0   → "N to review" (warning/amber tone)
+ *  3. otherwise          → "up to date" (success/sage tone) */
+function stateChip(e: Experiment): { tone: NoticePillTone; label: string } {
+  if (e.ingest_status === "scanning" || e.ingest_status === "analyzing") {
+    return { tone: "scanning", label: "scanning…" };
+  }
+  const rc = e.review_count ?? 0;
+  if (rc > 0) return { tone: "warning", label: `${rc} to review` };
+  return { tone: "success", label: "up to date" };
 }
 
+// ─── Year grouping ───────────────────────────────────────────────────────────
+
+/** Extract the year from an ISO timestamp string, or null on failure. */
+function yearOf(ts: string | null | undefined): number | null {
+  if (!ts) return null;
+  const y = parseInt(ts.slice(0, 4), 10);
+  return isNaN(y) ? null : y;
+}
+
+/** Group experiments by year (from stats.started_at → fallback created_at),
+ *  sorted DESC by year; within a year sorted DESC by started_at. */
+function groupByYear(
+  experiments: Experiment[],
+): { year: number; items: Experiment[] }[] {
+  const yearMap = new Map<number, Experiment[]>();
+
+  for (const e of experiments) {
+    const ts = e.stats?.started_at ?? e.created_at;
+    const year = yearOf(ts) ?? new Date().getFullYear();
+    const bucket = yearMap.get(year) ?? [];
+    bucket.push(e);
+    yearMap.set(year, bucket);
+  }
+
+  // Sort within each bucket DESC by started_at
+  for (const bucket of yearMap.values()) {
+    bucket.sort((a, b) => {
+      const ta = a.stats?.started_at ?? a.created_at ?? "";
+      const tb = b.stats?.started_at ?? b.created_at ?? "";
+      return tb.localeCompare(ta);
+    });
+  }
+
+  // Sort years DESC
+  return Array.from(yearMap.entries())
+    .sort(([ya], [yb]) => yb - ya)
+    .map(([year, items]) => ({ year, items }));
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
 /**
- * ExperimentsHomePage — /experiments gallery (spec §7/§8.7). Cards carry a
- * status dot, serif name, `date range · directory` meta, counts, and a
- * "N need grouping review" hint; selecting one persists activeExperimentId and
- * routes to its corpus. Empty → EmptyState + New CTA.
+ * ExperimentsHomePage — /experiments gallery (M2). Year-grouped 2-column card
+ * grid with a slim left timeline rail. Each card shows the experiment name,
+ * state chip (scanning / N to review / up to date), data_dir path, and counts.
+ * Empty → EmptyState + New CTA.
  */
 export function ExperimentsHomePage(): JSX.Element {
   const navigate = useNavigate();
@@ -38,13 +84,15 @@ export function ExperimentsHomePage(): JSX.Element {
   };
 
   const list = experiments.data ?? [];
+  const groups = groupByYear(list);
 
   return (
     <PageFrame width="home" className="px-6 py-8">
-      <div className="flex items-start justify-between gap-6 mb-6">
+      {/* Page header */}
+      <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <Kicker>Experiments</Kicker>
-          <h1 className="text-display text-ink">Your experiments</h1>
+          <Kicker tone="accent">Experiments</Kicker>
+          <h1 className="text-display text-ink">All experiments</h1>
         </div>
         <Button
           variant="accent"
@@ -66,24 +114,94 @@ export function ExperimentsHomePage(): JSX.Element {
           }
         />
       ) : (
-        <ul className="flex flex-col gap-3">
-          {list.map((e) => (
-            <Card
-              as="li"
-              key={e.id}
-              interactive
-              padding="md"
-              data-testid={`experiment-card-${e.id}`}
-              onClick={() => open(e.id)}
-            >
-              <div className="flex items-center gap-3">
-                <Dot tone={statusTone(e.ingest_status)} />
-                <span className="text-headline text-ink">{e.name ?? `Experiment ${e.id}`}</span>
-                <span className="ml-auto font-mono text-sm text-ink-soft">{e.data_dir}</span>
-              </div>
-            </Card>
-          ))}
-        </ul>
+        /* Two-column layout: slim timeline rail + year-grouped card content */
+        <div className="flex gap-8 items-start">
+          {/* Left timeline rail */}
+          <aside className="shrink-0 w-36 pt-1">
+            <Kicker tone="soft" className="mb-3">Timeline</Kicker>
+            <div className="flex flex-col gap-4">
+              {groups.map(({ year, items }) => (
+                <div key={year} className="flex items-start gap-2">
+                  <Dot tone="neutral" className="mt-1 shrink-0" />
+                  <div>
+                    <div className="text-body text-ink font-medium">{year}</div>
+                    <div className="text-xs text-ink-soft">
+                      {items.length} {items.length === 1 ? "session" : "sessions"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          {/* Year-grouped card sections */}
+          <div className="flex-1 min-w-0 flex flex-col gap-8">
+            {groups.map(({ year, items }) => (
+              <section key={year}>
+                {/* Year heading + hairline */}
+                <div className="flex items-center gap-4 mb-4">
+                  <h2 className="text-headline text-ink shrink-0">{year}</h2>
+                  <div className="flex-1 border-t border-hair" />
+                </div>
+
+                {/* 2-column card grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  {items.map((e) => {
+                    const { tone, label } = stateChip(e);
+                    const stats = e.stats;
+                    const isScanning =
+                      e.ingest_status === "scanning" ||
+                      e.ingest_status === "analyzing";
+
+                    return (
+                      <Card
+                        key={e.id}
+                        as="button"
+                        interactive
+                        padding="md"
+                        className="w-full text-left"
+                        data-testid={`experiment-card-${e.id}`}
+                        onClick={() => open(e.id)}
+                      >
+                        {/* Card header: name + state chip */}
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <span className="text-body text-ink font-medium leading-snug">
+                            {e.name ?? `Experiment ${e.id}`}
+                          </span>
+                          <NoticePill
+                            tone={tone}
+                            className="shrink-0 mt-0.5"
+                          >
+                            {label}
+                          </NoticePill>
+                        </div>
+
+                        {/* data_dir path */}
+                        <div className="font-mono text-xs text-ink-soft mb-2 truncate">
+                          {e.data_dir}
+                        </div>
+
+                        {/* Counts or indexing placeholder */}
+                        {isScanning || !stats ? (
+                          <div className="text-xs text-ink-soft">indexing…</div>
+                        ) : (
+                          <div className="text-xs text-ink-soft">
+                            <span className="font-mono text-ink">{stats.samples}</span>
+                            {" samples · "}
+                            <span className="font-mono text-ink">{stats.exposures}</span>
+                            {" exp · "}
+                            <span className="font-mono text-ink">{stats.loads}</span>
+                            {" loads"}
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
       )}
     </PageFrame>
   );

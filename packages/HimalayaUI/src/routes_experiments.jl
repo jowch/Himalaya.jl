@@ -73,7 +73,8 @@ Cheap roll-up of counts for the shared experiment header stat ledger and the
 gallery cards. `span_hours` is the exposure timestamp span; `sessions` is the
 persisted macro-session count from `loads.session_id` (assigned at ingest by
 `_assign_sessions` in grouping.jl, backfilled for existing loads by
-`backfill_load_sessions!` in db.jl — spec §5).
+`backfill_load_sessions!` in db.jl — spec §5). `started_at` is the minimum
+exposure timestamp (String or nothing) — used by the gallery for year-grouping.
 """
 function _experiment_stats(db::SQLite.DB, exp_id::Integer)
     loads = Tables.rowtable(DBInterface.execute(db,
@@ -89,8 +90,27 @@ function _experiment_stats(db::SQLite.DB, exp_id::Integer)
     sessions = Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(DISTINCT session_id) AS c FROM loads WHERE experiment_id = ? AND session_id IS NOT NULL",
         [exp_id]))[1].c
+    t = Tables.rowtable(DBInterface.execute(db,
+        "SELECT MIN(timestamp) AS t FROM exposures WHERE experiment_id = ? AND timestamp IS NOT NULL",
+        [exp_id]))[1].t
+    started_at = (t === missing || t === nothing) ? nothing : String(t)
     (loads = Int(loads), samples = Int(samples), exposures = Int(exposures),
-     sessions = Int(sessions), span_hours = span_hours)
+     sessions = Int(sessions), span_hours = span_hours, started_at = started_at)
+end
+
+"""
+    _experiment_review_count(db, exp_id) -> Int
+
+Count of samples in this experiment that carry a pending grouping flag
+(SplitFlag or MergeFlag) — i.e. samples the user should review. Reuses the
+single-sourced flag derivation in `get_loads_rollup` / `derive_sample_flags`.
+
+# ponytail: O(rollup) per experiment, fine for the gallery (loads once, few
+# experiments); precompute/lighter-query if it ever slows at many-experiments scale.
+"""
+function _experiment_review_count(db::SQLite.DB, exp_id::Integer)
+    rollup = get_loads_rollup(db, exp_id)   # nested loads → samples (each .flag); dismiss-suppressed
+    count(s -> s.flag !== nothing, (s for ld in rollup for s in ld.samples))
 end
 
 """
@@ -234,8 +254,12 @@ function register_experiments_routes!()
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM experiments ORDER BY id"))
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write([_experiment_row_to_json(r, db) for r in rows]))
+        out = map(rows) do r
+            d = _experiment_row_to_json(r, db)
+            d[:review_count] = _experiment_review_count(db, Int(r.id))
+            d
+        end
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
     @get "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
