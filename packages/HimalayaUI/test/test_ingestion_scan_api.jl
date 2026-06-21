@@ -473,8 +473,17 @@ end
             row = only(Tables.rowtable(DBInterface.execute(db,
                 "SELECT image_pattern FROM experiments WHERE id = ?", [id])))
             @test row.image_pattern == "{name}.tiff"
-            # Let the async scan task finish before with_inproc_routes closes the DB.
-            sleep(1.0)
+            # Poll for the async scan to finish before with_inproc_routes closes the DB.
+            deadline = time() + 5.0
+            while time() < deadline
+                row2 = only(Tables.rowtable(DBInterface.execute(db,
+                    "SELECT ingest_status FROM experiments WHERE id = ?", [id])))
+                row2.ingest_status in ("complete", "failed") && break
+                sleep(0.05)
+            end
+            final_row = only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT ingest_status FROM experiments WHERE id = ?", [id])))
+            @test final_row.ingest_status == "complete"
         end
         SQLite.close(db)
     end
