@@ -65,8 +65,21 @@ describe("ExperimentCorpusPage (Phase E1)", () => {
     expect(screen.queryByTestId("grouping-review-banner")).toBeNull();
   });
 
-  it("renders the live-ingest placeholder while processing", async () => {
-    renderAt([], true);
+  it("renders the live-ingest placeholder while re-analyzing (analyzing status)", () => {
+    // T4.3 state machine: `analyzing` (rescanning) → inline progress slot.
+    // `scanning` (initial ingest) → GroupingReviewPage, NOT the slot.
+    useAppState.setState({ ingestInFlight: { 7: { processed: 10, total: 100, status: "analyzing" } } });
+    vi.spyOn(api, "listLoads").mockResolvedValue([]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/experiments/7/corpus"]}>
+          <Routes>
+            <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
     expect(screen.getByTestId("live-ingest-slot")).toBeInTheDocument();
   });
 });

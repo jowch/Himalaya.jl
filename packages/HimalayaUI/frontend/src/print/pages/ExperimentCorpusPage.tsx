@@ -1,35 +1,100 @@
-import { Link, useParams } from "react-router-dom";
+import { useMemo } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useExperiment, useLoads } from "../../queries";
 import { Badge } from "../ui/Badge";
+import { ProgressBar } from "../ui/ProgressBar";
 import { ScanFailedPage } from "./ScanFailedPage";
+import { GroupingReviewPage } from "../components/GroupingReviewPage";
+import { SheetTable } from "../components/SheetTable";
+import { SampleTableRow } from "../components/SampleTableRow";
 
 /**
- * ExperimentCorpusPage — the Corpus tab body. Reuses the shipped SheetTable
- * contact sheet scoped to the experiment (E2 wires the table), with a sticky
- * grouping-review banner above it linking to E2's GroupingReviewPage
- * (/experiments/:id/grouping). The live-ingest unfold (E2 LiveIngestUnfold)
- * replaces the table while ingestInFlight[id] is active.
+ * ExperimentCorpusPage — the Corpus tab body.
+ *
+ * Implements the §6.2 state machine:
+ *   - scanning   (inFlight.status==="scanning")      → GroupingReviewPage (live-unfold)
+ *   - rescanning (inFlight.status==="analyzing")     → inline ProgressBar
+ *   - failed     (!processing && status==="failed")  → ScanFailedPage  [T4.2, preserved]
+ *   - has-flags  (reviewCount > 0)                   → banner + SheetTable
+ *   - clean      (reviewCount === 0)                 → SheetTable only
+ *
+ * The SheetTable is scoped to this experiment's samples by flattening
+ * useLoads(expId) → LoadSample[]. No per-sample exposure fan-out is needed for
+ * the corpus view: exposures inside each LoadSample provide the frame count.
  */
 export function ExperimentCorpusPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
+  const navigate = useNavigate();
+
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const loads = useLoads(expId);
   const exp = useExperiment(expId);
 
-  // Review count: LoadSamples across all loads whose `flag` is non-null
-  // (a flagged merge/split discrepancy). Derived from useLoads — tests mock
-  // api.listLoads via vi.spyOn, same pattern as Tasks 11–14.
-  const reviewCount = (loads.data ?? []).reduce(
-    (n, l) => n + l.samples.filter((s) => s.flag !== null).length,
-    0,
-  );
-  const processing = inFlight?.status === "scanning" || inFlight?.status === "analyzing";
-  const failed = !processing && (inFlight?.status === "failed" || exp.data?.ingest_status === "failed");
+  // --- State machine derivation ---
+  // scanning: initial scan in progress (live-unfold surface)
+  const scanning = inFlight?.status === "scanning";
+  // rescanning: re-analysis pass (progress bar, table data not ready yet)
+  const rescanning = !scanning && inFlight?.status === "analyzing";
+  // processing: either active pass (scanning or rescanning)
+  const processing = scanning || rescanning;
+  // failed: terminal failure from the server (or ephemeral inFlight failure)
+  const failed =
+    !processing &&
+    (inFlight?.status === "failed" || exp.data?.ingest_status === "failed");
 
+  // Flatten Load▸Sample tree for review-count + table rows.
+  const loadSamples = useMemo(
+    () => (loads.data ?? []).flatMap((l) => l.samples),
+    [loads.data],
+  );
+
+  // Review count: LoadSamples whose `flag` is non-null (merge/split discrepancy).
+  const reviewCount = useMemo(
+    () => loadSamples.filter((s) => s.flag !== null).length,
+    [loadSamples],
+  );
+
+  // scanning → live GroupingReviewPage (the live-unfold surface for the initial scan)
+  if (scanning) {
+    return (
+      <GroupingReviewPage
+        experimentId={expId}
+        onBack={() => navigate(`/experiments/${expId}/corpus`)}
+      />
+    );
+  }
+
+  // rescanning → inline progress driven by ingestInFlight
+  if (rescanning) {
+    return (
+      <div data-testid="live-ingest-slot" className="flex flex-col gap-3">
+        <p className="text-sm text-ink-soft">Analyzing exposures…</p>
+        <ProgressBar
+          value={inFlight ? inFlight.processed : 0}
+          total={inFlight ? Math.max(inFlight.total, 1) : 1}
+          label="Analysis progress"
+        />
+      </div>
+    );
+  }
+
+  // failed → ScanFailedPage (T4.2; preserved exactly)
+  if (failed) {
+    return (
+      <ScanFailedPage
+        experimentId={expId}
+        unmatched={[]}
+        parsedCount={0}
+      />
+    );
+  }
+
+  // clean / has-flags → SheetTable scoped to this experiment's samples
   return (
     <div className="flex flex-col gap-4">
+      {/* grouping-review banner (has-flags branch) */}
       {reviewCount > 0 && (
         <div
           data-testid="grouping-review-banner"
@@ -49,29 +114,24 @@ export function ExperimentCorpusPage(): JSX.Element {
         </div>
       )}
 
-      {processing ? (
-        // E2 LiveIngestUnfold slots here (ProgressBar + StatBar counters +
-        // skeleton rows driven by ingestInFlight). E1 renders the labelled slot.
-        <div data-testid="live-ingest-slot" className="text-sm text-ink-soft">
-          Processing exposures…
-        </div>
-      ) : failed ? (
-        // T4.2: scan failed surface — pattern test + ingest-N confirm.
-        // unmatched + parsedCount are ephemeral (lost on reload); T4.3 wires
-        // a persistent source (e.g. ingestInFlight or a dedicated failed-scan
-        // query). Pass empty defaults so the page is renderable before T4.3.
-        <ScanFailedPage
-          experimentId={expId}
-          unmatched={[]}
-          parsedCount={0}
-        />
-      ) : (
-        // E2 mounts the scoped SheetTable here. E1 renders the labelled slot so
-        // the page is assemblable without the corpus query wiring.
-        <div data-testid="corpus-sheet-slot" className="text-sm text-ink-soft">
-          {/* SheetTable scoped to experiment {expId} — wired in E2 */}
-        </div>
-      )}
+      {/* Corpus sheet — one SampleTableRow per LoadSample, scoped to expId.
+          Exposures are taken from the nested LoadSample.exposures (the roll-up
+          already fetched by useLoads), so no per-sample fan-out is needed here. */}
+      <SheetTable>
+        {loadSamples.map((s) => (
+          <SampleTableRow
+            key={s.sample_id}
+            name={s.name}
+            sampleId={`#${s.sample_id}`}
+            exposures={[]}
+            kept={0}
+            total={s.exposures.length}
+            tags={[]}
+            onOpenFocus={() => navigate(`/sample/${s.sample_id}`)}
+            onOpenLoupe={() => navigate(`/sample/${s.sample_id}/loupe`)}
+          />
+        ))}
+      </SheetTable>
     </div>
   );
 }
