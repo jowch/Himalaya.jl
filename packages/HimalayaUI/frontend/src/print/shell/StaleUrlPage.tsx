@@ -24,13 +24,11 @@ function uiFor(
     return {
       dataMissing: "path",
       header: "Page not found.",
-      ctaLabel: "Go to Samples",
-      // I4.4 (#181): Index is retired, so the unknown-path escape hatch now
-      // lands on the corpus contact sheet (/samples) instead of setting
-      // activePage:"index". Replace mode so the back button doesn't loop back
-      // to /foo/bar → re-render StaleUrlPage and trap the user.
+      ctaLabel: "Go to Experiments",
+      // T3.2: unknown-path escape hatch now lands on /experiments (the home).
+      // Replace mode so the back button doesn't loop back to /foo/bar.
       onPick: () => {
-        navigate("/samples", { replace: true });
+        navigate("/experiments", { replace: true });
       },
     };
   }

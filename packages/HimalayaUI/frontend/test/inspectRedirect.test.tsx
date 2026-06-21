@@ -4,25 +4,20 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { makeClient } from "./test-utils";
 import { AppRoutes } from "../src/print/shell/AppRoutes";
+import * as api from "../src/api";
 
 // I1.7 (#163): Inspect is retired. Old /inspect* deep-links must land on the
-// corpus contact sheet (/samples), not the deleted Inspect page.
+// experiments home (/experiments), not the deleted Inspect page.
+// T3.2: /inspect/* now redirects to /experiments (was /samples — which itself
+// now redirects to /experiments).
 describe("/inspect* redirect", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    // All corpus/experiments fetches return empty so SamplesPage reaches its
-    // empty state rather than erroring — the redirect target is what matters.
-    vi.spyOn(global, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        new Response("[]", {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
+    // Mock the listExperiments call so ExperimentsHomePage renders.
+    vi.spyOn(api, "listExperiments").mockResolvedValue([]);
   });
 
-  it("redirects /inspect/:experiment/:sample to /samples", async () => {
+  it("redirects /inspect/:experiment/:sample to /experiments (T3.2)", async () => {
     render(
       <QueryClientProvider client={makeClient()}>
         <MemoryRouter initialEntries={["/inspect/1/10"]}>
@@ -31,11 +26,11 @@ describe("/inspect* redirect", () => {
       </QueryClientProvider>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("samples-page")).toBeInTheDocument(),
+      expect(screen.getByText("Your experiments")).toBeInTheDocument(),
     );
   });
 
-  it("redirects bare /inspect to /samples", async () => {
+  it("redirects bare /inspect to /experiments (T3.2)", async () => {
     render(
       <QueryClientProvider client={makeClient()}>
         <MemoryRouter initialEntries={["/inspect"]}>
@@ -44,7 +39,7 @@ describe("/inspect* redirect", () => {
       </QueryClientProvider>,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("samples-page")).toBeInTheDocument(),
+      expect(screen.getByText("Your experiments")).toBeInTheDocument(),
     );
   });
 });

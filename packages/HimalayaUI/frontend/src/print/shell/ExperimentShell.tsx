@@ -4,14 +4,12 @@ import { useExperiment } from "../../queries";
 import { useAppState } from "../../state";
 import * as api from "../../api";
 import { authOpts } from "../../lib/authOpts";
-import { Wordmark } from "../ui/Wordmark";
 import { Kicker } from "../ui/Kicker";
 import { Input } from "../ui/Input";
 import { StatBar } from "../ui/StatBar";
 import type { StatBarStat } from "../ui/StatBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { PageFrame } from "../components/PageFrame";
-import { ExperimentTopNav } from "./ExperimentTopNav";
 
 interface TabDef {
   id: "corpus" | "config";
@@ -23,12 +21,12 @@ const TABS: readonly TabDef[] = [
 ];
 
 /**
- * ExperimentShell — the /experiments/:id layout route. Renders its OWN chrome
- * (wordmark + ExperimentTopNav + experiment header + Corpus|Configuration tab
- * bar) outside CorpusShell so the header never stacks on CorpusTopbar (spec
- * §7/§9.6). Children (ExperimentCorpusPage / ConfigurationPage) render in the
- * Outlet. The grouping-review route reuses this shell too but hides the tab
- * bar's active state (E2 wires the banner → grouping surface).
+ * ExperimentShell — the /experiments/:id layout route. Renders the experiment
+ * page content (header + Corpus|Configuration tab bar + Outlet). T3.2: the
+ * top chrome (TopNav) is now provided by the outer AppShell — this component
+ * is pure page content, not a chrome. The grouping-review route reuses this
+ * shell too but hides the tab bar's active state (E2 wires the banner →
+ * grouping surface).
  */
 export function ExperimentShell(): JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -88,17 +86,6 @@ export function ExperimentShell(): JSX.Element {
       data-testid="experiment-shell"
       className="h-full w-full flex flex-col min-h-0 bg-paper text-ink overflow-auto"
     >
-      {/* Own top chrome (NOT CorpusTopbar). */}
-      <header className="flex items-center gap-6 px-6 h-14 border-b border-hair shrink-0">
-        <Link
-          to="/experiments"
-          className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-        >
-          <Wordmark tail="SAXS">Himalaya</Wordmark>
-        </Link>
-        <ExperimentTopNav />
-      </header>
-
       <PageFrame width="experiment" className="px-6 py-6 flex-1 min-h-0 flex flex-col">
         {/* Experiment header */}
         <div className="flex items-start justify-between gap-6">

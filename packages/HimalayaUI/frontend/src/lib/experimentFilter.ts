@@ -1,14 +1,14 @@
 import type { CorpusSample, Experiment } from "../api";
 
 /**
- * The one honest label both surfaces use for a ?beamtime that names nothing.
- * Exported so the topbar select and the contact-sheet EmptyState stay in
+ * The one honest label both surfaces use for a ?experiment that names nothing.
+ * Exported so the experiment filter UI and the contact-sheet EmptyState stay in
  * literal agreement (SA-F5): a single predicate AND a single copy string.
  */
-export const UNKNOWN_BEAMTIME_LABEL = "Unknown beamtime";
+export const UNKNOWN_EXPERIMENT_LABEL = "Unknown experiment";
 
 export interface ExperimentFilter {
-  /** Parsed ?beamtime id. Absent or malformed params filter nothing. */
+  /** Parsed ?experiment id. Absent or malformed params filter nothing. */
   id: number | undefined;
   /** True only once BOTH lists are loaded and the id names no experiment and
    *  no sample carries it. While either list is still loading we claim
@@ -21,10 +21,10 @@ export interface ExperimentFilter {
 }
 
 /**
- * Shared resolver for the `?beamtime=` experiment filter (SA-F5). Both the
- * SamplesPage body and the CorpusTopbar select judge the filter through this
+ * Shared resolver for the `?experiment=` filter (SA-F5). Both the
+ * SamplesPage body and the experiment filter UI judge the filter through this
  * single predicate so the two surfaces can never disagree about whether the
- * URL names a real beamtime.
+ * URL names a real experiment.
  */
 export function resolveExperimentFilter(
   raw: string | null,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   resolveExperimentFilter,
-  UNKNOWN_BEAMTIME_LABEL,
+  UNKNOWN_EXPERIMENT_LABEL,
 } from "../../src/lib/experimentFilter";
 import type { CorpusSample, Experiment } from "../../src/api";
 
@@ -46,6 +46,6 @@ describe("resolveExperimentFilter (the SA-F5 shared predicate)", () => {
   });
 
   it("exports the single honest label both surfaces render", () => {
-    expect(UNKNOWN_BEAMTIME_LABEL).toBe("Unknown beamtime");
+    expect(UNKNOWN_EXPERIMENT_LABEL).toBe("Unknown experiment");
   });
 });

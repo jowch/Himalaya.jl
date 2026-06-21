@@ -762,7 +762,7 @@ export interface SeriesSummary {
   /** Recipe ordering variable (e.g. "LL37 : lipid ratio"); null until scoped. */
   ordering_variable: string | null;
   /** True when the members resolve to >1 distinct `samples.experiment_id`.
-   *  Valid because q is absolute (Å⁻¹) — series may legitimately span beamtimes. */
+   *  Valid because q is absolute (Å⁻¹) — series may legitimately span experiments. */
   spans_experiments: boolean;
   /** Beamtime provenance: the members' single experiment's `name` when the
    *  series does NOT span experiments; null when spanning, memberless, or the single experiment has no name. */

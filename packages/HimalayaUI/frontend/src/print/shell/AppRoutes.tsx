@@ -1,9 +1,9 @@
 import { Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
-import { CorpusShell } from "./CorpusShell";
+import { TopNav } from "./TopNav";
 import { ExperimentShell } from "./ExperimentShell";
-import { SamplesPage } from "../pages/SamplesPage";
 import { LoupePage } from "../pages/LoupePage";
 import { FocusPage } from "../pages/FocusPage";
 import { SeriesFolioPage } from "../pages/SeriesFolioPage";
@@ -33,25 +33,17 @@ function GroupingReviewRoute(): JSX.Element {
 }
 
 /**
- * PageBody — the `*` catch-all body. After I5.1 (#182) it mounts under the
- * single CorpusShell (the legacy AppShell + dual-nav model are retired). Index
- * (#181), Inspect (#163), and Compare (#177) are all retired, so it renders
- * the in-flight (`resolving`) and stale (`staleUrlContext`) URL states only.
- *
- * The URL→stale classifier (`useStateFromUrl`) is mounted HERE, inside the
- * catch-all element, NOT in any layout shell. PageBody renders only when no
- * other route matched, so the classifier runs only on a genuinely-unmatched
- * path — mounting it in CorpusShell would wrongly park a valid corpus route
- * (e.g. `/samples`, which `parseLocation` has no arm for) on StaleUrlPage.
- * This preserves the isolation the AppShell layout used to provide.
+ * PageBody — the `*` catch-all body. The URL→stale classifier
+ * (`useStateFromUrl`) is mounted HERE, inside the catch-all element, NOT in
+ * any layout shell. PageBody renders only when no other route matched, so the
+ * classifier runs only on a genuinely-unmatched path — mounting it in the
+ * shell would wrongly park a valid corpus route on StaleUrlPage.
  *
  * Any path that reaches `*` is, by definition, one no other route matched —
  * `useStateFromUrl` classifies it as a stale unknown_path and sets
  * `staleUrlContext` inside its effect. On the first render that effect hasn't
  * run yet (so `staleUrlContext` is still null); we render the neutral
- * ResolvingFallback for that one frame rather than `<Navigate to="/samples">`.
- * Navigating away on the bare fallback raced the stale dispatch and bounced
- * typo'd/dead URLs off the "Page not found" view (the #181 regression).
+ * ResolvingFallback for that one frame rather than navigating away.
  */
 function PageBody(): JSX.Element {
   useStateFromUrl();
@@ -65,15 +57,24 @@ function PageBody(): JSX.Element {
 }
 
 /**
- * AppRoutes — the single hoisted top-level <Routes> table, plus the shared
- * root effects (global shortcuts).
- *
- * I5.1 (#182): one layout route, <CorpusShell>, hosts every surface — the
- * corpus pages AND the `*` stale catch-all (PageBody). The legacy AppShell +
- * the dual-nav `activePage` model are retired. Pre-shell redirects (`/`,
- * `/index*`, `/compare*`) sit outside the layout route so no chrome mounts
- * under them and races the redirect.
+ * AppShell — the single unified shell wrapping every route (T3.2).
+ * Renders TopNav (the unified nav bar) above the matched child.
+ * Replaces the three legacy shells (deleted in T3.2).
  */
+function AppShell(): JSX.Element {
+  return (
+    <div
+      data-testid="app-shell"
+      className="h-full w-full flex flex-col min-h-0 bg-paper text-ink"
+    >
+      <TopNav />
+      <main className="flex-1 min-h-0 overflow-auto">
+        <Outlet />
+      </main>
+    </div>
+  );
+}
+
 /**
  * SeriesBuilderRoute — keys the builder on its `:id` so each series mounts a
  * fresh instance.
@@ -91,6 +92,21 @@ function SeriesBuilderRoute(): JSX.Element {
   return <SeriesBuilderPage key={id} />;
 }
 
+/**
+ * AppRoutes — the single hoisted top-level <Routes> table, plus the shared
+ * root effects (global shortcuts).
+ *
+ * T3.2 (App Shell Unification): one layout route, <AppShell>, hosts every
+ * surface — the corpus pages, the experiment tree, Focus/Loupe, Series, AND
+ * the `*` stale catch-all (PageBody). The legacy shell trio was
+ * deleted in T3.2. Pre-shell redirects (`/`, `/index*`,
+ * `/compare*`, `/samples`) sit outside the layout route so no chrome mounts
+ * under them and races the redirect.
+ *
+ * Focus/Loupe stay flat at `/sample/:id` and `/sample/:id/loupe` — NO resolver,
+ * NO experiment-scoped nesting (a resolver would always flash a loading screen).
+ * The chrome reads the experiment from the loaded sample's experiment_id.
+ */
 export function AppRoutes(): JSX.Element {
   // R0a (#221): the theme-class effect is gone. "The Print" is the single
   // identity defined statically in styles.css `@theme`; there is no
@@ -105,8 +121,10 @@ export function AppRoutes(): JSX.Element {
 
   return (
     <Routes>
-      <Route element={<CorpusShell />}>
-        <Route path="/samples" element={<SamplesPage />} />
+      {/* T3.2: single AppShell wraps every surface. */}
+      <Route element={<AppShell />}>
+        {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
+        <Route path="/samples" element={<Navigate to="/experiments" replace />} />
         <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
         {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
         <Route path="/sample/:sampleId" element={<FocusPage />} />
@@ -119,43 +137,38 @@ export function AppRoutes(): JSX.Element {
         {/* I3.5a (#175): series builder — read-only visual surface. Keyed on
             :id (SeriesBuilderRoute) so per-series visits don't leak local state. */}
         <Route path="/series/:id" element={<SeriesBuilderRoute />} />
-        {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on the
-            contact sheet. Splat covers /inspect, /inspect/:exp, /inspect/:exp/:sample. */}
-        <Route path="/inspect/*" element={<Navigate to="/samples" replace />} />
-        {/* I5.1 (#182): the `*` stale catch-all now lives under the single
-            CorpusShell. PageBody mounts the URL→stale classifier; StaleUrlPage
-            renders under CorpusTopbar. (Was the legacy AppShell layout route.) */}
+        {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on
+            /experiments (the new home). Splat covers /inspect, /inspect/:exp,
+            /inspect/:exp/:sample. */}
+        <Route path="/inspect/*" element={<Navigate to="/experiments" replace />} />
+        {/* Ingestion redesign: experiments tree (E1). ExperimentShell owns its
+            own header/tabs per spec §3.2 (page content, not a separate chrome). */}
+        <Route path="/experiments" element={<ExperimentsHomePage />} />
+        <Route path="/experiments/new" element={<NewExperimentPage />} />
+        <Route path="/experiments/:id" element={<ExperimentShell />}>
+          <Route index element={<Navigate to="corpus" replace />} />
+          <Route path="corpus" element={<ExperimentCorpusPage />} />
+          <Route path="config" element={<ConfigurationPage />} />
+          {/* E2: GroupingReviewPage mounts here (Task 20). */}
+          <Route path="grouping" element={<GroupingReviewRoute />} />
+        </Route>
+        {/* The `*` stale catch-all mounts PageBody which runs the URL→stale
+            classifier and renders StaleUrlPage or ResolvingFallback. */}
         <Route path="*" element={<PageBody />} />
       </Route>
-      {/* I4.4 (#181): Index retired. These redirects sit OUTSIDE the layout
-          shell so no chrome mounts under them and races the redirect. Bare `/`
-          and the sampleless legacy Index URLs land on the corpus contact sheet;
-          a slug-bearing `/index/:exp/:sample` resolves to the focus workspace
-          via IndexSlugRedirect (preserving old permalink deep-links). */}
+      {/* Pre-shell redirects — sit OUTSIDE the layout route so no chrome
+          mounts under them and races the redirect. */}
+      {/* I4.4 (#181): Index retired. Bare `/` and the sampleless legacy Index
+          URLs land on the experiments home; a slug-bearing `/index/:exp/:sample`
+          resolves to the focus workspace via IndexSlugRedirect. */}
       <Route path="/" element={<Navigate to="/experiments" replace />} />
-      <Route path="/index" element={<Navigate to="/samples" replace />} />
-      <Route path="/index/:experiment" element={<Navigate to="/samples" replace />} />
+      <Route path="/index" element={<Navigate to="/experiments" replace />} />
+      <Route path="/index/:experiment" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
       {/* I3.6 (#177): Compare retired. The series stage replaces it; all
-          `/compare*` deep-links (both the experiment-scoped and the global
-          `/compare/all` roots, incl. `/new`, `/:id`, `/:id/edit`) redirect to
-          the series folio. Placed OUTSIDE the layout shell for the same reason
-          as the Index redirects above. The `comparison*` tables + dispatcher
-          branches stay forever for event replay; only the UI + routes are gone. */}
+          `/compare*` deep-links redirect to the series folio. */}
       <Route path="/experiments/:eid/compare/*" element={<Navigate to="/series" replace />} />
       <Route path="/compare/all/*" element={<Navigate to="/series" replace />} />
-      {/* Ingestion redesign (spec §7/§9.6): the experiments tree sits OUTSIDE
-          CorpusShell so ExperimentShell's own chrome never stacks on
-          CorpusTopbar. */}
-      <Route path="/experiments" element={<ExperimentsHomePage />} />
-      <Route path="/experiments/new" element={<NewExperimentPage />} />
-      <Route path="/experiments/:id" element={<ExperimentShell />}>
-        <Route index element={<Navigate to="corpus" replace />} />
-        <Route path="corpus" element={<ExperimentCorpusPage />} />
-        <Route path="config" element={<ConfigurationPage />} />
-        {/* E2: GroupingReviewPage mounts here (Task 20). */}
-        <Route path="grouping" element={<GroupingReviewRoute />} />
-      </Route>
     </Routes>
   );
 }

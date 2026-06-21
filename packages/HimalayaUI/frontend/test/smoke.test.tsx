@@ -77,19 +77,17 @@ describe("App smoke", () => {
     });
   });
 
-  it("redirects '/' to the Experiments home (ingestion-redesign IA)", async () => {
-    // Ingestion redesign (E1): the new IA makes "/experiments" the home; a cold
-    // "/" redirects there (was "/samples" under #181/#182). ExperimentsHomePage
-    // sits OUTSIDE CorpusShell (so the experiment chrome never stacks on
-    // CorpusTopbar), so corpus-shell is NOT mounted at "/". The "New experiment"
-    // CTA renders unconditionally, so it is the stable landing assertion.
+  it("redirects '/' to the Experiments home (ingestion-redesign IA / T3.2)", async () => {
+    // T3.2: "/" redirects to "/experiments". TopNav (unified app-shell)
+    // wraps every route. The "New experiment" CTA is the stable landing assertion.
     renderApp();
     await waitFor(() =>
       expect(screen.getByTestId("new-experiment-cta")).toBeInTheDocument(),
       { timeout: 3000 },
     );
+    // T3.2: TopNav (app-shell) IS present; the old CorpusShell is gone.
+    expect(screen.getByTestId("app-shell")).toBeInTheDocument();
     expect(screen.queryByTestId("corpus-shell")).toBeNull();
-    expect(screen.queryByTestId("app-shell")).toBeNull();
   });
 
   it("shows the onboarding overlay when no user is set", () => {

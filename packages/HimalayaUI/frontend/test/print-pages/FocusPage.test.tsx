@@ -183,7 +183,8 @@ function focusTreeAt(sampleId: number | string) {
       <LocationProbe />
       <Routes>
         <Route path="/sample/:sampleId" element={<FocusPage />} />
-        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+        <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">corpus</div>} />
+        <Route path="/experiments" element={<div data-testid="experiments-home">home</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -310,9 +311,10 @@ describe("FocusPage", () => {
       fireEvent.keyDown(document.body, { key: "Escape" });
       expect(pn3m()).not.toHaveAttribute("data-previewed");
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/42");
-      // second Escape (no preview) backs out to the sheet
+      // second Escape (no preview) backs out to the experiment corpus
+      // (sample 42 has experiment_id: 1, no ?from=series → /experiments/1/corpus)
       fireEvent.keyDown(document.body, { key: "Escape" });
-      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/samples");
+      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/experiments/1/corpus");
     });
   });
 
@@ -599,7 +601,7 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("focus-not-found")).toBeInTheDocument();
   });
 
-  it("not-found renders an EmptyState whose action leads back to the contact sheet (FO-ERR)", () => {
+  it("not-found renders an EmptyState whose action leads back to experiments (FO-ERR, T3.2)", () => {
     state.corpus = [];
     state.activeSampleId = undefined;
     renderAt(999);
@@ -609,9 +611,9 @@ describe("FocusPage", () => {
       within(block).getByRole("heading", { name: "Sample not found" }),
     ).toBeInTheDocument();
     fireEvent.click(
-      within(block).getByRole("button", { name: "Back to the contact sheet" }),
+      within(block).getByRole("button", { name: "Back to the experiments" }),
     );
-    expect(screen.getByTestId("sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("experiments-home")).toBeInTheDocument();
   });
 
   it("not-found exposes its sole heading as an h1, not a level-skipped h2 (FO-NFHEAD)", () => {

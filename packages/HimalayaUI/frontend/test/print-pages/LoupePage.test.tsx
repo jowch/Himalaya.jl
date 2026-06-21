@@ -68,10 +68,10 @@ function LocationProbe(): JSX.Element {
 
 function renderAt(sampleId: number, search = "") {
   return render(
-    <MemoryRouter initialEntries={[`/samples/loupe/${sampleId}${search}`]}>
+    <MemoryRouter initialEntries={[`/sample/${sampleId}/loupe${search}`]}>
       <Routes>
         <Route
-          path="/samples/loupe/:sampleId"
+          path="/sample/:sampleId/loupe"
           element={
             <>
               <LoupePage />
@@ -79,7 +79,7 @@ function renderAt(sampleId: number, search = "") {
             </>
           }
         />
-        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+        <Route path="/experiments" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -91,12 +91,12 @@ function renderWithOrder(sampleId: number, order: number[], search = "") {
   return render(
     <MemoryRouter
       initialEntries={[
-        { pathname: `/samples/loupe/${sampleId}`, search, state: { sampleOrder: order } },
+        { pathname: `/sample/${sampleId}/loupe`, search, state: { sampleOrder: order } },
       ]}
     >
       <Routes>
         <Route
-          path="/samples/loupe/:sampleId"
+          path="/sample/:sampleId/loupe"
           element={
             <>
               <LoupePage />
@@ -104,7 +104,7 @@ function renderWithOrder(sampleId: number, order: number[], search = "") {
             </>
           }
         />
-        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+        <Route path="/experiments" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -205,9 +205,9 @@ describe("LoupePage", () => {
     // A FRESH element each render: a referentially-identical root element would
     // let React bail out of reconciling, so the SSE list change wouldn't apply.
     const tree = () => (
-      <MemoryRouter initialEntries={["/samples/loupe/42"]}>
+      <MemoryRouter initialEntries={["/sample/42/loupe"]}>
         <Routes>
-          <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
+          <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
         </Routes>
       </MemoryRouter>
     );
@@ -744,31 +744,31 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
   it("↑ is a no-op on the first sample of the walk", () => {
     renderWithOrder(10, [10, 11, 12]);
     fireEvent.keyDown(window, { key: "ArrowUp" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/10/loupe");
   });
 
   it("↓ is a no-op on the last sample of the walk", () => {
     renderWithOrder(12, [10, 11, 12]);
     fireEvent.keyDown(window, { key: "ArrowDown" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
   it("↓ steps to the next sample, ↑ steps to the previous (←/→ still flip frames)", () => {
     renderWithOrder(11, [10, 11, 12]);
     fireEvent.keyDown(window, { key: "ArrowDown" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
   it("↑ steps to the previous sample", () => {
     renderWithOrder(11, [10, 11, 12]);
     fireEvent.keyDown(window, { key: "ArrowUp" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/10/loupe");
   });
 
   it("falls back to the beamtime-scoped corpus order on a direct URL (no router state)", () => {
     renderAt(11);
     fireEvent.keyDown(window, { key: "ArrowDown" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
   it("documents the sample-step keys in the loupe legend", () => {

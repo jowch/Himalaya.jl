@@ -129,7 +129,7 @@ beforeEach(() => {
 
 describe("SamplesPage", () => {
   it("renders the head, the sheet table, rows and the keyboard legend", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     expect(screen.getByTestId("samples-page")).toBeInTheDocument();
     // beamtime title = experiment name
     expect(screen.getByRole("heading", { name: "BL-19 April" })).toBeInTheDocument();
@@ -138,13 +138,13 @@ describe("SamplesPage", () => {
   });
 
   it("renders one row per filtered sample", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // beamtime 1 has 2 samples (ids 1, 2)
     expect(screen.getAllByTestId("sample-table-row")).toHaveLength(2);
   });
 
   it("clicking a thumb selects it → cull bar shows with the right count", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!);
     const bar = screen.getByTestId("cull-bar");
@@ -153,7 +153,7 @@ describe("SamplesPage", () => {
   });
 
   it("publishes the floating-dock lane as occupied while a selection bar shows, and frees it on unmount (LA-COLLIDE)", () => {
-    const { unmount } = renderAt("/samples?beamtime=1");
+    const { unmount } = renderAt("/samples?experiment=1");
     // No selection → lane is free, banner stays centred.
     expect(useFloatingDock.getState().centerLaneOccupied).toBe(false);
     // Selecting a frame raises the CullBar → the dock lane is now occupied.
@@ -166,7 +166,7 @@ describe("SamplesPage", () => {
   });
 
   it("CullBar Drop calls the batch mutator with the selected exposure", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // first row (sample 1) → first thumb = exposure 100
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!);
@@ -179,7 +179,7 @@ describe("SamplesPage", () => {
   });
 
   it("CullBar Keep calls the batch mutator with status accepted (SA-SCREENED)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!);
     fireEvent.click(screen.getByRole("button", { name: /Keep/ }));
@@ -193,7 +193,7 @@ describe("SamplesPage", () => {
   });
 
   it("CullBar Restore sends status null even for already-accepted frames", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // Fixture exposure 100 is status "accepted" — Restore must still null it.
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
     fireEvent.click(screen.getByRole("button", { name: /Restore/ }));
@@ -208,7 +208,7 @@ describe("SamplesPage", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      renderAt("/samples?beamtime=1");
+      renderAt("/samples?experiment=1");
       fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
       fireEvent.keyDown(window, { key: "k" });
       expect(batchMutate).toHaveBeenCalledWith({
@@ -227,7 +227,7 @@ describe("SamplesPage", () => {
     // X/K live in the contextual cull hint (SA-CULLHINT, below) and on the
     // CullBar once frames are selected; repeating them in the footer was a
     // duplicate affordance. The footer keeps navigation/selection/open.
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const legend = screen.getByTestId("kb-legend");
     expect(within(legend).queryByText("keep the selected frames")).not.toBeInTheDocument();
     expect(within(legend).queryByText("drop the selected frames")).not.toBeInTheDocument();
@@ -235,7 +235,7 @@ describe("SamplesPage", () => {
   });
 
   it("hints the X/K cull gesture (registry-driven) until a selection exists (SA-CULLHINT)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const hint = screen.getByTestId("samples-cull-hint");
     const caps = within(hint).getAllByTestId("kbkey").map((k) => k.textContent);
     // key caps come straight from the shortcut registry (drop=X, keep=K)
@@ -248,14 +248,14 @@ describe("SamplesPage", () => {
   });
 
   it("the keyboard legend advertises the ⌘K finder (SA-F4)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const legend = screen.getByTestId("kb-legend");
     expect(within(legend).getByText("⌘K")).toBeInTheDocument();
     expect(within(legend).getByText("find a sample")).toBeInTheDocument();
   });
 
   it("K from a contenteditable target does not batch-keep", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
     const editor = document.createElement("div");
     editor.setAttribute("contenteditable", "true");
@@ -270,7 +270,7 @@ describe("SamplesPage", () => {
   });
 
   it("an open modal dialog suppresses K (selection survives, no batch mutate)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
@@ -286,7 +286,7 @@ describe("SamplesPage", () => {
   });
 
   it("X drops the selection and Escape clears it", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!);
     // X → drop
@@ -312,7 +312,7 @@ describe("SamplesPage", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      renderAt("/samples?beamtime=1");
+      renderAt("/samples?experiment=1");
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!);
       fireEvent.keyDown(window, { key: "X" });
@@ -326,7 +326,7 @@ describe("SamplesPage", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      renderAt("/samples?beamtime=1");
+      renderAt("/samples?experiment=1");
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!);
       // The CullBar Restore button routes through batchSet(null).
@@ -338,7 +338,7 @@ describe("SamplesPage", () => {
   });
 
   it("a cross-sample selection discloses its spread in the cull bar (SA-F3)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // Sample 1 renders thumbs 0-2; sample 2 renders thumbs 3-4. Select one
     // frame from EACH row — the bar must disclose that the selection spans
     // two samples, not just report a flat count.
@@ -351,7 +351,7 @@ describe("SamplesPage", () => {
   });
 
   it("a single-sample selection stays count-only — no 'across' noise", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.click(thumbs[0]!); // sample 1
     fireEvent.click(thumbs[1]!); // sample 1 again
@@ -364,7 +364,7 @@ describe("SamplesPage", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      renderAt("/samples?beamtime=1");
+      renderAt("/samples?experiment=1");
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!); // sample 1 → exposure 100
       fireEvent.click(thumbs[3]!); // sample 2 → exposure 200
@@ -389,7 +389,7 @@ describe("SamplesPage", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      renderAt("/samples?beamtime=1");
+      renderAt("/samples?experiment=1");
       const thumbs = screen.getAllByTestId("thumbnail");
       fireEvent.click(thumbs[0]!);
       fireEvent.click(thumbs[1]!);
@@ -401,7 +401,7 @@ describe("SamplesPage", () => {
   });
 
   it("shift-click extends the contiguous range within one sample only", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // Sample 1 (3 thumbs) then sample 2 (2 thumbs).
     const thumbs = screen.getAllByTestId("thumbnail");
     // Click frame 1 of sample 1 (anchor).
@@ -418,7 +418,7 @@ describe("SamplesPage", () => {
   });
 
   it("the Status door navigates to /sample/:id; the name navigates to the loupe", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // Status door for sample 1 (no phase → "Index <name>").
     fireEvent.click(screen.getByRole("button", { name: /index buffer/i }));
     expect(screen.getByTestId("focus-route")).toBeInTheDocument();
@@ -430,7 +430,7 @@ describe("SamplesPage", () => {
       [1, []],
       [2, [exp({ id: 200, sample_id: 2 })]],
     ]);
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // No dead Index door into an empty Focus workspace.
     expect(screen.queryByRole("button", { name: /index buffer/i })).toBeNull();
     // A clear terminal status instead.
@@ -442,49 +442,49 @@ describe("SamplesPage", () => {
     state.byId = new Map<number, Exposure[]>([
       [2, [exp({ id: 200, sample_id: 2 })]],
     ]);
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     expect(screen.getByRole("button", { name: /index buffer/i })).toBeInTheDocument();
     expect(screen.queryByText("No exposures")).toBeNull();
   });
 
   it("clicking a sample name opens the loupe at that sample", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     fireEvent.click(screen.getByRole("button", { name: "Buffer" }));
     expect(screen.getByTestId("loupe-route")).toBeInTheDocument();
   });
 
   it("double-clicking a frame opens the loupe AT that frame (SA-F2)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     // Sample 1's thumbs render first; thumbs[1] = exposure 101 (frame 2).
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.dblClick(thumbs[1]!);
     expect(screen.getByTestId("loupe-route")).toHaveAttribute(
       "data-search",
-      "?beamtime=1&exposure=101",
+      "?experiment=1&exposure=101",
     );
   });
 
   it("Shift+Enter on a thumbnail opens the loupe AT that frame — keyboard parity for double-click (SA-THUMBKEY)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     const thumbs = screen.getAllByTestId("thumbnail");
     fireEvent.keyDown(thumbs[1]!, { key: "Enter", shiftKey: true });
     expect(screen.getByTestId("loupe-route")).toHaveAttribute(
       "data-search",
-      "?beamtime=1&exposure=101",
+      "?experiment=1&exposure=101",
     );
   });
 
   it("a name-click loupe opening carries no exposure param (default frame)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     fireEvent.click(screen.getByRole("button", { name: "Buffer" }));
     expect(screen.getByTestId("loupe-route")).toHaveAttribute(
       "data-search",
-      "?beamtime=1",
+      "?experiment=1",
     );
   });
 
   it("?beamtime filters rows and titles by the experiment", () => {
-    renderAt("/samples?beamtime=2");
+    renderAt("/samples?experiment=2");
     // beamtime 2 → only sample 3
     expect(screen.getAllByTestId("sample-table-row")).toHaveLength(1);
     // experiment 2 has no name in the fixtures → falls back to "experiment 2"
@@ -500,33 +500,33 @@ describe("SamplesPage", () => {
 
   it("an unknown ?beamtime renders an honest EmptyState, not a bare div (SA-F5)", () => {
     // 99 names no experiment record AND no sample carries it → unknown filter.
-    renderAt("/samples?beamtime=99");
-    const block = screen.getByTestId("samples-unknown-beamtime");
+    renderAt("/samples?experiment=99");
+    const block = screen.getByTestId("samples-unknown-experiment");
     expect(within(block).getByTestId("empty-state")).toBeInTheDocument();
     expect(
-      within(block).getByRole("heading", { name: "Unknown beamtime" }),
+      within(block).getByRole("heading", { name: "Unknown experiment" }),
     ).toBeInTheDocument();
     // The raw id never leaks into the page title.
     expect(screen.queryByRole("heading", { name: /experiment 99/i })).toBeNull();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Unknown beamtime",
+      "Unknown experiment",
     );
   });
 
   it("the unknown-beamtime CTA clears the filter and shows the whole corpus", () => {
-    renderAt("/samples?beamtime=99");
+    renderAt("/samples?experiment=99");
     fireEvent.click(screen.getByRole("button", { name: "Show all experiments" }));
     expect(screen.getByRole("heading", { name: "The corpus" })).toBeInTheDocument();
     expect(screen.getAllByTestId("sample-table-row")).toHaveLength(3);
-    expect(screen.queryByTestId("samples-unknown-beamtime")).toBeNull();
+    expect(screen.queryByTestId("samples-unknown-experiment")).toBeNull();
   });
 
   it("a beamtime known only through its samples is NOT unknown (shared-predicate pin)", () => {
     // Experiment 2 has no /experiments record but sample 3 carries it — the
     // shared resolver treats it as real, so the page (and the topbar select,
     // which uses the same resolver) never calls it unknown.
-    renderAt("/samples?beamtime=2");
-    expect(screen.queryByTestId("samples-unknown-beamtime")).toBeNull();
+    renderAt("/samples?experiment=2");
+    expect(screen.queryByTestId("samples-unknown-experiment")).toBeNull();
     expect(screen.getAllByTestId("sample-table-row")).toHaveLength(1);
   });
 
@@ -686,7 +686,7 @@ describe("SamplesPage", () => {
   });
 
   it("X from a contenteditable target does not batch-drop", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
     const editor = document.createElement("div");
     editor.setAttribute("contenteditable", "true");
@@ -702,7 +702,7 @@ describe("SamplesPage", () => {
   });
 
   it("an open modal dialog suppresses X (selection survives, no batch mutate)", () => {
-    renderAt("/samples?beamtime=1");
+    renderAt("/samples?experiment=1");
     fireEvent.click(screen.getAllByTestId("thumbnail")[0]!);
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");

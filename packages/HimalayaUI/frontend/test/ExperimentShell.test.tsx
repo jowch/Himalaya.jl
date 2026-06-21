@@ -38,9 +38,10 @@ describe("ExperimentShell (Phase E1)", () => {
   beforeEach(() => { vi.spyOn(api, "getExperiment").mockResolvedValue(EXP); });
   afterEach(() => vi.restoreAllMocks());
 
-  it("renders own chrome (top nav) + the experiment header name", async () => {
+  it("renders the experiment header name (T3.2: TopNav lives in outer AppShell)", async () => {
+    // T3.2: ExperimentShell is pure page content; TopNav comes from the outer
+    // AppShell (not rendered in this isolated unit test).
     renderAt("/experiments/7/corpus");
-    expect(screen.getByTestId("experiment-top-nav")).toBeInTheDocument();
     // The header name is an Input variant='title' (edit-in-place). Its wrapper
     // div carries data-testid; the inner <input> carries the value attribute.
     const nameWrapper = await screen.findByTestId("experiment-header-name");
@@ -60,10 +61,13 @@ describe("ExperimentShell (Phase E1)", () => {
     expect(screen.getByTestId("exp-tab-config")).toHaveAttribute("aria-current", "page");
   });
 
-  it("does NOT render the corpus topbar (it lives outside CorpusShell)", async () => {
+  it("no corpus-topbar in isolation (T3.2: TopNav lives in outer AppShell)", async () => {
     renderAt("/experiments/7/corpus");
     await screen.findByTestId("experiment-header-name");
+    // T3.2: corpus-topbar is gone; ExperimentShell is pure page content.
+    // TopNav is provided by the outer AppShell (not in this isolated unit test).
     expect(screen.queryByTestId("corpus-topbar")).toBeNull();
+    expect(screen.queryByTestId("topnav")).toBeNull();
   });
 
   it("StatBar shows real counts from stats when available (not placeholder dashes)", async () => {

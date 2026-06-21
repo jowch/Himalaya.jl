@@ -54,7 +54,7 @@ export function toCardChrome(s: SeriesSummary, figNumber: number, now: Date): Ca
     sampleCount: s.member_count,
     variable: s.ordering_variable ?? "",
     // Footer provenance: cross-experiment cards keep the explicit span note;
-    // single-beamtime cards quietly name the beamtime (null when memberless).
+    // single-experiment cards quietly name the experiment (null when memberless).
     provenance: s.spans_experiments
       ? "↔ cross-experiment · q normalized"
       : s.experiment_name,

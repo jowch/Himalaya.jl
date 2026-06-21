@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
@@ -142,6 +142,7 @@ const FOCUS_FIXTURE = (
  */
 export function FocusPage(): JSX.Element {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // ── route → store seeding ──────────────────────────────────────────────────
   // The status guards against the mid-session lie: a bogus /sample/:id never
@@ -506,7 +507,8 @@ export function FocusPage(): JSX.Element {
       // disarm handler (which also re-anchors focus per WCAG 2.4.3).
       if (addArmed) return false;
       if (previewIndexId !== undefined) setPreviewIndexId(undefined);
-      else navigate("/samples");
+      else if (searchParams.get("from") === "series") { navigate("/series"); }
+      else navigate(`/experiments/${experimentId}/corpus`);
       return undefined;
     },
   });
@@ -521,8 +523,8 @@ export function FocusPage(): JSX.Element {
             title="Sample not found"
             body="Nothing in the corpus matches this address."
             action={
-              <Button variant="outline" onClick={() => navigate("/samples")}>
-                Back to the contact sheet
+              <Button variant="outline" onClick={() => navigate("/experiments")}>
+                Back to the experiments
               </Button>
             }
           />

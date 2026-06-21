@@ -15,7 +15,7 @@ export type RouteSampleStatus = "pending" | "found" | "unknown";
 /**
  * The single shared predicate behind RouteSampleStatus: the exact parse plus
  * cache lookup the seeding hook uses. Pure, so honest surfaces rendered
- * outside the routed element (the CorpusTopbar sample stepper) can judge the
+ * outside the routed element (the sample stepper in the app shell) can judge the
  * same param against the same cache without duplicating the logic.
  */
 export function resolveRouteSampleStatus(

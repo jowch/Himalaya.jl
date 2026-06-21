@@ -4,7 +4,7 @@ The live application shell: the single layout shell, the topbar chrome, the rout
 
 ## Where things live
 
-- **Shell + chrome**: `CorpusShell` (the single layout shell) wraps `CorpusTopbar` (wordmark + stage-tabs + Beamtime chip — composed from `../ui` primitives: `TopBar`, `Wordmark`). No appearance utilities live here — chrome appearance is owned by the `ui/` primitives (closed-look / open-placement contract).
+- **Shell + chrome**: `AppShell` (the single layout shell) wraps `TopNav` (wordmark + stage-tabs + Experiment chip — composed from `../ui` primitives: `TopBar`, `Wordmark`). No appearance utilities live here — chrome appearance is owned by the `ui/` primitives (closed-look / open-placement contract).
 - **Routing**: `AppRoutes` is the route table (samples / loupe / focus / series folio·builder·scoping pages, all imported from `../pages`). `IndexSlugRedirect` and `StaleUrlPage` resolve/repair permalink slugs; `ResolvingFallback` is the in-flight placeholder.
 - **Onboarding / modals / errors**: `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. The modals compose `ModalShell` (+ `Button`/`Kicker`/`IconButton`) from `../ui`.
 
@@ -42,7 +42,7 @@ For a brand-new user who hasn't seen the tutorial, `onSubmitName` stashes the cr
 
 ## Loupe stepper's `location.state.sampleOrder` contract
 
-The loupe prev/next stepper (`CorpusTopbar`, the `loupeStepper`) derives its traversal order from `location.state.sampleOrder` — the serialized contact-sheet order, passed as React Router history state at navigate time (`CorpusTopbar.tsx:237-245`). When absent (a direct URL visit, or an entry-point that forgets to pass it), `resolveSampleOrder` falls back to a fresh sort, and the stepper walks a *different* order than the sheet the user came from. Any code navigating to the loupe must pass `navigate(url, { state: { sampleOrder: ordered } })` (the stepper's own `goto` already does, threading the order forward step-to-step).
+The loupe prev/next stepper (`TopNav`, the `loupeStepper`) derives its traversal order from `location.state.sampleOrder` — the serialized contact-sheet order, passed as React Router history state at navigate time (`TopNav.tsx:237-245`). When absent (a direct URL visit, or an entry-point that forgets to pass it), `resolveSampleOrder` falls back to a fresh sort, and the stepper walks a *different* order than the sheet the user came from. Any code navigating to the loupe must pass `navigate(url, { state: { sampleOrder: ordered } })` (the stepper's own `goto` already does, threading the order forward step-to-step).
 
 ## Anti-patterns
 

@@ -6,7 +6,7 @@ import { StaleUrlPage } from "../src/print/shell/StaleUrlPage";
 import { useAppState } from "../src/state";
 import type { StaleUrlContext } from "../src/state";
 
-// StaleUrlPage uses useNavigate (its unknown-path CTA navigates to /samples
+// StaleUrlPage uses useNavigate (its unknown-path CTA navigates to /experiments
 // since the Index surface was retired in #181), so renders need a Router.
 let lastLocation = "";
 function LocationProbe(): null {
@@ -80,14 +80,14 @@ describe("StaleUrlPage", () => {
     expect(s.navModalOpen).toBe(false);
   });
 
-  it("unknown_path — Page not found, CTA navigates to /samples (#181)", () => {
+  it("unknown_path — Page not found, CTA navigates to /experiments (T3.2)", () => {
     const ctx: StaleUrlContext = { kind: "unknown_path", raw: "/foo/bar" };
     renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "path");
     expect(screen.getByRole("heading")).toHaveTextContent(/Page not found\./);
-    expect(screen.getByTestId("stale-url-cta")).toHaveTextContent("Go to Samples");
+    expect(screen.getByTestId("stale-url-cta")).toHaveTextContent("Go to Experiments");
     fireEvent.click(screen.getByTestId("stale-url-cta"));
-    expect(lastLocation).toBe("/samples");
+    expect(lastLocation).toBe("/experiments");
   });
 
   it("/ keypress triggers CTA", () => {

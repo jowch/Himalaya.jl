@@ -18,7 +18,7 @@ import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
 import { useFloatingDock } from "../shell/floatingDock";
 import {
   resolveExperimentFilter,
-  UNKNOWN_BEAMTIME_LABEL,
+  UNKNOWN_EXPERIMENT_LABEL,
 } from "../../lib/experimentFilter";
 import { useShortcuts } from "../shell/useShortcuts";
 import { showToast } from "../../lib/toast";
@@ -72,7 +72,7 @@ function selectionSpread(
  *
  * Reimplemented from src/print composites + the sample-table mockup: a
  * `PageFrame width="sheet"` body with the contact-sheet head (kicker + serif
- * beamtime title + screened progress), a slotted `SheetTable` of
+ * experiment title + screened progress), a slotted `SheetTable` of
  * `SampleTableRow`s, a footer keyboard legend, and a floating `CullBar`.
  *
  * Carried logic only (queries / mutators / the row adapter); no legacy
@@ -87,13 +87,13 @@ export function SamplesPage(): JSX.Element {
   const corpusQuery = useCorpusSamples();
   const experimentsQuery = useExperiments();
   // SA-F5: the SAME resolver the topbar select uses — the page body and the
-  // select must agree on whether the URL names a real beamtime.
+  // select must agree on whether the URL names a real experiment.
   const filter = resolveExperimentFilter(
-    searchParams.get("beamtime"),
+    searchParams.get("experiment"),
     experimentsQuery.data,
     corpusQuery.data,
   );
-  const beamtime = filter.id;
+  const experimentId = filter.id;
 
   const samples = useMemo(
     () => corpusQuery.data ?? [],
@@ -101,25 +101,25 @@ export function SamplesPage(): JSX.Element {
   );
   const filtered = useMemo(
     () =>
-      beamtime === undefined
+      experimentId === undefined
         ? samples
-        : samples.filter((s) => s.experiment_id === beamtime),
-    [samples, beamtime],
+        : samples.filter((s) => s.experiment_id === experimentId),
+    [samples, experimentId],
   );
 
   // The unknown title never repeats the raw id from the address; the loading
   // fallback (`experiment N`) only shows before the lists settle the verdict.
   const title =
-    beamtime === undefined
+    experimentId === undefined
       ? "The corpus"
       : filter.unknown
-        ? UNKNOWN_BEAMTIME_LABEL
-        : (filter.name ?? `experiment ${beamtime}`);
+        ? UNKNOWN_EXPERIMENT_LABEL
+        : (filter.name ?? `experiment ${experimentId}`);
 
-  function clearBeamtimeFilter(): void {
+  function clearExperimentFilter(): void {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      next.delete("beamtime");
+      next.delete("experiment");
       return next;
     });
   }
@@ -129,7 +129,7 @@ export function SamplesPage(): JSX.Element {
   const batch = useSetExposureStatusBatch();
 
   // ── sort (SA-SORT, page-owned, URL-persisted) ───────────────────────────────
-  // The sort key+dir live in the address the SAME way the beamtime filter does
+  // The sort key+dir live in the address the SAME way the experiment filter does
   // (useSearchParams), so a sorted view is a shareable permalink. An unknown /
   // absent ?sort falls back to null = ingest order; ?dir defaults to asc.
   const sortKeyParam = searchParams.get("sort");
@@ -168,7 +168,7 @@ export function SamplesPage(): JSX.Element {
     });
   }, [filtered, sortKey, sortDir, corpusExposures.byId]);
 
-  // LO-NEXT: hand the loupe the exact visible order (sorted + beamtime-filtered)
+  // LO-NEXT: hand the loupe the exact visible order (sorted + experiment-filtered)
   // through router state, so its prev/next walk matches what's on screen. (The
   // "exposures"/"kept" sorts can't be reconstructed from the loupe's data, so
   // passing the resolved id list is the honest source.)
@@ -226,7 +226,7 @@ export function SamplesPage(): JSX.Element {
     });
   }
 
-  // SA-STALESELECT: a beamtime-filter change re-scopes the visible corpus, so a
+  // SA-STALESELECT: an experiment-filter change re-scopes the visible corpus, so a
   // working selection from the prior scope is no longer on screen to act on or
   // uncheck. Carrying it forward made the CullBar/ComposeBar counts, the cull
   // toast receipt, and the "+ New series" carry lie about what's actionable
@@ -237,7 +237,7 @@ export function SamplesPage(): JSX.Element {
     setSelected(new Set());
     setCheckedSamples(new Set());
     anchorRef.current = null;
-  }, [beamtime]);
+  }, [experimentId]);
 
   // LA-COLLIDE: the CullBar / ComposeBar are opaque, fixed, bottom-centre and
   // sit above the global InfrastructureBanner's z-index — so while either shows
@@ -444,7 +444,7 @@ export function SamplesPage(): JSX.Element {
   // direction. Frameless openings (name click) omit it → loupe default frame.
   function loupeHref(id: number, exposureId?: number): string {
     const params = new URLSearchParams();
-    if (beamtime !== undefined) params.set("beamtime", String(beamtime));
+    if (experimentId !== undefined) params.set("experiment", String(experimentId));
     if (exposureId !== undefined) params.set("exposure", String(exposureId));
     const qs = params.toString();
     return `/samples/loupe/${id}${qs ? `?${qs}` : ""}`;
@@ -508,16 +508,16 @@ export function SamplesPage(): JSX.Element {
             />
           </div>
         ) : filter.unknown ? (
-          // SA-F5: an address filtering by a beamtime that names nothing gets
-          // an honest empty state, never the bare "No samples in this beamtime"
-          // placeholder (which would imply the beamtime exists). The single
+          // SA-F5: an address filtering by an experiment that names nothing gets
+          // an honest empty state, never the bare "No samples in this experiment"
+          // placeholder (which would imply the experiment exists). The single
           // action embodies the way forward: clear the filter.
-          <div data-testid="samples-unknown-beamtime">
+          <div data-testid="samples-unknown-experiment">
             <EmptyState
-              title={UNKNOWN_BEAMTIME_LABEL}
-              body="The address filters by a beamtime that is not in this corpus."
+              title={UNKNOWN_EXPERIMENT_LABEL}
+              body="The address filters by an experiment that is not in this corpus."
               action={
-                <Button variant="outline" onClick={clearBeamtimeFilter}>
+                <Button variant="outline" onClick={clearExperimentFilter}>
                   Show all experiments
                 </Button>
               }
@@ -541,15 +541,15 @@ export function SamplesPage(): JSX.Element {
               onSort={applySort}
               empty={
                 // ON-EMPTY: a real door, consistent with the error /
-                // unknown-beamtime states. The corpus is populated by ingesting
+                // unknown-experiment states. The corpus is populated by ingesting
                 // and analyzing an experiment (CLI — there is no in-app upload),
                 // so the body names that path and the action reloads once it has
                 // run, rather than dead-ending on a lone sentence.
                 <EmptyState
                   title={
-                    beamtime === undefined
+                    experimentId === undefined
                       ? "No samples yet"
-                      : "No samples in this beamtime yet"
+                      : "No samples in this experiment yet"
                   }
                   body="Samples appear after an experiment is ingested and analyzed. If you just added data, reload to pull it in."
                   action={
@@ -632,7 +632,7 @@ export function SamplesPage(): JSX.Element {
 
         {/* ── Footer keyboard legend ────────────────────────────────────────── */}
         {/* SA-RESCORE3 F11: the legend documents cell navigation / selection —
-            meaningless under an empty, errored, or unknown-beamtime table (all
+            meaningless under an empty, errored, or unknown-experiment table (all
             of which leave sortedSamples empty). Render it only when there are
             rows to drive. */}
         {sortedSamples.length > 0 && (

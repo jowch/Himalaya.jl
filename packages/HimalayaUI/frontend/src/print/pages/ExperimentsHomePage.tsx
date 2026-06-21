@@ -44,7 +44,7 @@ export function ExperimentsHomePage(): JSX.Element {
       <div className="flex items-start justify-between gap-6 mb-6">
         <div>
           <Kicker>Experiments</Kicker>
-          <h1 className="text-display text-ink">Your beamtimes</h1>
+          <h1 className="text-display text-ink">Your experiments</h1>
         </div>
         <Button
           variant="accent"

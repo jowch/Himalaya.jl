@@ -20,7 +20,7 @@ export interface SeriesCardProps {
   sampleCount: number;
   /** Meta: "by {variable}". */
   variable: string;
-  /** Footer-left: beamtime string or a cross-experiment node. */
+  /** Footer-left: experiment label or a cross-experiment node. */
   provenance: ReactNode;
   /** Footer-right: "2 days ago". */
   editedLabel: string;

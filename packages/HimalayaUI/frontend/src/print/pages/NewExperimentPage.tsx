@@ -91,7 +91,7 @@ export function NewExperimentPage(): JSX.Element {
         ← Experiments
       </button>
       <Kicker>New experiment</Kicker>
-      <h1 className="text-display text-ink mb-1">Point at a beamtime</h1>
+      <h1 className="text-display text-ink mb-1">Point at an experiment directory</h1>
       <p className="text-base text-ink-soft mb-6">
         Choose the directory of exposures. Himalaya reads the PRP and setup files,
         groups the frames into samples, and derives the geometry.

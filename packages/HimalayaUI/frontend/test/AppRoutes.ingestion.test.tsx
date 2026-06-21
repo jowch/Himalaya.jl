@@ -24,7 +24,7 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
 
   it("/experiments renders the home gallery", async () => {
     renderAt("/experiments");
-    expect(await screen.findByText("Your beamtimes")).toBeInTheDocument();
+    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
   });
 
   it("/experiments/new renders the directory picker", () => {
@@ -35,8 +35,9 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
   it("/experiments/:id/corpus mounts ExperimentShell chrome + corpus body", async () => {
     renderAt("/experiments/7/corpus");
     expect(await screen.findByTestId("experiment-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("experiment-top-nav")).toBeInTheDocument();
-    // ExperimentShell is OUTSIDE CorpusShell -> no corpus topbar.
+    // T3.2: AppShell renders TopNav; ExperimentShell is pure page content.
+    // There is exactly ONE topnav in the DOM (from AppShell).
+    expect(screen.getByTestId("topnav")).toBeInTheDocument();
     expect(screen.queryByTestId("corpus-topbar")).toBeNull();
   });
 
@@ -50,6 +51,6 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
 
   it("/ redirects to /experiments", async () => {
     renderAt("/");
-    expect(await screen.findByText("Your beamtimes")).toBeInTheDocument();
+    expect(await screen.findByText("Your experiments")).toBeInTheDocument();
   });
 });

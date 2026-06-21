@@ -89,7 +89,7 @@ function notifySaveFailed(err: unknown): void {
 /**
  * LoupePage (greenfield) — the sample loupe at /samples/loupe/:sampleId.
  * URL-owned: the sample id is the route param, never Zustand `activeSampleId`.
- * Mounts body-only inside the carried CorpusShell <Outlet>.
+ * Mounts body-only inside the app shell <Outlet> (T3.2).
  */
 export function LoupePage(): JSX.Element {
   const { sampleId: sampleIdParam } = useParams<{ sampleId: string }>();
@@ -293,36 +293,36 @@ export function LoupePage(): JSX.Element {
   }, [exposures]);
 
   const goBack = useCallback(() => {
-    const beamtime = searchParams.get("beamtime");
+    const experimentParam = searchParams.get("experiment");
     // LO-FOCUSRET (WCAG 2.4.3): carry the originating sample id back so the
     // sheet restores focus to that row instead of dropping it to <body>.
     const opts = hasValidId ? { state: { focusSampleId: sampleId } } : undefined;
-    navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples", opts);
+    navigate(experimentParam ? `/experiments?experiment=${experimentParam}` : "/experiments", opts);
   }, [navigate, searchParams, hasValidId, sampleId]);
 
   // ── LO-NEXT: prev/next-SAMPLE navigation ──────────────────────────────────
   // Culling N samples should not cost N sheet round-trips. The sheet hands its
   // visible, sorted+filtered sample order through router state when it opens
   // the loupe; we walk THAT list so prev/next match exactly what the user saw.
-  // A direct URL (permalink, no state) falls back to the beamtime-scoped corpus
+  // A direct URL (permalink, no state) falls back to the experiment-scoped corpus
   // order, which also matches the sheet's default (ingest order).
   const location = useLocation();
-  const beamtimeParam = searchParams.get("beamtime");
-  const beamtime =
-    beamtimeParam !== null && /^\d+$/.test(beamtimeParam)
-      ? Number(beamtimeParam)
+  const experimentParam2 = searchParams.get("experiment");
+  const experimentId =
+    experimentParam2 !== null && /^\d+$/.test(experimentParam2)
+      ? Number(experimentParam2)
       : undefined;
-  // Shared with the CorpusTopbar sample stepper (resolveSampleOrder), so the
+  // Shared with the app shell sample stepper (resolveSampleOrder), so the
   // topbar's ‹ › and the loupe's own `[`/`]` keyboard nav always agree.
   const orderedSampleIds = useMemo(
     () =>
       resolveSampleOrder(
         corpusQ.data ?? [],
-        beamtime,
+        experimentId,
         sampleId,
         (location.state as { sampleOrder?: number[] } | null)?.sampleOrder,
       ),
-    [location.state, corpusQ.data, beamtime, sampleId],
+    [location.state, corpusQ.data, experimentId, sampleId],
   );
   const { prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
     orderedSampleIds,
@@ -331,15 +331,15 @@ export function LoupePage(): JSX.Element {
   const gotoSample = useCallback(
     (id: number): void => {
       const params = new URLSearchParams();
-      if (beamtime !== undefined) params.set("beamtime", String(beamtime));
+      if (experimentId !== undefined) params.set("experiment", String(experimentId));
       const qs = params.toString();
       // Carry the SAME order forward (so the next step still has the list) and
       // drop ?exposure= so each sample opens at its own default frame.
-      navigate(`/samples/loupe/${id}${qs ? `?${qs}` : ""}`, {
+      navigate(`/sample/${id}/loupe${qs ? `?${qs}` : ""}`, {
         state: { sampleOrder: orderedSampleIds },
       });
     },
-    [navigate, beamtime, orderedSampleIds],
+    [navigate, experimentId, orderedSampleIds],
   );
 
   // Loupe keyboard, via the shared shortcut library. The vocabulary nests:

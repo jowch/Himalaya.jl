@@ -13,11 +13,11 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
-| App shell + routing | `print/shell/` | `CorpusShell`, `CorpusTopbar`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
+| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector,comb,export}/` (and `print/waterfall/`) | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder). The `lint:design` appearance guard excludes `print/{plot,detector,comb,export}/` only — `print/waterfall/` is NOT exempt |
-| Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
+| Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `AppShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |

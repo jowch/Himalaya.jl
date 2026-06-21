@@ -29,7 +29,7 @@ const SAMPLE_B = {
 function BeamtimeSwitch(): JSX.Element {
   const [, setSp] = useSearchParams();
   return (
-    <button data-testid="set-beamtime" onClick={() => setSp({ beamtime: "2" })}>
+    <button data-testid="set-beamtime" onClick={() => setSp({ experiment: "2" })}>
       filter to exp 2
     </button>
   );
