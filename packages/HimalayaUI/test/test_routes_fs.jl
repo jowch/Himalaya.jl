@@ -102,6 +102,35 @@ end
     end
 end
 
+@testset "GET /api/fs/manifest matches integration against analysis_dir" begin
+    # Integration (.dat) lives in the analysis subtree, not data_dir (mirrors
+    # grouping.jl scan_directory). With analysis_dir supplied, integration is
+    # counted there; the per-exposure shortfall surfaces in `unmatched`.
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            data = mktempdir(); analysis = mktempdir()
+            for s in ("A", "B", "C")
+                touch(joinpath(data, "exp_$s.tif")); touch(joinpath(data, "exp_$s.prp"))
+            end
+            touch(joinpath(analysis, "exp_A.dat")); touch(joinpath(analysis, "exp_B.dat"))  # C has no .dat
+            base = "image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
+
+            # Without analysis_dir: integration matched against data_dir → 0.
+            m0 = JSON3.read(call("GET", "/api/fs/manifest?path=$(HTTP.escapeuri(data))&$base").body)
+            @test m0.matched.image == 3
+            @test m0.matched.integration == 0
+
+            # With analysis_dir: integration matched against the analysis subtree → 2 (A, B).
+            m1 = JSON3.read(call("GET",
+                "/api/fs/manifest?path=$(HTTP.escapeuri(data))&analysis_dir=$(HTTP.escapeuri(analysis))&$base").body)
+            @test m1.matched.image == 3
+            @test m1.matched.integration == 2
+            @test any(u -> u.file == "exp_C" && u.miss == "integration", m1.unmatched)
+        end
+    end
+end
+
 @testset "GET /api/fs/manifest 400 for missing dir" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
@@ -276,9 +305,33 @@ end
         r = HimalayaUI.resolve_experiment_layout(root)
         @test r.name == "1p7m"
         @test r.data_dir == joinpath(root, "data")
-        @test r.analysis_dir == joinpath(root, "analysis")
+        # analysis_dir points at the dir holding the integration .dat (the SSRL
+        # tot_files convention), discovered from the {base}_tot.dat present there.
+        @test r.analysis_dir == joinpath(root, "analysis", "automatic_analysis", "tot_files")
+        @test r.integration_pattern == "{name}_tot.dat"
+        @test r.image_pattern == "{name}.tif"        # fixture stems carry no _0_NNN frame
+        @test r.metadata_pattern == "{name}.prp"
         @test r.setup_file !== nothing && endswith(r.setup_file, "setup_info_20260425_181705.txt")
         @test r.setup_ambiguous == false
+    end
+end
+
+@testset "resolve_experiment_layout keys tot patterns off the frame suffix" begin
+    # SSRL data: stems carry a _0_001 frame; tot files are per-base ({base}_tot.dat).
+    # The resolver must suggest `{name}_0_001.tif` so the scan's stem resolves to base.
+    mktempdir() do tmp
+        root = joinpath(tmp, "ssrl"); mkpath(root)
+        data = joinpath(root, "data"); mkpath(data)
+        for stem in ("HA_1_001_S1_0_001", "HA_1_002_S2_0_001")
+            touch(joinpath(data, "$stem.tif")); _fs_write_prp(joinpath(data, "$stem.prp"))
+        end
+        totdir = joinpath(root, "analysis", "automatic_analysis", "tot_files"); mkpath(totdir)
+        touch(joinpath(totdir, "HA_1_001_S1_tot.dat")); touch(joinpath(totdir, "HA_1_002_S2_tot.dat"))
+        r = HimalayaUI.resolve_experiment_layout(root)
+        @test r.analysis_dir == totdir
+        @test r.image_pattern == "{name}_0_001.tif"
+        @test r.metadata_pattern == "{name}_0_001.prp"
+        @test r.integration_pattern == "{name}_tot.dat"
     end
 end
 
@@ -308,6 +361,7 @@ end
             @test endswith(String(r.data_dir), "/data")
             @test endswith(String(r.setup_file), "setup_info_20260425_181705.txt")
             @test r.setup_ambiguous == false
+            @test r.integration_pattern == "{name}_tot.dat"   # detected tot convention surfaced
             # 400 for a non-directory.
             @test call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri("/no/such/xyz"))").status == 400
         end

@@ -27,6 +27,63 @@ _setup_infos(dir::AbstractString)::Vector{String} =
                if startswith(f, "setup_info_") && endswith(f, ".txt")] :
         String[]
 
+# Bounded discovery of WHERE integration sidecars live AND which pattern names
+# them. SSRL data nests integration under an analysis subtree, and the canonical
+# integration is the per-base TOTAL: `analysis/automatic_analysis/tot_files/{base}_tot.dat`
+# (`{base}` = the sample stem with its `_0_NNN` frame suffix stripped). So the
+# scan's flat `sidecar(analysis_dir, stem, dat_pattern)` only finds them when
+# analysis_dir points at the real `.dat` dir AND the patterns match the convention.
+#
+# Probe one sample data stem against shallow candidate dirs (analysis, its
+# immediate subdirs, and the immediate subdirs of `analysis/automatic_analysis`):
+#   1. TOT (canonical): `{base}_tot.dat` → patterns key off the frame suffix.
+#   2. Per-frame `.dat` (e.g. sastool): `{stem}.dat` → default `{name}` patterns.
+# Returns `(; dir, image_pattern, metadata_pattern, integration_pattern)` or
+# `nothing` (caller falls back to root/analysis with default patterns).
+# SMB-bounded: one `readdir(data_dir)` (as validate/manifest already do) for a
+# sample stem, then a handful of `isdir`/`isfile` stats — NO deep walk.
+function _detect_integration_layout(data_dir::AbstractString, analysis_root::AbstractString)
+    isdir(analysis_root) || return nothing
+    sample_tif = nothing
+    for f in (try readdir(data_dir) catch; String[] end)
+        if endswith(f, ".tif"); sample_tif = f; break; end
+    end
+    sample_tif === nothing && return nothing
+    stem = sample_tif[1:end-length(".tif")]
+    # Frame suffix (e.g. "_0_001") if present; `{base}` is the stem without it.
+    m = match(r"_0_\d+$", stem)
+    suffix = m === nothing ? "" : m.match
+    base   = m === nothing ? stem : stem[1:end - length(suffix)]
+
+    subdirs(d) = isdir(d) ?
+        String[joinpath(d, x) for x in (try readdir(d) catch; String[] end)
+               if isdir(joinpath(d, x))] : String[]
+    candidates = String[analysis_root]
+    append!(candidates, subdirs(analysis_root))
+    append!(candidates, subdirs(joinpath(analysis_root, "automatic_analysis")))
+
+    # 1. Canonical TOTAL integration: {base}_tot.dat. The image/metadata patterns
+    #    key off the actual frame suffix so the scan's stem resolves to {base}.
+    for d in candidates
+        if isfile(joinpath(d, base * "_tot.dat"))
+            return (; dir = d,
+                      image_pattern       = "{name}$(suffix).tif",
+                      metadata_pattern    = "{name}$(suffix).prp",
+                      integration_pattern = "{name}_tot.dat")
+        end
+    end
+    # 2. Per-frame integration: {stem}.dat (default {name} patterns).
+    for d in candidates
+        if isfile(joinpath(d, stem * ".dat"))
+            return (; dir = d,
+                      image_pattern       = "{name}.tif",
+                      metadata_pattern    = "{name}.prp",
+                      integration_pattern = "{name}.dat")
+        end
+    end
+    return nothing
+end
+
 """
     resolve_experiment_layout(root) -> NamedTuple
 
@@ -40,9 +97,11 @@ Heuristics (name-based, with a correctable safety net):
 - `name`         = `basename(root)`.
 - `data_dir`     = `root/data` if it exists, else `root` (raw images usually
                    live in a `data` subdir; the user corrects if not).
-- `analysis_dir` = `root/analysis` if it exists, else `nothing` (a starting
-                   point; the user drills to the specific integration `.dat`
-                   directory, e.g. `analysis/automatic_analysis/tot_files`).
+- `analysis_dir` = the directory that actually holds the integration `.dat`
+                   sidecars, discovered by probing a sample stem against the
+                   analysis subtree (e.g. `analysis/automatic_analysis/sastool`);
+                   falls back to `root/analysis`, else `nothing`. The user can
+                   still correct it in Configuration.
 - `setup_file`   = the latest `setup_info_*.txt` found at the TOP of `root` or
                    `root/analysis` (where it actually lives — NOT next to the
                    integration files). This is the geometry source, so it is
@@ -56,14 +115,24 @@ function resolve_experiment_layout(root::AbstractString)
     data_dir = isdir(data_candidate) ? data_candidate : root
 
     analysis_candidate = joinpath(root, "analysis")
-    analysis_dir = isdir(analysis_candidate) ? analysis_candidate : nothing
+    # Discover the directory that actually holds the integration `.dat` files
+    # (often nested, e.g. analysis/automatic_analysis/tot_files) AND the file
+    # patterns that name them, so the scan finds them. Fall back to root/analysis
+    # with default `{name}` patterns when nothing is discovered.
+    detected = _detect_integration_layout(data_dir, analysis_candidate)
+    analysis_dir = detected !== nothing ? detected.dir :
+                   (isdir(analysis_candidate) ? analysis_candidate : nothing)
+    image_pattern       = detected !== nothing ? detected.image_pattern       : nothing
+    metadata_pattern    = detected !== nothing ? detected.metadata_pattern    : nothing
+    integration_pattern = detected !== nothing ? detected.integration_pattern : nothing
 
     # setup_info lives at the top of root or root/analysis — two shallow reads.
     setup_files = sort!(vcat(_setup_infos(root), _setup_infos(analysis_candidate)))
     setup_file = isempty(setup_files) ? nothing : last(setup_files)  # latest by name
     setup_ambiguous = isempty(setup_files) || length(unique(dirname.(setup_files))) > 1
 
-    return (; name, data_dir, analysis_dir, setup_file, setup_ambiguous)
+    return (; name, data_dir, analysis_dir, setup_file, setup_ambiguous,
+              image_pattern, metadata_pattern, integration_pattern)
 end
 
 """
@@ -102,7 +171,10 @@ function register_fs_routes!()
                    :data_dir => r.data_dir,
                    :analysis_dir => r.analysis_dir,
                    :setup_file => r.setup_file,
-                   :setup_ambiguous => r.setup_ambiguous))
+                   :setup_ambiguous => r.setup_ambiguous,
+                   :image_pattern => r.image_pattern,
+                   :metadata_pattern => r.metadata_pattern,
+                   :integration_pattern => r.integration_pattern))
     end
     @get "/api/fs/validate" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
@@ -128,22 +200,32 @@ function register_fs_routes!()
                 metadata    = get(q, "metadata_pattern", "{name}.prp"),
                 integration = get(q, "integration_pattern", "{name}.dat"))
         files = filter(!startswith("."), readdir(path))
+        # Integration (.dat) lives in the ANALYSIS subtree, not data_dir — the real
+        # scan pairs it via `sidecar(analysis_dir, stem, dat_pattern)` (grouping.jl
+        # `scan_directory`). Mirror that here so the preview's integration count is
+        # truthful: match `integration_pattern` against `analysis_dir` when supplied.
+        # Absent → fall back to data_dir (backward-compatible with older callers/tests).
+        analysis_dir_q = get(q, "analysis_dir", "")
+        integ_files = (!isempty(analysis_dir_q) && isdir(analysis_dir_q)) ?
+            filter(!startswith("."), readdir(analysis_dir_q)) : files
         # {name}-capture per type, inlined. Do NOT add a module helper — grouping.jl
         # / config.jl already own pattern matching; if the manifest's needs grow,
         # call the shared matcher (config.jl `_matches_prefix_with_boundary` /
         # `resolve_files`) rather than maintaining a second one (ponytail review).
-        function stems(pat)
+        function stems(filelist, pat)
             occursin("{name}", pat) || return Set{String}()
             pre, post = split(pat, "{name}"; limit = 2)
             out = Set{String}()
-            for f in files
+            for f in filelist
                 (startswith(f, pre) && endswith(f, post) &&
                     length(f) > length(pre) + length(post)) || continue
                 push!(out, f[nextind(f, lastindex(pre)):prevind(f, lastindex(f) - length(post) + 1)])
             end
             out
         end
-        img, meta, integ = stems(pats.image), stems(pats.metadata), stems(pats.integration)
+        img  = stems(files, pats.image)
+        meta = stems(files, pats.metadata)
+        integ = stems(integ_files, pats.integration)
         unmatched = Dict{String,String}[]
         for s in img, (label, set) in (("metadata", meta), ("integration", integ))
             s in set || push!(unmatched, Dict("file" => s, "miss" => label))
