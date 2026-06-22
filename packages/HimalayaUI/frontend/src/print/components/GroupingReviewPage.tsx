@@ -436,10 +436,11 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
         }));
         return (
           <>
-            {/* Invisible backdrop to catch outside-clicks */}
+            {/* Invisible backdrop to catch outside-clicks. Above the Confirm
+                footer (z-30) so a picker opened near the bottom isn't covered. */}
             <div
               aria-hidden="true"
-              style={{ position: "fixed", inset: 0, zIndex: 19 }}
+              style={{ position: "fixed", inset: 0, zIndex: 39 }}
               onClick={() => setMovePicker(null)}
             />
             {/* Anchor wrapper: positioned at the trigger element */}
@@ -448,7 +449,7 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
                 position: "fixed",
                 top: rect.bottom,
                 left: rect.left,
-                zIndex: 20,
+                zIndex: 40,
               }}
             >
               <div className="relative">
