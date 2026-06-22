@@ -88,6 +88,9 @@ describe("ConfigurationPage (first-run mode)", () => {
       analysis_dir: "/data/run42/analysis",
       setup_file: "/data/run42/analysis/setup_info_x.txt",
       setup_ambiguous: false,
+      image_pattern: null,
+      metadata_pattern: null,
+      integration_pattern: null,
     });
     mockFetchManifest({
       total: 4,

@@ -71,6 +71,14 @@ export const useDraftExperiment = create<DraftExperimentState>((set) => ({
       analysis_dir: r.analysis_dir ?? "",
       setup_file: r.setup_file ?? "",
       setup_ambiguous: r.setup_ambiguous,
+      // Seed detected patterns (e.g. the SSRL tot_files convention). When the
+      // resolver returns null (undetected), keep patterns empty so the funnel's
+      // `{name}.*` defaults apply.
+      patterns: {
+        ...(r.image_pattern ? { image: r.image_pattern } : {}),
+        ...(r.metadata_pattern ? { metadata: r.metadata_pattern } : {}),
+        ...(r.integration_pattern ? { integration: r.integration_pattern } : {}),
+      },
     }),
   patch: (fields) => set((s) => ({ ...s, ...fields })),
   clear: () => set({ ...EMPTY }),

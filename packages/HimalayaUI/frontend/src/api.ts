@@ -261,6 +261,12 @@ export interface ResolveLayoutResponse {
   analysis_dir: string | null;
   setup_file: string | null;
   setup_ambiguous: boolean;
+  /** Suggested file patterns when a known integration layout is detected (e.g.
+   *  the SSRL tot_files convention → `{name}_0_001.tif` / `{name}_tot.dat`).
+   *  Null when undetected — the funnel falls back to its `{name}.*` defaults. */
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
 }
 export const resolveLayout = (path: string) =>
   request<ResolveLayoutResponse>(
@@ -293,9 +299,13 @@ export const fetchManifest = (
   path: string,
   patterns: { image?: string; metadata?: string; integration?: string } = {},
   setupFile?: string,
+  analysisDir?: string,
 ): Promise<ManifestResponse> => {
   const params = new URLSearchParams({ path });
   if (setupFile)            params.set("setup_file",          setupFile);
+  // Integration (.dat) is matched against the analysis subtree, mirroring the
+  // real scan — so the preview's integration count reflects where .dat lives.
+  if (analysisDir)          params.set("analysis_dir",        analysisDir);
   if (patterns.image)       params.set("image_pattern",       patterns.image);
   if (patterns.metadata)    params.set("metadata_pattern",    patterns.metadata);
   if (patterns.integration) params.set("integration_pattern", patterns.integration);

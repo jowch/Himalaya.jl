@@ -60,6 +60,51 @@ const DEFAULT_PATTERNS = {
   integration: "{name}.dat",
 } as const;
 
+/**
+ * CoverageLine — truthful per-pattern match counts for the indexing preview.
+ * The exposure count is the number of image matches; metadata and integration
+ * are shown as `n / exposures`, flagged amber when a pattern covers fewer than
+ * the exposures (or zero). A shortfall raises an explicit warning instead of
+ * being hidden — integration (.dat) is matched against the analysis subtree, so
+ * a 0 here means the pattern or the analysis directory is off, not a near-miss.
+ */
+function CoverageLine({ m }: { m: api.ManifestResponse }): JSX.Element {
+  const exp = m.matched.image;
+  const cov = [
+    { key: "image", label: "Image", n: m.matched.image },
+    { key: "metadata", label: "Metadata", n: m.matched.metadata },
+    { key: "integration", label: "Integration", n: m.matched.integration },
+  ] as const;
+  const short = cov.filter((c) => c.key !== "image" && c.n < exp);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="manifest-coverage">
+        {cov.map((c) => {
+          const under = c.key !== "image" && c.n < exp;
+          return (
+            <span key={c.key} className="text-caption">
+              <span className="text-ink-soft">{c.label} </span>
+              <span className={under ? "text-data text-warning" : "text-data text-ink"}>{c.n}</span>
+              {c.key !== "image" && <span className="text-ink-faint">/{exp}</span>}
+            </span>
+          );
+        })}
+      </div>
+      {short.length > 0 && exp > 0 && (
+        <p className="text-caption text-warning" role="status" data-testid="manifest-warning">
+          {short
+            .map((c) =>
+              c.key === "integration"
+                ? `Integration matched ${c.n} of ${exp}. Check the integration pattern or the analysis directory.`
+                : `Metadata matched ${c.n} of ${exp}. Check the metadata pattern.`,
+            )
+            .join(" ")}
+        </p>
+      )}
+    </>
+  );
+}
+
 /** Maps a geometry source string to the short label shown in the chip. */
 function sourceLabel(source: string | undefined | null): string {
   if (!source || source === "default") return "unset";
@@ -100,8 +145,8 @@ function ConfigurationFirstRun(): JSX.Element {
   // 2. Manifest (geometry/files) against the resolved + corrected data_dir +
   //    setup_file. Re-keys when the user edits data_dir / patterns / setup_file.
   const manifestQuery = useQuery({
-    queryKey: ["manifest", data_dir, patterns, setup_file],
-    queryFn: () => api.fetchManifest(data_dir, patterns, setup_file || undefined),
+    queryKey: ["manifest", data_dir, analysis_dir, patterns, setup_file],
+    queryFn: () => api.fetchManifest(data_dir, patterns, setup_file || undefined, analysis_dir || undefined),
     enabled: resolved && data_dir !== "",
   });
 
@@ -135,26 +180,52 @@ function ConfigurationFirstRun(): JSX.Element {
   // Local editable field state, synced from the draft once it resolves; commits
   // on blur/Enter via patch() (which re-keys the manifest query where relevant).
   const [nameLocal, setNameLocal] = useState(name);
-  const [dataDirLocal, setDataDirLocal] = useState(data_dir);
   const [analysisDirLocal, setAnalysisDirLocal] = useState(analysis_dir);
   const [setupFileLocal, setSetupFileLocal] = useState(setup_file);
   const [imagePattern, setImagePattern] = useState(patterns.image ?? DEFAULT_PATTERNS.image);
   const [metadataPattern, setMetadataPattern] = useState(patterns.metadata ?? DEFAULT_PATTERNS.metadata);
   const [integrationPattern, setIntegrationPattern] = useState(patterns.integration ?? DEFAULT_PATTERNS.integration);
 
+  // Analysis directory is shown read-only ("what we found"), RELATIVE to the
+  // experiment root; the user reveals an editable relative-suffix field only to
+  // CORRECT it (note 10). analysisDirLocal stays absolute (the backend contract);
+  // the field shows/edits the suffix under the root.
+  const [editingAnalysis, setEditingAnalysis] = useState(false);
+
   // When resolve populates the draft, seed the editable fields from it.
   useEffect(() => {
     if (resolved) {
       setNameLocal(name);
-      setDataDirLocal(data_dir);
       setAnalysisDirLocal(analysis_dir);
       setSetupFileLocal(setup_file);
+      // Re-seed pattern fields from any patterns the resolver detected (e.g. the
+      // SSRL tot_files convention); fall back to the defaults when absent.
+      setImagePattern(patterns.image ?? DEFAULT_PATTERNS.image);
+      setMetadataPattern(patterns.metadata ?? DEFAULT_PATTERNS.metadata);
+      setIntegrationPattern(patterns.integration ?? DEFAULT_PATTERNS.integration);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolved]);
 
   const commitPattern = (key: "image" | "metadata" | "integration", value: string): void => {
     patch({ patterns: { ...patterns, [key]: value } });
+  };
+
+  // Root-relative path display: the root is absolute (shown under the title);
+  // the data/analysis locations read RELATIVE to it (e.g. `data`, `analysis`).
+  // An absolute value outside the root degrades gracefully to showing absolute.
+  const rootTrim = root.replace(/\/+$/, "");
+  const rootBase = rootTrim.split("/").filter(Boolean).pop() ?? "";
+  const stripRoot = (abs: string): string => {
+    if (!abs) return "";
+    if (abs === rootTrim) return ".";
+    return abs.startsWith(rootTrim + "/") ? abs.slice(rootTrim.length + 1) : abs;
+  };
+  const joinRoot = (rel: string): string => {
+    const v = rel.trim();
+    if (v === "") return "";
+    if (v.startsWith("/")) return v; // absolute override (e.g. a shared analysis dir outside root)
+    return `${rootTrim}/${v.replace(/^\.\//, "")}`;
   };
 
   const geo = manifest?.geometry;
@@ -175,71 +246,121 @@ function ConfigurationFirstRun(): JSX.Element {
   return (
     <>
       <div className="flex flex-col gap-6 px-8 py-8 pb-28">
-        {/* 1. Header — editable Name + root path */}
-        <div data-testid="config-header">
-          <Kicker tone="accent" className="mb-1">
-            New experiment · Review before scan
-          </Kicker>
-          {/* ponytail: undo/redo buttons top-right -- deferred */}
-          <Input
-            variant="title"
-            testId="config-name"
-            value={nameLocal}
-            onValueChange={setNameLocal}
-            onBlur={() => patch({ name: nameLocal.trim() })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { patch({ name: nameLocal.trim() }); (e.target as HTMLElement).blur(); }
-            }}
-            aria-label="Experiment name"
-          />
-          <p className="text-sm font-mono text-ink-soft mt-1">{root}</p>
+        {/* 1. Header — editable Name + root path (left) · task framing (right) */}
+        <div data-testid="config-header" className="flex items-start justify-between gap-8">
+          <div className="min-w-0">
+            <Kicker tone="accent" className="mb-1">
+              New experiment · Review before scan
+            </Kicker>
+            {/* The title is editable in place; a quiet cue says so (note 6). */}
+            <div className="flex items-baseline gap-2">
+              <Input
+                variant="title"
+                testId="config-name"
+                value={nameLocal}
+                onValueChange={setNameLocal}
+                onBlur={() => patch({ name: nameLocal.trim() })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { patch({ name: nameLocal.trim() }); (e.target as HTMLElement).blur(); }
+                }}
+                aria-label="Experiment name"
+              />
+              <span className="text-caption text-ink-faint shrink-0">click to rename</span>
+            </div>
+            <p className="text-caption font-mono text-ink-soft mt-1 truncate">{root}</p>
+          </div>
+          {/* Task framing — what this screen is for (note 6). */}
+          <p className="text-body text-ink-soft max-w-[36ch] shrink-0">
+            We scanned this folder and filled in what we found. Check the
+            locations and geometry below, correct anything off, then Approve to
+            create the experiment and run the full scan.
+          </p>
         </div>
 
-        {/* 2. Indexing progress line */}
+        {/* 2. Indexing progress + truthful per-pattern coverage */}
         <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <span className="text-meta text-ink-soft">
               {indexing ? "Indexing directory…" : "Indexed"}
             </span>
             {manifest && (
               <span className="text-meta text-ink-soft">
-                {manifest.matched.image}/{manifest.total} indexed
+                <span className="text-data text-ink">{manifest.matched.image}</span>
+                {manifest.matched.image === 1 ? " exposure found" : " exposures found"}
               </span>
             )}
           </div>
+          {manifest && <CoverageLine m={manifest} />}
           {indexing && <ProgressBar value={0} total={1} label="Indexing directory" />}
         </div>
 
         {/* 3. Two cards side by side: Sources (locations + patterns) and Geometry */}
         <div className="grid grid-cols-2 gap-5">
-          {/* 3a. SOURCES card — editable locations + file patterns */}
+          {/* 3a. SOURCES card — resolved locations (read-only) + file patterns.
+              Labels are sentence-case ink (.text-meta); hints are dim caption,
+              so label and hint read as distinct roles (note 9). */}
           <Card padding="lg">
-            <Kicker tone="soft" className="mb-4">Sources · locations and patterns</Kicker>
+            <Kicker tone="soft" className="mb-1">Sources · locations and patterns</Kicker>
+            <p className="text-caption text-ink-soft mb-4">
+              Locations are relative to the experiment root above.
+            </p>
             <div className="flex flex-col gap-3">
+              {/* Data directory — read-only confirmation, relative to the root
+                  (note 7). You pointed at the root; this is what we resolved. */}
               <div className="flex items-center justify-between gap-4">
-                <span className="text-meta text-ink-soft shrink-0">data directory</span>
-                <Input
-                  value={dataDirLocal}
-                  onValueChange={setDataDirLocal}
-                  inputSize="sm" mono testId="config-data-dir"
-                  onBlur={() => patch({ data_dir: dataDirLocal.trim() })}
-                  onKeyDown={(e) => { if (e.key === "Enter") patch({ data_dir: dataDirLocal.trim() }); }}
-                  className="w-56"
-                />
+                <span className="text-meta shrink-0">Data directory</span>
+                <span data-testid="config-data-dir" className="text-data text-ink-soft truncate text-right">
+                  {stripRoot(data_dir) || "—"}
+                </span>
+              </div>
+              {/* Analysis directory — resolved, read-only, relative; reveal a
+                  relative-suffix field to correct it (note 10). */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-meta shrink-0">Analysis directory</span>
+                  {!editingAnalysis && (
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span data-testid="config-analysis-dir" className="text-data text-ink-soft truncate text-right">
+                        {stripRoot(analysisDirLocal) || "not found"}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-caption text-accent shrink-0 hover:underline"
+                        onClick={() => setEditingAnalysis(true)}
+                      >
+                        Edit
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {editingAnalysis && (
+                  <div className="flex items-center gap-2">
+                    {/* The root is fixed (dim prefix); the user types the suffix.
+                        A leading "/" still accepts an absolute path. */}
+                    <Input
+                      value={stripRoot(analysisDirLocal)}
+                      onValueChange={(rel) => {
+                        const abs = joinRoot(rel);
+                        setAnalysisDirLocal(abs);
+                        patch({ analysis_dir: abs });
+                      }}
+                      inputSize="sm" mono
+                      aria-label="Analysis directory (relative to root)"
+                      leading={<span className="text-data text-ink-faint shrink-0">…/{rootBase}/</span>}
+                      className="flex-1"
+                    />
+                    <button
+                      type="button"
+                      className="text-caption text-accent shrink-0 hover:underline"
+                      onClick={() => { patch({ analysis_dir: analysisDirLocal.trim() }); setEditingAnalysis(false); }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-meta text-ink-soft shrink-0">analysis directory</span>
-                <Input
-                  value={analysisDirLocal}
-                  onValueChange={setAnalysisDirLocal}
-                  inputSize="sm" mono testId="config-analysis-dir"
-                  onBlur={() => patch({ analysis_dir: analysisDirLocal.trim() })}
-                  onKeyDown={(e) => { if (e.key === "Enter") patch({ analysis_dir: analysisDirLocal.trim() }); }}
-                  className="w-56"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-meta text-ink-soft">image</span>
+                <span className="text-meta shrink-0">Exposure pattern</span>
                 <Input
                   value={imagePattern}
                   onValueChange={setImagePattern}
@@ -250,7 +371,7 @@ function ConfigurationFirstRun(): JSX.Element {
                 />
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-meta text-ink-soft">metadata</span>
+                <span className="text-meta shrink-0">Metadata pattern</span>
                 <Input
                   value={metadataPattern}
                   onValueChange={setMetadataPattern}
@@ -261,7 +382,7 @@ function ConfigurationFirstRun(): JSX.Element {
                 />
               </div>
               <div className="flex items-center justify-between gap-4">
-                <span className="text-meta text-ink-soft">integration</span>
+                <span className="text-meta shrink-0">Integration pattern</span>
                 <Input
                   value={integrationPattern}
                   onValueChange={setIntegrationPattern}
@@ -272,8 +393,8 @@ function ConfigurationFirstRun(): JSX.Element {
                 />
               </div>
             </div>
-            <p className="text-meta text-ink-soft mt-4">
-              Editing the data directory or a pattern re-runs the index.
+            <p className="text-caption text-ink-soft mt-4">
+              Editing a pattern re-runs the index.
             </p>
           </Card>
 
@@ -283,7 +404,7 @@ function ConfigurationFirstRun(): JSX.Element {
             {geo ? (
               <div className="flex flex-col divide-y divide-hair">
                 <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">beam center</span>
+                  <span className="text-meta text-ink-soft">Beam center</span>
                   <span className="flex items-center gap-2">
                     <span className="text-data text-ink">
                       {geo.beam_center_x != null && geo.beam_center_y != null
@@ -296,7 +417,7 @@ function ConfigurationFirstRun(): JSX.Element {
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">flight path</span>
+                  <span className="text-meta text-ink-soft">Flight path</span>
                   <span className="flex items-center gap-2">
                     <span className="text-data text-ink">
                       {geo.flight_path_m != null ? `${geo.flight_path_m.toFixed(4)} m` : "—"}
@@ -307,7 +428,7 @@ function ConfigurationFirstRun(): JSX.Element {
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">pixel size</span>
+                  <span className="text-meta text-ink-soft">Pixel size</span>
                   <span className="flex items-center gap-2">
                     <span className="text-data text-ink">
                       {geo.pixel_size_um != null ? `${geo.pixel_size_um.toFixed(1)} µm` : "—"}
@@ -318,7 +439,7 @@ function ConfigurationFirstRun(): JSX.Element {
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">energy</span>
+                  <span className="text-meta text-ink-soft">Energy</span>
                   <span className="flex items-center gap-2">
                     <span className="text-data text-ink">
                       {geo.energy_kev != null ? `${geo.energy_kev.toFixed(1)} keV` : "—"}
@@ -347,26 +468,30 @@ function ConfigurationFirstRun(): JSX.Element {
                 discovery was ambiguous (none / multiple). Otherwise a quiet
                 caption naming which file fed the geometry. */}
             {setup_ambiguous ? (
-              <div className="mt-3 flex flex-col gap-1">
+              <div className="mt-3 flex flex-col gap-1.5">
                 <span className="text-meta text-warning">
-                  Setup file unconfirmed · point to the geometry source:
+                  We could not find the beamline setup file on its own.
+                </span>
+                <span className="text-caption text-ink-soft">
+                  Point us to the setup_info file so we can read the beam center and flight path.
                 </span>
                 <Input
                   value={setupFileLocal}
                   onValueChange={setSetupFileLocal}
                   inputSize="sm" mono testId="config-setup-file"
+                  placeholder="…/analysis/setup_info_*.txt"
                   onBlur={() => patch({ setup_file: setupFileLocal.trim() })}
                   onKeyDown={(e) => { if (e.key === "Enter") patch({ setup_file: setupFileLocal.trim() }); }}
-                  className="w-full"
+                  className="w-full mt-0.5"
                 />
               </div>
             ) : setup_file ? (
-              <p className="text-meta text-ink-soft mt-3" data-testid="config-setup-caption">
-                geometry from {setup_file.split("/").pop()}
+              <p className="text-caption text-ink-soft mt-3" data-testid="config-setup-caption">
+                Geometry read from {setup_file.split("/").pop()}
               </p>
             ) : null}
-            <p className="text-meta text-ink-soft mt-4">
-              prp = sidecar · setup = beamline. Override after the experiment is created.
+            <p className="text-caption text-ink-soft mt-4">
+              Derived automatically: prp = file sidecar, setup = beamline log. You can override later.
             </p>
           </Card>
         </div>
