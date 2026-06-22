@@ -102,6 +102,28 @@ end
     end
 end
 
+@testset "GET /api/fs/manifest flags near-miss image extensions" begin
+    # A file that almost matches the image pattern but for a wrong extension/case
+    # (.tiff vs .tif, .TIF vs .tif) is a leading cause of a half-failed scan, so the
+    # diagnostic surface must see it (§5.5). Emit an `image` miss carrying the
+    # offending on-disk filename in `near`.
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            dir = mktempdir()
+            touch(joinpath(dir, "good.tif")); touch(joinpath(dir, "good.prp")); touch(joinpath(dir, "good.dat"))
+            touch(joinpath(dir, "extra.tiff"))   # near-miss: .tiff superset of .tif
+            touch(joinpath(dir, "caps.TIF"))      # near-miss: case
+            q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
+            m = JSON3.read(call("GET", "/api/fs/manifest?$q").body)
+            @test m.matched.image == 1                                       # only good.tif matched exactly
+            img_misses = filter(u -> u.miss == "image", m.unmatched)
+            @test Set([u.near for u in img_misses]) == Set(["extra.tiff", "caps.TIF"])
+            @test all(u -> haskey(u, :file), img_misses)                     # would-be stem present
+        end
+    end
+end
+
 @testset "GET /api/fs/manifest matches integration against analysis_dir" begin
     # Integration (.dat) lives in the analysis subtree, not data_dir (mirrors
     # grouping.jl scan_directory). With analysis_dir supplied, integration is

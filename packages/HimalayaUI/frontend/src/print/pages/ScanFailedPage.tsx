@@ -15,11 +15,12 @@ export interface ScanFailedPageProps {
   onIngestParsed?: () => void;
 }
 
-type MissType = "metadata" | "integration";
+type MissType = "metadata" | "integration" | "image";
 
 const MISS_LABEL: Record<MissType, string> = {
   metadata: "metadata",
   integration: "integration",
+  image: "image",
 };
 
 /**

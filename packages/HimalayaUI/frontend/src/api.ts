@@ -278,7 +278,7 @@ export const resolveLayout = (path: string) =>
  *  unmatched files so the user can tune patterns before creating the
  *  experiment. `patterns` keys are optional — omitting them lets the backend
  *  use its defaults. */
-export interface ManifestUnmatched { file: string; miss: string }
+export interface ManifestUnmatched { file: string; miss: string; near?: string }
 export interface ManifestGeometry {
   energy_kev: number | null; energy_kev_source: string;
   flight_path_m: number | null; flight_path_m_source: string;

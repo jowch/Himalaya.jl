@@ -230,6 +230,36 @@ function register_fs_routes!()
         for s in img, (label, set) in (("metadata", meta), ("integration", integ))
             s in set || push!(unmatched, Dict("file" => s, "miss" => label))
         end
+        # Near-miss image extensions: a file matching the image prefix + the right
+        # middle but a wrong extension/case (.tiff vs .tif, .TIF vs .tif) never enters
+        # `img`, so the sidecar loop above can't see it. A leading cause of a
+        # half-failed scan, so the diagnostic surface must (§5.5). `file` = would-be
+        # stem, `near` = the offending on-disk filename.
+        # ponytail: extension/case near-miss only; doesn't catch a typo'd stem middle.
+        if occursin("{name}", pats.image)
+            ipre, ipost = split(pats.image, "{name}"; limit = 2)
+            pdot = findlast('.', ipost)
+            if pdot !== nothing
+                patext = lowercase(ipost[pdot:end])              # ".tif"
+                patmid = ipost[1:prevind(ipost, pdot)]           # "" or "_0_001"
+                for f in files
+                    (startswith(f, ipre) && !endswith(f, ipost)) || continue
+                    rest = f[nextind(f, lastindex(ipre)):end]
+                    fdot = findlast('.', rest)
+                    fdot === nothing && continue
+                    fext = lowercase(rest[fdot:end])
+                    fmid = rest[1:prevind(rest, fdot)]           # stem + any middle
+                    # near = same ext bar case (.TIF), or exactly one extra trailing
+                    # char (.tif⊂.tiff). One char keeps .tiff but rejects .tiffany.
+                    (fext == patext ||
+                     (startswith(fext, patext) && length(fext) == length(patext) + 1)) || continue
+                    endswith(fmid, patmid) || continue
+                    stem = chop(fmid; tail = length(patmid))     # drop the pattern middle
+                    isempty(stem) && continue
+                    push!(unmatched, Dict("file" => stem, "miss" => "image", "near" => f))
+                end
+            end
+        end
 
         # ── Geometry preview (read-only) ──
         # `path` is the data_dir (the frontend passes the resolved/edited data_dir).
