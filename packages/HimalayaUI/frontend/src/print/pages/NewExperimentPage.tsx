@@ -42,7 +42,7 @@ function PreflightCheck({
  */
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
-  const { setDraft, clear } = useDraftExperiment();
+  const { setRoot, clear } = useDraftExperiment();
 
   const { data: experiments } = useExperiments();
 
@@ -51,12 +51,19 @@ export function NewExperimentPage(): JSX.Element {
   const [validation, setValidation] = useState<ValidatePathResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // One experiment per directory: warn (and block) if this dir is already taken.
+  // The picked path is the experiment ROOT; its data_dir is usually `<root>/data`
+  // (resolved on the next step). One experiment per data_dir, so flag a dup when
+  // either the root itself OR <root>/data already backs an experiment. The create
+  // route enforces the real 409 — this is the up-front courtesy check.
   const trimmedPath = path.trim();
+  const rootData = trimmedPath.replace(/\/+$/, "") + "/data";
   const duplicateOf =
     trimmedPath === ""
       ? undefined
-      : (experiments ?? []).find((e) => e.data_dir.trim() === trimmedPath);
+      : (experiments ?? []).find((e) => {
+          const d = e.data_dir.trim();
+          return d === trimmedPath || d === rootData;
+        });
 
   // Debounced suggestion + validation fetch on path change.
   useEffect(() => {
@@ -79,7 +86,7 @@ export function NewExperimentPage(): JSX.Element {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      setDraft({ path: trimmedPath });
+      setRoot(trimmedPath);
       navigate("/experiments/new/config");
     } finally {
       setSubmitting(false);
@@ -104,8 +111,9 @@ export function NewExperimentPage(): JSX.Element {
           <Kicker tone="accent">New experiment</Kicker>
           <h1 className="text-display text-ink">Point at a directory</h1>
           <p className="text-body text-ink-soft mt-2 mb-6 max-w-[60ch]">
-            Pick the folder for this experiment. The next step indexes it and lets
-            you review before anything is created.
+            Pick the experiment folder (the one holding the data and analysis
+            directories). The next step finds the pieces and lets you review and
+            correct them before anything is created.
           </p>
 
           <Card padding="lg">

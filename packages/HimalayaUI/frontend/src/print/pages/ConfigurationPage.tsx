@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -69,28 +69,40 @@ function sourceLabel(source: string | undefined | null): string {
   return "unset";
 }
 
-/** Derives a display name from the draft path: the last non-empty path segment. */
-function nameFromPath(path: string): string {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
-}
-
 /**
- * First-run mode rendered at `/experiments/new/config`. Reads from the draft
- * store, fetches the phase-1 manifest, shows the indexing status + file-pattern
- * editor + auto-derived geometry + latest files scanned. Gates Approve until
- * the manifest resolves. On Approve creates the experiment and navigates to its corpus.
+ * First-run mode rendered at `/experiments/new/config`. Reads the picked ROOT
+ * from the draft store, structurally RESOLVES it (`/api/fs/resolve`) into
+ * auto-discovered defaults (name / data_dir / analysis_dir / setup_file) the
+ * user CORRECTS in place, then fetches the phase-1 manifest against the resolved
+ * data_dir + setup_file (geometry source). Gates Approve until indexing resolves.
+ * On Approve creates the experiment with the CONFIRMED values + navigates to its corpus.
  *
- * Geometry is shown first-run (geometry is now derived at indexing time from
- * sidecar .prp files and beamline setup -- no need to defer to after creation).
+ * Geometry is shown first-run (derived at index time from the resolved setup
+ * file + sidecar .prp files -- no need to defer to after creation).
  */
 function ConfigurationFirstRun(): JSX.Element {
   const navigate = useNavigate();
-  const { path, patterns, setDraft, clear } = useDraftExperiment();
+  const {
+    root, resolved, name, data_dir, analysis_dir, setup_file, setup_ambiguous,
+    patterns, applyResolved, patch, clear,
+  } = useDraftExperiment();
 
+  // 1. Resolve the picked root into correctable defaults (once per root).
+  const resolveQuery = useQuery({
+    queryKey: ["resolve", root],
+    queryFn: () => api.resolveLayout(root),
+    enabled: root !== "" && !resolved,
+  });
+  useEffect(() => {
+    if (resolveQuery.data && !resolved) applyResolved(resolveQuery.data);
+  }, [resolveQuery.data, resolved, applyResolved]);
+
+  // 2. Manifest (geometry/files) against the resolved + corrected data_dir +
+  //    setup_file. Re-keys when the user edits data_dir / patterns / setup_file.
   const manifestQuery = useQuery({
-    queryKey: ["manifest", path, patterns],
-    queryFn: () => api.fetchManifest(path, patterns),
-    enabled: path !== "",
+    queryKey: ["manifest", data_dir, patterns, setup_file],
+    queryFn: () => api.fetchManifest(data_dir, patterns, setup_file || undefined),
+    enabled: resolved && data_dir !== "",
   });
 
   const createMutation = useMutation({
@@ -102,50 +114,88 @@ function ConfigurationFirstRun(): JSX.Element {
   });
 
   const handleApprove = (): void => {
-    createMutation.mutate({ path, patterns });
+    // Send the CONFIRMED values (the create route uses them verbatim — no guessing).
+    createMutation.mutate({
+      name,
+      data_dir,
+      path: data_dir,
+      ...(analysis_dir ? { analysis_dir } : {}),
+      patterns,
+    });
   };
 
   const manifest = manifestQuery.data;
-  const isFetching = manifestQuery.isFetching;
+  const indexing = manifestQuery.isFetching;
+  const resolving = resolveQuery.isFetching && !resolved;
 
-  // Local editable pattern state -- mirrors the draft store values.
-  // Editing a pattern and committing on blur/Enter re-keys the manifest query
-  // (queryKey: ["manifest", path, patterns]) so the index re-runs.
-  const [imagePattern, setImagePattern] = useState(
-    patterns.image ?? DEFAULT_PATTERNS.image,
-  );
-  const [metadataPattern, setMetadataPattern] = useState(
-    patterns.metadata ?? DEFAULT_PATTERNS.metadata,
-  );
-  const [integrationPattern, setIntegrationPattern] = useState(
-    patterns.integration ?? DEFAULT_PATTERNS.integration,
-  );
+  // Local editable field state, synced from the draft once it resolves; commits
+  // on blur/Enter via patch() (which re-keys the manifest query where relevant).
+  const [nameLocal, setNameLocal] = useState(name);
+  const [dataDirLocal, setDataDirLocal] = useState(data_dir);
+  const [analysisDirLocal, setAnalysisDirLocal] = useState(analysis_dir);
+  const [setupFileLocal, setSetupFileLocal] = useState(setup_file);
+  const [imagePattern, setImagePattern] = useState(patterns.image ?? DEFAULT_PATTERNS.image);
+  const [metadataPattern, setMetadataPattern] = useState(patterns.metadata ?? DEFAULT_PATTERNS.metadata);
+  const [integrationPattern, setIntegrationPattern] = useState(patterns.integration ?? DEFAULT_PATTERNS.integration);
 
-  /** Commit an edited pattern into the draft (triggers a manifest re-fetch). */
+  // When resolve populates the draft, seed the editable fields from it.
+  useEffect(() => {
+    if (resolved) {
+      setNameLocal(name);
+      setDataDirLocal(data_dir);
+      setAnalysisDirLocal(analysis_dir);
+      setSetupFileLocal(setup_file);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolved]);
+
   const commitPattern = (key: "image" | "metadata" | "integration", value: string): void => {
-    setDraft({ path, patterns: { ...patterns, [key]: value } });
+    patch({ patterns: { ...patterns, [key]: value } });
   };
 
   const geo = manifest?.geometry;
 
+  // Pre-resolve: the root is set but discovery hasn't returned yet.
+  if (!resolved) {
+    return (
+      <div data-testid="config-resolving" className="flex flex-col gap-3 px-8 py-8">
+        <Kicker tone="accent">New experiment · Review before scan</Kicker>
+        <p className="text-sm text-ink-soft">
+          {resolving || root !== "" ? "Locating experiment files…" : "No experiment selected."}
+        </p>
+        {(resolving || root !== "") && <ProgressBar value={0} total={1} label="Locating files" />}
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="flex flex-col gap-6 px-8 py-8 pb-28">
-        {/* 1. Header */}
-        <div>
+        {/* 1. Header — editable Name + root path */}
+        <div data-testid="config-header">
           <Kicker tone="accent" className="mb-1">
             New experiment · Review before scan
           </Kicker>
           {/* ponytail: undo/redo buttons top-right -- deferred */}
-          <h1 className="text-display text-ink">{nameFromPath(path)}</h1>
-          <p className="text-sm font-mono text-ink-soft mt-1">{path}</p>
+          <Input
+            variant="title"
+            testId="config-name"
+            value={nameLocal}
+            onValueChange={setNameLocal}
+            onBlur={() => patch({ name: nameLocal.trim() })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { patch({ name: nameLocal.trim() }); (e.target as HTMLElement).blur(); }
+            }}
+            aria-label="Experiment name"
+          />
+          <p className="text-sm font-mono text-ink-soft mt-1">{root}</p>
         </div>
 
         {/* 2. Indexing progress line */}
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="text-meta text-ink-soft">
-              {isFetching ? "Indexing directory…" : "Indexed"}
+              {indexing ? "Indexing directory…" : "Indexed"}
             </span>
             {manifest && (
               <span className="text-meta text-ink-soft">
@@ -153,29 +203,46 @@ function ConfigurationFirstRun(): JSX.Element {
               </span>
             )}
           </div>
-          {isFetching && (
-            <ProgressBar value={0} total={1} label="Indexing directory" />
-          )}
+          {indexing && <ProgressBar value={0} total={1} label="Indexing directory" />}
         </div>
 
-        {/* 3. Two cards side by side: Sources and Geometry */}
+        {/* 3. Two cards side by side: Sources (locations + patterns) and Geometry */}
         <div className="grid grid-cols-2 gap-5">
-          {/* 3a. SOURCES card */}
+          {/* 3a. SOURCES card — editable locations + file patterns */}
           <Card padding="lg">
-            <Kicker tone="soft" className="mb-4">Sources · file patterns</Kicker>
+            <Kicker tone="soft" className="mb-4">Sources · locations and patterns</Kicker>
             <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-meta text-ink-soft shrink-0">data directory</span>
+                <Input
+                  value={dataDirLocal}
+                  onValueChange={setDataDirLocal}
+                  inputSize="sm" mono testId="config-data-dir"
+                  onBlur={() => patch({ data_dir: dataDirLocal.trim() })}
+                  onKeyDown={(e) => { if (e.key === "Enter") patch({ data_dir: dataDirLocal.trim() }); }}
+                  className="w-56"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-meta text-ink-soft shrink-0">analysis directory</span>
+                <Input
+                  value={analysisDirLocal}
+                  onValueChange={setAnalysisDirLocal}
+                  inputSize="sm" mono testId="config-analysis-dir"
+                  onBlur={() => patch({ analysis_dir: analysisDirLocal.trim() })}
+                  onKeyDown={(e) => { if (e.key === "Enter") patch({ analysis_dir: analysisDirLocal.trim() }); }}
+                  className="w-56"
+                />
+              </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-meta text-ink-soft">image</span>
                 <Input
                   value={imagePattern}
                   onValueChange={setImagePattern}
-                  inputSize="sm"
-                  mono
+                  inputSize="sm" mono
                   onBlur={() => commitPattern("image", imagePattern)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitPattern("image", imagePattern);
-                  }}
-                  className="w-48"
+                  onKeyDown={(e) => { if (e.key === "Enter") commitPattern("image", imagePattern); }}
+                  className="w-56"
                 />
               </div>
               <div className="flex items-center justify-between gap-4">
@@ -183,13 +250,10 @@ function ConfigurationFirstRun(): JSX.Element {
                 <Input
                   value={metadataPattern}
                   onValueChange={setMetadataPattern}
-                  inputSize="sm"
-                  mono
+                  inputSize="sm" mono
                   onBlur={() => commitPattern("metadata", metadataPattern)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitPattern("metadata", metadataPattern);
-                  }}
-                  className="w-48"
+                  onKeyDown={(e) => { if (e.key === "Enter") commitPattern("metadata", metadataPattern); }}
+                  className="w-56"
                 />
               </div>
               <div className="flex items-center justify-between gap-4">
@@ -197,18 +261,15 @@ function ConfigurationFirstRun(): JSX.Element {
                 <Input
                   value={integrationPattern}
                   onValueChange={setIntegrationPattern}
-                  inputSize="sm"
-                  mono
+                  inputSize="sm" mono
                   onBlur={() => commitPattern("integration", integrationPattern)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitPattern("integration", integrationPattern);
-                  }}
-                  className="w-48"
+                  onKeyDown={(e) => { if (e.key === "Enter") commitPattern("integration", integrationPattern); }}
+                  className="w-56"
                 />
               </div>
             </div>
             <p className="text-meta text-ink-soft mt-4">
-              Editing a pattern re-runs the index.
+              Editing the data directory or a pattern re-runs the index.
             </p>
           </Card>
 
@@ -278,6 +339,28 @@ function ConfigurationFirstRun(): JSX.Element {
                 ))}
               </div>
             )}
+            {/* Setup file (geometry source): exposed for correction only when
+                discovery was ambiguous (none / multiple). Otherwise a quiet
+                caption naming which file fed the geometry. */}
+            {setup_ambiguous ? (
+              <div className="mt-3 flex flex-col gap-1">
+                <span className="text-meta text-warning">
+                  Setup file unconfirmed · point to the geometry source:
+                </span>
+                <Input
+                  value={setupFileLocal}
+                  onValueChange={setSetupFileLocal}
+                  inputSize="sm" mono testId="config-setup-file"
+                  onBlur={() => patch({ setup_file: setupFileLocal.trim() })}
+                  onKeyDown={(e) => { if (e.key === "Enter") patch({ setup_file: setupFileLocal.trim() }); }}
+                  className="w-full"
+                />
+              </div>
+            ) : setup_file ? (
+              <p className="text-meta text-ink-soft mt-3" data-testid="config-setup-caption">
+                geometry from {setup_file.split("/").pop()}
+              </p>
+            ) : null}
             <p className="text-meta text-ink-soft mt-4">
               prp = sidecar · setup = beamline. Override after the experiment is created.
             </p>
@@ -329,7 +412,7 @@ function ConfigurationFirstRun(): JSX.Element {
           <Button
             variant="accent"
             data-testid="approve-button"
-            disabled={isFetching || !manifest || createMutation.isPending}
+            disabled={indexing || !manifest || createMutation.isPending}
             onClick={handleApprove}
           >
             Approve

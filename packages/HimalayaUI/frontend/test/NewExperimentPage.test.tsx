@@ -45,7 +45,8 @@ describe("NewExperimentPage (Phase E1)", () => {
     fireEvent.click(screen.getByRole("button", { name: /review/i }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/new/config"));
     expect(create).not.toHaveBeenCalled();
-    expect(useDraftExperiment.getState().path).toBe("/data/run42");
+    // The picker commits the experiment ROOT; Configuration resolves it.
+    expect(useDraftExperiment.getState().root).toBe("/data/run42");
   });
 
   it("keeps submit disabled until validation is ok", () => {
@@ -75,6 +76,6 @@ describe("NewExperimentPage (Phase E1)", () => {
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(navigate).toHaveBeenCalledWith("/experiments");
-    expect(useDraftExperiment.getState().path).toBe("");
+    expect(useDraftExperiment.getState().root).toBe("");
   });
 });

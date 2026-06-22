@@ -220,7 +220,11 @@ export const updateExperiment = (
 /** Create-from-directory (spec §9.2). Returns the new experiment id
  *  immediately; the first scan runs async with progress over SSE. */
 export interface CreateExperimentBody {
-  path: string;
+  /** Legacy single-path field (= data_dir). Optional now that the funnel sends
+   *  explicit data_dir/analysis_dir/name confirmed by the user in Configuration. */
+  path?: string;
+  data_dir?: string;
+  analysis_dir?: string;
   name?: string;
   patterns?: { image?: string; metadata?: string; integration?: string };
 }
@@ -246,6 +250,21 @@ export interface PathSuggestResponse { suggestions: string[] }
 export const suggestPaths = (prefix: string) =>
   request<PathSuggestResponse>(
     "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+
+/** Structural experiment-layout resolver (funnel resolution). Given the picked
+ *  experiment ROOT, returns auto-discovered defaults the user corrects in
+ *  Configuration. `analysis_dir`/`setup_file` are null when nothing matched;
+ *  `setup_ambiguous` flags none/multiple setup files (the geometry source). */
+export interface ResolveLayoutResponse {
+  name: string;
+  data_dir: string;
+  analysis_dir: string | null;
+  setup_file: string | null;
+  setup_ambiguous: boolean;
+}
+export const resolveLayout = (path: string) =>
+  request<ResolveLayoutResponse>(
+    "GET", `/api/fs/resolve?path=${encodeURIComponent(path)}`);
 
 /** Phase-1 manifest for the Configuration first-run step (spec §6.5).
  *  `GET /api/fs/manifest` with query params derived from the draft path +
@@ -273,8 +292,10 @@ export interface ManifestResponse {
 export const fetchManifest = (
   path: string,
   patterns: { image?: string; metadata?: string; integration?: string } = {},
+  setupFile?: string,
 ): Promise<ManifestResponse> => {
   const params = new URLSearchParams({ path });
+  if (setupFile)            params.set("setup_file",          setupFile);
   if (patterns.image)       params.set("image_pattern",       patterns.image);
   if (patterns.metadata)    params.set("metadata_pattern",    patterns.metadata);
   if (patterns.integration) params.set("integration_pattern", patterns.integration);

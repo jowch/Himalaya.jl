@@ -6,6 +6,66 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 # no pendingDeferreds participation. Queue-orthogonal by design.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Structural experiment-layout resolver (funnel resolution, 2026-06-21).
+# Given an experiment ROOT directory, auto-discover sensible defaults the user
+# then corrects in Configuration before Approve. PURELY STRUCTURAL — no
+# experiment.toml / manifest.toml (deprecated going forward); everything is
+# inferred from the directory tree:
+#   name         = basename(root)
+#   data_dir     = the root or an immediate subdir holding the most .tif (raw images)
+#   analysis_dir = the dir (under a non-data subtree) holding the most .dat (integration)
+#   setup_file   = setup_info_*.txt found by a bounded tree walk (geometry source);
+#                  it lives under analysis/, SEPARATE from the integration analysis_dir.
+# Bounded for SMB latency: the data_dir subtree (the big one) is never walked;
+# only sibling subdirs are walked, depth-capped.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_setup_infos(dir::AbstractString)::Vector{String} =
+    isdir(dir) ?
+        String[joinpath(dir, f) for f in (try readdir(dir) catch; String[] end)
+               if startswith(f, "setup_info_") && endswith(f, ".txt")] :
+        String[]
+
+"""
+    resolve_experiment_layout(root) -> NamedTuple
+
+Structural auto-discovery for the ingest funnel. Returns
+`(; name, data_dir, analysis_dir, setup_file, setup_ambiguous)`. All values are
+DEFAULTS the user corrects in Configuration — so this stays CHEAP (a handful of
+shallow `isdir`/`readdir` calls, NEVER a deep walk and NEVER a full read of the
+huge raw-image directory), because it runs interactively over slow SMB.
+
+Heuristics (name-based, with a correctable safety net):
+- `name`         = `basename(root)`.
+- `data_dir`     = `root/data` if it exists, else `root` (raw images usually
+                   live in a `data` subdir; the user corrects if not).
+- `analysis_dir` = `root/analysis` if it exists, else `nothing` (a starting
+                   point; the user drills to the specific integration `.dat`
+                   directory, e.g. `analysis/automatic_analysis/tot_files`).
+- `setup_file`   = the latest `setup_info_*.txt` found at the TOP of `root` or
+                   `root/analysis` (where it actually lives — NOT next to the
+                   integration files). This is the geometry source, so it is
+                   resolved precisely; `setup_ambiguous` flags none/multiple.
+"""
+function resolve_experiment_layout(root::AbstractString)
+    root = String(root)
+    name = basename(rstrip(root, '/'))
+
+    data_candidate = joinpath(root, "data")
+    data_dir = isdir(data_candidate) ? data_candidate : root
+
+    analysis_candidate = joinpath(root, "analysis")
+    analysis_dir = isdir(analysis_candidate) ? analysis_candidate : nothing
+
+    # setup_info lives at the top of root or root/analysis — two shallow reads.
+    setup_files = sort!(vcat(_setup_infos(root), _setup_infos(analysis_candidate)))
+    setup_file = isempty(setup_files) ? nothing : last(setup_files)  # latest by name
+    setup_ambiguous = isempty(setup_files) || length(unique(dirname.(setup_files))) > 1
+
+    return (; name, data_dir, analysis_dir, setup_file, setup_ambiguous)
+end
+
 """
     register_fs_routes!()
 
@@ -32,6 +92,17 @@ function register_fs_routes!()
             length(kids) >= 20 && break
         end
         _json(200, Dict(:suggestions => kids))
+    end
+    @get "/api/fs/resolve" function(req::HTTP.Request)
+        q    = HTTP.queryparams(HTTP.URI(req.target))
+        path = get(q, "path", "")
+        isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
+        r = resolve_experiment_layout(path)
+        _json(200, Dict(:name => r.name,
+                   :data_dir => r.data_dir,
+                   :analysis_dir => r.analysis_dir,
+                   :setup_file => r.setup_file,
+                   :setup_ambiguous => r.setup_ambiguous))
     end
     @get "/api/fs/validate" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
@@ -78,9 +149,14 @@ function register_fs_routes!()
             s in set || push!(unmatched, Dict("file" => s, "miss" => label))
         end
 
-        # ── Geometry preview (read-only; mirrors ingest.jl + routes_experiments.jl) ──
-        data_dir     = path
-        analysis_dir = let ad = joinpath(data_dir, "analysis"); isdir(ad) ? ad : data_dir end
+        # ── Geometry preview (read-only) ──
+        # `path` is the data_dir (the frontend passes the resolved/edited data_dir).
+        # `setup_file` (optional) is the geometry source resolved by /api/fs/resolve;
+        # when supplied we use it directly (it lives under analysis/, NOT next to the
+        # integration files). Absent → fall back to the old data_dir/analysis scan so
+        # older callers/tests keep working.
+        data_dir       = path
+        setup_file_q   = get(q, "setup_file", "")
 
         # Reconstruct matched metadata filenames from stems (same pre/post split).
         _nm(x) = ismissing(x) ? nothing : x
@@ -93,15 +169,25 @@ function register_fs_routes!()
         geo_dict, disc_list = let
             prp_paths = if occursin("{name}", pats.metadata)
                 meta_pre, meta_post = split(pats.metadata, "{name}"; limit = 2)
-                [joinpath(data_dir, meta_pre * s * meta_post) for s in meta
+                # Geometry is CONSTANT per run, so sample up to 50 PRPs — keeps the
+                # preview fast over SMB (a full run is thousands of files, and each
+                # would be an isfile + read round-trip). The first 50 suffice.
+                sample = collect(Iterators.take(meta, 50))
+                [joinpath(data_dir, meta_pre * s * meta_post) for s in sample
                     if isfile(joinpath(data_dir, meta_pre * s * meta_post))]
             else
                 String[]
             end
-            setup_files = isdir(analysis_dir) ?
-                [joinpath(analysis_dir, f) for f in readdir(analysis_dir)
-                    if startswith(f, "setup_info_") && endswith(f, ".txt")] :
-                String[]
+            setup_files = if !isempty(setup_file_q) && isfile(setup_file_q)
+                [setup_file_q]
+            else
+                # Fallback (no explicit setup_file): old data_dir/analysis scan.
+                ad = let a = joinpath(data_dir, "analysis"); isdir(a) ? a : data_dir end
+                isdir(ad) ?
+                    [joinpath(ad, f) for f in readdir(ad)
+                        if startswith(f, "setup_info_") && endswith(f, ".txt")] :
+                    String[]
+            end
             # ponytail: if prp_paths grows to thousands, consider sampling ~100
             # representative files for geometry preview (geometry is constant per run).
             geo_result, disc_result = try

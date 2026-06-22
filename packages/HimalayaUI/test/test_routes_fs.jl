@@ -251,3 +251,88 @@ end
         end
     end
 end
+
+# ── Structural layout resolver (funnel resolution) ───────────────────────────
+
+"""Build a real-shaped experiment ROOT: root/data/{tif,prp}, root/analysis/setup_info,
+   root/analysis/automatic_analysis/tot_files/{dat}. Returns the root path."""
+function _fs_make_experiment_root(root::AbstractString)
+    data = joinpath(root, "data"); mkpath(data)
+    for stem in ("a_001", "b_002")
+        touch(joinpath(data, "$stem.tif"))
+        _fs_write_prp(joinpath(data, "$stem.prp"))
+    end
+    analysis = joinpath(root, "analysis"); mkpath(analysis)
+    _fs_write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"))
+    totdir = joinpath(analysis, "automatic_analysis", "tot_files"); mkpath(totdir)
+    touch(joinpath(totdir, "a_001_tot.dat"))
+    return root
+end
+
+@testset "resolve_experiment_layout discovers data/analysis/setup structurally" begin
+    mktempdir() do tmp
+        root = joinpath(tmp, "1p7m"); mkpath(root)
+        _fs_make_experiment_root(root)
+        r = HimalayaUI.resolve_experiment_layout(root)
+        @test r.name == "1p7m"
+        @test r.data_dir == joinpath(root, "data")
+        @test r.analysis_dir == joinpath(root, "analysis")
+        @test r.setup_file !== nothing && endswith(r.setup_file, "setup_info_20260425_181705.txt")
+        @test r.setup_ambiguous == false
+    end
+end
+
+@testset "resolve_experiment_layout flags no-setup as ambiguous" begin
+    mktempdir() do tmp
+        root = joinpath(tmp, "bare"); mkpath(root)
+        data = joinpath(root, "data"); mkpath(data)
+        touch(joinpath(data, "a_001.tif"))  # data, but no analysis/ and no setup_info
+        r = HimalayaUI.resolve_experiment_layout(root)
+        @test r.data_dir == joinpath(root, "data")
+        @test r.analysis_dir === nothing
+        @test r.setup_file === nothing
+        @test r.setup_ambiguous == true
+    end
+end
+
+@testset "GET /api/fs/resolve returns the structural layout" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            root = joinpath(mktempdir(), "1p7m"); mkpath(root)
+            _fs_make_experiment_root(root)
+            resp = call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri(root))")
+            @test resp.status == 200
+            r = JSON3.read(resp.body)
+            @test r.name == "1p7m"
+            @test endswith(String(r.data_dir), "/data")
+            @test endswith(String(r.setup_file), "setup_info_20260425_181705.txt")
+            @test r.setup_ambiguous == false
+            # 400 for a non-directory.
+            @test call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri("/no/such/xyz"))").status == 400
+        end
+    end
+end
+
+@testset "GET /api/fs/manifest uses an explicit setup_file for geometry" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            # data_dir has the PRPs; the setup file lives OUTSIDE it (the real
+            # split). Passing setup_file explicitly is what makes geometry derive.
+            data = mktempdir()
+            for stem in ("a_001", "b_002")
+                touch(joinpath(data, "$stem.tif")); _fs_write_prp(joinpath(data, "$stem.prp"))
+            end
+            setup = joinpath(mktempdir(), "setup_info_20260425_181705.txt")
+            _fs_write_setup_info(setup)
+            q = "path=$(HTTP.escapeuri(data))&setup_file=$(HTTP.escapeuri(setup))" *
+                "&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))"
+            resp = call("GET", "/api/fs/manifest?$q")
+            @test resp.status == 200
+            geo = JSON3.read(resp.body).geometry
+            @test geo.beam_center_x ≈ 421.409
+            @test geo.beam_center_x_source == "setup"
+        end
+    end
+end

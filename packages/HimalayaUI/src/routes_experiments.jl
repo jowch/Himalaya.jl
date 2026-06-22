@@ -158,11 +158,14 @@ function register_experiments_routes!()
         db   = current_db()
         body = json(req)
 
-        # Required: path to the data directory.
-        path_val = get(body, :path, get(body, "path", nothing))
+        # Required: the data directory. The funnel resolver (/api/fs/resolve) sends
+        # an explicit `data_dir` (+ `analysis_dir`, `name`) that the user confirmed
+        # in Configuration; older callers send `path`. Prefer the explicit field.
+        path_val = get(body, :data_dir, get(body, "data_dir",
+                       get(body, :path, get(body, "path", nothing))))
         path_val === nothing && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "path is required")))
+            JSON3.write(Dict(:error => "data_dir (or path) is required")))
         data_dir = String(path_val)
 
         isdir(data_dir) || return HTTP.Response(400,
@@ -184,10 +187,12 @@ function register_experiments_routes!()
         # Derive defaults.
         name_val  = get(body, :name, get(body, "name", nothing))
         exp_name  = name_val !== nothing ? String(name_val) : basename(rstrip(data_dir, '/'))
-        # analysis_dir convention: look for an `analysis` subdirectory; fall back to data_dir.
-        analysis_dir = let ad = joinpath(data_dir, "analysis")
-            isdir(ad) ? ad : data_dir
-        end
+        # analysis_dir: prefer the explicit, user-confirmed value from the funnel
+        # (the resolver's default that the user corrected); else the old convention
+        # (look for an `analysis` subdir, fall back to data_dir) for older callers.
+        ad_val = get(body, :analysis_dir, get(body, "analysis_dir", nothing))
+        analysis_dir = ad_val !== nothing ? String(ad_val) :
+            let ad = joinpath(data_dir, "analysis"); isdir(ad) ? ad : data_dir end
 
         # Patterns are edited on Configuration before Approve; persisted to the row
         # so scan_and_group! (which reads the row + coalesces) uses them. Nested

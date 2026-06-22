@@ -72,43 +72,54 @@ describe("ConfigurationPage (Phase E1 shell)", () => {
 describe("ConfigurationPage (first-run mode)", () => {
   beforeEach(() => {
     navigate.mockClear();
+    useDraftExperiment.getState().clear();
   });
   afterEach(() => {
     vi.restoreAllMocks();
-    useDraftExperiment.setState({ path: "", patterns: {} });
+    useDraftExperiment.getState().clear();
   });
 
-  test("Configuration first-run runs the manifest, shows geometry, gates Approve, then creates", async () => {
-    useDraftExperiment.setState({ path: "/data/run42", patterns: {} });
+  test("first-run resolves the root, shows geometry, gates Approve, then creates with confirmed values", async () => {
+    // The picker committed a root; the page resolves it structurally.
+    useDraftExperiment.getState().setRoot("/data/run42");
+    vi.spyOn(api, "resolveLayout").mockResolvedValue({
+      name: "run42",
+      data_dir: "/data/run42/data",
+      analysis_dir: "/data/run42/analysis",
+      setup_file: "/data/run42/analysis/setup_info_x.txt",
+      setup_ambiguous: false,
+    });
     mockFetchManifest({
       total: 4,
       matched: { image: 2, metadata: 1, integration: 0 },
       unmatched: [{ file: "s2", miss: "metadata" }],
       geometry: {
-        beam_center_x: 421.3,
-        beam_center_x_source: "setup",
-        beam_center_y: 836.7,
-        beam_center_y_source: "setup",
-        flight_path_m: 1.8095,
-        flight_path_m_source: "setup",
-        pixel_size_um: 172.0,
-        pixel_size_um_source: "prp",
-        energy_kev: 9.0,
-        energy_kev_source: "prp",
+        beam_center_x: 421.3, beam_center_x_source: "setup",
+        beam_center_y: 836.7, beam_center_y_source: "setup",
+        flight_path_m: 1.8095, flight_path_m_source: "setup",
+        pixel_size_um: 172.0, pixel_size_um_source: "prp",
+        energy_kev: 9.0, energy_kev_source: "prp",
       },
       matched_files: ["JC_001.tif", "JC_002.tif"],
     });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 9 } as any);
     renderConfiguration({ route: "/experiments/new/config" });   // first-run = draft route, no :id
-    expect(screen.getByRole("button", { name: /approve/i })).toBeDisabled();        // while indexing
+
+    // Resolve → manifest → body. The matched count + geometry are now visible.
     expect(await screen.findByText(/2 matched/i)).toBeInTheDocument();
-    // Geometry is now VISIBLE in first-run (decision reversed)
-    expect(screen.getByText(/geometry/i)).toBeInTheDocument();
-    // Beam center value rendered
+    expect(screen.getByText(/auto-derived/i)).toBeInTheDocument();   // the Geometry card heading
     expect(screen.getByText(/421\.3/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled();
+    // The Name field is prefilled from the resolver (editable).
+    expect(
+      (screen.getByTestId("config-name").querySelector("input") as HTMLInputElement).value,
+    ).toBe("run42");
+
+    // Approve enabled once indexing resolved; creates with the CONFIRMED values.
+    await waitFor(() => expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: /approve/i }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ path: "/data/run42" })));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      name: "run42", data_dir: "/data/run42/data",
+    })));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/9/corpus"));
   });
 });
