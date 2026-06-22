@@ -12,6 +12,9 @@ export interface DirectoryPickerFieldProps {
   suggestions: ReadonlyArray<string>;
   /** Live validation probe result, or null when not yet probed. */
   validation: ValidatePathResponse | null;
+  /** Accessible label for the input. Default "Data directory" (the primary
+   *  new-experiment use); set e.g. "Analysis directory" when reused elsewhere. */
+  ariaLabel?: string;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -36,6 +39,7 @@ export function DirectoryPickerField({
   onChange,
   suggestions,
   validation,
+  ariaLabel = "Data directory",
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
   const [active, setActive] = useState(0);
@@ -83,8 +87,8 @@ export function DirectoryPickerField({
             onValueChange={onChange}
             onKeyDown={onKeyDown}
             mono
-            placeholder="/Volumes/data/ssrl/2026_04/…"
-            aria-label="Data directory"
+            placeholder="Type or paste your experiment directory…"
+            aria-label={ariaLabel}
           />
         }
         label="Directory suggestions"

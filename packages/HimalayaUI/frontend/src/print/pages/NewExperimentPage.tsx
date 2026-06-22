@@ -107,25 +107,36 @@ export function NewExperimentPage(): JSX.Element {
   return (
     <>
       <PageFrame width="home" className="px-6 py-8 pb-28">
-        <div className="max-w-[760px]">
+        {/* Intro stays a readable measure; the input card spans the page so a
+            long path has room and the checks can sit alongside it (notes 4/5). */}
+        <div className="max-w-[60ch]">
           <Kicker tone="accent">New experiment</Kicker>
           <h1 className="text-display text-ink">Point at a directory</h1>
-          <p className="text-body text-ink-soft mt-2 mb-6 max-w-[60ch]">
+          <p className="text-body text-ink-soft mt-2 max-w-[60ch]">
             Pick the experiment folder (the one holding the data and analysis
             directories). The next step finds the pieces and lets you review and
             correct them before anything is created.
           </p>
+        </div>
 
-          <Card padding="lg">
-            <Kicker tone="soft" className="mb-2">Directory</Kicker>
-            <DirectoryPickerField
-              value={path}
-              onChange={setPath}
-              suggestions={suggestions}
-              validation={null}
-            />
+        <Card padding="lg" className="mt-6">
+          <Kicker tone="soft" className="mb-2">Directory</Kicker>
+          {/* Field flexes wide; pre-flight checks sit to the right, aligned to
+              the field's top (note 4). They stack vertically and right-align. */}
+          <div className="flex items-start gap-8">
+            <div className="flex-1 min-w-0">
+              <DirectoryPickerField
+                value={path}
+                onChange={setPath}
+                suggestions={suggestions}
+                validation={null}
+              />
+              <p className="text-caption text-ink-soft mt-2">
+                Start typing and we suggest matches. Tab completes, ↑↓ choose, ↵ confirms.
+              </p>
+            </div>
             <div
-              className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5"
+              className="shrink-0 flex flex-col items-end gap-1.5 pt-1.5"
               data-testid="dirpicker-checks"
             >
               <PreflightCheck
@@ -143,8 +154,8 @@ export function NewExperimentPage(): JSX.Element {
                 }
               />
             </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
       </PageFrame>
 
       {/* Sticky funnel footer (p1-new): reassurance + Cancel/Review. */}

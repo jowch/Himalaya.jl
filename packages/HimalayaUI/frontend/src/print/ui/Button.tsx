@@ -9,7 +9,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    *  fill, paper text, `aria-pressed`. Distinct from `variant="accent"` (a
    *  primary action, not a toggle). */
   armed?: boolean;
+  /** "md" (default): the dense chrome button. "lg": a prominent primary CTA
+   *  (~50% larger box + body-size label) for empty-state / first-run calls to
+   *  action, where the button is the focal point rather than dense chrome. */
+  size?: ButtonSize;
 }
+
+export type ButtonSize = "md" | "lg";
+
+// Size owns the box geometry + label scale; variant owns colour. Kept orthogonal
+// so any variant can be sized up for an empty-state hero CTA.
+const sizeClass: Record<ButtonSize, string> = {
+  md: "text-meta px-2.5 py-1",
+  lg: "text-body px-4 py-2",
+};
 
 const variantClass: Record<ButtonVariant, string> = {
   solid:
@@ -59,6 +72,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   {
     variant = "ghost",
     armed,
+    size = "md",
     className = "",
     children,
     ...props
@@ -76,7 +90,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       // which carries no aria-pressed at all. So bind the raw value: undefined
       // omits the attribute, false renders "false", true renders "true".
       aria-pressed={armed}
-      className={`text-meta font-semibold whitespace-nowrap rounded-md px-2.5 py-1 transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
+      className={`${sizeClass[size]} font-semibold whitespace-nowrap rounded-md transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >
       {children}

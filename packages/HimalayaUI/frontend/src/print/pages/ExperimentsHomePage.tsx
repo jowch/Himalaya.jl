@@ -85,18 +85,23 @@ export function ExperimentsHomePage(): JSX.Element {
 
   const list = experiments.data ?? [];
   const groups = groupByYear(list);
+  // Empty gallery: the prominent banner CTA carries the call to action, so the
+  // header CTA is redundant — disable it and let the banner drive (note 1).
+  const isEmpty = experiments.isSuccess && list.length === 0;
 
   return (
     <PageFrame width="home" className="px-6 py-8">
       {/* Page header */}
       <div className="flex items-start justify-between gap-6 mb-8">
         <div>
-          <Kicker tone="accent">Experiments</Kicker>
+          {/* +4px below the accent kicker so it doesn't crowd the title (note 2). */}
+          <Kicker tone="accent" className="mb-1">Experiments</Kicker>
           <h1 className="text-display text-ink">All experiments</h1>
         </div>
         <Button
           variant="accent"
           data-testid="new-experiment-cta"
+          disabled={isEmpty}
           onClick={() => navigate("/experiments/new")}
         >
           + New experiment
@@ -106,9 +111,16 @@ export function ExperimentsHomePage(): JSX.Element {
       {experiments.isSuccess && list.length === 0 ? (
         <EmptyState
           title="No experiments yet"
-          body="Point Himalaya at a directory of exposures and it scans, groups them into samples, and derives the geometry. No manifest needed."
+          body={
+            // Narrower measure: the body wrapped tight so the line length suits
+            // the font size instead of stretching the full page width (note 3).
+            <span className="block max-w-[34ch] mx-auto">
+              Point Himalaya to your experiment directory. It will discover your
+              setup, scan your exposures, group them into samples. Easy.
+            </span>
+          }
           action={
-            <Button variant="accent" onClick={() => navigate("/experiments/new")}>
+            <Button size="lg" variant="accent" onClick={() => navigate("/experiments/new")}>
               + New experiment
             </Button>
           }
