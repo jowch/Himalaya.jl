@@ -368,6 +368,9 @@ export function ExperimentCorpusPage(): JSX.Element {
         unmatched={manifestQuery.data?.unmatched ?? []}
         parsedCount={manifestQuery.data?.matched.image ?? 0}
         onIngestParsed={() => triggerScan.mutate(true)}
+        dataDir={exp.data?.data_dir ?? ""}
+        {...(exp.data?.analysis_dir != null ? { analysisDir: exp.data.analysis_dir } : {})}
+        patterns={manifestPatterns}
       />
     );
   }

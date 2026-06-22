@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { HTMLAttributes } from "react";
 
-export type KickerTone = "accent" | "faint" | "soft";
+export type KickerTone = "accent" | "faint" | "soft" | "warning";
 
 interface KickerProps extends HTMLAttributes<HTMLElement> {
   /**
@@ -27,6 +27,7 @@ const toneClass: Record<KickerTone, string> = {
   accent: "text-kicker-accent",
   faint: "text-kicker-faint",
   soft: "text-kicker-soft",
+  warning: "text-warning",
 };
 
 /** Forwards its ref to the rendered element. */
