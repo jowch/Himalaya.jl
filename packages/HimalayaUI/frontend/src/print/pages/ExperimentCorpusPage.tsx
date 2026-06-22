@@ -87,9 +87,16 @@ export function ExperimentCorpusPage(): JSX.Element {
     ...(exp.data?.integration_pattern != null && { integration: exp.data.integration_pattern }),
   }), [exp.data?.image_pattern, exp.data?.metadata_pattern, exp.data?.integration_pattern]);
 
+  // B1 (§5.5): pass the stored leaf analysis_dir so integration (.dat) is matched
+  // against the analysis subtree where it actually lives. Without it, .dat is
+  // matched against data_dir (where it never is) and every integration trace
+  // reports `unmatched`, so the pattern-test can never clear. The experiment's
+  // analysis_dir was persisted from the resolved leaf at create time.
   const manifestQuery = useQuery({
-    queryKey: ["manifest", exp.data?.data_dir ?? "", manifestPatterns],
-    queryFn: () => api.fetchManifest(exp.data!.data_dir, manifestPatterns),
+    queryKey: ["manifest", exp.data?.data_dir ?? "", manifestPatterns, exp.data?.analysis_dir ?? ""],
+    queryFn: () => api.fetchManifest(
+      exp.data!.data_dir, manifestPatterns, undefined, exp.data!.analysis_dir ?? undefined,
+    ),
     enabled: failed && !!exp.data?.data_dir,
   });
 

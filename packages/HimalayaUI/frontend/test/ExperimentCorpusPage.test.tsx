@@ -105,7 +105,7 @@ describe("ExperimentCorpusPage (Phase E1)", () => {
 
   it("failed state: passes manifest unmatched + parsedCount from API to ScanFailedPage", async () => {
     // fetchManifest returns a real unmatched file + 3 parsed images.
-    vi.spyOn(api, "fetchManifest").mockResolvedValue({
+    const manifestSpy = vi.spyOn(api, "fetchManifest").mockResolvedValue({
       total: 4,
       matched: { image: 3, metadata: 0, integration: 0 },
       unmatched: [{ file: "orphan.prp", miss: "metadata" }],
@@ -116,6 +116,11 @@ describe("ExperimentCorpusPage (Phase E1)", () => {
     await screen.findByText("orphan.prp");
     // The per-type pattern test input for the affected miss type renders.
     expect(screen.getByRole("textbox", { name: /metadata pattern/i })).toBeInTheDocument();
+    // B1 (§5.5): the fetch must pass the stored leaf analysis_dir (4th arg), or
+    // integration (.dat) is matched against data_dir and always reports unmatched.
+    expect(manifestSpy).toHaveBeenCalledWith(
+      "/data/exp1/raw", expect.anything(), undefined, "/data/exp1/analysis",
+    );
   });
 
   it("failed state: 'Ingest N that parsed' → Confirm calls triggerScan", async () => {
