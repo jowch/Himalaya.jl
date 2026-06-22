@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { ConfigurationBody } from "../components/ConfigurationBody";
+import { DirectoryPickerField } from "../components/DirectoryPickerField";
 import { useDraftExperiment } from "../../lib/draftExperiment";
 import * as api from "../../api";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -81,11 +82,14 @@ function CoverageLine({ m }: { m: api.ManifestResponse }): JSX.Element {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="manifest-coverage">
         {cov.map((c) => {
           const under = c.key !== "image" && c.n < exp;
+          // Denominator hidden when there are no exposures (image === 0): a `/0`
+          // reads like a real ratio when it is just "nothing to divide" (§6, D4).
+          const showDenom = c.key !== "image" && exp > 0;
           return (
             <span key={c.key} className="text-caption">
               <span className="text-ink-soft">{c.label} </span>
-              <span className={under ? "text-data text-warning" : "text-data text-ink"}>{c.n}</span>
-              {c.key !== "image" && <span className="text-ink-faint">/{exp}</span>}
+              <span className={c.n === 0 || under ? "text-data text-warning" : "text-data text-ink"}>{c.n}</span>
+              {showDenom && <span className="text-ink-faint">/{exp}</span>}
             </span>
           );
         })}
@@ -103,6 +107,21 @@ function CoverageLine({ m }: { m: api.ManifestResponse }): JSX.Element {
       )}
     </>
   );
+}
+
+/**
+ * D4 zero-coverage block (§6). An exposure is the triple (image, metadata,
+ * integration) and all three legs are essential "for now": a whole type matching
+ * zero everywhere means the triple cannot be formed, so the experiment cannot be
+ * ingested. Returns the first zero leg, or null. Single block tier (no advisory).
+ */
+function zeroCoverageType(
+  m: api.ManifestResponse,
+): "image" | "metadata" | "integration" | null {
+  if (m.matched.image === 0) return "image";
+  if (m.matched.metadata === 0) return "metadata";
+  if (m.matched.integration === 0) return "integration";
+  return null;
 }
 
 /** Maps a geometry source string to the short label shown in the chip. */
@@ -176,6 +195,9 @@ function ConfigurationFirstRun(): JSX.Element {
   const manifest = manifestQuery.data;
   const indexing = manifestQuery.isFetching;
   const resolving = resolveQuery.isFetching && !resolved;
+  // D4 hard block: a whole essential type matched zero everywhere (§6). Disables
+  // Approve and swaps the headline; the partial-shortfall path stays non-blocking.
+  const blockType = manifest && !indexing ? zeroCoverageType(manifest) : null;
 
   // Local editable field state, synced from the draft once it resolves; commits
   // on blur/Enter via patch() (which re-keys the manifest query where relevant).
@@ -191,6 +213,20 @@ function ConfigurationFirstRun(): JSX.Element {
   // CORRECT it (note 10). analysisDirLocal stays absolute (the backend contract);
   // the field shows/edits the suffix under the root.
   const [editingAnalysis, setEditingAnalysis] = useState(false);
+
+  // Directory autocomplete for the analysis-dir field (same source as the
+  // primary picker: GET /api/fs/suggest). Debounced; only while editing.
+  const [analysisSuggest, setAnalysisSuggest] = useState<ReadonlyArray<string>>([]);
+  useEffect(() => {
+    if (!editingAnalysis || analysisDirLocal.trim() === "") { setAnalysisSuggest([]); return; }
+    let live = true;
+    const t = setTimeout(() => {
+      void api.suggestPaths(analysisDirLocal)
+        .then((r) => { if (live) setAnalysisSuggest(r.suggestions); })
+        .catch(() => {});
+    }, 200);
+    return () => { live = false; clearTimeout(t); };
+  }, [editingAnalysis, analysisDirLocal]);
 
   // When resolve populates the draft, seed the editable fields from it.
   useEffect(() => {
@@ -215,17 +251,10 @@ function ConfigurationFirstRun(): JSX.Element {
   // the data/analysis locations read RELATIVE to it (e.g. `data`, `analysis`).
   // An absolute value outside the root degrades gracefully to showing absolute.
   const rootTrim = root.replace(/\/+$/, "");
-  const rootBase = rootTrim.split("/").filter(Boolean).pop() ?? "";
   const stripRoot = (abs: string): string => {
     if (!abs) return "";
     if (abs === rootTrim) return ".";
     return abs.startsWith(rootTrim + "/") ? abs.slice(rootTrim.length + 1) : abs;
-  };
-  const joinRoot = (rel: string): string => {
-    const v = rel.trim();
-    if (v === "") return "";
-    if (v.startsWith("/")) return v; // absolute override (e.g. a shared analysis dir outside root)
-    return `${rootTrim}/${v.replace(/^\.\//, "")}`;
   };
 
   const geo = manifest?.geometry;
@@ -284,13 +313,29 @@ function ConfigurationFirstRun(): JSX.Element {
               {indexing ? "Indexing directory…" : "Indexed"}
             </span>
             {manifest && (
-              <span className="text-meta text-ink-soft">
-                <span className="text-data text-ink">{manifest.matched.image}</span>
-                {manifest.matched.image === 1 ? " exposure found" : " exposures found"}
-              </span>
+              blockType ? (
+                <span
+                  className="text-meta text-warning font-semibold"
+                  role="status"
+                  data-testid="manifest-block"
+                >
+                  No {blockType} matched
+                </span>
+              ) : (
+                <span className="text-meta text-ink-soft">
+                  <span className="text-data text-ink">{manifest.matched.image}</span>
+                  {manifest.matched.image === 1 ? " exposure found" : " exposures found"}
+                </span>
+              )
             )}
           </div>
           {manifest && <CoverageLine m={manifest} />}
+          {blockType && (
+            <p className="text-caption text-warning">
+              Every exposure needs an image, metadata, and integration file. Fix the{" "}
+              {blockType} pattern or directory, then re-index, to enable Approve.
+            </p>
+          )}
           {indexing && <ProgressBar value={0} total={1} label="Indexing directory" />}
         </div>
 
@@ -335,18 +380,15 @@ function ConfigurationFirstRun(): JSX.Element {
                 </div>
                 {editingAnalysis && (
                   <div className="flex items-center gap-2">
-                    {/* The root is fixed (dim prefix); the user types the suffix.
-                        A leading "/" still accepts an absolute path. */}
-                    <Input
-                      value={stripRoot(analysisDirLocal)}
-                      onValueChange={(rel) => {
-                        const abs = joinRoot(rel);
-                        setAnalysisDirLocal(abs);
-                        patch({ analysis_dir: abs });
-                      }}
-                      inputSize="sm" mono
-                      aria-label="Analysis directory (relative to root)"
-                      leading={<span className="text-data text-ink-faint shrink-0">…/{rootBase}/</span>}
+                    {/* Absolute path with Tab/↑↓/↵ autocomplete — same picker the
+                        data directory uses (note 10). The read-only display above
+                        stays relative to the root. */}
+                    <DirectoryPickerField
+                      value={analysisDirLocal}
+                      onChange={(abs) => { setAnalysisDirLocal(abs); patch({ analysis_dir: abs }); }}
+                      suggestions={analysisSuggest}
+                      validation={null}
+                      ariaLabel="Analysis directory"
                       className="flex-1"
                     />
                     <button
@@ -541,7 +583,7 @@ function ConfigurationFirstRun(): JSX.Element {
           <Button
             variant="accent"
             data-testid="approve-button"
-            disabled={indexing || !manifest || createMutation.isPending}
+            disabled={indexing || !manifest || createMutation.isPending || blockType != null}
             onClick={handleApprove}
           >
             Approve

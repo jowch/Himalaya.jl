@@ -93,9 +93,9 @@ describe("ConfigurationPage (first-run mode)", () => {
       integration_pattern: null,
     });
     mockFetchManifest({
-      total: 4,
-      matched: { image: 2, metadata: 1, integration: 0 },
-      unmatched: [{ file: "s2", miss: "metadata" }],
+      total: 6,
+      matched: { image: 2, metadata: 2, integration: 2 },   // clean triple: Approve enables
+      unmatched: [],
       geometry: {
         beam_center_x: 421.3, beam_center_x_source: "setup",
         beam_center_y: 836.7, beam_center_y_source: "setup",
@@ -125,5 +125,35 @@ describe("ConfigurationPage (first-run mode)", () => {
     })));
     // Approve lands on the combined scan + grouping-review surface.
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/9/grouping"));
+  });
+
+  test("D4: a whole type matching zero everywhere hard-blocks Approve", async () => {
+    useDraftExperiment.getState().setRoot("/data/run42");
+    vi.spyOn(api, "resolveLayout").mockResolvedValue({
+      name: "run42",
+      data_dir: "/data/run42/data",
+      analysis_dir: "/data/run42/analysis",
+      setup_file: "/data/run42/analysis/setup_info_x.txt",
+      setup_ambiguous: false,
+      image_pattern: null, metadata_pattern: null, integration_pattern: null,
+    });
+    mockFetchManifest({
+      total: 3,
+      matched: { image: 3, metadata: 3, integration: 0 },   // integration matched nowhere
+      unmatched: [],
+      geometry: {
+        beam_center_x: 421.3, beam_center_x_source: "setup",
+        beam_center_y: 836.7, beam_center_y_source: "setup",
+        flight_path_m: 1.8095, flight_path_m_source: "setup",
+        pixel_size_um: 172.0, pixel_size_um_source: "prp",
+        energy_kev: 9.0, energy_kev_source: "prp",
+      },
+      matched_files: ["JC_001.tif"],
+    });
+    renderConfiguration({ route: "/experiments/new/config" });
+
+    // Headline swaps to the block message; Approve stays disabled; no `/0` shown.
+    expect(await screen.findByTestId("manifest-block")).toHaveTextContent(/No integration matched/i);
+    expect(screen.getByRole("button", { name: /approve/i })).toBeDisabled();
   });
 });
