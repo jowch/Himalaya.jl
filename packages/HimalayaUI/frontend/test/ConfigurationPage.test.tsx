@@ -120,6 +120,7 @@ describe("ConfigurationPage (first-run mode)", () => {
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
       name: "run42", data_dir: "/data/run42/data",
     })));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/9/corpus"));
+    // Approve lands on the combined scan + grouping-review surface.
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/9/grouping"));
   });
 });

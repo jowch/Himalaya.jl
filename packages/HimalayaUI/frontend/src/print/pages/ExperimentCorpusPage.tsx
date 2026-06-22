@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../../state";
 import {
@@ -18,7 +18,6 @@ import { ComposeBar } from "../ui/ComposeBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { Dock } from "../ui/Dock";
 import { ScanFailedPage } from "./ScanFailedPage";
-import { GroupingReviewPage } from "../components/GroupingReviewPage";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { CullBar } from "../components/CullBar";
@@ -338,12 +337,10 @@ export function ExperimentCorpusPage(): JSX.Element {
 
   // ── Takeover states (no sheet/dock) ──────────────────────────────────────
   if (scanning) {
-    return (
-      <GroupingReviewPage
-        experimentId={expId}
-        onBack={() => navigate(`/experiments/${expId}/corpus`)}
-      />
-    );
+    // The scanning/grouping surface is a full takeover that owns its own header
+    // (p1-grouping), so it lives at /grouping OUTSIDE this experiment shell.
+    // Landing on the corpus mid-scan redirects there rather than nesting it.
+    return <Navigate to={`/experiments/${expId}/grouping`} replace />;
   }
   if (rescanning) {
     return (

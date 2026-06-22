@@ -148,12 +148,14 @@ export function AppRoutes(): JSX.Element {
         <Route path="/experiments/new" element={<NewExperimentPage />} />
         {/* T4.0: draft Configuration — first-run mode, no :id yet. */}
         <Route path="/experiments/new/config" element={<ConfigurationPage />} />
+        {/* The combined scan + grouping-review surface (p1-grouping) is a
+            TAKEOVER: it owns its full header, so it mounts OUTSIDE ExperimentShell
+            (no redundant experiment header). Declared before the layout route. */}
+        <Route path="/experiments/:id/grouping" element={<GroupingReviewRoute />} />
         <Route path="/experiments/:id" element={<ExperimentShell />}>
           <Route index element={<Navigate to="corpus" replace />} />
           <Route path="corpus" element={<ExperimentCorpusPage />} />
           <Route path="config" element={<ConfigurationPage />} />
-          {/* E2: GroupingReviewPage mounts here (Task 20). */}
-          <Route path="grouping" element={<GroupingReviewRoute />} />
         </Route>
         {/* The `*` stale catch-all mounts PageBody which runs the URL→stale
             classifier and renders StaleUrlPage or ResolvingFallback. */}

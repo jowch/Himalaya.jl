@@ -109,7 +109,11 @@ function ConfigurationFirstRun(): JSX.Element {
     mutationFn: (body: api.CreateExperimentBody) => api.createExperiment(body),
     onSuccess: (created) => {
       clear();
-      navigate(`/experiments/${created.id}/corpus`);
+      // Land on the combined scan + grouping-review surface (p1-grouping): loads
+      // unfold live, and Confirm-groups gates on the scan finishing. It persists
+      // through completion (the standalone route doesn't switch away like the
+      // corpus state machine would).
+      navigate(`/experiments/${created.id}/grouping`);
     },
   });
 

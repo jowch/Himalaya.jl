@@ -1,16 +1,18 @@
 import { useMemo, useState, type JSX } from "react";
 import type { Load, LoadSample } from "../../api";
 import {
-  useLoads,
+  useLoads, useExperiment,
   useMergeSamples, useRenameSample, useMoveExposure,
   useSplitSample, useDismissGroupingFlag, useUndoDismissGroupingFlag,
 } from "../../queries";
+import { useAppState } from "../../state";
 import { LoadFold } from "./LoadFold";
 import { GroupingBulkBar } from "./GroupingBulkBar";
 import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
+import { ProgressBar } from "../ui/ProgressBar";
 import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
 import { Menu } from "../ui/Menu";
@@ -53,11 +55,24 @@ interface UndoEntry {
 export interface GroupingReviewPageProps {
   experimentId: number;
   onBack: () => void;
+  /** "Confirm groups" target: where to go once the scan finishes and the user
+   *  accepts the grouping. Defaults to onBack (the corpus). */
+  onConfirm?: () => void;
   className?: string;
 }
 
-export function GroupingReviewPage({ experimentId, onBack, className }: GroupingReviewPageProps): JSX.Element {
+export function GroupingReviewPage({ experimentId, onBack, onConfirm, className }: GroupingReviewPageProps): JSX.Element {
   const { data: loads = [], isLoading } = useLoads(experimentId);
+  const exp = useExperiment(experimentId);
+  const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
+  // Scanning = an initial-scan frame is in flight (the combined scan + review
+  // surface, p1-grouping). Loads unfold live as the SSE invalidates the query.
+  // Prefer the live SSE inFlight; fall back to the persisted ingest_status so a
+  // reload mid-scan (or the brief window before the first SSE frame after
+  // Approve) still shows the scanning surface, not the post-scan review.
+  const scanning = inFlight != null
+    ? inFlight.status === "scanning"
+    : exp.data?.ingest_status === "scanning";
   const [filter, setFilter] = useState<Filter>("attn");
   const [search, setSearch] = useState("");
   // ORDERED selection (first-selected = bulk-merge survivor -- Task 15). Membership
@@ -97,7 +112,11 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
   // (search across all loads); a selected sample stays visible even when it
   // would be filtered out, so the persistent selection is verifiable.
   const visible = useMemo(() => {
-    const base: Load[] = !q && filter === "attn" ? loads.filter((l) => l.samples.some((s) => s.flag)) : loads;
+    // During scanning the surface shows EVERY load as it lands (clean ones
+    // collapsed); the attn filter only narrows the post-scan standalone review.
+    const base: Load[] = !q && filter === "attn" && !scanning
+      ? loads.filter((l) => l.samples.some((s) => s.flag))
+      : loads;
     return base
       .map((l) => ({
         load: l,
@@ -106,7 +125,7 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
           : l.samples,
       }))
       .filter((x) => x.samples.length > 0);
-  }, [loads, filter, q, selectedSet]);
+  }, [loads, filter, q, selectedSet, scanning]);
 
   const toggleSelect = (id: number) =>
     setSelection((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -247,24 +266,57 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
 
   return (
     <div className={`mx-auto max-w-[1180px] px-10 pb-32 pt-8${className ? ` ${className}` : ""}`}>
-      <button type="button" className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-accent" onClick={onBack}>
-        {"←"} Back to corpus
-      </button>
-      <div className="flex items-end justify-between gap-8">
-        <div>
-          <Kicker>Grouping review</Kicker>
-          <h1 className="text-display text-ink">Check the grouping</h1>
-          <p className="mt-2 max-w-[66ch] text-sm text-ink-soft">
-            Confirm every sample loaded, has all its exposures, and is split where it should be.
-          </p>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-display text-ink"><b className="text-accent">{flaggedTotal}</b> flagged</div>
-          <div className="text-xs font-bold uppercase text-ink-faint">of {totalSamples} samples</div>
-        </div>
-      </div>
+      {!scanning && (
+        <button type="button" className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-accent" onClick={onBack}>
+          {"←"} Back to corpus
+        </button>
+      )}
 
-      <div className="my-4 flex items-center gap-2">
+      {scanning ? (
+        // Combined scan + grouping-review header (p1-grouping): live progress as
+        // loads land. processed/total ride the SSE ingestInFlight; loads/samples
+        // come from the live-invalidated query.
+        <div data-testid="grouping-scanning-header">
+          <Kicker tone="accent">Scanning · review groups as they land</Kicker>
+          <h1 className="text-display text-ink">{exp.data?.name ?? `Experiment ${experimentId}`}</h1>
+          <div className="mt-3 flex items-center gap-4">
+            <span className="text-meta text-ink-soft whitespace-nowrap">
+              Parsing exposures… {inFlight?.processed ?? 0} / ~{inFlight?.total ?? 0}
+              {" · "}{loads.length} loads · {totalSamples} samples
+            </span>
+            <div className="flex-1 min-w-[8rem]">
+              <ProgressBar
+                value={inFlight?.processed ?? 0}
+                total={Math.max(inFlight?.total ?? 1, 1)}
+                label="Scan progress"
+              />
+            </div>
+            {flaggedTotal > 0 && (
+              <span className="text-meta font-semibold text-print-accent whitespace-nowrap" data-testid="grouping-flag-count">
+                {flaggedTotal} {flaggedTotal === 1 ? "flag" : "flags"} to review
+              </span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-end justify-between gap-8">
+          <div>
+            <Kicker>Grouping review</Kicker>
+            <h1 className="text-display text-ink">Check the grouping</h1>
+            <p className="mt-2 max-w-[66ch] text-sm text-ink-soft">
+              Confirm every sample loaded, has all its exposures, and is split where it should be.
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-display text-ink"><b className="text-accent">{flaggedTotal}</b> flagged</div>
+            <div className="text-xs font-bold uppercase text-ink-faint">of {totalSamples} samples</div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter/search is for the post-scan standalone review; during a live
+          scan the surface just shows every load as it lands. */}
+      <div className={`my-4 flex items-center gap-2${scanning ? " hidden" : ""}`}>
         <SegmentedControl<Filter>
           value={filter}
           onChange={setFilter}
@@ -304,7 +356,7 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
           <LoadFold
             key={load.load_id}
             load={load}
-            open={openLoads.has(load.load_id) || !!q || load.samples.some((s) => s.flag) || filter === "all"}
+            open={openLoads.has(load.load_id) || !!q || load.samples.some((s) => s.flag) || (filter === "all" && !scanning)}
             visibleSamples={samples}
             openSamples={openSamples}
             selected={selectedSet}
@@ -319,6 +371,16 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
             thumbSrcFor={() => null}
           />
         ))
+      )}
+
+      {/* Still-landing loads: a faint placeholder while the scan parses more. */}
+      {scanning && (inFlight?.processed ?? 0) < (inFlight?.total ?? 0) && (
+        <div
+          data-testid="grouping-unfolding"
+          className="mt-3 rounded-md border border-dashed border-hair px-5 py-4 text-meta text-ink-faint"
+        >
+          unfolding…
+        </div>
       )}
 
       {/* Merge confirm modal (single-entity) */}
@@ -414,6 +476,29 @@ export function GroupingReviewPage({ experimentId, onBack, className }: Grouping
           onClear={() => setSelection([])}
         />
       ) : null}
+
+      {/* Confirm-groups footer (p1-grouping): the surface's exit. Disabled while
+          the scan is in flight — settled loads are reviewable immediately, but
+          Confirm waits for the scan to finish (later loads can still raise flags).
+          Ingest is additive, so confirming never re-touches a settled load. */}
+      <footer
+        data-testid="grouping-footer"
+        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 border-t border-hair bg-paper px-8 py-3"
+      >
+        <span className="text-meta text-ink-soft">
+          {scanning
+            ? "Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags."
+            : "Confirm the grouping to head to the corpus. You can always return to review."}
+        </span>
+        <Button
+          variant="accent"
+          data-testid="grouping-confirm"
+          disabled={scanning}
+          onClick={() => (onConfirm ?? onBack)()}
+        >
+          {scanning ? "Confirm groups · scanning…" : "Confirm groups"}
+        </Button>
+      </footer>
     </div>
   );
 }
