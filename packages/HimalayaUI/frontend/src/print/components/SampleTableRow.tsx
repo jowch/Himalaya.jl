@@ -18,6 +18,9 @@ export interface SampleTableRowProps {
    *  this row flagged for dropping at once). Forwarded to the gallery's
    *  `selectedIds`; OR'd with `selectedExposureId`. */
   selectedExposureIds?: ReadonlySet<number>;
+  /** The roving cursor's active frame within this row → a double-border cue on
+   *  that thumb, distinct from the solid cull-selection border. */
+  cursoredExposureId?: number;
   onSelectExposure?: (id: number) => void;
   kept: number;
   total: number;
@@ -116,6 +119,7 @@ export function SampleTableRow({
   exposures,
   selectedExposureId,
   selectedExposureIds,
+  cursoredExposureId,
   onSelectExposure,
   kept,
   total,
@@ -138,14 +142,14 @@ export function SampleTableRow({
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
-  // Cursor cue (item 4): the roving ↑/↓ row reads as one opaque terracotta band.
-  // An `outline` was clipped — the frozen sticky cells (z-10, opaque) painted
-  // over it on the left and the horizontal scroller cut it on the right — so the
-  // whole row + its sticky cells take the OPAQUE `bg-accent-wash` instead (a
-  // sanctioned token; opaque so the frozen column still hides content beneath).
-  // Distinct in hue from the neutral grey rest/hover, and overrides hover so the
-  // cursor stays put under the mouse.
-  const rowBg = cursored ? " bg-accent-wash" : ` hover:bg-paper-sunk${restTint}`;
+  // Cursor cue (item 4): the roving ↑/↓ row reads as one opaque yellowish band
+  // (bg-row-cursor, the pages2 mockup's accent-into-paper-sunk mix). An `outline`
+  // was clipped — the frozen sticky cells (z-10, opaque) painted over it on the
+  // left and the horizontal scroller cut it on the right — so the whole row + its
+  // sticky cells take the OPAQUE band instead (opaque so the frozen column still
+  // hides content beneath). Distinct in hue from the neutral grey rest/hover, and
+  // overrides hover so the cursor stays put under the mouse.
+  const rowBg = cursored ? " bg-row-cursor" : ` hover:bg-paper-sunk${restTint}`;
 
   // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
   // cells). The opaque background must mirror the row's own surface — bg-plate
@@ -156,7 +160,7 @@ export function SampleTableRow({
   // The frozen cells follow the cursor band so the left column doesn't stay grey
   // while the body turns terracotta (the "broken border" the outline produced).
   const sticky = cursored
-    ? "sticky z-10 bg-accent-wash"
+    ? "sticky z-10 bg-row-cursor"
     : `sticky z-10 ${stickyBg} group-hover/row:bg-paper-sunk`;
   const sampleLeft = hasCheckbox ? CHECKBOX_TRACK_PX : 0;
 
@@ -211,6 +215,7 @@ export function SampleTableRow({
             exposures={exposures}
             {...(selectedExposureId != null ? { selectedId: selectedExposureId } : {})}
             {...(selectedExposureIds != null ? { selectedIds: selectedExposureIds } : {})}
+            {...(cursoredExposureId != null ? { cursoredId: cursoredExposureId } : {})}
             {...(onSelectExposure ? { onSelect: onSelectExposure } : {})}
             {...(onActivateExposure ? { onActivate: onActivateExposure } : {})}
           />

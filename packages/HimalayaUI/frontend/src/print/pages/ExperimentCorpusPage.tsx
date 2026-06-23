@@ -480,7 +480,7 @@ export function ExperimentCorpusPage(): JSX.Element {
                 onCheck={() => toggleSampleCheck(s.id)}
                 cursored={rowIndex === cursor.sampleIndex}
                 {...(rowIndex === cursor.sampleIndex && activeFrame
-                  ? { selectedExposureId: activeFrame.id }
+                  ? { cursoredExposureId: activeFrame.id }
                   : {})}
                 selectedExposureIds={selected}
                 onSelectExposure={(eid) => {

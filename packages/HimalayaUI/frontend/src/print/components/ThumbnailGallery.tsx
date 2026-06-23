@@ -20,6 +20,10 @@ export interface ThumbnailGalleryProps {
    *  `selected` if its id is in this set OR equals `selectedId` — so a gallery
    *  can use either model, or both. */
   selectedIds?: ReadonlySet<number>;
+  /** The roving keyboard cursor's active frame (distinct from selection). Renders
+   *  a double border on that thumb so the cursor is legible even on a selected
+   *  one. */
+  cursoredId?: number;
   onSelect?: (id: number) => void;
   /** Double-click handler — opens the loupe for the clicked exposure. */
   onActivate?: (id: number) => void;
@@ -36,6 +40,7 @@ export function ThumbnailGallery({
   exposures,
   selectedId,
   selectedIds,
+  cursoredId,
   onSelect,
   onActivate,
   size = "sm",
@@ -72,6 +77,7 @@ export function ThumbnailGallery({
           {...(exposure.rejected != null ? { rejected: exposure.rejected } : {})}
           {...(exposure.kept != null ? { kept: exposure.kept } : {})}
           selected={selectedId === exposure.id || (selectedIds?.has(exposure.id) ?? false)}
+          {...(cursoredId === exposure.id ? { cursored: true } : {})}
           size={size}
           {...(onSelect ? { onClick: () => onSelect(exposure.id) } : {})}
           {...(onActivate ? { onDoubleClick: () => onActivate(exposure.id) } : {})}
