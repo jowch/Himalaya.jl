@@ -36,11 +36,13 @@ describe("bulk merge", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /select A/i }));   // survivor
     fireEvent.click(screen.getByRole("checkbox", { name: /select B/i }));
     fireEvent.click(screen.getByRole("checkbox", { name: /select C/i }));
-    // bulk-bar primary (scope the query to the bar so it doesn't collide with
-    // the later modal confirm button, which also reads "Merge")
-    const bar = screen.getByTestId("bulk-bar");
-    fireEvent.click(within(bar).getByRole("button", { name: /^merge$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^merge$/i }));        // confirm modal
+    // Footer action-bar Merge (item 2). Scope the modal-confirm click to the
+    // bulk-merge-confirm dialog so it doesn't collide with the footer's own
+    // "Merge", which stays mounted while the modal is open.
+    fireEvent.click(screen.getByTestId("grouping-merge"));
+    fireEvent.click(
+      within(screen.getByTestId("bulk-merge-confirm")).getByRole("button", { name: /^merge$/i }),
+    );
     expect(mergeMutate).toHaveBeenCalledTimes(2);
     // assert first-arg inputs (the page may pass a 2nd options arg)
     const inputs = mergeMutate.mock.calls.map((c) => c[0]);

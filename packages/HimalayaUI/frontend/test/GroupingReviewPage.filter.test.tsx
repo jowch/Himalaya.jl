@@ -44,7 +44,7 @@ describe("GroupingReviewPage filter + persistent selection", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /select HA85 \(S01P15\)/i }));
     // search to sample 20's load only -- sample 10 leaves the view
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "S02" } });
-    // bulk bar still reflects the 1 retained selection
-    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("1");
+    // the footer selection readout still reflects the 1 retained selection
+    expect(screen.getByTestId("grouping-selection-count")).toHaveTextContent("1");
   });
 });

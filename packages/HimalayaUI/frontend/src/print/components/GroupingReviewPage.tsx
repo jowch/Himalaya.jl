@@ -7,7 +7,6 @@ import {
 } from "../../queries";
 import { useAppState } from "../../state";
 import { LoadFold } from "./LoadFold";
-import { GroupingBulkBar } from "./GroupingBulkBar";
 import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { KbKey } from "../ui/KbKey";
@@ -543,17 +542,6 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
         );
       })() : null}
 
-      {selection.length > 0 && !bulkMergeConfirm ? (
-        <GroupingBulkBar
-          count={selection.length}
-          noun="sample"
-          primaryLabel="Merge"
-          primaryEnabled={selection.length >= 2}
-          onPrimary={openBulkMergeConfirm}
-          onClear={() => setSelection([])}
-        />
-      ) : null}
-
       {/* Confirm-groups footer (p1-grouping): the surface's exit. Disabled while
           the scan is in flight — settled loads are reviewable immediately, but
           Confirm waits for the scan to finish (later loads can still raise flags).
@@ -567,13 +555,51 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
             Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags.
           </span>
         ) : (
-          // Keyboard controls (the dock hint). Keys are registry-aligned
-          // (shortcuts.ts) — the full legend is in the ? overlay.
-          <div className="flex items-center gap-4 text-meta text-ink-faint" aria-hidden="true">
-            <span className="inline-flex items-center gap-1"><KbKey>↑</KbKey><KbKey>↓</KbKey> move</span>
-            <span className="inline-flex items-center gap-1"><KbKey>space</KbKey> select</span>
-            <span className="inline-flex items-center gap-1"><KbKey>⇧↑</KbKey><KbKey>⇧↓</KbKey> flagged</span>
-            <span className="inline-flex items-center gap-1"><KbKey>x</KbKey> dismiss flag</span>
+          // Action bar (item 2): select / merge / split as buttons acting on the
+          // cursored sample + the multi-select, with a compact keyboard legend.
+          // Keys stay registry-aligned (shortcuts.ts); the full legend is in the
+          // ? overlay.
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                disabled={!cursorSample}
+                onClick={() => { if (cursorSample) toggleSelect(cursorSample.sample_id); }}
+                data-testid="grouping-select"
+              >
+                Select<KbKey className="ml-1.5">space</KbKey>
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={!cursorSample || cursorSample.exposures.length < 2}
+                onClick={() => { if (cursorSample) handleSplit(cursorSample.sample_id); }}
+                data-testid="grouping-split"
+              >
+                Split
+              </Button>
+              {selection.length > 0 && (
+                <>
+                  <span className="h-5 w-px bg-hair" aria-hidden />
+                  <span className="text-meta text-ink-soft" data-testid="grouping-selection-count">
+                    {selection.length} selected
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={selection.length < 2}
+                    onClick={openBulkMergeConfirm}
+                    data-testid="grouping-merge"
+                  >
+                    Merge
+                  </Button>
+                  <Button variant="ghost" onClick={() => setSelection([])}>Clear</Button>
+                </>
+              )}
+            </div>
+            <div className="hidden items-center gap-3 text-meta text-ink-faint lg:flex" aria-hidden="true">
+              <span className="inline-flex items-center gap-1"><KbKey>↑</KbKey><KbKey>↓</KbKey> move</span>
+              <span className="inline-flex items-center gap-1"><KbKey>⇧↑</KbKey><KbKey>⇧↓</KbKey> flagged</span>
+              <span className="inline-flex items-center gap-1"><KbKey>x</KbKey> dismiss flag</span>
+            </div>
           </div>
         )}
         <Button
