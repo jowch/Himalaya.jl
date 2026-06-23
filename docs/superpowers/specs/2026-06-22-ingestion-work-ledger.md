@@ -88,6 +88,20 @@ A live walk of the new-experiment funnel (served fresh DB on :8081) drove a batc
 
 _Append `- [ ] <what> · <anchor> · blocks/blocked-by <item>` here, then re-sort into the list above._
 
+**Polish backlog from live dev-walk (2026-06-23, 12 items, grouping/corpus/config surfaces):**
+- [x] **1. ⇧+arrow key hint** = three separate caps; combine to one cap (⇧↑/⇧↓). DONE `c140f7b4`.
+- [ ] **2. Move select/merge/split into action-bar (Dock) buttons** — pairs with #5; reshapes the corpus + grouping action model. DESIGN — confirm direction.
+- [ ] **3. Corpus page title pencil-to-edit** — the ExperimentShell title is an always-open Input (variant=title); switch to at-rest h1 + ✎ (the config/SampleFold idiom).
+- [ ] **4. Corpus arrow keys "don't work"** — they DO move the cursor (dock counter changes) but no ROW/frame is visually highlighted (SampleTableRow has no active/cursor prop). Add a visible active-row + active-frame indicator driven by `cursor`.
+- [ ] **5. Replace the cull bar with the Dock** — CullBar/ComposeBar still pop up on exposure select; fold their verbs into the persistent Dock. Pairs with #2.
+- [ ] **6. ←/→ glyphs for left/right** — locate where left/right are spelled out (frame stepper?) and use arrow glyphs.
+- [ ] **7. Tooltips on interactables** — use the Tooltip primitive on icon buttons etc., with help text; improve Tooltip visuals. Cross-cutting — scope which interactables.
+- [ ] **8. Rescan flashes the corpus page (remount)** — `ExperimentCorpusPage` returns a DIFFERENT subtree when `rescanning` (the "Analyzing exposures…" slot, lines 370-381), swapping the whole page. Make rescan a non-destructive inline banner that keeps the sheet+dock mounted.
+- [x] **9. No way back to corpus from config** — the ⚙ (corpus→config) had no inverse; on /config the gear becomes "← Back to corpus". DONE `c140f7b4`.
+- [ ] **10. Geometry table formatting issues** (config page) — inspect specifics.
+- [ ] **11. Geometry source chips differ** between the config page (preferred) and the ingest/grouping geometry panel — unify to the config-page chip style. Two impls: `GeometryLedger.tsx` SourceBadge vs `ConfigurationPage.tsx` inline `gSrc`/sourceLbl.
+- [ ] **12. Dates overlap in the acquisition plot panel** (`AcquisitionTimeline.tsx`) — layout/tick spacing fix.
+
 - [x] **Directory picker focus-steal broke typing + Tab completion** (`28fa0ba0`) — found on a live fresh-DB walk (user reported "the new experiment input still doesn't have a tab completion thing"). `DirectoryPickerField`'s suggestion `Popover` opens on click, and Popover's open-effect focuses its own panel; the field passed no `initialFocusRef`, so a click yanked the caret onto the `role=dialog` panel and the input's `onKeyDown` (Tab/↑↓) never fired. Fix: wire the inner-input ref through `Input.inputRef` → `Popover.initialFocusRef`. **This corrects the 9d "verified live, autocomplete works" claim — that check only confirmed the popover *renders*, not that focus stays / typing works.** Regression test opens the popover via a real click and asserts `activeElement === input` (the prior tests fired keyDown directly on the input, bypassing the focus path → green while broken). Live-verified on a served build: click → type → Tab completes.
 - [ ] **Focus trace q-axis label is hardcoded `"q (Å⁻¹)"`** · `TracePlot.tsx` xLabel default + `FocusPage.tsx` `<TracePlate>` passes no xLabel · found during 6e render-verify. The axis does NOT reflect the experiment's `q_units` at all (neither per-sample nor experiment-level). To honor a non-Å q_units on the plot, thread `prettifyUnits(experimentQ.data?.q_units)` → `TracePlate` xLabel → `TracePlot`. A UI feature (the q_units data layer is now correct), low priority — most experiments are Å⁻¹. Same likely applies to the Series/waterfall plots. *Not blocking; new surface work, not in the original ledger.*
 
