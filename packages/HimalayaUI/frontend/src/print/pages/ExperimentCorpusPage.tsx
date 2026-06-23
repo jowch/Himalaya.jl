@@ -168,6 +168,18 @@ export function ExperimentCorpusPage(): JSX.Element {
     { sampleIndex: 0, frameIndex: 0 },
   );
   const activeSample = scopedSamples[cursor.sampleIndex];
+  // Keep the roving ↑/↓ row visible: when the cursor row changes, pull it into
+  // the shell scroller's viewport. `block: "nearest"` only moves when the row is
+  // off-screen and aligns to the closest edge (no jumpy re-centering). The row
+  // carries `data-cursored="true"`; scope the lookup to this page's subtree.
+  const corpusRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // `?.scrollIntoView?.()` — guard the call: jsdom (unit tests) doesn't
+    // implement scrollIntoView, so optional-call it instead of throwing.
+    corpusRef.current
+      ?.querySelector('[data-cursored="true"]')
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [cursor.sampleIndex]);
   // Representative setter, keyed to the cursor's active sample. Lets "R" / the
   // dock "Mark rep" button flag which exposure represents the sample (the one
   // Focus opens) directly from the contact sheet.
@@ -457,7 +469,7 @@ export function ExperimentCorpusPage(): JSX.Element {
   return (
     // pb-24 clears the fixed Dock (≈47px) so the last sample rows scroll above it
     // instead of hiding beneath — the sheet had no bottom clearance.
-    <div data-testid="experiment-corpus" className="flex flex-col gap-4 pb-24">
+    <div ref={corpusRef} data-testid="experiment-corpus" className="flex flex-col gap-4 pb-24">
       {/* Inline rescan banner (item 8): an additive rescan reports progress here
           without unmounting the sheet/dock below — the rows stay put. */}
       {rescanning && (

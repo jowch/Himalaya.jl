@@ -150,6 +150,9 @@ export function SampleTableRow({
   // hides content beneath). Distinct in hue from the neutral grey rest/hover, and
   // overrides hover so the cursor stays put under the mouse.
   const rowBg = cursored ? " bg-row-cursor" : ` hover:bg-paper-sunk${restTint}`;
+  // The root also carries `scroll-mb-14` (56px): when the page scrolls the
+  // cursored row into view (scrollIntoView), that bottom scroll-margin keeps a
+  // downward-navigated row ABOVE the fixed Dock (~47px) instead of behind it.
 
   // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
   // cells). The opaque background must mirror the row's own surface — bg-plate
@@ -170,7 +173,7 @@ export function SampleTableRow({
       role="row"
       data-screened={screened ? "true" : "false"}
       data-cursored={cursored ? "true" : "false"}
-      className={`group/row border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
+      className={`group/row scroll-mb-14 border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
     >
       <div
         role="presentation"
