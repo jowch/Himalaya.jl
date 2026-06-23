@@ -20,7 +20,9 @@ export function GroupingBulkBar(p: GroupingBulkBarProps): JSX.Element {
   return (
     <div
       data-testid="bulk-bar"
-      className={`fixed inset-x-0 bottom-6 mx-auto flex w-fit items-center gap-4 rounded-md bg-ink px-5 py-3 text-paper shadow-lg${p.className ? ` ${p.className}` : ""}`}
+      // bottom-20 + z-40 clears the grouping Confirm footer (fixed bottom-0
+      // z-30) so the bar isn't covered by it.
+      className={`fixed inset-x-0 bottom-20 z-40 mx-auto flex w-fit items-center gap-4 rounded-md bg-ink px-5 py-3 text-paper shadow-lg${p.className ? ` ${p.className}` : ""}`}
     >
       <span className="font-mono text-sm">
         {p.count} {p.noun}{p.count === 1 ? "" : "s"} selected

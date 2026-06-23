@@ -53,7 +53,7 @@ describe("GroupingReviewPage edits", () => {
   it("inline rename: activating rename and committing via Enter fires useRenameSample with trimmed name", () => {
     wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} />);
     // Click the Rename button on the sample row
-    fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /rename sample/i }));
     // The inline input should appear
     const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
     fireEvent.change(input, { target: { value: "  HA85 Renamed  " } });
@@ -66,7 +66,7 @@ describe("GroupingReviewPage edits", () => {
 
   it("inline rename: pressing Escape does NOT fire useRenameSample", () => {
     wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: /^rename$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /rename sample/i }));
     const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
     fireEvent.change(input, { target: { value: "Cancelled" } });
     fireEvent.keyDown(input, { key: "Escape" });

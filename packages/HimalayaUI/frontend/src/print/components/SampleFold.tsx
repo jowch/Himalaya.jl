@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type JSX } from "react";
 import type { LoadSample } from "../../api";
 import { Checkbox } from "../ui/Checkbox";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 import { Input } from "../ui/Input";
 import { ExposureLeaf } from "./ExposureLeaf";
 
@@ -73,6 +74,7 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
           <div className="min-w-0 flex-1">
             <Input
               variant="title"
+              inputSize="sm"
               testId="sample-rename-input"
               value={renameDraft}
               onValueChange={setRenameDraft}
@@ -91,22 +93,39 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
             />
           </div>
         ) : (
-          <button
-            type="button"
-            className="min-w-0 flex-1 text-left"
-            onClick={() => props.onToggleOpen(s.sample_id)}
-          >
-            <span className="text-headline text-ink">{s.name}</span>
-            <span className="ml-2 font-mono text-xs text-ink-faint">
-              {s.exposures.length} exposures · {s.exposures[0]?.timestamp ?? "--"}
-            </span>
-            {flagChip ? (
-              <span className="ml-2 text-xs font-bold uppercase text-warning">{flagChip}</span>
-            ) : null}
-          </button>
+          <div className="min-w-0 flex-1 flex items-center gap-1.5">
+            <button
+              type="button"
+              className="min-w-0 text-left"
+              onClick={() => props.onToggleOpen(s.sample_id)}
+            >
+              <span className="text-headline text-ink">{s.name}</span>
+              <span className="ml-2 font-mono text-xs text-ink-faint">
+                {s.exposures.length} exposures · {s.exposures[0]?.timestamp ?? "--"}
+              </span>
+            </button>
+            {/* Pencil sits next to the name (the funnel rename idiom), not as a
+                far-right button. */}
+            <IconButton label="Rename sample" tone="ghost" onClick={activateRename}>
+              {"✎"}
+            </IconButton>
+          </div>
         )}
+        {/* Flag chip + an explicit dismiss (×), discoverable WITHOUT expanding,
+            for BOTH split and merge kinds. The backend dismiss route handles
+            both; split flags previously had no dismiss affordance at all. */}
+        {flag && flagChip ? (
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-bold uppercase text-warning">{flagChip}</span>
+            <IconButton
+              label="Dismiss flag"
+              tone="ghost"
+              dismiss
+              onClick={() => props.onDismissFlag(s.sample_id)}
+            />
+          </div>
+        ) : null}
         <div className="flex items-center gap-1.5">
-          <Button variant="outline" onClick={activateRename}>Rename</Button>
           <Button variant="outline" onClick={() => props.onSplit(s.sample_id)}>Split...</Button>
         </div>
       </div>

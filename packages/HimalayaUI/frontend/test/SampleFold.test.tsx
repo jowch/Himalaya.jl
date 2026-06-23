@@ -55,10 +55,19 @@ describe("SampleFold", () => {
     expect(divider.textContent).toMatch(/8\.0 → 36\.0/);
   });
 
+  it("a flag (either kind) shows a header Dismiss control that calls onDismissFlag", () => {
+    // Split flags previously had no dismiss affordance — now the chip carries one.
+    const onDismiss = vi.fn();
+    render(<SampleFold sample={sample({ flag: { kind: "split", split_at_index: 1, jump_from: 8, jump_to: 36 } })}
+      {...baseProps} onDismissFlag={onDismiss} />);
+    fireEvent.click(screen.getByRole("button", { name: /dismiss flag/i }));
+    expect(onDismiss).toHaveBeenCalledWith(10);
+  });
+
   describe("inline rename", () => {
     it("clicking Rename activates an inline Input with the current name", () => {
       render(<SampleFold sample={sample()} {...baseProps} />);
-      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /rename sample/i }));
       const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
       expect(input).toBeInTheDocument();
       expect(input.value).toBe("HA85 (S01P15)");
@@ -67,7 +76,7 @@ describe("SampleFold", () => {
     it("Enter commits the trimmed new name and calls onRename", () => {
       const onRename = vi.fn();
       render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
-      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /rename sample/i }));
       const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
       fireEvent.change(input, { target: { value: "  New Name  " } });
       fireEvent.keyDown(input, { key: "Enter" });
@@ -77,7 +86,7 @@ describe("SampleFold", () => {
     it("blur commits the trimmed new name and calls onRename", () => {
       const onRename = vi.fn();
       render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
-      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /rename sample/i }));
       const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
       fireEvent.change(input, { target: { value: "Blurred Name" } });
       fireEvent.blur(input);
@@ -87,7 +96,7 @@ describe("SampleFold", () => {
     it("Escape cancels rename without calling onRename", () => {
       const onRename = vi.fn();
       render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
-      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /rename sample/i }));
       const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
       fireEvent.change(input, { target: { value: "Should Not Save" } });
       fireEvent.keyDown(input, { key: "Escape" });
@@ -99,7 +108,7 @@ describe("SampleFold", () => {
     it("committing the same name (unchanged) does not call onRename", () => {
       const onRename = vi.fn();
       render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
-      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /rename sample/i }));
       const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
       // No change to value — commit via blur
       fireEvent.blur(input);
@@ -109,7 +118,7 @@ describe("SampleFold", () => {
     it("committing an empty name does not call onRename", () => {
       const onRename = vi.fn();
       render(<SampleFold sample={sample()} {...baseProps} onRename={onRename} />);
-      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /^rename$/i }));
+      fireEvent.click(within(screen.getByTestId("sample-fold")).getByRole("button", { name: /rename sample/i }));
       const input = screen.getByTestId("sample-rename-input").querySelector("input")!;
       fireEvent.change(input, { target: { value: "   " } });
       fireEvent.blur(input);

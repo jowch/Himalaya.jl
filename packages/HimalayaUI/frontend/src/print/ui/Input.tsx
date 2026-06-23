@@ -97,7 +97,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
         aria-invalid={invalid || undefined}
         className={cx(
           "flex-1 bg-transparent border-none outline-none placeholder:text-ink-soft min-w-0",
-          isTitle ? "text-display text-ink" : "text-base text-ink",
+          isTitle
+            // Title font scales with inputSize: sm → headline (a compact inline
+            // rename, e.g. the grouping SampleFold), md (default) → display.
+            ? cx(inputSize === "sm" ? "text-headline" : "text-display", "text-ink")
+            : "text-base text-ink",
           mono && "font-mono",
         )}
         {...rest}

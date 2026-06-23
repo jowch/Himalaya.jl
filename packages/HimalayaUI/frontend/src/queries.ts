@@ -138,12 +138,22 @@ export function useExperiment(id: number) {
 
 /** The Load ▸ Sample ▸ Exposures roll-up (grouping-review + Configuration
  *  acquisition timeline read off this; spec §9.2/§9.6). Gated id>0 like
- *  useExperiment so a zero/undefined experiment never hits /loads. */
-export function useLoads(id: number) {
+ *  useExperiment so a zero/undefined experiment never hits /loads.
+ *
+ *  `refetchWhileScanning` is the robust floor for live-unfold: during an initial
+ *  scan, the SSE `ingest_progress`/`ingest_complete` frames invalidate this query
+ *  — but React Query ABSORBS an invalidation that lands while a fetch is already
+ *  in flight (the frame burst overlaps the first, empty, mid-scan fetch), and
+ *  `staleTime` then keeps that empty result "fresh", so nothing re-fetches until a
+ *  manual reload. Polling while the scan is live (mirrors useExperiment's ingest
+ *  self-heal) picks up the committed loads regardless of the invalidation race;
+ *  it stops the moment the caller's `scanning` flag clears. */
+export function useLoads(id: number, refetchWhileScanning = false) {
   return useQuery({
     queryKey: queryKeys.loads(id),
     queryFn: () => api.listLoads(id),
     enabled: id > 0,
+    refetchInterval: refetchWhileScanning ? 2000 : false,
   });
 }
 

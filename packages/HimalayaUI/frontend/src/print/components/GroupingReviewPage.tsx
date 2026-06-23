@@ -63,7 +63,6 @@ export interface GroupingReviewPageProps {
 }
 
 export function GroupingReviewPage({ experimentId, onBack, onConfirm, className }: GroupingReviewPageProps): JSX.Element {
-  const { data: loads = [], isLoading } = useLoads(experimentId);
   const exp = useExperiment(experimentId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   // Scanning = an initial-scan frame is in flight (the combined scan + review
@@ -75,6 +74,9 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   // surface self-heals to the post-scan review without a manual reload.
   const scanning =
     effectiveIngestStatus(inFlight?.status, exp.data?.ingest_status) === "scanning";
+  // Poll loads while scanning so the committed grouping surfaces even when the
+  // SSE invalidation is absorbed by an in-flight empty fetch (see useLoads).
+  const { data: loads = [], isLoading } = useLoads(experimentId, scanning);
   const [filter, setFilter] = useState<Filter>("attn");
   const [search, setSearch] = useState("");
   // ORDERED selection (first-selected = bulk-merge survivor -- Task 15). Membership
