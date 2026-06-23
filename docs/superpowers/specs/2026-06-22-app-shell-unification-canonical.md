@@ -873,30 +873,11 @@ render-verified live; branch stays unmerged awaiting Jonathan).
   model); finding 11 (coverage counting + integration-vs-analysis + warning); finding 12 (tot_files
   copied into mini + the SSRL integration-layout auto-detection in the resolver).
 
-**Remaining:**
-- **M6 polish:** the later-⚙ Configuration edit mode (per-field geometry override + aligned table +
-  gated rescan-on-save + undo/redo wiring); a dock polish sweep; Configuration fidelity vs `p1-config`.
-- **Scan-failed surface (stub today):** build `p1-failed` fidelity — fetch the real manifest, nearest-
-  file pairing, adaptive pattern-test card with live `✓N/N`, warn-toned kicker, the two-stage in-place
-  partial-ingest confirm, the `↵` chip (§5.5).
-- **Keyboard gaps (§8 status):** Series `↑/↓`/`Enter`/`A`/`⌘Enter` (needs new `addSample`/`confirm`
-  registry ids), Focus `P` (needs `addPeak`) + `Enter`-apply, Configuration undo/redo, Series Scoping
-  redo.
-- **Backend miss types:** widen the manifest to emit an `image` miss label + extend `MissType` so the
-  scan-failed "Image mismatch" group renders (§5.5).
-- **Dock fidelity (§7):** the Series dock (stepper + Focus + swatch/name/from-experiment); the frosted
-  `↵` key-chip on Focus destinations (Corpus/Loupe/Series); the `Enter`-on-native-interactive decline
-  gate (§8 gate b).
-- **`CullBar` parameterization** (§13): when the optional `actions: {label,onClick,variant}[]` is
-  provided, render it in place of the fixed Drop/Keep/Restore/Clear set; otherwise keep the fixed
-  handlers. `variant` ∈ {`accent`,`success`,`ghostInverse`}.
-- **The heavy end-to-end live walk:** Approve → full phase-② scan over real `tot_files` integration
-  data (138 exposures) → grouping unfold → corpus render. The funnel/preview is verified; a real ingest
-  has not yet been walked.
-- **Deferred / open:** the zero-everywhere coverage hard block (§6, D4); `series_samples.position`
-  compaction after merge (§11.4, D6 — shipped leaves gaps); the cross-version SSE deploy sequencing
-  (§11.5); the crash-mid-scan `ingest_status='scanning'` corpus state (G4); the toml/`config.jl` code
-  removal (toml deprecated going forward); a single e2e tying an SSE frame to the corpus ProgressBar.
+**Remaining:** tracked in the living work ledger
+[`2026-06-22-ingestion-work-ledger.md`](2026-06-22-ingestion-work-ledger.md) — a
+dependency-ordered worklist (funnel honesty → scan-failed surface → keyboard gaps → dock fidelity
+→ M6 Configuration edit mode → deferred backend/edges → the heavy live walk) that agents check off
+and append discoveries to. The ledger moves; this spec stays the fixed design target.
 
 **Standing constraints:** branch stays unmerged; never `git add -A`; verify by rendering live; refined-
 surface layouts (Focus/Loupe/Series/Configuration body) stay untouched except for keyboard + chrome
