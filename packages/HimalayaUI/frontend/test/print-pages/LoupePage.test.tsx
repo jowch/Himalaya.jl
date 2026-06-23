@@ -79,6 +79,8 @@ function renderAt(sampleId: number, search = "") {
             </>
           }
         />
+        <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">sheet</div>} />
+        {/* not-found loupe (no sample → no experiment_id) falls back to the list */}
         <Route path="/experiments" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,
@@ -104,6 +106,8 @@ function renderWithOrder(sampleId: number, order: number[], search = "") {
             </>
           }
         />
+        <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">sheet</div>} />
+        {/* not-found loupe (no sample → no experiment_id) falls back to the list */}
         <Route path="/experiments" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,

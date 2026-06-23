@@ -295,12 +295,17 @@ export function LoupePage(): JSX.Element {
   }, [exposures]);
 
   const goBack = useCallback(() => {
+    // App-shell unification: the corpus lives at /experiments/:id/corpus. The
+    // legacy target (/experiments?experiment=N, the experiments LIST) sent
+    // "back" to the wrong page. Prefer the ?experiment scope the sheet passed;
+    // fall back to the sample's own experiment_id for a direct permalink.
     const experimentParam = searchParams.get("experiment");
+    const expId = experimentParam ?? (sample ? String(sample.experiment_id) : null);
     // LO-FOCUSRET (WCAG 2.4.3): carry the originating sample id back so the
     // sheet restores focus to that row instead of dropping it to <body>.
     const opts = hasValidId ? { state: { focusSampleId: sampleId } } : undefined;
-    navigate(experimentParam ? `/experiments?experiment=${experimentParam}` : "/experiments", opts);
-  }, [navigate, searchParams, hasValidId, sampleId]);
+    navigate(expId ? `/experiments/${expId}/corpus` : "/experiments", opts);
+  }, [navigate, searchParams, hasValidId, sampleId, sample]);
 
   // ── LO-NEXT: prev/next-SAMPLE navigation ──────────────────────────────────
   // Culling N samples should not cost N sheet round-trips. The sheet hands its
