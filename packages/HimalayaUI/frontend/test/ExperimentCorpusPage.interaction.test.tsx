@@ -216,10 +216,14 @@ describe("ExperimentCorpusPage — keyboard cursor + cull verbs", () => {
   });
 });
 
-// ── sample-grain compose bar (ported from SamplesPage.samplePicker.test) ─────
-describe("ExperimentCorpusPage — sample-grain picker (ComposeBar)", () => {
+// ── sample-grain compose segment (dock-as-action-bar, items 2/5) ─────────────
+// The floating ComposeBar/CullBar were folded into the Dock: a sample-grain
+// `dock-compose` segment appears on check; a frame-grain `dock-selection-count`
+// readout appears on exposure select. Both are absent (not just hidden/inert)
+// when their selection is empty.
+describe("ExperimentCorpusPage — sample-grain picker (dock compose segment)", () => {
   function seedPicker(): void {
-    // Two scoped samples, no exposures (compose bar is sample-grain only).
+    // Two scoped samples, no exposures (compose segment is sample-grain only).
     state.samples = [
       corpus({ id: 10, experiment_id: 1, name: "A" }),
       corpus({ id: 11, experiment_id: 1, name: "B" }),
@@ -228,38 +232,35 @@ describe("ExperimentCorpusPage — sample-grain picker (ComposeBar)", () => {
   }
   beforeEach(seedPicker);
 
-  it("compose bar is hidden when no samples are checked", () => {
+  it("the compose segment is absent when no samples are checked", () => {
     renderAt(1);
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "false");
+    expect(screen.queryByTestId("dock-compose")).toBeNull();
   });
 
-  it("compose bar becomes visible (count 1) when a sample is checked", async () => {
+  it("the compose segment appears (count 1) when a sample is checked", async () => {
     const user = userEvent.setup();
     renderAt(1);
     const checkboxes = screen.getAllByRole("checkbox");
     await user.click(checkboxes[0]!);
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "true");
-    expect(screen.getByTestId("compose-bar")).toHaveTextContent("1");
+    expect(screen.getByTestId("dock-compose")).toHaveTextContent("1");
   });
 
-  it("Clear resets the sample selection and hides the compose bar", async () => {
+  it("Clear resets the sample selection and removes the compose segment", async () => {
     const user = userEvent.setup();
     renderAt(1);
     await user.click(screen.getAllByRole("checkbox")[0]!);
-    // Scope to the compose bar — JSDOM does not implement inert a11y-tree
-    // exclusion, so the hidden CullBar's Clear is still in the tree.
     await user.click(
-      within(screen.getByTestId("compose-bar")).getByRole("button", { name: /clear/i }),
+      within(screen.getByTestId("dock-compose")).getByRole("button", { name: /clear/i }),
     );
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "false");
+    expect(screen.queryByTestId("dock-compose")).toBeNull();
   });
 
-  it("the frame-grain cull bar stays independent of sample-grain checks", async () => {
+  it("the frame-grain selection readout stays independent of sample-grain checks", async () => {
     const user = userEvent.setup();
     renderAt(1);
     await user.click(screen.getAllByRole("checkbox")[0]!);
-    // No exposure selected → the cull bar is still hidden.
-    expect(screen.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
+    // No exposure selected → no frame-grain selection readout in the dock.
+    expect(screen.queryByTestId("dock-selection-count")).toBeNull();
   });
 });
 
@@ -302,15 +303,14 @@ describe("ExperimentCorpusPage — selection clears on experiment-scope change",
       </QueryClientProvider>,
     );
 
-    // Check the only experiment-1 sample → compose bar carries one pick.
+    // Check the only experiment-1 sample → the dock compose segment carries one pick.
     await user.click(screen.getAllByRole("checkbox")[0]!);
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "true");
-    expect(screen.getByTestId("compose-bar")).toHaveTextContent("1");
+    expect(screen.getByTestId("dock-compose")).toHaveTextContent("1");
 
     // Re-scope to experiment 2 in place. The page's expId-change effect must
     // clear both selection grains, so the carry does not linger pointing at an
     // off-scope sample (no row remains to uncheck it).
     await user.click(screen.getByTestId("scope-switch"));
-    expect(screen.getByTestId("compose-bar")).toHaveAttribute("data-show", "false");
+    expect(screen.queryByTestId("dock-compose")).toBeNull();
   });
 });

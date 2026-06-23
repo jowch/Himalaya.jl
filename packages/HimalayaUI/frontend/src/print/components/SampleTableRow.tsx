@@ -51,6 +51,10 @@ export interface SampleTableRowProps {
   checked?: boolean;
   indeterminate?: boolean;
   onCheck?: () => void;
+  /** The roving keyboard cursor (↑/↓) is on this row → an inset accent outline
+   *  so arrow-key navigation is visible (item 4). The cursor's active frame is
+   *  separately highlighted by `selectedExposureId`. */
+  cursored?: boolean;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
 }
@@ -129,6 +133,7 @@ export function SampleTableRow({
   checked,
   indeterminate,
   onCheck,
+  cursored = false,
   className,
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
@@ -148,7 +153,8 @@ export function SampleTableRow({
       data-testid="sample-table-row"
       role="row"
       data-screened={screened ? "true" : "false"}
-      className={`group/row border-b border-hair hover:bg-paper-sunk${restTint}${className ? ` ${className}` : ""}`}
+      data-cursored={cursored ? "true" : "false"}
+      className={`group/row border-b border-hair hover:bg-paper-sunk${restTint}${cursored ? " outline outline-2 -outline-offset-2 outline-accent" : ""}${className ? ` ${className}` : ""}`}
     >
       <div
         role="presentation"

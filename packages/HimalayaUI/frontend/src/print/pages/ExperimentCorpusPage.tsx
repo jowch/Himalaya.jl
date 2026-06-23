@@ -14,13 +14,11 @@ import * as api from "../../api";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { KbKey } from "../ui/KbKey";
-import { ComposeBar } from "../ui/ComposeBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { Dock } from "../ui/Dock";
 import { ScanFailedPage } from "./ScanFailedPage";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
-import { CullBar } from "../components/CullBar";
 import { toSampleRowModel } from "./samplesAdapters";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -367,18 +365,11 @@ export function ExperimentCorpusPage(): JSX.Element {
     // Landing on the corpus mid-scan redirects there rather than nesting it.
     return <Navigate to={`/experiments/${expId}/grouping`} replace />;
   }
-  if (rescanning) {
-    return (
-      <div data-testid="live-ingest-slot" className="flex flex-col gap-3">
-        <p className="text-sm text-ink-soft">Analyzing exposures…</p>
-        <ProgressBar
-          value={inFlight ? inFlight.processed : 0}
-          total={inFlight ? Math.max(inFlight.total, 1) : 1}
-          label="Analysis progress"
-        />
-      </div>
-    );
-  }
+  // §8 (item 8): a rescan no longer swaps the whole page to an "Analyzing…"
+  // takeover (which unmounted + remounted the sheet on entry/exit — the
+  // "flash"). It now renders as an inline banner ABOVE the still-mounted sheet
+  // (see the rescanning banner in the return below), so the rows stay put while
+  // the additive scan runs.
   if (failed) {
     return (
       <ScanFailedPage
@@ -407,9 +398,35 @@ export function ExperimentCorpusPage(): JSX.Element {
     batch.mutate({ sampleId: activeSample.id, exposureId: activeFrame.id, status });
   };
 
+  // Dock-as-action-bar (items 2/5): the floating CullBar/ComposeBar are gone.
+  // The dock's verbs act on the multi-frame cull selection when one exists,
+  // otherwise on the cursor's active frame; the compose segment appears when
+  // samples are checked. `selSpread` discloses how many samples a frame
+  // selection spans (the same count the batch routes through).
+  const hasSel = selected.size > 0;
+  const hasChecks = checkedSamples.size > 0;
+  const selSpread = selectionSpread(selected, ownerOf);
+  const clearSelection = (): void => { setSelected(new Set()); anchorRef.current = null; };
+
   // ── Corpus sheet + cull/compose/dock ─────────────────────────────────────
   return (
     <div data-testid="experiment-corpus" className="flex flex-col gap-4">
+      {/* Inline rescan banner (item 8): an additive rescan reports progress here
+          without unmounting the sheet/dock below — the rows stay put. */}
+      {rescanning && (
+        <div
+          data-testid="live-ingest-slot"
+          className="flex flex-col gap-2 rounded-sm border border-hair bg-paper-sunk px-4 py-3"
+        >
+          <p className="text-sm text-ink-soft">Analyzing exposures…</p>
+          <ProgressBar
+            value={inFlight ? inFlight.processed : 0}
+            total={inFlight ? Math.max(inFlight.total, 1) : 1}
+            label="Analysis progress"
+          />
+        </div>
+      )}
+
       {/* Grouping-review banner — amber, with an explanatory breakdown. */}
       {reviewCount > 0 && (
         <div
@@ -459,6 +476,10 @@ export function ExperimentCorpusPage(): JSX.Element {
                 {...(slotBySample.has(s.id) ? { slotIndex: slotBySample.get(s.id)! } : {})}
                 checked={checkedSamples.has(s.id)}
                 onCheck={() => toggleSampleCheck(s.id)}
+                cursored={rowIndex === cursor.sampleIndex}
+                {...(rowIndex === cursor.sampleIndex && activeFrame
+                  ? { selectedExposureId: activeFrame.id }
+                  : {})}
                 selectedExposureIds={selected}
                 onSelectExposure={(eid) => {
                   setCursor((c) => ({ ...c, sampleIndex: rowIndex }));
@@ -485,25 +506,6 @@ export function ExperimentCorpusPage(): JSX.Element {
           })}
         </SheetTable>
       )}
-
-      {/* Floating cull bar (exposure-grain) */}
-      <CullBar
-        count={selected.size}
-        sampleCount={selectionSpread(selected, ownerOf)}
-        show={selected.size > 0}
-        onReject={() => batchSet("rejected")}
-        onKeep={() => batchSet("accepted")}
-        onRestore={() => batchSet(null)}
-        onClear={() => { setSelected(new Set()); anchorRef.current = null; }}
-      />
-
-      {/* Floating sample-grain compose bar (sits above CullBar) */}
-      <ComposeBar
-        count={checkedSamples.size}
-        show={checkedSamples.size > 0}
-        onNewSeries={() => navigateToNewSeries(checkedSamples, navigate)}
-        onClear={() => setCheckedSamples(new Set())}
-      />
 
       {/* Contextual bottom dock (Corpus grammar §3.3, mockup b1):
           ‹ Experiments │ Sample ‹N/M› │ Frame ‹N/M› │ Drop[X] Keep[K] Restore ──→ Loupe[L] Focus
@@ -548,18 +550,49 @@ export function ExperimentCorpusPage(): JSX.Element {
 
         <span className="w-px self-stretch bg-hair" aria-hidden />
 
-        {/* Cull verbs — key-chipped Drop/Keep, plain Restore (acts on the active frame) */}
+        {/* Cull verbs — act on the multi-frame selection when one exists (the
+            old floating CullBar's job, now folded into the dock, items 2/5),
+            otherwise on the cursor's active frame. A selection readout + Clear
+            appear only while a selection is live. */}
         <div className="flex items-center gap-1">
+          {hasSel && (
+            <span className="text-meta text-ink-soft mr-1" data-testid="dock-selection-count">
+              {selected.size} frame{selected.size === 1 ? "" : "s"}
+              {selSpread > 1 ? ` · ${selSpread} samples` : ""}
+            </span>
+          )}
           <Button variant="outlineAccent" data-testid="dock-drop"
-            onClick={() => cullActiveFrame("rejected")}>Drop<KbKey className="ml-1.5">X</KbKey></Button>
+            onClick={() => (hasSel ? batchSet("rejected") : cullActiveFrame("rejected"))}>Drop<KbKey className="ml-1.5">X</KbKey></Button>
           <Button variant="outlineSuccess" data-testid="dock-keep"
-            onClick={() => cullActiveFrame("accepted")}>Keep<KbKey className="ml-1.5">K</KbKey></Button>
+            onClick={() => (hasSel ? batchSet("accepted") : cullActiveFrame("accepted"))}>Keep<KbKey className="ml-1.5">K</KbKey></Button>
           <Button variant="ghost" data-testid="dock-restore"
-            onClick={() => cullActiveFrame(null)}>Restore</Button>
+            onClick={() => (hasSel ? batchSet(null) : cullActiveFrame(null))}>Restore</Button>
+          {hasSel && (
+            <Button variant="ghost" data-testid="dock-clear-selection"
+              onClick={clearSelection}>Clear<KbKey className="ml-1.5">Esc</KbKey></Button>
+          )}
         </div>
 
         {/* Spacer — right-anchors the destinations */}
         <div className="flex-1" />
+
+        {/* Compose segment — appears when samples are checked (the old floating
+            ComposeBar's job, now in the dock). Sample-grain, distinct from the
+            frame-grain cull selection above. */}
+        {hasChecks && (
+          <>
+            <div className="flex items-center gap-1" data-testid="dock-compose">
+              <span className="text-meta text-ink-soft">
+                {checkedSamples.size} sample{checkedSamples.size === 1 ? "" : "s"}
+              </span>
+              <Button variant="accent" data-testid="dock-new-series"
+                onClick={() => navigateToNewSeries(checkedSamples, navigate)}>+ New series</Button>
+              <Button variant="ghost" data-testid="dock-clear-checks"
+                onClick={() => setCheckedSamples(new Set())}>Clear</Button>
+            </div>
+            <span className="w-px self-stretch bg-hair" aria-hidden />
+          </>
+        )}
 
         {/* Destinations — Loupe (key-chipped) + Focus (the dedicated primary) */}
         <div className="flex items-center gap-1">
