@@ -16,6 +16,7 @@ import { Kicker } from "../ui/Kicker";
 import { ProgressBar } from "../ui/ProgressBar";
 import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 import { Menu } from "../ui/Menu";
 import { matchSample } from "../../lib/matchSample";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
@@ -139,6 +140,10 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   const [cursorId, setCursorId] = useState<number | null>(null);
   const cursorIdx = flatSamples.findIndex((s) => s.sample_id === cursorId);
   const cursorSample = cursorIdx >= 0 ? flatSamples[cursorIdx] : undefined;
+  // Footer nav-stepper readout (mirrors the corpus Dock's "N / M"): 1-based
+  // cursor position over the visible samples, 0 when the cursor is unplaced.
+  const navTotal = flatSamples.length;
+  const navPos = cursorIdx >= 0 ? cursorIdx + 1 : 0;
 
   const moveCursor = (delta: number) => {
     if (flatSamples.length === 0) return;
@@ -333,11 +338,8 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
 
   return (
     <div className={`mx-auto max-w-[1180px] px-10 pb-32 pt-8${className ? ` ${className}` : ""}`}>
-      {!scanning && (
-        <button type="button" className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-accent" onClick={onBack}>
-          {"←"} Back to corpus
-        </button>
-      )}
+      {/* Back-to-corpus moved into the footer dock as the "‹ Samples" up-link,
+          mirroring the corpus Dock's "‹ Experiments". */}
 
       {scanning ? (
         // Combined scan + grouping-review header (p1-grouping): live progress as
@@ -548,21 +550,64 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
           Ingest is additive, so confirming never re-touches a settled load. */}
       <footer
         data-testid="grouping-footer"
-        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 border-t border-hair bg-paper px-8 py-3"
+        className="fixed bottom-0 left-0 right-0 z-30 flex items-center gap-2 border-t border-hair bg-plate px-8 py-3"
       >
         {scanning ? (
-          <span className="text-meta text-ink-soft">
+          <span className="flex-1 text-meta text-ink-soft">
             Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags.
           </span>
         ) : (
-          // Action bar (item 2): select / merge / split as buttons acting on the
-          // cursored sample + the multi-select, with a compact keyboard legend.
-          // Keys stay registry-aligned (shortcuts.ts); the full legend is in the
-          // ? overlay.
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+          // Action bar (item 2), structured to mirror the corpus Dock: an up-link,
+          // a ↑/↓ nav-stepper section, then the bordered/coloured verb section.
+          <>
+            {/* Up-link — mirrors the corpus Dock's "‹ Experiments". */}
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-meta font-semibold text-print-accent hover:underline"
+              data-testid="grouping-up-link"
+            >
+              ‹ Samples
+            </button>
+
+            <span className="w-px self-stretch bg-hair" aria-hidden />
+
+            {/* Navigation section — roving ↑/↓ cursor over samples + readout. */}
+            <div className="flex items-center gap-1">
+              <span className="text-meta text-ink-soft">Sample</span>
+              <IconButton
+                label="Previous sample"
+                tone="ghost"
+                disabled={navTotal === 0 || cursorIdx === 0}
+                onClick={() => moveCursor(-1)}
+                data-testid="grouping-prev-sample"
+              >
+                ↑
+              </IconButton>
+              <span
+                className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+                data-testid="grouping-sample-count"
+              >
+                {navPos} / {navTotal}
+              </span>
+              <IconButton
+                label="Next sample"
+                tone="ghost"
+                disabled={navTotal === 0 || cursorIdx === navTotal - 1}
+                onClick={() => moveCursor(1)}
+                data-testid="grouping-next-sample"
+              >
+                ↓
+              </IconButton>
+            </div>
+
+            <span className="w-px self-stretch bg-hair" aria-hidden />
+
+            {/* Action section — bordered, coloured verbs on the cursored sample
+                + the multi-select. */}
+            <div className="flex items-center gap-1">
               <Button
-                variant="ghost"
+                variant="outline"
                 disabled={!cursorSample}
                 onClick={() => { if (cursorSample) toggleSelect(cursorSample.sample_id); }}
                 data-testid="grouping-select"
@@ -570,7 +615,7 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
                 Select<KbKey className="ml-1.5">space</KbKey>
               </Button>
               <Button
-                variant="ghost"
+                variant="outline"
                 disabled={!cursorSample || cursorSample.exposures.length < 2}
                 onClick={() => { if (cursorSample) handleSplit(cursorSample.sample_id); }}
                 data-testid="grouping-split"
@@ -579,12 +624,12 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
               </Button>
               {selection.length > 0 && (
                 <>
-                  <span className="h-5 w-px bg-hair" aria-hidden />
+                  <span className="w-px self-stretch bg-hair" aria-hidden />
                   <span className="text-meta text-ink-soft" data-testid="grouping-selection-count">
                     {selection.length} selected
                   </span>
                   <Button
-                    variant="outline"
+                    variant="outlineAccent"
                     disabled={selection.length < 2}
                     onClick={openBulkMergeConfirm}
                     data-testid="grouping-merge"
@@ -595,12 +640,16 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
                 </>
               )}
             </div>
+
+            {/* Spacer — right-anchors Confirm (mirrors the corpus Dock). */}
+            <div className="flex-1" />
+
+            {/* No-button keys (↑/↓ are now visible steppers). */}
             <div className="hidden items-center gap-3 text-meta text-ink-faint lg:flex" aria-hidden="true">
-              <span className="inline-flex items-center gap-1"><KbKey>↑</KbKey><KbKey>↓</KbKey> move</span>
               <span className="inline-flex items-center gap-1"><KbKey>⇧↑</KbKey><KbKey>⇧↓</KbKey> flagged</span>
               <span className="inline-flex items-center gap-1"><KbKey>x</KbKey> dismiss flag</span>
             </div>
-          </div>
+          </>
         )}
         <Button
           variant="accent"
