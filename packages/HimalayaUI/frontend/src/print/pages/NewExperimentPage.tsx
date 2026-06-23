@@ -5,27 +5,33 @@ import * as api from "../../api";
 import { useDraftExperiment } from "../../lib/draftExperiment";
 import { PageFrame } from "../components/PageFrame";
 import { DirectoryPickerField } from "../components/DirectoryPickerField";
-import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Kicker } from "../ui/Kicker";
 import type { ValidatePathResponse } from "../../api";
 
-/** One inline pre-flight check in the dual ✓ row (mockup p1-new): a green ✓
- *  when satisfied, a red ✗ + reason when not, faint while pending. */
+/** One inline pre-flight check (mockup p1-new): a green ✓ when satisfied, faint
+ *  while pending. A failing GATING check is a red ✗ + reason (role=alert); a
+ *  failing ADVISORY check (one that does not block submission) is a muted note
+ *  (role=status), so an unrecognized-but-usable directory does not look broken. */
 function PreflightCheck({
   state,
   pass,
   fail,
+  advisory = false,
 }: {
   state: "pass" | "fail" | "pending";
   pass: string;
   fail: string;
+  advisory?: boolean;
 }): JSX.Element {
   if (state === "pending") {
     return <span className="text-meta text-ink-faint">◦ {pass}</span>;
   }
   if (state === "pass") {
     return <span className="text-meta font-semibold text-success" role="status">✓ {pass}</span>;
+  }
+  if (advisory) {
+    return <span className="text-meta text-ink-soft" role="status">◦ {fail}</span>;
   }
   return <span className="text-meta font-semibold text-error" role="alert">✗ {fail}</span>;
 }
@@ -49,6 +55,7 @@ export function NewExperimentPage(): JSX.Element {
   const [path, setPath] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [validation, setValidation] = useState<ValidatePathResponse | null>(null);
+  const [resolved, setResolved] = useState<api.ResolveLayoutResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // The picked path is the experiment ROOT; its data_dir is usually `<root>/data`
@@ -70,12 +77,16 @@ export function NewExperimentPage(): JSX.Element {
     if (path.trim() === "") {
       setSuggestions([]);
       setValidation(null);
+      setResolved(null);
       return;
     }
     let live = true;
     const t = setTimeout(() => {
       void api.suggestPaths(path).then((r) => { if (live) setSuggestions(r.suggestions); }).catch(() => {});
       void api.validatePath(path).then((r) => { if (live) setValidation(r); }).catch(() => {});
+      // Structural probe: does this dir look like an experiment (data + analysis
+      // integration layout found)? Cheap, name-based. 400s for a non-dir → clear.
+      void api.resolveLayout(path).then((r) => { if (live) setResolved(r); }).catch(() => { if (live) setResolved(null); });
     }, 200);
     return () => { live = false; clearTimeout(t); };
   }, [path]);
@@ -103,6 +114,16 @@ export function NewExperimentPage(): JSX.Element {
     trimmedPath === "" || validation == null ? "pending" : validation.ok ? "pass" : "fail";
   const uniqueState: "pass" | "fail" | "pending" =
     trimmedPath === "" ? "pending" : duplicateOf === undefined ? "pass" : "fail";
+  // Structure probe (advisory, never gates): the resolver found the integration
+  // layout (an analysis dir holding `.dat` sidecars) → this really looks like a
+  // SAXS experiment. When it doesn't, we don't block — the next step lets the
+  // user point at the right data/analysis dirs. Pending until the dir resolves.
+  const structureState: "pass" | "fail" | "pending" =
+    trimmedPath === "" || validation == null
+      ? "pending"
+      : resolved?.analysis_dir != null && resolved.integration_pattern != null
+        ? "pass"
+        : "fail";
 
   return (
     <>
@@ -119,43 +140,47 @@ export function NewExperimentPage(): JSX.Element {
           </p>
         </div>
 
-        <Card padding="lg" className="mt-6">
+        {/* The bar fills the container; the pre-flight checks stack directly
+            below it (no card — the page chrome carries the section). */}
+        <div className="mt-6">
           <Kicker tone="soft" className="mb-2">Directory</Kicker>
-          {/* Field flexes wide; pre-flight checks sit to the right, aligned to
-              the field's top (note 4). They stack vertically and right-align. */}
-          <div className="flex items-start gap-8">
-            <div className="flex-1 min-w-0">
-              <DirectoryPickerField
-                value={path}
-                onChange={setPath}
-                suggestions={suggestions}
-                validation={null}
-              />
-              <p className="text-caption text-ink-soft mt-2">
-                Start typing and we suggest matches. Tab completes, ↑↓ choose, ↵ confirms.
-              </p>
-            </div>
-            <div
-              className="shrink-0 flex flex-col items-end gap-1.5 pt-1.5"
-              data-testid="dirpicker-checks"
-            >
-              <PreflightCheck
-                state={existsState}
-                pass="directory exists"
-                fail={validation?.message ?? "directory not found"}
-              />
-              <PreflightCheck
-                state={uniqueState}
-                pass="not already an experiment"
-                fail={
-                  duplicateOf?.name
-                    ? `already an experiment ("${duplicateOf.name}")`
-                    : "already an experiment"
-                }
-              />
-            </div>
+          <DirectoryPickerField
+            value={path}
+            onChange={setPath}
+            suggestions={suggestions}
+            validation={null}
+          />
+          <p className="text-caption text-ink-soft mt-2">
+            Start typing and we suggest matches. Tab completes, ↑↓ choose, ↵ confirms.
+          </p>
+          <div
+            className="mt-3 flex flex-col gap-1.5"
+            data-testid="dirpicker-checks"
+          >
+            <PreflightCheck
+              state={existsState}
+              pass="directory exists"
+              fail={validation?.message ?? "directory not found"}
+            />
+            <PreflightCheck
+              state={uniqueState}
+              pass="not already an experiment"
+              fail={
+                duplicateOf?.name
+                  ? `already an experiment ("${duplicateOf.name}")`
+                  : "already an experiment"
+              }
+            />
+            {/* Advisory: it's fine to proceed even if we don't recognize the
+                layout — Configuration lets the user point at the right dirs. */}
+            <PreflightCheck
+              state={structureState}
+              advisory
+              pass="looks like an experiment (data + analysis found)"
+              fail="no data/analysis layout detected here; you can set it up next"
+            />
           </div>
-        </Card>
+        </div>
       </PageFrame>
 
       {/* Sticky funnel footer (p1-new): reassurance + Cancel/Review. */}

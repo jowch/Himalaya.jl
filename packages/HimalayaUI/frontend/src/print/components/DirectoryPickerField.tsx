@@ -108,10 +108,12 @@ export function DirectoryPickerField({
             mono
             placeholder="Type or paste your experiment directory…"
             aria-label={ariaLabel}
+            className="w-full"
           />
         }
         label="Directory suggestions"
         initialFocusRef={inputRef}
+        fullWidth
         className="w-full"
       >
         {hasSuggestions && (
