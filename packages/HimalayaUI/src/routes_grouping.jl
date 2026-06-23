@@ -147,6 +147,14 @@ function register_grouping_routes!()
         exp_id = Int(both[1].experiment_id)
 
         return with_idempotency(db, req) do
+            # Capture every series the loser belongs to BEFORE the dedup/re-point so
+            # we can compact positions afterwards (D6, §11.4). The dedup DELETE below
+            # leaves a hole in `series_samples.position` for any series the survivor
+            # was already in; re-pointed series stay contiguous (compaction is a
+            # no-op there).
+            loser_series = [Int(r.series_id) for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT DISTINCT series_id FROM series_samples WHERE sample_id = ?", [loser_id]))]
+
             # (i) series_samples dedup — drop loser's membership in any series
             # where the survivor already appears (spec §9.3). Done BEFORE re-point
             # so the surviving UNIQUE(series_id, position) isn't invalidated first.
@@ -204,6 +212,23 @@ function register_grouping_routes!()
 
             # (iv) Retire the loser (sets merged_into_id; does not hard-delete).
             retire_sample!(db, loser_id; merged_into_id=survivor_id)
+
+            # (iv.5) Compact series_samples.position to 0..n-1 per affected series
+            # (D6, §11.4). The dedup DELETE above can leave gaps; renumber by current
+            # order. Two-phase via negative temps to dodge transient
+            # UNIQUE(series_id, position) collisions during the in-place rewrite.
+            for sid in loser_series
+                rows = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT id FROM series_samples WHERE series_id = ? ORDER BY position", [sid]))
+                for (i, r) in enumerate(rows)
+                    DBInterface.execute(db,
+                        "UPDATE series_samples SET position = ? WHERE id = ?", [-i, Int(r.id)])
+                end
+                for (i, r) in enumerate(rows)
+                    DBInterface.execute(db,
+                        "UPDATE series_samples SET position = ? WHERE id = ?", [i - 1, Int(r.id)])
+                end
+            end
 
             # (v) Optional rename of survivor.
             if haskey(body, :name) && body.name isa AbstractString

@@ -382,6 +382,39 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
         end
     end
 
+    @testset "POST /api/samples/{id}/merge — series_samples positions compact to 0..n-1 (D6)" begin
+        db = fresh_db()
+        (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
+        s3_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, load_id=load_id,
+            slot_index=3, name="HA85 (S01P03)")
+
+        # Series with all three: s1@0, s2@1, s3@2. Merging s2 into s1 drops s2's
+        # membership (s1 already present) → an interior gap at position 1.
+        series_id = DBInterface.lastrowid(DBInterface.execute(db,
+            "INSERT INTO series DEFAULT VALUES"))
+        for (sid, pos) in ((s1_id, 0), (s2_id, 1), (s3_id, 2))
+            DBInterface.execute(db,
+                "INSERT INTO series_samples (series_id, sample_id, position) VALUES (?, ?, ?)",
+                [series_id, sid, pos])
+        end
+
+        with_inproc_routes(db) do call
+            resp = call("POST", "/api/samples/$(s2_id)/merge";
+                headers = ["Content-Type"  => "application/json",
+                           "X-Username"    => "alice",
+                           "X-Client-Op-Id" => "test-op-merge-compact"],
+                body = Vector{UInt8}(JSON3.write(Dict(:survivor_id => s1_id))))
+            @test resp.status == 200
+
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT sample_id, position FROM series_samples WHERE series_id = ? ORDER BY position",
+                [series_id]))
+            # Two members remain (s1, s3), positions compacted to a contiguous 0..n-1.
+            @test [Int(r.position) for r in rows] == [0, 1]
+            @test [Int(r.sample_id) for r in rows] == [s1_id, s3_id]   # order preserved
+        end
+    end
+
     @testset "POST /api/samples/{id}/merge — sample_tags dedup: survivor wins" begin
         db = fresh_db()
         (exp_id, load_id, s1_id, s2_id, e1_id, e2_id) = seed_two_samples(db)
