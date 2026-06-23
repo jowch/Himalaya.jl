@@ -27,7 +27,11 @@ function GroupingReviewRoute(): JSX.Element {
   return (
     <GroupingReviewPage
       experimentId={experimentId}
-      onBack={() => navigate("../corpus")}
+      // Absolute target: `/grouping` is a top-level takeover route (not nested
+      // under the experiment shell), so a relative `../corpus` resolves to bare
+      // `/corpus` (a 404). Confirm-groups and Back both land on this
+      // experiment's corpus.
+      onBack={() => navigate(`/experiments/${experimentId}/corpus`)}
     />
   );
 }

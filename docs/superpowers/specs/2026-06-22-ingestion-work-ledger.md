@@ -60,14 +60,24 @@ spec wins on *what to build*, this ledger wins on *what is left and in what orde
 - [ ] **6f. e2e** tying an SSE frame to the corpus ProgressBar.
 - [ ] **6g. Backend nearest-file enrichment for metadata/integration misses** (§5.5) — widen the 1a near-miss pass to metadata/integration so the manifest emits `near` for case/extension misses on those types (e.g. `RY_BL3_S1780.PRP` vs `*.prp`), letting 2b render true nearest-file pairing for non-image rows. Ratified 1a scope was image-only; this is a deliberate non-blocking follow-up.
 
-### 7. Heavy end-to-end live walk (do LAST)
-- [ ] **7. Real ingest** — Approve → full phase-② scan over real `tot_files` data (138 exposures) → grouping unfold → corpus render. The funnel/preview is verified; a real ingest has not been walked. *Depends on 1–2 landing.*
+### 7. Heavy end-to-end live walk (DONE — surfaced P0/P1/P2)
+- [x] **7. Real ingest live walk** (mini-1p7m → `mini-clean.db`, 138 exposures, 35 samples, 3 loads) — WALKED end to end. ✅ Funnel (picker pre-flight ✓✓ → config coverage 138 Image / 138/138 Metadata / 138/138 Integration, no D4 block → leaf analysis_dir resolved → geometry from real `setup_info` → Approve). ✅ Grouping live-unfold + split-flag segmentation (real stage-position jumps) + Confirm-gate. ✅ Corpus render (5-stat masthead 3·35·138·5.9h·2, amber review banner, sheet with real detector thumbnails + slot chips, §7 dock). 🐛 Found **P0 .dat-pattern (analyze indexes nothing)**, **P1 route→404 (fixed)**, **P2 scanning-no-auto-complete** — all in Inbox. *The walk did its job: caught a P0 that 1000+ green tests + the funnel preview all missed.*
+
+### 8. P0/P1 from the live walk (do NEXT — blocks a usable real ingest)
+- [ ] **8a. P0 — `analyze_exposure!` integration-`.dat` resolution** (see Inbox). Real ingest indexes zero samples. Backend fix + real-ingest test. *Highest priority.*
+- [x] **8b. P1 — grouping Confirm/Back → 404** (`<pending>`) — absolute route in `AppRoutes.tsx`.
+- [ ] **8c. P2 — scanning UI auto-complete** (see Inbox) — refetch `ingest_status` while scanning, or fix the completion-frame race.
 
 ## Inbox (unplaced discoveries)
 
 _Append `- [ ] <what> · <anchor> · blocks/blocked-by <item>` here, then re-sort into the list above._
 
-(empty — placed nearest-file enrichment as 6g)
+**From the item-7 live walk (2026-06-22, mini-1p7m real ingest on `mini-clean.db`):**
+- [ ] **P0 — real ingest indexes ZERO samples: `analyze_exposure!` resolves the integration `.dat` with the default `{name}.dat`, not the experiment's stored `integration_pattern`.** `pipeline.jl analyze_exposure!` (+ wherever it reconstructs the `.dat` path). The `exposures` table stores `image_path`/`prp_path` only (no `dat_path`), so analyze RE-RESOLVES the `.dat` from the stem and uses `{name}.dat`. Real files are `agbe_S1963_tot.dat` (pattern `{name}_tot.dat`); scan looked for `agbe_S1963.dat` → "dat file not found" for all 138 → no traces → no peaks → corpus all "not indexed". `scan_and_group!`/`scan_directory` thread the pattern correctly (grouping/geometry work); only the analyze re-resolution is wrong. **The funnel preview MASKS this** (the `/api/fs/manifest` matcher uses the pattern correctly → 138/138). Fix: thread `integration_pattern` into `analyze_exposure!`'s `.dat` resolution (or persist `dat_path` on the exposure at scan time and read it). Needs a real-ingest test (fixtures with a `_tot.dat` suffix). *Highest priority remaining; blocks a usable real ingest.*
+- [x] **P1 — Confirm-groups / Back navigated to bare `/corpus` (404)** — `AppRoutes.tsx` `GroupingReviewRoute` used a relative `navigate("../corpus")` which mis-resolves from the top-level `/grouping` takeover route. FIXED (absolute `/experiments/:id/corpus`); commit pending.
+- [ ] **P2 — scanning UI does not auto-flip to "Confirm groups" (enabled) when the scan completes; needs a manual reload.** The `ingest_complete` SSE frame should `clearIngestProgress` + invalidate the experiment query (App.tsx:65-73), after which `scanning` falls back to `exp.data.ingest_status`. Live, it stayed "scanning…"/`processed=71` until reload. The `/api/events` 500s in the serve log are benign `EPIPE` (client disconnect on my reloads), so the stream isn't dead — likely a completion-frame race when the scan finishes fast, OR the experiment-query invalidation not refetching `ingest_status`. Defense-in-depth: refetch `ingest_status` while `scanning` (a short `refetchInterval`) so completion is never missed. *Needs repro + decision.*
+
+(prior: nearest-file enrichment placed as 6g)
 
 ## Done
 
