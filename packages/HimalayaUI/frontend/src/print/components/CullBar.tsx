@@ -43,6 +43,10 @@ export interface CullBarProps {
   onKeep?: () => void;     // "Keep" (success — constructive, never a second accent)
   onRestore?: () => void;  // "Restore" (ghostInverse)
   onClear?: () => void;    // "Clear" (ghostInverse)
+  /** General-reuse override (§13). When supplied, these buttons render in place
+   *  of the fixed Drop/Keep/Restore/Clear set, so the same dark transient bar
+   *  can host any verdict verbs. Each is one Button; `variant` picks the look. */
+  actions?: ReadonlyArray<{ label: string; onClick: () => void; variant: "accent" | "success" | "ghostInverse" }>;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
 }
@@ -55,6 +59,7 @@ export function CullBar({
   onKeep,
   onRestore,
   onClear,
+  actions,
   className,
 }: CullBarProps): JSX.Element {
   const barRef = useRef<HTMLDivElement>(null);
@@ -89,18 +94,28 @@ export function CullBar({
           </>
         )}
       </span>
-      <Button variant="accent" onClick={onReject}>
-        Drop<KbKey className="ml-1.5">X</KbKey>
-      </Button>
-      <Button variant="success" onClick={onKeep}>
-        Keep<KbKey className="ml-1.5">K</KbKey>
-      </Button>
-      <Button variant="ghostInverse" onClick={onRestore}>
-        Restore
-      </Button>
-      <Button variant="ghostInverse" onClick={onClear}>
-        Clear<KbKey className="ml-1.5">Esc</KbKey>
-      </Button>
+      {actions ? (
+        actions.map((a) => (
+          <Button key={a.label} variant={a.variant} onClick={a.onClick}>
+            {a.label}
+          </Button>
+        ))
+      ) : (
+        <>
+          <Button variant="accent" onClick={onReject}>
+            Drop<KbKey className="ml-1.5">X</KbKey>
+          </Button>
+          <Button variant="success" onClick={onKeep}>
+            Keep<KbKey className="ml-1.5">K</KbKey>
+          </Button>
+          <Button variant="ghostInverse" onClick={onRestore}>
+            Restore
+          </Button>
+          <Button variant="ghostInverse" onClick={onClear}>
+            Clear<KbKey className="ml-1.5">Esc</KbKey>
+          </Button>
+        </>
+      )}
     </div>
   );
 }
