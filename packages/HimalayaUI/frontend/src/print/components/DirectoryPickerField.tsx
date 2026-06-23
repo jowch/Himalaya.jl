@@ -55,6 +55,17 @@ export function DirectoryPickerField({
     setActive(0);
   };
 
+  // The dropdown shows each suggestion's basename (last path segment) — the only
+  // part that differs from what the user typed — rather than the full absolute
+  // path, which is long and repeats the common prefix. Selecting still completes
+  // the FULL path into the field (complete(s)). Defensive against a trailing
+  // slash; falls back to the whole string if there is no segment.
+  const basename = (p: string): string => {
+    const trimmed = p.replace(/\/+$/, "");
+    const seg = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+    return seg === "" ? p : seg;
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (suggestions.length === 0) return;
     if (e.key === "Tab") {
@@ -118,12 +129,13 @@ export function DirectoryPickerField({
                   aria-selected={i === active}
                   data-active={i === active ? "true" : undefined}
                   onClick={() => complete(s)}
+                  title={s}
                   className={
                     "flex w-full px-3 py-1.5 text-left font-mono text-sm transition-colors " +
                     (i === active ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink hover:bg-paper-sunk")
                   }
                 >
-                  {s}
+                  {basename(s)}
                 </button>
               </li>
             ))}

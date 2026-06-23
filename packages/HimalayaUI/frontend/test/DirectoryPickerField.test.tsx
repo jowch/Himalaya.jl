@@ -61,6 +61,29 @@ describe("DirectoryPickerField (Phase E1)", () => {
     expect(document.activeElement).toBe(input);
   });
 
+  it("shows each suggestion's basename but completes the full path", () => {
+    const onChange = vi.fn();
+    render(
+      <DirectoryPickerField
+        value="/Users/me/projects/himalaya-devdata/mi"
+        onChange={onChange}
+        suggestions={["/Users/me/projects/himalaya-devdata/mini-1p7m"]}
+        validation={null}
+      />,
+    );
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input); // open the popover so the list renders
+    const opt = screen.getByRole("option");
+    // Label is the basename, not the full path …
+    expect(opt).toHaveTextContent("mini-1p7m");
+    expect(opt.textContent).not.toContain("/");
+    // … the full path stays available as a title for disambiguation …
+    expect(opt).toHaveAttribute("title", "/Users/me/projects/himalaya-devdata/mini-1p7m");
+    // … and selecting it completes the FULL path into the field.
+    fireEvent.click(opt);
+    expect(onChange).toHaveBeenCalledWith("/Users/me/projects/himalaya-devdata/mini-1p7m");
+  });
+
   it("renders a positive validation line", () => {
     render(
       <DirectoryPickerField
