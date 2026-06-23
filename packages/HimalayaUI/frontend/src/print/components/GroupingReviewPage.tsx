@@ -17,6 +17,7 @@ import { ProgressBar } from "../ui/ProgressBar";
 import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
+import { Dock } from "../ui/Dock";
 import { Menu } from "../ui/Menu";
 import { matchSample } from "../../lib/matchSample";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
@@ -337,10 +338,11 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   }, [cursorId]);
 
   return (
-    <div className={`mx-auto max-w-[1180px] px-10 pb-20 pt-12${className ? ` ${className}` : ""}`}>
-      {/* Back-to-corpus moved into the footer dock as the "‹ Samples" up-link,
-          mirroring the corpus Dock's "‹ Experiments". The top padding (pt-12)
-          replaces the breathing room the removed top back-button used to give. */}
+    <div className={`mx-auto max-w-[1180px] px-10 pb-18 pt-6${className ? ` ${className}` : ""}`}>
+      {/* Factored to match the sibling corpus surface: pt-6 (24px below the
+          global TopNav, == the shell's py-6 top) and pb-18 (clears the reused
+          47px Dock by ~50px, == corpus). Back-to-corpus lives in the footer
+          dock as the "‹ Samples" up-link now. */}
 
       {scanning ? (
         // Combined scan + grouping-review header (p1-grouping): live progress as
@@ -548,11 +550,10 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
       {/* Confirm-groups footer (p1-grouping): the surface's exit. Disabled while
           the scan is in flight — settled loads are reviewable immediately, but
           Confirm waits for the scan to finish (later loads can still raise flags).
-          Ingest is additive, so confirming never re-touches a settled load. */}
-      <footer
-        data-testid="grouping-footer"
-        className="fixed bottom-0 left-0 right-0 z-30 flex items-center gap-2 border-t border-hair bg-plate px-8 py-3"
-      >
+          Ingest is additive, so confirming never re-touches a settled load.
+          Reuses the shared Dock primitive (one bar height app-wide) with a
+          semantic testId. */}
+      <Dock testId="grouping-footer">
         {scanning ? (
           <span className="flex-1 text-meta text-ink-soft">
             Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags.
@@ -660,7 +661,7 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
         >
           {scanning ? "Confirm groups · scanning…" : "Confirm groups"}
         </Button>
-      </footer>
+      </Dock>
     </div>
   );
 }

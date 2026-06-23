@@ -18,9 +18,13 @@ export interface DockProps {
   children?: React.ReactNode;
   /** PLACEMENT-ONLY, appended last. */
   className?: string;
+  /** Override the test id (default "dock"). Lets a consumer keep a semantic
+   *  hook like "grouping-footer" while still reusing the one dock primitive so
+   *  the bar height stays identical across pages. */
+  testId?: string;
 }
 
-export function Dock({ children, className = "" }: DockProps): JSX.Element {
+export function Dock({ children, className = "", testId = "dock" }: DockProps): JSX.Element {
   const setCenterLaneOccupied = useFloatingDock((s) => s.setCenterLaneOccupied);
 
   // Claim the dock lane on mount so InfrastructureBanner steps aside.
@@ -32,7 +36,7 @@ export function Dock({ children, className = "" }: DockProps): JSX.Element {
 
   return (
     <div
-      data-testid="dock"
+      data-testid={testId}
       className={`fixed bottom-0 left-0 right-0 z-40 flex items-center gap-2 border-t border-hair bg-plate px-4 py-2 shadow-[0_-2px_8px_0_rgba(0,0,0,0.06)] ${className}`}
     >
       {children}
