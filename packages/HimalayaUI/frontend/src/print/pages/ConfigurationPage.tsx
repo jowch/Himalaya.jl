@@ -305,12 +305,20 @@ function BeamCenterRow({
     <div className="flex items-center justify-between gap-4 py-1.5">
       <span className="text-meta text-ink-soft">Beam center</span>
       {editing ? (
-        <span className="flex items-center gap-1.5">
+        /* Commit when focus leaves the WHOLE pair (relatedTarget outside this
+           span) — not on the internal X→Y tab. A per-input onBlur on X would
+           commit on that tab; with no onBlur on X, an outside-click from X would
+           strand the edit. The Done button's onMouseDown-preventDefault keeps
+           focus so its click commits before this blur fires. */
+        <span
+          className="flex items-center gap-1.5"
+          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) commit(); }}
+        >
           <Input value={dx} onValueChange={setDx} inputSize="sm" mono autoFocus
             className="w-20" aria-label="Beam center X" onKeyDown={keys} />
           <span className="text-caption text-ink-faint">,</span>
           <Input value={dy} onValueChange={setDy} inputSize="sm" mono
-            className="w-20" aria-label="Beam center Y" onKeyDown={keys} onBlur={commit} />
+            className="w-20" aria-label="Beam center Y" onKeyDown={keys} />
           <button type="button" className="text-caption text-accent shrink-0 hover:underline"
             onMouseDown={(e) => e.preventDefault()} onClick={commit}>Done</button>
         </span>

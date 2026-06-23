@@ -202,6 +202,42 @@ describe("ConfigurationPage (first-run mode)", () => {
     })));
   });
 
+  test("beam center edits both x and y in one override (Done commits the pair)", async () => {
+    useDraftExperiment.getState().setRoot("/data/run42");
+    vi.spyOn(api, "resolveLayout").mockResolvedValue({
+      name: "run42", data_dir: "/data/run42/data", analysis_dir: "/data/run42/analysis",
+      setup_file: "/data/run42/analysis/setup_info_x.txt", setup_ambiguous: false,
+      image_pattern: null, metadata_pattern: null, integration_pattern: null,
+    });
+    mockFetchManifest({
+      total: 2, matched: { image: 2, metadata: 2, integration: 2 }, unmatched: [],
+      geometry: {
+        beam_center_x: 421.3, beam_center_x_source: "setup",
+        beam_center_y: 836.7, beam_center_y_source: "setup",
+        flight_path_m: 1.8095, flight_path_m_source: "setup",
+        pixel_size_um: 172.0, pixel_size_um_source: "prp",
+        energy_kev: 9.0, energy_kev_source: "prp",
+      },
+      matched_files: ["JC_001.tif"],
+    });
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 9 } as any);
+    renderConfiguration({ route: "/experiments/new/config" });
+    await screen.findByText(/2 matched/i);
+
+    const bcRow = screen.getByText("Beam center").closest("div")!;
+    fireEvent.click(within(bcRow).getByRole("button", { name: /edit/i }));
+    fireEvent.change(within(bcRow).getByLabelText("Beam center X"), { target: { value: "400" } });
+    fireEvent.change(within(bcRow).getByLabelText("Beam center Y"), { target: { value: "800" } });
+    fireEvent.click(within(bcRow).getByRole("button", { name: /done/i }));
+    expect(screen.getByText("400.0, 800.0 px")).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      geometry: { beam_center_x: 400, beam_center_y: 800 },
+    })));
+  });
+
   test("D4: a whole type matching zero everywhere hard-blocks Approve", async () => {
     useDraftExperiment.getState().setRoot("/data/run42");
     vi.spyOn(api, "resolveLayout").mockResolvedValue({
