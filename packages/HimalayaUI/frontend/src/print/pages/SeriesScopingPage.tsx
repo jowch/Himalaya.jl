@@ -517,6 +517,11 @@ export function SeriesScopingPage(): JSX.Element {
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        // ⌘⇧Z is REDO, not undo. Scoping has no redo stack yet (useUndoStack is
+        // pop-only), so decline ⌘⇧Z rather than firing undo on it — the old
+        // guard matched metaKey+'z' regardless of Shift, so ⌘⇧Z wrongly undid.
+        // (Real redo tracked in ledger 3c-redo.)
+        if (e.shiftKey) return;
         // Guard BEFORE preventDefault — ⌘Z inside an input must stay the
         // browser's native text undo, not the page's skip-undo.
         if (suppressGlobalKeys(e)) return;
