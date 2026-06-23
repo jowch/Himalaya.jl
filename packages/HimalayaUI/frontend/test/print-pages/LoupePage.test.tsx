@@ -141,6 +141,19 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
   });
 
+  it("dock follows the §7 grammar: labeled Sample/Frame readouts, X/K/R chips, frosted Focus (5c)", () => {
+    renderAt(42);
+    // Labeled steppers with current / total readouts.
+    expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 1");
+    expect(screen.getByTestId("dock-frame-count").textContent).toBe("1 / 2");
+    // Cull verbs carry their key-chips (must match the real X/K/R bindings).
+    expect(within(screen.getByTestId("dock-drop")).getByTestId("kbkey").textContent).toBe("X");
+    expect(within(screen.getByTestId("dock-keep")).getByTestId("kbkey").textContent).toBe("K");
+    expect(within(screen.getByTestId("dock-set-representative")).getByTestId("kbkey").textContent).toBe("R");
+    // Focus is the primary destination with the frosted ↵ chip.
+    expect(within(screen.getByTestId("dock-focus")).getByTestId("kbkey").textContent).toBe("↵");
+  });
+
   it("advertises only the loupe-unique screen verbs in the bottom legend (LO-KBDLEGEND)", () => {
     renderAt(42);
     const legend = screen.getByTestId("loupe-kbd-legend");

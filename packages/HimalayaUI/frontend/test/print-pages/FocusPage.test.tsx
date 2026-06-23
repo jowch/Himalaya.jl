@@ -29,6 +29,10 @@ const state = {
   // sibling order for the [ ] sample-step shortcut (useExperimentSiblings mock)
   sibPrev: undefined as { id: number } | undefined,
   sibNext: undefined as { id: number } | undefined,
+  // Dock sample readout (5c): seeded sibling list + index, default empty so
+  // tests that don't care render no readout.
+  sibSiblings: [] as { id: number }[],
+  sibIndex: 0,
 };
 
 // Capture props the q-link triple receives so we can assert the shared wire
@@ -85,8 +89,8 @@ vi.mock("../../src/state", () => ({
 vi.mock("../../src/hooks/useExperimentSiblings", () => ({
   useExperimentSiblings: () => ({
     activeSample: state.activeSampleId !== undefined ? { id: state.activeSampleId } : undefined,
-    siblings: [],
-    index: 0,
+    siblings: state.sibSiblings,
+    index: state.sibIndex,
     prev: state.sibPrev,
     next: state.sibNext,
   }),
@@ -170,6 +174,8 @@ function seedFull(): void {
   state.loading = false;
   state.sibPrev = undefined;
   state.sibNext = undefined;
+  state.sibSiblings = [];
+  state.sibIndex = 0;
 }
 
 function LocationProbe() {
@@ -208,6 +214,15 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("assignment-rail")).toBeInTheDocument();
     expect(screen.getByTestId("detector-panel")).toBeInTheDocument();
     expect(screen.getByTestId("combs-panel")).toBeInTheDocument();
+  });
+
+  it("dock follows the §7 grammar: labeled Sample readout + right-anchored Loupe with L chip (5c)", () => {
+    // Two experiment-siblings so the readout reports a real total.
+    state.sibSiblings = [{ id: 42 }, { id: 43 }];
+    state.sibIndex = 0;
+    renderAt(42);
+    expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 2");
+    expect(within(screen.getByTestId("dock-loupe")).getByTestId("kbkey").textContent).toBe("L");
   });
 
   it("the candidate-rail note is the distilled one-sentence guide (DI-FOCUSNOTE)", () => {

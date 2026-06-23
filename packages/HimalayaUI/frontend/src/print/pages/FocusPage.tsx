@@ -13,7 +13,7 @@ import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText, EmptyState, Button, IconButton } from "../ui";
+import { HintText, EmptyState, Button, IconButton, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
@@ -198,7 +198,7 @@ export function FocusPage(): JSX.Element {
 
   // Inter-sample order (the SAME derivation the topbar stepper uses) so the
   // `[`/`]` shortcuts and the stepper always agree.
-  const { prev: prevSibling, next: nextSibling } = useExperimentSiblings();
+  const { prev: prevSibling, next: nextSibling, index: siblingIndex, siblings } = useExperimentSiblings();
 
   const traceQ = useTrace(activeExposureId);
   const peaksQ = usePeaks(activeExposureId);
@@ -904,35 +904,43 @@ export function FocusPage(): JSX.Element {
 
         <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-        {/* Sample↑↓ stepper */}
-        <IconButton
-          label="Previous sample"
-          tone="ghost"
-          disabled={prevSibling === undefined}
-          onClick={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
-          data-testid="dock-prev-sample"
-        >
-          ↑
-        </IconButton>
-        <IconButton
-          label="Next sample"
-          tone="ghost"
-          disabled={nextSibling === undefined}
-          onClick={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
-          data-testid="dock-next-sample"
-        >
-          ↓
-        </IconButton>
+        {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
+        <div className="flex items-center gap-1">
+          <span className="text-meta text-ink-soft">Sample</span>
+          <IconButton
+            label="Previous sample"
+            tone="ghost"
+            disabled={prevSibling === undefined}
+            onClick={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
+            data-testid="dock-prev-sample"
+          >
+            ↑
+          </IconButton>
+          {siblingIndex >= 0 && siblings.length > 0 && (
+            <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+              data-testid="dock-sample-count">{siblingIndex + 1} / {siblings.length}</span>
+          )}
+          <IconButton
+            label="Next sample"
+            tone="ghost"
+            disabled={nextSibling === undefined}
+            onClick={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
+            data-testid="dock-next-sample"
+          >
+            ↓
+          </IconButton>
+        </div>
 
-        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+        {/* Spacer — right-anchors the destination (§7) */}
+        <div className="flex-1" />
 
-        {/* Loupe destination */}
+        {/* Loupe destination — quiet neutral (on Focus the indexing IS the work) */}
         <Button
           variant="ghost"
           onClick={() => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`)}
           data-testid="dock-loupe"
         >
-          Loupe
+          Loupe<KbKey className="ml-1.5">L</KbKey>
         </Button>
       </Dock>
     </>

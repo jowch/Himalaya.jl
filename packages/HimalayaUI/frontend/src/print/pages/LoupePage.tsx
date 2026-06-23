@@ -13,12 +13,13 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button, IconButton } from "../ui";
+import { EmptyState, Button, IconButton, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
 import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
 import { useShortcuts } from "../shell/useShortcuts";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { KbdLegend } from "../shell/KbdLegend";
 import { isValidationError } from "../../lib/queue/errors";
 import { BigFrame } from "../components/BigFrame";
@@ -325,7 +326,7 @@ export function LoupePage(): JSX.Element {
       ),
     [location.state, corpusQ.data, experimentId, sampleId],
   );
-  const { prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
+  const { index: sampleIndex, prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
     orderedSampleIds,
     sampleId,
   );
@@ -362,6 +363,15 @@ export function LoupePage(): JSX.Element {
     },
     nextSample: () => {
       if (nextSampleId !== undefined) gotoSample(nextSampleId);
+    },
+    // Enter opens Focus for this sample (b4: "Focus is the forward step,
+    // Enter") — makes the dock's frosted ↵ chip honest. §8 invariant (b): on a
+    // native interactive target (a dock button) Enter activates it natively.
+    openFocus: (e) => {
+      if (isNativeInteractiveTarget(e)) return false;
+      if (!hasValidId) return false;
+      navigate(`/sample/${sampleId}`);
+      return undefined;
     },
     dismiss: () => goBack(),
   });
@@ -501,78 +511,92 @@ export function LoupePage(): JSX.Element {
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-          {/* Sample↑↓ stepper */}
-          <IconButton
-            label="Previous sample"
-            tone="ghost"
-            disabled={prevSampleId === undefined}
-            onClick={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
-            data-testid="dock-prev-sample"
-          >
-            ↑
-          </IconButton>
-          <IconButton
-            label="Next sample"
-            tone="ghost"
-            disabled={nextSampleId === undefined}
-            onClick={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
-            data-testid="dock-next-sample"
-          >
-            ↓
-          </IconButton>
+          {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
+          <div className="flex items-center gap-1">
+            <span className="text-meta text-ink-soft">Sample</span>
+            <IconButton
+              label="Previous sample"
+              tone="ghost"
+              disabled={prevSampleId === undefined}
+              onClick={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
+              data-testid="dock-prev-sample"
+            >
+              ↑
+            </IconButton>
+            {sampleIndex >= 0 && (
+              <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+                data-testid="dock-sample-count">{sampleIndex + 1} / {orderedSampleIds.length}</span>
+            )}
+            <IconButton
+              label="Next sample"
+              tone="ghost"
+              disabled={nextSampleId === undefined}
+              onClick={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
+              data-testid="dock-next-sample"
+            >
+              ↓
+            </IconButton>
+          </div>
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-          {/* Frame‹› stepper */}
-          <IconButton
-            label="Previous frame"
-            tone="ghost"
-            disabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
-            onClick={() => flip(-1)}
-            data-testid="dock-prev-frame"
-          >
-            ‹
-          </IconButton>
-          <IconButton
-            label="Next frame"
-            tone="ghost"
-            disabled={activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1}
-            onClick={() => flip(1)}
-            data-testid="dock-next-frame"
-          >
-            ›
-          </IconButton>
+          {/* Frame stepper — labeled ‹/› axis + current / total readout (§7) */}
+          <div className="flex items-center gap-1">
+            <span className="text-meta text-ink-soft">Frame</span>
+            <IconButton
+              label="Previous frame"
+              tone="ghost"
+              disabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
+              onClick={() => flip(-1)}
+              data-testid="dock-prev-frame"
+            >
+              ‹
+            </IconButton>
+            {activeExposure !== undefined && (
+              <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
+                data-testid="dock-frame-count">{exposures.indexOf(activeExposure) + 1} / {exposures.length}</span>
+            )}
+            <IconButton
+              label="Next frame"
+              tone="ghost"
+              disabled={activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1}
+              onClick={() => flip(1)}
+              data-testid="dock-next-frame"
+            >
+              ›
+            </IconButton>
+          </div>
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-          {/* Cull verbs — coloured outlines (spec §3.3) */}
+          {/* Cull verbs — coloured outlines + key-chips (§7) */}
           <Button
             variant="outlineAccent"
             onClick={handleDropToggle}
             data-testid="dock-drop"
           >
-            Drop
+            Drop<KbKey className="ml-1.5">X</KbKey>
           </Button>
           <Button
             variant="outlineSuccess"
             onClick={handleKeepToggle}
             data-testid="dock-keep"
           >
-            Keep
+            Keep<KbKey className="ml-1.5">K</KbKey>
           </Button>
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-          {/* Set representative (Loupe-only — NOT on Corpus) */}
+          {/* Set representative (Loupe-only — NOT on Corpus), key-chipped R */}
           <Button
             variant="ghost"
             onClick={handleSetRepresentative}
             data-testid="dock-set-representative"
           >
-            Set representative
+            Set representative<KbKey className="ml-1.5">R</KbKey>
           </Button>
 
-          {/* Restore */}
+          {/* Restore — un-cull to neutral (Backspace); plain, like Corpus */}
           <Button
             variant="ghost"
             onClick={handleRestore}
@@ -581,9 +605,10 @@ export function LoupePage(): JSX.Element {
             Restore
           </Button>
 
-          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+          {/* Spacer — right-anchors the destination (§7) */}
+          <div className="flex-1" />
 
-          {/* Focus destination */}
+          {/* Focus destination — the unambiguous primary */}
           <Button
             variant="accent"
             onClick={() => {
@@ -591,7 +616,7 @@ export function LoupePage(): JSX.Element {
             }}
             data-testid="dock-focus"
           >
-            Focus
+            Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey>
           </Button>
         </Dock>
       </div>

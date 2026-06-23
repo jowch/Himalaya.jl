@@ -568,7 +568,7 @@ export function ExperimentCorpusPage(): JSX.Element {
           >Loupe<KbKey className="ml-1.5">L</KbKey></Button>
           <Button variant="accent" data-testid="dock-focus"
             onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}`); }}
-          >Focus</Button>
+          >Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey></Button>
         </div>
       </Dock>
     </div>
