@@ -301,6 +301,38 @@ end
     end
 end
 
+@testset "POST /api/experiments persists first-run geometry overrides as source='user'" begin
+    tmp = mktempdir()
+    data_dir = joinpath(tmp, "data"); mkpath(data_dir)   # empty → scan derives nothing
+    db = open_prepared_clone(tmp)
+
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/experiments";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(
+                :data_dir => data_dir,
+                :name     => "Geo",
+                :geometry => Dict(:beam_center_x => 421.3, :beam_center_y => 836.7,
+                                  :energy_kev => 11.2)))))
+        @test r.status == 202
+        eid = Int(JSON3.read(String(r.body)).id)
+
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
+                    energy_kev, energy_kev_source, flight_path_m, flight_path_m_source
+             FROM experiments WHERE id = ?", [eid]))[1]
+        # Provided fields are persisted and stamped 'user' (the scan never clobbers them).
+        @test row.beam_center_x == 421.3
+        @test row.beam_center_x_source == "user"
+        @test row.beam_center_y == 836.7
+        @test row.beam_center_y_source == "user"
+        @test row.energy_kev == 11.2
+        @test row.energy_kev_source == "user"
+        # An un-provided field stays 'default' (left for the scan to derive).
+        @test row.flight_path_m_source == "default"
+    end
+end
+
 @testset "POST /api/experiments rejects a duplicate data_dir (409)" begin
     tmp = mktempdir()
     data_dir = joinpath(tmp, "data"); mkpath(data_dir)

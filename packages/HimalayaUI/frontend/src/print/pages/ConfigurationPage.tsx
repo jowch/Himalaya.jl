@@ -221,7 +221,111 @@ function sourceLabel(source: string | undefined | null): string {
   if (source === "prp") return "prp";
   if (source === "setup") return "setup";
   if (source === "computed") return "computed";
+  if (source === "user") return "edited";
   return "unset";
+}
+
+/**
+ * GeometryEditRow — a single-value geometry field (flight path / pixel size /
+ * energy) with the Edit/Done mechanism. Read mode shows the formatted value +
+ * source chip + Edit; editing swaps in a numeric input (raw number, no unit)
+ * committing on Done / Enter / blur, reverting on Escape. `onCommit` gets the
+ * raw string; the parent parses + stores the override (blank reverts to derived).
+ */
+function GeometryEditRow({
+  label, rawValue, displayValue, sourceLbl, onCommit,
+}: {
+  label: string;
+  rawValue: number | null;
+  displayValue: string;
+  sourceLbl: string;
+  onCommit: (raw: string) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const seed = rawValue == null ? "" : String(rawValue);
+  const [draft, setDraft] = useState(seed);
+  useEffect(() => { if (!editing) setDraft(rawValue == null ? "" : String(rawValue)); }, [rawValue, editing]);
+  const commit = (): void => { onCommit(draft); setEditing(false); };
+  const cancel = (): void => { setDraft(seed); setEditing(false); };
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <span className="text-meta text-ink-soft">{label}</span>
+      {editing ? (
+        <span className="flex items-center gap-2">
+          <Input
+            value={draft} onValueChange={setDraft} inputSize="sm" mono autoFocus
+            className="w-28" aria-label={label}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commit(); }
+              else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+            }}
+            onBlur={commit}
+          />
+          <button type="button" className="text-caption text-accent shrink-0 hover:underline"
+            onMouseDown={(e) => e.preventDefault()} onClick={commit}>Done</button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-2">
+          <span className="text-data text-ink">{displayValue}</span>
+          <Chip variant="static" size="sm">{sourceLbl}</Chip>
+          <button type="button" className="text-caption text-accent shrink-0 hover:underline"
+            onClick={() => setEditing(true)}>Edit</button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** BeamCenterRow — the beam-center (x, y) pair with the Edit/Done mechanism: read
+ *  shows "x, y px" + chip + Edit; editing shows two numeric inputs. `onCommit`
+ *  gets both raw strings (committed together so neither half clobbers the other). */
+function BeamCenterRow({
+  x, y, sourceLbl, onCommit,
+}: {
+  x: number | null;
+  y: number | null;
+  sourceLbl: string;
+  onCommit: (rx: string, ry: string) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const seedX = x == null ? "" : String(x);
+  const seedY = y == null ? "" : String(y);
+  const [dx, setDx] = useState(seedX);
+  const [dy, setDy] = useState(seedY);
+  useEffect(() => {
+    if (!editing) { setDx(x == null ? "" : String(x)); setDy(y == null ? "" : String(y)); }
+  }, [x, y, editing]);
+  const commit = (): void => { onCommit(dx, dy); setEditing(false); };
+  const cancel = (): void => { setDx(seedX); setDy(seedY); setEditing(false); };
+  const keys = (e: React.KeyboardEvent): void => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+    else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  };
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <span className="text-meta text-ink-soft">Beam center</span>
+      {editing ? (
+        <span className="flex items-center gap-1.5">
+          <Input value={dx} onValueChange={setDx} inputSize="sm" mono autoFocus
+            className="w-20" aria-label="Beam center X" onKeyDown={keys} />
+          <span className="text-caption text-ink-faint">,</span>
+          <Input value={dy} onValueChange={setDy} inputSize="sm" mono
+            className="w-20" aria-label="Beam center Y" onKeyDown={keys} onBlur={commit} />
+          <button type="button" className="text-caption text-accent shrink-0 hover:underline"
+            onMouseDown={(e) => e.preventDefault()} onClick={commit}>Done</button>
+        </span>
+      ) : (
+        <span className="flex items-center gap-2">
+          <span className="text-data text-ink">
+            {x != null && y != null ? `${x.toFixed(1)}, ${y.toFixed(1)} px` : "—"}
+          </span>
+          <Chip variant="static" size="sm">{sourceLbl}</Chip>
+          <button type="button" className="text-caption text-accent shrink-0 hover:underline"
+            onClick={() => setEditing(true)}>Edit</button>
+        </span>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -239,7 +343,7 @@ function ConfigurationFirstRun(): JSX.Element {
   const navigate = useNavigate();
   const {
     root, resolved, name, data_dir, analysis_dir, setup_file, setup_ambiguous,
-    patterns, applyResolved, patch, clear,
+    patterns, geometry: geomOverride, applyResolved, patch, clear,
   } = useDraftExperiment();
 
   // 1. Resolve the picked root into correctable defaults (once per root).
@@ -274,13 +378,40 @@ function ConfigurationFirstRun(): JSX.Element {
 
   const handleApprove = (): void => {
     // Send the CONFIRMED values (the create route uses them verbatim — no guessing).
+    // Any geometry the user edited is sent as an override (persisted source='user'
+    // at create; the scan derives the rest and never clobbers these).
     createMutation.mutate({
       name,
       data_dir,
       path: data_dir,
       ...(analysis_dir ? { analysis_dir } : {}),
       patterns,
+      ...(Object.keys(geomOverride).length > 0 ? { geometry: geomOverride } : {}),
     });
+  };
+
+  // Set or clear one geometry override (a blank/NaN value reverts to auto-derived).
+  const setGeomOverride = (key: keyof typeof geomOverride, raw: string): void => {
+    const n = parseFloat(raw);
+    const next = { ...geomOverride };
+    if (raw.trim() === "" || Number.isNaN(n)) delete next[key];
+    else next[key] = n;
+    patch({ geometry: next });
+  };
+  // Effective value = user override (if set) wins over the derived manifest value.
+  const gEff = (key: keyof typeof geomOverride, derived: number | null | undefined): number | null =>
+    geomOverride[key] ?? derived ?? null;
+  // Effective source label: an override reads as "edited"; else the derived source.
+  const gSrc = (key: keyof typeof geomOverride, derivedSource: string | undefined): string =>
+    geomOverride[key] !== undefined ? "edited" : sourceLabel(derivedSource);
+  // Beam center commits BOTH halves in one patch — two setGeomOverride calls would
+  // each read the same stale closure and the second would clobber the first.
+  const setBeamCenter = (rx: string, ry: string): void => {
+    const next = { ...geomOverride };
+    const nx = parseFloat(rx); const ny = parseFloat(ry);
+    if (rx.trim() === "" || Number.isNaN(nx)) delete next.beam_center_x; else next.beam_center_x = nx;
+    if (ry.trim() === "" || Number.isNaN(ny)) delete next.beam_center_y; else next.beam_center_y = ny;
+    patch({ geometry: next });
   };
 
   const manifest = manifestQuery.data;
@@ -549,52 +680,46 @@ function ConfigurationFirstRun(): JSX.Element {
             <Kicker tone="soft" className="mb-4">Geometry · auto-derived</Kicker>
             {geo ? (
               <div className="flex flex-col divide-y divide-hair">
-                <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">Beam center</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-data text-ink">
-                      {geo.beam_center_x != null && geo.beam_center_y != null
-                        ? `${geo.beam_center_x.toFixed(1)}, ${geo.beam_center_y.toFixed(1)} px`
-                        : "—"}
-                    </span>
-                    <Chip variant="static" size="sm">
-                      {sourceLabel(geo.beam_center_x_source)}
-                    </Chip>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">Flight path</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-data text-ink">
-                      {geo.flight_path_m != null ? `${geo.flight_path_m.toFixed(4)} m` : "—"}
-                    </span>
-                    <Chip variant="static" size="sm">
-                      {sourceLabel(geo.flight_path_m_source)}
-                    </Chip>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">Pixel size</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-data text-ink">
-                      {geo.pixel_size_um != null ? `${geo.pixel_size_um.toFixed(1)} µm` : "—"}
-                    </span>
-                    <Chip variant="static" size="sm">
-                      {sourceLabel(geo.pixel_size_um_source)}
-                    </Chip>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4 py-1.5">
-                  <span className="text-meta text-ink-soft">Energy</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-data text-ink">
-                      {geo.energy_kev != null ? `${geo.energy_kev.toFixed(1)} keV` : "—"}
-                    </span>
-                    <Chip variant="static" size="sm">
-                      {sourceLabel(geo.energy_kev_source)}
-                    </Chip>
-                  </span>
-                </div>
+                {(() => {
+                  const bx = gEff("beam_center_x", geo.beam_center_x);
+                  const by = gEff("beam_center_y", geo.beam_center_y);
+                  const fp = gEff("flight_path_m", geo.flight_path_m);
+                  const px = gEff("pixel_size_um", geo.pixel_size_um);
+                  const en = gEff("energy_kev", geo.energy_kev);
+                  return (
+                    <>
+                      <BeamCenterRow
+                        x={bx} y={by}
+                        sourceLbl={
+                          geomOverride.beam_center_x !== undefined || geomOverride.beam_center_y !== undefined
+                            ? "edited" : sourceLabel(geo.beam_center_x_source)
+                        }
+                        onCommit={setBeamCenter}
+                      />
+                      <GeometryEditRow
+                        label="Flight path"
+                        rawValue={fp}
+                        displayValue={fp != null ? `${fp.toFixed(4)} m` : "—"}
+                        sourceLbl={gSrc("flight_path_m", geo.flight_path_m_source)}
+                        onCommit={(raw) => setGeomOverride("flight_path_m", raw)}
+                      />
+                      <GeometryEditRow
+                        label="Pixel size"
+                        rawValue={px}
+                        displayValue={px != null ? `${px.toFixed(1)} µm` : "—"}
+                        sourceLbl={gSrc("pixel_size_um", geo.pixel_size_um_source)}
+                        onCommit={(raw) => setGeomOverride("pixel_size_um", raw)}
+                      />
+                      <GeometryEditRow
+                        label="Energy"
+                        rawValue={en}
+                        displayValue={en != null ? `${en.toFixed(1)} keV` : "—"}
+                        sourceLbl={gSrc("energy_kev", geo.energy_kev_source)}
+                        onCommit={(raw) => setGeomOverride("energy_kev", raw)}
+                      />
+                    </>
+                  );
+                })()}
               </div>
             ) : (
               <p className="text-meta text-ink-soft">

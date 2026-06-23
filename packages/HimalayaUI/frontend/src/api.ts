@@ -227,6 +227,16 @@ export interface CreateExperimentBody {
   analysis_dir?: string;
   name?: string;
   patterns?: { image?: string; metadata?: string; integration?: string };
+  /** First-run geometry overrides. Any field present is persisted as
+   *  source='user' at create; the scan's derive never clobbers it. Omitted
+   *  fields are auto-derived from the setup/PRP files. */
+  geometry?: {
+    beam_center_x?: number;
+    beam_center_y?: number;
+    flight_path_m?: number;
+    pixel_size_um?: number;
+    energy_kev?: number;
+  };
 }
 export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
   request<Experiment>("POST", "/api/experiments", body, opts);

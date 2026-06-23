@@ -162,6 +162,46 @@ describe("ConfigurationPage (first-run mode)", () => {
     ).toBe("{name}.tif");
   });
 
+  test("geometry fields use the Edit mechanism and an edit is sent as a create override", async () => {
+    useDraftExperiment.getState().setRoot("/data/run42");
+    vi.spyOn(api, "resolveLayout").mockResolvedValue({
+      name: "run42", data_dir: "/data/run42/data", analysis_dir: "/data/run42/analysis",
+      setup_file: "/data/run42/analysis/setup_info_x.txt", setup_ambiguous: false,
+      image_pattern: null, metadata_pattern: null, integration_pattern: null,
+    });
+    mockFetchManifest({
+      total: 2, matched: { image: 2, metadata: 2, integration: 2 }, unmatched: [],
+      geometry: {
+        beam_center_x: 421.3, beam_center_x_source: "setup",
+        beam_center_y: 836.7, beam_center_y_source: "setup",
+        flight_path_m: 1.8095, flight_path_m_source: "setup",
+        pixel_size_um: 172.0, pixel_size_um_source: "prp",
+        energy_kev: 9.0, energy_kev_source: "prp",
+      },
+      matched_files: ["JC_001.tif"],
+    });
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 9 } as any);
+    renderConfiguration({ route: "/experiments/new/config" });
+    await screen.findByText(/2 matched/i);
+
+    // Energy reads as text at rest (9.0 keV); its Edit opens a numeric input.
+    expect(screen.getByText("9.0 keV")).toBeInTheDocument();
+    const energyRow = screen.getByText("Energy").closest("div")!;
+    fireEvent.click(within(energyRow).getByRole("button", { name: /edit/i }));
+    const input = within(energyRow).getByLabelText("Energy") as HTMLInputElement;
+    expect(input.value).toBe("9");
+    fireEvent.change(input, { target: { value: "11.2" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    // Now reads the edited value + "edited" chip.
+    expect(screen.getByText("11.2 keV")).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      geometry: { energy_kev: 11.2 },
+    })));
+  });
+
   test("D4: a whole type matching zero everywhere hard-blocks Approve", async () => {
     useDraftExperiment.getState().setRoot("/data/run42");
     vi.spyOn(api, "resolveLayout").mockResolvedValue({

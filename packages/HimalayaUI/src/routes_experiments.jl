@@ -208,6 +208,18 @@ function register_experiments_routes!()
         pats = get(body, :patterns, get(body, "patterns", Dict()))
         ppat(k) = (v = get(pats, k, get(pats, string(k), nothing)); v === nothing ? nothing : String(v))
 
+        # Geometry overrides (optional): the first-run Configuration may edit
+        # geometry BEFORE Approve. Each provided field is stamped source='user' so
+        # the scan's derive step (`_update_geometry_if_not_user!`, ingest.jl) never
+        # clobbers it. Absent fields stay source='default' and are derived by the
+        # scan from the setup/PRP files. Non-numeric values are ignored (treated as
+        # not provided) so a malformed body can't 500 the create.
+        geo_body = get(body, :geometry, get(body, "geometry", Dict()))
+        gnum(k) = (v = get(geo_body, k, get(geo_body, string(k), nothing)); v isa Number ? Float64(v) : nothing)
+        g_bcx = gnum(:beam_center_x); g_bcy = gnum(:beam_center_y)
+        g_fp  = gnum(:flight_path_m); g_px  = gnum(:pixel_size_um); g_en = gnum(:energy_kev)
+        gsrc(v) = v === nothing ? "default" : "user"
+
         exp_id = lock(_DB_WRITE_LOCK) do
             SQLite.transaction(db) do
                 create_experiment!(db;
@@ -218,6 +230,11 @@ function register_experiments_routes!()
                     image_pattern     = ppat(:image),
                     metadata_pattern  = ppat(:metadata),
                     integration_pattern = ppat(:integration),
+                    beam_center_x = g_bcx, beam_center_x_source = gsrc(g_bcx),
+                    beam_center_y = g_bcy, beam_center_y_source = gsrc(g_bcy),
+                    flight_path_m = g_fp,  flight_path_m_source = gsrc(g_fp),
+                    pixel_size_um = g_px,  pixel_size_um_source = gsrc(g_px),
+                    energy_kev    = g_en,  energy_kev_source    = gsrc(g_en),
                     ingest_status     = "scanning")
             end
         end
