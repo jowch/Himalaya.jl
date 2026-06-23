@@ -63,14 +63,17 @@ export function Tooltip({
           data-testid="tooltip"
           data-side={side}
           className={cx(
-            "pointer-events-none absolute z-30 left-1/2 -translate-x-1/2 rounded-sm px-2 py-1 text-xs",
+            "pointer-events-none absolute z-30 left-1/2 -translate-x-1/2 rounded-sm px-2.5 py-1 text-xs font-medium shadow-lg",
             multiline ? "w-max max-w-[15rem] whitespace-normal text-left leading-snug" : "whitespace-nowrap",
-            side === "top" ? "bottom-full mb-1" : "top-full mt-1",
+            side === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5",
             className,
           )}
           style={{
             background: "var(--color-frame-edge)",
             color: "var(--color-frame-tag)",
+            // A hair of inset definition so the dark window reads against dark
+            // detector panels too (the warm-paper system's only dark exception).
+            boxShadow: "0 6px 16px -4px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.06)",
           }}
         >
           {label}

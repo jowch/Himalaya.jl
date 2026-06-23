@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { Tooltip } from "./Tooltip";
 
 export type IconButtonTone = "ghost" | "accent" | "danger";
 
@@ -44,27 +45,32 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   },
   ref,
 ): JSX.Element {
+  // Icon-only buttons carry no visible text, so their meaning isn't obvious on
+  // sight (item 7). Wrap in our Tooltip (replacing the browser's native `title`)
+  // so every icon button gets a styled hover/focus caption from its label. An
+  // explicit `title` overrides the caption text when a richer hint is wanted.
   return (
-    <button
-      ref={ref}
-      type={type}
-      aria-label={label}
-      title={title ?? label}
-      data-tone={tone}
-      className={cx(
-        // `.icon-button` (styles.css) supplies the >=44px hit-area pseudo-element
-        // so the visible box stays compact and never balloons dense chip rows.
-        "icon-button relative inline-flex items-center justify-center",
-        "rounded p-1 leading-none transition-colors",
-        "focus-visible:outline focus-visible:outline-2",
-        "focus-visible:outline-offset-2 focus-visible:outline-accent",
-        "disabled:cursor-not-allowed disabled:opacity-30",
-        toneClass[tone],
-        className,
-      )}
-      {...props}
-    >
-      {dismiss ? "×" : children}
-    </button>
+    <Tooltip label={title ?? label}>
+      <button
+        ref={ref}
+        type={type}
+        aria-label={label}
+        data-tone={tone}
+        className={cx(
+          // `.icon-button` (styles.css) supplies the >=44px hit-area pseudo-element
+          // so the visible box stays compact and never balloons dense chip rows.
+          "icon-button relative inline-flex items-center justify-center",
+          "rounded p-1 leading-none transition-colors",
+          "focus-visible:outline focus-visible:outline-2",
+          "focus-visible:outline-offset-2 focus-visible:outline-accent",
+          "disabled:cursor-not-allowed disabled:opacity-30",
+          toneClass[tone],
+          className,
+        )}
+        {...props}
+      >
+        {dismiss ? "×" : children}
+      </button>
+    </Tooltip>
   );
 });
