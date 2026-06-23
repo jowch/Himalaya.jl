@@ -394,11 +394,38 @@ to the built-in `simple` template, preserving backward compatibility.
 """
 function config_from_db(db::SQLite.DB, experiment_id::Int)::ExperimentConfig
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT config FROM experiments WHERE id = ?", [experiment_id]))
+        "SELECT config, image_pattern, integration_pattern FROM experiments WHERE id = ?",
+        [experiment_id]))
     isempty(rows) && error("Experiment $experiment_id not found")
-    blob = rows[1].config
-    if blob === nothing || blob === missing
-        return load_builtin_config("simple")
-    end
-    _build_config(TOML.parse(String(blob)))
+    r = rows[1]
+    base = (r.config === nothing || r.config === missing) ?
+        load_builtin_config("simple") : _build_config(TOML.parse(String(r.config)))
+    # The per-experiment pattern COLUMNS are the source of truth for HTTP-ingested
+    # experiments: that path stores patterns in the columns and leaves the TOML
+    # `config` blob NULL (the blob is deprecated). Without this override,
+    # config_from_db returns the builtin `{name}.dat` and analyze_exposure! can
+    # never resolve a real `_tot.dat` integration trace, so nothing indexes.
+    _apply_db_patterns(base, r.image_pattern, r.integration_pattern)
+end
+
+"""
+    _apply_db_patterns(cfg, image_col, integration_col) -> ExperimentConfig
+
+Override a base config's `image_pattern` / `integration_pattern` with the
+experiment's column values when they are present and well-formed (contain
+`{name}`). The columns win over the deprecated TOML blob. Returns `cfg` unchanged
+when both columns are absent. Robust to field reordering (rebuilds positionally
+from `fieldnames`).
+"""
+function _apply_db_patterns(cfg::ExperimentConfig, image_col, integration_col)::ExperimentConfig
+    pick(col, cur) = (col !== nothing && col !== missing &&
+                      occursin("{name}", String(col))) ? String(col) : cur
+    img   = pick(image_col, cfg.image_pattern)
+    integ = pick(integration_col, cfg.integration_pattern)
+    (img == cfg.image_pattern && integ == cfg.integration_pattern) && return cfg
+    fn   = fieldnames(ExperimentConfig)
+    vals = Any[getfield(cfg, f) for f in fn]
+    vals[findfirst(==(:image_pattern), fn)]       = img
+    vals[findfirst(==(:integration_pattern), fn)] = integ
+    ExperimentConfig(vals...)
 end

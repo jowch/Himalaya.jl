@@ -416,6 +416,25 @@ end
     @test cfg.integration_pattern == "{name}.dat"
 end
 
+@testset "config_from_db prefers the per-experiment pattern columns" begin
+    # The HTTP ingestion path stores file patterns in the experiments COLUMNS and
+    # leaves the deprecated TOML `config` blob NULL. config_from_db must read the
+    # columns; otherwise analyze_exposure! resolves the integration .dat with the
+    # builtin `{name}.dat` and a real `_tot.dat` run indexes nothing (the P0 the
+    # live walk caught — masked by the manifest preview, which uses the pattern).
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.create_experiment!(db;
+        name = "Columns", path = "/tmp/cols",
+        data_dir = "/tmp/cols/data",
+        analysis_dir = "/tmp/cols/analysis/automatic_analysis",
+        image_pattern = "{name}_0_001.tif",
+        integration_pattern = "{name}_tot.dat")
+    cfg = HimalayaUI.config_from_db(db, exp_id)   # config blob NULL → columns win
+    @test cfg.integration_pattern == "{name}_tot.dat"
+    @test cfg.image_pattern == "{name}_0_001.tif"
+end
+
 @testset "cli_config_list prints simple" begin
     buf = IOBuffer()
     HimalayaUI.cli_config_list(buf)
