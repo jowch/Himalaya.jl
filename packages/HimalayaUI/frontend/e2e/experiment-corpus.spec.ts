@@ -26,6 +26,10 @@ function makeExperiment(ingest_status = "complete"): object {
     analysis_dir: "/analysis",
     manifest_path: null,
     created_at: "2026-01-01",
+    // Non-null so a `scanning` row renders the inline rescan ProgressBar
+    // (rescanning), not the initial-scan grouping-takeover redirect —
+    // last_scanned_at is null only before the first scan completes.
+    last_scanned_at: "2026-01-01T10:00:00",
     ingest_status,
     stats: { loads: 1, samples: 3, exposures: 3, sessions: 1 },
   };
@@ -164,4 +168,30 @@ test("experiment corpus shows ScanFailedPage when ingest_status=failed", async (
   await expect(page.getByRole("button", { name: /Open Configuration/i })).toBeVisible();
   // The table must NOT be visible on the failed branch.
   await expect(page.getByRole("table")).toHaveCount(0);
+});
+
+test("a live rescan SSE frame drives the corpus ProgressBar (6f)", async ({ page }) => {
+  // End-to-end seam: backend broadcast_progress! → /api/events frame →
+  // App.tsx ingest listener → ingestInFlight → corpus rescanning ProgressBar.
+  // The unit halves are covered separately; this ties the whole chain together.
+  await mockExperiment(page, { id: 7, ingest_status: "scanning", samples: 3 });
+  // Override /api/events with a single rescan progress frame. EventSource parses
+  // it on connect and App.tsx's "curation" listener maps phase:"rescan" →
+  // analyzing. Registered AFTER mockExperiment so this handler wins (Playwright
+  // invokes the most-recently-added matching route first).
+  await page.route("**/api/events*", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body:
+        'event: curation\n' +
+        'data: {"kind":"ingest_progress","payload":{"experiment_id":7,"processed":5,"total":10,"phase":"rescan"}}\n\n',
+    }));
+  await page.goto("/experiments/7/corpus");
+
+  const bar = page.getByTestId("live-ingest-slot").getByRole("progressbar");
+  await expect(bar).toBeVisible();
+  // The bar reflects the FRAME's processed/total, proving the SSE→UI wiring.
+  await expect(bar).toHaveAttribute("aria-valuenow", "5");
+  await expect(bar).toHaveAttribute("aria-valuemax", "10");
 });
