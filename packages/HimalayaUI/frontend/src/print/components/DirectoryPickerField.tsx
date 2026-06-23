@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "../ui/Input";
 import { Popover } from "../ui/Popover";
@@ -43,6 +43,12 @@ export function DirectoryPickerField({
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
   const [active, setActive] = useState(0);
+  // Ref to the inner <input>. Popover's open-effect focuses its panel by
+  // default; for this search-first combobox we redirect that focus back to the
+  // input (initialFocusRef) so a click that opens the suggestion popover keeps
+  // the caret in the field — otherwise typing and Tab-completion land on the
+  // panel, not the input.
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const complete = (path: string): void => {
     onChange(path);
@@ -87,12 +93,14 @@ export function DirectoryPickerField({
             value={value}
             onValueChange={onChange}
             onKeyDown={onKeyDown}
+            inputRef={inputRef}
             mono
             placeholder="Type or paste your experiment directory…"
             aria-label={ariaLabel}
           />
         }
         label="Directory suggestions"
+        initialFocusRef={inputRef}
         className="w-full"
       >
         {hasSuggestions && (
