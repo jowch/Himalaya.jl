@@ -5,8 +5,9 @@ import { PageFrame } from "../components/PageFrame";
 import { SeriesPlate } from "../components/SeriesPlate";
 import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
-import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
+import { IconButton, Button, EmptyState, Input, GripHandle, Swatch, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
+import { dominantPhase } from "../../lib/series/memberRead";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
 import { useReorderShortcuts } from "../shell/useReorderShortcuts";
@@ -210,6 +211,48 @@ export function SeriesBuilderPage(): JSX.Element {
   // sample id under the cursor (for Enter → Focus). Undefined when the list is
   // empty.
   const cursorSampleId = navSamples[selectedIndex]?.sample_id;
+
+  // ── Dock identity segment (§7) ──────────────────────────────────────────────
+  // sample.id → { name, experiment_id }, from the corpus-picker projection (the
+  // same source the recipe→plate resolver reads). The picker carries a full
+  // Sample, so name + experiment_id come from one place; experiment NAME resolves
+  // through the experiments query.
+  const sampleMeta = useMemo(() => {
+    const m = new Map<number, { name: string; experiment_id: number }>();
+    for (const r of pickerQ.data ?? []) {
+      m.set(r.sample.id, { name: r.sample.name, experiment_id: r.sample.experiment_id });
+    }
+    return m;
+  }, [pickerQ.data]);
+  const experimentNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const e of experimentsQ.data ?? []) if (e.name) m.set(e.id, e.name);
+    return m;
+  }, [experimentsQ.data]);
+  // sample.id → overlay phase. The builder plate colours each trace by its
+  // member's dominantPhase (CardFigure/WaterfallChart: phaseColor(row.phase)),
+  // so the dock swatch reads the SAME phase through the cursor sample's indexing
+  // exposure → committed member → dominantPhase. Null phase (unindexed / form
+  // factor) → an empty swatch, matching the plate's UNINDEXED treatment. This is
+  // an OVERLAY-MATCHED swatch (phase-keyed via the Swatch primitive's phaseColor),
+  // not a palette-by-index fallback.
+  const phaseByExposure = useMemo(() => {
+    const m = new Map<number, string | null>();
+    for (const mem of series?.members ?? []) {
+      if (mem.exposure_id != null) m.set(mem.exposure_id, dominantPhase(mem));
+    }
+    return m;
+  }, [series?.members]);
+  const cursorIdentity = useMemo(() => {
+    if (cursorSampleId === undefined) return undefined;
+    const meta = sampleMeta.get(cursorSampleId);
+    const name = meta?.name ?? `Sample ${cursorSampleId}`;
+    const experimentName =
+      meta != null ? experimentNameById.get(meta.experiment_id) : undefined;
+    const exposureId = exposureBySample.get(cursorSampleId);
+    const phase = exposureId != null ? phaseByExposure.get(exposureId) ?? null : null;
+    return { name, experimentName, phase };
+  }, [cursorSampleId, sampleMeta, experimentNameById, exposureBySample, phaseByExposure]);
   // Late-bound handler refs (assigned each render, below the early return).
   const confirmRef = useRef<() => void>(() => {});
   const navigateRef = useRef(navigate);
@@ -600,18 +643,76 @@ export function SeriesBuilderPage(): JSX.Element {
         />
       )}
     </Skeleton>
-    {/* ── Contextual bottom dock (Series grammar §3.3) ──────────────────────────
-        ‹ All series · Sample↑↓ · Focus
-        The builder shows the member list; Sample↑↓ is left out (no cursor
-        over members in the current session model). */}
+    {/* ── Contextual bottom dock (Series grammar §7) ───────────────────────────
+        ‹ All series │ Sample ↑ N/total ↓ │ swatch · name · from <experiment> ──→ Focus[↵]
+        The unit is "Sample" (members are samples); no cull (a series has nothing
+        to keep or reject). The swatch matches the cursor member's highlighted
+        trace colour on the overlay (phase-keyed). An empty member list shows only
+        the up-link. */}
     <Dock>
       <button
         onClick={() => navigate("/series")}
-        className="text-meta font-semibold text-print-accent hover:underline mr-1"
+        className="text-meta font-semibold text-print-accent hover:underline"
         data-testid="dock-up-link"
       >
         ‹ All series
       </button>
+
+      {navSamples.length > 0 && (
+        <>
+          <span className="w-px self-stretch bg-hair" aria-hidden />
+
+          {/* Sample stepper — ↑/↓ axis, current / total readout (mirrors the
+              prevSample/nextSample keyboard handlers; same clamping setters). */}
+          <div className="flex items-center gap-1">
+            <span className="text-meta text-ink-soft">Sample</span>
+            <IconButton label="Previous sample" tone="ghost" disabled={selectedIndex === 0}
+              onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
+              data-testid="dock-prev-sample">↑</IconButton>
+            <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+              data-testid="dock-sample-count">{selectedIndex + 1} / {navSamples.length}</span>
+            <IconButton label="Next sample" tone="ghost"
+              disabled={selectedIndex >= navSamples.length - 1}
+              onClick={() => setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1))}
+              data-testid="dock-next-sample">↓</IconButton>
+          </div>
+
+          {cursorIdentity && (
+            <>
+              <span className="w-px self-stretch bg-hair" aria-hidden />
+              {/* Current-member identity — swatch (overlay-matched phase colour) +
+                  name + faint "from <experiment>". */}
+              <div className="flex items-center gap-1.5 min-w-0" data-testid="dock-identity">
+                {cursorIdentity.phase
+                  ? <Swatch phase={cursorIdentity.phase} />
+                  : <Swatch phase="" empty />}
+                <span className="text-data text-ink truncate" data-testid="dock-identity-name">
+                  {cursorIdentity.name}
+                </span>
+                {cursorIdentity.experimentName && (
+                  <span className="text-meta text-ink-soft truncate">
+                    from {cursorIdentity.experimentName}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Spacer — right-anchors the Focus destination */}
+          <div className="flex-1" />
+
+          {/* Focus — the unambiguous primary destination; opens the cursor
+              member's sample (matches the openFocus keyboard binding). */}
+          <Button variant="accent" data-testid="dock-focus"
+            disabled={cursorSampleId === undefined}
+            onClick={() => {
+              if (cursorSampleId === undefined) return;
+              navigate(`/sample/${cursorSampleId}?from=series`);
+            }}>
+            Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey>
+          </Button>
+        </>
+      )}
     </Dock>
     </>
   );
