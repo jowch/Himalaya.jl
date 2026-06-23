@@ -227,15 +227,17 @@ export interface CreateExperimentBody {
   analysis_dir?: string;
   name?: string;
   patterns?: { image?: string; metadata?: string; integration?: string };
-  /** First-run geometry overrides. Any field present is persisted as
-   *  source='user' at create; the scan's derive never clobbers it. Omitted
-   *  fields are auto-derived from the setup/PRP files. */
+  /** First-run geometry, committed at create. The funnel preview already derived
+   *  geometry (with the confirmed setup file), so Approve sends the WHOLE thing —
+   *  each value with its honest source ('setup'/'prp'/'computed', or 'user' for a
+   *  manual edit). Persisted verbatim; the scan only fills fields left unset, so
+   *  geometry is derived once. A value with no source defaults to 'user'. */
   geometry?: {
-    beam_center_x?: number;
-    beam_center_y?: number;
-    flight_path_m?: number;
-    pixel_size_um?: number;
-    energy_kev?: number;
+    beam_center_x?: number; beam_center_x_source?: string;
+    beam_center_y?: number; beam_center_y_source?: string;
+    flight_path_m?: number; flight_path_m_source?: string;
+    pixel_size_um?: number; pixel_size_um_source?: string;
+    energy_kev?: number;    energy_kev_source?: string;
   };
 }
 export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>

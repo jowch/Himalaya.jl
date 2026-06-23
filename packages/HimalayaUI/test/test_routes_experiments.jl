@@ -333,6 +333,61 @@ end
     end
 end
 
+@testset "POST /api/experiments persists committed geometry with its honest source" begin
+    tmp = mktempdir()
+    data_dir = joinpath(tmp, "data"); mkpath(data_dir)
+    db = open_prepared_clone(tmp)
+
+    with_inproc_routes(db) do call
+        # The funnel commits the WHOLE preview geometry: each value carries its
+        # real source ('setup'/'prp'), and only an edited field is 'user'.
+        r = call("POST", "/api/experiments";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(
+                :data_dir => data_dir, :name => "Geo",
+                :geometry => Dict(
+                    :beam_center_x => 421.4, :beam_center_x_source => "setup",
+                    :flight_path_m => 1.8095, :flight_path_m_source => "setup",
+                    :pixel_size_um => 172.0, :pixel_size_um_source => "prp",
+                    :energy_kev    => 11.2,  :energy_kev_source    => "user")))))
+        @test r.status == 202
+        eid = Int(JSON3.read(String(r.body)).id)
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT beam_center_x_source, flight_path_m_source, pixel_size_um_source,
+                    energy_kev_source, flight_path_m FROM experiments WHERE id = ?", [eid]))[1]
+        @test row.beam_center_x_source == "setup"   # honest provenance, not 'user'
+        @test row.flight_path_m_source == "setup"
+        @test row.flight_path_m == 1.8095           # the setup value, not a PRP re-derive
+        @test row.pixel_size_um_source == "prp"
+        @test row.energy_kev_source == "user"       # the one edited field
+    end
+end
+
+@testset "_fill_unset_geometry! fills only 'default' fields, never an established one" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = joinpath(tmp, "d"),
+        analysis_dir = joinpath(tmp, "a"),
+        flight_path_m = 1.8095, flight_path_m_source = "setup",      # established
+        beam_center_x = 421.4, beam_center_x_source = "setup")        # established
+    # A later scan re-derives DIFFERENT values (e.g. from PRP only, no setup file).
+    geo = (energy_kev = 9.0, energy_kev_source = "prp",
+           flight_path_m = 1.7, flight_path_m_source = "prp",          # would clobber
+           beam_center_x = missing, beam_center_x_source = "prp",
+           beam_center_y = missing, beam_center_y_source = "prp",
+           pixel_size_um = 172.0, pixel_size_um_source = "prp")
+    HimalayaUI._fill_unset_geometry!(db, eid, geo)
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT flight_path_m, flight_path_m_source, energy_kev, energy_kev_source,
+                beam_center_x, pixel_size_um FROM experiments WHERE id = ?", [eid]))[1]
+    @test row.flight_path_m == 1.8095                # established 'setup' value PRESERVED
+    @test row.flight_path_m_source == "setup"
+    @test row.energy_kev == 9.0                      # was 'default' → filled
+    @test row.energy_kev_source == "prp"
+    @test row.beam_center_x == 421.4                 # established, untouched
+    @test row.pixel_size_um == 172.0                 # was 'default' → filled
+end
+
 @testset "POST /api/experiments rejects a duplicate data_dir (409)" begin
     tmp = mktempdir()
     data_dir = joinpath(tmp, "data"); mkpath(data_dir)

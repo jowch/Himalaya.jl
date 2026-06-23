@@ -208,17 +208,22 @@ function register_experiments_routes!()
         pats = get(body, :patterns, get(body, "patterns", Dict()))
         ppat(k) = (v = get(pats, k, get(pats, string(k), nothing)); v === nothing ? nothing : String(v))
 
-        # Geometry overrides (optional): the first-run Configuration may edit
-        # geometry BEFORE Approve. Each provided field is stamped source='user' so
-        # the scan's derive step (`_update_geometry_if_not_user!`, ingest.jl) never
-        # clobbers it. Absent fields stay source='default' and are derived by the
-        # scan from the setup/PRP files. Non-numeric values are ignored (treated as
-        # not provided) so a malformed body can't 500 the create.
+        # Geometry (optional): the funnel preview already derived geometry with the
+        # confirmed setup file, so Approve sends the WHOLE geometry — each field as
+        # a value + its honest source (`setup`/`prp`/`computed`, or `user` for a
+        # manual edit). It is persisted verbatim and the scan's fill-only step
+        # (`_fill_unset_geometry!`, ingest.jl) leaves any established field alone, so
+        # geometry is derived once (at preview) and never re-derived. A field with a
+        # value but no source defaults to `user` (back-compat with a values-only
+        # body). Non-numeric values / non-string sources are ignored (treated as not
+        # provided) so a malformed body can't 500 the create.
         geo_body = get(body, :geometry, get(body, "geometry", Dict()))
-        gnum(k) = (v = get(geo_body, k, get(geo_body, string(k), nothing)); v isa Number ? Float64(v) : nothing)
+        gnum(k)  = (v = get(geo_body, k, get(geo_body, string(k), nothing)); v isa Number ? Float64(v) : nothing)
+        gstr(k)  = (v = get(geo_body, k, get(geo_body, string(k), nothing)); v isa AbstractString ? String(v) : nothing)
+        # value present → its source (or 'user' when omitted); absent → 'default'.
+        psrc(val, src) = val === nothing ? "default" : (src === nothing ? "user" : src)
         g_bcx = gnum(:beam_center_x); g_bcy = gnum(:beam_center_y)
         g_fp  = gnum(:flight_path_m); g_px  = gnum(:pixel_size_um); g_en = gnum(:energy_kev)
-        gsrc(v) = v === nothing ? "default" : "user"
 
         exp_id = lock(_DB_WRITE_LOCK) do
             SQLite.transaction(db) do
@@ -230,11 +235,11 @@ function register_experiments_routes!()
                     image_pattern     = ppat(:image),
                     metadata_pattern  = ppat(:metadata),
                     integration_pattern = ppat(:integration),
-                    beam_center_x = g_bcx, beam_center_x_source = gsrc(g_bcx),
-                    beam_center_y = g_bcy, beam_center_y_source = gsrc(g_bcy),
-                    flight_path_m = g_fp,  flight_path_m_source = gsrc(g_fp),
-                    pixel_size_um = g_px,  pixel_size_um_source = gsrc(g_px),
-                    energy_kev    = g_en,  energy_kev_source    = gsrc(g_en),
+                    beam_center_x = g_bcx, beam_center_x_source = psrc(g_bcx, gstr(:beam_center_x_source)),
+                    beam_center_y = g_bcy, beam_center_y_source = psrc(g_bcy, gstr(:beam_center_y_source)),
+                    flight_path_m = g_fp,  flight_path_m_source = psrc(g_fp,  gstr(:flight_path_m_source)),
+                    pixel_size_um = g_px,  pixel_size_um_source = psrc(g_px,  gstr(:pixel_size_um_source)),
+                    energy_kev    = g_en,  energy_kev_source    = psrc(g_en,  gstr(:energy_kev_source)),
                     ingest_status     = "scanning")
             end
         end

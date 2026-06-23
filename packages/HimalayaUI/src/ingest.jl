@@ -6,7 +6,9 @@
 #   - Insert-only for loads/samples/exposures (no clobber on rescan).
 #   - The exposure dedup key is (experiment_id, filename) — also enforced by the
 #     `exposures_unique_filename` UNIQUE index (db.jl migrate_exposures_unique_filename!).
-#   - Geometry never clobbers a `*_source='user'` field (spec §4).
+#   - Geometry is FILL-ONLY: it writes a field only when still unset ('default');
+#     any established source (setup/prp/computed, or 'user') is left untouched, so
+#     geometry derived once (at the funnel preview) is never re-derived (spec §4).
 #   - Every DB write is wrapped in `_DB_WRITE_LOCK` (server.jl) + a SQLite.transaction
 #     so a mid-scan failure rolls back the whole insert batch (no partial write).
 #   - analyze_exposure! is called OUTSIDE the write transaction (same contract as
@@ -28,8 +30,10 @@ root is the experiment's own `data_dir`/`analysis_dir` (resolved from its row).
 Steps:
   1. Resolve `data_dir` and `analysis_dir` from the `experiments` row.
   2. Scan: enumerate TIF+PRP+DAT triplets with `scan_directory`.
-  3. Geometry: derive from the sampled PRPs + the latest setup_info file; write
-     to the `experiments` row (respects `*_source='user'` never-clobber).
+  3. Geometry: FILL-ONLY — derive from the sampled PRPs + setup_info, but write
+     only fields still unset; never overwrite geometry already established (e.g.
+     committed from the funnel preview, which derived it with the confirmed setup
+     file). Derived once, not re-derived each scan.
   4. Group: `group_into_samples` → loads/samples/slots.
   5. Persist: insert `loads`, `samples`, `exposures` rows inside ONE write
      transaction (insert-only — dedup loads by (experiment_id, load_index),
@@ -86,11 +90,13 @@ function scan_and_group!(
 
     geo, _disc = derive_geometry(prp_paths, setup_files)
 
-    # Persist geometry with never-clobber: only write fields whose current source
-    # is not 'user' (spec §4).
+    # FILL-ONLY: write only geometry fields still unset ('default' source). Fields
+    # already established at create (committed from the funnel preview, which
+    # derived them with the confirmed setup file) or manually edited ('user') are
+    # left untouched — geometry is derived once, not re-derived on every scan.
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
-            _update_geometry_if_not_user!(db, experiment_id, geo)
+            _fill_unset_geometry!(db, experiment_id, geo)
         end
     end
 
@@ -563,7 +569,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
             end
 
             # 3e. Geometry (never-clobber 'user').
-            _update_geometry_if_not_user!(db, experiment_id, geo)
+            _fill_unset_geometry!(db, experiment_id, geo)
 
             # 3f. Mark the experiment complete.
             DBInterface.execute(db,
@@ -662,13 +668,22 @@ function cheap_change_check(
 end
 
 """
-    _update_geometry_if_not_user!(db, experiment_id, geo)
+    _fill_unset_geometry!(db, experiment_id, geo)
 
-Write derived geometry fields to the `experiments` row, skipping any field whose
-current `*_source` is `'user'` (never-clobber contract, spec §4) and any field
-whose derived value is `missing`. Called inside a write transaction.
+FILL-ONLY geometry write: write a derived field to the `experiments` row ONLY when
+that field is still UNSET (its current `*_source` is `'default'`). Any field that
+already has an established source — `'setup'`/`'prp'`/`'computed'` (derived once,
+e.g. committed from the funnel preview) or `'user'` (a manual override) — is left
+untouched. Also skips a field whose derived value is `missing`. Called inside a
+write transaction.
+
+Geometry is derived ONCE, at the funnel preview (with the confirmed setup file),
+and committed at create; this scan step is the fallback that fills geometry for
+callers that did not supply it, and it never silently re-derives over an
+established value (so a rescan presents what was committed, not a fresh — and
+possibly worse — re-derivation). The user can always re-edit in Configuration.
 """
-function _update_geometry_if_not_user!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
+function _fill_unset_geometry!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
     current = first(Tables.rowtable(DBInterface.execute(db,
         """SELECT energy_kev_source, flight_path_m_source,
                   beam_center_x_source, beam_center_y_source, pixel_size_um_source
@@ -678,8 +693,10 @@ function _update_geometry_if_not_user!(db::SQLite.DB, experiment_id::Int, geo::N
 
     function maybe!(field, source_field, val, source)
         curr_src = getproperty(current, Symbol(source_field))
-        if !ismissing(curr_src) && String(curr_src) == "user"
-            return  # never overwrite a user-set field
+        # Only fill a field that is still unset ('default'); never overwrite an
+        # established source (setup/prp/computed/user).
+        if !ismissing(curr_src) && String(curr_src) != "default"
+            return
         end
         val === missing && return
         push!(updates, field => val)

@@ -384,17 +384,37 @@ function ConfigurationFirstRun(): JSX.Element {
     },
   });
 
+  // Build the geometry to commit at create: the preview ALREADY derived it (with
+  // the confirmed setup file), so send the whole thing — each field's value + its
+  // honest source — with any manual edit overriding as source='user'. The backend
+  // persists it verbatim and the scan never re-derives an established field, so
+  // geometry is computed once, here.
+  const buildGeometry = (): NonNullable<api.CreateExperimentBody["geometry"]> | undefined => {
+    const m = manifestQuery.data?.geometry;
+    const g: NonNullable<api.CreateExperimentBody["geometry"]> = {};
+    const bcx = geomOverride.beam_center_x ?? m?.beam_center_x;
+    if (bcx != null) { g.beam_center_x = bcx; g.beam_center_x_source = geomOverride.beam_center_x !== undefined ? "user" : (m?.beam_center_x_source ?? "computed"); }
+    const bcy = geomOverride.beam_center_y ?? m?.beam_center_y;
+    if (bcy != null) { g.beam_center_y = bcy; g.beam_center_y_source = geomOverride.beam_center_y !== undefined ? "user" : (m?.beam_center_y_source ?? "computed"); }
+    const fp = geomOverride.flight_path_m ?? m?.flight_path_m;
+    if (fp != null) { g.flight_path_m = fp; g.flight_path_m_source = geomOverride.flight_path_m !== undefined ? "user" : (m?.flight_path_m_source ?? "computed"); }
+    const px = geomOverride.pixel_size_um ?? m?.pixel_size_um;
+    if (px != null) { g.pixel_size_um = px; g.pixel_size_um_source = geomOverride.pixel_size_um !== undefined ? "user" : (m?.pixel_size_um_source ?? "computed"); }
+    const en = geomOverride.energy_kev ?? m?.energy_kev;
+    if (en != null) { g.energy_kev = en; g.energy_kev_source = geomOverride.energy_kev !== undefined ? "user" : (m?.energy_kev_source ?? "computed"); }
+    return Object.keys(g).length > 0 ? g : undefined;
+  };
+
   const handleApprove = (): void => {
     // Send the CONFIRMED values (the create route uses them verbatim — no guessing).
-    // Any geometry the user edited is sent as an override (persisted source='user'
-    // at create; the scan derives the rest and never clobbers these).
+    const geometry = buildGeometry();
     createMutation.mutate({
       name,
       data_dir,
       path: data_dir,
       ...(analysis_dir ? { analysis_dir } : {}),
       patterns,
-      ...(Object.keys(geomOverride).length > 0 ? { geometry: geomOverride } : {}),
+      ...(geometry ? { geometry } : {}),
     });
   };
 

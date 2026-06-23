@@ -197,8 +197,14 @@ describe("ConfigurationPage (first-run mode)", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    // The whole preview geometry is committed; the edited field is source='user',
+    // the rest keep their derived sources.
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      geometry: { energy_kev: 11.2 },
+      geometry: expect.objectContaining({
+        energy_kev: 11.2, energy_kev_source: "user",
+        beam_center_x: 421.3, beam_center_x_source: "setup",
+        flight_path_m: 1.8095, flight_path_m_source: "setup",
+      }),
     })));
   });
 
@@ -234,7 +240,10 @@ describe("ConfigurationPage (first-run mode)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /approve/i })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: /approve/i }));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      geometry: { beam_center_x: 400, beam_center_y: 800 },
+      geometry: expect.objectContaining({
+        beam_center_x: 400, beam_center_x_source: "user",
+        beam_center_y: 800, beam_center_y_source: "user",
+      }),
     })));
   });
 
