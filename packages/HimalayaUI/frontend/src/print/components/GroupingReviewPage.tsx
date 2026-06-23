@@ -572,7 +572,7 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
           <div className="flex items-center gap-4 text-meta text-ink-faint" aria-hidden="true">
             <span className="inline-flex items-center gap-1"><KbKey>↑</KbKey><KbKey>↓</KbKey> move</span>
             <span className="inline-flex items-center gap-1"><KbKey>space</KbKey> select</span>
-            <span className="inline-flex items-center gap-1"><KbKey>⇧</KbKey><KbKey>↑</KbKey><KbKey>↓</KbKey> flagged</span>
+            <span className="inline-flex items-center gap-1"><KbKey>⇧↑</KbKey><KbKey>⇧↓</KbKey> flagged</span>
             <span className="inline-flex items-center gap-1"><KbKey>x</KbKey> dismiss flag</span>
           </div>
         )}

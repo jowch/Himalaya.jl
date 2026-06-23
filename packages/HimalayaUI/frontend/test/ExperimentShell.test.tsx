@@ -60,6 +60,14 @@ describe("ExperimentShell (Phase E1)", () => {
     expect(await screen.findByText("CONFIG BODY")).toBeInTheDocument();
   });
 
+  it("on the config view, the ⚙ gear becomes a back-to-corpus control (item 9)", async () => {
+    renderAt("/experiments/7/config");
+    await screen.findByText("CONFIG BODY");
+    // No gear on config — instead a back affordance (the only way back to corpus).
+    expect(screen.queryByTestId("experiment-config-gear")).toBeNull();
+    expect(screen.getByTestId("experiment-config-back")).toBeInTheDocument();
+  });
+
   it("no corpus-topbar in isolation (T3.2: TopNav lives in outer AppShell)", async () => {
     renderAt("/experiments/7/corpus");
     await screen.findByTestId("experiment-header-name");

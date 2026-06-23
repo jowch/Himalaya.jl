@@ -1,4 +1,4 @@
-import { Outlet, useNavigate, useParams } from "react-router-dom";
+import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { useExperiment, useTriggerScan } from "../../queries";
 import { useAppState } from "../../state";
@@ -27,6 +27,9 @@ export function ExperimentShell(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
   const navigate = useNavigate();
+  // The config view nests under this shell, so the ⚙ has no inverse. On config,
+  // turn it into a back-to-corpus control (the only way back, item 9).
+  const onConfig = useLocation().pathname.endsWith("/config");
   const exp = useExperiment(expId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const username = useAppState((s) => s.username);
@@ -148,14 +151,25 @@ export function ExperimentShell(): JSX.Element {
             >
               Rescan
             </Button>
-            <IconButton
-              label="Configuration"
-              tone="ghost"
-              data-testid="experiment-config-gear"
-              onClick={() => navigate(`/experiments/${expId}/config`)}
-            >
-              ⚙
-            </IconButton>
+            {onConfig ? (
+              <IconButton
+                label="Back to corpus"
+                tone="ghost"
+                data-testid="experiment-config-back"
+                onClick={() => navigate(`/experiments/${expId}/corpus`)}
+              >
+                ←
+              </IconButton>
+            ) : (
+              <IconButton
+                label="Configuration"
+                tone="ghost"
+                data-testid="experiment-config-gear"
+                onClick={() => navigate(`/experiments/${expId}/config`)}
+              >
+                ⚙
+              </IconButton>
+            )}
           </div>
         </div>
 
