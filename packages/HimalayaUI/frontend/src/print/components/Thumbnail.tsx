@@ -186,11 +186,12 @@ export function Thumbnail({
               : " border-2 border-transparent group-hover:border-hair-strong"
         }`}
       />
-      {/* Cursor = the SECOND, inner line of a double border. Sits just inside the
-          outer accent line so the cursor frame reads distinctly from a plain
-          solid-bordered selection — and stays legible when the cursor is ON a
-          selected thumb (solid accent + inner light line = "selected, here"). */}
-      {cursored && (
+      {/* Cursor-on-selection = the SECOND, inner line of a double border. Only a
+          SELECTED thumb needs disambiguating (its solid accent border already
+          looks like the cursor's), so the inner light line is drawn only when the
+          cursor sits on a selected thumb. A cursored-but-unselected thumb keeps
+          the single 2px accent line above. */}
+      {cursored && selected && (
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-[3px] rounded-sm border border-paper"

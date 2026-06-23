@@ -34,6 +34,7 @@ import type { CorpusSample, Exposure } from "../src/api";
 
 // ── mutator spy + nav target probe ──────────────────────────────────────────
 const batchMutate = vi.fn();
+const selectMutate = vi.fn();
 
 // ── mock data plane (mutated per test) ──────────────────────────────────────
 const state = {
@@ -59,6 +60,7 @@ vi.mock("../src/queries", () => ({
     return { byId, isLoading: false };
   },
   useSetExposureStatusBatch: () => ({ mutate: batchMutate }),
+  useSelectExposure: () => ({ mutate: selectMutate }),
 }));
 
 // Zustand store: ingestInFlight stays null so no takeover state pre-empts the
@@ -109,6 +111,7 @@ function renderAt(expId = 1) {
 
 beforeEach(() => {
   batchMutate.mockClear();
+  selectMutate.mockClear();
 });
 
 // ── keyboard cursor + cull verbs (ported from SamplesPage.keyboard.test) ─────
@@ -175,12 +178,14 @@ describe("ExperimentCorpusPage — keyboard cursor + cull verbs", () => {
     expect(screen.getByTestId("loupe-route")).toBeInTheDocument();
   });
 
-  it("r (representative) does nothing on Corpus — no navigation, no mutate", () => {
+  it("r (representative) flags the active frame as the sample's representative", () => {
     renderAt(1);
     fireEvent.keyDown(window, { key: "r" });
-    expect(screen.queryByTestId("focus-route")).toBeNull();
-    expect(screen.queryByTestId("loupe-route")).toBeNull();
+    // The cursor's active frame (S0/E0 = id 100) is set representative via
+    // useSelectExposure; no cull mutate, no navigation.
+    expect(selectMutate).toHaveBeenCalledWith(100, expect.anything());
     expect(batchMutate).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("focus-route")).toBeNull();
   });
 
   it("X (drop) with no selection fires on the active frame (cursor 0,0)", () => {
@@ -196,6 +201,20 @@ describe("ExperimentCorpusPage — keyboard cursor + cull verbs", () => {
     fireEvent.keyDown(window, { key: "k" });
     expect(batchMutate).toHaveBeenCalledWith({
       sampleId: 10, exposureId: 100, status: "accepted",
+    });
+  });
+
+  it("X on an already-dropped frame TOGGLES it back to unscreened (null)", () => {
+    // Seed the active frame (E0) as already rejected, so Drop un-drops it.
+    state.byId = new Map<number, Exposure[]>([
+      [10, [{ ...E0, status: "rejected" }, E1]],
+      [11, []],
+      [12, []],
+    ]);
+    renderAt(1);
+    fireEvent.keyDown(window, { key: "x" });
+    expect(batchMutate).toHaveBeenCalledWith({
+      sampleId: 10, exposureId: 100, status: null,
     });
   });
 

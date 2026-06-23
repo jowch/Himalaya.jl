@@ -9,6 +9,7 @@ import {
   useCorpusSamples,
   useCorpusExposures,
   useSetExposureStatusBatch,
+  useSelectExposure,
 } from "../../queries";
 import * as api from "../../api";
 import { Button } from "../ui/Button";
@@ -40,6 +41,14 @@ function selectionSpread(
     if (sampleId !== undefined) owners.add(sampleId);
   }
   return owners.size;
+}
+
+type Verdict = "accepted" | "rejected" | null;
+
+/** Drop/Keep are TOGGLES: applying a verdict a frame already carries clears it
+ *  to unscreened (null). Restore (target null) is never a toggle. */
+function verdictNext(current: Verdict, target: Verdict): Verdict {
+  return target !== null && current === target ? null : target;
 }
 
 /**
@@ -159,6 +168,10 @@ export function ExperimentCorpusPage(): JSX.Element {
     { sampleIndex: 0, frameIndex: 0 },
   );
   const activeSample = scopedSamples[cursor.sampleIndex];
+  // Representative setter, keyed to the cursor's active sample. Lets "R" / the
+  // dock "Mark rep" button flag which exposure represents the sample (the one
+  // Focus opens) directly from the contact sheet.
+  const setRepresentative = useSelectExposure(activeSample?.id ?? 0);
 
   function clamp(v: number, lo: number, hi: number): number {
     return v < lo ? lo : v > hi ? hi : v;
@@ -244,14 +257,24 @@ export function ExperimentCorpusPage(): JSX.Element {
     });
   }
 
-  function batchSet(status: "accepted" | "rejected" | null): void {
+  function batchSet(status: Verdict): void {
     const targets = [...selected].filter((id) => ownerOf.has(id));
+    const statusOf = (id: number): Verdict => {
+      const sId = ownerOf.get(id)!;
+      return corpusExposures.byId.get(sId)?.find((e) => e.id === id)?.status ?? null;
+    };
+    // Toggle as a set: if every selected frame already carries this verdict,
+    // clear them all to unscreened instead (mirrors the single-frame toggle).
+    const next: Verdict =
+      status !== null && targets.length > 0 && targets.every((id) => statusOf(id) === status)
+        ? null
+        : status;
     for (const id of targets) {
-      batch.mutate({ sampleId: ownerOf.get(id)!, exposureId: id, status });
+      batch.mutate({ sampleId: ownerOf.get(id)!, exposureId: id, status: next });
     }
     const n = targets.length;
     if (n > 0) {
-      const verb = status === "rejected" ? "dropped" : status === "accepted" ? "kept" : "restored";
+      const verb = next === "rejected" ? "dropped" : next === "accepted" ? "kept" : "restored";
       const spread = selectionSpread(new Set(targets), ownerOf);
       const suffix = spread > 1 ? ` across ${spread} samples` : "";
       showToast(`${n} frame${n === 1 ? "" : "s"} ${verb}${suffix}`, "success");
@@ -317,8 +340,9 @@ export function ExperimentCorpusPage(): JSX.Element {
       const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
       const frame = frames[cursor.frameIndex];
       if (s == null || frame == null) return false;
-      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "rejected" });
-      showToast("1 frame dropped", "success");
+      const next = verdictNext(frame.status ?? null, "rejected");
+      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: next });
+      showToast(`1 frame ${next === "rejected" ? "dropped" : "restored"}`, "success");
       return undefined;
     },
     keep: () => {
@@ -327,8 +351,9 @@ export function ExperimentCorpusPage(): JSX.Element {
       const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
       const frame = frames[cursor.frameIndex];
       if (s == null || frame == null) return false;
-      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: "accepted" });
-      showToast("1 frame kept", "success");
+      const next = verdictNext(frame.status ?? null, "accepted");
+      batch.mutate({ sampleId: s.id, exposureId: frame.id, status: next });
+      showToast(`1 frame ${next === "accepted" ? "kept" : "restored"}`, "success");
       return undefined;
     },
     restore: () => {
@@ -345,6 +370,17 @@ export function ExperimentCorpusPage(): JSX.Element {
       if (selected.size === 0) return false;
       setSelected(new Set());
       anchorRef.current = null;
+      return undefined;
+    },
+    representative: () => {
+      const s = activeSample;
+      const frames = s != null ? (corpusExposures.byId.get(s.id) ?? []) : [];
+      const frame = frames[cursor.frameIndex];
+      if (s == null || frame == null) return false;
+      if (frame.selected) return undefined; // already the representative
+      setRepresentative.mutate(frame.id, {
+        onSuccess: () => showToast("Set as the representative frame", "success"),
+      });
       return undefined;
     },
   });
@@ -393,9 +429,18 @@ export function ExperimentCorpusPage(): JSX.Element {
   const samplePos = sampleTotal > 0 ? cursor.sampleIndex + 1 : 0;
   const frameTotal = activeFrames.length;
   const framePos = frameTotal > 0 ? cursor.frameIndex + 1 : 0;
-  const cullActiveFrame = (status: "accepted" | "rejected" | null): void => {
+  const cullActiveFrame = (status: Verdict): void => {
     if (activeSample == null || activeFrame == null) return;
-    batch.mutate({ sampleId: activeSample.id, exposureId: activeFrame.id, status });
+    const next = verdictNext(activeFrame.status ?? null, status);
+    batch.mutate({ sampleId: activeSample.id, exposureId: activeFrame.id, status: next });
+    const verb = next === "rejected" ? "dropped" : next === "accepted" ? "kept" : "restored";
+    showToast(`1 frame ${verb}`, "success");
+  };
+  const markRepresentative = (): void => {
+    if (activeSample == null || activeFrame == null || activeFrame.selected) return;
+    setRepresentative.mutate(activeFrame.id, {
+      onSuccess: () => showToast("Set as the representative frame", "success"),
+    });
   };
 
   // Dock-as-action-bar (items 2/5): the floating CullBar/ComposeBar are gone.
@@ -598,8 +643,13 @@ export function ExperimentCorpusPage(): JSX.Element {
           </>
         )}
 
-        {/* Destinations — Loupe (bordered neutral verb) + Focus (the primary) */}
+        {/* Destinations — Mark rep (flags the active frame as the sample's
+            representative, the one Focus opens) + Loupe + Focus (the primary) */}
         <div className="flex items-center gap-1">
+          <Button variant="ghost" data-testid="dock-mark-rep"
+            disabled={activeFrame == null || (activeFrame.selected ?? false)}
+            onClick={markRepresentative}
+          >Mark rep<KbKey className="ml-1.5">R</KbKey></Button>
           <Button variant="outline" data-testid="dock-loupe"
             onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}/loupe`); }}
           >Loupe<KbKey className="ml-1.5">L</KbKey></Button>
