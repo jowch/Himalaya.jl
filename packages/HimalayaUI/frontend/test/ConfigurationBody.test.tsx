@@ -139,6 +139,39 @@ describe("ConfigurationBody", () => {
     expect(triggerScanMutate).toHaveBeenCalledWith(true);
   });
 
+  // --- 5d: undo then redo a geometry override (button + keyboard) ---
+  it("after an override, Undo PATCHes the old value and Redo PATCHes the new one", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 10 }));
+
+    // Undo restores the prior raw value (9).
+    fireEvent.click(screen.getByRole("button", { name: /undo last change/i }));
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 9 }));
+
+    // The Redo affordance is now offered; clicking it replays the new value.
+    fireEvent.click(screen.getByRole("button", { name: /redo last change/i }));
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 10 }));
+  });
+
+  it("⌘⇧Z redoes a geometry override after ⌘Z undoes it", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "11" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+
+    // ⌘Z on the window (focus on body) undoes.
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 9 }));
+    // ⌘⇧Z redoes.
+    fireEvent.keyDown(window, { key: "z", metaKey: true, shiftKey: true });
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 11 }));
+  });
+
   it("editing a NON-pattern (geometry) field does NOT call triggerScanMutate", () => {
     wrap(<ConfigurationBody experimentId={7} />);
     // Override Beam energy (geometry, not a pattern)

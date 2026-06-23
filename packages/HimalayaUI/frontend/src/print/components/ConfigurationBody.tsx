@@ -1,18 +1,21 @@
-import { useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { useExperiment, useLoads, useUpdateExperiment, useTriggerScan } from "../../queries";
 import { useUndoStack } from "../../hooks/useUndoStack";
+import { suppressGlobalKeys } from "../../lib/keys";
 import { Card } from "../ui/Card";
 import { GeometryLedger, type GeometryRow } from "./GeometryLedger";
 import { AcquisitionTimeline, type AcqSession } from "./AcquisitionTimeline";
 import { SourcesCard, type SourceRow } from "./SourcesCard";
 import type { ExperimentPatch } from "../../api";
 
-/** Undo entry: records the field key, its previous raw value, and its
- *  previous source so Revert/Undo can replay the inverse write. */
+/** Undo entry: records the field key, its previous raw value (+ source) so
+ *  Revert/Undo can replay the inverse write, and its new value so Redo can
+ *  replay the forward write. */
 interface UndoEntry {
   key: string;
   prevValue: number | string;
   prevSource: string;
+  newValue: number | string;
 }
 
 /** Pattern field keys that trigger a forced rescan on edit (the set of file
@@ -202,9 +205,10 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
     if (newRaw === undefined || newRaw === prevRaw || !row) return;
     const patchKey = GEOM_PATCH_KEY[editingKey];
     if (!patchKey) return;
-    // Record undo entry BEFORE the PATCH so Undo can restore the old value.
+    // Record undo entry BEFORE the PATCH so Undo can restore the old value and
+    // Redo can replay the new one.
     if (prevRaw !== undefined) {
-      undoStack.push({ key: editingKey, prevValue: prevRaw, prevSource: row.source });
+      undoStack.push({ key: editingKey, prevValue: prevRaw, prevSource: row.source, newValue: newRaw });
     }
     updateMutate({ [patchKey]: newRaw });
   };
@@ -232,6 +236,32 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
       updateMutate({ [patchKey]: entry.prevValue });
     }
   };
+
+  const handleRedo = () => {
+    const entry = undoStack.popRedo();
+    if (!entry) return;
+    const patchKey = GEOM_PATCH_KEY[entry.key];
+    if (patchKey) {
+      updateMutate({ [patchKey]: entry.newValue });
+    }
+  };
+
+  // ⌘Z / ⌘⇧Z geometry undo/redo. Guarded by suppressGlobalKeys so a chord
+  // inside the description textarea or an inline geometry Input stays native
+  // text-undo (the field owns the keyboard there).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      if (suppressGlobalKeys(e)) return;
+      e.preventDefault();
+      if (e.shiftKey) handleRedo();
+      else handleUndo();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // handleUndo/handleRedo close only over stable mutate/undoStack refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSourceEdit = (key: string, value: string) => {
     const patchKey = key as keyof ExperimentPatch;
@@ -302,6 +332,8 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
           onRevert={handleRevert}
           onUndo={handleUndo}
           canUndo={undoStack.canUndo}
+          onRedo={handleRedo}
+          canRedo={undoStack.canRedo}
           discrepancyCount={0}
           {...(editingKey !== undefined ? { editingKey, editDraft } : {})}
           onEditDraftChange={setEditDraft}

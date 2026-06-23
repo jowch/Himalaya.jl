@@ -76,17 +76,22 @@ const SCOPING_FIXTURE = (
 // gestures push a typed entry so each is recoverable — skip and reorder reach
 // parity (no asymmetric freedom): a `flag` entry restores one member's skip
 // state; a `reorder` entry restores the WHOLE prior display order.
+// Each entry carries BOTH directions: the `prev*` fields restore the pre-edit
+// state (undo), and the forward fields replay the post-edit state (redo). A
+// `flag` is a pure toggle, so redo is `!prev` and needs no extra field.
 type HistoryEntry =
   | { type: "flag"; id: number; prev: boolean; label: string }
-  | { type: "reorder"; prevOrder: number[]; label: string }
+  | { type: "reorder"; prevOrder: number[]; nextOrder: number[]; label: string }
   // SC-VALUECORRECT: an inline value correction is recoverable too — `prev` is
-  // the pre-edit read so skip/reorder/edit reach undo parity.
-  | { type: "value"; id: number; prev: string; label: string }
+  // the pre-edit read, `next` the corrected one, so skip/reorder/edit reach
+  // undo AND redo parity.
+  | { type: "value"; id: number; prev: string; next: string; label: string }
   // SCOPE-LOOSEADD: pulling a loose candidate into the members is recoverable —
   // `prevLoose` is the original value-less candidate so undo restores it whole
-  // to the loose list (carried in the entry so undo needs no live `rows` read,
-  // keeping every history updater pure — no StrictMode double-apply).
-  | { type: "add"; id: number; prevLoose: OrderingRow; label: string };
+  // to the loose list, and `value` is the named value so redo re-seats it
+  // (both carried in the entry so neither direction reads live state, keeping
+  // every history updater pure — no StrictMode double-apply).
+  | { type: "add"; id: number; prevLoose: OrderingRow; value: string; label: string };
 
 /**
  * ColdAssignSection: the shared assign body (ColdAssignPanel + the gated
@@ -359,7 +364,7 @@ export function SeriesScopingPage(): JSX.Element {
       const changed =
         next.length !== order.length || next.some((id, i) => id !== order[i]);
       if (!changed) return;
-      undoStack.push({ type: "reorder", prevOrder: order, label: "reorder" });
+      undoStack.push({ type: "reorder", prevOrder: order, nextOrder: next, label: "reorder" });
       setOrder(next);
     },
     [order],
@@ -460,7 +465,7 @@ export function SeriesScopingPage(): JSX.Element {
   const editValue = (id: number, value: string): void => {
     const m = rows.find((r) => r.sampleId === id);
     if (!m || value === m.value) return;
-    undoStack.push({ type: "value", id, prev: m.value, label: `smp_${id}` });
+    undoStack.push({ type: "value", id, prev: m.value, next: value, label: `smp_${id}` });
     setRows((cur) => cur.map((r) => (r.sampleId === id ? { ...r, value } : r)));
   };
 
@@ -478,7 +483,7 @@ export function SeriesScopingPage(): JSX.Element {
     if (v === "") return;
     const c = loose.find((r) => r.sampleId === id);
     if (!c) return;
-    undoStack.push({ type: "add", id, prevLoose: c, label: `smp_${id}` });
+    undoStack.push({ type: "add", id, prevLoose: c, value: v, label: `smp_${id}` });
     setLoose((cur) => cur.filter((r) => r.sampleId !== id));
     // include:true is load-bearing — loose matches carry include:false, and the
     // commit gate (isKept) drops a non-included row, so a spread that kept the
@@ -514,24 +519,43 @@ export function SeriesScopingPage(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undoStack.pop]);
 
+  // Redo replays the FORWARD state of the most-recently-undone gesture (mirror
+  // of undo). Every applier is pure and reads only the entry's forward fields.
+  const redo = useCallback((): void => {
+    const e = undoStack.popRedo();
+    if (!e) return;
+    if (e.type === "flag") {
+      // flag is a pure toggle: redo re-applies the toggled (post-edit) value.
+      setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, flagged: !e.prev } : r)));
+    } else if (e.type === "value") {
+      setRows((cur) => cur.map((r) => (r.sampleId === e.id ? { ...r, value: e.next } : r)));
+    } else if (e.type === "add") {
+      // add: re-seat the candidate as a kept member (mirror of addLoose).
+      setLoose((cur) => cur.filter((r) => r.sampleId !== e.id));
+      setRows((cur) => [...cur, { ...e.prevLoose, value: e.value, flagged: false, include: true }]);
+      setOrder((cur) => (cur.includes(e.id) ? cur : [...cur, e.id]));
+    } else {
+      // reorder: re-apply the post-reorder display order.
+      setOrder(e.nextOrder);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoStack.popRedo]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        // ⌘⇧Z is REDO, not undo. Scoping has no redo stack yet (useUndoStack is
-        // pop-only), so decline ⌘⇧Z rather than firing undo on it — the old
-        // guard matched metaKey+'z' regardless of Shift, so ⌘⇧Z wrongly undid.
-        // (Real redo tracked in ledger 3c-redo.)
-        if (e.shiftKey) return;
         // Guard BEFORE preventDefault — ⌘Z inside an input must stay the
-        // browser's native text undo, not the page's skip-undo.
+        // browser's native text undo/redo, not the page's history.
         if (suppressGlobalKeys(e)) return;
         e.preventDefault();
-        undo();
+        // ⌘⇧Z is REDO, plain ⌘Z is UNDO.
+        if (e.shiftKey) redo();
+        else undo();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo]);
+  }, [undo, redo]);
 
   // Trace + dominant-phase maps, keyed exposure → sample (carried wiring).
   const pickerById = useMemo(() => {
@@ -608,6 +632,7 @@ export function SeriesScopingPage(): JSX.Element {
   const footState = buildFootState(keptCount, skippedCount);
   const canBuild = canScopeBuild(rows, proposal.orderingKey);
   const lastLabel = undoStack.top?.label;
+  const redoLabel = undoStack.redoTop?.label;
 
   // SC-POLISH2: Discard moved from the page top into each plate foot beside
   // "Confirm & build", and guarded against silently destroying in-progress
@@ -960,6 +985,9 @@ export function SeriesScopingPage(): JSX.Element {
               count={orderCaption}
               {...(undoStack.canUndo
                 ? { onUndo: undo, ...(lastLabel ? { undoLabel: `Step back: ${lastLabel}` } : {}) }
+                : {})}
+              {...(undoStack.canRedo
+                ? { onRedo: redo, ...(redoLabel ? { redoLabel: `Step forward: ${redoLabel}` } : {}) }
                 : {})}
               rows={sorted.map((r, i) => {
                 const dprops = dragItemProps(i);

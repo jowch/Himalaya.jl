@@ -23,6 +23,8 @@ export interface ScopePlateProps {
   count: string;
   onUndo?: () => void;
   undoLabel?: string;
+  onRedo?: () => void;
+  redoLabel?: string;
   /** ScopeSampleRow×N (children-slotting). */
   rows: ReactNode;
   /** ScopeCandidateRow×N OR the empty node. */
@@ -72,6 +74,8 @@ export function ScopePlate({
   count,
   onUndo,
   undoLabel,
+  onRedo,
+  redoLabel,
   rows,
   candidates,
   preview,
@@ -137,6 +141,16 @@ export function ScopePlate({
               {...(undoLabel ? { title: undoLabel } : {})}
             >
               ↺ Undo last change
+            </button>
+          ) : null}
+          {onRedo ? (
+            <button
+              type="button"
+              onClick={onRedo}
+              className="text-caption font-semibold text-accent hover:underline"
+              {...(redoLabel ? { title: redoLabel } : {})}
+            >
+              ↻ Redo
             </button>
           ) : null}
           {/* SC-CAPTION-MONO: the count is descriptive chrome, not a measured

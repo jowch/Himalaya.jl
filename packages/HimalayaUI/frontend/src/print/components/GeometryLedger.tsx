@@ -18,6 +18,8 @@ export interface GeometryLedgerProps {
   onRevert: (key: string) => void;
   onUndo: () => void;
   canUndo: boolean;
+  onRedo: () => void;
+  canRedo: boolean;
   discrepancyCount?: number;
   className?: string;
   /** Key of the row currently being inline-edited (undefined = not editing). */
@@ -76,6 +78,16 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
               aria-label="Undo last change"
             >
               Undo last change
+            </button>
+          ) : null}
+          {p.canRedo ? (
+            <button
+              type="button"
+              className="text-xs font-semibold text-accent"
+              onClick={p.onRedo}
+              aria-label="Redo last change"
+            >
+              Redo
             </button>
           ) : null}
           <span className="text-xs text-ink-faint">auto-derived</span>

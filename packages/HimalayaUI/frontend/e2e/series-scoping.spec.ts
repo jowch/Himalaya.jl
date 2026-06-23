@@ -146,6 +146,32 @@ test.describe("series scoping — greenfield DOM", () => {
     await expect(grip).toBeFocused();
   });
 
+  test("⌘Z undoes a reorder and ⌘⇧Z redoes it (5d)", async ({ page }) => {
+    const captured = { body: null as unknown };
+    await mockScoping(page, captured);
+    await page.goto("/series/new");
+
+    const rows = page.getByTestId("scope-sample-row");
+    await expect(rows.first()).toContainText("A_1to1");
+
+    // Reorder: move B_2to1 to the top.
+    const grip = page.getByRole("button", { name: /^reorder B_2to1$/i });
+    await grip.focus();
+    await page.keyboard.press("ArrowUp");
+    await expect(rows.first()).toContainText("B_2to1");
+
+    // ⌘Z restores the original order.
+    await page.keyboard.press("Meta+z");
+    await expect(rows.first()).toContainText("A_1to1");
+
+    // The Redo affordance is now offered on the plate.
+    await expect(page.getByRole("button", { name: /redo/i })).toBeVisible();
+
+    // ⌘⇧Z replays the reorder.
+    await page.keyboard.press("Meta+Shift+z");
+    await expect(rows.first()).toContainText("B_2to1");
+  });
+
   test("Confirm & build is enabled when members exist and navigates to /series on success", async ({ page }) => {
     const captured = { body: null as unknown };
     await mockScoping(page, captured);

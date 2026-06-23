@@ -8,7 +8,14 @@ const ROWS: GeometryRow[] = [
   { key: "flight_path", label: "Flight path", value: "1.81 m", source: "user" },
 ];
 
-const cb = { onOverride: () => {}, onRevert: () => {}, onUndo: () => {}, canUndo: false };
+const cb = {
+  onOverride: () => {},
+  onRevert: () => {},
+  onUndo: () => {},
+  canUndo: false,
+  onRedo: () => {},
+  canRedo: false,
+};
 
 describe("GeometryLedger", () => {
   it("renders each row with a provenance chip", () => {
@@ -41,6 +48,14 @@ describe("GeometryLedger", () => {
     rerender(<GeometryLedger rows={ROWS} {...cb} canUndo onUndo={onUndo} />);
     fireEvent.click(screen.getByRole("button", { name: /undo last change/i }));
     expect(onUndo).toHaveBeenCalled();
+  });
+  it("Redo is gated on canRedo", () => {
+    const onRedo = vi.fn();
+    const { rerender } = render(<GeometryLedger rows={ROWS} {...cb} canRedo={false} onRedo={onRedo} />);
+    expect(screen.queryByRole("button", { name: /redo last change/i })).toBeNull();
+    rerender(<GeometryLedger rows={ROWS} {...cb} canRedo onRedo={onRedo} />);
+    fireEvent.click(screen.getByRole("button", { name: /redo last change/i }));
+    expect(onRedo).toHaveBeenCalled();
   });
 
   // --- inline edit-in-place tests ---
