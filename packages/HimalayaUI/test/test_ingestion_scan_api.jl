@@ -325,6 +325,29 @@ end
         end
     end
 
+    @testset "rearm_rescan_schedulers! arms only completed experiments on boot (6c-2)" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            done_id = HimalayaUI.create_experiment!(db;
+                name = "done", path = dir, data_dir = dir, analysis_dir = dir)
+            busy_id = HimalayaUI.create_experiment!(db;
+                name = "busy", path = dir, data_dir = dir, analysis_dir = dir)
+            DBInterface.execute(db,
+                "UPDATE experiments SET ingest_status = 'complete' WHERE id = ?", [done_id])
+            DBInterface.execute(db,
+                "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [busy_id])
+            try
+                HimalayaUI.stop_all_rescan_timers!()    # clean slate
+                HimalayaUI.rearm_rescan_schedulers!(db)
+                @test haskey(HimalayaUI.RESCAN_TIMERS, done_id)   # completed → armed
+                @test !haskey(HimalayaUI.RESCAN_TIMERS, busy_id)  # mid-scan → skipped
+            finally
+                HimalayaUI.stop_all_rescan_timers!()
+                SQLite.close(db)
+            end
+        end
+    end
+
     @testset "DELETE /api/experiments/{id} removes experiment + cascade" begin
         db, dir, exp_id = scan_test_db()
         lid = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 2)

@@ -288,6 +288,34 @@ function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
 end
 
 """
+    rearm_rescan_schedulers!(db)
+
+Re-arm the per-experiment rescan timers on server boot (6c-2). The registry
+(`RESCAN_TIMERS`) is in-memory, so a restart drops every scheduler; without this
+an already-ingested experiment would never auto-rescan again until someone
+triggers a manual scan. Arms a scheduler for each experiment whose ingest has
+completed. Per-experiment failures are logged, never fatal (one bad row must not
+abort boot).
+"""
+function rearm_rescan_schedulers!(db::SQLite.DB)
+    rows = try
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM experiments WHERE ingest_status = 'complete'"))
+    catch err
+        @warn "rearm_rescan_schedulers!: query failed" exception = err
+        return nothing
+    end
+    for r in rows
+        try
+            start_rescan_scheduler!(db, Int(r.id))
+        catch err
+            @warn "rearm_rescan_schedulers!: failed to arm" experiment_id = Int(r.id) exception = err
+        end
+    end
+    nothing
+end
+
+"""
     _rescan_tick!(db, experiment_id; cheap_check_fn=nothing, kwargs...)
 
 One tick of the per-experiment rescan scheduler. Called from the `@spawn`'d
@@ -421,6 +449,7 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     bind_db!(db)
     register_routes!()
     start_gc_timer!(db)
+    rearm_rescan_schedulers!(db)   # 6c-2: timers are in-memory; re-arm on boot
     # parallel = true wraps each request in `Threads.@spawn`, dispatching
     # handlers across the default thread pool. Without it, every handler
     # runs cooperatively on HTTP.jl's single interactive thread — even with
