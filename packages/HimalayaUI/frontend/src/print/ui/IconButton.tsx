@@ -14,6 +14,9 @@ export interface IconButtonProps
    *  (the destructive baseline signal — DESIGN.md §2), strengthening to a subtle
    *  red wash on hover. */
   tone?: IconButtonTone;
+  /** Render as a bordered box (hair-strong outline, paper ground, one radius
+   *  step) instead of a bare glyph — the pages2 dock's ↑/↓ stepper buttons. */
+  boxed?: boolean;
   /** render the canonical dismiss glyph (×, U+00D7) as the content. */
   dismiss?: boolean;
   /** glyph or SVG when not a dismiss button (chevron, trash, reorder arrow). */
@@ -36,6 +39,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   {
     label,
     tone = "ghost",
+    boxed = false,
     dismiss = false,
     className = "",
     children,
@@ -60,7 +64,10 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
           // `.icon-button` (styles.css) supplies the >=44px hit-area pseudo-element
           // so the visible box stays compact and never balloons dense chip rows.
           "icon-button relative inline-flex items-center justify-center",
-          "rounded p-1 leading-none transition-colors",
+          "leading-none transition-colors",
+          boxed
+            ? "h-[26px] w-[26px] rounded-md border border-hair-strong bg-paper"
+            : "rounded p-1",
           "focus-visible:outline focus-visible:outline-2",
           "focus-visible:outline-offset-2 focus-visible:outline-accent",
           "disabled:cursor-not-allowed disabled:opacity-30",

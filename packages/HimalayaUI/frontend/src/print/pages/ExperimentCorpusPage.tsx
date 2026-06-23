@@ -523,34 +523,35 @@ export function ExperimentCorpusPage(): JSX.Element {
           ‹ Experiments
         </a>
 
-        <span className="w-px self-stretch bg-hair" aria-hidden />
+        <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
 
-        {/* Sample stepper — ↑/↓ axis, current / total readout */}
-        <div className="flex items-center gap-1">
-          <span className="text-meta text-ink-soft">Sample</span>
-          <IconButton label="Previous sample" tone="ghost" disabled={cursor.sampleIndex === 0}
+        {/* Sample stepper — ↑/↓ axis, current / total readout (pages2 dock: faint
+            label, bordered ↑/↓ boxes, faint total). */}
+        <div className="flex items-center gap-1.5">
+          <span className="mr-0.5 text-meta text-ink-faint">Sample</span>
+          <IconButton label="Previous sample" tone="ghost" boxed disabled={cursor.sampleIndex === 0}
             onClick={() => clampSample(-1)} data-testid="dock-prev-sample">↑</IconButton>
           <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
-            data-testid="dock-sample-count">{samplePos} / {sampleTotal}</span>
-          <IconButton label="Next sample" tone="ghost" disabled={cursor.sampleIndex >= scopedSamples.length - 1}
+            data-testid="dock-sample-count">{samplePos}<span className="font-normal text-ink-faint"> / {sampleTotal}</span></span>
+          <IconButton label="Next sample" tone="ghost" boxed disabled={cursor.sampleIndex >= scopedSamples.length - 1}
             onClick={() => clampSample(1)} data-testid="dock-next-sample">↓</IconButton>
         </div>
 
-        <span className="w-px self-stretch bg-hair" aria-hidden />
+        <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
 
-        {/* Frame stepper — ‹/› axis within the active sample */}
-        <div className="flex items-center gap-1">
-          <span className="text-meta text-ink-soft">Frame</span>
-          <IconButton label="Previous frame" tone="ghost" disabled={cursor.frameIndex === 0}
+        {/* Frame stepper — ←/→ axis within the active sample */}
+        <div className="flex items-center gap-1.5">
+          <span className="mr-0.5 text-meta text-ink-faint">Frame</span>
+          <IconButton label="Previous frame" tone="ghost" boxed disabled={cursor.frameIndex === 0}
             onClick={() => clampFrame(-1)} data-testid="dock-prev-frame">←</IconButton>
           <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
-            data-testid="dock-frame-count">{framePos} / {frameTotal}</span>
-          <IconButton label="Next frame" tone="ghost"
+            data-testid="dock-frame-count">{framePos}<span className="font-normal text-ink-faint"> / {frameTotal}</span></span>
+          <IconButton label="Next frame" tone="ghost" boxed
             disabled={cursor.frameIndex >= frameTotal - 1}
             onClick={() => clampFrame(1)} data-testid="dock-next-frame">→</IconButton>
         </div>
 
-        <span className="w-px self-stretch bg-hair" aria-hidden />
+        <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
 
         {/* Cull verbs — act on the multi-frame selection when one exists (the
             old floating CullBar's job, now folded into the dock, items 2/5),
@@ -558,7 +559,8 @@ export function ExperimentCorpusPage(): JSX.Element {
             appear only while a selection is live. */}
         <div className="flex items-center gap-1">
           {hasSel && (
-            <span className="text-meta text-ink-soft mr-1" data-testid="dock-selection-count">
+            <span className="mr-1 inline-flex items-center gap-2 text-meta font-semibold text-ink" data-testid="dock-selection-count">
+              <span className="h-2 w-2 rounded-sm bg-accent" aria-hidden />
               {selected.size} frame{selected.size === 1 ? "" : "s"}
               {selSpread > 1 ? ` · ${selSpread} samples` : ""}
             </span>
@@ -592,13 +594,13 @@ export function ExperimentCorpusPage(): JSX.Element {
               <Button variant="ghost" data-testid="dock-clear-checks"
                 onClick={() => setCheckedSamples(new Set())}>Clear</Button>
             </div>
-            <span className="w-px self-stretch bg-hair" aria-hidden />
+            <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
           </>
         )}
 
-        {/* Destinations — Loupe (key-chipped) + Focus (the dedicated primary) */}
+        {/* Destinations — Loupe (bordered neutral verb) + Focus (the primary) */}
         <div className="flex items-center gap-1">
-          <Button variant="ghost" data-testid="dock-loupe"
+          <Button variant="outline" data-testid="dock-loupe"
             onClick={() => { if (activeSample == null) return; navigate(`/sample/${activeSample.id}/loupe`); }}
           >Loupe<KbKey className="ml-1.5">L</KbKey></Button>
           <Button variant="accent" data-testid="dock-focus"

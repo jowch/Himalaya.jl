@@ -47,13 +47,15 @@ const variantClass: Record<ButtonVariant, string> = {
     "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   // Coloured-outline cull verbs (dock Drop/Keep, spec §5): the verb's hue
-  // (accent for Drop, success for Keep) on the border + text over a light
-  // plate, filling on hover. Accent Drop matches CullBar (one Drop hue app-wide).
+  // (accent for Drop, success for Keep) as text on a SOFTENED (40%-mixed) border
+  // over the transparent bar, filling solid on hover. The soft resting border +
+  // transparent ground match the pages2 dock mock (was a full-saturation accent
+  // line on a plate). Accent Drop matches the one Drop hue app-wide.
   outlineAccent:
-    "border border-accent bg-plate text-accent hover:bg-accent hover:text-paper " +
+    "border border-accent-soft bg-transparent text-accent hover:bg-accent hover:text-paper hover:border-accent " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   outlineSuccess:
-    "border border-success bg-plate text-success hover:bg-success hover:text-paper " +
+    "border border-success-soft bg-transparent text-success hover:bg-success hover:text-paper hover:border-success " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghostInverse:
     "bg-transparent text-paper/70 hover:text-paper border border-transparent " +

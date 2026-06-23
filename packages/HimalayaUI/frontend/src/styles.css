@@ -29,6 +29,12 @@
      band reads YELLOWISH (≈ oklch 0.911 0.022 79), not the pinker accent-wash.
      Named token so bg-row-cursor is a sanctioned utility. */
   --color-row-cursor: color-mix(in oklch, var(--color-accent) 10%, var(--color-paper-sunk));
+  /* Softened verb-border tints — the pages2 dock draws cull verbs (Drop/Keep) on
+     a 40%-accent/60%-white border over a transparent bar, not a full-saturation
+     accent line. Named tokens so border-accent-soft / border-success-soft are
+     sanctioned utilities. */
+  --color-accent-soft:  color-mix(in oklch, var(--color-accent) 40%, white);
+  --color-success-soft: color-mix(in oklch, var(--color-success) 40%, white);
   /* Status tokens, paper-tuned for AA on plate (DESIGN.md `colors:` /
      §Status). R0c (#223) corrected `success` from the drifted mint
      (oklch(0.72 0.08 155)) to the canonical sage — the same value the loupe

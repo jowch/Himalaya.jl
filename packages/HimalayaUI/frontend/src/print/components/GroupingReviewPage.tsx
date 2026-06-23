@@ -572,14 +572,16 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
               ‹ Samples
             </button>
 
-            <span className="w-px self-stretch bg-hair" aria-hidden />
+            <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
 
-            {/* Navigation section — roving ↑/↓ cursor over samples + readout. */}
-            <div className="flex items-center gap-1">
-              <span className="text-meta text-ink-soft">Sample</span>
+            {/* Navigation section — roving ↑/↓ cursor over samples + readout
+                (pages2 dock: faint label, bordered ↑/↓ boxes, faint total). */}
+            <div className="flex items-center gap-1.5">
+              <span className="mr-0.5 text-meta text-ink-faint">Sample</span>
               <IconButton
                 label="Previous sample"
                 tone="ghost"
+                boxed
                 disabled={navTotal === 0 || cursorIdx === 0}
                 onClick={() => moveCursor(-1)}
                 data-testid="grouping-prev-sample"
@@ -590,11 +592,12 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
                 className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
                 data-testid="grouping-sample-count"
               >
-                {navPos} / {navTotal}
+                {navPos}<span className="font-normal text-ink-faint"> / {navTotal}</span>
               </span>
               <IconButton
                 label="Next sample"
                 tone="ghost"
+                boxed
                 disabled={navTotal === 0 || cursorIdx === navTotal - 1}
                 onClick={() => moveCursor(1)}
                 data-testid="grouping-next-sample"
@@ -603,7 +606,7 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
               </IconButton>
             </div>
 
-            <span className="w-px self-stretch bg-hair" aria-hidden />
+            <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
 
             {/* Action section — bordered, coloured verbs on the cursored sample
                 + the multi-select. */}
@@ -626,8 +629,9 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
               </Button>
               {selection.length > 0 && (
                 <>
-                  <span className="w-px self-stretch bg-hair" aria-hidden />
-                  <span className="text-meta text-ink-soft" data-testid="grouping-selection-count">
+                  <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
+                  <span className="inline-flex items-center gap-2 text-meta font-semibold text-ink" data-testid="grouping-selection-count">
+                    <span className="h-2 w-2 rounded-sm bg-accent" aria-hidden />
                     {selection.length} selected
                   </span>
                   <Button

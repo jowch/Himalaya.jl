@@ -37,7 +37,7 @@ export function Dock({ children, className = "", testId = "dock" }: DockProps): 
   return (
     <div
       data-testid={testId}
-      className={`fixed bottom-0 left-0 right-0 z-40 flex items-center gap-2 border-t border-hair bg-plate px-4 py-2 shadow-[0_-2px_8px_0_rgba(0,0,0,0.06)] ${className}`}
+      className={`fixed bottom-0 left-0 right-0 z-40 flex items-center gap-2 border-t border-hair-strong bg-plate px-4 py-2 shadow-[0_-7px_24px_-10px_rgba(40,30,20,0.22)] ${className}`}
     >
       {children}
     </div>
