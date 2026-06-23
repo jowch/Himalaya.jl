@@ -11,6 +11,7 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Kicker } from "../ui/Kicker";
 import { Input } from "../ui/Input";
+import { IconButton } from "../ui/IconButton";
 import { Chip } from "../ui/Chip";
 
 /**
@@ -202,6 +203,14 @@ function ConfigurationFirstRun(): JSX.Element {
   // Local editable field state, synced from the draft once it resolves; commits
   // on blur/Enter via patch() (which re-keys the manifest query where relevant).
   const [nameLocal, setNameLocal] = useState(name);
+  // The title shows as text at rest; the pencil opens a wide rename field.
+  const [editingName, setEditingName] = useState(false);
+  const commitName = (): void => {
+    const trimmed = nameLocal.trim();
+    setNameLocal(trimmed);          // keep the rest-state display in sync with what's saved
+    patch({ name: trimmed });
+    setEditingName(false);
+  };
   const [analysisDirLocal, setAnalysisDirLocal] = useState(analysis_dir);
   const [setupFileLocal, setSetupFileLocal] = useState(setup_file);
   const [imagePattern, setImagePattern] = useState(patterns.image ?? DEFAULT_PATTERNS.image);
@@ -281,21 +290,38 @@ function ConfigurationFirstRun(): JSX.Element {
             <Kicker tone="accent" className="mb-1">
               New experiment · Review before scan
             </Kicker>
-            {/* The title is editable in place; a quiet cue says so (note 6). */}
-            <div className="flex items-baseline gap-2">
+            {/* The title reads as text; the pencil opens a wide rename field. The
+                "rename" cue lives on the pencil (its label/tooltip), not inline. */}
+            {editingName ? (
               <Input
                 variant="title"
                 testId="config-name"
                 value={nameLocal}
                 onValueChange={setNameLocal}
-                onBlur={() => patch({ name: nameLocal.trim() })}
+                className="w-full"
+                autoFocus
+                onBlur={commitName}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") { patch({ name: nameLocal.trim() }); (e.target as HTMLElement).blur(); }
+                  if (e.key === "Enter") { e.preventDefault(); commitName(); }
+                  else if (e.key === "Escape") { e.preventDefault(); setNameLocal(name); setEditingName(false); }
                 }}
                 aria-label="Experiment name"
               />
-              <span className="text-caption text-ink-faint shrink-0">click to rename</span>
-            </div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <h1 data-testid="config-name" className="text-display text-ink truncate">
+                  {nameLocal || "Untitled"}
+                </h1>
+                <IconButton
+                  label="Rename experiment"
+                  tone="ghost"
+                  className="shrink-0 self-center"
+                  onClick={() => setEditingName(true)}
+                >
+                  ✎
+                </IconButton>
+              </div>
+            )}
             <p className="text-caption font-mono text-ink-soft mt-1 truncate">{root}</p>
           </div>
           {/* Task framing — what this screen is for (note 6). */}

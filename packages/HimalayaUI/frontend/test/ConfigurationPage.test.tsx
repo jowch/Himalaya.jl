@@ -112,7 +112,10 @@ describe("ConfigurationPage (first-run mode)", () => {
     expect(await screen.findByText(/2 matched/i)).toBeInTheDocument();
     expect(screen.getByText(/auto-derived/i)).toBeInTheDocument();   // the Geometry card heading
     expect(screen.getByText(/421\.3/)).toBeInTheDocument();
-    // The Name field is prefilled from the resolver (editable).
+    // The title reads as text at rest (prefilled from the resolver); the pencil
+    // opens the rename field, prefilled with the same value.
+    expect(screen.getByTestId("config-name")).toHaveTextContent("run42");
+    fireEvent.click(screen.getByRole("button", { name: /rename experiment/i }));
     expect(
       (screen.getByTestId("config-name").querySelector("input") as HTMLInputElement).value,
     ).toBe("run42");
