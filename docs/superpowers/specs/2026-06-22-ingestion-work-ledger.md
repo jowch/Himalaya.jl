@@ -73,6 +73,17 @@ spec wins on *what to build*, this ledger wins on *what is left and in what orde
 - [x] **8b. P1 — grouping Confirm/Back → 404** (`9abb40c5`) — absolute route in `AppRoutes.tsx`.
 - [x] **8c. P2 — scanning UI auto-complete** (`95ef696f` + review fix `0e136f58`) — root cause was a stale live overlay: the at-most-once `/api/events` stream drops the terminal `ingest_complete` frame on an EventSource reconnect (benign EPIPE), leaving `ingestInFlight` stuck. Fixed with one shared `effectiveIngestStatus` rule (**a TERMINAL persisted state always wins**, self-healing both scan kinds) + a scoped `useExperiment` `refetchInterval`. frontend-reviewer caught 2 P1s in the first cut (verified vs `routes_experiments.jl`: the rescan route sets the row scanning→complete just like an initial scan, so the original "analyzing-overlay-wins" branch reintroduced the bug for rescans, and the corpus surface choice keyed on persisted-`scanning` which both routes set) → fixed in `0e136f58` (drop the branch; corpus surface gates on overlay phase + `last_scanned_at`). Live-verified on a fresh DB: scan completes → grouping auto-flips to review + enabled Confirm, no reload.
 
+## Funnel UX polish — live dev-walk session (2026-06-23, all committed)
+
+A live walk of the new-experiment funnel (served fresh DB on :8081) drove a batch of refinements, each gated + (where backend/shared) reviewer-clean:
+- **Picker focus-steal fix** (`28fa0ba0`) — `DirectoryPickerField` gave the suggestion `Popover` no `initialFocusRef`, so a click stole focus to the dialog panel; typing + Tab-completion never reached the input. Wired `Input.inputRef`→`Popover.initialFocusRef`. (Corrects the earlier 9d "verified live" claim — popover-renders ≠ field-usable. See [[feedback-live-verify-full-interaction]].)
+- **Suggestion basenames** (`b3474eba`) — dropdown shows each option's basename (full path on `title`); selecting completes the full path.
+- **New-experiment layout** (`6d3aecc7`) — full-width bar, pre-flight checks moved below it, Card dropped; **+ a structure-match check** (advisory) driven by `/api/fs/resolve` (`✓ looks like an experiment` when analysis_dir + integration_pattern detected, muted note otherwise; never gates).
+- **First-run title → pencil-to-edit** (`46705302`) — name reads as text + pencil; click opens a WIDE rename field; hint moved onto the pencil.
+- **Pattern fields → Edit/Done mechanism** (`96822a72`) — read-only value + Edit (was always-open inputs); reusable `EditableRow` helper.
+- **Geometry fields → editable via a CREATE-TIME override** (`c2ff36e3` + P2 fix `40f883f3`) — couldn't reuse `PATCH /:id` (no experiment until Approve), so the create route now accepts a `geometry` body, stamped `source='user'`; the scan's `_update_geometry_if_not_user!` never clobbers it. `GeometryEditRow` (single) + `BeamCenterRow` (x,y pair, blur-commit gated on `relatedTarget`). Draft `geometry` map + `CreateExperimentBody.geometry`. himalaya-reviewer + frontend-reviewer both clean (frontend caught the beam-center outside-click lost-edit P2 → fixed). **Note (pre-existing, logged below): the scan derives geometry from PRP, which has no beam center, so beam center lands empty after scan even though the preview shows it from the setup file — now overridable here.**
+- Gates across the batch: frontend build + full vitest (→3022) + targeted e2e; backend `make test-parallel` 6/6.
+
 ## Inbox (unplaced discoveries)
 
 _Append `- [ ] <what> · <anchor> · blocks/blocked-by <item>` here, then re-sort into the list above._
