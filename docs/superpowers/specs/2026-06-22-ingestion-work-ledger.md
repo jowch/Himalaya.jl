@@ -112,6 +112,14 @@ _Append `- [ ] <what> · <anchor> · blocks/blocked-by <item>` here, then re-sor
 
 Gate: frontend build + vitest 3024 green; frontend-reviewer clean. Backend untouched.
 
+**Grouping-review live-walk batch 2 (2026-06-23, `433691d3` + review-fix `e46737f6`) — 4 items (frontend-reviewer: 1 P1 + 1 P2, both FIXED):**
+- [x] **Split failed "exposure_ids must not be empty".** `split_at_index` is 1-BASED (grouping.jl:399); the frontend used it 0-based. agbe (2 exposures, split_at_index=2) sliced `exposures.slice(2)` = [] → backend 400. Fix: `split_at_index - 1`, clamped [1, len-1] + `len<2` guard; SampleFold divider renders at the SAME clamped `splitBoundary` (P2 was divider/slice divergence for out-of-range flags → unified). **Live: POST .../split → 201.**
+- [x] **Thumbnails were `thumbSrcFor={() => null}`** ("No image" everywhere). Wired to `/api/exposures/:id/image?thumb=1` (thumb route reads image_path by id; 404→placeholder; only OPEN folds render → bounded fan-out). **Live: detector canvases render, 0 "No image".** Two grouping tests gained the standard DetectorImage mock (JSDOM lacks createImageBitmap/fetch).
+- [x] **Filter search floated far-right at fixed 320px**, orphaned. Now `flex-1` wrapper + SearchInput `w-full` fills the row next to the toggle. **Live: search 881px, fills to the content edge.**
+- [x] **Keyboard nav (the dock controls).** New surface-local `prevFlagged`/`nextFlagged` registry ids (⇧↑/↓), kept out of the help overlay. Roving cursor by sample id (`cursorId`+`flatSamples`+`moveCursor`/`jumpFlagged`), `useShortcuts({prevSample,nextSample,prevFlagged,nextFlagged,toggleSelect,drop}, !scanning && movePicker===null)`, scrollIntoView (jsdom try/catch). SampleFold `cursored` (outline) + LoadFold `cursoredId`. Footer dock hint via KbKey (↑↓ move · space select · ⇧↑↓ flagged · x dismiss). **Live: cursor+space verified on real data; ⇧-jump+x in units (5/5).** **P1 (reviewer): the Move picker is a bare role="menu" (not a dialog) so suppressGlobalKeys missed it → x/space/arrows leaked to the sample underneath; FIXED by gating `enabled` on `movePicker===null`.** LESSON: suppressGlobalKeys only guards dialogs+inputs, NOT role="menu" popups — gate surface shortcuts on local menu state.
+
+Gate: frontend build + vitest 3031 green; frontend-reviewer clean after P1/P2 fixes; live-verified on a real experiment.
+
 ## Done
 
 _Move checked items here with their commit sha as they land._
