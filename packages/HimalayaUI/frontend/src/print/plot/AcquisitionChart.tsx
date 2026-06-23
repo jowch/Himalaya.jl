@@ -7,6 +7,11 @@ const PAD_BOTTOM = 22;  // room for the session label row
 const BAR_W = 14;
 const BAR_GAP = 4;      // between bars in a cluster
 const CLUSTER_GAP = 22; // between session clusters
+// Minimum horizontal slot a session cluster occupies, so its centered date
+// label has room — a narrow cluster (one or two bars) is otherwise thinner than
+// its "2026-04-25" label and adjacent labels collide. Sized for a full ISO date
+// at fontSize 10 (~65px) plus breathing room.
+const MIN_SLOT = 78;
 const PLOT_H = H - PAD_TOP - PAD_BOTTOM;
 
 export interface AcquisitionChartProps {
@@ -20,19 +25,24 @@ export function AcquisitionChart({ sessions, className }: AcquisitionChartProps)
   const maxCount = Math.max(1, ...sessions.flatMap((s) => s.loadFrameCounts));
   const yOf = (count: number): number => PLOT_H - (count / maxCount) * PLOT_H; // top edge of a bar
 
-  // Walk left to right, accumulating x and recording per-cluster centers for labels.
+  // Walk left to right. Each session gets a slot at least MIN_SLOT wide (so its
+  // centered date label can't collide with a neighbor's), with the bars centered
+  // inside the slot. The label is anchored on the slot center.
   let x = 0;
   const clusters = sessions.map((s) => {
+    const n = s.loadFrameCounts.length;
+    const barsW = n > 0 ? n * BAR_W + (n - 1) * BAR_GAP : BAR_W;
+    const slotW = Math.max(barsW, MIN_SLOT);
+    const slotStart = x;
+    const barsStart = slotStart + (slotW - barsW) / 2;
+    let bx = barsStart;
     const bars = s.loadFrameCounts.map((count) => {
-      const bx = x;
-      x += BAR_W + BAR_GAP;
-      return { x: bx, count };
+      const b = { x: bx, count };
+      bx += BAR_W + BAR_GAP;
+      return b;
     });
-    if (bars.length === 0) x += BAR_W; // empty session still occupies a slot
-    const start = bars[0]?.x ?? x;
-    const end = (bars[bars.length - 1]?.x ?? x) + BAR_W;
-    const center = (start + end) / 2;
-    x += CLUSTER_GAP;
+    const center = slotStart + slotW / 2;
+    x = slotStart + slotW + CLUSTER_GAP;
     return { label: s.label, bars, center };
   });
   const width = Math.max(0, x - CLUSTER_GAP);

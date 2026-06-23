@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { SourceChip } from "./SourceChip";
 
 export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
 
@@ -42,27 +43,6 @@ const SOURCE_LABEL: Record<GeometrySource, string> = {
   default: "unset",
   computed: "computed",
 };
-
-// SourceChip: a small presentational badge for the provenance of a geometry
-// field. "edited" (user) gets the accent-wash tint; all others get a neutral
-// paper-sunk background. This component lives in print/components/ (NOT the
-// design-guard-exempt print/ui/ layer) so it may only use named token utilities
-// -- no bg-[...] or color-mix literals. bg-accent-wash is sanctioned because
-// --color-accent-wash is declared in styles.css @theme.
-function SourceChip({ source }: { source: GeometrySource }): JSX.Element {
-  const isUser = source === "user";
-  return (
-    <span
-      className={
-        isUser
-          ? "rounded-sm bg-accent-wash px-1.5 py-0.5 text-xs font-bold uppercase text-accent"
-          : "rounded-sm bg-paper-sunk px-1.5 py-0.5 text-xs font-bold uppercase text-ink-faint"
-      }
-    >
-      {SOURCE_LABEL[source]}
-    </span>
-  );
-}
 
 export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
   return (
@@ -111,6 +91,8 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
             >
               <span className="w-32 shrink-0 text-xs text-ink-soft">{r.label}</span>
 
+              {/* Fixed-width value column so the source chip + actions line up
+                  in aligned columns across every row (no ragged float). */}
               {isEditing ? (
                 <Input
                   mono
@@ -118,7 +100,7 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
                   value={p.editDraft ?? ""}
                   onValueChange={p.onEditDraftChange ?? (() => {})}
                   aria-label={`Override ${r.label}`}
-                  className="w-36"
+                  className="w-32"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter") { e.preventDefault(); p.onEditCommit?.(); }
@@ -127,28 +109,31 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
                   onBlur={() => p.onEditCommit?.()}
                 />
               ) : (
-                <span className="font-mono text-sm font-medium text-ink">{r.value}</span>
+                <span className="w-32 shrink-0 font-mono text-sm font-medium text-ink">{r.value}</span>
               )}
 
-              <SourceChip source={r.source} />
-              {r.source === "user" ? (
-                <Button
-                  variant="ghost"
-                  aria-label={`Revert ${r.label}`}
-                  onClick={() => p.onRevert(r.key)}
-                >
-                  Revert
-                </Button>
-              ) : null}
-              {!isEditing && (
-                <Button
-                  variant="ghost"
-                  aria-label={`Override ${r.label}`}
-                  onClick={() => p.onOverride(r.key)}
-                >
-                  {r.source === "user" ? "Edit" : "Override"}
-                </Button>
-              )}
+              <SourceChip label={SOURCE_LABEL[r.source]} emphasized={r.source === "user"} />
+
+              <div className="ml-auto flex items-center gap-2">
+                {r.source === "user" ? (
+                  <Button
+                    variant="ghost"
+                    aria-label={`Revert ${r.label}`}
+                    onClick={() => p.onRevert(r.key)}
+                  >
+                    Revert
+                  </Button>
+                ) : null}
+                {!isEditing && (
+                  <Button
+                    variant="ghost"
+                    aria-label={`Override ${r.label}`}
+                    onClick={() => p.onOverride(r.key)}
+                  >
+                    {r.source === "user" ? "Edit" : "Override"}
+                  </Button>
+                )}
+              </div>
             </div>
           );
         })}

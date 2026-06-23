@@ -134,7 +134,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
         {
           key: "pixel_size_um",
           label: "Pixel pitch",
-          value: exp.pixel_size_um != null ? `${exp.pixel_size_um} um` : "—",
+          value: exp.pixel_size_um != null ? `${exp.pixel_size_um} µm` : "—",
           source: exp.pixel_size_um_source,
         },
         {

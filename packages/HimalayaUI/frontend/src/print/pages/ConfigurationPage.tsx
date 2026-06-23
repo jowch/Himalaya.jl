@@ -12,7 +12,7 @@ import { Card } from "../ui/Card";
 import { Kicker } from "../ui/Kicker";
 import { Input } from "../ui/Input";
 import { IconButton } from "../ui/IconButton";
-import { Chip } from "../ui/Chip";
+import { SourceChip } from "../components/SourceChip";
 
 /**
  * ConfigurationPage -- the Configuration tab shell (spec sec 8.1). Extracts
@@ -267,7 +267,7 @@ function GeometryEditRow({
       ) : (
         <span className="flex items-center gap-2">
           <span className="text-data text-ink">{displayValue}</span>
-          <Chip variant="static" size="sm">{sourceLbl}</Chip>
+          <SourceChip label={sourceLbl} emphasized={sourceLbl === "edited"} />
           <button type="button" className="text-caption text-accent shrink-0 hover:underline"
             onClick={() => setEditing(true)}>Edit</button>
         </span>
@@ -327,7 +327,7 @@ function BeamCenterRow({
           <span className="text-data text-ink">
             {x != null && y != null ? `${x.toFixed(1)}, ${y.toFixed(1)} px` : "—"}
           </span>
-          <Chip variant="static" size="sm">{sourceLbl}</Chip>
+          <SourceChip label={sourceLbl} emphasized={sourceLbl === "edited"} />
           <button type="button" className="text-caption text-accent shrink-0 hover:underline"
             onClick={() => setEditing(true)}>Edit</button>
         </span>
