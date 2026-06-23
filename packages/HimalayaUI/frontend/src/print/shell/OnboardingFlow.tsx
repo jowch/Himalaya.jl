@@ -18,32 +18,32 @@ import { Button, ModalShell, Kicker } from "../ui";
  */
 const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
   {
-    title: "Three stages, one corpus",
+    title: "From a directory to a corpus",
     body:
-      "The stage tabs run across the top: Triage, Index, Series. You screen new " +
-      "exposures, index one representative per sample, then build the cross-sample " +
-      "series. The series is the point; the first two stages prepare it.",
+      "Point Himalaya at your experiment folder. It finds your setup, scans the " +
+      "exposures, and groups them into samples. You review the grouping, correct " +
+      "anything off, then work the corpus.",
   },
   {
-    title: "Triage: screen and choose",
+    title: "Screen the corpus",
     body:
-      "Review each sample's detector images and reject the ones with flares or " +
-      "artifacts. Nothing is flagged for you, and keeping is the default. Pick one " +
-      "representative exposure per sample to carry into indexing.",
+      "Each sample shows its detector images. Reject the ones with flares or " +
+      "artifacts; keeping is the default and nothing is flagged for you. What " +
+      "survives is your working set.",
   },
   {
-    title: "Index: read the trace",
+    title: "Focus: read the trace",
     body:
-      "Curate the Bragg peaks on the 1D integration. The detector image sits " +
-      "alongside, linked by q, so a trace peak and its ring light up together: a " +
-      "crisp ring is real signal, a blob or streak is an artifact. The phase call " +
-      "is the output.",
+      "Open a sample to curate the Bragg peaks on its 1D integration. The detector " +
+      "image sits alongside, linked by q, so a trace peak and its ring light up " +
+      "together: a crisp ring is real signal, a blob or streak is an artifact. The " +
+      "phase call is the output.",
   },
   {
-    title: "Curate the active set",
+    title: "Series: the point",
     body:
-      "Click + on a candidate to add it to the active set; click − to take it back out. " +
-      "Changes save automatically.",
+      "Build a cross-sample series from the Series tab to compare traces across " +
+      "conditions. The earlier stages prepare it; the series is what you came for.",
   },
 ];
 
