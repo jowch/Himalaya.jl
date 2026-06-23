@@ -31,7 +31,7 @@ export interface ThumbnailProps {
 
 const SIZE_PX: Record<"xs" | "sm" | "lg", number> = {
   xs: 30,
-  sm: 62,
+  sm: 56, // pages2 contact-sheet thumbnail (.th = 56px)
   lg: 70,
 };
 
