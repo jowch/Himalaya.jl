@@ -26,6 +26,7 @@ import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
 import { useShortcuts } from "../shell/useShortcuts";
 import { isNativeInteractiveTarget } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
+import { effectiveIngestStatus } from "../../lib/ingestStatus";
 
 /** Distinct samples a cull selection spans, counted EXACTLY the way the
  *  Drop/Keep/Restore batch routes it (unmappable ids are skipped). The CullBar
@@ -71,12 +72,15 @@ export function ExperimentCorpusPage(): JSX.Element {
   const triggerScan = useTriggerScan(expId);
 
   // --- State machine derivation ---
-  const scanning = inFlight?.status === "scanning";
-  const rescanning = !scanning && inFlight?.status === "analyzing";
+  // Effective status reconciles the live overlay with the persisted truth: a
+  // terminal persisted state overrides a stale "scanning"/"analyzing" overlay
+  // from a dropped SSE terminal frame (8c), and a persisted "scanning" shows the
+  // grouping takeover even on a fresh mount before the first overlay frame.
+  const eff = effectiveIngestStatus(inFlight?.status, exp.data?.ingest_status);
+  const scanning = eff === "scanning";
+  const rescanning = eff === "analyzing";
   const processing = scanning || rescanning;
-  const failed =
-    !processing &&
-    (inFlight?.status === "failed" || exp.data?.ingest_status === "failed");
+  const failed = !processing && eff === "failed";
 
   // Manifest query — unconditional (hooks rule), enabled only in the failed
   // branch when data_dir is known. Provides real unmatched + parsedCount for

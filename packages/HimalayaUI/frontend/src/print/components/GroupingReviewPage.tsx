@@ -17,6 +17,7 @@ import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
 import { Menu } from "../ui/Menu";
 import { matchSample } from "../../lib/matchSample";
+import { effectiveIngestStatus } from "../../lib/ingestStatus";
 import { showToast } from "../../lib/toast";
 import { useUndoStack } from "../../hooks/useUndoStack";
 
@@ -67,12 +68,13 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   // Scanning = an initial-scan frame is in flight (the combined scan + review
   // surface, p1-grouping). Loads unfold live as the SSE invalidates the query.
-  // Prefer the live SSE inFlight; fall back to the persisted ingest_status so a
-  // reload mid-scan (or the brief window before the first SSE frame after
-  // Approve) still shows the scanning surface, not the post-scan review.
-  const scanning = inFlight != null
-    ? inFlight.status === "scanning"
-    : exp.data?.ingest_status === "scanning";
+  // Reconcile the live SSE overlay with the persisted resting truth: a terminal
+  // persisted state (complete/failed) overrides a stale "scanning" overlay left
+  // behind by a dropped `ingest_complete` frame (8c). With useExperiment's
+  // scoped refetchInterval refreshing ingest_status while a scan is active, the
+  // surface self-heals to the post-scan review without a manual reload.
+  const scanning =
+    effectiveIngestStatus(inFlight?.status, exp.data?.ingest_status) === "scanning";
   const [filter, setFilter] = useState<Filter>("attn");
   const [search, setSearch] = useState("");
   // ORDERED selection (first-selected = bulk-merge survivor -- Task 15). Membership

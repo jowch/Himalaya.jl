@@ -129,7 +129,12 @@ describe("ExperimentShell (Phase E1)", () => {
   });
 
   it("Rescan button is disabled when isProcessing (status=scanning)", async () => {
-    // Inject an in-flight scanning state for experiment 7.
+    // A real in-flight INITIAL scan has the persisted row at "scanning" too (the
+    // create route sets it). effectiveIngestStatus reads a scanning overlay as
+    // stale unless the persisted row agrees — so mirror reality here, otherwise
+    // this would exercise the 8c stale-overlay path (overlay scanning + row
+    // complete → resolves to complete), not an active scan.
+    vi.spyOn(api, "getExperiment").mockResolvedValue({ ...EXP, ingest_status: "scanning" });
     useAppState.setState({
       ingestInFlight: { 7: { status: "scanning", processed: 5, total: 20 } },
     });

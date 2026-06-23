@@ -124,6 +124,15 @@ export function useExperiment(id: number) {
     // we don't hit GET /api/experiments/0 → 404 (and retries) on every chip
     // mount before the user picks an experiment.
     enabled: id > 0,
+    // Self-heal a stuck scan (8c): if the SSE `ingest_complete` frame is dropped
+    // (EventSource reconnect mid-scan), poll the resting `ingest_status` so the
+    // surface flips to the post-scan review without a manual reload. Polls ONLY
+    // while a scan/analyze is in flight — idle/complete/failed rows don't poll.
+    // react-query dedupes by query key, so N mounted observers share one poll.
+    refetchInterval: (q) => {
+      const s = q.state.data?.ingest_status;
+      return s === "scanning" || s === "analyzing" ? 2500 : false;
+    },
   });
 }
 

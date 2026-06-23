@@ -12,6 +12,7 @@ import { StatBar } from "../ui/StatBar";
 import type { StatBarStat } from "../ui/StatBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { PageFrame } from "../components/PageFrame";
+import { effectiveIngestStatus } from "../../lib/ingestStatus";
 
 /**
  * ExperimentShell — the /experiments/:id layout route. Renders the experiment
@@ -54,7 +55,9 @@ export function ExperimentShell(): JSX.Element {
     void api.updateExperiment(expId, { name: trimmed }, authOpts(username, undefined));
   };
 
-  const status = inFlight?.status ?? exp.data?.ingest_status ?? "idle";
+  // Terminal persisted status overrides a stale "scanning" overlay (8c) — see
+  // effectiveIngestStatus; useExperiment self-heals the persisted value.
+  const status = effectiveIngestStatus(inFlight?.status, exp.data?.ingest_status);
   const isProcessing = status === "scanning" || status === "analyzing";
 
   const triggerScan = useTriggerScan(expId);
