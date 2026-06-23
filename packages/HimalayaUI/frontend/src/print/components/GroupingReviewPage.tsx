@@ -303,10 +303,14 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   };
 
   // Keyboard: roving cursor + select/dismiss verbs (registry-aligned, so the
-  // keys mean the same as elsewhere). Disabled while scanning. useShortcuts'
-  // suppressGlobalKeys already ignores keys while a field/modal/popover is
-  // focused, so the search + rename inputs and the confirm modals aren't
-  // hijacked (Space types a space in the search box, etc.).
+  // keys mean the same as elsewhere). useShortcuts' suppressGlobalKeys already
+  // ignores keys while a field/modal/popover is focused, so the search + rename
+  // inputs and the ModalShell confirms aren't hijacked (Space types a space in
+  // the search box, etc.). The Move picker is a bare `role="menu"` (NOT a
+  // dialog), so suppressGlobalKeys does NOT catch it — gate on it explicitly so
+  // x/space/arrows don't act on the sample underneath the open picker (and the
+  // arrows don't double-fire with the menu's own item nav). Disabled while
+  // scanning too.
   useShortcuts(
     {
       prevSample: () => moveCursor(-1),
@@ -316,7 +320,7 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
       toggleSelect: () => { if (cursorSample) toggleSelect(cursorSample.sample_id); },
       drop: () => { if (cursorSample?.flag) handleDismissFlag(cursorSample.sample_id); },
     },
-    !scanning,
+    !scanning && movePicker === null,
   );
 
   // Keep the cursored row in view as it moves. Guarded: jsdom has no layout

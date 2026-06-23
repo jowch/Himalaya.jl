@@ -33,6 +33,14 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
   const flagChip =
     flag?.kind === "split" ? "check split" :
     flag?.kind === "merge" ? "possible reshoot" : null;
+  // 0-based split boundary (start of the split-off tail), clamped to [1, len-1]
+  // — the SAME boundary GroupingReviewPage.handleSplit uses, so the divider
+  // always sits exactly where the split would land (even for an out-of-range
+  // flag the backend shouldn't emit). -1 when not a split flag.
+  const splitBoundary =
+    flag?.kind === "split"
+      ? Math.min(Math.max(flag.split_at_index - 1, 1), s.exposures.length - 1)
+      : -1;
 
   // Inline rename state: null = not editing; string = draft value being edited.
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
@@ -166,10 +174,9 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
 
           {s.exposures.map((e, i) => (
             <div key={e.id}>
-              {/* split_at_index is 1-BASED (grouping.jl) — the divider sits
-                  BEFORE the 0-based (split_at_index - 1) exposure, i.e. at the
-                  start of the split-off tail. */}
-              {flag?.kind === "split" && i === flag.split_at_index - 1 ? (
+              {/* The divider sits at the clamped 0-based split boundary — the
+                  start of the split-off tail (== handleSplit's slice point). */}
+              {flag?.kind === "split" && i === splitBoundary ? (
                 <div
                   data-testid="split-divider"
                   className="mx-2.5 my-1 flex items-center gap-3 rounded-sm border border-warning bg-paper-sunk px-3 py-1.5"
