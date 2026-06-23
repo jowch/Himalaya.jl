@@ -24,6 +24,7 @@ import { CullBar } from "../components/CullBar";
 import { toSampleRowModel } from "./samplesAdapters";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
 import { useShortcuts } from "../shell/useShortcuts";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 
 /** Distinct samples a cull selection spans, counted EXACTLY the way the
@@ -253,7 +254,10 @@ export function ExperimentCorpusPage(): JSX.Element {
     nextSample: () => clampSample(1),
     prevDetail: () => clampFrame(-1),
     nextDetail: () => clampFrame(1),
-    openFocus: () => {
+    openFocus: (e) => {
+      // §8 invariant (b): on a native interactive target (button/link/sort
+      // header) Enter activates that control natively — decline.
+      if (isNativeInteractiveTarget(e)) return false;
       if (activeSample == null) return false;
       navigate(`/sample/${activeSample.id}`);
       return undefined;

@@ -39,6 +39,7 @@ import { isSeriesDraftDirty } from "../../lib/series/isSeriesDraftDirty";
 import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
 import { buildSeriesFigureKeys } from "../export/seriesFigureKeys";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { showToast } from "../../lib/toast";
@@ -152,7 +153,6 @@ export function SeriesBuilderPage(): JSX.Element {
     setUndoFuture(undoFuture.slice(1));
     setUndoPast([...undoPast, cur]);
   };
-  useShortcuts({ undo, redo });
 
   // ── Confirm chain (Save → await fresh cache → Commit → discard) ─────────
   const save = useSaveSeries();
@@ -187,6 +187,73 @@ export function SeriesBuilderPage(): JSX.Element {
   const series = seriesQ.data;
   // The active draft only counts when it targets THIS series.
   const liveDraft = draft !== null && series !== undefined && draft.id === series.id ? draft : null;
+
+  // ── Member-list cursor + keyboard (T3a) ──────────────────────────────────
+  // The navigable member list is the recipe (draft) or the committed recipe
+  // (read mode) — both SeriesSample-shaped rows carrying `sample_id` in
+  // `position` order. ↑/↓ move the cursor; Enter opens the cursored sample in
+  // Focus; A opens the add-sample picker; ⌘Enter confirms. These reference
+  // handlers (`onConfirm` / picker trigger) defined below the honest-state
+  // early return, so they are read through refs the render keeps current —
+  // the listener closes over a stable ref, never a stale or not-yet-defined
+  // binding.
+  const navSamples = liveDraft ? liveDraft.recipe : (series?.samples ?? []);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Clamp the cursor into the live member list (it shrinks on remove, grows on
+  // add). An empty list parks the cursor at 0 (Enter declines).
+  useEffect(() => {
+    setSelectedIndex((i) => {
+      if (navSamples.length === 0) return 0;
+      return Math.max(0, Math.min(navSamples.length - 1, i));
+    });
+  }, [navSamples.length]);
+  // sample id under the cursor (for Enter → Focus). Undefined when the list is
+  // empty.
+  const cursorSampleId = navSamples[selectedIndex]?.sample_id;
+  // Late-bound handler refs (assigned each render, below the early return).
+  const confirmRef = useRef<() => void>(() => {});
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  useShortcuts({
+    undo,
+    redo,
+    prevSample: () => {
+      if (navSamples.length === 0) return false;
+      setSelectedIndex((i) => Math.max(0, i - 1));
+      return undefined;
+    },
+    nextSample: () => {
+      if (navSamples.length === 0) return false;
+      setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1));
+      return undefined;
+    },
+    openFocus: (e) => {
+      if (isNativeInteractiveTarget(e)) return false;
+      if (cursorSampleId === undefined) return false;
+      navigateRef.current(`/sample/${cursorSampleId}?from=series`);
+      return undefined;
+    },
+    addSample: () => {
+      // Open the existing add-sample affordance (the AddSamplePicker popover
+      // trigger). It only renders under a live draft with addable samples;
+      // clicking it through the DOM reuses the picker's own open/focus flow.
+      const btn = document.querySelector<HTMLButtonElement>(
+        '[data-testid="builder-add-sample"]',
+      );
+      if (!btn) return false;
+      btn.click();
+      return undefined;
+    },
+    confirm: () => {
+      // Decline (leave ⌘Enter un-prevented) when Confirm is disabled — the
+      // same gate onConfirm itself enforces. The picker popover, when open,
+      // is a `[role="dialog"]` and is already suppressed by suppressGlobalKeys,
+      // so ⌘Enter there can't reach this handler.
+      if (!liveDraft || stage.current !== "idle" || !resolverReady) return false;
+      confirmRef.current();
+      return undefined;
+    },
+  });
 
   // BU-NAMES: one shared identity token across the builder's member views. The
   // figure plate + reading list label a trace by its exposure (memberRowLabel:
@@ -435,6 +502,10 @@ export function SeriesBuilderPage(): JSX.Element {
     stage.current = "saving";
     save.mutate({ id, ...buildSeriesSaveBody(liveDraft) });
   };
+  // Keep the keyboard `confirm` binding pointing at the live onConfirm (defined
+  // after the honest-state early return, so it's bound here once in scope).
+  confirmRef.current = onConfirm;
+
   const onCancel = (): void => {
     stage.current = "idle";
     discardDraft();

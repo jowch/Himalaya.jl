@@ -62,3 +62,19 @@ export function suppressGlobalKeys(e: KeyboardEvent): boolean {
   }
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 }
+
+/**
+ * isNativeInteractiveTarget — §8 invariant (b) for the `Enter` (`openFocus`)
+ * gesture. When Enter is pressed while focus sits on a native interactive
+ * control (a button, link, role=button, or a sortable header), the page-level
+ * `openFocus` handler must DECLINE (`return false`) so the un-prevented Enter
+ * activates that control natively (click the button, follow the link, toggle
+ * the sort) instead of drilling into Focus. Each page's `openFocus` binding
+ * calls this and early-returns false when it is true.
+ */
+export function isNativeInteractiveTarget(e: KeyboardEvent): boolean {
+  return (
+    e.target instanceof Element &&
+    e.target.closest("button, a, [role=button], [aria-sort]") != null
+  );
+}

@@ -30,6 +30,9 @@ export type ShortcutId =
   | "redo"
   | "reorderUp"
   | "reorderDown"
+  | "addSample"
+  | "confirm"
+  | "addPeak"
   | "find";
 
 export type ShortcutGroup = "Navigate" | "Screen" | "Edit" | "General";
@@ -71,6 +74,11 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   redo: { id: "redo", keys: ["Mod+Shift+z"], label: "Redo", group: "Edit" },
   reorderUp: { id: "reorderUp", keys: ["Alt+ArrowUp"], label: "Move up", group: "Edit" },
   reorderDown: { id: "reorderDown", keys: ["Alt+ArrowDown"], label: "Move down", group: "Edit" },
+  // Surface-local in-surface verbs (Series A / ⌘Enter, Focus P) — kept out of
+  // OVERLAY_IDS (the overlay lists only the global/navigation keymap).
+  addSample: { id: "addSample", keys: ["a"], label: "Add a sample", group: "Edit" },
+  confirm: { id: "confirm", keys: ["Mod+Enter"], label: "Confirm / build", group: "Edit" },
+  addPeak: { id: "addPeak", keys: ["p"], label: "Toggle add-peak mode", group: "Edit" },
 };
 
 /**

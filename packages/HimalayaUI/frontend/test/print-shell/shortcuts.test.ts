@@ -95,6 +95,19 @@ describe("matchShortcut", () => {
     expect(matchShortcut(ev("Backspace"))).toBe("restore");
     expect(matchShortcut(ev(" "))).toBe("toggleSelect");
   });
+
+  it("B3 surface-local verbs are bound: a→addSample, Mod+Enter→confirm, p→addPeak", () => {
+    expect(matchShortcut(ev("a"))).toBe("addSample");
+    expect(matchShortcut(ev("p"))).toBe("addPeak");
+    // ⌘Enter / Ctrl+Enter both collapse to "Mod+Enter" → confirm.
+    expect(matchShortcut(ev("Enter", { meta: true }))).toBe("confirm");
+    expect(matchShortcut(ev("Enter", { ctrl: true }))).toBe("confirm");
+    // Bare letters carry no modifier — a held Mod is NOT the page verb.
+    expect(matchShortcut(ev("a", { meta: true }))).toBe("selectAll"); // Mod+a is select-all
+    expect(matchShortcut(ev("p", { ctrl: true }))).toBeNull();
+    // ⌘Enter must not be plain openFocus (Enter alone stays openFocus).
+    expect(matchShortcut(ev("Enter"))).toBe("openFocus");
+  });
 });
 
 describe("eventCombo (normalization)", () => {

@@ -60,6 +60,7 @@ import { sanitizeDashes } from "../../lib/copy";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import type { Trace, IndexEntry } from "../../api";
 
@@ -487,6 +488,29 @@ export function FocusPage(): JSX.Element {
   useShortcuts({
     prevSample: () => prevSibling && navigate(`/sample/${prevSibling.id}`),
     nextSample: () => nextSibling && navigate(`/sample/${nextSibling.id}`),
+    // P = toggle add-peak mode — the SAME state the TracePlate "+ Peak" arm
+    // toggles (page-interpreted Edit verb, not in the overlay).
+    addPeak: () => setAddArmed((v) => !v),
+    // Enter (openFocus) is page-interpreted on Focus as "apply the focused
+    // candidate" (§8: one semantic id per physical key, the page interprets
+    // it). The focused candidate is the ↑/↓-previewed index (previewIndexId);
+    // applying it toggles its membership in the assignment, mirroring the
+    // CandidateRow click. Decline when nothing is focused (no preview) or the
+    // event lands on a native interactive control (§8 invariant (b)).
+    openFocus: (e) => {
+      if (isNativeInteractiveTarget(e)) return false;
+      if (previewIndexId === undefined) return false;
+      const ix = indices.find((i) => i.id === previewIndexId);
+      if (!ix) return false;
+      if (memberIds.has(ix.id)) {
+        removeAssignmentPhase.mutate(ix.id);
+        announce(`${ix.phase} removed from the call`);
+      } else {
+        addAssignmentPhase.mutate(ix.id);
+        announce(`${ix.phase} added to the call`);
+      }
+      return undefined;
+    },
     // ←/→ = candidate detail axis (renamed from prevCandidate/nextCandidate in T2.5;
     // exposure stepping now relies on the ThumbnailGallery onSelect filmstrip only).
     prevDetail: () => {
