@@ -13,6 +13,8 @@ import type { StatBarStat } from "../ui/StatBar";
 import { ProgressBar } from "../ui/ProgressBar";
 import { PageFrame } from "../components/PageFrame";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
+import { formatRelativeTime } from "../../lib/relativeTime";
+import { Dot } from "../ui/Dot";
 
 /**
  * ExperimentShell — the /experiments/:id layout route. Renders the experiment
@@ -122,15 +124,21 @@ export function ExperimentShell(): JSX.Element {
           <div className="flex items-center gap-2 shrink-0">
             <div
               data-testid="experiment-rescan-status"
-              className="text-sm text-ink-soft"
+              className="flex items-center gap-1.5 text-sm text-ink-soft"
             >
-              {isProcessing
-                ? status === "scanning"
-                  ? "Scanning…"
-                  : "Analyzing…"
-                : status === "failed"
-                  ? "Scan failed"
-                  : "Up to date"}
+              {isProcessing ? (
+                status === "scanning" ? "Scanning…" : "Analyzing…"
+              ) : status === "failed" ? (
+                "Scan failed"
+              ) : exp.data?.last_scanned_at ? (
+                // §5.6 target: ● scanned 2 min ago · up to date
+                <>
+                  <Dot tone="success" size="xs" aria-hidden />
+                  scanned {formatRelativeTime(exp.data.last_scanned_at)} · up to date
+                </>
+              ) : (
+                "Up to date"
+              )}
             </div>
             <Button
               variant="outline"
