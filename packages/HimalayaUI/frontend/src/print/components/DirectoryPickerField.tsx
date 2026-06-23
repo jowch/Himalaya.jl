@@ -70,11 +70,12 @@ export function DirectoryPickerField({
 
   // The Input is the Popover trigger. Popover's cloneElement adds
   // aria-haspopup/aria-expanded/onClick to it; onValueChange and onKeyDown
-  // pass through Input's ...rest spread onto the inner <input>. The Popover
-  // open state is driven externally by whether suggestions is non-empty —
-  // we control `open` to avoid Popover's click-toggle interfering with the
-  // keyboard-driven flow (suggestions appear while typing, not on click).
-  // Popover's outside-pointerdown effect and Escape handler both fire when open.
+  // pass through Input's ...rest spread onto the inner <input>. Popover is
+  // self-managed (no controlled `open`): clicking into the field to type opens
+  // it, and the list below renders once suggestions arrive — so in the normal
+  // click-then-type flow the matches appear as you type. (A purely programmatic
+  // fill that never focuses the field would not auto-open it; not a real-use
+  // path. 9d.) Popover's outside-pointerdown + Escape handlers close it.
   const hasSuggestions = suggestions.length > 0;
 
   return (
