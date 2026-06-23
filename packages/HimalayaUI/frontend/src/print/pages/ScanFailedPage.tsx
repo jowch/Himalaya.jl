@@ -168,11 +168,13 @@ export function ScanFailedPage({
                   {items.map((u) => (
                     <li key={u.file} className="flex flex-col">
                       <span className="text-sm text-ink font-mono">{u.file}</span>
-                      {missType === "image" && u.near ? (
+                      {u.near ? (
+                        // 6g: metadata/integration misses now also carry the nearest
+                        // on-disk file (case/extension near-miss), not just image.
                         <span className="text-caption text-ink-soft font-mono">
                           nearest{" "}
                           <span className="text-warning">{u.near}</span> (vs{" "}
-                          {imagePattern})
+                          {patterns?.[missType] ?? imagePattern})
                         </span>
                       ) : (
                         <span className="text-caption text-ink-faint font-mono">

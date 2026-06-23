@@ -124,6 +124,30 @@ end
     end
 end
 
+@testset "GET /api/fs/manifest flags near-miss metadata + integration sidecars (6g)" begin
+    # An image stem matches but its sidecar is on disk with a wrong-case/extra-char
+    # extension (good.PRP for {name}.prp, good.DAT for {name}.dat). The miss row must
+    # carry the offending filename in `near` so the scan-failed surface can pair it.
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            data = mktempdir(); analysis = mktempdir()
+            touch(joinpath(data, "good.tif"))     # image matches exactly
+            touch(joinpath(data, "good.PRP"))     # metadata near-miss: case
+            touch(joinpath(analysis, "good.DAT")) # integration near-miss: case (analysis subtree)
+            q = "path=$(HTTP.escapeuri(data))&analysis_dir=$(HTTP.escapeuri(analysis))" *
+                "&image_pattern=$(HTTP.escapeuri("{name}.tif"))" *
+                "&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))" *
+                "&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
+            m = JSON3.read(call("GET", "/api/fs/manifest?$q").body)
+            meta_miss  = only(filter(u -> u.miss == "metadata", m.unmatched))
+            integ_miss = only(filter(u -> u.miss == "integration", m.unmatched))
+            @test meta_miss.file == "good" && meta_miss.near == "good.PRP"
+            @test integ_miss.file == "good" && integ_miss.near == "good.DAT"
+        end
+    end
+end
+
 @testset "GET /api/fs/manifest matches integration against analysis_dir" begin
     # Integration (.dat) lives in the analysis subtree, not data_dir (mirrors
     # grouping.jl scan_directory). With analysis_dir supplied, integration is

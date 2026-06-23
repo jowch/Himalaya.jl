@@ -226,9 +226,41 @@ function register_fs_routes!()
         img  = stems(files, pats.image)
         meta = stems(files, pats.metadata)
         integ = stems(integ_files, pats.integration)
+        # near = same extension bar case (.PRP), or exactly one extra trailing char
+        # (.prp ⊂ .prpx). One char keeps the common typo bucket but rejects unrelated
+        # longer extensions. Shared by the metadata/integration sidecar search below
+        # and the standalone image-file pass further down.
+        is_near_ext(lext, patext) = lext == patext ||
+            (startswith(lext, patext) && length(lext) == length(patext) + 1)
+        # near_sidecar: given a KNOWN stem missing its exact sidecar, find an on-disk
+        # file = pre*stem*mid*<near-ext> (e.g. RY_S1780.PRP for `{name}.prp`). The
+        # exact match would already be in the matched set, so any hit here is a real
+        # near-miss. Returns the offending filename or nothing.
+        function near_sidecar(filelist, pat, stem)
+            occursin("{name}", pat) || return nothing
+            pre, post = split(pat, "{name}"; limit = 2)
+            pdot = findlast('.', post)
+            pdot === nothing && return nothing
+            patext = lowercase(post[pdot:end])
+            patmid = post[1:prevind(post, pdot)]
+            target = pre * stem * patmid                 # everything up to the extension
+            for f in filelist
+                (startswith(f, target) && length(f) > length(target)) || continue
+                if is_near_ext(lowercase(f[nextind(f, lastindex(target)):end]), patext)
+                    return f
+                end
+            end
+            nothing
+        end
         unmatched = Dict{String,String}[]
-        for s in img, (label, set) in (("metadata", meta), ("integration", integ))
-            s in set || push!(unmatched, Dict("file" => s, "miss" => label))
+        for s in img,
+            (label, set, flist, pat) in (("metadata", meta, files, pats.metadata),
+                                         ("integration", integ, integ_files, pats.integration))
+            s in set && continue
+            near = near_sidecar(flist, pat, s)
+            push!(unmatched, near === nothing ?
+                Dict("file" => s, "miss" => label) :
+                Dict("file" => s, "miss" => label, "near" => near))
         end
         # Near-miss image extensions: a file matching the image prefix + the right
         # middle but a wrong extension/case (.tiff vs .tif, .TIF vs .tif) never enters
@@ -249,10 +281,7 @@ function register_fs_routes!()
                     fdot === nothing && continue
                     fext = lowercase(rest[fdot:end])
                     fmid = rest[1:prevind(rest, fdot)]           # stem + any middle
-                    # near = same ext bar case (.TIF), or exactly one extra trailing
-                    # char (.tif⊂.tiff). One char keeps .tiff but rejects .tiffany.
-                    (fext == patext ||
-                     (startswith(fext, patext) && length(fext) == length(patext) + 1)) || continue
+                    is_near_ext(fext, patext) || continue        # .TIF/.tiff, not .tiffany
                     endswith(fmid, patmid) || continue
                     stem = chop(fmid; tail = length(patmid))     # drop the pattern middle
                     isempty(stem) && continue
