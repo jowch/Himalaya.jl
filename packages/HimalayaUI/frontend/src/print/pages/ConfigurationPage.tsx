@@ -125,6 +125,96 @@ function zeroCoverageType(
   return null;
 }
 
+/**
+ * EditableRow — a read-only value with an inline Edit/Done toggle (the same
+ * click-to-edit idiom as the Analysis-directory field). Read mode shows
+ * `display` (defaults to the raw value) + an "Edit" link; clicking it swaps in a
+ * text Input that commits on Done / Enter / blur and reverts on Escape. The
+ * committed string is trimmed. Used for the pattern fields (and, where editable,
+ * geometry).
+ */
+function EditableRow({
+  label,
+  value,
+  display,
+  mono = false,
+  inputTestId,
+  valueTestId,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  display?: JSX.Element | string;
+  mono?: boolean;
+  inputTestId?: string;
+  valueTestId?: string;
+  onCommit: (next: string) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  // Re-seed the draft from upstream while not actively editing (e.g. a resolve
+  // re-fills the value), so the field never shows a stale draft on next open.
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+
+  const commit = (): void => { onCommit(draft.trim()); setEditing(false); };
+  const cancel = (): void => { setDraft(value); setEditing(false); };
+
+  if (editing) {
+    return (
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-meta shrink-0">{label}</span>
+        <span className="flex items-center gap-2">
+          <Input
+            value={draft}
+            onValueChange={setDraft}
+            inputSize="sm"
+            mono={mono}
+            autoFocus
+            className="w-56"
+            aria-label={label}
+            {...(inputTestId ? { testId: inputTestId } : {})}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commit(); }
+              else if (e.key === "Escape") { e.preventDefault(); cancel(); }
+            }}
+            onBlur={commit}
+          />
+          {/* preventDefault on mousedown keeps focus so the click commits before
+              the input's blur fires a redundant first commit. */}
+          <button
+            type="button"
+            className="text-caption text-accent shrink-0 hover:underline"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={commit}
+          >
+            Done
+          </button>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-meta shrink-0">{label}</span>
+      <span className="flex items-center gap-2 min-w-0">
+        <span
+          className={`text-data text-ink truncate text-right${mono ? " font-mono" : ""}`}
+          {...(valueTestId ? { "data-testid": valueTestId } : {})}
+        >
+          {display ?? value}
+        </span>
+        <button
+          type="button"
+          className="text-caption text-accent shrink-0 hover:underline"
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </button>
+      </span>
+    </div>
+  );
+}
+
 /** Maps a geometry source string to the short label shown in the chip. */
 function sourceLabel(source: string | undefined | null): string {
   if (!source || source === "default") return "unset";
@@ -427,39 +517,27 @@ function ConfigurationFirstRun(): JSX.Element {
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-meta shrink-0">Exposure pattern</span>
-                <Input
-                  value={imagePattern}
-                  onValueChange={setImagePattern}
-                  inputSize="sm" mono
-                  onBlur={() => commitPattern("image", imagePattern)}
-                  onKeyDown={(e) => { if (e.key === "Enter") commitPattern("image", imagePattern); }}
-                  className="w-56"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-meta shrink-0">Metadata pattern</span>
-                <Input
-                  value={metadataPattern}
-                  onValueChange={setMetadataPattern}
-                  inputSize="sm" mono
-                  onBlur={() => commitPattern("metadata", metadataPattern)}
-                  onKeyDown={(e) => { if (e.key === "Enter") commitPattern("metadata", metadataPattern); }}
-                  className="w-56"
-                />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-meta shrink-0">Integration pattern</span>
-                <Input
-                  value={integrationPattern}
-                  onValueChange={setIntegrationPattern}
-                  inputSize="sm" mono
-                  onBlur={() => commitPattern("integration", integrationPattern)}
-                  onKeyDown={(e) => { if (e.key === "Enter") commitPattern("integration", integrationPattern); }}
-                  className="w-56"
-                />
-              </div>
+              <EditableRow
+                label="Exposure pattern"
+                value={imagePattern}
+                mono
+                inputTestId="config-image-pattern"
+                onCommit={(v) => { setImagePattern(v); commitPattern("image", v); }}
+              />
+              <EditableRow
+                label="Metadata pattern"
+                value={metadataPattern}
+                mono
+                inputTestId="config-metadata-pattern"
+                onCommit={(v) => { setMetadataPattern(v); commitPattern("metadata", v); }}
+              />
+              <EditableRow
+                label="Integration pattern"
+                value={integrationPattern}
+                mono
+                inputTestId="config-integration-pattern"
+                onCommit={(v) => { setIntegrationPattern(v); commitPattern("integration", v); }}
+              />
             </div>
             <p className="text-caption text-ink-soft mt-4">
               Editing a pattern re-runs the index.

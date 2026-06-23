@@ -1,6 +1,6 @@
 // test/ConfigurationPage.test.tsx
 import { describe, it, test, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ConfigurationPage } from "../src/print/pages/ConfigurationPage";
@@ -128,6 +128,38 @@ describe("ConfigurationPage (first-run mode)", () => {
     })));
     // Approve lands on the combined scan + grouping-review surface.
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/9/grouping"));
+  });
+
+  test("pattern fields use the Edit mechanism: read-only value, Edit reveals the input", async () => {
+    useDraftExperiment.getState().setRoot("/data/run42");
+    vi.spyOn(api, "resolveLayout").mockResolvedValue({
+      name: "run42", data_dir: "/data/run42/data", analysis_dir: "/data/run42/analysis",
+      setup_file: "/data/run42/analysis/setup_info_x.txt", setup_ambiguous: false,
+      image_pattern: null, metadata_pattern: null, integration_pattern: null,
+    });
+    mockFetchManifest({
+      total: 2, matched: { image: 2, metadata: 2, integration: 2 }, unmatched: [],
+      geometry: {
+        beam_center_x: 421.3, beam_center_x_source: "setup",
+        beam_center_y: 836.7, beam_center_y_source: "setup",
+        flight_path_m: 1.8095, flight_path_m_source: "setup",
+        pixel_size_um: 172.0, pixel_size_um_source: "prp",
+        energy_kev: 9.0, energy_kev_source: "prp",
+      },
+      matched_files: ["JC_001.tif"],
+    });
+    renderConfiguration({ route: "/experiments/new/config" });
+    await screen.findByText(/2 matched/i);
+
+    // At rest the pattern is read-only text + an Edit affordance (no input yet).
+    expect(screen.getByText("{name}.tif")).toBeInTheDocument();
+    expect(screen.queryByTestId("config-image-pattern")).toBeNull();
+    // The Exposure-pattern row's Edit reveals the prefilled input.
+    const row = screen.getByText("Exposure pattern").closest("div")!;
+    fireEvent.click(within(row).getByRole("button", { name: /edit/i }));
+    expect(
+      (screen.getByTestId("config-image-pattern").querySelector("input") as HTMLInputElement).value,
+    ).toBe("{name}.tif");
   });
 
   test("D4: a whole type matching zero everywhere hard-blocks Approve", async () => {
