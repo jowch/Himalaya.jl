@@ -67,6 +67,12 @@ vi.mock("../src/queries", async (orig) => {
   };
 });
 
+// The open folds render exposure thumbnails through DetectorImage, which
+// touches fetch / createImageBitmap (absent in JSDOM).
+vi.mock("../src/print/detector/DetectorImage", () => ({
+  DetectorImage: () => <div data-testid="mock-detector-image" />,
+}));
+
 vi.mock("../src/lib/toast", () => ({
   showToast: vi.fn(),
 }));

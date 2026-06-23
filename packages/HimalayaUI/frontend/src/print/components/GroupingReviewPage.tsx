@@ -1,4 +1,4 @@
-import { useMemo, useState, type JSX } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
 import type { Load, LoadSample } from "../../api";
 import {
   useLoads, useExperiment,
@@ -10,6 +10,8 @@ import { LoadFold } from "./LoadFold";
 import { GroupingBulkBar } from "./GroupingBulkBar";
 import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
+import { KbKey } from "../ui/KbKey";
+import { useShortcuts } from "../shell/useShortcuts";
 import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
 import { ProgressBar } from "../ui/ProgressBar";
@@ -131,6 +133,30 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
       .filter((x) => x.samples.length > 0);
   }, [loads, filter, q, selectedSet, scanning]);
 
+  // Keyboard cursor (↑/↓ nav). Tracked by sample id so it survives list
+  // reorders / filter changes; lands on the first visible sample on the first
+  // key. The cursor is DISTINCT from the multi-select `selection`.
+  const flatSamples = useMemo(() => visible.flatMap((v) => v.samples), [visible]);
+  const [cursorId, setCursorId] = useState<number | null>(null);
+  const cursorIdx = flatSamples.findIndex((s) => s.sample_id === cursorId);
+  const cursorSample = cursorIdx >= 0 ? flatSamples[cursorIdx] : undefined;
+
+  const moveCursor = (delta: number) => {
+    if (flatSamples.length === 0) return;
+    const from = cursorIdx < 0 ? (delta > 0 ? -1 : 0) : cursorIdx;
+    const next = Math.min(Math.max(from + delta, 0), flatSamples.length - 1);
+    setCursorId(flatSamples[next]!.sample_id);
+  };
+
+  // Shift+↑/↓: jump the cursor to the prev/next FLAGGED sample.
+  const jumpFlagged = (dir: number) => {
+    if (flatSamples.length === 0) return;
+    const start = cursorIdx < 0 ? (dir > 0 ? -1 : flatSamples.length) : cursorIdx;
+    for (let i = start + dir; i >= 0 && i < flatSamples.length; i += dir) {
+      if (flatSamples[i]!.flag) { setCursorId(flatSamples[i]!.sample_id); return; }
+    }
+  };
+
   const toggleSelect = (id: number) =>
     setSelection((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
@@ -168,8 +194,16 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
       if (s) { sample = s; break; }
     }
     if (!sample) return;
+    const len = sample.exposures.length;
+    if (len < 2) return; // nothing to split
     const flag = sample.flag?.kind === "split" ? sample.flag : null;
-    const splitIdx = flag?.split_at_index ?? Math.floor(sample.exposures.length / 2);
+    // split_at_index is 1-BASED (grouping.jl): the exposure where the position
+    // jump lands. The 0-based start of the split-off tail is split_at_index - 1.
+    // Clamp to [1, len-1] so NEITHER side is empty — a degenerate flag at the
+    // first/last exposure would otherwise send empty exposure_ids → 400
+    // ("exposure_ids must not be empty").
+    const rawIdx = flag ? flag.split_at_index - 1 : Math.floor(len / 2);
+    const splitIdx = Math.min(Math.max(rawIdx, 1), len - 1);
     const splitExposureIds = sample.exposures.slice(splitIdx).map((e) => e.id);
     // Use the sample name with a suffix for the split-off portion
     const splitName = `${sample.name} (split)`;
@@ -268,6 +302,32 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     showToast(`Merged ${loserIds.length + 1} samples into ${survivorLabel}`, "info");
   };
 
+  // Keyboard: roving cursor + select/dismiss verbs (registry-aligned, so the
+  // keys mean the same as elsewhere). Disabled while scanning. useShortcuts'
+  // suppressGlobalKeys already ignores keys while a field/modal/popover is
+  // focused, so the search + rename inputs and the confirm modals aren't
+  // hijacked (Space types a space in the search box, etc.).
+  useShortcuts(
+    {
+      prevSample: () => moveCursor(-1),
+      nextSample: () => moveCursor(1),
+      prevFlagged: () => jumpFlagged(-1),
+      nextFlagged: () => jumpFlagged(1),
+      toggleSelect: () => { if (cursorSample) toggleSelect(cursorSample.sample_id); },
+      drop: () => { if (cursorSample?.flag) handleDismissFlag(cursorSample.sample_id); },
+    },
+    !scanning,
+  );
+
+  // Keep the cursored row in view as it moves. Guarded: jsdom has no layout
+  // engine and throws "Not implemented" on scrollIntoView (cosmetic only).
+  useEffect(() => {
+    if (cursorId == null) return;
+    try {
+      document.querySelector('[data-cursored="true"]')?.scrollIntoView({ block: "nearest" });
+    } catch { /* no layout engine (jsdom) */ }
+  }, [cursorId]);
+
   return (
     <div className={`mx-auto max-w-[1180px] px-10 pb-32 pt-8${className ? ` ${className}` : ""}`}>
       {!scanning && (
@@ -320,15 +380,18 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
 
       {/* Filter/search is for the post-scan standalone review; during a live
           scan the surface just shows every load as it lands. */}
-      <div className={`my-4 flex items-center gap-2${scanning ? " hidden" : ""}`}>
+      <div className={`my-4 flex items-center gap-3${scanning ? " hidden" : ""}`}>
         <SegmentedControl<Filter>
           value={filter}
           onChange={setFilter}
           options={[{ value: "attn", label: "Needs review" }, { value: "all", label: "All loads" }]}
           aria-label="Grouping filter"
         />
-        <div className="ml-auto w-80">
+        {/* Search fills the rest of the row next to the toggle (was floated
+            far-right at a fixed width, orphaned from everything else). */}
+        <div className="flex-1">
           <SearchInput
+            className="w-full"
             value={search}
             onChange={setSearch}
             ariaLabel="Filter samples"
@@ -372,7 +435,12 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
             onMerge={handleMerge}
             onDismissFlag={handleDismissFlag}
             onMoveExposure={handleMoveExposure}
-            thumbSrcFor={() => null}
+            // Detector thumbnail per exposure. The thumb route reads image_path
+            // from the DB by id (LoadExposure carries no image_path), 404s when
+            // absent → DetectorImage placeholder. Lazy-loaded + only for OPEN
+            // folds, so the image fan-out stays bounded.
+            thumbSrcFor={(exposureId) => `/api/exposures/${exposureId}/image?thumb=1`}
+            cursoredId={cursorId}
           />
         ))
       )}
@@ -490,11 +558,20 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
         data-testid="grouping-footer"
         className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 border-t border-hair bg-paper px-8 py-3"
       >
-        <span className="text-meta text-ink-soft">
-          {scanning
-            ? "Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags."
-            : "Confirm the grouping to head to the corpus. You can always return to review."}
-        </span>
+        {scanning ? (
+          <span className="text-meta text-ink-soft">
+            Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags.
+          </span>
+        ) : (
+          // Keyboard controls (the dock hint). Keys are registry-aligned
+          // (shortcuts.ts) — the full legend is in the ? overlay.
+          <div className="flex items-center gap-4 text-meta text-ink-faint" aria-hidden="true">
+            <span className="inline-flex items-center gap-1"><KbKey>↑</KbKey><KbKey>↓</KbKey> move</span>
+            <span className="inline-flex items-center gap-1"><KbKey>space</KbKey> select</span>
+            <span className="inline-flex items-center gap-1"><KbKey>⇧</KbKey><KbKey>↑</KbKey><KbKey>↓</KbKey> flagged</span>
+            <span className="inline-flex items-center gap-1"><KbKey>x</KbKey> dismiss flag</span>
+          </div>
+        )}
         <Button
           variant="accent"
           data-testid="grouping-confirm"

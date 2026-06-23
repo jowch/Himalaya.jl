@@ -10,6 +10,9 @@ export interface SampleFoldProps {
   sample: LoadSample;
   open: boolean;
   selected: boolean;
+  /** Keyboard cursor lands here (↑/↓ nav). Distinct from `selected`: an outline
+   *  (focus look) vs the selected accent ring + checked box. */
+  cursored?: boolean;
   onToggleOpen: (sampleId: number) => void;
   onToggleSelect: (sampleId: number) => void;
   /** Called with the sample id and trimmed new name when the rename is committed. */
@@ -57,10 +60,14 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
   return (
     <div
       data-testid="sample-fold"
+      data-cursored={props.cursored ? "true" : undefined}
       className={[
         "rounded-sm border border-hair bg-plate",
         flag ? "border-warning" : "",
         selected ? "ring-1 ring-accent" : "",
+        // Cursor = an offset outline (focus look), independent of the selected
+        // ring (box-shadow) so the two can show at once without clobbering.
+        props.cursored ? "outline outline-2 outline-offset-2 outline-accent" : "",
         props.className ?? "",
       ].filter(Boolean).join(" ")}
     >
@@ -159,7 +166,10 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
 
           {s.exposures.map((e, i) => (
             <div key={e.id}>
-              {flag?.kind === "split" && i === flag.split_at_index ? (
+              {/* split_at_index is 1-BASED (grouping.jl) — the divider sits
+                  BEFORE the 0-based (split_at_index - 1) exposure, i.e. at the
+                  start of the split-off tail. */}
+              {flag?.kind === "split" && i === flag.split_at_index - 1 ? (
                 <div
                   data-testid="split-divider"
                   className="mx-2.5 my-1 flex items-center gap-3 rounded-sm border border-warning bg-paper-sunk px-3 py-1.5"

@@ -64,6 +64,8 @@ export interface Sample {
  *  (`grouping_flag_dismissed`, Phase D) clears it. */
 export type GroupingFlag =
   | { kind: "merge"; merge_with_sample_id: number; merge_with_label: string }
+  // `split_at_index` is 1-BASED (grouping.jl): the exposure where the position
+  // jump lands. Consumers split BEFORE it → 0-based `split_at_index - 1`.
   | { kind: "split"; split_at_index: number; jump_from: number; jump_to: number }
   | null;
 

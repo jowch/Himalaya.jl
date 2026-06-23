@@ -12,6 +12,8 @@
 export type ShortcutId =
   | "prevSample"
   | "nextSample"
+  | "prevFlagged"
+  | "nextFlagged"
   | "prevDetail"
   | "nextDetail"
   | "openFocus"
@@ -51,6 +53,10 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   // Navigate — rev-2 axes: ↑/↓ = sample, ←/→ = detail (page-interpreted).
   prevSample: { id: "prevSample", keys: ["ArrowUp"], label: "Previous sample", group: "Navigate" },
   nextSample: { id: "nextSample", keys: ["ArrowDown"], label: "Next sample", group: "Navigate" },
+  // Surface-local to the grouping review (jump the cursor to the prev/next
+  // FLAGGED sample). Kept OUT of OVERLAY_IDS — not part of the global keymap.
+  prevFlagged: { id: "prevFlagged", keys: ["Shift+ArrowUp"], label: "Previous flagged", group: "Navigate" },
+  nextFlagged: { id: "nextFlagged", keys: ["Shift+ArrowDown"], label: "Next flagged", group: "Navigate" },
   prevDetail: { id: "prevDetail", keys: ["ArrowLeft"], label: "Previous detail", group: "Navigate" },
   nextDetail: { id: "nextDetail", keys: ["ArrowRight"], label: "Next detail", group: "Navigate" },
   openFocus: { id: "openFocus", keys: ["Enter"], label: "Open Focus workspace", group: "Navigate" },

@@ -50,7 +50,8 @@ describe("SampleFold", () => {
   });
 
   it("split flag shows a divider with the position jump before the split index", () => {
-    render(<SampleFold sample={sample({ flag: { kind: "split", split_at_index: 1, jump_from: 8, jump_to: 36 } })} {...baseProps} />);
+    // split_at_index is 1-BASED: 2 → divider before the 0-based index-1 exposure.
+    render(<SampleFold sample={sample({ flag: { kind: "split", split_at_index: 2, jump_from: 8, jump_to: 36 } })} {...baseProps} />);
     const divider = screen.getByTestId("split-divider");
     expect(divider.textContent).toMatch(/8\.0 → 36\.0/);
   });

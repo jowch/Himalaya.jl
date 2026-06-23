@@ -18,6 +18,8 @@ export interface LoadFoldProps {
   onDismissFlag: (sampleId: number) => void;
   onMoveExposure: (sampleId: number, exposureId: number, anchorEl: HTMLElement) => void;
   thumbSrcFor: (exposureId: number) => string | null;
+  /** The keyboard-cursored sample id (↑/↓ nav), or null. */
+  cursoredId?: number | null;
   className?: string;
 }
 
@@ -78,6 +80,7 @@ export function LoadFold(p: LoadFoldProps): JSX.Element {
                 onDismissFlag={p.onDismissFlag}
                 onMoveExposure={p.onMoveExposure}
                 thumbSrcFor={p.thumbSrcFor}
+                cursored={p.cursoredId === s.sample_id}
               />
             </div>
           ))}
