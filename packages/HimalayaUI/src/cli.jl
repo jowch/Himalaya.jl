@@ -258,10 +258,17 @@ function cli_serve(args)
     p = parse_args(args, s; as_symbols = true)
 
     db_path = default_db_path()
-    isfile(db_path) || error("no database at $db_path — ingest an experiment via the HTTP scan API first")
+    # First-run bootstrap: serve an empty schema'd DB when none exists yet, so a
+    # brand-new user lands on the empty experiments home and can create one via
+    # the funnel (you can't reach the HTTP scan API without a running server, and
+    # the server can't start without a DB — a chicken-and-egg the old hard error
+    # left unresolvable). open_db creates + migrates. A loud notice keeps a typo'd
+    # HIMALAYA_DB_PATH from silently masking existing data behind a fresh empty DB.
+    fresh = !isfile(db_path)
+    fresh && @warn "no database at $db_path — creating a new empty one. If you expected existing data, stop and check HIMALAYA_DB_PATH."
 
     db = open_db(db_path)
-    println("HimalayaUI serving DB at $db_path on http://$(p[:host]):$(p[:port])")
+    println("HimalayaUI serving $(fresh ? "a new empty " : "")DB at $db_path on http://$(p[:host]):$(p[:port])")
     serve(db; host = p[:host], port = p[:port])
 end
 
