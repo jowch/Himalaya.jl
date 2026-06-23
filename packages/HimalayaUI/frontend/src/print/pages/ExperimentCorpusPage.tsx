@@ -72,14 +72,24 @@ export function ExperimentCorpusPage(): JSX.Element {
   const triggerScan = useTriggerScan(expId);
 
   // --- State machine derivation ---
-  // Effective status reconciles the live overlay with the persisted truth: a
-  // terminal persisted state overrides a stale "scanning"/"analyzing" overlay
-  // from a dropped SSE terminal frame (8c), and a persisted "scanning" shows the
-  // grouping takeover even on a fresh mount before the first overlay frame.
+  // Effective status reconciles the live overlay with the persisted truth so a
+  // dropped SSE terminal frame (8c) self-heals once the polled row turns terminal.
+  // The surface CHOICE (initial-scan grouping takeover vs inline rescan progress)
+  // can't ride on persisted "scanning" alone — both routes set it — so it keys on
+  // last_scanned_at, which is null only until the first scan completes. That keeps
+  // a reload mid-rescan (overlay lost, persisted "scanning") on the inline path
+  // instead of wrongly re-entering the full grouping takeover.
   const eff = effectiveIngestStatus(inFlight?.status, exp.data?.ingest_status);
-  const scanning = eff === "scanning";
-  const rescanning = eff === "analyzing";
-  const processing = scanning || rescanning;
+  const processing = eff === "scanning" || eff === "analyzing";
+  // The overlay phase is authoritative when present: "analyzing" ⇒ a rescan
+  // (inline ProgressBar), "scanning" ⇒ an initial scan (grouping takeover). Only
+  // when the overlay is absent (a reload mid-scan) does persisted "scanning"
+  // remain, which BOTH routes set — disambiguate with last_scanned_at, null only
+  // until the first scan completes, so a reload mid-rescan stays on the inline
+  // path instead of wrongly re-entering the full takeover.
+  const isInitialScan = eff === "scanning" && exp.data?.last_scanned_at == null;
+  const scanning = processing && isInitialScan;
+  const rescanning = processing && !isInitialScan;
   const failed = !processing && eff === "failed";
 
   // Manifest query — unconditional (hooks rule), enabled only in the failed

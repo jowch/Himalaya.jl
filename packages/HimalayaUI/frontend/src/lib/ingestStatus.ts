@@ -21,13 +21,13 @@ export function effectiveIngestStatus(
   inFlight: IngestProgressStatus | undefined,
   persisted: IngestStatus | undefined,
 ): IngestStatus {
-  // A RESCAN ("analyzing") is driven entirely by the overlay: the persisted row
-  // stays "complete" throughout, so the overlay is the source of truth and must
-  // win even over a terminal persisted state.
-  if (inFlight === "analyzing") return "analyzing";
-  // An INITIAL scan transitions the persisted row scanning→complete/failed, so a
-  // TERMINAL persisted state is authoritative — it overrides a stale "scanning"
-  // overlay left behind by a dropped `ingest_complete` frame (8c).
+  // A TERMINAL persisted state (complete/failed) is authoritative and overrides a
+  // stale overlay. BOTH an initial scan and a rescan transition the persisted row
+  // scanning→complete/failed (routes_experiments.jl), so a dropped terminal SSE
+  // frame can strand the overlay at "scanning" (initial) OR "analyzing" (rescan);
+  // either way the polled terminal row wins and self-heals the surface.
   if (persisted === "complete" || persisted === "failed") return persisted;
+  // Live scan/rescan: the overlay carries the phase distinction (scanning vs
+  // analyzing) and leads; persisted "scanning" bridges the pre-overlay gap.
   return inFlight ?? persisted ?? "idle";
 }

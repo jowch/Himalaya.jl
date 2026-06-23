@@ -146,6 +146,12 @@ describe("ExperimentShell (Phase E1)", () => {
   });
 
   it("Rescan button is disabled when isProcessing (status=analyzing)", async () => {
+    // A live rescan sets the persisted row to "scanning" too (routes set it at
+    // start); only the SSE phase tag distinguishes it as "analyzing" in the
+    // overlay. Mirror that, else effectiveIngestStatus reads the analyzing
+    // overlay + a "complete" row as the 8c stale-overlay path → resolves to
+    // complete (not processing).
+    vi.spyOn(api, "getExperiment").mockResolvedValue({ ...EXP, ingest_status: "scanning" });
     useAppState.setState({
       ingestInFlight: { 7: { status: "analyzing", processed: 20, total: 20 } },
     });

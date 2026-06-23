@@ -2,19 +2,20 @@ import { describe, it, expect } from "vitest";
 import { effectiveIngestStatus } from "../src/lib/ingestStatus";
 
 describe("effectiveIngestStatus", () => {
-  it("terminal persisted state wins over a stale scanning overlay (8c self-heal)", () => {
-    // The missed-ingest_complete-frame case: inFlight stuck "scanning", DB says complete.
+  it("terminal persisted state wins over a stale overlay — both scan kinds (8c self-heal)", () => {
+    // The missed-terminal-frame case: a dropped ingest_complete strands the
+    // overlay at "scanning" (initial scan) or "analyzing" (rescan); the polled
+    // terminal row wins either way.
     expect(effectiveIngestStatus("scanning", "complete")).toBe("complete");
     expect(effectiveIngestStatus("scanning", "failed")).toBe("failed");
+    expect(effectiveIngestStatus("analyzing", "complete")).toBe("complete");
+    expect(effectiveIngestStatus("analyzing", "failed")).toBe("failed");
   });
 
-  it("a rescan overlay (analyzing) leads even when persisted is terminal", () => {
-    // A rescan keeps the persisted row "complete"; the overlay is the truth.
-    expect(effectiveIngestStatus("analyzing", "complete")).toBe("analyzing");
-    expect(effectiveIngestStatus("analyzing", "idle")).toBe("analyzing");
-  });
-
-  it("initial-scan overlay leads while persisted is non-terminal", () => {
+  it("the live overlay leads while persisted is non-terminal (carries the phase)", () => {
+    // During a live rescan the persisted row is "scanning"; the overlay's
+    // "analyzing" phase is what distinguishes it from an initial scan.
+    expect(effectiveIngestStatus("analyzing", "scanning")).toBe("analyzing");
     expect(effectiveIngestStatus("scanning", "scanning")).toBe("scanning");
     expect(effectiveIngestStatus("scanning", "idle")).toBe("scanning");
   });
