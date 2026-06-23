@@ -1260,7 +1260,8 @@ end
         DBInterface.execute(db, "PRAGMA foreign_keys = ON")
         DBInterface.execute(db, """CREATE TABLE experiments (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT,
-            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT)""")
+            data_dir TEXT, analysis_dir TEXT, manifest_path TEXT, config TEXT,
+            image_pattern TEXT, integration_pattern TEXT)""")
         legacy = """
         [experiment]
         name = "Legacy Exp"
