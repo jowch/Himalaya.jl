@@ -70,7 +70,10 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
       data-testid="sample-fold"
       data-cursored={props.cursored ? "true" : undefined}
       className={[
-        "rounded-sm border border-hair bg-plate",
+        // scroll-mb-14 (56px): reserves clearance below for the page's
+        // scrollIntoView so a downward-cursored row aligns ABOVE the fixed
+        // grouping-footer Dock (~47px), not behind it. Mirrors SampleTableRow.
+        "rounded-sm border border-hair bg-plate scroll-mb-14",
         flag ? "border-warning" : "",
         selected ? "ring-1 ring-accent" : "",
         // Cursor = an offset outline (focus look), independent of the selected
