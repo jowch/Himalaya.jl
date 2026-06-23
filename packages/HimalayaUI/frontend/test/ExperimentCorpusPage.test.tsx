@@ -76,13 +76,16 @@ describe("ExperimentCorpusPage (Phase E1)", () => {
     expect(screen.getByTestId("grouping-review-link")).toHaveAttribute("href", "/experiments/7/grouping");
   });
 
-  it("hides the banner when nothing needs review", async () => {
-    // Load with no flagged samples.
+  it("keeps the banner when nothing needs review, in the calm 'clear' state + same link", async () => {
+    // Load with no flagged samples. The banner stays (data-state=clear) with
+    // reassuring copy and the SAME entry point, so review is always one click away.
     const cleanLoad: Load = { ...LOAD_WITH_FLAG,
       samples: LOAD_WITH_FLAG.samples.map((s) => ({ ...s, flag: null })) };
     renderAt([cleanLoad]);
-    await waitFor(() => expect(api.listLoads).toHaveBeenCalled());
-    expect(screen.queryByTestId("grouping-review-banner")).toBeNull();
+    const banner = await screen.findByTestId("grouping-review-banner");
+    expect(banner).toHaveAttribute("data-state", "clear");
+    expect(banner).toHaveTextContent(/settled/i);
+    expect(screen.getByTestId("grouping-review-link")).toHaveAttribute("href", "/experiments/7/grouping");
   });
 
   it("renders the live-ingest placeholder while re-analyzing (analyzing status)", () => {

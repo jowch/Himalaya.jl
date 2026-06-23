@@ -474,18 +474,35 @@ export function ExperimentCorpusPage(): JSX.Element {
         </div>
       )}
 
-      {/* Grouping-review banner — amber, with an explanatory breakdown. */}
-      {reviewCount > 0 && (
+      {/* Grouping-review banner — always present once loads are known. When
+          samples need a check it's an amber call-to-action with the breakdown;
+          otherwise a calm "settled, but review if something's off" that keeps the
+          SAME entry point so the grouping review is always one click away. */}
+      {loads.data !== undefined && (
         <div
           data-testid="grouping-review-banner"
-          className="flex items-center gap-3 rounded-sm border border-warning bg-warning/10 px-4 py-3"
+          data-state={reviewCount > 0 ? "attention" : "clear"}
+          className={`flex items-center gap-3 rounded-sm border px-4 py-3 ${
+            reviewCount > 0 ? "border-warning bg-warning/10" : "border-hair bg-paper-sunk"
+          }`}
         >
-          <span aria-hidden className="text-warning">⚠</span>
+          <span aria-hidden className={reviewCount > 0 ? "text-warning" : "text-ink-faint"}>
+            {reviewCount > 0 ? "⚠" : "✓"}
+          </span>
           <p className="text-sm text-ink-soft">
-            <span className="font-semibold text-ink">
-              {reviewCount} {reviewCount === 1 ? "sample needs" : "samples need"} a grouping check.
-            </span>{" "}
-            {reviewDetail}
+            {reviewCount > 0 ? (
+              <>
+                <span className="font-semibold text-ink">
+                  {reviewCount} {reviewCount === 1 ? "sample needs" : "samples need"} a grouping check.
+                </span>{" "}
+                {reviewDetail}
+              </>
+            ) : (
+              <>
+                <span className="font-semibold text-ink">Grouping looks settled.</span>{" "}
+                Open the review if a sample looks split, merged, or is missing exposures.
+              </>
+            )}
           </p>
           <Link
             to={`/experiments/${expId}/grouping`}
