@@ -1,7 +1,16 @@
-import type { InputHTMLAttributes, ReactNode, Ref } from "react";
+import { forwardRef } from "react";
+import type { InputHTMLAttributes, MutableRefObject, ReactNode, Ref } from "react";
 
 function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
+}
+
+/** Apply one node to several refs (forwarded `ref` + the `inputRef` prop). */
+function setRefs<T>(node: T | null, ...refs: Array<Ref<T> | undefined>): void {
+  for (const r of refs) {
+    if (typeof r === "function") r(node);
+    else if (r) (r as MutableRefObject<T | null>).current = node;
+  }
 }
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
@@ -47,7 +56,7 @@ const sizeClass: Record<"sm" | "md", string> = {
  *  second-channeled by consumer error text (the field carries `aria-invalid` for
  *  assistive tech). F — appearance from `@theme` tokens (`bg-plate`,
  *  `border-hair-strong`, `border-error`, `text-ink`), no hex, 5px `rounded-sm`. */
-export function Input({
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
   value,
   onValueChange,
   inputSize = "md",
@@ -60,7 +69,7 @@ export function Input({
   inputRef,
   className = "",
   ...rest
-}: InputProps): JSX.Element {
+}, ref): JSX.Element {
   const isTitle = variant === "title";
   return (
     <div
@@ -82,7 +91,7 @@ export function Input({
     >
       {leading}
       <input
-        ref={inputRef}
+        ref={(node) => setRefs(node, ref, inputRef)}
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
         aria-invalid={invalid || undefined}
@@ -96,4 +105,4 @@ export function Input({
       {trailing}
     </div>
   );
-}
+});
