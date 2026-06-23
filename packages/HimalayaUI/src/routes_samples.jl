@@ -46,11 +46,16 @@ function register_samples_routes!()
                 "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
                 [exp_filter]))
 
-        # experiment_id -> q_units, one TOML parse per experiment (not per sample).
+        # experiment_id -> q_units. Prefer the typed `q_units` column (Phase A,
+        # the source of truth for HTTP-ingested experiments); fall back to the
+        # deprecated TOML `config` blob for legacy rows whose geometry lives only
+        # there (mirrors `_experiment_row_to_json`'s typed-first-with-fallback).
         qunits_by_exp = Dict{Int, String}()
         for er in Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, config FROM experiments"))
-            qunits_by_exp[Int(er.id)] = _q_units_from_config(er.config)
+                "SELECT id, q_units, config FROM experiments"))
+            qunits_by_exp[Int(er.id)] =
+                (er.q_units === nothing || er.q_units === missing) ?
+                    _q_units_from_config(er.config) : String(er.q_units)
         end
 
         # One batched tag query, grouped by sample_id. Skipped entirely when

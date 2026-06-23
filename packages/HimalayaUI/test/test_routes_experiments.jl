@@ -184,6 +184,27 @@ end
     end
 end
 
+@testset "typed q_units is honored even with no other geometry (6e)" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    # A geometry-less experiment whose ONLY typed value is q_units (config blob
+    # left NULL). Pre-6e, has_typed checked only beam_center_x / energy_kev, so
+    # this fell to the blob and reported the default "A-1", masking the override.
+    exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data",
+        analysis_dir="analysis", q_units="nm^-1", q_units_source="user")
+
+    with_inproc_routes(db) do call
+        body = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
+        @test body.q_units == "nm^-1"
+        @test body.q_units_source == "user"
+        # A stale blob value must NOT override the typed column.
+        DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
+            ["[beamline]\nq_units = \"A-1\"\n", exp_id])
+        body2 = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
+        @test body2.q_units == "nm^-1"
+    end
+end
+
 @testset "GET /experiments/:id stats includes sessions count" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)

@@ -123,9 +123,17 @@ for legacy rows that still have their geometry only in the TOML `config` blob
 """
 function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} = nothing)
     d = row_to_json(row)
-    # Prefer typed columns (Phase A); fall back to TOML blob for legacy rows.
+    # Prefer typed columns (Phase A); fall back to the TOML blob ONLY for legacy
+    # rows that carry NO typed geometry at all. Checking every typed field (not
+    # just beam_center_x / energy_kev) means a q_units-only override — e.g. a
+    # Configuration PATCH on a geometry-less experiment — is honored instead of
+    # being masked by the blob's default "A-1".
     has_typed = !isnothing(get(d, :beam_center_x, nothing)) ||
-                !isnothing(get(d, :energy_kev, nothing))
+                !isnothing(get(d, :beam_center_y, nothing)) ||
+                !isnothing(get(d, :flight_path_m, nothing)) ||
+                !isnothing(get(d, :pixel_size_um, nothing)) ||
+                !isnothing(get(d, :energy_kev, nothing)) ||
+                !isnothing(get(d, :q_units, nothing))
     if !has_typed
         bl = _beamline_from_config(get(d, :config, nothing))
         d[:q_units]              = bl.q_units
