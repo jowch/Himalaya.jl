@@ -538,12 +538,12 @@ export function ExperimentCorpusPage(): JSX.Element {
         <div className="flex items-center gap-1">
           <span className="text-meta text-ink-soft">Frame</span>
           <IconButton label="Previous frame" tone="ghost" disabled={cursor.frameIndex === 0}
-            onClick={() => clampFrame(-1)} data-testid="dock-prev-frame">‹</IconButton>
+            onClick={() => clampFrame(-1)} data-testid="dock-prev-frame">←</IconButton>
           <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
             data-testid="dock-frame-count">{framePos} / {frameTotal}</span>
           <IconButton label="Next frame" tone="ghost"
             disabled={cursor.frameIndex >= frameTotal - 1}
-            onClick={() => clampFrame(1)} data-testid="dock-next-frame">›</IconButton>
+            onClick={() => clampFrame(1)} data-testid="dock-next-frame">→</IconButton>
         </div>
 
         <span className="w-px self-stretch bg-hair" aria-hidden />

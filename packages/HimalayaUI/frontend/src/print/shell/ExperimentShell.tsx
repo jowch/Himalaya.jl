@@ -46,6 +46,9 @@ export function ExperimentShell(): JSX.Element {
   // separate effect/re-render cycle. When true, we render `pendingDraft`.
   const [localEdit, setLocalEdit] = useState(false);
   const [pendingDraft, setPendingDraft] = useState("");
+  // Rename is pencil-activated (matching SampleFold / the config name): at rest
+  // the name is a confident h1, not a permanently-open input field (item 3).
+  const [editingName, setEditingName] = useState(false);
   // The effective draft: if the user has typed, use their pending draft;
   // otherwise fall back to the server value (or the placeholder).
   const nameDraft = localEdit ? pendingDraft : serverName;
@@ -100,23 +103,41 @@ export function ExperimentShell(): JSX.Element {
                 The wrapper is suppressed during loading so `findByTestId`
                 waits for data to arrive before resolving. */}
             {exp.data !== undefined && (
-              <Input
-                variant="title"
-                testId="experiment-header-name"
-                value={nameDraft || `Experiment ${expId}`}
-                onValueChange={(v) => {
-                  setLocalEdit(true);
-                  setPendingDraft(v);
-                }}
-                onBlur={commitName}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    commitName();
-                    (e.target as HTMLElement).blur();
-                  }
-                }}
-                aria-label="Experiment name"
-              />
+              editingName ? (
+                <Input
+                  variant="title"
+                  testId="experiment-header-name"
+                  value={nameDraft || `Experiment ${expId}`}
+                  onValueChange={(v) => {
+                    setLocalEdit(true);
+                    setPendingDraft(v);
+                  }}
+                  autoFocus
+                  onBlur={() => { commitName(); setEditingName(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      commitName();
+                      setEditingName(false);
+                      (e.target as HTMLElement).blur();
+                    } else if (e.key === "Escape") {
+                      setLocalEdit(false);
+                      setPendingDraft("");
+                      setEditingName(false);
+                      (e.target as HTMLElement).blur();
+                    }
+                  }}
+                  aria-label="Experiment name"
+                />
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h1 data-testid="experiment-header-name" className="text-display text-ink truncate">
+                    {nameDraft || `Experiment ${expId}`}
+                  </h1>
+                  <IconButton label="Rename experiment" tone="ghost" onClick={() => setEditingName(true)}>
+                    {"✎"}
+                  </IconButton>
+                </div>
+              )
             )}
             {exp.data?.data_dir && (
               <p className="text-sm text-ink-soft font-mono mt-1 truncate">

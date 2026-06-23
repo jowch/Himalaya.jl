@@ -497,7 +497,7 @@ export function LoupePage(): JSX.Element {
         </Skeleton>
 
         {/* ── Contextual bottom dock (Loupe grammar §3.3) ──────────────────────────
-            ‹ Corpus · Sample↑↓ · Frame‹› · Drop · Keep · Set representative · Restore · Focus
+            ‹ Corpus · Sample↑↓ · Frame←→ · Drop · Keep · Set representative · Restore · Focus
             Each verb calls the SAME callback the keyboard shortcut uses. */}
         <Dock>
           {/* Up-link back to corpus */}
@@ -550,7 +550,7 @@ export function LoupePage(): JSX.Element {
               onClick={() => flip(-1)}
               data-testid="dock-prev-frame"
             >
-              ‹
+              ←
             </IconButton>
             {activeExposure !== undefined && (
               <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
@@ -563,7 +563,7 @@ export function LoupePage(): JSX.Element {
               onClick={() => flip(1)}
               data-testid="dock-next-frame"
             >
-              ›
+              →
             </IconButton>
           </div>
 

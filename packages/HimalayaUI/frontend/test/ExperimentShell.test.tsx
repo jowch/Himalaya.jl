@@ -42,10 +42,11 @@ describe("ExperimentShell (Phase E1)", () => {
     // T3.2: ExperimentShell is pure page content; TopNav comes from the outer
     // AppShell (not rendered in this isolated unit test).
     renderAt("/experiments/7/corpus");
-    // The header name is an Input variant='title' (edit-in-place). Its wrapper
-    // div carries data-testid; the inner <input> carries the value attribute.
-    const nameWrapper = await screen.findByTestId("experiment-header-name");
-    expect(nameWrapper.querySelector("input")?.value).toBe("SSRL · 1p7m");
+    // At rest the header name is a confident h1 (item 3); the pencil reveals the
+    // edit-in-place Input. The h1 shows the loaded value.
+    const heading = await screen.findByTestId("experiment-header-name");
+    expect(heading.tagName).toBe("H1");
+    expect(heading.textContent).toBe("SSRL · 1p7m");
   });
 
   it("retires the tab bar; Configuration is reached via the ⚙ gear (M3)", async () => {
@@ -97,8 +98,10 @@ describe("ExperimentShell (Phase E1)", () => {
 
     renderAt("/experiments/7/corpus");
 
-    // Wait for the Input to appear (it is suppressed during loading).
-    const wrapper = await screen.findByTestId("experiment-header-name");
+    // At rest it's an h1; click the pencil to reveal the edit-in-place Input.
+    await screen.findByTestId("experiment-header-name");
+    fireEvent.click(screen.getByRole("button", { name: /rename experiment/i }));
+    const wrapper = screen.getByTestId("experiment-header-name");
     const input = wrapper.querySelector("input") as HTMLInputElement;
     expect(input).not.toBeNull();
 
