@@ -410,7 +410,9 @@ export function ExperimentCorpusPage(): JSX.Element {
 
   // ── Corpus sheet + cull/compose/dock ─────────────────────────────────────
   return (
-    <div data-testid="experiment-corpus" className="flex flex-col gap-4">
+    // pb-24 clears the fixed Dock (≈47px) so the last sample rows scroll above it
+    // instead of hiding beneath — the sheet had no bottom clearance.
+    <div data-testid="experiment-corpus" className="flex flex-col gap-4 pb-24">
       {/* Inline rescan banner (item 8): an additive rescan reports progress here
           without unmounting the sheet/dock below — the rows stay put. */}
       {rescanning && (

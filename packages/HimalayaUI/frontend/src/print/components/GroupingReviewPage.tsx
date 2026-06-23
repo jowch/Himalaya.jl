@@ -337,9 +337,10 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   }, [cursorId]);
 
   return (
-    <div className={`mx-auto max-w-[1180px] px-10 pb-32 pt-8${className ? ` ${className}` : ""}`}>
+    <div className={`mx-auto max-w-[1180px] px-10 pb-32 pt-12${className ? ` ${className}` : ""}`}>
       {/* Back-to-corpus moved into the footer dock as the "‹ Samples" up-link,
-          mirroring the corpus Dock's "‹ Experiments". */}
+          mirroring the corpus Dock's "‹ Experiments". The top padding (pt-12)
+          replaces the breathing room the removed top back-button used to give. */}
 
       {scanning ? (
         // Combined scan + grouping-review header (p1-grouping): live progress as

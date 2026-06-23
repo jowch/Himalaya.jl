@@ -138,6 +138,14 @@ export function SampleTableRow({
 }: SampleTableRowProps): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
+  // Cursor cue (item 4): the roving ↑/↓ row reads as one opaque terracotta band.
+  // An `outline` was clipped — the frozen sticky cells (z-10, opaque) painted
+  // over it on the left and the horizontal scroller cut it on the right — so the
+  // whole row + its sticky cells take the OPAQUE `bg-accent-wash` instead (a
+  // sanctioned token; opaque so the frozen column still hides content beneath).
+  // Distinct in hue from the neutral grey rest/hover, and overrides hover so the
+  // cursor stays put under the mouse.
+  const rowBg = cursored ? " bg-accent-wash" : ` hover:bg-paper-sunk${restTint}`;
 
   // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
   // cells). The opaque background must mirror the row's own surface — bg-plate
@@ -145,7 +153,11 @@ export function SampleTableRow({
   // unscreened resting tint — and follow the row hover via group-hover, so the
   // frozen column is indistinguishable from the row at wide viewports.
   const stickyBg = screened ? "bg-plate" : "bg-paper-sunk";
-  const sticky = `sticky z-10 ${stickyBg} group-hover/row:bg-paper-sunk`;
+  // The frozen cells follow the cursor band so the left column doesn't stay grey
+  // while the body turns terracotta (the "broken border" the outline produced).
+  const sticky = cursored
+    ? "sticky z-10 bg-accent-wash"
+    : `sticky z-10 ${stickyBg} group-hover/row:bg-paper-sunk`;
   const sampleLeft = hasCheckbox ? CHECKBOX_TRACK_PX : 0;
 
   return (
@@ -154,7 +166,7 @@ export function SampleTableRow({
       role="row"
       data-screened={screened ? "true" : "false"}
       data-cursored={cursored ? "true" : "false"}
-      className={`group/row border-b border-hair hover:bg-paper-sunk${restTint}${cursored ? " outline outline-2 -outline-offset-2 outline-accent" : ""}${className ? ` ${className}` : ""}`}
+      className={`group/row border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
     >
       <div
         role="presentation"
