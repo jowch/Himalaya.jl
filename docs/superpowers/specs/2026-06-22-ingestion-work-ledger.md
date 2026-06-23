@@ -64,8 +64,8 @@ spec wins on *what to build*, this ledger wins on *what is left and in what orde
 - [x] **7. Real ingest live walk** (mini-1p7m → `mini-clean.db`, 138 exposures, 35 samples, 3 loads) — WALKED end to end. ✅ Funnel (picker pre-flight ✓✓ → config coverage 138 Image / 138/138 Metadata / 138/138 Integration, no D4 block → leaf analysis_dir resolved → geometry from real `setup_info` → Approve). ✅ Grouping live-unfold + split-flag segmentation (real stage-position jumps) + Confirm-gate. ✅ Corpus render (5-stat masthead 3·35·138·5.9h·2, amber review banner, sheet with real detector thumbnails + slot chips, §7 dock). 🐛 Found **P0 .dat-pattern (analyze indexes nothing)**, **P1 route→404 (fixed)**, **P2 scanning-no-auto-complete** — all in Inbox. *The walk did its job: caught a P0 that 1000+ green tests + the funnel preview all missed.*
 
 ### 8. P0/P1 from the live walk (do NEXT — blocks a usable real ingest)
-- [ ] **8a. P0 — `analyze_exposure!` integration-`.dat` resolution** (see Inbox). Real ingest indexes zero samples. Backend fix + real-ingest test. *Highest priority.*
-- [x] **8b. P1 — grouping Confirm/Back → 404** (`<pending>`) — absolute route in `AppRoutes.tsx`.
+- [x] **8a. P0 — integration-`.dat` resolution** (`365ba492`) — `config_from_db` now prefers the per-experiment pattern COLUMNS over the deprecated blob; root cause was the builtin `{name}.dat` fallback. Live-verified: 173 indices / 333 auto_peaks / 0 dat-errors on a real re-ingest; suite green.
+- [x] **8b. P1 — grouping Confirm/Back → 404** (`9abb40c5`) — absolute route in `AppRoutes.tsx`.
 - [ ] **8c. P2 — scanning UI auto-complete** (see Inbox) — refetch `ingest_status` while scanning, or fix the completion-frame race.
 
 ## Inbox (unplaced discoveries)
