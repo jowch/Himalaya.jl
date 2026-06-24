@@ -838,23 +838,22 @@ function snap_experiment(db::SQLite.DB, experiment_id::Int)
      curation = count_curation(db))
 end
 
-@testset "Task 3 upgrade-grouping CLI" begin
-    # Helper: run cli_upgrade_grouping with HIMALAYA_DB_PATH pointing at `path`.
-    # Captures stdout to a temp file and returns it as a String.
-    function run_upgrade(path, args)
-        tmpf = tempname()
-        open(tmpf, "w") do io
-            redirect_stdout(io) do
-                withenv("HIMALAYA_DB_PATH" => path) do
-                    HimalayaUI.cli_upgrade_grouping(args)
-                end
+"Run cli_upgrade_grouping with HIMALAYA_DB_PATH=path, capturing stdout to a String."
+function run_upgrade(path, args)
+    tmpf = tempname()
+    open(tmpf, "w") do io
+        redirect_stdout(io) do
+            withenv("HIMALAYA_DB_PATH" => path) do
+                HimalayaUI.cli_upgrade_grouping(args)
             end
         end
-        out = read(tmpf, String)
-        rm(tmpf; force = true)
-        out
     end
+    out = read(tmpf, String)
+    rm(tmpf; force = true)
+    out
+end
 
+@testset "Task 3 upgrade-grouping CLI" begin
     @testset "dry-run leaves data unchanged (regroup_experiment! kwarg proof)" begin
         # Unit-level proof: call regroup_experiment! with dry_run=true directly,
         # assert the DB state is row-identical to before.
@@ -1133,20 +1132,6 @@ function build_legacy_db_full(dir::AbstractString)
     return path, info
 end
 
-"Run cli_upgrade_grouping with HIMALAYA_DB_PATH=path, capturing stdout to a String."
-function run_upgrade_capture(path, args)
-    tmpf = tempname()
-    open(tmpf, "w") do io
-        redirect_stdout(io) do
-            withenv("HIMALAYA_DB_PATH" => path) do
-                HimalayaUI.cli_upgrade_grouping(args)
-            end
-        end
-    end
-    out = read(tmpf, String)
-    rm(tmpf; force = true)
-    out
-end
 
 @testset "Task 4 end-to-end round-trip" begin
     @testset "fixture derives the asserted multi-shape partition when scanned whole" begin
@@ -1216,14 +1201,11 @@ end
         end
 
         # --- data half: exercise the CLI --apply path (Task 3 wrapper) ---
-        out = run_upgrade_capture(path, ["--apply", "--experiment", string(info.experiment_id)])
+        out = run_upgrade(path, ["--apply", "--experiment", string(info.experiment_id)])
         @test occursin("APPLY", out)
         @test occursin("ok", out)
 
         with_migration_db(path) do db
-            # opens clean (no error from open_db on the upgraded DB).
-            @test true
-
             # loads > 0 with correct frame_counts (5 / 2 from the partition).
             loads = Tables.rowtable(DBInterface.execute(db,
                 "SELECT id, load_index, frame_count FROM loads WHERE experiment_id = ? ORDER BY load_index",
@@ -1322,10 +1304,10 @@ end
         with_migration_db(path) do db; HimalayaUI.migrate_schema!(db); end
         exp_arg = ["--apply", "--experiment", string(info.experiment_id)]
 
-        run_upgrade_capture(path, exp_arg)
+        run_upgrade(path, exp_arg)
         snap1 = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
 
-        run_upgrade_capture(path, exp_arg)
+        run_upgrade(path, exp_arg)
         snap2 = with_migration_db(path) do db; snap_experiment(db, info.experiment_id); end
 
         # Full row-state identity across loads/exposures + curation.

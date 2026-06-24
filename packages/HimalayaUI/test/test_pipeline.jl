@@ -462,7 +462,7 @@ end
         # Confirm peaks were persisted (i.e. the pattern resolved correctly and the file was loaded)
         peaks = Tables.rowtable(DBInterface.execute(db,
             "SELECT id FROM auto_peaks WHERE exposure_id = ?", [e_id]))
-        @test length(peaks) >= 0   # Just need analyze_exposure! not to throw
+        @test length(peaks) >= 1   # pattern resolved + example data contains peaks
     end
 end
 

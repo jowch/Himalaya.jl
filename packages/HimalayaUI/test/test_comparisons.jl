@@ -481,15 +481,12 @@ end
 # in `routes_comparisons.jl` (deleted). The kept `comparison_*` dispatcher
 # branches + idempotency-replay are still covered by `test_events.jl` and
 # `test_idempotency_replay_invariant.jl`.
-@testset "Comparisons REST routes (retired with the Compare routes, #177)" begin
-    # All route tests here exercised `routes_comparisons.jl` (deleted): create,
-    # get, listing, forks, submit (incl. 403/404/409 author + conflict gates),
-    # delete + cascade, messages, and idempotent-replay of the submit op. The
-    # kept `comparison_*` dispatcher branches + idempotency replay are still
-    # covered by `test_events.jl` and `test_idempotency_replay_invariant.jl`;
-    # sample-message routing is covered by `test_routes_messages.jl`.
-    @test true  # placeholder so the testset is non-empty
-end
+# Comparisons REST routes (retired with the Compare routes, #177): create,
+# get, listing, forks, submit (incl. 403/404/409 author + conflict gates),
+# delete + cascade, messages, and idempotent-replay of the submit op. The
+# kept `comparison_*` dispatcher branches + idempotency replay are still
+# covered by `test_events.jl` and `test_idempotency_replay_invariant.jl`;
+# sample-message routing is covered by `test_routes_messages.jl`.
 
 @testset "_count_distinct_phases — Compare UX F" begin
     f = HimalayaUI._count_distinct_phases

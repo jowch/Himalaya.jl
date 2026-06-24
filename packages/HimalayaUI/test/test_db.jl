@@ -223,10 +223,17 @@ end
 
 @testset "migrate_r2_split_peaks! is idempotent" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-        # Open again — should not error or duplicate rows.
-        db2 = HimalayaUI.open_db(joinpath(dir, "h.db"))
-        @test true  # if no exception thrown, we're good
+        path = joinpath(dir, "h.db")
+        db = HimalayaUI.open_db(path)
+        # First open: record table list.
+        tables1 = Set(String(r.name) for r in Tables.rowtable(
+            DBInterface.execute(db, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")))
+        # Second open — must not error or duplicate any table.
+        @test_nowarn HimalayaUI.open_db(path)
+        db2 = HimalayaUI.open_db(path)
+        tables2 = Set(String(r.name) for r in Tables.rowtable(
+            DBInterface.execute(db2, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")))
+        @test tables1 == tables2
     end
 end
 

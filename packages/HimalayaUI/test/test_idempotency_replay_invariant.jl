@@ -217,9 +217,8 @@ end
     # itself stays covered by the surviving kinds above (peak_added,
     # assignment_add, post_message, update_sample). The kept comparison_*
     # dispatcher branches' fold is covered by test_events.jl.
-    @testset "comparison replay invariants (retired with the Compare routes, #177)" begin
-        @test true  # placeholder; routes deleted in I3.6
-    end
+    # comparison replay invariants (retired with the Compare routes, #177);
+    # routes deleted in I3.6; invariant covered by surviving kinds above.
 end
 
 # I3.6 (#177): the "SSE frame includes view_* on comparison_submitted (A-6)"
