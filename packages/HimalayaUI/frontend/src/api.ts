@@ -803,7 +803,7 @@ export const batchSampleTags = (
 //
 // Queue-side scaffolding (#198) + the folio read layer (#173 / I3.3): the
 // listing summary type `SeriesSummary` and the read fetchers
-// (listSeries / getSeries / forksOfSeries) below back the read hooks
+// (listSeries / getSeries) below back the read hooks
 // useSeriesList / useSeries in queries.ts. See the Decision Record in
 // docs/event-log.md.
 // Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
