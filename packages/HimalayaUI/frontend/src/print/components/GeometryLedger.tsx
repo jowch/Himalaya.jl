@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { useRef, useState, type JSX } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -11,11 +11,17 @@ export interface GeometryRow {
   label: string;
   value: string;
   source: GeometrySource;
+  /** Raw, unit-less seed for the inline editor (e.g. "9.00", not "9.00 keV").
+   *  Undefined means the row has no editable value yet -- Override is a no-op. */
+  editValue?: string | undefined;
 }
 
 export interface GeometryLedgerProps {
   rows: GeometryRow[];
-  onOverride: (key: string) => void;
+  /** Commit an inline override: fired on Enter/blur with the row key and the
+   *  raw draft string. The parent parses it, decides no-op vs PATCH, and owns
+   *  the undo stack -- this component only owns which row is open and its draft. */
+  onCommit: (key: string, value: string) => void;
   onRevert: (key: string) => void;
   onUndo: () => void;
   canUndo: boolean;
@@ -23,16 +29,6 @@ export interface GeometryLedgerProps {
   canRedo: boolean;
   discrepancyCount?: number;
   className?: string;
-  /** Key of the row currently being inline-edited (undefined = not editing). */
-  editingKey?: string;
-  /** Controlled draft value for the row being edited. */
-  editDraft?: string;
-  /** Called when the user types into the inline input. */
-  onEditDraftChange?: (value: string) => void;
-  /** Called on Enter or blur -- parent decides whether to PATCH. */
-  onEditCommit?: () => void;
-  /** Called on Escape -- parent cancels the edit, no PATCH. */
-  onEditCancel?: () => void;
 }
 
 // Source label display strings -- no em dashes.
@@ -45,6 +41,34 @@ const SOURCE_LABEL: Record<GeometrySource, string> = {
 };
 
 export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  // Synchronous guard: a blur firing right after Enter must not commit twice
+  // (a double commit would push two undo entries for one edit). State alone is
+  // too late -- the blur handler closes over the pre-update render -- so the ref
+  // is cleared inside commit() before the second call can read it.
+  const editingRef = useRef<string | null>(null);
+
+  const begin = (r: GeometryRow) => {
+    if (r.editValue === undefined) return;
+    editingRef.current = r.key;
+    setEditingKey(r.key);
+    setDraft(r.editValue);
+  };
+
+  const commit = () => {
+    const key = editingRef.current;
+    if (key === null) return;
+    editingRef.current = null;
+    setEditingKey(null);
+    p.onCommit(key, draft);
+  };
+
+  const cancel = () => {
+    editingRef.current = null;
+    setEditingKey(null);
+  };
+
   return (
     <Card className={p.className}>
       <div className="flex items-center justify-between border-b border-hair px-4 py-3.5">
@@ -83,7 +107,7 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
 
       <div className="px-4 pb-3.5">
         {p.rows.map((r) => {
-          const isEditing = p.editingKey === r.key;
+          const isEditing = editingKey === r.key;
           return (
             <div
               key={r.key}
@@ -97,16 +121,16 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
                 <Input
                   mono
                   inputSize="sm"
-                  value={p.editDraft ?? ""}
-                  onValueChange={p.onEditDraftChange ?? (() => {})}
+                  value={draft}
+                  onValueChange={setDraft}
                   aria-label={`Override ${r.label}`}
                   className="w-32"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); p.onEditCommit?.(); }
-                    if (e.key === "Escape") { e.preventDefault(); p.onEditCancel?.(); }
+                    if (e.key === "Enter") { e.preventDefault(); commit(); }
+                    if (e.key === "Escape") { e.preventDefault(); cancel(); }
                   }}
-                  onBlur={() => p.onEditCommit?.()}
+                  onBlur={() => commit()}
                 />
               ) : (
                 <span className="w-32 shrink-0 font-mono text-sm font-medium text-ink">{r.value}</span>
@@ -128,7 +152,7 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
                   <Button
                     variant="ghost"
                     aria-label={`Override ${r.label}`}
-                    onClick={() => p.onOverride(r.key)}
+                    onClick={() => begin(r)}
                   >
                     {r.source === "user" ? "Edit" : "Override"}
                   </Button>

@@ -3,13 +3,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { GeometryLedger, type GeometryRow } from "../src/print/components/GeometryLedger";
 
 const ROWS: GeometryRow[] = [
-  { key: "beam_energy", label: "Beam energy", value: "9.00 keV", source: "prp" },
-  { key: "beam_center_x", label: "Beam center X", value: "421.4 px", source: "setup" },
-  { key: "flight_path", label: "Flight path", value: "1.81 m", source: "user" },
+  { key: "beam_energy", label: "Beam energy", value: "9.00 keV", source: "prp", editValue: "9.00" },
+  { key: "beam_center_x", label: "Beam center X", value: "421.4 px", source: "setup", editValue: "421.4" },
+  { key: "flight_path", label: "Flight path", value: "1.81 m", source: "user", editValue: "1.81" },
 ];
 
 const cb = {
-  onOverride: () => {},
+  onCommit: () => {},
   onRevert: () => {},
   onUndo: () => {},
   canUndo: false,
@@ -30,12 +30,6 @@ describe("GeometryLedger", () => {
     render(<GeometryLedger rows={ROWS} {...cb} onRevert={onRevert} />);
     fireEvent.click(screen.getByRole("button", { name: /revert/i }));
     expect(onRevert).toHaveBeenCalledWith("flight_path");
-  });
-  it("Override calls onOverride with the key", () => {
-    const onOverride = vi.fn();
-    render(<GeometryLedger rows={ROWS} {...cb} onOverride={onOverride} />);
-    fireEvent.click(screen.getAllByRole("button", { name: /override/i })[0]!);
-    expect(onOverride).toHaveBeenCalledWith("beam_energy");
   });
   it("shows the discrepancy banner when discrepancies > 0", () => {
     render(<GeometryLedger rows={ROWS} {...cb} discrepancyCount={2} />);
@@ -58,95 +52,73 @@ describe("GeometryLedger", () => {
     expect(onRedo).toHaveBeenCalled();
   });
 
-  // --- inline edit-in-place tests ---
+  // --- inline edit-in-place tests (GeometryLedger owns editing state) ---
 
-  it("when editingKey matches a row, that row shows an input seeded with editDraft", () => {
-    render(
-      <GeometryLedger
-        rows={ROWS}
-        {...cb}
-        editingKey="beam_energy"
-        editDraft="9.00 keV"
-        onEditDraftChange={() => {}}
-        onEditCommit={() => {}}
-        onEditCancel={() => {}}
-      />
-    );
+  it("Override opens an input on that row, seeded with the row's editValue", () => {
+    render(<GeometryLedger rows={ROWS} {...cb} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
     const inp = screen.getByRole("textbox", { name: /override beam energy/i });
-    expect(inp).toBeInTheDocument();
-    expect((inp as HTMLInputElement).value).toBe("9.00 keV");
+    expect((inp as HTMLInputElement).value).toBe("9.00");
   });
 
-  it("onEditDraftChange fires when the inline input changes", () => {
-    const onChange = vi.fn();
-    render(
-      <GeometryLedger
-        rows={ROWS}
-        {...cb}
-        editingKey="beam_energy"
-        editDraft="9.00 keV"
-        onEditDraftChange={onChange}
-        onEditCommit={() => {}}
-        onEditCancel={() => {}}
-      />
-    );
-    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
-    fireEvent.change(inp, { target: { value: "10.00 keV" } });
-    expect(onChange).toHaveBeenCalledWith("10.00 keV");
+  it("a row with no editValue is not editable -- Override is a no-op", () => {
+    const rows: GeometryRow[] = [{ key: "q_units", label: "q units", value: "—", source: "default" }];
+    render(<GeometryLedger rows={rows} {...cb} />);
+    fireEvent.click(screen.getByRole("button", { name: /override q units/i }));
+    expect(screen.queryByRole("textbox", { name: /override q units/i })).toBeNull();
   });
 
-  it("onEditCommit fires on Enter in the inline input", () => {
+  it("Enter commits the current draft via onCommit(key, value)", () => {
     const onCommit = vi.fn();
-    render(
-      <GeometryLedger
-        rows={ROWS}
-        {...cb}
-        editingKey="beam_energy"
-        editDraft="9.00 keV"
-        onEditDraftChange={() => {}}
-        onEditCommit={onCommit}
-        onEditCancel={() => {}}
-      />
-    );
+    render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10.00" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    expect(onCommit).toHaveBeenCalledWith("beam_energy", "10.00");
+  });
+
+  it("blur commits via onCommit", () => {
+    const onCommit = vi.fn();
+    render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
+    fireEvent.blur(screen.getByRole("textbox", { name: /override beam energy/i }));
+    expect(onCommit).toHaveBeenCalledWith("beam_energy", "9.00");
+  });
+
+  it("Enter then a trailing blur commits exactly once (no double undo push)", () => {
+    const onCommit = vi.fn();
+    render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
     const inp = screen.getByRole("textbox", { name: /override beam energy/i });
     fireEvent.keyDown(inp, { key: "Enter" });
-    expect(onCommit).toHaveBeenCalled();
-  });
-
-  it("onEditCommit fires on blur from the inline input", () => {
-    const onCommit = vi.fn();
-    render(
-      <GeometryLedger
-        rows={ROWS}
-        {...cb}
-        editingKey="beam_energy"
-        editDraft="9.00 keV"
-        onEditDraftChange={() => {}}
-        onEditCommit={onCommit}
-        onEditCancel={() => {}}
-      />
-    );
-    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
     fireEvent.blur(inp);
-    expect(onCommit).toHaveBeenCalled();
+    expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
-  it("onEditCancel fires on Escape in the inline input", () => {
-    const onCancel = vi.fn();
-    render(
-      <GeometryLedger
-        rows={ROWS}
-        {...cb}
-        editingKey="beam_energy"
-        editDraft="9.00 keV"
-        onEditDraftChange={() => {}}
-        onEditCommit={() => {}}
-        onEditCancel={onCancel}
-      />
-    );
+  it("switching rows mid-edit commits the open row exactly once, then opens the next", () => {
+    // Real browsers blur the open input when focus leaves to click another row's
+    // Override. The ref guard must serialize: blur A commits once, opening B
+    // must not re-fire A's commit (which would risk a stray second undo entry).
+    const onCommit = vi.fn();
+    render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
+    fireEvent.blur(screen.getByRole("textbox", { name: /override beam energy/i }));
+    fireEvent.click(screen.getByRole("button", { name: /override beam center x/i }));
+    expect(screen.getByRole("textbox", { name: /override beam center x/i })).toBeInTheDocument();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("beam_energy", "9.00");
+  });
+
+  it("Escape exits edit mode without committing", () => {
+    const onCommit = vi.fn();
+    render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
     const inp = screen.getByRole("textbox", { name: /override beam energy/i });
     fireEvent.keyDown(inp, { key: "Escape" });
-    expect(onCancel).toHaveBeenCalled();
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: /override beam energy/i })).toBeNull();
+    expect(screen.getByText("9.00 keV")).toBeInTheDocument();
   });
 
   it("source='computed' renders a non-empty provenance chip label", () => {
@@ -154,22 +126,12 @@ describe("GeometryLedger", () => {
       { key: "beam_center_x", label: "Beam center X", value: "421.4 px", source: "computed" },
     ];
     render(<GeometryLedger rows={computedRows} {...cb} />);
-    // Must show a non-empty label (not "—"), using the "computed" entry in SOURCE_LABEL.
     expect(screen.getByText("computed")).toBeInTheDocument();
   });
 
   it("non-editing rows still show their text value when a different row is being edited", () => {
-    render(
-      <GeometryLedger
-        rows={ROWS}
-        {...cb}
-        editingKey="beam_energy"
-        editDraft="9.00 keV"
-        onEditDraftChange={() => {}}
-        onEditCommit={() => {}}
-        onEditCancel={() => {}}
-      />
-    );
+    render(<GeometryLedger rows={ROWS} {...cb} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
     expect(screen.getByText("421.4 px")).toBeInTheDocument();
     expect(screen.getByText("1.81 m")).toBeInTheDocument();
   });

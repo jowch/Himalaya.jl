@@ -100,11 +100,13 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState("");
 
-  // Geometry inline-edit state.
-  const [editingKey, setEditingKey] = useState<string | undefined>(undefined);
-  const [editDraft, setEditDraft] = useState("");
-
   // --- Build geometry rows ---
+  // Raw, unit-less seed for a row's inline editor (undefined = nothing to edit).
+  const geoEdit = (key: string): string | undefined => {
+    if (!exp) return undefined;
+    const raw = rawGeoValue(exp, key);
+    return raw === undefined ? undefined : rawToDraft(raw);
+  };
   const geometryRows: GeometryRow[] = exp
     ? [
         {
@@ -112,36 +114,42 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
           label: "Beam energy",
           value: exp.energy_kev != null ? `${exp.energy_kev.toFixed(2)} keV` : "—",
           source: exp.energy_kev_source,
+          editValue: geoEdit("energy_kev"),
         },
         {
           key: "flight_path_m",
           label: "Flight path",
           value: exp.flight_path_m != null ? `${exp.flight_path_m.toFixed(4)} m` : "—",
           source: exp.flight_path_m_source,
+          editValue: geoEdit("flight_path_m"),
         },
         {
           key: "beam_center_x",
           label: "Beam center X",
           value: exp.beam_center_x != null ? `${exp.beam_center_x.toFixed(1)} px` : "—",
           source: exp.beam_center_x_source,
+          editValue: geoEdit("beam_center_x"),
         },
         {
           key: "beam_center_y",
           label: "Beam center Y",
           value: exp.beam_center_y != null ? `${exp.beam_center_y.toFixed(1)} px` : "—",
           source: exp.beam_center_y_source,
+          editValue: geoEdit("beam_center_y"),
         },
         {
           key: "pixel_size_um",
           label: "Pixel pitch",
           value: exp.pixel_size_um != null ? `${exp.pixel_size_um} µm` : "—",
           source: exp.pixel_size_um_source,
+          editValue: geoEdit("pixel_size_um"),
         },
         {
           key: "q_units",
           label: "q units",
           value: exp.q_units ?? "—",
           source: exp.q_units_source,
+          editValue: geoEdit("q_units"),
         },
       ]
     : [];
@@ -179,43 +187,23 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
 
   // --- Geometry override handlers ---
 
-  /** Activate inline editing for a row. Seeds the draft with the raw numeric
-   *  (or string) value -- no units suffix -- so the user edits a clean number. */
-  const handleOverride = (key: string) => {
+  /** Commit an inline geometry edit (GeometryLedger owns which row is open and
+   *  its draft; this just decides what to do with the committed value). Parses
+   *  the draft; if unchanged or unparseable, no-op. Only on a real change: push
+   *  undo BEFORE the PATCH so Undo restores the old value and Redo replays the
+   *  new one (backend stamps *_source='user'). */
+  const handleGeomCommit = (key: string, draft: string) => {
     if (!exp) return;
-    const raw = rawGeoValue(exp, key);
-    if (raw === undefined) return;
-    setEditingKey(key);
-    setEditDraft(rawToDraft(raw));
-  };
-
-  /** Commit an inline edit. Parses the draft; if the value is unchanged (or
-   *  unparseable), exits edit mode without a PATCH. Only when the value
-   *  actually changes: push undo + PATCH (backend stamps *_source='user'). */
-  const handleEditCommit = () => {
-    if (!exp || !editingKey) {
-      setEditingKey(undefined);
-      return;
-    }
-    const newRaw = parseDraft(editingKey, editDraft);
-    const prevRaw = rawGeoValue(exp, editingKey);
-    const row = geometryRows.find((r) => r.key === editingKey);
-    // Exit edit mode first to prevent double-commit on blur after Enter.
-    setEditingKey(undefined);
+    const newRaw = parseDraft(key, draft);
+    const prevRaw = rawGeoValue(exp, key);
+    const row = geometryRows.find((r) => r.key === key);
     if (newRaw === undefined || newRaw === prevRaw || !row) return;
-    const patchKey = GEOM_PATCH_KEY[editingKey];
+    const patchKey = GEOM_PATCH_KEY[key];
     if (!patchKey) return;
-    // Record undo entry BEFORE the PATCH so Undo can restore the old value and
-    // Redo can replay the new one.
     if (prevRaw !== undefined) {
-      undoStack.push({ key: editingKey, prevValue: prevRaw, prevSource: row.source, newValue: newRaw });
+      undoStack.push({ key, prevValue: prevRaw, prevSource: row.source, newValue: newRaw });
     }
     updateMutate({ [patchKey]: newRaw });
-  };
-
-  /** Cancel inline edit -- no PATCH. */
-  const handleEditCancel = () => {
-    setEditingKey(undefined);
   };
 
   const handleUndo = () => {
@@ -318,17 +306,13 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
       <div className="grid grid-cols-2 gap-4">
         <GeometryLedger
           rows={geometryRows}
-          onOverride={handleOverride}
+          onCommit={handleGeomCommit}
           onRevert={(_key) => handleUndo()}
           onUndo={handleUndo}
           canUndo={undoStack.canUndo}
           onRedo={handleRedo}
           canRedo={undoStack.canRedo}
           discrepancyCount={0}
-          {...(editingKey !== undefined ? { editingKey, editDraft } : {})}
-          onEditDraftChange={setEditDraft}
-          onEditCommit={handleEditCommit}
-          onEditCancel={handleEditCancel}
           // TODO(Phase-D/E1): source from geometry_discrepancy when field lands
         />
 
