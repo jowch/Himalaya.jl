@@ -385,6 +385,25 @@ end
         slots_bf = HimalayaUI._cluster_slots(burst_frames)
         @test length(slots_bf) == 3                       # one slot per burst position
         @test all(length(s) == 3 for s in slots_bf)       # 3 frames each
+
+        # Single-frame position scan (real-data load-20 case): one frame per slot,
+        # each ~3.5 mm from the last, no bursts. The median consecutive Δ IS the
+        # slot step (~3.5 mm), so the old `median × slot_k` (~17 mm) tolerance
+        # exceeded every gap and collapsed all 6 into ONE slot. The physical-floor
+        # regime (median Δ > min_slot_separation_mm → split at the 1 mm floor)
+        # recovers one slot per scan position.
+        scan_frames = HimalayaUI.ExposureMeta[]
+        for (i, pos) in enumerate([110.0, 106.5, 103.0, 99.5, 96.0, 92.5])
+            push!(scan_frames, HimalayaUI.ExposureMeta("scan_$(i)_S$(lpad(i, 4, '0'))_0_001",
+                nothing, nothing, nothing,
+                (timestamp = t0 + Second((i - 1) * 19),
+                 horizontal_position_mm = pos,
+                 beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
+                 detector = "Pilatus 1M", exposure_time_s = 15.0)))
+        end
+        slots_scan = HimalayaUI._cluster_slots(scan_frames)
+        @test length(slots_scan) == 6                     # one slot per scan position
+        @test all(length(s) == 1 for s in slots_scan)
     end
 
     @testset "group_into_samples" begin

@@ -206,6 +206,7 @@ UI; for Phase B it falls through to a single slot.
 function _cluster_slots(
     load_metas::Vector{ExposureMeta};
     slot_k::Float64 = 5.0,
+    min_slot_separation_mm::Float64 = 1.0,
 )::Vector{Vector{ExposureMeta}}
     isempty(load_metas) && return Vector{ExposureMeta}[]
     length(load_metas) == 1 && return [[load_metas[1]]]
@@ -234,15 +235,27 @@ function _cluster_slots(
     end
 
     med_delta = _median_inline(deltas)
-    # Median-near-zero fallback: when most consecutive frames sit at the same position
-    # (multi-frame bursts), the median delta is ~0 and `median × slot_k` would be a
-    # degenerate (zero) tolerance. Learn the slot-spacing tolerance from the non-zero
-    # deltas (the burst→burst jumps) instead; Inf when there are no jumps at all.
+    # Three regimes for the slot-boundary tolerance:
     local threshold::Float64
     if med_delta < 1e-6
+        # Multi-frame bursts at one position: median Δ ≈ 0, so `median × slot_k`
+        # is a degenerate (zero) tolerance. Learn it from the non-zero burst→burst
+        # jumps instead; Inf when there are no jumps at all.
         nonzero = filter(d -> d > 1e-6, deltas)
         threshold = isempty(nonzero) ? Inf : _median_inline(nonzero) / slot_k
+    elseif med_delta > min_slot_separation_mm
+        # Single-frame position scan: every exposure steps to a NEW slot, so the
+        # median Δ IS the slot step, not within-slot jitter. `median × slot_k`
+        # would then exceed every gap and collapse the whole load into one slot
+        # (the real-data load-20 failure: 34 distinct specimens → 1 sample). Split
+        # at the physical slot floor — SAXS capillary slots are ≥ ~1 mm apart, so
+        # any consecutive gap above it is a genuine boundary. Time order is kept,
+        # so a slot revisited later in the load (reshoot) still reads as its own
+        # cluster rather than being merged by position.
+        threshold = min_slot_separation_mm
     else
+        # Within-slot jitter dominates (median Δ below the slot floor): the
+        # adaptive `median × slot_k` correctly sits between jitter and the jumps.
         threshold = med_delta * slot_k
     end
 
