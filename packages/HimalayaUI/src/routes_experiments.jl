@@ -153,6 +153,19 @@ function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} 
         d[:flight_path_m_source] = "default"
         d[:q_units_source]       = "default"
     end
+    # q_units is a unit convention, never derived from the data files (geometry.jl
+    # `derive_geometry` produces no q_units). Default it to the SAXS convention
+    # "A-1" whenever the column is unset — including the typed path above, where a
+    # migrated/fresh row carries real geometry but a NULL q_units — so every
+    # experiment reports a concrete unit (the geometry ledger never shows it blank)
+    # and stays consistent with routes_samples' per-sample A-1 default. A user
+    # PATCH override leaves the column non-null, so this is skipped.
+    let qv = get(d, :q_units, nothing)
+        if isnothing(qv) || ismissing(qv)
+            d[:q_units]        = "A-1"
+            d[:q_units_source] = "default"
+        end
+    end
     # Add stats roll-up when db is supplied (single-row endpoint).
     if db !== nothing
         exp_id = Int(row.id)

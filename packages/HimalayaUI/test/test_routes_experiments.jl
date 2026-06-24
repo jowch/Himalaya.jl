@@ -54,6 +54,18 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(list) >= 1
         @test haskey(list[1], :q_units)
 
+        # Typed-geometry row with a NULL q_units (a migrated/fresh experiment that
+        # carries real beam center etc.) must STILL default q_units to A-1. The
+        # typed path used to serve the raw NULL column, blanking the geometry ledger.
+        DBInterface.execute(db,
+            "UPDATE experiments SET beam_center_x = 421.4, beam_center_x_source = 'setup', q_units = NULL WHERE id = ?",
+            [exp_id])
+        r4 = call("GET", "/api/experiments/$exp_id")
+        body4 = JSON3.read(String(r4.body))
+        @test body4.beam_center_x == 421.4          # has_typed = true → typed path
+        @test body4.q_units == "A-1"                # ...yet q_units still defaults
+        @test body4.q_units_source == "default"
+
         # Malformed config blob must not 500 the route — should fall back to default.
         # This guards against TOML.parse exceptions taking down GET /api/experiments.
         DBInterface.execute(db,
