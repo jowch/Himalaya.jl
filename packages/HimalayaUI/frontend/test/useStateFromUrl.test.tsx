@@ -14,7 +14,7 @@ import { useAppState } from "../src/state";
 // returns `root` or `stale`, so useStateFromUrl no longer resolves any slug URL
 // into Zustand (the router redirects /index*, /compare*, /inspect*). Surviving
 // behaviors:
-//   - `root` (/) → redirect to /samples (§4.1 corpus home).
+//   - `root` (/) → redirect to /experiments (§4.1 experiments home).
 //   - `stale`    → setStaleUnknownPath (the user lands on StaleUrlPage).
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,7 +71,7 @@ describe("useStateFromUrl", () => {
   });
 });
 
-describe("useStateFromUrl — / redirect (§4.1 corpus home)", () => {
+describe("useStateFromUrl — / redirect (§4.1 experiments home)", () => {
   // The redirect path uses `useNavigate()` which under BrowserRouter calls
   // `window.history.replaceState`. We assert on the URL arg (`mock.calls[i][2]`)
   // because BrowserRouter passes a state object (not raw `null`) as the first arg.
@@ -85,7 +85,7 @@ describe("useStateFromUrl — / redirect (§4.1 corpus home)", () => {
     };
   }
 
-  it("bare / redirects to /samples regardless of persisted state, no fetch", async () => {
+  it("bare / redirects to /experiments regardless of persisted state, no fetch", async () => {
     history.replaceState(null, "", "/");
     useAppState.setState({
       activeExperimentId: 17, activeSampleId: 42,
@@ -96,7 +96,7 @@ describe("useStateFromUrl — / redirect (§4.1 corpus home)", () => {
     const replaceSpy = vi.spyOn(history, "replaceState");
     renderHook(() => useStateFromUrl(), { wrapper: Wrapper });
     await waitFor(() => {
-      expect(replaceSpy.mock.calls.some((c) => c[2] === "/samples")).toBe(true);
+      expect(replaceSpy.mock.calls.some((c) => c[2] === "/experiments")).toBe(true);
     });
     expect(fetchSpy).not.toHaveBeenCalled();
   });

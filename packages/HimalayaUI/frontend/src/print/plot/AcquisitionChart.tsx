@@ -1,5 +1,6 @@
 import type { JSX } from "react";
-import type { AcqSession } from "../components/AcquisitionTimeline";
+
+export interface AcqSession { label: string; loadFrameCounts: number[] }
 
 const H = 132;          // chart height (px)
 const PAD_TOP = 8;

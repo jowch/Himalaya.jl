@@ -11,7 +11,7 @@ import {
   removeRecipeRow,
   reorderRecipe,
 } from "./lib/series/seriesDraftFactories";
-import type { OrderRule, Series } from "./api";
+import type { OrderRule, Series, IngestStatus } from "./api";
 
 export const LS_KEY = "himalaya-ui:state";
 
@@ -28,7 +28,7 @@ export const LS_KEY = "himalaya-ui:state";
 
 export type NavModalStep = "experiment" | "sample";
 
-export type IngestProgressStatus = "scanning" | "analyzing" | "complete" | "failed";
+export type IngestProgressStatus = Exclude<IngestStatus, "idle">;
 export interface IngestProgress {
   processed: number;
   total: number;

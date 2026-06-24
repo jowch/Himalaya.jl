@@ -4,7 +4,7 @@ import { useUndoStack } from "../../hooks/useUndoStack";
 import { suppressGlobalKeys } from "../../lib/keys";
 import { Card } from "../ui/Card";
 import { GeometryLedger, type GeometryRow } from "./GeometryLedger";
-import { AcquisitionTimeline, type AcqSession } from "./AcquisitionTimeline";
+import { AcquisitionChart, type AcqSession } from "../plot/AcquisitionChart";
 import { SourcesCard, type SourceRow } from "./SourcesCard";
 import type { ExperimentPatch } from "../../api";
 
@@ -218,16 +218,6 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
     setEditingKey(undefined);
   };
 
-  const handleRevert = (key: string) => {
-    const entry = undoStack.pop();
-    if (!entry) return;
-    const patchKey = GEOM_PATCH_KEY[entry.key];
-    if (patchKey) {
-      updateMutate({ [patchKey]: entry.prevValue });
-    }
-    void key; // key identifies the row; entry.key matches it
-  };
-
   const handleUndo = () => {
     const entry = undoStack.pop();
     if (!entry) return;
@@ -329,7 +319,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
         <GeometryLedger
           rows={geometryRows}
           onOverride={handleOverride}
-          onRevert={handleRevert}
+          onRevert={(_key) => handleUndo()}
           onUndo={handleUndo}
           canUndo={undoStack.canUndo}
           onRedo={handleRedo}
@@ -352,7 +342,9 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
                 No acquisition timeline yet. Rescan this experiment to record session timing.
               </p>
             ) : (
-              <AcquisitionTimeline sessions={acquisitionSessions} />
+              <div data-testid="acquisition-timeline">
+                <AcquisitionChart sessions={acquisitionSessions} />
+              </div>
             )}
           </div>
         </Card>

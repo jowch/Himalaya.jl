@@ -127,8 +127,6 @@ export function AppRoutes(): JSX.Element {
     <Routes>
       {/* T3.2: single AppShell wraps every surface. */}
       <Route element={<AppShell />}>
-        {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
-        <Route path="/samples" element={<Navigate to="/experiments" replace />} />
         {/* T3.2: flat loupe route — /sample/:sampleId/loupe (matches gotoSample + loupeHref). */}
         <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
         {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
@@ -174,6 +172,8 @@ export function AppRoutes(): JSX.Element {
       <Route path="/index" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
+      {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
+      <Route path="/samples" element={<Navigate to="/experiments" replace />} />
       {/* I3.6 (#177): Compare retired. The series stage replaces it; all
           `/compare*` deep-links redirect to the series folio. */}
       <Route path="/experiments/:eid/compare/*" element={<Navigate to="/series" replace />} />

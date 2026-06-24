@@ -6,41 +6,24 @@ import { useCorpusSamples, useExperiments, useSamples } from "../../queries";
 import type { CorpusSample, Experiment, Sample } from "../../api";
 import { IconButton, ModalShell } from "../ui";
 
-const NAV_FIXTURE_EXPERIMENTS: { id: number; primary: string; secondary: string }[] = [
-  { id: 1, primary: "Experiment A", secondary: "/data/lipids/expA" },
-  { id: 2, primary: "Experiment B", secondary: "/data/lipids/expB" },
-  { id: 3, primary: "Experiment C", secondary: "/data/lipids/expC" },
-  { id: 4, primary: "Experiment D", secondary: "/data/lipids/expD" },
-];
-
-const NAV_FIXTURE_SAMPLES: { id: number; primary: string; secondary: string }[] = [
-  { id: 1, primary: "DOPE 70%",        secondary: "JC001" },
-  { id: 2, primary: "DOPE 80%",        secondary: "JC002" },
-  { id: 3, primary: "DPPC 100%",       secondary: "JC003" },
-  { id: 4, primary: "DPPC/DOPE 50/50", secondary: "JC004" },
-];
-
-function navFixtureItems(items: { id: number; primary: string; secondary: string }[]): JSX.Element {
+function navSkeletonRows(n: number): JSX.Element {
   return (
     <>
-      {items.map((item, idx) => (
+      {Array.from({ length: n }, (_, idx) => (
         <div
-          key={item.id}
+          key={idx}
           className={
             "w-full text-left px-3 py-2 flex flex-col gap-0.5 text-base " +
             (idx === 0 ? "bg-paper-sunk text-ink" : "text-ink")
           }
         >
-          <span className="font-medium">{item.primary}</span>
-          <span className="text-ink-soft text-sm font-sans">{item.secondary}</span>
+          <span className="font-medium">&nbsp;</span>
+          <span className="text-ink-soft text-sm font-sans">&nbsp;</span>
         </div>
       ))}
     </>
   );
 }
-
-const NAV_EXPERIMENTS_FIXTURE = navFixtureItems(NAV_FIXTURE_EXPERIMENTS);
-const NAV_SAMPLES_FIXTURE     = navFixtureItems(NAV_FIXTURE_SAMPLES);
 
 // Cap for the direct-sample group at the experiment step (SA-F4). The corpus is
 // ~139 samples; anything past the cap is disclosed honestly as "+N more".
@@ -304,7 +287,7 @@ export function NavModal(): JSX.Element | null {
           loading={step === "experiment" ? experimentsQ.isLoading : samplesQ.isLoading}
           stagger={50}
           transition={200}
-          fixture={step === "experiment" ? NAV_EXPERIMENTS_FIXTURE : NAV_SAMPLES_FIXTURE}
+          fixture={navSkeletonRows(4)}
           fallback={<div className="px-4 py-6 text-center text-ink-soft italic text-base">{step === "experiment" ? "loading experiments…" : "loading samples…"}</div>}
         >
           <div className="flex-1 overflow-y-auto py-1" data-testid="nav-modal-results">
