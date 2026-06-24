@@ -73,16 +73,4 @@ describe("applyRemoteToCache: series #166 kinds", () => {
     expect(qc.getQueryData(queryKeys.series(5))).toEqual(post);
   });
 
-  it("series_pinned / series_unpinned invalidate the pins cache", () => {
-    for (const kind of ["series_pinned", "series_unpinned"] as const) {
-      const qc = new QueryClient();
-      qc.setQueryData(queryKeys.seriesPins, [5]);
-      const remote: SseEvent = {
-        id: 5, kind, entity_type: "user", entity_id: 1,
-        payload: { series_id: 5 },
-      };
-      applyRemoteToCache(remote, qc);
-      expect(qc.getQueryState(queryKeys.seriesPins)?.isInvalidated).toBe(true);
-    }
-  });
 });

@@ -4,7 +4,6 @@ import { BuilderRail } from "./BuilderRail";
 import { SeriesPlate, type SeriesScale } from "./SeriesPlate";
 import { MemberRow } from "./MemberRow";
 import { RailBack } from "./RailBack";
-import { OffsetDock } from "./OffsetDock";
 import { useDragReorder, reorder } from "./useDragReorder";
 import { TRANSITION } from "../waterfall/waterfall.fixtures";
 
@@ -109,10 +108,7 @@ function SeriesBuilderView(): JSX.Element {
       </div>
 
       {collapsed && (
-        <>
-          <RailBack onClick={() => setCollapsed(false)} />
-          <OffsetDock offset={offset} onOffsetChange={setOffset} />
-        </>
+        <RailBack onClick={() => setCollapsed(false)} />
       )}
     </div>
   );

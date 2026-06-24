@@ -1,14 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  emptyDraft,
-  loadDraftFromSession,
-  persistDraftToSession,
-  type ActiveDraft,
-  type ActiveDraftSlot,
-  type DraftMember,
-} from "./lib/comparison/draft";
-import {
   loadSeriesDraftFromSession,
   persistSeriesDraftToSession,
   type SeriesDraftSlot,
@@ -96,44 +88,6 @@ export interface AppState {
   navModalOpen: boolean;
   navModalStep: NavModalStep;
   helpOverlayOpen: boolean;
-  /**
-   * R5 (#228, F-12): the focus-workspace Notes drawer toggle. Below the `xl`
-   * breakpoint the Notes margin column yields to a topbar button + drawer
-   * (mockup `#notes-btn` + `@media(max-width:1320px)`); this flag gates the
-   * drawer. Ephemeral (per-tab UI state, not persisted) and closed whenever
-   * the active sample changes so it never strands open over a new sample.
-   */
-  notesDrawerOpen: boolean;
-  // Speculative builder: when non-null, the modal is open for this exposure.
-  // All builder form state (phase, anchor peak, ratio) is local to the
-  // SpeculativeBuilder component — only the open/close gate lives in store
-  // because PhasePanel needs to mount/unmount the modal.
-  speculativeBuilder: { exposureId: number } | null;
-
-  // ── Compare-era draft / view slice — KEPT, shared by the series builder ──
-  //
-  // I3.5b built the series builder ON TOP OF this slice, so the surviving
-  // members are live, shared infrastructure — not dead Compare-only state.
-  // grep-verified (non-test) consumers:
-  //   - `showPeakTicks` / `showPeakLabels` (+ setters): `SeriesBuilderPage.tsx`,
-  //     `AnnotationToggles`, `MultiTracePlot`, `MemberTraceLayer`, and the
-  //     `cleanFigureSvg` export builder (via the page's renderSvg thunk).
-  //   - `activeDraft` + `updateMember` / `reorderMembers` / `resizeBands` /
-  //     `setDraftViewGroupingMode` / `highlightedCompareMemberId` (+ setter):
-  //     the shared render components the series builder mounts (`MemberMetaRow`,
-  //     `MemberMetaGutter`, `BandResizeDivider`, `GroupingModeToggle`).
-  // I5.3 (#184) pruned the genuinely-dead Compare-only subset that the retired
-  // Compare page drove (the create/fork/membership/zoom actions:
-  // `startNewDraft`, `startForkDraft`, `loadDraftFromComparison`,
-  // `setDraftForkOf`, `addMember`, `removeMember`, `discardDraft`,
-  // `setCompareXDomain` + the `compareXDomains` field, `resetBandHeights`,
-  // `cyclePeakDisplayForMember`) along with their now-orphaned factory modules.
-  /**
-   * Compare-era draft slot (Plan §Phase 4, Task 4.3). Single slot. Mirrored to
-   * sessionStorage with a schema version (see `lib/comparison/draft.ts`). Now
-   * driven only by the kept member-edit actions the series builder shares.
-   */
-  activeDraft: ActiveDraftSlot;
 
   /**
    * Series-builder draft slot (I3.5b). A SEPARATE namespace from `activeDraft`
@@ -155,23 +109,11 @@ export interface AppState {
   showPeakLabels: boolean;
 
   /**
-   * Compare-page hover/click-to-pin highlight target (Plan §Phase 9,
-   * Task 9.5). When set, `MemberTraceLayer` recolors that member's
-   * snapshotted index peaks to the phase color; non-index peaks stay black.
-   * Mirrors the `hoveredIndexId` single-setter pattern from the Index page.
-   * Cleared on page navigation, edit-mode entry, and member removal.
-   */
-  highlightedCompareMemberId: number | undefined;
-
-  /**
-   * Permalink URL handling slots (spec §4.4 + §6).
-   * Both ephemeral — not persisted. `staleUrlContext` is non-null when the
-   * current URL points to a slug that doesn't resolve (404 from
-   * `/api/resolve` or unknown path). `resolving` is true while the
-   * URL→state resolve fetch is in flight.
+   * Permalink URL handling slot (spec §4.4 + §6).
+   * Ephemeral — not persisted. Non-null when the current URL points to a slug
+   * that doesn't resolve (404 from `/api/resolve` or unknown path).
    */
   staleUrlContext: StaleUrlContext | null;
-  resolving: boolean;
 
   // setters
   setUsername: (name: string) => void;
@@ -190,20 +132,8 @@ export interface AppState {
   closeNavModal: () => void;
   openHelpOverlay: () => void;
   closeHelpOverlay: () => void;
-  openNotesDrawer: () => void;
-  closeNotesDrawer: () => void;
-  toggleNotesDrawer: () => void;
   setNavModalStep: (step: NavModalStep) => void;
   clearUsername: () => void;
-  openSpeculativeBuilder: (exposureId: number) => void;
-  closeSpeculativeBuilder: () => void;
-
-  // Compare-era draft actions — KEPT (consumed by the shared series-builder
-  // render core: MemberMetaRow / MemberMetaGutter / BandResizeDivider). The
-  // Compare-only create/fork/membership sub-actions were removed in I5.3 (#184).
-  updateMember: (index: number, partial: Partial<DraftMember>) => void;
-  reorderMembers: (newOrder: number[]) => void;
-  resizeBands: (memberIdx: number, deltaPx: number, totalHeightPx: number) => void;
 
   // ── Series-builder draft actions (I3.5b) ───────────────────────────────
   /**
@@ -230,21 +160,12 @@ export interface AppState {
    */
   restoreSeriesDraft: (slot: SeriesDraftSlot) => void;
 
-  // Compare-page Phase 9 review-mode UI actions
-  /**
-   * Set the grouping mode on the active draft (C-4). Creates an empty draft
-   * if none is active so the viewer can toggle without entering full edit mode
-   * (spec §6.4 viewer escape hatch). effectiveGroupingMode(draft, comparison)
-   * then surfaces the value to consumers.
-   */
-  setDraftViewGroupingMode: (mode: ActiveDraft["viewGroupingMode"]) => void;
+  // Compare-page Phase 9 review-mode UI actions (annotation toggles only)
   setShowPeakTicks: (show: boolean) => void;
   setShowPeakLabels: (show: boolean) => void;
-  setHighlightedCompareMemberId: (id: number | undefined) => void;
 
   // Permalink URL handling actions (spec §4.4 + §6)
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
-  setResolving: (v: boolean) => void;
   recoverFromStaleUrl: (opts: RecoverOpts) => void;
   /** Mark the URL as an unknown frontend path (renders StaleUrlPage). */
   setStaleUnknownPath: (raw: string) => void;
@@ -252,24 +173,6 @@ export interface AppState {
   setStaleNotFound: (
     ctx: Extract<StaleUrlContext, { kind: "not_found" }>,
   ) => void;
-}
-
-/**
- * Wrap a state mutator so that any change to `activeDraft` is mirrored to
- * sessionStorage. We don't use Zustand's `persist` middleware for the draft
- * because we want sessionStorage (not localStorage) AND a separate schema
- * version, both of which `persist` can't accommodate alongside the LS_KEY
- * partition.
- */
-function withDraftMirror(
-  set: (partial: Partial<AppState>) => void,
-  get: () => AppState,
-) {
-  return (next: ActiveDraftSlot): void => {
-    set({ activeDraft: next });
-    persistDraftToSession(next);
-    void get; // unused, kept for symmetry with potential future read-paths
-  };
 }
 
 /**
@@ -287,7 +190,6 @@ function withSeriesDraftMirror(set: (partial: Partial<AppState>) => void) {
 export const useAppState = create<AppState>()(
   persist(
     (set, get) => {
-      const setDraft = withDraftMirror(set, get);
       const setSeriesDraft = withSeriesDraftMirror(set);
       return {
         username: undefined,
@@ -306,22 +208,15 @@ export const useAppState = create<AppState>()(
         navModalOpen: false,
         navModalStep: "experiment",
         helpOverlayOpen: false,
-        notesDrawerOpen: false,
-        speculativeBuilder: null,
-        // Rehydrate the draft from sessionStorage at module-init time so
-        // a tab reload restores edit-in-progress.
-        activeDraft: loadDraftFromSession(),
-        // I3.5b — same rehydration for the series-builder draft.
+        // I3.5b — rehydrate the series-builder draft from sessionStorage.
         seriesDraft: loadSeriesDraftFromSession(),
 
         // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
         showPeakTicks: true,
         showPeakLabels: true,
-        highlightedCompareMemberId: undefined,
 
-        // Permalink URL handling — both ephemeral, default empty.
+        // Permalink URL handling — ephemeral, default empty.
         staleUrlContext: null,
-        resolving: false,
 
         setUsername: (username) => set({ username }),
         setUser: ({ username, firstName, lastName }) =>
@@ -338,8 +233,6 @@ export const useAppState = create<AppState>()(
             activeSampleId,
             activeExposureId: undefined,
             staleUrlContext: null,
-            // F-12: never strand the Notes drawer open across a sample switch.
-            notesDrawerOpen: false,
           }),
         setActiveExposure: (activeExposureId) => {
           // Inspect — the only surface that put the exposure in the URL via
@@ -369,66 +262,8 @@ export const useAppState = create<AppState>()(
         closeNavModal: () => set({ navModalOpen: false }),
         openHelpOverlay: () => set({ helpOverlayOpen: true }),
         closeHelpOverlay: () => set({ helpOverlayOpen: false }),
-        openNotesDrawer: () => set({ notesDrawerOpen: true }),
-        closeNotesDrawer: () => set({ notesDrawerOpen: false }),
-        toggleNotesDrawer: () => set({ notesDrawerOpen: !get().notesDrawerOpen }),
         setNavModalStep: (navModalStep) => set({ navModalStep }),
         clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
-        openSpeculativeBuilder: (exposureId) =>
-          set({ speculativeBuilder: { exposureId } }),
-        closeSpeculativeBuilder: () => set({ speculativeBuilder: null }),
-
-        // ── Compare-era draft actions — KEPT ───────────────────────────
-        // Consumed by the shared series-builder render core (MemberMetaRow,
-        // MemberMetaGutter, BandResizeDivider). The Compare-only create/fork/
-        // membership sub-actions were removed in I5.3 (#184).
-        updateMember: (index, partial) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          const members = cur.members.slice();
-          if (index < 0 || index >= members.length) return;
-          members[index] = { ...members[index]!, ...partial };
-          setDraft({ ...cur, members });
-        },
-        reorderMembers: (newOrder) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          if (newOrder.length !== cur.members.length) return;
-          const seen = new Set<number>();
-          for (const idx of newOrder) {
-            if (idx < 0 || idx >= cur.members.length || seen.has(idx)) return;
-            seen.add(idx);
-          }
-          const reordered = newOrder.map((idx, i) => ({
-            ...cur.members[idx]!,
-            display_order: i,
-          }));
-          setDraft({ ...cur, members: reordered });
-        },
-        resizeBands: (memberIdx, deltaPx, totalHeightPx) => {
-          const cur = get().activeDraft;
-          if (cur === null) return;
-          if (memberIdx < 0 || memberIdx >= cur.members.length - 1) return;
-          if (totalHeightPx <= 0) return;
-          // Convert pixel delta to a band-height ratio. The dragged member
-          // grows by deltaRatio = deltaPx/totalHeightPx; the next neighbor
-          // shrinks by the same amount, preserving total band height.
-          // Floors at a small minimum so a band can't collapse to zero.
-          const deltaRatio = deltaPx / totalHeightPx;
-          const MIN_HEIGHT = 0.1;
-          const a = cur.members[memberIdx]!;
-          const b = cur.members[memberIdx + 1]!;
-          const newA = Math.max(MIN_HEIGHT, a.band_height + deltaRatio);
-          const newB = Math.max(MIN_HEIGHT, b.band_height - deltaRatio);
-          // If clamping ate part of the delta, propagate the actual change so
-          // total height (sum of band_heights) stays approximately stable.
-          const actualDelta = newA - a.band_height;
-          const adjustedB = Math.max(MIN_HEIGHT, b.band_height - actualDelta);
-          const members = cur.members.slice();
-          members[memberIdx] = { ...a, band_height: newA };
-          members[memberIdx + 1] = { ...b, band_height: adjustedB === newB ? newB : adjustedB };
-          setDraft({ ...cur, members });
-        },
 
         // ── Series-builder draft actions (I3.5b) ─────────────────────────
         startSeriesDraftFromSeries: (series) => {
@@ -475,26 +310,15 @@ export const useAppState = create<AppState>()(
           setSeriesDraft(reorderRecipe(cur, from, to));
         },
 
-        // Phase 9 / C-4 — view-choice actions
-        setDraftViewGroupingMode: (mode) => {
-          const cur = get().activeDraft;
-          // Viewer escape hatch (spec §6.4): if no draft is active, create an
-          // empty one so the grouping preference can be carried without forcing
-          // the user into full edit mode.
-          const base = cur ?? emptyDraft();
-          setDraft({ ...base, viewGroupingMode: mode });
-        },
+        // Phase 9 — annotation toggle actions
         setShowPeakTicks: (showPeakTicks) => set({ showPeakTicks }),
         setShowPeakLabels: (showPeakLabels) => set({ showPeakLabels }),
-        setHighlightedCompareMemberId: (highlightedCompareMemberId) =>
-          set({ highlightedCompareMemberId }),
 
         // Permalink URL handling actions (spec §4.4 + §6).
         // `recoverFromStaleUrl` is atomic: clears stale + sets active ids +
         // opens nav modal in one render-cycle commit so consumers don't see
         // an intermediate state.
         setStaleUrlContext: (staleUrlContext) => set({ staleUrlContext }),
-        setResolving: (resolving) => set({ resolving }),
         recoverFromStaleUrl: (opts) => {
           set((s) => ({
             staleUrlContext: null,
@@ -506,15 +330,9 @@ export const useAppState = create<AppState>()(
           }));
         },
         setStaleUnknownPath: (raw) =>
-          set({
-            staleUrlContext: { kind: "unknown_path", raw },
-            resolving: false,
-          }),
+          set({ staleUrlContext: { kind: "unknown_path", raw } }),
         setStaleNotFound: (ctx) =>
-          set({
-            staleUrlContext: ctx,
-            resolving: false,
-          }),
+          set({ staleUrlContext: ctx }),
       };
     },
     {

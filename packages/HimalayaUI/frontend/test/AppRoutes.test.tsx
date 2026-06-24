@@ -40,7 +40,6 @@ describe("AppRoutes — single unified shell (TopNav, T3.2)", () => {
     useAppState.setState({
       activeExperimentId: undefined,
       staleUrlContext: null,
-      resolving: false,
     });
     vi.spyOn(api, "listSeries").mockResolvedValue([]);
   });
@@ -130,7 +129,6 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
       activeExperimentId: undefined,
       activeSampleId: undefined,
       staleUrlContext: null,
-      resolving: false,
     });
     // / now redirects to /experiments; mock the list so the home page renders.
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
@@ -202,7 +200,6 @@ describe("AppRoutes — bare / always lands on experiments home (#77 / I4.4 / E1
     useAppState.setState({
       activeExperimentId: undefined,
       staleUrlContext: null,
-      resolving: false,
     });
     // / redirects to /experiments; mock the list so the home page renders.
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);

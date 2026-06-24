@@ -653,9 +653,6 @@ export interface SampleMessage {
   created_at: string;
 }
 
-export const listSampleMessages = (sample_id: number) =>
-  request<SampleMessage[]>("GET", `/api/samples/${sample_id}/messages`);
-
 export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOpts) =>
   request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
 
@@ -1024,10 +1021,6 @@ export const listSeries = () =>
 /** Full nested detail for one series (#175 builder reuses this). */
 export const getSeries = (id: number) =>
   request<Series>("GET", `/api/series/${id}`);
-
-/** Forks of one series — same SeriesSummary[] shape as the listing. */
-export const forksOfSeries = (id: number) =>
-  request<SeriesSummary[]>("GET", `/api/series/${id}/forks`);
 
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 

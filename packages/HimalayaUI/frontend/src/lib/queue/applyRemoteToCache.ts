@@ -290,15 +290,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.seriesList });
       break;
     }
-    case "series_pinned":
-    case "series_unpinned": {
-      // Pin/unpin fan out cross-tab. The seriesPins cache is global per-tab
-      // (the current user's pin set); the SSE self-echo filter discards the
-      // originating tab's own frame. Invalidate so the next read gets the
-      // canonical list.
-      qc.invalidateQueries({ queryKey: queryKeys.seriesPins });
-      break;
-    }
     case "add_tag":
     case "remove_tag":
     case "edit_tag": {

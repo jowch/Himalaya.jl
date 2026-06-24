@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { SheetTable } from "./SheetTable";
 import { SampleTableRow } from "./SampleTableRow";
-import { CullBar } from "./CullBar";
 import type { GalleryExposure } from "./ThumbnailGallery";
 import { Kicker, ProgressBar } from "../ui";
 import type { Tag } from "../ui";
@@ -196,15 +195,6 @@ function ContactSheetView(): JSX.Element {
           })}
         </SheetTable>
 
-        {/* Floating batch-cull bar — reject/restore/clear all wired to clear
-            demo selection (this is a fidelity sim, not production wiring). */}
-        <CullBar
-          count={selected.size}
-          show={selected.size > 0}
-          onReject={() => setSelected(new Set())}
-          onRestore={() => setSelected(new Set())}
-          onClear={() => setSelected(new Set())}
-        />
       </div>
     </div>
   );

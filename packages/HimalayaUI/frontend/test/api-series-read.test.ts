@@ -76,11 +76,4 @@ describe("series read fetchers", () => {
     expect(s.members).toEqual([]);
   });
 
-  it("forksOfSeries GETs /api/series/:id/forks", async () => {
-    mockJson([]);
-    await api.forksOfSeries(7);
-    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
-      "/api/series/7/forks",
-    );
-  });
 });

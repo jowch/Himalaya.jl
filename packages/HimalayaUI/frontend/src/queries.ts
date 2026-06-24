@@ -4,7 +4,6 @@ import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
-import { isSampleScreened } from "./lib/sample/screened";
 import {
   updateSampleMutator,
   addSampleTagMutator,
@@ -14,7 +13,6 @@ import {
   editCorpusSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
-  postSampleMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -95,7 +93,6 @@ export const queryKeys = {
   seriesTraces: (id: number | undefined) =>
     ["series", id ?? "none", "traces"] as const,
   seriesList: ["series-list"] as const,
-  seriesPins: ["series-pins"] as const,
   // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
   // and the corpus picker projection. Foreign add_tag replay invalidates both
   // (applyRemoteToCache add_tag/sample branch) so a peer's scoping write
@@ -229,32 +226,6 @@ export function useCorpusExposures(
   return { byId, isLoading };
 }
 
-/**
- * Page-level screened-progress aggregate for the contact-sheet header (M-1):
- * "N / M samples screened". Runs `useQueries` over the visible samples,
- * sharing the exact `queryKeys.exposures(id)` cache rows each ContactSheetRow
- * fetches — no double-fetch. `screened` is derived per-sample by the shared
- * helper (lib/sample/screened.ts), so it tracks #162's flag when that lands.
- *
- * `total` is the number of samples passed in; `screened` counts those whose
- * derivation resolves true once their exposures have loaded.
- */
-export function useScreenedProgress(
-  samples: readonly api.CorpusSample[],
-): { screened: number; total: number } {
-  const queries = useQueries({
-    queries: samples.map((s) => ({
-      queryKey: queryKeys.exposures(s.id),
-      queryFn: () => api.listExposures(s.id),
-    })),
-  });
-  const screened = samples.reduce(
-    (n, s, i) => (isSampleScreened(s, queries[i]?.data) ? n + 1 : n),
-    0,
-  );
-  return { screened, total: samples.length };
-}
-
 export function useTrace(exposureId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.trace(exposureId),
@@ -342,51 +313,6 @@ export function useMemberIndices(exposureIds: number[]): Map<number, api.IndexEn
   return useStableQueryMap(exposureIds, (id) => ({
     queryKey: queryKeys.indices(id),
     queryFn: () => api.listIndices(id),
-  }));
-}
-
-/**
- * Sibling of `useMemberTraces` that surfaces a single boolean — true when
- * any underlying trace fetch is in its cold-loading state. Used by the
- * Compare-page skeleton wrappers to gate plot + gutter.
- *
- * Mirrors the boneyard rule (CLAUDE.md): gate on `query.isLoading`, NOT
- * `isPending` — disabled queries (empty `exposureIds`) and background
- * refetches must NOT trigger the skeleton.
- */
-export function useMemberTracesLoading(exposureIds: number[]): boolean {
-  const queries = useQueries({
-    queries: exposureIds.map((id) => ({
-      queryKey: queryKeys.trace(id),
-      queryFn: () => api.getTrace(id),
-    })),
-  });
-  return queries.some((q) => q.isLoading);
-}
-
-/**
- * Sibling of `useMemberTraces` that hydrates per-member EXPOSURE rows. Compare
- * review-mode pages use `sampleIdFor` and label resolution that depend on the
- * exposure cache being populated; without an explicit subscription the cache
- * never warms (only the trace key is fetched), and downstream readers fall
- * back to the orphan path. Issue #61 / #52.
- */
-export function useMemberExposures(exposureIds: number[]): Map<number, api.Exposure> {
-  return useStableQueryMap(exposureIds, (id) => ({
-    queryKey: queryKeys.exposure(id),
-    queryFn: () => api.getExposure(id),
-  }));
-}
-
-/**
- * Hydrates per-member SAMPLE rows. Used together with `useMemberExposures`
- * by the Compare review-mode label resolver — a member's display label is
- * `${sample.name} · ${exposure.filename}` (issue #52).
- */
-export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
-  return useStableQueryMap(sampleIds, (id) => ({
-    queryKey: queryKeys.sample(id),
-    queryFn: () => api.getSample(id),
   }));
 }
 
@@ -568,29 +494,6 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
     addSampleTagMutator,
     { experimentId, sampleId, username, clientId: CLIENT_ID },
   );
-}
-
-export function useSampleMessages(sampleId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.messages(sampleId),
-    queryFn: () => api.listSampleMessages(sampleId as number),
-    enabled: sampleId !== undefined,
-  });
-}
-
-// Adapter: useQueueMutation flat-spreads input into the payload, but the
-// existing consumers call `postMsg.mutate(body: string)`. Wrap to package the
-// string under a `body` key for the mutator.
-export function usePostSampleMessage(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    postSampleMessageMutator,
-    { sampleId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (body: string) => inner.mutate({ body }),
-  };
 }
 
 export function useRemoveSampleTag(experimentId: number, sampleId: number) {

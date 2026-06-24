@@ -88,32 +88,6 @@ describe("useAppState", () => {
     expect("setTheme" in s).toBe(false);
   });
 
-  // R5 (#228, F-12): the Notes drawer toggle for the focus workspace below the
-  // xl breakpoint. Ephemeral; closed on sample switch.
-  it("notesDrawer state is ephemeral — open/close/toggle", () => {
-    expect(useAppState.getState().notesDrawerOpen).toBe(false);
-    useAppState.getState().openNotesDrawer();
-    expect(useAppState.getState().notesDrawerOpen).toBe(true);
-    useAppState.getState().closeNotesDrawer();
-    expect(useAppState.getState().notesDrawerOpen).toBe(false);
-    useAppState.getState().toggleNotesDrawer();
-    expect(useAppState.getState().notesDrawerOpen).toBe(true);
-    useAppState.getState().toggleNotesDrawer();
-    expect(useAppState.getState().notesDrawerOpen).toBe(false);
-  });
-
-  it("switching samples closes the Notes drawer", () => {
-    useAppState.getState().openNotesDrawer();
-    useAppState.getState().setActiveSample(42);
-    expect(useAppState.getState().notesDrawerOpen).toBe(false);
-  });
-
-  it("notesDrawerOpen is NOT in the persisted partition", () => {
-    useAppState.getState().openNotesDrawer();
-    const raw = localStorage.getItem(LS_KEY);
-    expect(raw ?? "").not.toContain("notesDrawerOpen");
-  });
-
   it("navModal state is ephemeral — open/close + step transitions", () => {
     expect(useAppState.getState().navModalOpen).toBe(false);
     useAppState.getState().openNavModal();
@@ -168,32 +142,7 @@ describe("useAppState", () => {
     expect(raw).not.toContain("hoveredPeakId");
   });
 
-  // ── compare-page review-mode UI state (Phase 9) ────────────────────────
-
-  // C-4: groupingMode was removed from Zustand; it now lives on
-  // ActiveDraft.viewGroupingMode and is resolved via effectiveGroupingMode.
-  it("setDraftViewGroupingMode creates an empty draft and sets viewGroupingMode", () => {
-    // Start with no draft.
-    useAppState.setState({ activeDraft: null });
-    useAppState.getState().setDraftViewGroupingMode("byPhase");
-    const draft = useAppState.getState().activeDraft;
-    expect(draft).not.toBeNull();
-    expect(draft?.viewGroupingMode).toBe("byPhase");
-  });
-
-  it("setDraftViewGroupingMode updates existing draft's viewGroupingMode", () => {
-    useAppState.getState().setDraftViewGroupingMode("bySample");
-    useAppState.getState().setDraftViewGroupingMode("distinct");
-    expect(useAppState.getState().activeDraft?.viewGroupingMode).toBe("distinct");
-  });
-
-  it("viewGroupingMode is NOT in the persisted partition (carried on draft, not LS_KEY state)", () => {
-    // The draft is sessionStorage-persisted, not localStorage; the main store
-    // key should not contain the raw string "viewGroupingMode".
-    useAppState.getState().setDraftViewGroupingMode("byPhase");
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("viewGroupingMode");
-  });
+  // ── compare-page review-mode annotation toggles (Phase 9) ────────────────
 
   it("showPeakTicks defaults to true and can be set", () => {
     expect(useAppState.getState().showPeakTicks).toBe(true);
@@ -215,20 +164,6 @@ describe("useAppState", () => {
     const raw = localStorage.getItem(LS_KEY) ?? "";
     expect(raw).not.toContain("showPeakTicks");
     expect(raw).not.toContain("showPeakLabels");
-  });
-
-  it("highlightedCompareMemberId starts undefined and can set/clear via single setter", () => {
-    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
-    useAppState.getState().setHighlightedCompareMemberId(42);
-    expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
-    useAppState.getState().setHighlightedCompareMemberId(undefined);
-    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
-  });
-
-  it("highlightedCompareMemberId is NOT persisted", () => {
-    useAppState.getState().setHighlightedCompareMemberId(7);
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("highlightedCompareMemberId");
   });
 
   // I5.3 (#184): the compareXDomains field + setCompareXDomain action were

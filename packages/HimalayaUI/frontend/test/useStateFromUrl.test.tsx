@@ -29,7 +29,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   useAppState.setState({
-    staleUrlContext: null, resolving: false,
+    staleUrlContext: null,
     activeExperimentId: undefined, activeSampleId: undefined, activeExposureId: undefined,
   });
   history.replaceState(null, "", "/");
