@@ -388,7 +388,7 @@ end
 const GroupingFlag = Union{MergeFlag, SplitFlag}
 
 """
-    derive_sample_flags(load_rows; min_slot_separation_mm = 0.5) -> Dict{Int, GroupingFlag}
+    derive_sample_flags(load_rows; min_slot_separation_mm = 1.0) -> Dict{Int, GroupingFlag}
 
 PURE read-time derivation of per-sample merge/split suggestions over the
 `get_loads_rollup` rows (spec §8.8). No DB access; returns a Dict keyed by
@@ -409,11 +409,14 @@ Two suggestion kinds (a sample gets at most one; **split wins** if both apply):
    Physical rationale: SAXS samples sit in quartz capillaries (0.5–2 mm
    diameter) and the X-ray beam passes through exactly one at a time, so
    adjacent slots are physically ≥ ~1 mm apart. Stage repeatability when
-   returning to the *same* slot is ~0.1–0.3 mm in real SSRL data. A gap of
-   0.5 mm therefore sits ~5× above stage jitter and ~2× below the minimum
-   slot pitch — a physical floor, not a fitted constant. It errs toward
-   flagging (false flags are cheap; these are human-review suggestions,
-   nothing auto-changes).
+   returning to the *same* slot is ~0.1–0.3 mm in real SSRL data. The 1 mm
+   threshold sits AT the minimum slot pitch — a within-sample gap below it
+   cannot be a real slot boundary, only stage jitter. Validated on real SSRL
+   data: per-sample max gaps cluster at ≤ ~0.86 mm (jitter) while genuine slot
+   crossings are ≥ 11 mm, with nothing in between, so 1 mm separates them
+   cleanly. (The earlier 0.5 mm default sat *below* the slot pitch and flagged
+   jitter — ~97% of its flags on real data were false positives.) These are
+   human-review suggestions; nothing auto-changes.
 
 2. **Merge** — a sample's filename label (via `_label_from_stem` over its
    exposures' `filename`s) recurs as the label of a sample in *another* load. The
@@ -424,7 +427,7 @@ Two suggestion kinds (a sample gets at most one; **split wins** if both apply):
    `sample_id`); the UI walks the chain.
 """
 function derive_sample_flags(load_rows;
-        min_slot_separation_mm::Float64 = 0.5)::Dict{Int, GroupingFlag}
+        min_slot_separation_mm::Float64 = 1.0)::Dict{Int, GroupingFlag}
     flags = Dict{Int, GroupingFlag}()
 
     # =====================================================================
@@ -434,8 +437,8 @@ function derive_sample_flags(load_rows;
     #    no median computation, no regime switching.
     #
     #    Physical basis: SAXS capillary slots are ≥ ~1 mm apart; stage
-    #    repeatability (returning to the same slot) is ~0.1–0.3 mm. The 0.5 mm
-    #    default sits ~5× above jitter and ~2× below the minimum slot pitch.
+    #    repeatability (returning to the same slot) is ~0.1–0.3 mm. The 1 mm
+    #    default sits AT the slot pitch; sub-mm gaps are jitter, not boundaries.
     # =====================================================================
     for ld in load_rows
         for sm in ld.samples
