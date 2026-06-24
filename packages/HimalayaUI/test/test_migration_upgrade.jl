@@ -1568,10 +1568,11 @@ end
 
 # ---------------------------------------------------------------------------
 # Production trace naming: a real pre-rework DB's integration traces are the
-# per-acquisition `_tot.dat` totals, named by the stem with the frame suffix
-# dropped (HA_5_010_S1965_tot.dat) and shared across that acquisition's per-frame
-# exposures (filename HA_5_010_S1965_0_001). The migration's analyze step must
-# resolve them so newly-ingested exposures get peaks — not just exist image-only.
+# per-acquisition `_tot.dat` totals (HA_5_010_S1965_tot.dat). Single-frame ingest
+# (the migration resolves the funnel's detected `{name}_0_001.*` pattern from
+# disk, dropping the frame suffix) names the exposure by the acquisition stem
+# (HA_5_010_S1965) — identical to a fresh scan. The migration's analyze step must
+# resolve the shared `_tot.dat` so inserted exposures get peaks, not just exist.
 # ---------------------------------------------------------------------------
 @testset "migration analyzes inserted exposures via per-acquisition _tot.dat" begin
     dir          = mktempdir()
@@ -1579,7 +1580,8 @@ end
     analysis_dir = joinpath(dir, "analysis");  mkpath(analysis_dir)
     write_setup_dir!(analysis_dir)
 
-    full = "HA_5_010_S1965_0_001"   # per-frame stem (becomes exposures.filename)
+    full = "HA_5_010_S1965_0_001"   # on-disk per-frame file
+    acq  = "HA_5_010_S1965"         # acquisition stem == ingested exposures.filename
     write_stem_fixtures!(data_dir, analysis_dir, full;
         horizontal_position_mm = 58.9, timestamp = DateTime(2026, 4, 26, 23, 14, 8))
     # Real trace bytes named by the ACQUISITION stem (frame suffix dropped).
@@ -1603,7 +1605,7 @@ end
 
     with_migration_db(path) do db
         eid = first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM exposures WHERE filename = ?", [full]))).id
+            "SELECT id FROM exposures WHERE filename = ?", [acq]))).id
         npeaks = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM auto_peaks WHERE exposure_id = ?", [eid]))).c
         @test npeaks > 0   # inserted exposure got analyzed via the frame-suffix fallback

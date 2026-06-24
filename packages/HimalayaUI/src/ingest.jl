@@ -286,11 +286,27 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     # -----------------------------------------------------------------------
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern FROM experiments WHERE id = ?", [experiment_id])))
-    data_dir     = String(exp_row.data_dir)
-    analysis_dir = String(exp_row.analysis_dir)
-    tif_pattern  = coalesce(exp_row.image_pattern,       "{name}.tif")
-    prp_pattern  = coalesce(exp_row.metadata_pattern,    "{name}.prp")
-    dat_pattern  = coalesce(exp_row.integration_pattern, "{name}.dat")
+    data_dir = String(exp_row.data_dir)
+
+    # Resolve analysis_dir + file patterns + setup from DISK with the SAME resolver
+    # the funnel runs at create (resolve_experiment_layout), so a migrated row is
+    # indistinguishable from a freshly-ingested one. A pre-rework row arrives with
+    # NULL patterns + a manifest-era analysis_dir; without this the migration falls
+    # back to {name}.* defaults — which name the wrong integration files ({name}.dat
+    # vs the real {name}_tot.dat) and produce full-stem filenames where a fresh scan
+    # produces short ones. FILL-ONLY: a value already set on the row (a prior run /
+    # user edit) wins over detection. Persisted at 3e′ so a rescan reuses them.
+    # ponytail: this resolves one exposure per acquisition (single-frame, the
+    # detected {name}_0_001.* pattern). Multi-frame is out of scope by design.
+    _pick(rowval, detected, default) =
+        (rowval === missing || rowval === nothing) ? something(detected, default) : String(rowval)
+    dd     = rstrip(data_dir, '/')
+    root   = basename(dd) == "data" ? dirname(dd) : dd
+    layout = resolve_experiment_layout(root)
+    analysis_dir = something(layout.analysis_dir, String(exp_row.analysis_dir))
+    tif_pattern  = _pick(exp_row.image_pattern,       layout.image_pattern,       "{name}.tif")
+    prp_pattern  = _pick(exp_row.metadata_pattern,    layout.metadata_pattern,    "{name}.prp")
+    dat_pattern  = _pick(exp_row.integration_pattern, layout.integration_pattern, "{name}.dat")
 
     metas = scan_directory(data_dir, analysis_dir;
         tif_pattern = tif_pattern, prp_pattern = prp_pattern, dat_pattern = dat_pattern)
@@ -302,7 +318,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         geometry = nothing, discrepancies = String[])
 
     prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
-    setup_files = _find_setup_files(analysis_dir)
+    setup_files = layout.setup_file === nothing ? String[] : String[layout.setup_file]
     geo, disc = derive_geometry(prp_paths, setup_files)
 
     result = group_into_samples(metas)
@@ -584,6 +600,19 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
 
             # 3e. Geometry (never-clobber 'user').
             _fill_unset_geometry!(db, experiment_id, geo)
+
+            # 3e′. Persist the file-resolved analysis_dir + patterns (FILL-ONLY via
+            # COALESCE — a value already set is never clobbered) so the migrated row
+            # is indistinguishable from a fresh ingest and later rescans reuse them.
+            DBInterface.execute(db,
+                """UPDATE experiments SET
+                       analysis_dir        = COALESCE(analysis_dir, ?),
+                       image_pattern       = COALESCE(image_pattern, ?),
+                       metadata_pattern    = COALESCE(metadata_pattern, ?),
+                       integration_pattern = COALESCE(integration_pattern, ?)
+                   WHERE id = ?""",
+                [layout.analysis_dir, layout.image_pattern, layout.metadata_pattern,
+                 layout.integration_pattern, experiment_id])
 
             # 3f. Mark the experiment complete.
             DBInterface.execute(db,
