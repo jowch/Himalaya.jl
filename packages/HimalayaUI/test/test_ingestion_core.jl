@@ -241,7 +241,8 @@ end
              detector = "Pilatus 1M", exposure_time_s = 15.0),
         ) for (i, s) in enumerate(offsets)]
 
-        loads = HimalayaUI._segment_loads(metas)
+        loads, flag = HimalayaUI._segment_loads_with_flag(metas)
+        @test flag == :ok
         @test length(loads) == 2
         @test length(loads[1]) == 4
         @test length(loads[2]) == 4
@@ -707,6 +708,36 @@ end
             data_dir = joinpath(dir, "does_not_exist"),
             analysis_dir = analysis_dir)
         @test HimalayaUI.cheap_change_check(bad_db, bad_id) == false
+    end
+
+    @testset "cheap_change_check reads image_pattern from experiment row" begin
+        # Verify that cheap_change_check uses the experiment row's image_pattern
+        # column (not a hardcoded default) so a non-default suffix is counted correctly.
+        dir = mktempdir()
+        data_dir = joinpath(dir, "data")
+        mkpath(data_dir)
+
+        # Write 2 files with a custom suffix ".tiff" (not the default ".tif")
+        write(joinpath(data_dir, "EX001.tiff"), "fake tif")
+        write(joinpath(data_dir, "EX002.tiff"), "fake tif")
+
+        db = fresh_db()
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "pattern-check", path = dir,
+            data_dir = data_dir, analysis_dir = joinpath(dir, "analysis"),
+            image_pattern = "{name}.tiff")
+
+        # With the row's image_pattern="{name}.tiff": 2 files, 0 exposures → changed
+        @test HimalayaUI.cheap_change_check(db, exp_id) == true
+
+        # If image_pattern were ignored (defaulted to ".tif"), the count would be 0
+        # and cheap_change_check would return false — prove the pattern is honoured.
+        db2 = fresh_db()
+        exp_id2 = HimalayaUI.create_experiment!(db2;
+            name = "pattern-check-tif", path = dir,
+            data_dir = data_dir, analysis_dir = joinpath(dir, "analysis"))
+        # image_pattern is NULL → default ".tif" → 0 .tif files → false (nothing to ingest)
+        @test HimalayaUI.cheap_change_check(db2, exp_id2) == false
     end
 
     @testset "_assign_sessions" begin

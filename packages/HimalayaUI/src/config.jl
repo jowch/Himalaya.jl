@@ -259,59 +259,6 @@ function resolve_file_path(
 end
 
 """
-    config_to_toml(cfg::ExperimentConfig) -> String
-
-Serialize an `ExperimentConfig` to a TOML-formatted string suitable for
-storage in the `experiments.config` column or writing to disk. Uses the
-stdlib `TOML.print` to handle quoting and escaping correctly.
-"""
-function config_to_toml(cfg::ExperimentConfig)::String
-    function col_value(v)
-        v isa Integer ? Int(v) : String(v)
-    end
-    # Omit nullable beamline fields when unset so a round-trip preserves
-    # `nothing` instead of silently collapsing to 0.0.
-    beamline = Dict{String,Any}()
-    cfg.energy_kev    !== nothing && (beamline["energy_kev"]    = cfg.energy_kev)
-    cfg.flight_path_m !== nothing && (beamline["flight_path_m"] = cfg.flight_path_m)
-    cfg.beam_center_x !== nothing && (beamline["beam_center_x"] = cfg.beam_center_x)
-    cfg.beam_center_y !== nothing && (beamline["beam_center_y"] = cfg.beam_center_y)
-    cfg.pixel_size_um !== nothing && (beamline["pixel_size_um"] = cfg.pixel_size_um)
-    beamline["q_units"] = cfg.q_units
-    d = Dict(
-        "experiment" => Dict(
-            "name"        => cfg.name,
-            "description" => cfg.description,
-            "manifest"    => cfg.manifest_file,
-        ),
-        "beamline" => beamline,
-        "manifest" => Dict(
-            "delimiter"      => cfg.delimiter,
-            "skip_rows"      => cfg.skip_rows,
-            "header_row"     => cfg.header_row,
-            "sample_id"      => col_value(cfg.col_sample_id),
-            "name"           => col_value(cfg.col_name),
-            "display_name"   => col_value(cfg.col_display_name),
-            "filenames"      => col_value(cfg.col_filenames),
-            "notes_sample"   => col_value(cfg.col_notes_sample),
-            "notes_exposure" => col_value(cfg.col_notes_exposure),
-        ),
-        "layout" => Dict(
-            "data_dir"      => cfg.data_dir,
-            "analysis_dir"  => cfg.analysis_dir,
-            "exposure_type" => cfg.exposure_type,
-        ),
-        "files" => Dict(
-            "integration" => cfg.integration_pattern,
-            "image"       => cfg.image_pattern,
-        ),
-    )
-    io = IOBuffer()
-    TOML.print(io, d)
-    String(take!(io))
-end
-
-"""
     migrate_manifest_toml_text(text) -> (new_text, changed)
 
 Pure-text rewrite of a TOML blob from the legacy `[manifest].label`/`name`

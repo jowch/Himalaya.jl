@@ -20,9 +20,7 @@
 # manifest-free, never-clobber ingest path.
 
 """
-    scan_and_group!(db, experiment_id; analyze=true,
-                    tif_pattern="{name}.tif", prp_pattern="{name}.prp", dat_pattern="{name}.dat",
-                    on_progress=nothing)
+    scan_and_group!(db, experiment_id; analyze=true, on_progress=nothing)
 
 Full ingest of a beamtime directory into `db` under `experiment_id`. The scan
 root is the experiment's own `data_dir`/`analysis_dir` (resolved from its row).
@@ -41,7 +39,7 @@ Steps:
      (experiment_id, filename) — so a clean rescan is a true no-op).
   6. Analyze: run `analyze_exposure!` for every newly inserted exposure, OUTSIDE
      the write transaction (same contract as `cli_init_with_db!`). Skipped when
-     `analyze=false` (tests + the HTTP "scan-only" path).
+     `analyze=false` (test-only).
 
 The insert-only discipline makes every scan additive: a clean rescan is a no-op,
 new files extend the existing loads/samples/exposures. Returns a NamedTuple summary
@@ -51,9 +49,6 @@ function scan_and_group!(
     db           ::SQLite.DB,
     experiment_id::Int;
     analyze      ::Bool   = true,
-    tif_pattern  ::String = "{name}.tif",
-    prp_pattern  ::String = "{name}.prp",
-    dat_pattern  ::String = "{name}.dat",
     on_progress  ::Union{Function,Nothing} = nothing,
 )
     # Resolve data_dir, analysis_dir, and per-experiment pattern overrides from the row.
@@ -62,11 +57,11 @@ function scan_and_group!(
     data_dir     = String(exp_row.data_dir)
     analysis_dir = String(exp_row.analysis_dir)
 
-    # Prefer DB columns (set via PATCH /api/experiments/:id); fall back to
-    # caller kwargs (which default to the legacy {name}.<ext> patterns).
-    tif_pattern = coalesce(exp_row.image_pattern,       tif_pattern)
-    prp_pattern = coalesce(exp_row.metadata_pattern,    prp_pattern)
-    dat_pattern = coalesce(exp_row.integration_pattern, dat_pattern)
+    # Read file patterns from DB columns (set via PATCH /api/experiments/:id); fall back to
+    # legacy {name}.<ext> defaults when the column is NULL.
+    tif_pattern = coalesce(exp_row.image_pattern,       "{name}.tif")
+    prp_pattern = coalesce(exp_row.metadata_pattern,    "{name}.prp")
+    dat_pattern = coalesce(exp_row.integration_pattern, "{name}.dat")
 
     # -----------------------------------------------------------------------
     # 1. Scan: enumerate TIF+PRP+DAT triplets
@@ -619,8 +614,7 @@ end
     cheap_change_check(db, experiment_id) -> Bool
 
 Cheap "has the directory changed since the last ingest?" probe for the Phase-C
-auto-rescan scheduler and the `POST /api/experiments/{id}/scan` route (both
-resolve this by name via `isdefined(HimalayaUI, :cheap_change_check)`).
+auto-rescan scheduler and the `POST /api/experiments/{id}/scan` route.
 
 Returns `true` when the data directory appears to hold files not yet persisted
 (so a `scan_and_group!` is warranted), `false` when it looks unchanged (the
@@ -630,7 +624,8 @@ scheduler tick can stay quiet / back off — spec §9.4).
 matching image files in the experiment's `data_dir` (a single `readdir` + suffix
 filter) and compares against `COUNT(*)` of already-persisted exposures. Additive
 ingest dedups on `(experiment_id, filename)`, so "more files on disk than rows in
-the DB" is exactly "there is new data to ingest".
+the DB" is exactly "there is new data to ingest". The image suffix is read from
+the experiment row's `image_pattern` column (same source `scan_and_group!` uses).
 
 **Bias:** any ambiguity returns `true` (an extra scan is a harmless no-op via the
 insert-only dedup; a missed scan would silently drop data). The only `false`
@@ -640,19 +635,21 @@ persisted count.
 """
 function cheap_change_check(
     db::SQLite.DB,
-    experiment_id::Int;
-    image_pattern::String = "{name}.tif",
+    experiment_id::Int,
 )::Bool
-    # Resolve the experiment's data_dir (the authoritative scan root).
+    # Resolve the experiment's data_dir and image_pattern (the authoritative scan root + suffix).
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir FROM experiments WHERE id = ?", [experiment_id]))
+        "SELECT data_dir, image_pattern FROM experiments WHERE id = ?", [experiment_id]))
     isempty(rows) && return true   # unknown experiment: let the caller's scan surface the error
-    data_dir = String(first(rows).data_dir)
+    exp_row = first(rows)
+    data_dir = String(exp_row.data_dir)
 
     isdir(data_dir) || return false  # vanished/unreadable dir: nothing to ingest, never crash
 
     # Cheap on-disk count: number of files whose name matches the image suffix.
     # image_pattern is "{name}<suffix>"; everything after "{name}" is the literal suffix.
+    # Read from the experiment row — same source scan_and_group! uses.
+    image_pattern = coalesce(exp_row.image_pattern, "{name}.tif")
     suffix = replace(image_pattern, "{name}" => "")
     on_disk = try
         count(f -> endswith(f, suffix), readdir(data_dir))

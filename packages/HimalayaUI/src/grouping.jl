@@ -88,20 +88,6 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    _segment_loads(metas; gap_k = 10.0) -> Vector{Vector{ExposureMeta}}
-
-Split `metas` (sorted by timestamp) into loads using gap-relative segmentation:
-a time gap > `gap_k × median(all_consecutive_gaps)` starts a new load.
-
-Returns only the load groups (no flag). Use `_segment_loads_with_flag` to
-distinguish the unimodal fallback.
-"""
-function _segment_loads(metas::Vector{ExposureMeta}; gap_k::Float64 = 10.0)
-    groups, _ = _segment_loads_with_flag(metas; gap_k = gap_k)
-    return groups
-end
-
-"""
     _segment_loads_with_flag(metas; gap_k = 10.0) -> (loads, flag)
 
 `flag ∈ {:ok, :unimodal_fallback}`:
@@ -136,10 +122,7 @@ function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 
         return ([sorted], :unimodal_fallback)
     end
 
-    med = let v = sort(gaps)
-        n = length(v)
-        iseven(n) ? (v[n÷2] + v[n÷2+1]) / 2.0 : v[(n+1)÷2]
-    end
+    med = _median_inline(gaps)
     threshold = med * gap_k
     flag = :unimodal_fallback  # default; set to :ok when we actually split
 
@@ -296,7 +279,7 @@ struct GroupedSample
     name           ::String
     name_source    ::String   # always "auto" from this function
     slot_index     ::Int
-    grouping_source::String   # "auto_position" or "auto_time"
+    grouping_source::String   # always "auto_position"
     exposures      ::Vector{GroupedExposure}
 end
 
