@@ -20,6 +20,33 @@
 # manifest-free, never-clobber ingest path.
 
 """
+    _find_setup_files(analysis_dir) -> Vector{String}
+
+Locate the experiment's `setup_info_*.txt` (AgBe calibration: beam center +
+flight distance). The configured `analysis_dir` is frequently a leaf such as
+`.../analysis/automatic_analysis/tot_files`, while `setup_info` lives in the
+analysis root, so search `analysis_dir` and walk up its ancestors, returning the
+matches from the first directory that has any.
+
+# ponytail: cap the ascent at 3 ancestors — covers `analysis/automatic_analysis/
+# tot_files`. Widen the bound if a deeper analysis layout ever appears.
+"""
+function _find_setup_files(analysis_dir::AbstractString)
+    dir = analysis_dir
+    for _ in 1:4   # analysis_dir + 3 ancestors
+        if isdir(dir)
+            hits = String[joinpath(dir, f) for f in readdir(dir)
+                          if startswith(f, "setup_info_") && endswith(f, ".txt")]
+            isempty(hits) || return hits
+        end
+        parent = dirname(dir)
+        parent == dir && break   # reached the filesystem root
+        dir = parent
+    end
+    return String[]
+end
+
+"""
     scan_and_group!(db, experiment_id; analyze=true, on_progress=nothing)
 
 Full ingest of a beamtime directory into `db` under `experiment_id`. The scan
@@ -77,11 +104,7 @@ function scan_and_group!(
     # 2. Geometry: derive + write to experiments row (never-clobber human fields)
     # -----------------------------------------------------------------------
     prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
-    setup_files = isdir(analysis_dir) ?
-        String[joinpath(analysis_dir, f)
-                for f in readdir(analysis_dir)
-                if startswith(f, "setup_info_") && endswith(f, ".txt")] :
-        String[]
+    setup_files = _find_setup_files(analysis_dir)
 
     geo, _disc = derive_geometry(prp_paths, setup_files)
 
@@ -279,11 +302,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         geometry = nothing, discrepancies = String[])
 
     prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
-    setup_files = isdir(analysis_dir) ?
-        String[joinpath(analysis_dir, f)
-                for f in readdir(analysis_dir)
-                if startswith(f, "setup_info_") && endswith(f, ".txt")] :
-        String[]
+    setup_files = _find_setup_files(analysis_dir)
     geo, disc = derive_geometry(prp_paths, setup_files)
 
     result = group_into_samples(metas)

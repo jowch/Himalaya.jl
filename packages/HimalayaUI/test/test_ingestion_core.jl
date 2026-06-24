@@ -113,6 +113,28 @@ end
         @test empty_info.mean_distance_m === missing
     end
 
+    @testset "_find_setup_files ascends from a tot_files analysis_dir" begin
+        # Real SSRL layout: setup_info lives in the analysis ROOT, but the
+        # experiment's analysis_dir is the .../automatic_analysis/tot_files leaf.
+        root = mktempdir()
+        analysis = joinpath(root, "analysis")
+        tot_files = joinpath(analysis, "automatic_analysis", "tot_files")
+        mkpath(tot_files)
+        setup = joinpath(analysis, "setup_info_20260425_181705.txt")
+        write_setup_info(setup; beam_center_x = 421.409, beam_center_y = 836.946,
+                         mean_distance_mm = 1809.5)
+
+        # From the leaf, it must ascend to the analysis root and find the file.
+        found = HimalayaUI._find_setup_files(tot_files)
+        @test found == [setup]
+        # When analysis_dir directly holds the file (the mini layout), found there.
+        @test HimalayaUI._find_setup_files(analysis) == [setup]
+        # No setup file anywhere → empty (not an error).
+        @test HimalayaUI._find_setup_files(mktempdir()) == String[]
+        # A non-existent dir is tolerated (walks up; returns empty).
+        @test HimalayaUI._find_setup_files(joinpath(root, "does", "not", "exist")) == String[]
+    end
+
     @testset "derive_geometry" begin
         dir = mktempdir()
         data_dir = joinpath(dir, "data")
