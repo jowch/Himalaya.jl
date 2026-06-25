@@ -7,7 +7,7 @@ const meta = {
   args: {
     kicker: "Folio",
     title: "Saved series",
-    subtitle: "A wall of saved series across every beamtime — experiment is a filter facet, not a container.",
+    subtitle: "A wall of saved series across every experiment — experiment is a filter facet, not a container.",
     count: 5,
     countLabel: "series in the folio",
   },

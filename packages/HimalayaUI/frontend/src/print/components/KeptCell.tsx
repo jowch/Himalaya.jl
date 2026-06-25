@@ -1,7 +1,13 @@
+import { Button } from "../ui/Button";
+
 export interface KeptCellProps {
   kept: number;
   total: number;
   dropped?: number;
+  /** When provided and `dropped > 0`, renders a Restore button that calls this
+   *  callback. The button is the pointer target for the Backspace=restore key
+   *  wired at the page level. */
+  onRestore?: () => void;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -10,6 +16,7 @@ export function KeptCell({
   kept,
   total,
   dropped,
+  onRestore,
   className,
 }: KeptCellProps): JSX.Element {
   const showDropped = typeof dropped === "number" && dropped > 0;
@@ -39,6 +46,18 @@ export function KeptCell({
         >
           {dropped} dropped
         </span>
+      )}
+      {dropped != null && dropped > 0 && onRestore && (
+        <Button
+          variant="ghost"
+          className="mt-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRestore();
+          }}
+        >
+          Restore
+        </Button>
       )}
     </div>
   );

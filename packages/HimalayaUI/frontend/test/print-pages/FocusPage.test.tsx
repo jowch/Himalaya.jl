@@ -29,6 +29,10 @@ const state = {
   // sibling order for the [ ] sample-step shortcut (useExperimentSiblings mock)
   sibPrev: undefined as { id: number } | undefined,
   sibNext: undefined as { id: number } | undefined,
+  // Dock sample readout (5c): seeded sibling list + index, default empty so
+  // tests that don't care render no readout.
+  sibSiblings: [] as { id: number }[],
+  sibIndex: 0,
 };
 
 // Capture props the q-link triple receives so we can assert the shared wire
@@ -85,8 +89,8 @@ vi.mock("../../src/state", () => ({
 vi.mock("../../src/hooks/useExperimentSiblings", () => ({
   useExperimentSiblings: () => ({
     activeSample: state.activeSampleId !== undefined ? { id: state.activeSampleId } : undefined,
-    siblings: [],
-    index: 0,
+    siblings: state.sibSiblings,
+    index: state.sibIndex,
     prev: state.sibPrev,
     next: state.sibNext,
   }),
@@ -170,6 +174,8 @@ function seedFull(): void {
   state.loading = false;
   state.sibPrev = undefined;
   state.sibNext = undefined;
+  state.sibSiblings = [];
+  state.sibIndex = 0;
 }
 
 function LocationProbe() {
@@ -183,7 +189,8 @@ function focusTreeAt(sampleId: number | string) {
       <LocationProbe />
       <Routes>
         <Route path="/sample/:sampleId" element={<FocusPage />} />
-        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+        <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">corpus</div>} />
+        <Route path="/experiments" element={<div data-testid="experiments-home">home</div>} />
       </Routes>
     </MemoryRouter>
   );
@@ -209,6 +216,15 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("combs-panel")).toBeInTheDocument();
   });
 
+  it("dock follows the §7 grammar: labeled Sample readout + right-anchored Loupe with L chip (5c)", () => {
+    // Two experiment-siblings so the readout reports a real total.
+    state.sibSiblings = [{ id: 42 }, { id: 43 }];
+    state.sibIndex = 0;
+    renderAt(42);
+    expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 2");
+    expect(within(screen.getByTestId("dock-loupe")).getByTestId("kbkey").textContent).toBe("L");
+  });
+
   it("the candidate-rail note is the distilled one-sentence guide (DI-FOCUSNOTE)", () => {
     renderAt(42);
     // Distilled to the single load-bearing fact (a sample can be multiphasic),
@@ -220,25 +236,28 @@ describe("FocusPage", () => {
     expect(screen.queryByText(/Candidates that explain the same peaks swap/)).toBeNull();
   });
 
-  // ── keyboard: the two-axis model (shared shortcut library) ───────────────────
+  // ── keyboard: the two-axis model (shared shortcut library, rev-2 axes T2.5) ──
+  // ↑/↓ = sample axis (prevSample/nextSample), ←/→ = candidate detail axis
+  // (prevDetail/nextDetail). The old exposure axis ([]/[ and old ←/→ for frames
+  // on Focus) is retired — exposure stepping is filmstrip-only via ThumbnailGallery.
   describe("keyboard — two-axis model", () => {
-    it("] / [ step the sample (agree with the stepper via useExperimentSiblings)", () => {
+    it("↓ / ↑ step the sample (agree with the stepper via useExperimentSiblings)", () => {
       state.sibNext = { id: 43 };
       state.sibPrev = { id: 41 };
       renderAt(42);
-      fireEvent.keyDown(document.body, { key: "]" });
+      fireEvent.keyDown(document.body, { key: "ArrowDown" });
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/43");
     });
 
-    it("[ steps to the previous sample", () => {
+    it("↑ steps to the previous sample", () => {
       state.sibPrev = { id: 41 };
       renderAt(42);
-      fireEvent.keyDown(document.body, { key: "[" });
+      fireEvent.keyDown(document.body, { key: "ArrowUp" });
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/41");
     });
 
     // FO-NAV-STATE: React Router does NOT remount FocusPage on a same-route
-    // /sample/:id step, so page-owned interaction state (the "+ Peak" arm, the
+    // ↑/↓ sample step, so page-owned interaction state (the "+ Peak" arm, the
     // zoom window) would survive a sample switch — the first click on the next
     // sample's trace would silently mutate ITS peaks. The arm must reset on the
     // sample change.
@@ -249,11 +268,11 @@ describe("FocusPage", () => {
       // Arm "+ Peak" AND preview a candidate.
       fireEvent.click(screen.getByText("+ Peak"));
       expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "true");
-      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // preview first candidate
+      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // preview first candidate
       expect(
         screen.getByRole("button", { name: /Pn3m, in assignment/ }),
       ).toHaveAttribute("data-previewed", "true");
-      // A [ / ] step changes activeSampleId WITHOUT remounting FocusPage. In
+      // A ↑/↓ step changes activeSampleId WITHOUT remounting FocusPage. In
       // production Zustand re-renders on that change; the mocked store is
       // non-reactive, so drive the sample change + re-render the SAME tree
       // (FocusPage is reused, not remounted — its useState survives). The reset
@@ -269,70 +288,48 @@ describe("FocusPage", () => {
       ).not.toHaveAttribute("data-previewed");
     });
 
-    it("→ / ← step the active exposure (no wrap)", () => {
-      state.exposures = [exp({ id: 7 }), exp({ id: 8, filename: "JC042-002.dat" })];
-      state.activeExposureId = 7;
-      renderAt(42);
-      fireEvent.keyDown(document.body, { key: "ArrowRight" });
-      expect(state.activeExposureId).toBe(8);
-      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
-      expect(state.activeExposureId).toBe(7);
-    });
-
-    // FO-EXPSKIP: the exposure axis traverses INDEXABLE exposures only — the
-    // same acceptable set useAutoPickExposure pins to. Stepping onto a rejected
-    // (dropped) frame would be reverted by the auto-pick (it yanks any
-    // non-acceptable active exposure to the representative), so a step onto a
-    // dropped frame reads as the axis going dead or jumping to the rep. The
-    // stepper must skip rejected frames so ← / → moves between the frames the
-    // page can actually hold active.
-    it("→ / ← skip rejected (dropped) frames, stepping among acceptable exposures only (FO-EXPSKIP)", () => {
-      state.exposures = [
-        exp({ id: 7 }),
-        exp({ id: 8, filename: "JC042-002.dat", status: "rejected", selected: false }),
-        exp({ id: 9, filename: "JC042-003.dat" }),
-      ];
-      state.activeExposureId = 7;
-      renderAt(42);
-      // → skips the rejected middle frame (8) and lands on the next acceptable (9)
-      fireEvent.keyDown(document.body, { key: "ArrowRight" });
-      expect(state.activeExposureId).toBe(9);
-      // clamp at the last acceptable frame — no wrap, and never onto a rejected one
-      fireEvent.keyDown(document.body, { key: "ArrowRight" });
-      expect(state.activeExposureId).toBe(9);
-      // ← steps back to the first acceptable frame, also skipping the rejected one
-      fireEvent.keyDown(document.body, { key: "ArrowLeft" });
-      expect(state.activeExposureId).toBe(7);
-    });
-
-    it("↓ / ↑ move the previewed candidate (the arrow cursor), clamped, with a visible marker", () => {
+    it("→ / ← step the previewed candidate (detail axis), clamped, with a visible marker", () => {
       renderAt(42);
       const pn3m = screen.getByRole("button", { name: /Pn3m, in assignment/ });
       const lam = screen.getByRole("button", { name: /^Lamellar$/ });
       expect(pn3m).not.toHaveAttribute("data-previewed");
-      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // none → first
+      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // none → first
       expect(pn3m).toHaveAttribute("data-previewed", "true");
-      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // first → second
+      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // first → second
       expect(lam).toHaveAttribute("data-previewed", "true");
       expect(pn3m).not.toHaveAttribute("data-previewed");
-      fireEvent.keyDown(document.body, { key: "ArrowDown" }); // clamp at last
+      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // clamp at last
       expect(lam).toHaveAttribute("data-previewed", "true");
-      fireEvent.keyDown(document.body, { key: "ArrowUp" }); // back to first
+      fireEvent.keyDown(document.body, { key: "ArrowLeft" }); // back to first
       expect(pn3m).toHaveAttribute("data-previewed", "true");
+    });
+
+    it("exposure keys (old [] / old ←→ exposure axis) are gone — arrows step candidate, not exposure", () => {
+      // ArrowRight must NOT change activeExposureId; it steps the candidate preview.
+      state.exposures = [exp({ id: 7 }), exp({ id: 8, filename: "JC042-002.dat" })];
+      state.activeExposureId = 7;
+      renderAt(42);
+      fireEvent.keyDown(document.body, { key: "ArrowRight" });
+      // exposure is unchanged — the candidate list moved, not the exposure
+      expect(state.activeExposureId).toBe(7);
+      // and no [ / ] binding exists either
+      fireEvent.keyDown(document.body, { key: "]" });
+      expect(state.activeExposureId).toBe(7);
     });
 
     it("Escape is a ladder: clear the candidate preview first, THEN back to the sheet", () => {
       renderAt(42);
-      fireEvent.keyDown(document.body, { key: "ArrowDown" });
+      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // preview first candidate
       const pn3m = () => screen.getByRole("button", { name: /Pn3m, in assignment/ });
       expect(pn3m()).toHaveAttribute("data-previewed", "true");
       // first Escape clears the preview, does NOT navigate
       fireEvent.keyDown(document.body, { key: "Escape" });
       expect(pn3m()).not.toHaveAttribute("data-previewed");
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/42");
-      // second Escape (no preview) backs out to the sheet
+      // second Escape (no preview) backs out to the experiment corpus
+      // (sample 42 has experiment_id: 1, no ?from=series → /experiments/1/corpus)
       fireEvent.keyDown(document.body, { key: "Escape" });
-      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/samples");
+      expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/experiments/1/corpus");
     });
   });
 
@@ -619,7 +616,7 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("focus-not-found")).toBeInTheDocument();
   });
 
-  it("not-found renders an EmptyState whose action leads back to the contact sheet (FO-ERR)", () => {
+  it("not-found renders an EmptyState whose action leads back to experiments (FO-ERR, T3.2)", () => {
     state.corpus = [];
     state.activeSampleId = undefined;
     renderAt(999);
@@ -629,9 +626,9 @@ describe("FocusPage", () => {
       within(block).getByRole("heading", { name: "Sample not found" }),
     ).toBeInTheDocument();
     fireEvent.click(
-      within(block).getByRole("button", { name: "Back to the contact sheet" }),
+      within(block).getByRole("button", { name: "Back to the experiments" }),
     );
-    expect(screen.getByTestId("sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("experiments-home")).toBeInTheDocument();
   });
 
   it("not-found exposes its sole heading as an h1, not a level-skipped h2 (FO-NFHEAD)", () => {

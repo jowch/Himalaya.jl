@@ -14,7 +14,7 @@ type Story = StoryObj<typeof meta>;
 export const FilterNoMatch: Story = {
   args: {
     title: "No series match",
-    body: "Try clearing a filter, or widen the beamtime range to see more.",
+    body: "Try clearing a filter, or widen the experiment range to see more.",
   },
 };
 

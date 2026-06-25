@@ -11,7 +11,9 @@ export const STORAGE_KEY = "himalaya-ui:queue";
 // Bumped 3 → 4 in the plotting redesign (D-10): the /groups routes + the
 // index_confirmed / index_unconfirmed op kinds were retired. Any pre-cutover
 // queued group op must DROP on rehydrate rather than replay into a dead route.
-export const SCHEMA_VERSION = 4;
+// Bumped 4 → 5 (Phase E1, Task 1b): samples.display_name collapsed into non-null
+// name; pre-deploy update_sample ops carrying display_name DROP on rehydrate.
+export const SCHEMA_VERSION = 5;
 
 interface PersistedOp {
   schemaVersion: number;

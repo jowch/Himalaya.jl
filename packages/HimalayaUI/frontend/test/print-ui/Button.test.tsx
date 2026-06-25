@@ -82,6 +82,11 @@ describe("<Button> success variant", () => {
   });
 });
 
+// The dock cull-verb variants (outlineAccent/outlineSuccess, spec §5) are
+// type-enforced (exhaustive Record<ButtonVariant,…>) and proven at the call
+// site — SamplesPage/LoupePage dock tests assert data-variant on dock-drop /
+// dock-keep. A primitive-level data-variant echo would add no signal.
+
 describe("<Button> disabled state", () => {
   it("forwards the disabled attribute (gated actions)", () => {
     render(<Button variant="solid" disabled>Confirm & build</Button>);

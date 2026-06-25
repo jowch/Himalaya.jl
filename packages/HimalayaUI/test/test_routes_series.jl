@@ -839,15 +839,15 @@ end
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        good   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+        good   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
         # A second exposure whose .dat does NOT exist on disk → must be SKIPPED, not 500.
-        missing_dat = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="nope")
+        missing_dat = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="nope")
         # A derived (non-"file") exposure whose .dat IS on disk → must be SKIPPED on
         # the kind branch (not on the missing-file branch). Exercises the
         # `String(row.kind) == "file" || continue` guard directly.
         cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
            joinpath(analysis_dir, "derived_tot.dat"))
-        derived = HimalayaUI.create_exposure!(db; sample_id=s_id,
+        derived = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id,
             filename="derived", kind="derived")
 
         snap = "{\"effective_peaks\":[],\"confirmed_index\":null,\"analysis_inputs_hash\":null}"

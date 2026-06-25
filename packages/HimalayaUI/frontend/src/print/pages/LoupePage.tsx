@@ -13,11 +13,13 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button } from "../ui";
+import { EmptyState, Button, IconButton, KbKey } from "../ui";
+import { Dock } from "../ui/Dock";
 import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
 import { useShortcuts } from "../shell/useShortcuts";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { KbdLegend } from "../shell/KbdLegend";
 import { isValidationError } from "../../lib/queue/errors";
 import { BigFrame } from "../components/BigFrame";
@@ -87,9 +89,9 @@ function notifySaveFailed(err: unknown): void {
 }
 
 /**
- * LoupePage (greenfield) — the sample loupe at /samples/loupe/:sampleId.
+ * LoupePage (greenfield) — the sample loupe at /sample/:sampleId/loupe.
  * URL-owned: the sample id is the route param, never Zustand `activeSampleId`.
- * Mounts body-only inside the carried CorpusShell <Outlet>.
+ * Mounts body-only inside the app shell <Outlet> (T3.2).
  */
 export function LoupePage(): JSX.Element {
   const { sampleId: sampleIdParam } = useParams<{ sampleId: string }>();
@@ -239,6 +241,19 @@ export function LoupePage(): JSX.Element {
     );
   }, [activeExposure, setStatus]);
 
+  // Restore: set the active frame's status back to null (unscreened). Mirrors
+  // the drop/keep toggle path — same setStatus mutation, status: null payload.
+  const handleRestore = useCallback(() => {
+    if (!activeExposure) return;
+    setStatus.mutate(
+      { exposureId: activeExposure.id, status: null },
+      {
+        onSuccess: () => showToast("Frame restored", "success"),
+        onError: notifySaveFailed,
+      },
+    );
+  }, [activeExposure, setStatus]);
+
   const handleSetRepresentative = useCallback(() => {
     if (!activeExposure) return;
     if (activeExposure.selected) {
@@ -280,53 +295,58 @@ export function LoupePage(): JSX.Element {
   }, [exposures]);
 
   const goBack = useCallback(() => {
-    const beamtime = searchParams.get("beamtime");
+    // App-shell unification: the corpus lives at /experiments/:id/corpus. The
+    // legacy target (/experiments?experiment=N, the experiments LIST) sent
+    // "back" to the wrong page. Prefer the ?experiment scope the sheet passed;
+    // fall back to the sample's own experiment_id for a direct permalink.
+    const experimentParam = searchParams.get("experiment");
+    const expId = experimentParam ?? (sample ? String(sample.experiment_id) : null);
     // LO-FOCUSRET (WCAG 2.4.3): carry the originating sample id back so the
     // sheet restores focus to that row instead of dropping it to <body>.
     const opts = hasValidId ? { state: { focusSampleId: sampleId } } : undefined;
-    navigate(beamtime ? `/samples?beamtime=${beamtime}` : "/samples", opts);
-  }, [navigate, searchParams, hasValidId, sampleId]);
+    navigate(expId ? `/experiments/${expId}/corpus` : "/experiments", opts);
+  }, [navigate, searchParams, hasValidId, sampleId, sample]);
 
   // ── LO-NEXT: prev/next-SAMPLE navigation ──────────────────────────────────
   // Culling N samples should not cost N sheet round-trips. The sheet hands its
   // visible, sorted+filtered sample order through router state when it opens
   // the loupe; we walk THAT list so prev/next match exactly what the user saw.
-  // A direct URL (permalink, no state) falls back to the beamtime-scoped corpus
+  // A direct URL (permalink, no state) falls back to the experiment-scoped corpus
   // order, which also matches the sheet's default (ingest order).
   const location = useLocation();
-  const beamtimeParam = searchParams.get("beamtime");
-  const beamtime =
-    beamtimeParam !== null && /^\d+$/.test(beamtimeParam)
-      ? Number(beamtimeParam)
+  const experimentParam2 = searchParams.get("experiment");
+  const experimentId =
+    experimentParam2 !== null && /^\d+$/.test(experimentParam2)
+      ? Number(experimentParam2)
       : undefined;
-  // Shared with the CorpusTopbar sample stepper (resolveSampleOrder), so the
+  // Shared with the app shell sample stepper (resolveSampleOrder), so the
   // topbar's ‹ › and the loupe's own `[`/`]` keyboard nav always agree.
   const orderedSampleIds = useMemo(
     () =>
       resolveSampleOrder(
         corpusQ.data ?? [],
-        beamtime,
+        experimentId,
         sampleId,
         (location.state as { sampleOrder?: number[] } | null)?.sampleOrder,
       ),
-    [location.state, corpusQ.data, beamtime, sampleId],
+    [location.state, corpusQ.data, experimentId, sampleId],
   );
-  const { prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
+  const { index: sampleIndex, prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
     orderedSampleIds,
     sampleId,
   );
   const gotoSample = useCallback(
     (id: number): void => {
       const params = new URLSearchParams();
-      if (beamtime !== undefined) params.set("beamtime", String(beamtime));
+      if (experimentId !== undefined) params.set("experiment", String(experimentId));
       const qs = params.toString();
       // Carry the SAME order forward (so the next step still has the list) and
       // drop ?exposure= so each sample opens at its own default frame.
-      navigate(`/samples/loupe/${id}${qs ? `?${qs}` : ""}`, {
+      navigate(`/sample/${id}/loupe${qs ? `?${qs}` : ""}`, {
         state: { sampleOrder: orderedSampleIds },
       });
     },
-    [navigate, beamtime, orderedSampleIds],
+    [navigate, experimentId, orderedSampleIds],
   );
 
   // Loupe keyboard, via the shared shortcut library. The vocabulary nests:
@@ -336,16 +356,27 @@ export function LoupePage(): JSX.Element {
   // useShortcuts — so the per-key guards the old ad-hoc handler spelled out are
   // now owned uniformly by the library.
   useShortcuts({
-    prevExposure: () => flip(-1),
-    nextExposure: () => flip(1),
+    // ←/→ = frame (detail) axis — renamed from prevExposure/nextExposure in T2.5.
+    prevDetail: () => flip(-1),
+    nextDetail: () => flip(1),
     drop: () => handleDropToggle(),
     keep: () => handleKeepToggle(),
     representative: () => handleSetRepresentative(),
+    restore: () => handleRestore(),
     prevSample: () => {
       if (prevSampleId !== undefined) gotoSample(prevSampleId);
     },
     nextSample: () => {
       if (nextSampleId !== undefined) gotoSample(nextSampleId);
+    },
+    // Enter opens Focus for this sample (b4: "Focus is the forward step,
+    // Enter") — makes the dock's frosted ↵ chip honest. §8 invariant (b): on a
+    // native interactive target (a dock button) Enter activates it natively.
+    openFocus: (e) => {
+      if (isNativeInteractiveTarget(e)) return false;
+      if (!hasValidId) return false;
+      navigate(`/sample/${sampleId}`);
+      return undefined;
     },
     dismiss: () => goBack(),
   });
@@ -384,9 +415,9 @@ export function LoupePage(): JSX.Element {
   return (
     <PageFrame width="loupe" className="px-8 py-7">
       <div data-testid="loupe-page">
-        {/* The inter-sample stepper lives in the TopBar (the SAME SampleStepper
-            the Focus workspace uses, same location); the loupe's own `[`/`]`
-            keyboard nav still steps via gotoSample, sharing resolveSampleOrder. */}
+        {/* The inter-sample stepper lives in the Dock (§3.3); the loupe's own
+            `[`/`]` keyboard nav still steps via gotoSample, sharing
+            resolveSampleOrder. */}
         <div className="mb-3.5 flex items-center gap-3">
           <button data-testid="loupe-back" onClick={goBack} className="text-sm font-semibold text-print-accent hover:underline">
             ← Back to the sheet
@@ -394,7 +425,7 @@ export function LoupePage(): JSX.Element {
         </div>
         <PlateHeader
           as="h1"
-          title={sample?.display_name ?? sample?.name ?? "—"}
+          title={sample?.name ?? "—"}
           subtitle={`${sample?.name ?? "—"} · ${exposurePosition}`}
           className="mb-5"
         />
@@ -428,8 +459,8 @@ export function LoupePage(): JSX.Element {
                       the screen verbs ALONE — the frame arrows are conventional
                       (and their registry label says "exposure", which LO-TERM
                       keeps off the loupe), and the sample steps ([ ]) are
-                      advertised by the shared SampleStepper's tooltips in the
-                      TopBar (LO-STEPDEDUP), so repeating them here is redundant. */}
+                      advertised by the Dock's stepper buttons (LO-STEPDEDUP),
+                      so repeating them here is redundant. */}
                   <KbdLegend
                     ids={["drop", "keep", "representative"]}
                     testId="loupe-kbd-legend"
@@ -453,7 +484,7 @@ export function LoupePage(): JSX.Element {
                 />
                 <ManageTagsModal
                   open={manageOpen}
-                  sampleName={sample.display_name ?? sample.name ?? ""}
+                  sampleName={sample.name ?? ""}
                   tags={toLoupeTags(sample.tags)}
                   keyOptions={keyOptions}
                   valueOptionsFor={valueOptionsFor}
@@ -469,6 +500,130 @@ export function LoupePage(): JSX.Element {
             )}
           </div>
         </Skeleton>
+
+        {/* ── Contextual bottom dock (Loupe grammar §3.3) ──────────────────────────
+            ‹ Corpus · Sample↑↓ · Frame←→ · Drop · Keep · Set representative · Restore · Focus
+            Each verb calls the SAME callback the keyboard shortcut uses. */}
+        <Dock>
+          {/* Up-link back to corpus */}
+          <button
+            onClick={goBack}
+            className="text-meta font-semibold text-print-accent hover:underline mr-1"
+            data-testid="dock-up-link"
+          >
+            ‹ Corpus
+          </button>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
+          <div className="flex items-center gap-1">
+            <span className="text-meta text-ink-soft">Sample</span>
+            <IconButton
+              label="Previous sample"
+              tone="ghost"
+              disabled={prevSampleId === undefined}
+              onClick={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
+              data-testid="dock-prev-sample"
+            >
+              ↑
+            </IconButton>
+            {sampleIndex >= 0 && (
+              <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+                data-testid="dock-sample-count">{sampleIndex + 1} / {orderedSampleIds.length}</span>
+            )}
+            <IconButton
+              label="Next sample"
+              tone="ghost"
+              disabled={nextSampleId === undefined}
+              onClick={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
+              data-testid="dock-next-sample"
+            >
+              ↓
+            </IconButton>
+          </div>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Frame stepper — labeled ‹/› axis + current / total readout (§7) */}
+          <div className="flex items-center gap-1">
+            <span className="text-meta text-ink-soft">Frame</span>
+            <IconButton
+              label="Previous frame"
+              tone="ghost"
+              disabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
+              onClick={() => flip(-1)}
+              data-testid="dock-prev-frame"
+            >
+              ←
+            </IconButton>
+            {activeExposure !== undefined && (
+              <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
+                data-testid="dock-frame-count">{exposures.indexOf(activeExposure) + 1} / {exposures.length}</span>
+            )}
+            <IconButton
+              label="Next frame"
+              tone="ghost"
+              disabled={activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1}
+              onClick={() => flip(1)}
+              data-testid="dock-next-frame"
+            >
+              →
+            </IconButton>
+          </div>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Cull verbs — coloured outlines + key-chips (§7) */}
+          <Button
+            variant="outlineAccent"
+            onClick={handleDropToggle}
+            data-testid="dock-drop"
+          >
+            Drop<KbKey className="ml-1.5">X</KbKey>
+          </Button>
+          <Button
+            variant="outlineSuccess"
+            onClick={handleKeepToggle}
+            data-testid="dock-keep"
+          >
+            Keep<KbKey className="ml-1.5">K</KbKey>
+          </Button>
+
+          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+          {/* Set representative (Loupe-only — NOT on Corpus), key-chipped R */}
+          <Button
+            variant="ghost"
+            onClick={handleSetRepresentative}
+            data-testid="dock-set-representative"
+          >
+            Set representative<KbKey className="ml-1.5">R</KbKey>
+          </Button>
+
+          {/* Restore — un-cull to neutral (Backspace); plain, like Corpus */}
+          <Button
+            variant="ghost"
+            onClick={handleRestore}
+            data-testid="dock-restore"
+          >
+            Restore
+          </Button>
+
+          {/* Spacer — right-anchors the destination (§7) */}
+          <div className="flex-1" />
+
+          {/* Focus destination — the unambiguous primary */}
+          <Button
+            variant="accent"
+            onClick={() => {
+              if (hasValidId) navigate(`/sample/${sampleId}`);
+            }}
+            data-testid="dock-focus"
+          >
+            Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey>
+          </Button>
+        </Dock>
       </div>
     </PageFrame>
   );

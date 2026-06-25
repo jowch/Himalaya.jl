@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
@@ -13,7 +13,8 @@ import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText, EmptyState, Button } from "../ui";
+import { HintText, EmptyState, Button, IconButton, KbKey } from "../ui";
+import { Dock } from "../ui/Dock";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
@@ -50,7 +51,7 @@ import {
 } from "../../queries";
 import { useAppState } from "../../state";
 import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFromRoute";
-import { useAutoPickExposure, acceptableExposures, noUsableExposureState, resolveActiveExposure } from "../../hooks/useAutoPickExposure";
+import { useAutoPickExposure, noUsableExposureState, resolveActiveExposure } from "../../hooks/useAutoPickExposure";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
 import { useShortcuts } from "../shell/useShortcuts";
@@ -59,6 +60,7 @@ import { sanitizeDashes } from "../../lib/copy";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import type { Trace, IndexEntry } from "../../api";
 
@@ -142,6 +144,7 @@ const FOCUS_FIXTURE = (
  */
 export function FocusPage(): JSX.Element {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // ── route → store seeding ──────────────────────────────────────────────────
   // The status guards against the mid-session lie: a bogus /sample/:id never
@@ -195,7 +198,7 @@ export function FocusPage(): JSX.Element {
 
   // Inter-sample order (the SAME derivation the topbar stepper uses) so the
   // `[`/`]` shortcuts and the stepper always agree.
-  const { prev: prevSibling, next: nextSibling } = useExperimentSiblings();
+  const { prev: prevSibling, next: nextSibling, index: siblingIndex, siblings } = useExperimentSiblings();
 
   const traceQ = useTrace(activeExposureId);
   const peaksQ = usePeaks(activeExposureId);
@@ -341,11 +344,11 @@ export function FocusPage(): JSX.Element {
     ? activeExposure.filename.replace(/\.[^.]+$/, "")
     : null;
   const sampleName =
-    corpusSample?.display_name ?? corpusSample?.name ?? "—";
+    corpusSample?.name ?? "—";
   // FO-RESCORE2 F14: name the browser tab after the sample (was static
   // "Himalaya"). Raw name (null while loading) so the placeholder "—" never
   // leaks into the tab. Hooks-safe: above the not-found early return.
-  useDocumentTitle(corpusSample?.display_name ?? corpusSample?.name ?? null);
+  useDocumentTitle(corpusSample?.name ?? null);
   // sanitizeDashes: upstream experiment/sample names may carry em dashes that
   // no source-level guard can catch (FO-SUBTITLE-EMDASH). Fold them out.
   const subtitle = sanitizeDashes(
@@ -485,29 +488,40 @@ export function FocusPage(): JSX.Element {
   useShortcuts({
     prevSample: () => prevSibling && navigate(`/sample/${prevSibling.id}`),
     nextSample: () => nextSibling && navigate(`/sample/${nextSibling.id}`),
-    // The exposure axis steps among INDEXABLE (acceptable) exposures only. The
-    // full `exposures` list keeps rejected frames so the filmstrip still shows
-    // them, but landing the active exposure on a rejected one is reverted by
-    // useAutoPickExposure (it yanks any non-acceptable pick back to the
-    // representative) — so the stepper must skip them to move predictably.
-    prevExposure: () => {
-      const pool = acceptableExposures(exposures);
-      const e = stepInList(pool, pool.findIndex((x) => x.id === activeExposureId), -1);
-      if (e) setActiveExposure(e.id);
+    // P = toggle add-peak mode — the SAME state the TracePlate "+ Peak" arm
+    // toggles (page-interpreted Edit verb, not in the overlay).
+    addPeak: () => setAddArmed((v) => !v),
+    // Enter (openFocus) is page-interpreted on Focus as "apply the focused
+    // candidate" (§8: one semantic id per physical key, the page interprets
+    // it). The focused candidate is the ↑/↓-previewed index (previewIndexId);
+    // applying it toggles its membership in the assignment, mirroring the
+    // CandidateRow click. Decline when nothing is focused (no preview) or the
+    // event lands on a native interactive control (§8 invariant (b)).
+    openFocus: (e) => {
+      if (isNativeInteractiveTarget(e)) return false;
+      if (previewIndexId === undefined) return false;
+      const ix = indices.find((i) => i.id === previewIndexId);
+      if (!ix) return false;
+      if (memberIds.has(ix.id)) {
+        removeAssignmentPhase.mutate(ix.id);
+        announce(`${ix.phase} removed from the call`);
+      } else {
+        addAssignmentPhase.mutate(ix.id);
+        announce(`${ix.phase} added to the call`);
+      }
+      return undefined;
     },
-    nextExposure: () => {
-      const pool = acceptableExposures(exposures);
-      const e = stepInList(pool, pool.findIndex((x) => x.id === activeExposureId), 1);
-      if (e) setActiveExposure(e.id);
-    },
-    prevCandidate: () => {
+    // ←/→ = candidate detail axis (renamed from prevCandidate/nextCandidate in T2.5;
+    // exposure stepping now relies on the ThumbnailGallery onSelect filmstrip only).
+    prevDetail: () => {
       const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), -1);
       if (c) setPreviewIndexId(c.id);
     },
-    nextCandidate: () => {
+    nextDetail: () => {
       const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), 1);
       if (c) setPreviewIndexId(c.id);
     },
+    openLoupe: () => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`),
     dismiss: () => {
       // Esc ladder (innermost first). An open modal/popover is already handled
       // upstream (suppressGlobalKeys). Next rung is the armed "+ Peak" mode,
@@ -518,7 +532,8 @@ export function FocusPage(): JSX.Element {
       // disarm handler (which also re-anchors focus per WCAG 2.4.3).
       if (addArmed) return false;
       if (previewIndexId !== undefined) setPreviewIndexId(undefined);
-      else navigate("/samples");
+      else if (searchParams.get("from") === "series") { navigate("/series"); }
+      else navigate(`/experiments/${experimentId}/corpus`);
       return undefined;
     },
   });
@@ -533,8 +548,8 @@ export function FocusPage(): JSX.Element {
             title="Sample not found"
             body="Nothing in the corpus matches this address."
             action={
-              <Button variant="outline" onClick={() => navigate("/samples")}>
-                Back to the contact sheet
+              <Button variant="outline" onClick={() => navigate("/experiments")}>
+                Back to the experiments
               </Button>
             }
           />
@@ -861,6 +876,73 @@ export function FocusPage(): JSX.Element {
       </Skeleton>
 
       {modals}
+
+      {/* ── Contextual bottom dock (Focus grammar §3.3) ──────────────────────────
+          ‹ Corpus|Series · Sample↑↓ · Loupe
+          Up-link reads the `from=series` marker (T3.2) to choose between
+          ‹ Series and ‹ Corpus. Each verb calls the SAME callback the keyboard
+          shortcut uses — no divergence between key and button. */}
+      <Dock>
+        {/* Up-link: Series when from=series, else Corpus */}
+        {searchParams.get("from") === "series" ? (
+          <button
+            onClick={() => navigate("/series")}
+            className="text-meta font-semibold text-print-accent hover:underline mr-1"
+            data-testid="dock-up-link"
+          >
+            ‹ Series
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate(`/experiments/${experimentId}/corpus`)}
+            className="text-meta font-semibold text-print-accent hover:underline mr-1"
+            data-testid="dock-up-link"
+          >
+            ‹ Corpus
+          </button>
+        )}
+
+        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
+
+        {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
+        <div className="flex items-center gap-1">
+          <span className="text-meta text-ink-soft">Sample</span>
+          <IconButton
+            label="Previous sample"
+            tone="ghost"
+            disabled={prevSibling === undefined}
+            onClick={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
+            data-testid="dock-prev-sample"
+          >
+            ↑
+          </IconButton>
+          {siblingIndex >= 0 && siblings.length > 0 && (
+            <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+              data-testid="dock-sample-count">{siblingIndex + 1} / {siblings.length}</span>
+          )}
+          <IconButton
+            label="Next sample"
+            tone="ghost"
+            disabled={nextSibling === undefined}
+            onClick={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
+            data-testid="dock-next-sample"
+          >
+            ↓
+          </IconButton>
+        </div>
+
+        {/* Spacer — right-anchors the destination (§7) */}
+        <div className="flex-1" />
+
+        {/* Loupe destination — quiet neutral (on Focus the indexing IS the work) */}
+        <Button
+          variant="ghost"
+          onClick={() => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`)}
+          data-testid="dock-loupe"
+        >
+          Loupe<KbKey className="ml-1.5">L</KbKey>
+        </Button>
+      </Dock>
     </>
   );
 }

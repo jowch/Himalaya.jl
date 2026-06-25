@@ -123,7 +123,7 @@ end
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
 
         _with_sub() do pending
             with_test_server(db) do port, base
@@ -144,7 +144,7 @@ end
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
 
         _with_sub() do pending
             with_test_server(db) do port, base
@@ -173,7 +173,7 @@ end
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
         peaks = Tables.rowtable(DBInterface.execute(db,
@@ -213,7 +213,7 @@ end
         exp_id = HimalayaUI.init_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
         # Force a non-no-op reanalyze: drop the inputs hash so it falls through
@@ -246,7 +246,7 @@ end
         exp_id = HimalayaUI.create_experiment!(db; path=tmp,
             data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
 
         _with_sub() do pending
             with_test_server(db) do port, base

@@ -449,6 +449,27 @@ against the rehydrated registry).
 build drops the queue with a toast — the alternative (silent type drift)
 would corrupt the cache.
 
+### Deploying across a schema change (cross-version SSE hazard)
+
+When a deploy changes a payload shape, two reconciliation surfaces can see a
+frame written by the *other* version mid-rollout:
+
+- **Persisted op queue (handled automatically).** Bumping `SCHEMA_VERSION`
+  (`lib/queue/persistence.ts`) drops any stale persisted ops with the "N edits
+  couldn't be restored" toast (§9 above). A pre-deploy op carrying an old field
+  name is dropped, not replayed; the user redoes that edit.
+- **Live SSE frames (operational, NOT code).** `applyRemoteToCache`'s
+  `update_sample` branch does a blind untyped spread `{ ...old, ...payload }`
+  and flips no key, so a frame emitted by the *previous* backend version — e.g.
+  one still carrying the retired `display_name` field after the rename to
+  `name` — would splice a stale field onto a record keyed off the new field.
+  **The ratified mitigation is deploy sequencing, not a key flip in the
+  reconciler** (a key flip would have to know every historical field name).
+  Practically: roll the backend first, let in-flight SSE connections drain
+  (clients reconnect to the new version), then roll the frontend — so no client
+  consumes a frame whose shape predates its own build. See the canonical spec
+  §11.5.
+
 ---
 
 ## 10. Failure classes + retry policy

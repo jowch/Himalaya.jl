@@ -97,6 +97,8 @@ async function mockCommon(page: Page): Promise<void> {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPERIMENT]) }));
   await page.route("**/api/experiments/1", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPERIMENT) }));
+  await page.route("**/api/experiments/1/loads", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SAMPLES) }));
   await page.route("**/api/samples/10/exposures*", (r) =>
@@ -176,10 +178,10 @@ test.describe("new-series creation flow (M-A)", () => {
     const captured = freshCaptured();
     await mockCommon(page);
     await mockScopingAndWrites(page, captured, /* warm */ true);
-    await page.goto("/samples");
+    await page.goto("/experiments/1/corpus");
 
     // The contact sheet loads with both sample rows.
-    await expect(page.getByTestId("samples-page")).toBeVisible();
+    await expect(page.getByTestId("experiment-corpus")).toBeVisible();
     await expect(page.getByTestId("sample-table-row")).toHaveCount(2);
 
     // Compose bar starts hidden (no sample checked).
@@ -233,7 +235,7 @@ test.describe("new-series creation flow (M-A)", () => {
     const captured = freshCaptured();
     await mockCommon(page);
     await mockScopingAndWrites(page, captured, /* warm */ true);
-    await page.goto("/samples");
+    await page.goto("/experiments/1/corpus");
     await expect(page.getByTestId("sample-table-row")).toHaveCount(2);
 
     await page.getByTestId("sample-table-row").first().getByRole("checkbox").click();
@@ -261,7 +263,7 @@ test.describe("new-series creation flow (M-A)", () => {
 
     // Arrive via the picker so a seed is carried (the cold panel only renders
     // when the user deliberately selected samples but none share a tag key).
-    await page.goto("/samples");
+    await page.goto("/experiments/1/corpus");
     await expect(page.getByTestId("sample-table-row")).toHaveCount(2);
     await page.getByTestId("sample-table-row").first().getByRole("checkbox").click();
     await page.getByTestId("sample-table-row").nth(1).getByRole("checkbox").click();

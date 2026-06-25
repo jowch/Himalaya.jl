@@ -2,17 +2,17 @@ import type { CorpusSample } from "../../api";
 
 /**
  * The ordered sample-id list the loupe steps through, shared by LoupePage (its
- * keyboard `[`/`]` + gotoSample) and CorpusTopbar (the sample stepper), so the
+ * keyboard `[`/`]` + gotoSample) and the loupe sample stepper, so the
  * two can never disagree about prev/next.
  *
  * Priority: the order carried in router `state.sampleOrder` (the contact-sheet
  * order the loupe was opened with, preserved across steps) when it still
- * contains the active sample; otherwise the corpus scoped to the active beamtime
- * (experiment), in corpus order.
+ * contains the active sample; otherwise the corpus scoped to the active
+ * experiment filter, in corpus order.
  */
 export function resolveSampleOrder(
   corpus: CorpusSample[],
-  beamtime: number | undefined,
+  experimentId: number | undefined,
   sampleId: number,
   sampleOrderState: number[] | undefined,
 ): number[] {
@@ -20,7 +20,7 @@ export function resolveSampleOrder(
     return sampleOrderState;
   }
   const scoped =
-    beamtime === undefined ? corpus : corpus.filter((s) => s.experiment_id === beamtime);
+    experimentId === undefined ? corpus : corpus.filter((s) => s.experiment_id === experimentId);
   return scoped.map((s) => s.id);
 }
 

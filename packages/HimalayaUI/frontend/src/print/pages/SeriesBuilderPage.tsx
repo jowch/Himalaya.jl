@@ -5,7 +5,9 @@ import { PageFrame } from "../components/PageFrame";
 import { SeriesPlate } from "../components/SeriesPlate";
 import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
-import { IconButton, Button, EmptyState, Input, GripHandle } from "../ui";
+import { IconButton, Button, EmptyState, Input, GripHandle, Swatch, KbKey } from "../ui";
+import { Dock } from "../ui/Dock";
+import { dominantPhase } from "../../lib/series/memberRead";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
 import { useReorderShortcuts } from "../shell/useReorderShortcuts";
@@ -38,6 +40,7 @@ import { isSeriesDraftDirty } from "../../lib/series/isSeriesDraftDirty";
 import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
 import { buildSeriesFigureKeys } from "../export/seriesFigureKeys";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { showToast } from "../../lib/toast";
@@ -151,7 +154,6 @@ export function SeriesBuilderPage(): JSX.Element {
     setUndoFuture(undoFuture.slice(1));
     setUndoPast([...undoPast, cur]);
   };
-  useShortcuts({ undo, redo });
 
   // ── Confirm chain (Save → await fresh cache → Commit → discard) ─────────
   const save = useSaveSeries();
@@ -187,6 +189,115 @@ export function SeriesBuilderPage(): JSX.Element {
   // The active draft only counts when it targets THIS series.
   const liveDraft = draft !== null && series !== undefined && draft.id === series.id ? draft : null;
 
+  // ── Member-list cursor + keyboard (T3a) ──────────────────────────────────
+  // The navigable member list is the recipe (draft) or the committed recipe
+  // (read mode) — both SeriesSample-shaped rows carrying `sample_id` in
+  // `position` order. ↑/↓ move the cursor; Enter opens the cursored sample in
+  // Focus; A opens the add-sample picker; ⌘Enter confirms. These reference
+  // handlers (`onConfirm` / picker trigger) defined below the honest-state
+  // early return, so they are read through refs the render keeps current —
+  // the listener closes over a stable ref, never a stale or not-yet-defined
+  // binding.
+  const navSamples = liveDraft ? liveDraft.recipe : (series?.samples ?? []);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Clamp the cursor into the live member list (it shrinks on remove, grows on
+  // add). An empty list parks the cursor at 0 (Enter declines).
+  useEffect(() => {
+    setSelectedIndex((i) => {
+      if (navSamples.length === 0) return 0;
+      return Math.max(0, Math.min(navSamples.length - 1, i));
+    });
+  }, [navSamples.length]);
+  // sample id under the cursor (for Enter → Focus). Undefined when the list is
+  // empty.
+  const cursorSampleId = navSamples[selectedIndex]?.sample_id;
+
+  // ── Dock identity segment (§7) ──────────────────────────────────────────────
+  // sample.id → { name, experiment_id }, from the corpus-picker projection (the
+  // same source the recipe→plate resolver reads). The picker carries a full
+  // Sample, so name + experiment_id come from one place; experiment NAME resolves
+  // through the experiments query.
+  const sampleMeta = useMemo(() => {
+    const m = new Map<number, { name: string; experiment_id: number }>();
+    for (const r of pickerQ.data ?? []) {
+      m.set(r.sample.id, { name: r.sample.name, experiment_id: r.sample.experiment_id });
+    }
+    return m;
+  }, [pickerQ.data]);
+  const experimentNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const e of experimentsQ.data ?? []) if (e.name) m.set(e.id, e.name);
+    return m;
+  }, [experimentsQ.data]);
+  // sample.id → overlay phase. The builder plate colours each trace by its
+  // member's dominantPhase (CardFigure/WaterfallChart: phaseColor(row.phase)),
+  // so the dock swatch reads the SAME phase through the cursor sample's indexing
+  // exposure → committed member → dominantPhase. Null phase (unindexed / form
+  // factor) → an empty swatch, matching the plate's UNINDEXED treatment. This is
+  // an OVERLAY-MATCHED swatch (phase-keyed via the Swatch primitive's phaseColor),
+  // not a palette-by-index fallback.
+  const phaseByExposure = useMemo(() => {
+    const m = new Map<number, string | null>();
+    for (const mem of series?.members ?? []) {
+      if (mem.exposure_id != null) m.set(mem.exposure_id, dominantPhase(mem));
+    }
+    return m;
+  }, [series?.members]);
+  const cursorIdentity = useMemo(() => {
+    if (cursorSampleId === undefined) return undefined;
+    const meta = sampleMeta.get(cursorSampleId);
+    const name = meta?.name ?? `Sample ${cursorSampleId}`;
+    const experimentName =
+      meta != null ? experimentNameById.get(meta.experiment_id) : undefined;
+    const exposureId = exposureBySample.get(cursorSampleId);
+    const phase = exposureId != null ? phaseByExposure.get(exposureId) ?? null : null;
+    return { name, experimentName, phase };
+  }, [cursorSampleId, sampleMeta, experimentNameById, exposureBySample, phaseByExposure]);
+  // Late-bound handler refs (assigned each render, below the early return).
+  const confirmRef = useRef<() => void>(() => {});
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  useShortcuts({
+    undo,
+    redo,
+    prevSample: () => {
+      if (navSamples.length === 0) return false;
+      setSelectedIndex((i) => Math.max(0, i - 1));
+      return undefined;
+    },
+    nextSample: () => {
+      if (navSamples.length === 0) return false;
+      setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1));
+      return undefined;
+    },
+    openFocus: (e) => {
+      if (isNativeInteractiveTarget(e)) return false;
+      if (cursorSampleId === undefined) return false;
+      navigateRef.current(`/sample/${cursorSampleId}?from=series`);
+      return undefined;
+    },
+    addSample: () => {
+      // Open the existing add-sample affordance (the AddSamplePicker popover
+      // trigger). It only renders under a live draft with addable samples;
+      // clicking it through the DOM reuses the picker's own open/focus flow.
+      const btn = document.querySelector<HTMLButtonElement>(
+        '[data-testid="builder-add-sample"]',
+      );
+      if (!btn) return false;
+      btn.click();
+      return undefined;
+    },
+    confirm: () => {
+      // Decline (leave ⌘Enter un-prevented) when Confirm is disabled — the
+      // same gate onConfirm itself enforces. The picker popover, when open,
+      // is a `[role="dialog"]` and is already suppressed by suppressGlobalKeys,
+      // so ⌘Enter there can't reach this handler.
+      if (!liveDraft || stage.current !== "idle" || !resolverReady) return false;
+      confirmRef.current();
+      return undefined;
+    },
+  });
+
   // BU-NAMES: one shared identity token across the builder's member views. The
   // figure plate + reading list label a trace by its exposure (memberRowLabel:
   // label_override, else "exp <id>"); the editable recipe rail labels by SAMPLE
@@ -218,7 +329,7 @@ export function SeriesBuilderPage(): JSX.Element {
     const nameByExposure = new Map<number, string>();
     const expByExposure = new Map<number, number>();
     for (const r of pickerQ.data ?? []) {
-      const nm = r.sample.display_name ?? r.sample.name ?? `Sample ${r.sample.id}`;
+      const nm = r.sample.name ?? `Sample ${r.sample.id}`;
       if (r.indexing_exposure_id != null) {
         nameByExposure.set(r.indexing_exposure_id, nm);
         expByExposure.set(r.indexing_exposure_id, r.sample.experiment_id);
@@ -434,6 +545,10 @@ export function SeriesBuilderPage(): JSX.Element {
     stage.current = "saving";
     save.mutate({ id, ...buildSeriesSaveBody(liveDraft) });
   };
+  // Keep the keyboard `confirm` binding pointing at the live onConfirm (defined
+  // after the honest-state early return, so it's bound here once in scope).
+  confirmRef.current = onConfirm;
+
   const onCancel = (): void => {
     stage.current = "idle";
     discardDraft();
@@ -475,6 +590,7 @@ export function SeriesBuilderPage(): JSX.Element {
         : "Confirming…";
 
   return (
+    <>
     <Skeleton
       name="series-builder"
       // Full-height flex column so the builder grid stretches to the bottom of the
@@ -527,6 +643,78 @@ export function SeriesBuilderPage(): JSX.Element {
         />
       )}
     </Skeleton>
+    {/* ── Contextual bottom dock (Series grammar §7) ───────────────────────────
+        ‹ All series │ Sample ↑ N/total ↓ │ swatch · name · from <experiment> ──→ Focus[↵]
+        The unit is "Sample" (members are samples); no cull (a series has nothing
+        to keep or reject). The swatch matches the cursor member's highlighted
+        trace colour on the overlay (phase-keyed). An empty member list shows only
+        the up-link. */}
+    <Dock>
+      <button
+        onClick={() => navigate("/series")}
+        className="text-meta font-semibold text-print-accent hover:underline"
+        data-testid="dock-up-link"
+      >
+        ‹ All series
+      </button>
+
+      {navSamples.length > 0 && (
+        <>
+          <span className="w-px self-stretch bg-hair" aria-hidden />
+
+          {/* Sample stepper — ↑/↓ axis, current / total readout (mirrors the
+              prevSample/nextSample keyboard handlers; same clamping setters). */}
+          <div className="flex items-center gap-1">
+            <span className="text-meta text-ink-soft">Sample</span>
+            <IconButton label="Previous sample" tone="ghost" disabled={selectedIndex === 0}
+              onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
+              data-testid="dock-prev-sample">↑</IconButton>
+            <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
+              data-testid="dock-sample-count">{selectedIndex + 1} / {navSamples.length}</span>
+            <IconButton label="Next sample" tone="ghost"
+              disabled={selectedIndex >= navSamples.length - 1}
+              onClick={() => setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1))}
+              data-testid="dock-next-sample">↓</IconButton>
+          </div>
+
+          {cursorIdentity && (
+            <>
+              <span className="w-px self-stretch bg-hair" aria-hidden />
+              {/* Current-member identity — swatch (overlay-matched phase colour) +
+                  name + faint "from <experiment>". */}
+              <div className="flex items-center gap-1.5 min-w-0" data-testid="dock-identity">
+                {cursorIdentity.phase
+                  ? <Swatch phase={cursorIdentity.phase} />
+                  : <Swatch phase="" empty />}
+                <span className="text-data text-ink truncate" data-testid="dock-identity-name">
+                  {cursorIdentity.name}
+                </span>
+                {cursorIdentity.experimentName && (
+                  <span className="text-meta text-ink-soft truncate">
+                    from {cursorIdentity.experimentName}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Spacer — right-anchors the Focus destination */}
+          <div className="flex-1" />
+
+          {/* Focus — the unambiguous primary destination; opens the cursor
+              member's sample (matches the openFocus keyboard binding). */}
+          <Button variant="accent" data-testid="dock-focus"
+            disabled={cursorSampleId === undefined}
+            onClick={() => {
+              if (cursorSampleId === undefined) return;
+              navigate(`/sample/${cursorSampleId}?from=series`);
+            }}>
+            Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey>
+          </Button>
+        </>
+      )}
+    </Dock>
+    </>
   );
 }
 
@@ -1106,6 +1294,6 @@ function RecipeRow({
 
 function sampleNameMap(corpus: api.CorpusSample[]): Record<number, string> {
   const out: Record<number, string> = {};
-  for (const s of corpus) out[s.id] = s.display_name ?? s.name ?? `Sample ${s.id}`;
+  for (const s of corpus) out[s.id] = s.name || `Sample ${s.id}`;
   return out;
 }

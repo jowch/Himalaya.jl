@@ -13,8 +13,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         data_dir = joinpath(tmp, "data"),
         analysis_dir = analysis_dir)
     s_id = HimalayaUI.create_sample!(db; experiment_id = exp_id,
-        name = "D1", display_name = "UX1")
-    HimalayaUI.create_exposure!(db; sample_id = s_id, filename = "example_tot")
+        name = "D1")
+    HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "example_tot")
 
     with_inproc_routes(db) do call
         # GET
@@ -24,13 +24,12 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.id == exp_id
         @test body.name == "E1"
 
-        # PATCH name is no longer allowed — experiments.name is derived from
-        # experiment.toml and must change via reingest.
+        # PATCH name is now allowed (Phase E1: name became editable).
         r = call("PATCH", "/api/experiments/$exp_id";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
             body = Vector{UInt8}(JSON3.write(Dict(:name => "E1-renamed"))))
-        @test r.status == 400
+        @test r.status == 200
 
         # POST analyze
         r = call("POST", "/api/experiments/$exp_id/analyze";
@@ -54,6 +53,18 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         list = JSON3.read(String(r3.body))
         @test length(list) >= 1
         @test haskey(list[1], :q_units)
+
+        # Typed-geometry row with a NULL q_units (a migrated/fresh experiment that
+        # carries real beam center etc.) must STILL default q_units to A-1. The
+        # typed path used to serve the raw NULL column, blanking the geometry ledger.
+        DBInterface.execute(db,
+            "UPDATE experiments SET beam_center_x = 421.4, beam_center_x_source = 'setup', q_units = NULL WHERE id = ?",
+            [exp_id])
+        r4 = call("GET", "/api/experiments/$exp_id")
+        body4 = JSON3.read(String(r4.body))
+        @test body4.beam_center_x == 421.4          # has_typed = true → typed path
+        @test body4.q_units == "A-1"                # ...yet q_units still defaults
+        @test body4.q_units_source == "default"
 
         # Malformed config blob must not 500 the route — should fall back to default.
         # This guards against TOML.parse exceptions taking down GET /api/experiments.
@@ -88,64 +99,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 end
 
-@testset "POST /api/experiments/:id/reingest" begin
-    tmp = mktempdir()
-    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
-    mkpath(analysis_dir)
-    # Drop one .dat file under analysis_dir so reingest discovers an exposure.
-    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
-       joinpath(analysis_dir, "S001.dat"))
-    # Minimal experiment.toml — uses simple.toml defaults; only [experiment].name set.
-    write(joinpath(tmp, "experiment.toml"), """
-    [experiment]
-    name        = "ReE"
-    description = ""
-    manifest    = "manifest.csv"
-    """)
-    # Manifest: tab-delimited, 1 header row, columns 1/2/3/9/10/11.
-    write(joinpath(tmp, "manifest.csv"),
-        "id\tlabel\tname\tc4\tc5\tc6\tc7\tc8\tfile\tnsamp\tnexp\n" *
-        "1\tS1\tSample-1\t.\t.\t.\t.\t.\tS001\t\t\n")
-
-    db = open_prepared_clone(tmp)
-    exp_id = HimalayaUI.init_experiment!(db;
-        name = "ReE", path = tmp,
-        data_dir = joinpath(tmp, "data"),
-        analysis_dir = analysis_dir)
-
-    with_inproc_routes(db) do call
-        # Happy path
-        r = call("POST", "/api/experiments/$exp_id/reingest";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 200
-        body = JSON3.read(String(r.body))
-        @test body.status == "ok"
-        @test body.added_samples   >= 1
-        @test body.added_exposures >= 1
-
-        n_exp = Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS c FROM exposures"))[1].c
-        @test n_exp >= 1
-
-        # No-manifest path: delete manifest, reingest again — should report
-        # status=no_manifest with 0 counts but still succeed (config updated).
-        rm(joinpath(tmp, "manifest.csv"))
-        r = call("POST", "/api/experiments/$exp_id/reingest";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 200
-        body = JSON3.read(String(r.body))
-        @test body.status == "no_manifest"
-        @test body.added_samples   == 0
-        @test body.added_exposures == 0
-
-        # 404 for unknown experiment
-        r = call("POST", "/api/experiments/9999/reingest";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 404
-    end
-end
-
-@testset "PATCH /api/experiments/:id no longer accepts name" begin
+@testset "PATCH /api/experiments/:id accepts name (Phase E1)" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)
     eid = HimalayaUI.init_experiment!(db;
@@ -158,42 +112,45 @@ end
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
             body = Vector{UInt8}(JSON3.write(Dict(:name => "newname"))))
-        @test r.status == 400
+        @test r.status == 200
+        rb = call("GET", "/api/experiments/$eid")
+        @test JSON3.read(String(rb.body)).name == "newname"
     end
 end
 
-@testset "POST /api/experiments/:id/reingest returns 400 on validation error" begin
+@testset "experiment stats: span_hours + derived sessions + list parity" begin
     tmp = mktempdir()
-    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
-    mkpath(analysis_dir)
-    # experiment.toml — simple layout.
-    write(joinpath(tmp, "experiment.toml"), """
-    [experiment]
-    name        = "DupTest"
-    description = ""
-    manifest    = "manifest.csv"
-    """)
-    # Manifest with duplicate sample names in column 2 (the `name` / stable-id
-    # column per simple.toml defaults) — triggers :duplicate_name violation.
-    # Column layout: col1=skip_id  col2=name  col3=display_name  col9=filenames
-    write(joinpath(tmp, "manifest.csv"),
-        "skip_header_row\n" *
-        "1\tDupSample\tLabel-A\t.\t.\t.\t.\t.\tS001\t\t\n" *
-        "2\tDupSample\tLabel-B\t.\t.\t.\t.\t.\tS002\t\t\n")
-
     db = open_prepared_clone(tmp)
     eid = HimalayaUI.init_experiment!(db;
-        name = "DupTest", path = tmp,
+        name = "Stats", path = tmp,
         data_dir = joinpath(tmp, "data"),
-        analysis_dir = analysis_dir)
+        analysis_dir = joinpath(tmp, "analysis"))
+    # Two loads 3h apart → 2 macro-sessions. session_id persisted at ingest.
+    l1 = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1,
+        start_time = "2026-04-25T10:00:00", session_id = 1)
+    l2 = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 2,
+        start_time = "2026-04-25T13:00:00", session_id = 2)
+    s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "D1")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l1,
+        filename = "a", timestamp = "2026-04-25T10:00:00")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l2,
+        filename = "b", timestamp = "2026-04-25T13:00:00")
 
     with_inproc_routes(db) do call
-        r = call("POST", "/api/experiments/$eid/reingest";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 400
-        body = JSON3.read(String(r.body))
-        @test body[:error] == "manifest_invalid"
-        @test !isempty(body[:violations])
+        # Detail endpoint: stats carry span_hours + derived sessions.
+        body = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+        @test body.stats.loads == 2
+        @test body.stats.exposures == 2
+        @test body.stats.sessions == 2                       # 3h gap > 2h threshold
+        @test isapprox(Float64(body.stats.span_hours), 3.0; atol = 0.05)
+
+        # List endpoint now carries the same stats (was the gap: list omitted stats).
+        list = JSON3.read(String(call("GET", "/api/experiments").body))
+        row = first(filter(e -> e.id == eid, list))
+        @test haskey(row, :stats)
+        @test row.stats.loads == 2
+        @test row.stats.sessions == 2
+        @test isapprox(Float64(row.stats.span_hours), 3.0; atol = 0.05)
     end
 end
 
@@ -236,5 +193,231 @@ end
         rq = call("GET", "/api/experiments")
         @test rq.status == 200
         @test JSON3.read(String(rq.body))[1].q_units == "A-1"
+    end
+end
+
+@testset "typed q_units is honored even with no other geometry (6e)" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    # A geometry-less experiment whose ONLY typed value is q_units (config blob
+    # left NULL). Pre-6e, has_typed checked only beam_center_x / energy_kev, so
+    # this fell to the blob and reported the default "A-1", masking the override.
+    exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data",
+        analysis_dir="analysis", q_units="nm^-1", q_units_source="user")
+
+    with_inproc_routes(db) do call
+        body = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
+        @test body.q_units == "nm^-1"
+        @test body.q_units_source == "user"
+        # A stale blob value must NOT override the typed column.
+        DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
+            ["[beamline]\nq_units = \"A-1\"\n", exp_id])
+        body2 = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
+        @test body2.q_units == "nm^-1"
+    end
+end
+
+@testset "GET /experiments/:id stats includes sessions count" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data", analysis_dir="analysis")
+
+    # Insert 3 loads across 2 distinct sessions (one load has session_id=nothing).
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=1, session_id=10)
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=2, session_id=10)
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=3, session_id=20)
+    HimalayaUI.create_load!(db; experiment_id=exp_id, load_index=4, session_id=nothing)
+
+    with_inproc_routes(db) do call
+        r = call("GET", "/api/experiments/$exp_id")
+        @test r.status == 200
+        body = JSON3.read(String(r.body))
+        @test haskey(body, :stats)
+        @test body.stats.loads == 4
+        # sessions = COUNT(DISTINCT session_id) WHERE session_id IS NOT NULL = 2 (10 and 20)
+        @test body.stats.sessions == 2
+    end
+end
+
+@testset "experiment stats: started_at = min exposure timestamp" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.init_experiment!(db;
+        name = "StartedAt", path = tmp,
+        data_dir = joinpath(tmp, "data"),
+        analysis_dir = joinpath(tmp, "analysis"))
+    l = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1)
+    s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "S1", load_id = l)
+    # Two exposures; the earlier timestamp should be the started_at.
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+        filename = "a", timestamp = "2026-03-01T08:00:00", frame_no = 1)
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+        filename = "b", timestamp = "2026-04-15T12:00:00", frame_no = 2)
+
+    with_inproc_routes(db) do call
+        # Detail endpoint: stats carries started_at.
+        body = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+        @test haskey(body.stats, :started_at)
+        @test startswith(String(body.stats.started_at), "2026-03-01")
+
+        # List endpoint: same started_at propagates.
+        list = JSON3.read(String(call("GET", "/api/experiments").body))
+        row = first(filter(e -> e.id == eid, list))
+        @test haskey(row.stats, :started_at)
+        @test startswith(String(row.stats.started_at), "2026-03-01")
+    end
+end
+
+@testset "experiment list: review_count" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.init_experiment!(db;
+        name = "ReviewCount", path = tmp,
+        data_dir = joinpath(tmp, "data"),
+        analysis_dir = joinpath(tmp, "analysis"))
+
+    with_inproc_routes(db) do call
+        # CLEAN experiment: one load, one sample, two exposures at the SAME
+        # horizontal_position → no split flag → review_count == 0.
+        l = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1)
+        s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "Clean",
+            load_id = l, slot_index = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+            filename = "c1", horizontal_position = 10.0, frame_no = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
+            filename = "c2", horizontal_position = 10.1, frame_no = 2)  # ~0.1 mm jitter, no flag
+
+        list = JSON3.read(String(call("GET", "/api/experiments").body))
+        row = first(filter(e -> e.id == eid, list))
+        @test haskey(row, :review_count)
+        @test row.review_count == 0
+
+        # FLAGGED experiment: second experiment, one sample, two exposures with
+        # horizontal_position jump > 0.5 mm → SplitFlag → review_count >= 1.
+        eid2 = HimalayaUI.init_experiment!(db;
+            name = "Flagged", path = mktempdir(),
+            data_dir = joinpath(mktempdir(), "data"),
+            analysis_dir = joinpath(mktempdir(), "analysis"))
+        l2 = HimalayaUI.create_load!(db; experiment_id = eid2, load_index = 1)
+        s2 = HimalayaUI.create_sample!(db; experiment_id = eid2, name = "Split",
+            load_id = l2, slot_index = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid2, sample_id = s2, load_id = l2,
+            filename = "f1", horizontal_position = 10.0, frame_no = 1)
+        HimalayaUI.create_exposure!(db; experiment_id = eid2, sample_id = s2, load_id = l2,
+            filename = "f2", horizontal_position = 20.0, frame_no = 2)  # 10 mm jump → SplitFlag
+
+        list2 = JSON3.read(String(call("GET", "/api/experiments").body))
+        row2 = first(filter(e -> e.id == eid2, list2))
+        @test haskey(row2, :review_count)
+        @test row2.review_count >= 1
+    end
+end
+
+@testset "POST /api/experiments persists first-run geometry overrides as source='user'" begin
+    tmp = mktempdir()
+    data_dir = joinpath(tmp, "data"); mkpath(data_dir)   # empty → scan derives nothing
+    db = open_prepared_clone(tmp)
+
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/experiments";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(
+                :data_dir => data_dir,
+                :name     => "Geo",
+                :geometry => Dict(:beam_center_x => 421.3, :beam_center_y => 836.7,
+                                  :energy_kev => 11.2)))))
+        @test r.status == 202
+        eid = Int(JSON3.read(String(r.body)).id)
+
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
+                    energy_kev, energy_kev_source, flight_path_m, flight_path_m_source
+             FROM experiments WHERE id = ?", [eid]))[1]
+        # Provided fields are persisted and stamped 'user' (the scan never clobbers them).
+        @test row.beam_center_x == 421.3
+        @test row.beam_center_x_source == "user"
+        @test row.beam_center_y == 836.7
+        @test row.beam_center_y_source == "user"
+        @test row.energy_kev == 11.2
+        @test row.energy_kev_source == "user"
+        # An un-provided field stays 'default' (left for the scan to derive).
+        @test row.flight_path_m_source == "default"
+    end
+end
+
+@testset "POST /api/experiments persists committed geometry with its honest source" begin
+    tmp = mktempdir()
+    data_dir = joinpath(tmp, "data"); mkpath(data_dir)
+    db = open_prepared_clone(tmp)
+
+    with_inproc_routes(db) do call
+        # The funnel commits the WHOLE preview geometry: each value carries its
+        # real source ('setup'/'prp'), and only an edited field is 'user'.
+        r = call("POST", "/api/experiments";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(
+                :data_dir => data_dir, :name => "Geo",
+                :geometry => Dict(
+                    :beam_center_x => 421.4, :beam_center_x_source => "setup",
+                    :flight_path_m => 1.8095, :flight_path_m_source => "setup",
+                    :pixel_size_um => 172.0, :pixel_size_um_source => "prp",
+                    :energy_kev    => 11.2,  :energy_kev_source    => "user")))))
+        @test r.status == 202
+        eid = Int(JSON3.read(String(r.body)).id)
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT beam_center_x_source, flight_path_m_source, pixel_size_um_source,
+                    energy_kev_source, flight_path_m FROM experiments WHERE id = ?", [eid]))[1]
+        @test row.beam_center_x_source == "setup"   # honest provenance, not 'user'
+        @test row.flight_path_m_source == "setup"
+        @test row.flight_path_m == 1.8095           # the setup value, not a PRP re-derive
+        @test row.pixel_size_um_source == "prp"
+        @test row.energy_kev_source == "user"       # the one edited field
+    end
+end
+
+@testset "_fill_unset_geometry! fills only 'default' fields, never an established one" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = joinpath(tmp, "d"),
+        analysis_dir = joinpath(tmp, "a"),
+        flight_path_m = 1.8095, flight_path_m_source = "setup",      # established
+        beam_center_x = 421.4, beam_center_x_source = "setup")        # established
+    # A later scan re-derives DIFFERENT values (e.g. from PRP only, no setup file).
+    geo = (energy_kev = 9.0, energy_kev_source = "prp",
+           flight_path_m = 1.7, flight_path_m_source = "prp",          # would clobber
+           beam_center_x = missing, beam_center_x_source = "prp",
+           beam_center_y = missing, beam_center_y_source = "prp",
+           pixel_size_um = 172.0, pixel_size_um_source = "prp")
+    HimalayaUI._fill_unset_geometry!(db, eid, geo)
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT flight_path_m, flight_path_m_source, energy_kev, energy_kev_source,
+                beam_center_x, pixel_size_um FROM experiments WHERE id = ?", [eid]))[1]
+    @test row.flight_path_m == 1.8095                # established 'setup' value PRESERVED
+    @test row.flight_path_m_source == "setup"
+    @test row.energy_kev == 9.0                      # was 'default' → filled
+    @test row.energy_kev_source == "prp"
+    @test row.beam_center_x == 421.4                 # established, untouched
+    @test row.pixel_size_um == 172.0                 # was 'default' → filled
+end
+
+@testset "POST /api/experiments rejects a duplicate data_dir (409)" begin
+    tmp = mktempdir()
+    data_dir = joinpath(tmp, "data"); mkpath(data_dir)
+    db = open_prepared_clone(tmp)
+    # An experiment already uses this directory.
+    HimalayaUI.init_experiment!(db; name = "E1", path = tmp,
+        data_dir = data_dir, analysis_dir = data_dir)
+
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/experiments";
+            headers = ["Content-Type" => "application/json"],
+            body = Vector{UInt8}(JSON3.write(Dict(:path => data_dir))))
+        @test r.status == 409
+        body = JSON3.read(String(r.body))
+        @test occursin("director", lowercase(String(body.error)))
+        # No second experiment was created for that directory.
+        n = Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM experiments WHERE data_dir = ?", [data_dir]))[1].c
+        @test n == 1
     end
 end

@@ -133,7 +133,7 @@ function seriesSample(id: number, sampleId: number, position: number): SeriesSam
 
 function corpusSample(id: number, name: string): CorpusSample {
   return {
-    id, experiment_id: 1, name, display_name: name, notes: "", tags: [], q_units: "Å⁻¹",
+    id, experiment_id: 1, name, notes: "", tags: [], q_units: "Å⁻¹",
   };
 }
 
@@ -1486,6 +1486,79 @@ describe("SeriesBuilderPage", () => {
     act(() => rerender());
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toMatch(/could.?n.?t|failed|error/i);
+  });
+
+  // ── §7 dock: Sample stepper + identity segment + Focus destination ─────────
+  describe("the contextual dock (§7)", () => {
+    // A render with a /sample/:id stub so the Focus destination's navigation
+    // lands somewhere observable.
+    function renderWithFocusStub(): void {
+      const qc = new QueryClient();
+      render(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter initialEntries={["/series/10"]}>
+            <Routes>
+              <Route path="/series/:id" element={<SeriesBuilderPage />} />
+              <Route path="/sample/:id" element={<div data-testid="focus-stub" />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    }
+
+    it("renders the Sample stepper (N / total) and a Focus button with the committed members", () => {
+      renderPage();
+      // The unit is Sample; the readout is current / total over the member list.
+      expect(screen.getByText("Sample")).toBeInTheDocument();
+      expect(screen.getByTestId("dock-sample-count")).toHaveTextContent("1 / 2");
+      expect(screen.getByTestId("dock-prev-sample")).toBeDisabled(); // at index 0
+      expect(screen.getByTestId("dock-next-sample")).not.toBeDisabled();
+      // The unambiguous primary destination.
+      expect(screen.getByTestId("dock-focus")).toBeInTheDocument();
+    });
+
+    it("the ↓ stepper advances the cursor and the readout", () => {
+      renderPage();
+      fireEvent.click(screen.getByTestId("dock-next-sample"));
+      expect(screen.getByTestId("dock-sample-count")).toHaveTextContent("2 / 2");
+      // At the end now → ↓ disables, ↑ enables.
+      expect(screen.getByTestId("dock-next-sample")).toBeDisabled();
+      expect(screen.getByTestId("dock-prev-sample")).not.toBeDisabled();
+    });
+
+    it("names the current member (name + 'from <experiment>') in the identity segment", () => {
+      // Enrich the picker projection + experiments so the identity resolves.
+      state.picker = [
+        { sample: { id: 1, name: "LL2", experiment_id: 1 }, indexing_exposure_id: 1 },
+        { sample: { id: 2, name: "LL4", experiment_id: 1 }, indexing_exposure_id: 2 },
+      ] as unknown as typeof state.picker;
+      state.experiments = [
+        { id: 1, name: "Titration A" } as unknown as Experiment,
+      ];
+      renderPage();
+      const identity = screen.getByTestId("dock-identity");
+      // Cursor starts on the FIRST member (sample 1 → "LL2").
+      expect(within(identity).getByTestId("dock-identity-name")).toHaveTextContent("LL2");
+      expect(within(identity).getByText(/from Titration A/)).toBeInTheDocument();
+      // Stepping the cursor renames the identity segment.
+      fireEvent.click(screen.getByTestId("dock-next-sample"));
+      expect(within(identity).getByTestId("dock-identity-name")).toHaveTextContent("LL4");
+    });
+
+    it("Focus opens the cursor member's sample in Focus (with ?from=series)", () => {
+      renderWithFocusStub();
+      fireEvent.click(screen.getByTestId("dock-focus"));
+      expect(screen.getByTestId("focus-stub")).toBeInTheDocument();
+    });
+
+    it("an empty member list shows ONLY the up-link (no stepper / identity / Focus)", () => {
+      state.seriesById = new Map([[10, baseSeries({ members: [], samples: [] })]]);
+      renderPage();
+      expect(screen.getByTestId("dock-up-link")).toBeInTheDocument();
+      expect(screen.queryByTestId("dock-sample-count")).toBeNull();
+      expect(screen.queryByTestId("dock-identity")).toBeNull();
+      expect(screen.queryByTestId("dock-focus")).toBeNull();
+    });
   });
 });
 

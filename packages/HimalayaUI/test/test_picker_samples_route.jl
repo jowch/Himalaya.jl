@@ -104,15 +104,15 @@ using HimalayaUI: picker_samples
         end
     end
 
-    @testset "NULL name and display_name render as null in JSON" begin
+    @testset "NULL name renders as null in JSON" begin
         mktempdir() do tmp
             db = open_prepared_clone(tmp)
             DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
-            DBInterface.execute(db, "INSERT INTO samples (id, experiment_id) VALUES (10, 1)")  # name+display_name NULL
+            DBInterface.execute(db, "INSERT INTO samples (id, experiment_id) VALUES (10, 1)")  # name NULL
             DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (100, 10, 'f', 1)")
             rows = picker_samples(db, 1)
-            @test rows[1][:sample][:name]         === nothing
-            @test rows[1][:sample][:display_name] === nothing
+            # display_name was collapsed into the single `name`; picker no longer projects it.
+            @test rows[1][:sample][:name] === nothing
         end
     end
 

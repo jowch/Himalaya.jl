@@ -133,19 +133,6 @@ describe("api", () => {
     expect(indices[0]!.peaks[0]!.q_observed).toBeCloseTo(0.71);
   });
 
-  it("listSampleMessages fetches messages for a sample", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([
-        { id: 1, sample_id: 3, author_id: 1, author: "alice", body: "hi", created_at: "2026-04-24 10:00:00" },
-        { id: 2, sample_id: 3, author_id: 2, author: "bob",   body: "yo", created_at: "2026-04-24 10:01:00" },
-      ]), { status: 200 }),
-    );
-    const msgs = await api.listSampleMessages(3);
-    expect(msgs).toHaveLength(2);
-    expect(msgs[0]!.author).toBe("alice");
-    expect(msgs[1]!.body).toBe("yo");
-  });
-
   it("postSampleMessage posts {body} with X-Username and returns parsed message", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({

@@ -40,10 +40,9 @@ export function StatusCell({ phase, formFactor = false, noExposures = false, doo
       ) : hasPhase ? (
         <PhaseChip phase={phase as string} />
       ) : formFactor ? (
-        <span data-role="status-form-factor" className="text-ink-soft text-xs whitespace-nowrap">
-          <Dot tone="neutral" size="xs" className="mr-1.5 align-middle" />
-          Form factor
-        </span>
+        // A real, terminal classification (indexed, no crystalline phase) → a
+        // neutral CHIP, distinct from the grey "Not indexed" text below.
+        <PhaseChip formFactor data-role="status-form-factor" />
       ) : door ? (
         <span data-role="status-index-invite" className="text-accent text-xs font-semibold whitespace-nowrap">
           Index

@@ -40,12 +40,13 @@ function renderAt(path: string) {
 }
 
 describe("/series/:id routing", () => {
-  it("mounts SeriesBuilderPage under the corpus shell", async () => {
+  it("mounts SeriesBuilderPage under the unified app shell (T3.2)", async () => {
     renderAt("/series/5");
     // Greenfield SeriesBuilderPage (src/print/pages) renders the SeriesPlate
     // once the series loads — its signature element (the legacy page's
     // `series-builder-page` wrapper testid is gone post-cutover).
     expect(await screen.findByTestId("series-plate")).toBeInTheDocument();
-    expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
+    // T3.2: TopNav (app-shell) replaces corpus-topbar.
+    expect(screen.getByTestId("topnav")).toBeInTheDocument();
   });
 });

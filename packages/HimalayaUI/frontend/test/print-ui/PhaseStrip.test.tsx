@@ -231,6 +231,77 @@ describe("<PhaseStrip> caption truthfulness (SC-PREVCLAIM)", () => {
   });
 });
 
+describe("<PhaseStrip> multi-segment count and layout", () => {
+  it("renders one ps-seg per segment", () => {
+    render(<PhaseStrip segments={segs({ phase: "Pn3m" }, { phase: "Lamellar" }, { phase: "Im3m" })} />);
+    expect(screen.getAllByTestId("ps-seg")).toHaveLength(3);
+  });
+
+  it("treats a non-monotone strip as a transition (distinct-count, not first===last)", () => {
+    // [Pn3m, Lamellar, Pn3m] has two distinct phases → transition, NOT "throughout".
+    render(<PhaseStrip segments={segs({ phase: "Pn3m" }, { phase: "Lamellar" }, { phase: "Pn3m" })} />);
+    const cap = screen.getByTestId("ps-cap");
+    expect(cap).toHaveTextContent(/→/);
+    expect(cap).not.toHaveTextContent(/throughout/i);
+  });
+
+  it("labels each segment with its phase via aria-label and title (mixed indexed/null)", () => {
+    render(<PhaseStrip segments={segs({ phase: "Pn3m" }, { phase: null })} />);
+    const segsEls = screen.getAllByTestId("ps-seg");
+    expect(segsEls[0]).toHaveAttribute("aria-label", "Pn3m");
+    expect(segsEls[0]).toHaveAttribute("title", "Pn3m");
+    expect(segsEls[1]).toHaveAttribute("aria-label", "Unindexed");
+    expect(segsEls[1]).toHaveAttribute("title", "Unindexed");
+  });
+});
+
+describe("<PhaseStrip> empty label", () => {
+  it("renders the default empty label when no segment is indexed", () => {
+    render(<PhaseStrip segments={segs({ phase: null }, { phase: null })} />);
+    expect(screen.getByTestId("ps-cap")).toHaveTextContent(/no clear phase/i);
+  });
+
+  it("honors an emptyLabel override", () => {
+    render(
+      <PhaseStrip
+        segments={segs({ phase: null })}
+        emptyLabel="Members not yet indexed; phase preview unavailable."
+      />,
+    );
+    expect(screen.getByTestId("ps-cap")).toHaveTextContent(/not yet indexed/i);
+  });
+});
+
+describe("<PhaseStrip> size and placement props", () => {
+  it("exposes a data-size attribute reflecting the size prop (default md)", () => {
+    const { rerender, container } = render(<PhaseStrip segments={segs({ phase: "Pn3m" })} />);
+    expect(container.firstChild).toHaveAttribute("data-size", "md");
+    rerender(<PhaseStrip segments={segs({ phase: "Pn3m" })} size="sm" />);
+    expect(container.firstChild).toHaveAttribute("data-size", "sm");
+  });
+
+  it("applies the placement className to the root", () => {
+    const { container } = render(<PhaseStrip segments={segs({ phase: "Pn3m" })} className="mt-5" />);
+    expect(container.firstChild).toHaveClass("mt-5");
+  });
+});
+
+describe("<PhaseStrip> data-state attribute", () => {
+  it("renders a hollow dashed cell with data-state=form_factor for a form_factor segment", () => {
+    render(<PhaseStrip segments={segs({ phase: null, state: "form_factor" })} />);
+    const segment = screen.getAllByTestId("ps-seg")[0]!;
+    expect(segment).toHaveAttribute("data-state", "form_factor");
+    expect(segment).toHaveAttribute("aria-label", expect.stringMatching(/form factor/i));
+  });
+
+  it("renders a null-state cell with data-state=null distinct from form_factor", () => {
+    render(<PhaseStrip segments={segs({ phase: null, state: "null" })} />);
+    const segment = screen.getAllByTestId("ps-seg")[0]!;
+    expect(segment).toHaveAttribute("data-state", "null");
+    expect(segment.getAttribute("data-state")).not.toBe("form_factor");
+  });
+});
+
 describe("<PhaseStrip> coexistWith empty/null", () => {
   it("treats an empty coexistWith array as single-phase", () => {
     render(

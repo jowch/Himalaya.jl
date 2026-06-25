@@ -15,6 +15,11 @@ export interface ThumbnailProps {
    *  If both are passed, rejected wins and kept is ignored. */
   kept?: boolean;
   selected?: boolean;
+  /** The roving keyboard cursor's active frame. Distinct from `selected` (the
+   *  cull pick): renders a thinner DOUBLE border (accent line + inner light line)
+   *  so the cursor stays legible even when it sits on an already-selected thumb,
+   *  whose solid accent border would otherwise look identical. */
+  cursored?: boolean;
   /** `"xs"` → 30px (dense Focus exposure strip); `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
   size?: "xs" | "sm" | "lg";
   onClick?: () => void;
@@ -26,18 +31,20 @@ export interface ThumbnailProps {
 
 const SIZE_PX: Record<"xs" | "sm" | "lg", number> = {
   xs: 30,
-  sm: 62,
+  sm: 56, // pages2 contact-sheet thumbnail (.th = 56px)
   lg: 70,
 };
 
 function buildDataState(props: {
   selected?: boolean;
+  cursored?: boolean;
   rejected?: boolean;
   representative?: boolean;
   kept?: boolean;
 }): string {
   const tokens: string[] = [];
   if (props.selected) tokens.push("selected");
+  if (props.cursored) tokens.push("cursored");
   if (props.rejected) tokens.push("rejected");
   if (props.representative) tokens.push("representative");
   if (props.kept) tokens.push("kept");
@@ -52,6 +59,7 @@ export function Thumbnail({
   rejected = false,
   kept = false,
   selected = false,
+  cursored = false,
   size = "sm",
   onClick,
   onDoubleClick,
@@ -62,7 +70,7 @@ export function Thumbnail({
   // A frame is never kept AND dropped — rejected wins so the two channels
   // can't contradict each other if a caller passes both.
   const showKept = kept && !rejected;
-  const dataState = buildDataState({ selected, rejected, representative, kept: showKept });
+  const dataState = buildDataState({ selected, cursored, rejected, representative, kept: showKept });
 
   // Accessible name: "Frame N" (or "Exposure" when unnumbered), with state
   // suffixes for the visual markers (representative dot / reject overlay /
@@ -173,9 +181,22 @@ export function Thumbnail({
         className={`pointer-events-none absolute inset-0 rounded-sm${
           selected
             ? " border-[3px] border-accent"
-            : " border-2 border-transparent group-hover:border-hair-strong"
+            : cursored
+              ? " border-2 border-accent"
+              : " border-2 border-transparent group-hover:border-hair-strong"
         }`}
       />
+      {/* Cursor-on-selection = the SECOND, inner line of a double border. Only a
+          SELECTED thumb needs disambiguating (its solid accent border already
+          looks like the cursor's), so the inner light line is drawn only when the
+          cursor sits on a selected thumb. A cursored-but-unselected thumb keeps
+          the single 2px accent line above. */}
+      {cursored && selected && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-[3px] rounded-sm border border-paper"
+        />
+      )}
     </button>
   );
 }

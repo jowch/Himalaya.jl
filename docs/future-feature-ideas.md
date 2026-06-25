@@ -463,6 +463,37 @@ The schema supports derived exposures (e.g. background-subtracted) but
 there's no UI to create them. Probably belongs on the exposure-triage
 page when that lands.
 
+### Reshoot grouping for new scans
+
+Auto-grouping derives samples from `(load, slot)` only, so the **same
+specimen re-shot in a later load becomes two samples** — `load` is part of
+sample identity. In the manifest-era dev data this is frequent (~20% of
+samples span multiple loads). This is true for migrated data too: the
+production migration applies the same `(load, slot)` partition a fresh scan
+would, so a reshot specimen splits into per-load samples there as well (it
+reuses the old row for the earliest cell to keep the human name, and mints
+a new sample for the later cell). Re-uniting a reshoot's cells into one
+specimen is the deferred capability, and it is the *same* `merged_into_id`
+action for migrated and new data. The hard part is **detecting** which
+cells to suggest merging: PRP files carry no specimen name/barcode, and
+filenames don't reliably share a specimen token across a reshoot's frame
+ranges — the only in-data signal is same-`horizontal_position`-across-loads,
+which is weak (a holder gets reloaded with different specimens at the same
+slots). So this can't be auto-derived reliably; it needs careful design.
+
+Realistic directions, cheapest first: (1) manual merge with good UX
+(`merged_into_id` + the grouping-review merge route already exist); (2)
+*suggested* merges flagged in the grouping-review surface from
+position-coincidence, human-confirmed, never auto-applied (a wrong
+auto-merge fuses distinct specimens — worse than a missed one); (3) capture
+specimen identity at acquisition time (an optional label/barcode), which
+recovers the capability deterministically but re-adds a manifest-ish input
+the rework deliberately removed. Decision deferred until we have
+post-rework usage data: the 20% rate is from manifest-era acquisition, and
+whether the frictionless workflow reshoots as often is unknown. If it does,
+that's the evidence for (3) — no heuristic recovers a signal the
+acquisition never wrote down.
+
 ---
 
 ## Interaction & accessibility residuals

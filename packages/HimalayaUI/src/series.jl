@@ -418,9 +418,9 @@ function series_member_traces(db::SQLite.DB, series_id::Integer)
         cfg = get!(cfg_cache, eid) do
             config_from_db(db, eid)
         end
-        pattern = replace(cfg.integration_pattern, "{name}" => String(row.filename))
-        path    = joinpath(String(row.analysis_dir), pattern)
-        isfile(path) || continue
+        # Shared resolver: exact per-frame name, else the per-acquisition `_tot.dat`.
+        path = resolve_trace_path(String(row.analysis_dir), cfg.integration_pattern, String(row.filename))
+        path === nothing && continue
         q, I, σ = load_dat(path)
         out[Int(row.exposure_id)] = Dict(:q => q, :I => I, :sigma => σ)
     end

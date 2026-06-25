@@ -5,8 +5,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     HimalayaUI.create_schema!(db)
     HimalayaUI.migrate_schema!(db)
     exp_id  = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-    samp_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-    eid     = HimalayaUI.create_exposure!(db; sample_id=samp_id)
+    samp_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+    eid     = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=samp_id)
 
     with_test_server(db) do port, base
         # accept

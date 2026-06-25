@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --frame-edge:oklch(0.150 0.010 55);
+    --phase-pn3m:oklch(0.570 0.150 58);--phase-im3m:oklch(0.520 0.120 162);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,ui-serif,serif;--font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --shadow-plate-lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+    --shadow-dock:0 -6px 22px -10px rgba(40,30,20,.20);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#cfc8bd;font-family:var(--font-sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .page{width:1180px;background:var(--paper);color:var(--ink);margin:0 auto;display:flex;flex-direction:column}
+  .ftitle{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:7px 40px 0}
+  .text-kicker{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.10em}.text-kicker.acc{color:var(--accent)}
+  .text-display{font-family:var(--font-serif);font-size:27px;line-height:1.15;font-weight:500}
+  .text-label{font-size:11.5px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)}
+  .text-caption{font-size:10.5px;color:var(--ink-soft)}.ink-soft{color:var(--ink-soft)}.ink-faint{color:var(--ink-faint)}
+
+  /* top chrome (context only) */
+  .top{display:flex;align-items:center;gap:18px;height:54px;padding:0 28px;border-bottom:1px solid var(--hair);background:var(--paper);flex:none}
+  .wm{font-family:var(--font-serif);font-weight:600;font-size:17px}.wmt{color:var(--ink-faint);font-weight:400;margin-left:6px;font-size:13px}
+  .sw{display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--hair-strong);background:var(--plate);border-radius:7px;box-shadow:var(--shadow-plate-lift)}
+  .sw .sn{font-family:var(--font-serif);font-size:14px;font-weight:500}.sw .ca,.sw .lt{color:var(--ink-faint);font-size:11px}
+  .top .sp{flex:1}
+  .tlink{font-size:11px;font-weight:600;letter-spacing:.025em;text-transform:uppercase;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px}
+  .tlink .d{width:5px;height:5px;border-radius:9999px;background:var(--accent)}
+
+  .body{flex:1;padding:22px 40px 18px;position:relative;min-height:430px}
+
+  /* ghost surface (faint context — NOT the subject of the mock) */
+  .ghost{opacity:.5}
+  .gsheet{border:1px solid var(--hair-strong);border-radius:7px;overflow:hidden;background:var(--plate)}
+  .grow{display:grid;grid-template-columns:30px 1.4fr 2fr 90px 120px;gap:14px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--hair)}
+  .grow:last-child{border-bottom:none}.grow.h{background:var(--paper-sunk);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);padding:9px 16px}
+  .cbx{width:14px;height:14px;border-radius:4px;border:1px solid var(--hair-strong);background:var(--plate)}
+  .nm{font-size:13px;font-weight:600}.id{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-soft)}
+  .th{width:50px;height:50px;border-radius:5px;background:var(--frame-edge);border:1px solid var(--hair-strong)}
+  .galg{display:flex;gap:5px;align-items:center}
+  .pchip{display:inline-flex;font-family:var(--font-mono);font-size:11px;font-weight:700;border-radius:5px;border:1px solid;padding:2px 8px}
+  .gplot{border:1px solid var(--hair-strong);border-radius:7px;background:var(--plate);padding:14px;height:330px;display:flex;flex-direction:column}
+  .stripnote{position:absolute;right:54px;font-family:var(--font-mono);font-size:9.5px;color:var(--accent);background:color-mix(in oklch,var(--accent) 9%,var(--paper));border:1px dashed color-mix(in oklch,var(--accent) 45%,white);border-radius:5px;padding:2px 7px}
+
+  /* THE DOCK — persistent, dynamic */
+  .dock{flex:none;display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--plate);border-top:1px solid var(--hair-strong);box-shadow:var(--shadow-dock)}
+  .dctx{display:flex;flex-direction:column;gap:1px;padding-right:6px}
+  .dctx .l1{font-size:12px;font-weight:600;color:var(--ink)}.dctx .l2{font-size:10px;color:var(--ink-soft);font-family:var(--font-mono)}
+  .back{font-size:12px;font-weight:600;color:var(--accent);display:inline-flex;align-items:center;gap:5px}
+  .step{display:inline-flex;align-items:center;gap:3px}.step .sb{width:24px;height:24px;border:1px solid var(--hair-strong);background:var(--paper);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:12px}
+  .step .pos{font-family:var(--font-mono);font-size:11px;color:var(--ink-soft);padding:0 5px}
+  .ddiv{width:1px;height:22px;background:var(--hair);margin:0 4px}
+  .dsp{flex:1}
+  .dseg{display:inline-flex;border:1px solid var(--hair-strong);border-radius:6px;overflow:hidden;background:var(--paper)}
+  .dseg span{font-size:11px;font-weight:600;padding:4px 10px;color:var(--ink-soft)}.dseg span.on{background:var(--ink);color:var(--paper)}
+  .dbtn{font-size:11.5px;font-weight:600;border-radius:6px;padding:5px 11px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .dbtn.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
+  .dbtn.accent{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  .dbtn.danger{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 40%,white)}
+  .dbtn.ok{color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)}
+  .kb{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-faint);border:1px solid var(--hair);border-radius:4px;padding:0 4px;margin-left:3px}
+  .slider{width:96px;height:5px;background:var(--paper-sunk);border-radius:9999px;position:relative}.slider i{position:absolute;left:42%;top:-3px;width:11px;height:11px;border-radius:9999px;background:var(--accent)}
+  .selpill{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--ink)}.selpill .p{width:7px;height:7px;border-radius:2px;background:var(--accent)}
+
+  .note{display:flex;gap:24px;padding:14px 40px 20px;border-top:1px dashed var(--hair-strong);background:var(--paper-sunk);flex:none}
+  .note .n{display:flex;gap:9px;max-width:330px}
+  .note .k{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--paper);background:var(--accent);border-radius:5px;width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  .note .t{font-size:11.5px;color:var(--ink);line-height:1.45}.note .t b{font-weight:700}
+</style></head>
+<body>
+
+<!-- ===== DOCK A — CORPUS (selection-aware) ===== -->
+<section id="d1" class="page">
+  <div class="ftitle">Dock state · Corpus — idle, then selection-aware</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sw"><span class="lt">‹</span><span class="sn">SSRL April 2026 · 1p7m</span><span class="ca">▾</span></span>
+    <span class="sp"></span><span class="tlink"><span class="d"></span>Series</span></header>
+  <div class="body">
+    <div class="text-kicker acc">Experiment · Corpus</div>
+    <div class="text-display" style="margin:3px 0 14px">SSRL April 2026 · 1p7m</div>
+    <span class="stripnote" style="top:30px">sort = click a column header (stays on surface)</span>
+    <div class="gsheet ghost">
+      <div class="grow h"><span></span><span>Sample</span><span>Exposures</span><span>Kept</span><span>Phase</span></div>
+      <div class="grow"><span class="cbx"></span><div><div class="nm">2-2 + LL37 1:1</div><div class="id">S2453 · slot 5</div></div><div class="galg"><span class="th"></span><span class="th"></span><span class="th"></span></div><div class="id">3 / 8</div><span class="pchip" style="color:var(--phase-pn3m);background:color-mix(in oklch,var(--phase-pn3m) 12%,white);border-color:color-mix(in oklch,var(--phase-pn3m) 35%,white)">Pn3m</span></div>
+      <div class="grow"><span class="cbx"></span><div><div class="nm">CM1 Only</div><div class="id">S2461 · slot 6</div></div><div class="galg"><span class="th"></span><span class="th"></span></div><div class="id">2 / 4</div><span class="pchip" style="color:var(--phase-im3m);background:color-mix(in oklch,var(--phase-im3m) 12%,white);border-color:color-mix(in oklch,var(--phase-im3m) 35%,white)">Im3m</span></div>
+      <div class="grow"><span class="cbx"></span><div><div class="nm">P2 + CMTM3 1:1</div><div class="id">S2470 · slot 7</div></div><div class="galg"><span class="th"></span><span class="th"></span><span class="th"></span></div><div class="id">4 / 12</div><span class="ink-faint" style="font-size:10.5px">not indexed</span></div>
+    </div>
+  </div>
+  <div class="dock">
+    <div class="dctx"><span class="l1">Corpus</span><span class="l2">170 samples · 682 exposures</span></div>
+    <div class="ddiv"></div>
+    <span class="dbtn ghost">Select all</span>
+    <span class="dbtn ghost">Sort <span class="ink-faint">▾</span></span>
+    <span class="dbtn ghost">Filter <span class="ink-faint">▾</span></span>
+    <div class="dsp"></div>
+    <span class="dbtn"><span style="color:var(--warning)">⚠</span> 3 need grouping review</span>
+    <span class="dbtn accent">Review grouping →</span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">▸</span><span class="t"><b>Idle dock</b> = corpus-wide verbs (select-all, sort, filter) + the grouping gate. The bar is the page's permanent action home.</span></div>
+    <div class="n"><span class="k">↺</span><span class="t"><b>On exposure selection</b> the right side swaps to <b>Drop · Keep · Restore · Clear</b> (today's CullBar). On sample selection → <b>+ New series</b> (today's ComposeBar). One bar, three states.</span></div>
+    <div class="n"><span class="k">✓</span><span class="t"><b>Stays on the surface:</b> click a row → Focus, click a header to sort, the checkboxes. Direct-manipulation never moves.</span></div>
+  </div>
+</section>
+
+<!-- ===== DOCK B — FOCUS ===== -->
+<section id="d2" class="page">
+  <div class="ftitle">Dock state · Focus — command verbs pulled into the dock</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span>
+    <span class="sw"><span class="lt">‹</span><span class="sn">SSRL April 2026 · 1p7m</span><span class="ca">▾</span></span>
+    <span class="sp"></span><span class="tlink"><span class="d"></span>Series</span></header>
+  <div class="body">
+    <div class="text-kicker acc">Focus · 2-2 + LL37 1:1</div>
+    <span class="stripnote" style="top:24px">click a peak / drag = stays on plot</span>
+    <div class="gplot ghost" style="margin-top:10px">
+      <div class="text-label">Integration · S2453</div>
+      <svg viewBox="0 0 900 280" style="width:100%;flex:1" preserveAspectRatio="none">
+        <polyline fill="none" stroke="var(--ink-soft)" stroke-width="1.5" points="0,235 80,225 150,120 180,55 210,120 300,210 360,165 410,80 460,135 560,210 650,175 700,150 780,210 850,222 900,226"/>
+        <g stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3 3"><line x1="180" y1="15" x2="180" y2="265"/><line x1="410" y1="15" x2="410" y2="265"/></g>
+      </svg>
+    </div>
+  </div>
+  <div class="dock">
+    <span class="back">‹ Back to Corpus</span>
+    <div class="step"><span class="sb">‹</span><span class="pos">3 / 170</span><span class="sb">›</span></div>
+    <div class="ddiv"></div>
+    <div class="dseg"><span class="on">log</span><span>lin</span></div>
+    <span class="dbtn">Auto-fit</span>
+    <span class="dbtn">+ Peak<span class="kb">P</span></span>
+    <span class="dbtn">Custom index</span>
+    <div class="dsp"></div>
+    <span class="dbtn ghost">Export <span class="ink-faint">▾</span></span>
+    <span class="dbtn accent">Set phase: Pn3m</span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">→</span><span class="t"><b>Moved into the dock:</b> log/lin, Auto-fit, + Peak, Custom index, Export — Focus's old inline command buttons now live here, in the same place as every other surface's verbs.</span></div>
+    <div class="n"><span class="k">✓</span><span class="t"><b>Stays on the plot:</b> clicking a peak to toggle/remove, click-to-add when +Peak is armed, hovering a candidate. The data manipulation is untouched.</span></div>
+    <div class="n"><span class="k">↩</span><span class="t"><b>Connective tissue, finally home:</b> Back-to-Corpus + the prev/next stepper sit in the dock too — the "Focus is too hidden / no way back" problem solved.</span></div>
+  </div>
+</section>
+
+<!-- ===== DOCK C — SERIES BUILDER (edit) ===== -->
+<section id="d3" class="page">
+  <div class="ftitle">Dock state · Series builder (editing) — even a rich surface's verbs collapse to one bar</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sp"></span>
+    <span class="tlink" style="color:var(--ink)"><span class="d"></span>Series</span><span style="width:16px"></span><span class="tlink">Experiments</span></header>
+  <div class="body">
+    <div class="text-kicker acc">Series · editing</div>
+    <div class="text-display" style="margin:3px 0 12px">LL37 dose response</div>
+    <span class="stripnote" style="top:26px">drag to reorder members = stays on surface</span>
+    <div class="gplot ghost" style="height:300px">
+      <div class="text-label">3 members · overlaid</div>
+      <svg viewBox="0 0 900 250" style="width:100%;flex:1" preserveAspectRatio="none">
+        <polyline fill="none" stroke="var(--phase-pn3m)" stroke-width="1.5" points="0,210 120,200 170,90 200,40 230,95 330,180 420,70 520,180 640,150 760,190 900,200"/>
+        <polyline fill="none" stroke="var(--phase-im3m)" stroke-width="1.5" points="0,225 120,215 180,120 210,75 240,125 340,195 430,110 530,195 650,170 770,205 900,212"/>
+      </svg>
+    </div>
+  </div>
+  <div class="dock">
+    <div class="dctx"><span class="l1">Editing recipe</span><span class="l2">6 members</span></div>
+    <div class="ddiv"></div>
+    <div class="dseg"><span class="on">log</span><span>lin</span></div>
+    <span class="dbtn ghost">Ticks</span>
+    <span class="dbtn ghost">Labels</span>
+    <span class="dbtn ghost" style="gap:8px">Offset <span class="slider"><i></i></span></span>
+    <span class="dbtn">+ Add sample</span>
+    <span class="dbtn ghost">Undo<span class="kb">⌘Z</span></span>
+    <div class="dsp"></div>
+    <span class="dbtn ghost">Export <span class="ink-faint">▾</span></span>
+    <span class="dbtn">Cancel</span>
+    <span class="dbtn accent">Confirm series</span>
+  </div>
+  <div class="note">
+    <div class="n"><span class="k">→</span><span class="t"><b>The whole BuilderRail collapses in:</b> scale, ticks/labels, offset, add-sample, undo, cancel, confirm, export — all the command verbs, one consistent bar.</span></div>
+    <div class="n"><span class="k">✓</span><span class="t"><b>Stays on the surface:</b> dragging members to reorder, clicking a member, inline title editing — the spatial recipe work.</span></div>
+    <div class="n"><span class="k">?</span><span class="t"><b>The cost to weigh:</b> the builder's refined inline rail is gone — its identity now lives in the shared dock. Consistency vs. each surface's bespoke feel.</span></div>
+  </div>
+</section>
+
+</body></html>

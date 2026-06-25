@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SHORTCUTS,
+  eventCombo,
   matchShortcut,
   keyComboLabel,
   shortcutLabel,
@@ -32,25 +33,29 @@ describe("shortcut registry", () => {
     }
   });
 
-  it("the sample stepper is [ and ] only (', '.' retired)", () => {
-    expect(SHORTCUTS.prevSample.keys).toEqual(["["]);
-    expect(SHORTCUTS.nextSample.keys).toEqual(["]"]);
-    // , and . must not appear anywhere in the registry
+  it("the sample axis is ↑/↓ and the detail axis is ←/→ (rev-2 axes)", () => {
+    expect(SHORTCUTS.prevSample.keys).toEqual(["ArrowUp"]);
+    expect(SHORTCUTS.nextSample.keys).toEqual(["ArrowDown"]);
+    expect(SHORTCUTS.prevDetail.keys).toEqual(["ArrowLeft"]);
+    expect(SHORTCUTS.nextDetail.keys).toEqual(["ArrowRight"]);
+    // old [ ] bindings must not appear anywhere in the registry
     const all = Object.values(SHORTCUTS).flatMap((d) => d.keys);
+    expect(all).not.toContain("[");
+    expect(all).not.toContain("]");
     expect(all).not.toContain(",");
     expect(all).not.toContain(".");
   });
 });
 
 describe("matchShortcut", () => {
-  it("matches bare letter/bracket keys only when NO modifier is held", () => {
+  it("matches bare letter keys only when NO modifier is held", () => {
     expect(matchShortcut(ev("x"))).toBe("drop");
     expect(matchShortcut(ev("k"))).toBe("keep");
     expect(matchShortcut(ev("r"))).toBe("representative");
-    expect(matchShortcut(ev("["))).toBe("prevSample");
-    expect(matchShortcut(ev("]"))).toBe("nextSample");
-    // a held Mod means it is NOT the page shortcut (e.g. Cmd+] = browser nav)
-    expect(matchShortcut(ev("]", { meta: true }))).toBeNull();
+    // old [ ] are unbound in rev-2; arrows now drive sample/detail nav
+    expect(matchShortcut(ev("["))).toBeNull();
+    expect(matchShortcut(ev("]"))).toBeNull();
+    // a held Mod means it is NOT the page shortcut
     expect(matchShortcut(ev("x", { ctrl: true }))).toBeNull();
   });
 
@@ -59,11 +64,11 @@ describe("matchShortcut", () => {
     expect(matchShortcut(ev("X", { shift: true }))).toBeNull(); // shift held = different combo
   });
 
-  it("matches arrows for the Focus/Loupe sub-entity steps", () => {
-    expect(matchShortcut(ev("ArrowLeft"))).toBe("prevExposure");
-    expect(matchShortcut(ev("ArrowRight"))).toBe("nextExposure");
-    expect(matchShortcut(ev("ArrowUp"))).toBe("prevCandidate");
-    expect(matchShortcut(ev("ArrowDown"))).toBe("nextCandidate");
+  it("matches arrows for the rev-2 sample/detail axes", () => {
+    expect(matchShortcut(ev("ArrowUp"))).toBe("prevSample");
+    expect(matchShortcut(ev("ArrowDown"))).toBe("nextSample");
+    expect(matchShortcut(ev("ArrowLeft"))).toBe("prevDetail");
+    expect(matchShortcut(ev("ArrowRight"))).toBe("nextDetail");
   });
 
   it("matches Mod+Z undo and Mod+Shift+Z redo cross-platform (meta OR ctrl)", () => {
@@ -84,6 +89,31 @@ describe("matchShortcut", () => {
   it("matches Escape to dismiss", () => {
     expect(matchShortcut(ev("Escape"))).toBe("dismiss");
   });
+
+  it("new verbs are bound: Enter→openFocus, Backspace→restore, Space→toggleSelect", () => {
+    expect(matchShortcut(ev("Enter"))).toBe("openFocus");
+    expect(matchShortcut(ev("Backspace"))).toBe("restore");
+    expect(matchShortcut(ev(" "))).toBe("toggleSelect");
+  });
+
+  it("B3 surface-local verbs are bound: a→addSample, Mod+Enter→confirm, p→addPeak", () => {
+    expect(matchShortcut(ev("a"))).toBe("addSample");
+    expect(matchShortcut(ev("p"))).toBe("addPeak");
+    // ⌘Enter / Ctrl+Enter both collapse to "Mod+Enter" → confirm.
+    expect(matchShortcut(ev("Enter", { meta: true }))).toBe("confirm");
+    expect(matchShortcut(ev("Enter", { ctrl: true }))).toBe("confirm");
+    // Bare letters carry no modifier — a held Mod is NOT the page verb.
+    expect(matchShortcut(ev("a", { meta: true }))).toBe("selectAll"); // Mod+a is select-all
+    expect(matchShortcut(ev("p", { ctrl: true }))).toBeNull();
+    // ⌘Enter must not be plain openFocus (Enter alone stays openFocus).
+    expect(matchShortcut(ev("Enter"))).toBe("openFocus");
+  });
+});
+
+describe("eventCombo (normalization)", () => {
+  it("? normalizes to a stable token regardless of Shift being held", () => {
+    expect(eventCombo(ev("?", { shift: true }))).toBe("?");
+  });
 });
 
 describe("keyComboLabel (display)", () => {
@@ -102,7 +132,7 @@ describe("keyComboLabel (display)", () => {
   });
 
   it("shortcutLabel shows the first binding of an action", () => {
-    expect(shortcutLabel("prevSample", true)).toBe("[");
+    expect(shortcutLabel("prevSample", true)).toBe("↑");
     expect(shortcutLabel("undo", true)).toBe("⌘Z");
   });
 });

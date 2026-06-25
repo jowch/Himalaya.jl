@@ -28,27 +28,50 @@ function renderModal() {
   );
 }
 
+const EXP_BASE = {
+  description: null,
+  manifest_path: null,
+  q_units: null,
+  beam_center_x: null,
+  beam_center_y: null,
+  pixel_size_um: null,
+  energy_kev: null,
+  flight_path_m: null,
+  energy_kev_source: "default" as api.GeometrySource,
+  flight_path_m_source: "default" as api.GeometrySource,
+  beam_center_x_source: "default" as api.GeometrySource,
+  beam_center_y_source: "default" as api.GeometrySource,
+  pixel_size_um_source: "default" as api.GeometrySource,
+  q_units_source: "default" as api.GeometrySource,
+  last_scanned_at: null,
+  scan_signature: null,
+  ingest_status: "idle" as api.IngestStatus,
+  image_pattern: null,
+  metadata_pattern: null,
+  integration_pattern: null,
+};
+
 const EXPERIMENTS: api.Experiment[] = [
-  { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", data_dir: "/data/ssrl_2026_05/data", analysis_dir: "/data/ssrl_2026_05/analysis", manifest_path: null, created_at: "2026-05-01", q_units: null, beam_center_x: null, beam_center_y: null, pixel_size_um: null, energy_kev: null, flight_path_m: null },
-  { id: 2, name: "APS Apr 2026",  path: "/data/aps_2026_04",  data_dir: "/data/aps_2026_04/data",  analysis_dir: "/data/aps_2026_04/analysis",  manifest_path: null, created_at: "2026-04-15", q_units: null, beam_center_x: null, beam_center_y: null, pixel_size_um: null, energy_kev: null, flight_path_m: null },
+  { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", data_dir: "/data/ssrl_2026_05/data", analysis_dir: "/data/ssrl_2026_05/analysis", created_at: "2026-05-01", ...EXP_BASE },
+  { id: 2, name: "APS Apr 2026",  path: "/data/aps_2026_04",  data_dir: "/data/aps_2026_04/data",  analysis_dir: "/data/aps_2026_04/analysis",  created_at: "2026-04-15", ...EXP_BASE },
 ];
 
 const SAMPLES_EXP1: api.Sample[] = [
-  { id: 10, experiment_id: 1, display_name: "D1", name: "cubic_run03", notes: null, tags: [] },
-  { id: 11, experiment_id: 1, display_name: "D2", name: "hex_run01",   notes: null, tags: [] },
+  { id: 10, experiment_id: 1, name: "cubic_run03", notes: null, tags: [] },
+  { id: 11, experiment_id: 1, name: "hex_run01",   notes: null, tags: [] },
 ];
 
 const SAMPLES_EXP2: api.Sample[] = [
-  { id: 20, experiment_id: 2, display_name: "S1", name: "lamellar_A",  notes: null, tags: [] },
+  { id: 20, experiment_id: 2, name: "lamellar_A",  notes: null, tags: [] },
 ];
 
 // Corpus-wide sample list (SA-F4): the experiment step matches sample names
 // across ALL experiments through this, not just the committed one.
 const CORPUS: api.CorpusSample[] = [
-  { id: 10, experiment_id: 1, display_name: "D1",    name: "cubic_run03", notes: null, tags: [], q_units: "A-1" },
-  { id: 11, experiment_id: 1, display_name: "D2",    name: "hex_run01",   notes: null, tags: [], q_units: "A-1" },
-  { id: 20, experiment_id: 2, display_name: "S1",    name: "lamellar_A",  notes: null, tags: [], q_units: "A-1" },
-  { id: 30, experiment_id: 2, display_name: "Calib", name: "aps_calib",   notes: null, tags: [], q_units: "A-1" },
+  { id: 10, experiment_id: 1, name: "cubic_run03", notes: null, tags: [], q_units: "A-1" },
+  { id: 11, experiment_id: 1, name: "hex_run01",   notes: null, tags: [], q_units: "A-1" },
+  { id: 20, experiment_id: 2, name: "lamellar_A",  notes: null, tags: [], q_units: "A-1" },
+  { id: 30, experiment_id: 2, name: "aps_calib",   notes: null, tags: [], q_units: "A-1" },
 ];
 
 function resetStore(): void {
@@ -252,8 +275,8 @@ describe("<NavModal>", () => {
       await user.type(screen.getByTestId("nav-modal-input"), "cubic");
       const row = await screen.findByTestId("nav-item-corpus-sample-10");
       expect(screen.getByTestId("nav-samples-group-label")).toHaveTextContent("Samples");
-      // Row = sample display name + its experiment name as quiet context.
-      expect(within(row).getByText("D1")).toBeInTheDocument();
+      // Row = sample name + its experiment name as quiet context.
+      expect(within(row).getByText("cubic_run03")).toBeInTheDocument();
       expect(within(row).getByText("SSRL May 2026")).toBeInTheDocument();
     });
 
@@ -344,7 +367,6 @@ describe("<NavModal>", () => {
       const many: api.CorpusSample[] = Array.from({ length: 11 }, (_, i) => ({
         id: 100 + i,
         experiment_id: 1,
-        display_name: `Bulk ${i + 1}`,
         name: `bulk_${String(i + 1).padStart(2, "0")}`,
         notes: null,
         tags: [],

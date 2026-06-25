@@ -1,0 +1,186 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+import { ConfigurationBody } from "../src/print/components/ConfigurationBody";
+
+// updateMutate simulates TanStack's mutate(vars, { onSuccess }) contract:
+// calls onSuccess() synchronously so pattern-field rescan chains are testable.
+const updateMutate = vi.fn((_patch: unknown, opts?: { onSuccess?: () => void }) => {
+  opts?.onSuccess?.();
+});
+const triggerScanMutate = vi.fn();
+
+vi.mock("../src/queries", async (orig) => {
+  const actual = await orig<typeof import("../src/queries")>();
+  return {
+    ...actual,
+    useTriggerScan: () => ({ mutate: triggerScanMutate, isPending: false }),
+    // E1's Experiment carries PER-FIELD *_source columns (NOT a combined
+    // beam_center_source): energy_kev_source, flight_path_m_source,
+    // beam_center_x_source, beam_center_y_source, pixel_size_um_source,
+    // q_units_source -- plus ingest_status/scan_signature/last_scanned_at.
+    useExperiment: () => ({
+      data: {
+        id: 7, name: "SSRL · 1p7m",
+        description: "April 2026 beamtime at SSRL 1p7m",
+        path: "/d", data_dir: "/d", analysis_dir: "/d/analysis",
+        image_pattern: "{name}.tiff", metadata_pattern: "{name}.prp", integration_pattern: "{name}.dat",
+        manifest_path: null, created_at: "2026-04-12", q_units: "A^-1",
+        energy_kev: 9.0, energy_kev_source: "prp",
+        flight_path_m: 1.81, flight_path_m_source: "setup",
+        beam_center_x: 421.4, beam_center_x_source: "setup",
+        beam_center_y: 836.9, beam_center_y_source: "setup",
+        pixel_size_um: 172, pixel_size_um_source: "prp", q_units_source: "prp",
+        last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "idle",
+      },
+      isLoading: false,
+    }),
+    useLoads: () => ({ data: [], isLoading: false }),
+    useUpdateExperiment: () => ({ mutate: updateMutate, isPending: false }),
+  };
+});
+
+const wrap = (n: ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{n}</QueryClientProvider>);
+
+describe("ConfigurationBody", () => {
+  beforeEach(() => { updateMutate.mockClear(); triggerScanMutate.mockClear(); });
+
+  it("renders the description, Geometry, Acquisition, and Sources cards", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    // description (DECISION: E1-owned column; E2 renders it here)
+    expect(screen.getByText(/April 2026 beamtime/)).toBeInTheDocument();
+    expect(screen.getByText("Geometry")).toBeInTheDocument();
+    expect(screen.getByText("Acquisition")).toBeInTheDocument();
+    expect(screen.getByText("Sources")).toBeInTheDocument();
+  });
+  it("derives a geometry row per typed field with its *_source provenance", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    expect(screen.getByText("Beam energy")).toBeInTheDocument();
+    // flight_path_m, beam_center_x, beam_center_y all have source="setup" -- use getAllByText
+    expect(screen.getAllByText("setup files").length).toBeGreaterThan(0);
+  });
+  it("renders the 3 pattern rows as editable (E1 columns: image/metadata/integration_pattern)", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    expect(screen.getByText("{name}.tiff")).toBeInTheDocument();  // image_pattern
+  });
+
+  // --- inline override: real-change triggers PATCH ---
+  it("Override activates inline input seeded with raw numeric value; typing a new value + Enter fires PATCH", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+
+    // Click Override for "Beam energy" (first override button)
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+
+    // An inline input should appear seeded with the raw numeric string (no units)
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    expect((inp as HTMLInputElement).value).toBe("9");
+
+    // Change the value and commit via Enter
+    fireEvent.change(inp, { target: { value: "10" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+
+    // updateMutate must have been called with the NEW parsed value
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ energy_kev: 10 })
+    );
+  });
+
+  // --- inline override: no-change does NOT fire PATCH ---
+  it("Override + commit with the SAME value does NOT call updateMutate (no mis-stamp)", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    // The draft is seeded to "9" (raw value). Do NOT change it -- commit with Enter.
+    expect((inp as HTMLInputElement).value).toBe("9");
+    fireEvent.keyDown(inp, { key: "Enter" });
+
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  // --- Escape cancels without PATCH ---
+  it("Override + Escape cancels without calling updateMutate", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.keyDown(inp, { key: "Escape" });
+
+    expect(updateMutate).not.toHaveBeenCalled();
+    // The value display should be back (no input visible)
+    expect(screen.queryByRole("textbox", { name: /override beam energy/i })).toBeNull();
+  });
+
+  // --- SourcesCard "Rescan now" button wires through to triggerScan ---
+  it("SourcesCard Rescan now button calls useTriggerScan().mutate()", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    const rescanBtn = screen.getByRole("button", { name: /rescan now/i });
+    fireEvent.click(rescanBtn);
+    expect(triggerScanMutate).toHaveBeenCalledTimes(1);
+  });
+
+  // --- Pattern field edit: fires PATCH + forced rescan on onSuccess ---
+  it("editing image_pattern calls updateMutate then triggerScanMutate(true)", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    // Click on the image_pattern value button ("{name}.tiff") to begin editing
+    fireEvent.click(screen.getByText("{name}.tiff"));
+    // An input should appear; change the value and commit with Enter
+    const inp = screen.getByRole("textbox", { name: /image pattern/i });
+    fireEvent.change(inp, { target: { value: "{name}.tif" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    // PATCH must be called
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ image_pattern: "{name}.tif" }),
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    // Forced rescan must be called after onSuccess
+    expect(triggerScanMutate).toHaveBeenCalledWith(true);
+  });
+
+  // --- 5d: undo then redo a geometry override (button + keyboard) ---
+  it("after an override, Undo PATCHes the old value and Redo PATCHes the new one", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 10 }));
+
+    // Undo restores the prior raw value (9).
+    fireEvent.click(screen.getByRole("button", { name: /undo last change/i }));
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 9 }));
+
+    // The Redo affordance is now offered; clicking it replays the new value.
+    fireEvent.click(screen.getByRole("button", { name: /redo last change/i }));
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 10 }));
+  });
+
+  it("⌘⇧Z redoes a geometry override after ⌘Z undoes it", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "11" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+
+    // ⌘Z on the window (focus on body) undoes.
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 9 }));
+    // ⌘⇧Z redoes.
+    fireEvent.keyDown(window, { key: "z", metaKey: true, shiftKey: true });
+    expect(updateMutate).toHaveBeenLastCalledWith(expect.objectContaining({ energy_kev: 11 }));
+  });
+
+  it("editing a NON-pattern (geometry) field does NOT call triggerScanMutate", () => {
+    wrap(<ConfigurationBody experimentId={7} />);
+    // Override Beam energy (geometry, not a pattern)
+    fireEvent.click(screen.getAllByRole("button", { name: /override beam energy/i })[0]!);
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "12" } });
+    fireEvent.keyDown(inp, { key: "Enter" });
+    // PATCH is called but rescan is NOT
+    expect(updateMutate).toHaveBeenCalled();
+    expect(triggerScanMutate).not.toHaveBeenCalled();
+  });
+});

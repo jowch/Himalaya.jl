@@ -93,6 +93,23 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
 }
 
 /**
+ * Shared cache-invalidation helper for ingest-frame side-effects. Exported so
+ * `App.tsx`'s SSE listener can call the same invalidations without duplicating
+ * them inline (the listener still owns the Zustand store write; this helper is
+ * pure cache-only). `isComplete=true` also refetches the experiment detail row
+ * (so `ingest_status` transitions from "analyzing" → "complete").
+ */
+export function invalidateIngestFrameCache(
+  qc: QueryClient,
+  expId: number,
+  isComplete: boolean,
+): void {
+  qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+  qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  if (isComplete) qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
+}
+
+/**
  * Apply a remote SSE event to the local query cache. Per-kind logic mirrors
  * the spec's "replay-without-refetch where post_state covers it; refetch
  * fallback where the event payload is insufficient or update is rare."
@@ -273,15 +290,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.seriesList });
       break;
     }
-    case "series_pinned":
-    case "series_unpinned": {
-      // Pin/unpin fan out cross-tab. The seriesPins cache is global per-tab
-      // (the current user's pin set); the SSE self-echo filter discards the
-      // originating tab's own frame. Invalidate so the next read gets the
-      // canonical list.
-      qc.invalidateQueries({ queryKey: queryKeys.seriesPins });
-      break;
-    }
     case "add_tag":
     case "remove_tag":
     case "edit_tag": {
@@ -329,6 +337,67 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "analyze_run": {
       applyPostState();
+      break;
+    }
+    case "ingest_started":
+    case "ingest_progress":
+    case "ingest_failed": {
+      // Broadcast-only progress (spec §9.3): rides the curation channel, carries
+      // a positive experiment_id in the payload (NEVER a sentinel entity_id).
+      // Read experiment_id from the payload, not remote.entity_id. Cache effect
+      // is invalidation-only (the ingestInFlight store write lives in the
+      // separate App.tsx listener — applyRemoteToCache stays pure).
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, false);
+      break;
+    }
+    case "ingest_complete": {
+      // Authoritative terminal frame (the 64-slot channel may drop progress
+      // frames at 680-exposure scale; treat complete as the source of truth).
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, true);
+      break;
+    }
+    case "sample_renamed": {
+      // Single-entity, payload-derivable: splice the renamed label into the
+      // sample cache + refresh the corpus/experiment listings. entity_id is the
+      // sample id; the new label rides payload.name.
+      const newName = payload?.name as string | undefined;
+      if (newName !== undefined) {
+        qc.setQueryData<Sample>(queryKeys.sample(id), (old) =>
+          old ? { ...old, name: newName } : old);
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+      break;
+    }
+    case "exposure_moved": {
+      // One exposure left from_sample_id for sample_id (the destination).
+      // Invalidate both sides' exposure lists + the loads roll-up (which
+      // re-derives the grouping view).
+      const dest = payload?.sample_id as number | undefined;
+      const from = payload?.from_sample_id as number | undefined;
+      if (from !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(from) });
+      if (dest !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(dest) });
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+      break;
+    }
+    case "sample_created":
+    case "sample_split":
+    case "grouping_flag_dismissed": {
+      // Orchestrations that create sample rows / change grouping whose new ids
+      // aren't worth a surgical splice (the series_created precedent). Refetch
+      // the loads roll-up + both sample listings. MUST be before `default:` so
+      // entity_id (a sample id) never poisons peaks(id)/indices(id). There is
+      // NO sample_merged event — merging is grouping_flag_dismissed + the move.
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) {
+        qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+        qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     default: {

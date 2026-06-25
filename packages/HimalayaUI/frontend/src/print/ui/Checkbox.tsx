@@ -13,10 +13,8 @@ export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "on
   onChange?: (checked: boolean) => void;
   /** Accessible name — required when no visible label wraps this. */
   "aria-label"?: string;
-  /** Override the roving tabindex. When provided, replaces the default
-   *  `disabled ? -1 : 0` (used by the Samples roving grid so the checkbox is
-   *  the cell's single tab stop only when its cell is active). Absent →
-   *  unchanged. */
+  /** Override tabIndex. When provided, replaces the default `disabled ? -1 : 0`.
+   *  Absent → unchanged. */
   tabIndex?: number;
   /** PLACEMENT-ONLY. */
   className?: string;

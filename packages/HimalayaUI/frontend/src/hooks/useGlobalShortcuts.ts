@@ -13,8 +13,8 @@ import { suppressGlobalKeys } from "../lib/keys";
  * everywhere it appears:
  *   - the sample step `[`/`]` lives on the surfaces that have it (Loupe, Focus),
  *     NOT here. KEYS-LIB step 2 retired the old global `,`/`.` stepper — `[`/`]`
- *     is the single sample-step gesture now, and the contact sheet navigates via
- *     its ARIA grid roving instead.
+ *     is the single sample-step gesture now, and the contact sheet navigation is
+ *     owned at the page level.
  *   - the exposure/candidate arrows, drop/keep/representative, undo/redo and
  *     reorder gestures are all bound by their owning page via `useShortcuts`.
  *
@@ -39,6 +39,15 @@ export function useGlobalShortcuts(): void {
         const s = useAppState.getState();
         const step = s.activeExperimentId === undefined ? "experiment" : "sample";
         s.openNavModal(step);
+        return;
+      }
+
+      // `?` → keyboard shortcut overlay (helpOverlay). Layout-robust: `?` is
+      // Shift+/ on US keyboards but `eventCombo` emits a stable `"?"` token for
+      // e.key === "?" regardless of layout (mirrors the shortcuts.ts special case).
+      if (e.key === "?") {
+        e.preventDefault();
+        useAppState.getState().openHelpOverlay();
       }
     };
     window.addEventListener("keydown", onKeyDown);

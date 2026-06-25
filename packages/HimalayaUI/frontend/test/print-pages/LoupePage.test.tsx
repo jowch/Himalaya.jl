@@ -68,10 +68,10 @@ function LocationProbe(): JSX.Element {
 
 function renderAt(sampleId: number, search = "") {
   return render(
-    <MemoryRouter initialEntries={[`/samples/loupe/${sampleId}${search}`]}>
+    <MemoryRouter initialEntries={[`/sample/${sampleId}/loupe${search}`]}>
       <Routes>
         <Route
-          path="/samples/loupe/:sampleId"
+          path="/sample/:sampleId/loupe"
           element={
             <>
               <LoupePage />
@@ -79,7 +79,9 @@ function renderAt(sampleId: number, search = "") {
             </>
           }
         />
-        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+        <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">sheet</div>} />
+        {/* not-found loupe (no sample → no experiment_id) falls back to the list */}
+        <Route path="/experiments" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -91,12 +93,12 @@ function renderWithOrder(sampleId: number, order: number[], search = "") {
   return render(
     <MemoryRouter
       initialEntries={[
-        { pathname: `/samples/loupe/${sampleId}`, search, state: { sampleOrder: order } },
+        { pathname: `/sample/${sampleId}/loupe`, search, state: { sampleOrder: order } },
       ]}
     >
       <Routes>
         <Route
-          path="/samples/loupe/:sampleId"
+          path="/sample/:sampleId/loupe"
           element={
             <>
               <LoupePage />
@@ -104,7 +106,9 @@ function renderWithOrder(sampleId: number, order: number[], search = "") {
             </>
           }
         />
-        <Route path="/samples" element={<div data-testid="sheet">sheet</div>} />
+        <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">sheet</div>} />
+        {/* not-found loupe (no sample → no experiment_id) falls back to the list */}
+        <Route path="/experiments" element={<div data-testid="sheet">sheet</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -121,7 +125,7 @@ function lastCbs(mock: ReturnType<typeof vi.fn>): MutateCbs {
 beforeEach(() => {
   vi.clearAllMocks();
   state.samples = [{
-    id: 42, experiment_id: 1, name: "JC042", display_name: "JC042 — LL37",
+    id: 42, experiment_id: 1, name: "JC042",
     notes: null, q_units: "A-1",
     tags: [{ id: 100, key: "LL37", value: "", source: "user" }],
   }];
@@ -136,9 +140,22 @@ describe("LoupePage", () => {
   it("renders the headline, frame, side panel and filmstrip", () => {
     renderAt(42);
     expect(screen.getByTestId("loupe-page")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /JC042 — LL37/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /JC042/ })).toBeInTheDocument();
     expect(screen.getByTestId("big-frame")).toBeInTheDocument();
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
+  });
+
+  it("dock follows the §7 grammar: labeled Sample/Frame readouts, X/K/R chips, frosted Focus (5c)", () => {
+    renderAt(42);
+    // Labeled steppers with current / total readouts.
+    expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 1");
+    expect(screen.getByTestId("dock-frame-count").textContent).toBe("1 / 2");
+    // Cull verbs carry their key-chips (must match the real X/K/R bindings).
+    expect(within(screen.getByTestId("dock-drop")).getByTestId("kbkey").textContent).toBe("X");
+    expect(within(screen.getByTestId("dock-keep")).getByTestId("kbkey").textContent).toBe("K");
+    expect(within(screen.getByTestId("dock-set-representative")).getByTestId("kbkey").textContent).toBe("R");
+    // Focus is the primary destination with the frosted ↵ chip.
+    expect(within(screen.getByTestId("dock-focus")).getByTestId("kbkey").textContent).toBe("↵");
   });
 
   it("advertises only the loupe-unique screen verbs in the bottom legend (LO-KBDLEGEND)", () => {
@@ -147,8 +164,8 @@ describe("LoupePage", () => {
     const caps = within(legend).getAllByTestId("kbkey").map((k) => k.textContent);
     // the screen verbs (X/K/R) come straight from the registry
     expect(caps).toEqual(expect.arrayContaining(["X", "K", "R"]));
-    // LO-STEPDEDUP: the sample steps ([ ]) are advertised by the shared
-    // SampleStepper's tooltips in the TopBar now, so they don't repeat here.
+    // LO-STEPDEDUP: the sample steps ([ ]) are advertised by the Dock's
+    // stepper buttons, so they don't repeat in the inline kbd legend.
     expect(caps).not.toContain("[");
     expect(caps).not.toContain("]");
     // LO-TERM: the loupe speaks "frame", so no "exposure"-worded entry leaks in
@@ -159,7 +176,7 @@ describe("LoupePage", () => {
     renderAt(42);
     // WCAG 1.3.1 / 2.4.6: the loupe has no outer h1 from a shell, so PlateHeader
     // must be promoted to h1 so assistive technology can navigate to the page topic.
-    expect(screen.getByRole("heading", { level: 1, name: /JC042 — LL37/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /JC042/ })).toBeInTheDocument();
   });
 
   it("opens on the representative exposure (id 1)", () => {
@@ -205,9 +222,9 @@ describe("LoupePage", () => {
     // A FRESH element each render: a referentially-identical root element would
     // let React bail out of reconciling, so the SSE list change wouldn't apply.
     const tree = () => (
-      <MemoryRouter initialEntries={["/samples/loupe/42"]}>
+      <MemoryRouter initialEntries={["/sample/42/loupe"]}>
         <Routes>
-          <Route path="/samples/loupe/:sampleId" element={<LoupePage />} />
+          <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
         </Routes>
       </MemoryRouter>
     );
@@ -613,7 +630,7 @@ describe("LoupePage", () => {
 
   it("removing the second of two byte-identical dose pills deletes tag id 7, not id 3 (LO-TAGDUP)", async () => {
     state.samples = [{
-      id: 42, experiment_id: 1, name: "JC042", display_name: "JC042 — LL37",
+      id: 42, experiment_id: 1, name: "JC042",
       notes: null, q_units: "A-1",
       tags: [
         { id: 3, key: "dose", value: "10", source: "manual" },
@@ -728,50 +745,101 @@ describe("LoupePage", () => {
 
 describe("LoupePage · LO-NEXT sample navigation", () => {
   const THREE = [
-    { id: 10, experiment_id: 1, name: "S10", display_name: "Sample 10", notes: null, q_units: "A-1", tags: [] },
-    { id: 11, experiment_id: 1, name: "S11", display_name: "Sample 11", notes: null, q_units: "A-1", tags: [] },
-    { id: 12, experiment_id: 1, name: "S12", display_name: "Sample 12", notes: null, q_units: "A-1", tags: [] },
+    { id: 10, experiment_id: 1, name: "S10", notes: null, q_units: "A-1", tags: [] },
+    { id: 11, experiment_id: 1, name: "S11", notes: null, q_units: "A-1", tags: [] },
+    { id: 12, experiment_id: 1, name: "S12", notes: null, q_units: "A-1", tags: [] },
   ];
   beforeEach(() => {
     state.samples = THREE;
     state.exposures = [exp({ id: 1, selected: true })];
   });
 
-  // The VISUAL stepper now lives in the TopBar (CorpusTopbar's SampleStepper);
-  // see CorpusTopbar.test. The loupe page keeps the `[`/`]` keyboard nav, which
-  // shares resolveSampleOrder with the topbar so the two can't disagree.
-  it("'[' is a no-op on the first sample of the walk", () => {
+  // The VISUAL stepper lives in the Dock (§3.3). The loupe page keeps
+  // ↑/↓ keyboard nav (rev-2 axes: prevSample/nextSample), which shares
+  // resolveSampleOrder with the Dock so the two can't disagree.
+  it("↑ is a no-op on the first sample of the walk", () => {
     renderWithOrder(10, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "[" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/10/loupe");
   });
 
-  it("']' is a no-op on the last sample of the walk", () => {
+  it("↓ is a no-op on the last sample of the walk", () => {
     renderWithOrder(12, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "]" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
-  it("']' steps to the next sample, '[' steps to the previous (arrows still flip frames)", () => {
+  it("↓ steps to the next sample, ↑ steps to the previous (←/→ still flip frames)", () => {
     renderWithOrder(11, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "]" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
-  it("'[' steps to the previous sample", () => {
+  it("↑ steps to the previous sample", () => {
     renderWithOrder(11, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "[" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/10");
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/10/loupe");
   });
 
   it("falls back to the beamtime-scoped corpus order on a direct URL (no router state)", () => {
     renderAt(11);
-    fireEvent.keyDown(window, { key: "]" });
-    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/samples/loupe/12");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
-  it("documents the [ ] sample-step keys in the loupe legend", () => {
+  it("documents the sample-step keys in the loupe legend", () => {
     renderWithOrder(11, [10, 11, 12]);
     expect(screen.getByText("prev / next sample")).toBeInTheDocument();
+  });
+});
+
+describe("LoupePage dock composition (§3.3)", () => {
+  beforeEach(() => {
+    state.samples = [{
+      id: 42, experiment_id: 1, name: "JC042",
+      notes: null, q_units: "A-1",
+      tags: [],
+    }];
+    state.exposures = [exp({ id: 1, selected: true }), exp({ id: 2, status: "rejected" })];
+    state.loading = false;
+  });
+
+  it("Loupe dock includes Set representative AND Restore", () => {
+    renderAt(42);
+    expect(screen.getByTestId("dock-set-representative")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-restore")).toBeInTheDocument();
+  });
+
+  it("Loupe dock has the corpus up-link, Drop, Keep, and Focus destination", () => {
+    renderAt(42);
+    expect(screen.getByTestId("dock-up-link").textContent).toMatch(/corpus/i);
+    expect(screen.getByTestId("dock-drop")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-drop").getAttribute("data-variant")).toBe("outlineAccent");
+    expect(screen.getByTestId("dock-keep")).toBeInTheDocument();
+    expect(screen.getByTestId("dock-keep").getAttribute("data-variant")).toBe("outlineSuccess");
+    expect(screen.getByTestId("dock-focus")).toBeInTheDocument();
+  });
+
+  it("dock Drop calls setStatus.mutate with rejected for the active frame", () => {
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("dock-drop"));
+    expect(setStatusMutate).toHaveBeenCalledWith(
+      { exposureId: 1, status: "rejected" },
+      expect.any(Object),
+    );
+  });
+
+  it("dock Set representative calls selectMutate for the active frame when not already representative", () => {
+    // Use exposure id=2 which is NOT the representative (selected: false).
+    // The default (id=1, selected: true) is already the representative —
+    // clicking it calls `announce` instead of mutating.
+    state.exposures = [
+      exp({ id: 1, selected: false, status: "accepted" }),
+      exp({ id: 2, selected: false, status: null }),
+    ];
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("dock-set-representative"));
+    // id=1 is the accepted default; Set representative calls selectMutate for it.
+    expect(selectMutate).toHaveBeenCalledWith(1, expect.any(Object));
   });
 });

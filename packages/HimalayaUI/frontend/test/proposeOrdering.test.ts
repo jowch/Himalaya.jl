@@ -12,7 +12,6 @@ function row(
       id,
       experiment_id: 1,
       name,
-      display_name: null,
       notes: null,
       tags: tags.map((t, i) => ({ id: i + 1, key: t.key, value: t.value, source: "manual" })),
     },

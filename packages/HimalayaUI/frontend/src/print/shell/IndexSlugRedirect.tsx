@@ -8,7 +8,7 @@ import { ResolvingFallback } from "./ResolvingFallback";
  * carry slug names; the focus workspace route wants a numeric `:sampleId`.
  * Resolve the slugs via `/api/resolve`, then redirect to `/sample/:id`. On
  * 404 / error / a success body without a sample, land on the corpus contact
- * sheet (`/samples`). Index is retired; this only preserves old permalinks.
+ * experiments home (`/experiments`). Index is retired; this only preserves old permalinks.
  */
 export function IndexSlugRedirect(): JSX.Element {
   const { experiment, sample } = useParams();
@@ -18,7 +18,7 @@ export function IndexSlugRedirect(): JSX.Element {
     let cancelled = false;
     (async () => {
       if (experiment === undefined || sample === undefined) {
-        if (!cancelled) setTarget("/samples");
+        if (!cancelled) setTarget("/experiments");
         return;
       }
       try {
@@ -30,11 +30,11 @@ export function IndexSlugRedirect(): JSX.Element {
         // an error and fall back to the corpus.
         setTarget(
           "error" in body || body.sample_id === undefined
-            ? "/samples"
+            ? "/experiments"
             : `/sample/${body.sample_id}`,
         );
       } catch {
-        if (!cancelled) setTarget("/samples");
+        if (!cancelled) setTarget("/experiments");
       }
     })();
     return () => { cancelled = true; };

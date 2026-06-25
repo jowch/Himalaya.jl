@@ -100,7 +100,7 @@ export const CrossExperiment: Story = {
           { phase: "Lamellar" },
         ]}
         figLabel="Fig. 5"
-        title="Cross-beamtime lipid comparison"
+        title="Cross-experiment lipid comparison"
         sampleCount={5}
         variable="temperature"
         provenance={<span>&#8644; April + July &middot; q normalized</span>}

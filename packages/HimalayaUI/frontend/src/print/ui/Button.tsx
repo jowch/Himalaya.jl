@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "ghostInverse";
+export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "outlineAccent" | "outlineSuccess" | "ghostInverse";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -9,7 +9,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    *  fill, paper text, `aria-pressed`. Distinct from `variant="accent"` (a
    *  primary action, not a toggle). */
   armed?: boolean;
+  /** "md" (default): the dense chrome button. "lg": a prominent primary CTA
+   *  (~50% larger box + body-size label) for empty-state / first-run calls to
+   *  action, where the button is the focal point rather than dense chrome. */
+  size?: ButtonSize;
 }
+
+export type ButtonSize = "md" | "lg";
+
+// Size owns the box geometry + label scale; variant owns colour. Kept orthogonal
+// so any variant can be sized up for an empty-state hero CTA.
+const sizeClass: Record<ButtonSize, string> = {
+  md: "text-meta px-2.5 py-1",
+  lg: "text-body px-4 py-2",
+};
 
 const variantClass: Record<ButtonVariant, string> = {
   solid:
@@ -33,6 +46,17 @@ const variantClass: Record<ButtonVariant, string> = {
   outline:
     "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  // Coloured-outline cull verbs (dock Drop/Keep, spec §5): the verb's hue
+  // (accent for Drop, success for Keep) as text on a SOFTENED (40%-mixed) border
+  // over the transparent bar, filling solid on hover. The soft resting border +
+  // transparent ground match the pages2 dock mock (was a full-saturation accent
+  // line on a plate). Accent Drop matches the one Drop hue app-wide.
+  outlineAccent:
+    "border border-accent-soft bg-transparent text-accent hover:bg-accent hover:text-paper hover:border-accent " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  outlineSuccess:
+    "border border-success-soft bg-transparent text-success hover:bg-success hover:text-paper hover:border-success " +
+    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   ghostInverse:
     "bg-transparent text-paper/70 hover:text-paper border border-transparent " +
     "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
@@ -50,6 +74,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   {
     variant = "ghost",
     armed,
+    size = "md",
     className = "",
     children,
     ...props
@@ -67,7 +92,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       // which carries no aria-pressed at all. So bind the raw value: undefined
       // omits the attribute, false renders "false", true renders "true".
       aria-pressed={armed}
-      className={`text-meta font-semibold whitespace-nowrap rounded-md px-2.5 py-1 transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
+      className={`${sizeClass[size]} font-semibold whitespace-nowrap rounded-md transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >
       {children}

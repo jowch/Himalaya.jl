@@ -31,11 +31,20 @@ describe("IconButton", () => {
     expect(screen.getByRole("button", { name: "delete" })).toHaveAttribute("data-tone", "danger");
   });
 
-  it("title defaults to label but a passed title wins", () => {
+  it("shows a Tooltip caption from the label on hover; a passed title overrides it (item 7)", async () => {
+    const user = userEvent.setup();
     const { rerender } = render(<IconButton label="Remove from recipe" dismiss />);
-    expect(screen.getByRole("button", { name: "Remove from recipe" })).toHaveAttribute("title", "Remove from recipe");
+    // The native browser `title` is gone — the caption lives in our Tooltip,
+    // which surfaces on hover/focus.
+    const btn = screen.getByRole("button", { name: "Remove from recipe" });
+    expect(btn).not.toHaveAttribute("title");
+    await user.hover(btn);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Remove from recipe");
+    await user.unhover(btn);
+
     rerender(<IconButton label="Remove from recipe" dismiss title="Custom" />);
-    expect(screen.getByRole("button", { name: "Remove from recipe" })).toHaveAttribute("title", "Custom");
+    await user.hover(screen.getByRole("button", { name: "Remove from recipe" }));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Custom");
   });
 
   it("defaults type to button (does not submit forms)", () => {

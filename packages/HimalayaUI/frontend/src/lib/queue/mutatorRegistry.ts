@@ -31,6 +31,7 @@ import {
   setAssignmentStateMutator,
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
+import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator } from "./mutators/grouping";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -128,6 +129,12 @@ export function resolveMutator(
       return setAssignmentStateMutator;
     case "custom_index_commit":
       return customIndexMutator;
+    case "move_exposure": return moveExposureMutator;
+    case "rename_sample": return renameSampleMutator;
+    case "merge_samples":          return mergeSamplesMutator;
+    case "split_sample":           return splitSampleMutator;
+    case "dismiss_grouping_flag":  return dismissGroupingFlagMutator;
+    case "undo_dismiss_grouping_flag": return undoDismissGroupingFlagMutator;
     default:
       return undefined;
   }
@@ -198,6 +205,18 @@ export function resolveMutatorForEvent(
       // was retired with the Compare page. `entityType` ("sample_message") is
       // not discriminated on, but the param is kept for arm-shape parity.
       return postSampleMessageMutator;
+    // Ingestion grouping-review structural edits (Phase E2). A merge fans out as
+    // exposure_moved frames — so exposure_moved is the only SSE kind move AND merge
+    // share on the wire. See brief §Step 4 note.
+    case "exposure_moved":  return moveExposureMutator;
+    case "sample_renamed":  return renameSampleMutator;
+    // split emits sample_created (new sample) + sample_split (source update).
+    // The own-tab deferred resolves on sample_created (the first-emitted frame).
+    // sample_split has no own-op mutator — it routes through applyRemoteToCache.
+    case "sample_split":             return splitSampleMutator;
+    case "grouping_flag_dismissed":  return dismissGroupingFlagMutator;
+    // merge_samples fans out as exposure_moved frames (no sample_merged kind exists);
+    // own-op confirmation uses the exposure_moved arm above.
     // Event kinds with no queue mutator fall through here (handled entirely by
     // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".

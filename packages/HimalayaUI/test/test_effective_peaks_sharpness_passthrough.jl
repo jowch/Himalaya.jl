@@ -10,9 +10,8 @@ using HimalayaUI: create_schema!, create_experiment!, create_sample!,
     create_schema!(db)
     exp_id = create_experiment!(db; path = "/tmp", data_dir = "/tmp/d",
                                      analysis_dir = "/tmp/a")
-    s_id   = create_sample!(db; experiment_id = exp_id, name = "S",
-                                 display_name = "S")
-    e_id   = create_exposure!(db; sample_id = s_id, filename = "example_tot.dat")
+    s_id   = create_sample!(db; experiment_id = exp_id, name = "S")
+    e_id   = create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "example_tot.dat")
 
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)
@@ -33,9 +32,8 @@ end
     create_schema!(db)
     exp_id = create_experiment!(db; path = "/tmp", data_dir = "/tmp/d",
                                      analysis_dir = "/tmp/a")
-    s_id   = create_sample!(db; experiment_id = exp_id, name = "S",
-                                 display_name = "S")
-    e_id   = create_exposure!(db; sample_id = s_id, filename = "example_tot.dat")
+    s_id   = create_sample!(db; experiment_id = exp_id, name = "S")
+    e_id   = create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "example_tot.dat")
 
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)

@@ -46,11 +46,16 @@ function register_samples_routes!()
                 "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
                 [exp_filter]))
 
-        # experiment_id -> q_units, one TOML parse per experiment (not per sample).
+        # experiment_id -> q_units. Prefer the typed `q_units` column (Phase A,
+        # the source of truth for HTTP-ingested experiments); fall back to the
+        # deprecated TOML `config` blob for legacy rows whose geometry lives only
+        # there (mirrors `_experiment_row_to_json`'s typed-first-with-fallback).
         qunits_by_exp = Dict{Int, String}()
         for er in Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, config FROM experiments"))
-            qunits_by_exp[Int(er.id)] = _q_units_from_config(er.config)
+                "SELECT id, q_units, config FROM experiments"))
+            qunits_by_exp[Int(er.id)] =
+                (er.q_units === nothing || er.q_units === missing) ?
+                    _q_units_from_config(er.config) : String(er.q_units)
         end
 
         # One batched tag query, grouped by sample_id. Skipped entirely when
@@ -151,13 +156,19 @@ function register_samples_routes!()
         db   = current_db()
         body = json(req)
         fields, vals = Symbol[], Any[]
-        for k in (:display_name, :notes)
+        for k in (:name, :notes)
             if haskey(body, k)
                 v = body[k]
-                # Trim leading/trailing whitespace on display_name only.
-                v isa AbstractString && k === :display_name && (v = strip(String(v)))
+                # Trim leading/trailing whitespace on name only.
+                v isa AbstractString && k === :name && (v = strip(String(v)))
                 push!(fields, k); push!(vals, v)
             end
+        end
+        # A user rename stamps provenance (matching routes_grouping rename) so the
+        # name_source column that derive_sample_flags + the gallery key off stays
+        # trustworthy — otherwise an auto-named sample renamed here still reads 'auto'.
+        if :name in fields
+            push!(fields, :name_source); push!(vals, "user")
         end
         if isempty(fields)
             return HTTP.Response(400,

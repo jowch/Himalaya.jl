@@ -24,9 +24,8 @@ describe("<ThumbnailGallery> root element", () => {
   it("the overflow-x-auto scroller carries tabindex=-1 (must NOT be an auto Tab-stop)", () => {
     // Chrome auto-adds scrollable containers with overflowing content to the
     // sequential Tab order even without a tabindex; tabindex=-1 opts this
-    // scroller out so it never becomes a stray keyboard stop (e.g. trapping Tab
-    // inside the Samples roving grid — SA-ROVING BUG D, and a redundant stop on
-    // the loupe filmstrip). Children stay independently tabbable.
+    // scroller out so it never becomes a stray keyboard stop (e.g. a redundant
+    // stop on the loupe filmstrip). Children stay independently tabbable.
     render(<ThumbnailGallery exposures={THREE_EXPOSURES} />);
     expect(screen.getByTestId("thumbnail-gallery")).toHaveAttribute("tabindex", "-1");
   });

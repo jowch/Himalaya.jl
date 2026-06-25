@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { HTMLAttributes } from "react";
 
-export type KickerTone = "accent" | "faint" | "soft";
+export type KickerTone = "accent" | "faint" | "soft" | "warning";
 
 interface KickerProps extends HTMLAttributes<HTMLElement> {
   /**
@@ -27,10 +27,10 @@ const toneClass: Record<KickerTone, string> = {
   accent: "text-kicker-accent",
   faint: "text-kicker-faint",
   soft: "text-kicker-soft",
+  warning: "text-warning",
 };
 
-/** Forwards its ref to the rendered element so a roving grid can register a
- *  zero-widget header cell (the Tags label) as a roving cell and focus it. */
+/** Forwards its ref to the rendered element. */
 export const Kicker = forwardRef<HTMLElement, KickerProps>(function Kicker(
   { tone = "faint", as: Tag = "div", className = "", children, ...props },
   ref,

@@ -68,7 +68,7 @@ function _setup_analyzed_exposure(tmp::String;
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename=filename)
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename=filename)
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     (db = db, experiment_id = exp_id, sample_id = s_id,
      exposure_id = e_id, analysis_dir = analysis_dir)

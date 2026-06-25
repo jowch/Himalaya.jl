@@ -180,7 +180,7 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     // but the pending mutation is the CORPUS mutator, so ITS onSuccess
     // consumes that synth. Pin this cross-mutator handoff.
     const sample = {
-      id: 10, experiment_id: 1, name: "n", display_name: "D1", notes: null,
+      id: 10, experiment_id: 1, name: "D1", notes: null,
       q_units: "nm^-1",
       tags: [{ id: -1, key: "lipid", value: "DOPC", source: "manual" }],
     };
@@ -221,36 +221,36 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
 
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {
     const original = {
-      id: 5, experiment_id: 1, display_name: "S5", name: "old-id",
+      id: 5, experiment_id: 1, name: "old-name",
       notes: "old notes", tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     };
     qc.setQueryData(queryKeys.sample(5), original);
     qc.setQueryData(queryKeys.samples(1), [original]);
-    // SSE payload for update_sample is the diff; if only `display_name` was patched,
-    // `notes` and `name` are undefined in the synthesized response.
+    // SSE payload for update_sample is the diff; if only `name` was patched,
+    // `notes` is undefined in the synthesized response.
     const sseSynth = {
       event_id: 7,
       client_op_id: "op-update",
       analysis_inputs_hash: undefined,
-      display_name: "new display",
-      // notes: undefined, name: undefined  ← intentionally absent
+      name: "new name",
+      // notes: undefined  ← intentionally absent
     } as any;
     updateSampleMutator.onSuccess(
-      { sampleId: 5, experimentId: 1, display_name: "new display",
+      { sampleId: 5, experimentId: 1, name: "new name",
         username: "u", clientId: "c", clientOpId: "op-update" } as any,
       sseSynth,
       qc,
     );
     const single = qc.getQueryData<any>(queryKeys.sample(5));
-    // display_name updated; name/notes/tags preserved (NOT clobbered to undefined)
+    // name updated; notes/tags preserved (NOT clobbered to undefined)
     expect(single).toEqual({
-      id: 5, experiment_id: 1, display_name: "new display", name: "old-id",
+      id: 5, experiment_id: 1, name: "new name",
       notes: "old notes",
       tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });
     const list = qc.getQueryData<any[]>(queryKeys.samples(1));
     expect(list![0]).toEqual({
-      id: 5, experiment_id: 1, display_name: "new display", name: "old-id",
+      id: 5, experiment_id: 1, name: "new name",
       notes: "old notes",
       tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });

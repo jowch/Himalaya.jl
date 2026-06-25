@@ -9,7 +9,6 @@ describe("Zustand state — permalink slots", () => {
     // username so other tests don't fight unexpectedly).
     useAppState.setState({
       staleUrlContext: null,
-      resolving: false,
       activeExperimentId: undefined,
       activeSampleId: undefined,
       activeExposureId: undefined,
@@ -32,12 +31,6 @@ describe("Zustand state — permalink slots", () => {
     expect(useAppState.getState().staleUrlContext).toBeNull();
   });
 
-  it("setResolving toggles", () => {
-    expect(useAppState.getState().resolving).toBe(false);
-    useAppState.getState().setResolving(true);
-    expect(useAppState.getState().resolving).toBe(true);
-  });
-
   // I5.1 (#182): setActivePage is deleted with the dual-nav model; the
   // setActive{Experiment,Sample,Exposure} setters still clear staleUrlContext.
   it.each([
@@ -50,12 +43,6 @@ describe("Zustand state — permalink slots", () => {
     });
     fn(42);
     expect(useAppState.getState().staleUrlContext).toBeNull();
-  });
-
-  it("setActive* does NOT clear resolving", () => {
-    useAppState.getState().setResolving(true);
-    useAppState.getState().setActiveExperiment(5);
-    expect(useAppState.getState().resolving).toBe(true);
   });
 
   it("recoverFromStaleUrl row 1 (experiment): clears stale, opens modal at experiment step", () => {
@@ -106,25 +93,19 @@ describe("Zustand state — permalink slots", () => {
     expect(s.navModalStep).toBe("sample");
   });
 
-  it("staleUrlContext and resolving are NOT in the persisted slice", () => {
-    // Touch them, then read back the Zustand persist `partialize` output.
-    useAppState.getState().setResolving(true);
+  it("staleUrlContext is NOT in the persisted slice", () => {
     useAppState.getState().setStaleUrlContext({ kind: "unknown_path", raw: "/x" });
     const persisted = JSON.parse(localStorage.getItem("himalaya-ui:state") ?? "{}");
-    expect(persisted.state?.resolving).toBeUndefined();
     expect(persisted.state?.staleUrlContext).toBeUndefined();
   });
 
-  it("setStaleUnknownPath stores raw + clears resolving", () => {
-    useAppState.getState().setResolving(true);
+  it("setStaleUnknownPath stores raw", () => {
     useAppState.getState().setStaleUnknownPath("/foo/bar/baz");
     const s = useAppState.getState();
     expect(s.staleUrlContext).toEqual({ kind: "unknown_path", raw: "/foo/bar/baz" });
-    expect(s.resolving).toBe(false);
   });
 
-  it("setStaleNotFound commits 404 context atomically + clears resolving", () => {
-    useAppState.getState().setResolving(true);
+  it("setStaleNotFound commits 404 context atomically", () => {
     const ctx = {
       kind: "not_found" as const,
       missing: "sample" as const,
@@ -135,6 +116,5 @@ describe("Zustand state — permalink slots", () => {
     useAppState.getState().setStaleNotFound(ctx);
     const s = useAppState.getState();
     expect(s.staleUrlContext).toEqual(ctx);
-    expect(s.resolving).toBe(false);
   });
 });

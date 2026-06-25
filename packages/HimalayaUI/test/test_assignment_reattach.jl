@@ -41,8 +41,8 @@ function _fwipe_setup(tmp)
     db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     (db = db, e_id = e_id, analysis_dir = analysis_dir)
 end
@@ -114,7 +114,7 @@ function _fwipe_merge_setup(tmp, member_bases::Vector{Float64})
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp, "data"), analysis_dir=joinpath(tmp, "analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     DBInterface.execute(db,
         "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
     for b in member_bases
@@ -148,7 +148,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp, "data"), analysis_dir=joinpath(tmp, "analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+            e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
             q, I, σ = HimalayaUI.load_dat(_FWIPE_DAT)
             pr = Himalaya.findpeaks(q, I, σ)

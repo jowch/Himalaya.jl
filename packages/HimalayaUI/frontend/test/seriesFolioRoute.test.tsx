@@ -37,10 +37,10 @@ function renderAt(path: string) {
 }
 
 describe("/series routing", () => {
-  it("mounts SeriesFolioPage under the corpus shell", async () => {
+  it("mounts SeriesFolioPage under the unified app shell (T3.2)", async () => {
     renderAt("/series");
     expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
-    // proves it is under CorpusShell (the corpus topbar), not the legacy AppShell
-    expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
+    // T3.2: proves it is under the unified AppShell (TopNav), not the legacy CorpusShell
+    expect(screen.getByTestId("topnav")).toBeInTheDocument();
   });
 });

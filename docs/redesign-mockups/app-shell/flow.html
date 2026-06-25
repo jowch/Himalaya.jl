@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,serif;--font-mono:ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);font-family:var(--font-sans)}
+  #flow{width:1300px;background:var(--paper)}
+  .zone{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;fill:var(--ink-faint)}
+  .nt{font-size:13px;font-weight:600;fill:var(--ink)}
+  .ns{font-family:var(--font-mono);font-size:9.5px;fill:var(--ink-soft)}
+  .el{font-family:var(--font-mono);font-size:10px;fill:var(--ink-soft)}
+  .ela{font-family:var(--font-mono);font-size:10px;fill:var(--accent);font-weight:600}
+  .title{font-family:var(--font-serif);font-size:22px;fill:var(--ink)}
+  .cap{font-size:11px;fill:var(--ink-soft)}
+  .phase{font-family:var(--font-mono);font-size:10px;fill:var(--ink)}
+  .phb{font-weight:700;fill:var(--accent)}
+</style></head>
+<body>
+<svg id="flow" viewBox="0 0 1300 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--ink-soft)"/></marker>
+    <marker id="aha" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--accent)"/></marker>
+    <marker id="ahb" markerWidth="9" markerHeight="9" refX="1" refY="3" orient="auto"><path d="M7,0 L0,3 L7,6 Z" fill="var(--ink-soft)"/></marker>
+  </defs>
+
+  <text class="title" x="30" y="38">Screen flow &amp; states</text>
+  <text class="cap" x="30" y="56">Solid = primary forward · dashed = branch / back / secondary · accent = into Focus / series. Every screen also has a ‹ up-link + Esc (up one level).</text>
+
+  <text class="zone" x="30" y="92">Onboarding funnel — once per experiment</text>
+  <text class="zone" x="1120" y="92">Daily loop</text>
+  <text class="zone" x="30" y="384">Series — cross-experiment</text>
+
+  <!-- ===== EDGES ===== -->
+  <!-- open existing arc -->
+  <path d="M100,118 L100,100 L995,100 L995,112" fill="none" stroke="var(--ink-soft)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+  <rect x="430" y="93" width="200" height="14" fill="var(--paper)"/><text class="el" x="438" y="103">open an existing experiment</text>
+
+  <!-- spine -->
+  <line x1="170" y1="150" x2="196" y2="150" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="171" y="135" width="30" height="13" fill="var(--paper)"/><text class="ela" x="172" y="145">+ New</text>
+  <line x1="350" y1="150" x2="376" y2="150" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="332" y="134" width="66" height="26" fill="var(--paper)"/><text class="el" x="334" y="143">create ·</text><text class="el" x="334" y="155">index files</text>
+  <line x1="530" y1="150" x2="576" y2="150" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="528" y="134" width="56" height="26" fill="var(--paper)"/><text class="el" x="530" y="143">confirm ·</text><text class="el" x="530" y="155">parse</text>
+  <line x1="720" y1="150" x2="746" y2="150" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="700" y="135" width="46" height="13" fill="var(--paper)"/><text class="el" x="702" y="145">flags</text>
+  <line x1="900" y1="150" x2="916" y2="150" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="828" y="135" width="74" height="13" fill="var(--paper)"/><text class="el" x="830" y="145">resolved</text>
+
+  <!-- scanning -> clean -> corpus -->
+  <path d="M650,180 L650,205 L905,205 L905,190" fill="none" stroke="var(--ink-soft)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+  <rect x="715" y="199" width="120" height="13" fill="var(--paper)"/><text class="el" x="717" y="209">clean (no flags)</text>
+
+  <!-- scanning -> failed, retry -->
+  <line x1="650" y1="180" x2="650" y2="213" stroke="var(--ink-soft)" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text class="el" x="656" y="201">error</text>
+  <path d="M605,213 L605,182" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ah)"/>
+  <text class="el" x="572" y="201" transform="rotate(-90 572,201)">retry</text>
+
+  <!-- corpus -> config (edit later) bottom route -->
+  <path d="M965,190 L965,300 L455,300 L455,194" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ah)"/>
+  <rect x="660" y="294" width="120" height="13" fill="var(--paper)"/><text class="el" x="662" y="304">⚙ edit later → re-parse</text>
+
+  <!-- corpus <-> grouping banner -->
+  <path d="M918,172 L903,172" fill="none" stroke="var(--accent)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#aha)"/>
+  <rect x="812" y="176" width="92" height="13" fill="var(--paper)"/><text class="ela" x="814" y="186">review banner</text>
+
+  <!-- corpus -> focus / loupe, focus<->loupe -->
+  <line x1="1070" y1="140" x2="1116" y2="128" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#aha)"/>
+  <rect x="1078" y="120" width="40" height="13" fill="var(--paper)"/><text class="ela" x="1080" y="130">Enter</text>
+  <line x1="1070" y1="162" x2="1116" y2="194" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#aha)"/>
+  <rect x="1080" y="172" width="18" height="13" fill="var(--paper)"/><text class="ela" x="1082" y="182">L</text>
+  <line x1="1195" y1="158" x2="1195" y2="168" stroke="var(--ink-soft)" stroke-width="1.4" marker-start="url(#ahb)" marker-end="url(#ah)"/>
+  <text class="el" x="1205" y="166">L / Enter</text>
+
+  <!-- nav A <-> J -->
+  <line x1="70" y1="182" x2="70" y2="408" stroke="var(--ink-soft)" stroke-width="1.4" stroke-dasharray="4 3" marker-start="url(#ahb)" marker-end="url(#ah)"/>
+  <text class="el" x="58" y="300" transform="rotate(-90 58,300)">top nav: Experiments ⇄ Series</text>
+
+  <!-- corpus -> scoping (send to series) -->
+  <path d="M955,190 L955,345 L825,345 L825,408" fill="none" stroke="var(--accent)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#aha)"/>
+  <rect x="830" y="339" width="100" height="13" fill="var(--paper)"/><text class="ela" x="832" y="349">send to series</text>
+
+  <!-- series lane -->
+  <line x1="180" y1="440" x2="746" y2="440" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="420" y="426" width="110" height="13" fill="var(--paper)"/><text class="el" x="422" y="436">+ new series</text>
+  <line x1="900" y1="440" x2="916" y2="440" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="858" y="426" width="42" height="13" fill="var(--paper)"/><text class="el" x="860" y="436">build</text>
+  <path d="M995,470 L995,512 L110,512 L110,472" fill="none" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ah)"/>
+  <rect x="520" y="506" width="56" height="13" fill="var(--paper)"/><text class="el" x="522" y="516">saved</text>
+  <path d="M1070,424 L1285,424 L1285,130 L1272,130" fill="none" stroke="var(--accent)" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#aha)"/>
+  <text class="ela" x="1278" y="290" transform="rotate(-90 1278,290)">open a member → Focus</text>
+
+  <!-- notes -->
+  <g transform="translate(120,316)">
+    <text class="phase"><tspan class="phb">Two-phase ingest.</tspan> <tspan class="phb">①</tspan> New experiment INDEXES the directory (count, paths, patterns) → review on Configuration.</text>
+    <text class="phase" x="0" y="16"><tspan class="phb">②</tspan> Confirm → full PARSE (PRP, geometry, grouping) on the Scanning page; editing Configuration re-runs ②.</text>
+    <text class="phase" x="0" y="34"><tspan class="phb">Rescan.</tspan> Runs IN PLACE on Corpus: phase-1 check → additive phase-2 Δ; new flags → banner. Config change = gated.</text>
+    <text class="phase" x="0" y="52"><tspan class="phb">Lifecycle.</tspan> Cancel discards the draft pre-Approve (no row). After Approve: permanent — no cancel, no delete.</text>
+  </g>
+
+  <!-- creation boundary at the Approve gate -->
+  <line x1="555" y1="110" x2="555" y2="268" stroke="var(--accent)" stroke-width="1.1" stroke-dasharray="2 4"/>
+  <circle cx="555" cy="110" r="2.5" fill="var(--accent)"/>
+  <rect x="470" y="270" width="172" height="14" fill="var(--paper)"/>
+  <text class="ela" x="472" y="280">⟵ draft  ·  created here  ⟶</text>
+
+  <!-- ===== NODES ===== -->
+  <g><rect x="30" y="120" width="140" height="60" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="44" y="146">Experiments</text><text class="ns" x="44" y="164">gallery · home</text></g>
+  <g><rect x="200" y="120" width="150" height="60" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="214" y="146">New experiment</text><text class="ns" x="214" y="164">directory picker</text></g>
+  <g><rect x="380" y="116" width="150" height="78" rx="8" fill="var(--plate)" stroke="var(--accent)" stroke-width="1.3"/><text class="nt" x="394" y="140">Configuration</text><text class="ns" x="394" y="158">check: files · patterns</text><text class="ns" x="394" y="172">· geometry — confirm</text></g>
+  <g><rect x="580" y="120" width="140" height="60" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="594" y="146">Scanning…</text><text class="ns" x="594" y="164">full parse · unfold</text></g>
+  <g><rect x="580" y="213" width="140" height="48" rx="8" fill="var(--plate)" stroke="color-mix(in oklch,var(--warning) 45%,var(--hair-strong))"/><text class="nt" x="594" y="236">Scan failed</text><text class="ns" x="594" y="252">retry · fix sources</text></g>
+  <g><rect x="750" y="120" width="150" height="60" rx="8" fill="var(--plate)" stroke="color-mix(in oklch,var(--warning) 45%,var(--hair-strong))"/><text class="nt" x="764" y="146">Grouping review</text><text class="ns" x="764" y="164">Gradescope gate</text></g>
+  <g><rect x="920" y="112" width="150" height="78" rx="8" fill="var(--plate)" stroke="var(--accent)" stroke-width="1.4"/><text class="nt" x="934" y="138">Corpus</text><text class="ns" x="934" y="156">home base · sheet</text><text class="ns" x="934" y="172">banner · ↻ rescan</text></g>
+  <g><rect x="1120" y="104" width="150" height="52" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="1134" y="128">Focus</text><text class="ns" x="1134" y="145">index the trace</text></g>
+  <g><rect x="1120" y="170" width="150" height="52" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="1134" y="194">Loupe</text><text class="ns" x="1134" y="211">cull frames</text></g>
+  <g><rect x="30" y="410" width="150" height="60" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="44" y="436">Series folio</text><text class="ns" x="44" y="454">all series</text></g>
+  <g><rect x="750" y="410" width="150" height="60" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="764" y="436">Series scoping</text><text class="ns" x="764" y="454">scope + values</text></g>
+  <g><rect x="920" y="410" width="150" height="60" rx="8" fill="var(--plate)" stroke="var(--hair-strong)"/><text class="nt" x="934" y="436">Series builder</text><text class="ns" x="934" y="454">recipe + overlay</text></g>
+
+  <!-- legend -->
+  <g transform="translate(1090,400)">
+    <rect x="0" y="0" width="190" height="92" rx="7" fill="var(--paper-sunk)" stroke="var(--hair-strong)"/>
+    <text class="el" x="12" y="20" style="font-weight:700;fill:var(--ink)">Legend</text>
+    <line x1="12" y1="36" x2="40" y2="36" stroke="var(--ink-soft)" stroke-width="1.6" marker-end="url(#ah)"/><text class="el" x="48" y="40">primary path</text>
+    <line x1="12" y1="56" x2="40" y2="56" stroke="var(--ink-soft)" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#ah)"/><text class="el" x="48" y="60">branch / back</text>
+    <line x1="12" y1="76" x2="40" y2="76" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#aha)"/><text class="ela" x="48" y="80">into Focus / series</text>
+  </g>
+</svg>
+</body></html>

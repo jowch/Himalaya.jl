@@ -35,7 +35,7 @@ clean:
 # (the GROUPS const). This convenience runner is NOT cross-checked against it;
 # the authoritative serial path (GROUP=All) is drift-guarded in runtests.jl. If
 # you add/rename a bucket there, update this line too or it won't run in parallel.
-GROUPS := db pipeline routes events wire
+GROUPS := db pipeline routes events wire migration
 test-parallel:
 	@mkdir -p build
 	@echo "Running $(words $(GROUPS)) groups in parallel..."

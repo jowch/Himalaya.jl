@@ -5,9 +5,13 @@ export interface User {
   last_name: string | null;
 }
 
+export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
+export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
+
 export interface Experiment {
   id: number;
   name: string | null;
+  description: string | null;     // Phase E1 additive column (Task 1c migration)
   path: string;
   data_dir: string;
   analysis_dir: string;
@@ -19,6 +23,25 @@ export interface Experiment {
   pixel_size_um: number | null;
   energy_kev: number | null;
   flight_path_m: number | null;
+  // Phase A typed-geometry per-field provenance + scan bookkeeping.
+  energy_kev_source: GeometrySource;
+  flight_path_m_source: GeometrySource;
+  beam_center_x_source: GeometrySource;
+  beam_center_y_source: GeometrySource;
+  pixel_size_um_source: GeometrySource;
+  q_units_source: GeometrySource;
+  last_scanned_at: string | null;
+  scan_signature: string | null;
+  ingest_status: IngestStatus;
+  // Phase E1 additive columns: editable file-pattern globs (Task 1c migration).
+  // NULL = use legacy experiment.toml fallback.
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
+  // Roll-up counts returned by both list and detail endpoints.
+  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null };
+  // Count of samples with a pending grouping flag (list endpoint only; absent on detail).
+  review_count?: number;
 }
 
 export interface SampleTag {
@@ -31,10 +54,56 @@ export interface SampleTag {
 export interface Sample {
   id: number;
   experiment_id: number;
-  name: string | null;
-  display_name: string | null;
+  name: string;            // non-null after the collapse (was `string | null` + `display_name`)
   notes: string | null;
   tags: SampleTag[];
+}
+
+/** A merge/split discrepancy flag the auto-grouper raised on a slot (spec §8.8).
+ *  `null` when the slot is clean. The structural-edit dismissal arm
+ *  (`grouping_flag_dismissed`, Phase D) clears it. */
+export type GroupingFlag =
+  | { kind: "merge"; merge_with_sample_id: number; merge_with_label: string }
+  // `split_at_index` is 1-BASED (grouping.jl): the exposure where the position
+  // jump lands. Consumers split BEFORE it → 0-based `split_at_index - 1`.
+  | { kind: "split"; split_at_index: number; jump_from: number; jump_to: number }
+  | null;
+
+/** One exposure leaf under a load's sample slot. */
+export interface LoadExposure {
+  id: number;
+  filename: string;
+  horizontal_position: number | null;
+  timestamp: string | null;
+}
+
+/** One sample slot inside a load (a (load, slot) coordinate). `name_source`/
+ *  `grouping_source` are provenance tags ("user" | "computed" | …);
+ *  `merged_into_id` is non-null when this slot was merged into a sibling. */
+export interface LoadSample {
+  sample_id: number;
+  name: string;
+  slot_index: number;
+  grouping_source: string;
+  name_source: string;
+  merged_into_id: number | null;
+  flag: GroupingFlag;
+  exposures: LoadExposure[];
+}
+
+/** One rack-load roll-up (Phase A `loads` table), returned NESTED by
+ *  `GET /api/experiments/:id/loads` (see Task 2): Load ▸ Sample ▸ Exposures.
+ *  Drives E2's LoadFold/SampleFold/ExposureLeaf + the grouping-review count
+ *  (samples whose `flag` is non-null). */
+export interface Load {
+  load_id: number;
+  load_index: number;
+  session_id: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  frame_count: number;
+  note: string | null;
+  samples: LoadSample[];
 }
 
 // Corpus samples carry q_units (resolved from the owning experiment's
@@ -115,23 +184,166 @@ export const createUser = (
   opts?: AuthOpts,
 ) => request<User>("POST", "/api/users", { username, ...fields }, opts);
 
+/** Canonical PATCH body for `PATCH /api/experiments/:id`. **E1 DEFINES,
+ *  E2 IMPORTS — never redefine.** All fields are optional; the backend
+ *  writes what is present:
+ *  - name/description: plain writes, NO *_source stamp, NO rescan.
+ *  - Geometry ×6: each field written + *_source stamped 'user' server-side
+ *    (already built in Phase C — this widens the same route).
+ *  - File patterns ×3: plain write + scan_signature invalidated server-side
+ *    so the next scan re-discovers with the new glob.
+ *  - data_dir/analysis_dir/path are READ-ONLY (400 if sent). */
+export interface ExperimentPatch {
+  name?: string;
+  description?: string | null;
+  energy_kev?: number;
+  flight_path_m?: number;
+  beam_center_x?: number;
+  beam_center_y?: number;
+  pixel_size_um?: number;
+  q_units?: string;
+  image_pattern?: string;
+  metadata_pattern?: string;
+  integration_pattern?: string;
+}
+
 // Experiments
 export const listExperiments = () =>
   request<Experiment[]>("GET", "/api/experiments");
 export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
+
 export const updateExperiment = (
   id: number,
-  patch: Record<string, never>,
+  patch: ExperimentPatch,
   opts?: AuthOpts,
 ) => request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
+
+/** Create-from-directory (spec §9.2). Returns the new experiment id
+ *  immediately; the first scan runs async with progress over SSE. */
+export interface CreateExperimentBody {
+  /** Legacy single-path field (= data_dir). Optional now that the funnel sends
+   *  explicit data_dir/analysis_dir/name confirmed by the user in Configuration. */
+  path?: string;
+  data_dir?: string;
+  analysis_dir?: string;
+  name?: string;
+  patterns?: { image?: string; metadata?: string; integration?: string };
+  /** First-run geometry, committed at create. The funnel preview already derived
+   *  geometry (with the confirmed setup file), so Approve sends the WHOLE thing —
+   *  each value with its honest source ('setup'/'prp'/'computed', or 'user' for a
+   *  manual edit). Persisted verbatim; the scan only fills fields left unset, so
+   *  geometry is derived once. A value with no source defaults to 'user'. */
+  geometry?: {
+    beam_center_x?: number; beam_center_x_source?: string;
+    beam_center_y?: number; beam_center_y_source?: string;
+    flight_path_m?: number; flight_path_m_source?: string;
+    pixel_size_um?: number; pixel_size_um_source?: string;
+    energy_kev?: number;    energy_kev_source?: string;
+  };
+}
+export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
+  request<Experiment>("POST", "/api/experiments", body, opts);
+
+export const deleteExperiment = (id: number, opts?: AuthOpts) =>
+  request<void>("DELETE", `/api/experiments/${id}`, undefined, opts);
+
+/** Rescan: cheap change-check then additive ingest of new files. Idempotent.
+ *  Pass `force = true` to bypass the cheap change-check and always run a full
+ *  scan — used when a pattern field edit changes what files are discovered. */
+export const triggerScan = (id: number, opts?: AuthOpts, force = false) =>
+  request<Experiment>("POST", `/api/experiments/${id}/scan`, { force }, opts);
+
+/** The Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface
+ *  (spec §9.2 — a dedicated endpoint, distinct from the flat corpus samples). */
+export const listLoads = (id: number) =>
+  request<Load[]>("GET", `/api/experiments/${id}/loads`);
+
+/** Directory-picker path autocomplete (spec §9.2, read-only). */
+export interface PathSuggestResponse { suggestions: string[] }
+export const suggestPaths = (prefix: string) =>
+  request<PathSuggestResponse>(
+    "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+
+/** Structural experiment-layout resolver (funnel resolution). Given the picked
+ *  experiment ROOT, returns auto-discovered defaults the user corrects in
+ *  Configuration. `analysis_dir`/`setup_file` are null when nothing matched;
+ *  `setup_ambiguous` flags none/multiple setup files (the geometry source). */
+export interface ResolveLayoutResponse {
+  name: string;
+  data_dir: string;
+  analysis_dir: string | null;
+  setup_file: string | null;
+  setup_ambiguous: boolean;
+  /** Suggested file patterns when a known integration layout is detected (e.g.
+   *  the SSRL tot_files convention → `{name}_0_001.tif` / `{name}_tot.dat`).
+   *  Null when undetected — the funnel falls back to its `{name}.*` defaults. */
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
+}
+export const resolveLayout = (path: string) =>
+  request<ResolveLayoutResponse>(
+    "GET", `/api/fs/resolve?path=${encodeURIComponent(path)}`);
+
+/** Phase-1 manifest for the Configuration first-run step (spec §6.5).
+ *  `GET /api/fs/manifest` with query params derived from the draft path +
+ *  optional glob overrides. Returns per-type matched counts and the list of
+ *  unmatched files so the user can tune patterns before creating the
+ *  experiment. `patterns` keys are optional — omitting them lets the backend
+ *  use its defaults. */
+export interface ManifestUnmatched { file: string; miss: string; near?: string }
+export interface ManifestGeometry {
+  energy_kev: number | null; energy_kev_source: string;
+  flight_path_m: number | null; flight_path_m_source: string;
+  beam_center_x: number | null; beam_center_x_source: string;
+  beam_center_y: number | null; beam_center_y_source: string;
+  pixel_size_um: number | null; pixel_size_um_source: string;
+}
+export interface ManifestDiscrepancy { field: string; message: string }
+export interface ManifestResponse {
+  total: number;
+  matched: { image: number; metadata: number; integration: number };
+  unmatched: ManifestUnmatched[];
+  geometry?: ManifestGeometry;
+  discrepancies?: ManifestDiscrepancy[];
+  matched_files?: string[];
+}
+export const fetchManifest = (
+  path: string,
+  patterns: { image?: string; metadata?: string; integration?: string } = {},
+  setupFile?: string,
+  analysisDir?: string,
+): Promise<ManifestResponse> => {
+  const params = new URLSearchParams({ path });
+  if (setupFile)            params.set("setup_file",          setupFile);
+  // Integration (.dat) is matched against the analysis subtree, mirroring the
+  // real scan — so the preview's integration count reflects where .dat lives.
+  if (analysisDir)          params.set("analysis_dir",        analysisDir);
+  if (patterns.image)       params.set("image_pattern",       patterns.image);
+  if (patterns.metadata)    params.set("metadata_pattern",    patterns.metadata);
+  if (patterns.integration) params.set("integration_pattern", patterns.integration);
+  return request<ManifestResponse>("GET", `/api/fs/manifest?${params.toString()}`);
+};
+
+/** Directory-picker validate-path probe (spec §9.2). `matched`/`scanned` drive
+ *  the validation line; `ok=false` + `message` powers the failed-scan preview. */
+export interface ValidatePathResponse {
+  ok: boolean;
+  matched: number;
+  scanned: number;
+  message: string | null;
+}
+export const validatePath = (path: string) =>
+  request<ValidatePathResponse>(
+    "GET", `/api/fs/validate?path=${encodeURIComponent(path)}`);
 
 // Samples
 export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
 export const listCorpusSamples = (): Promise<CorpusSample[]> =>
   request<CorpusSample[]>("GET", "/api/samples");
-export const updateSample   = (id: number, patch: { display_name?: string; notes?: string }, opts?: AuthOpts) =>
+export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
 export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
   request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
@@ -139,6 +351,34 @@ export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);
 export const editSampleTag = (id: number, tag_id: number, patch: { key?: string; value?: string }, opts?: AuthOpts) =>
   request<SampleTag>("PATCH", `/api/samples/${id}/tags/${tag_id}`, patch, opts);
+
+// Structural sample/exposure edits (Phase E2 grouping-review surface)
+export const renameSample = (id: number, name: string, opts?: AuthOpts): Promise<Sample> =>
+  request<Sample>("PATCH", `/api/samples/${id}/name`, { name }, opts);
+
+export const moveExposure = (exposureId: number, sampleId: number, opts?: AuthOpts): Promise<Exposure> =>
+  request<Exposure>("POST", `/api/exposures/${exposureId}/move`, { sample_id: sampleId }, opts);
+
+export interface MergeSamplesResponse { loser_id: number; survivor_id: number }
+export const mergeSamples = (loserId: number, survivorId: number, opts?: AuthOpts): Promise<MergeSamplesResponse> =>
+  request<MergeSamplesResponse>("POST", `/api/samples/${loserId}/merge`, { survivor_id: survivorId }, opts);
+
+export interface SplitSampleResponse { new_sample_id: number }
+export const splitSample = (sampleId: number, exposureIds: number[], name: string, opts?: AuthOpts): Promise<SplitSampleResponse> =>
+  request<SplitSampleResponse>("POST", `/api/samples/${sampleId}/split`, { exposure_ids: exposureIds, name }, opts);
+
+/** "Keep separate" — durable dismissal of a backend-produced grouping flag
+ *  (spec §9.3: grouping_flag_dismissed; suppressed in get_loads_rollup, so it
+ *  stays gone across rescans). */
+export interface DismissGroupingFlagBody { flag_kind: "merge" | "split"; merge_with_sample_id?: number }
+export const dismissGroupingFlag = (sampleId: number, body: DismissGroupingFlagBody, opts?: AuthOpts): Promise<void> =>
+  request<void>("POST", `/api/samples/${sampleId}/dismiss-flag`, body, opts);
+
+/** Undo a previous dismissal — re-shows the flag so the sample re-enters
+ *  "Needs review". The backend route is POST /api/samples/:id/dismiss-flag/undo.
+ *  Symmetric inverse of dismissGroupingFlag (re-show ↔ suppress). */
+export const undoDismissGroupingFlag = (sampleId: number, opts?: AuthOpts): Promise<void> =>
+  request<void>("POST", `/api/samples/${sampleId}/dismiss-flag/undo`, {}, opts);
 
 // Exposures
 export interface ExposureTag {
@@ -413,9 +653,6 @@ export interface SampleMessage {
   created_at: string;
 }
 
-export const listSampleMessages = (sample_id: number) =>
-  request<SampleMessage[]>("GET", `/api/samples/${sample_id}/messages`);
-
 export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOpts) =>
   request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
 
@@ -566,7 +803,7 @@ export const batchSampleTags = (
 //
 // Queue-side scaffolding (#198) + the folio read layer (#173 / I3.3): the
 // listing summary type `SeriesSummary` and the read fetchers
-// (listSeries / getSeries / forksOfSeries) below back the read hooks
+// (listSeries / getSeries) below back the read hooks
 // useSeriesList / useSeries in queries.ts. See the Decision Record in
 // docs/event-log.md.
 // Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
@@ -605,7 +842,7 @@ export interface SeriesSummary {
   /** Recipe ordering variable (e.g. "LL37 : lipid ratio"); null until scoped. */
   ordering_variable: string | null;
   /** True when the members resolve to >1 distinct `samples.experiment_id`.
-   *  Valid because q is absolute (Å⁻¹) — series may legitimately span beamtimes. */
+   *  Valid because q is absolute (Å⁻¹) — series may legitimately span experiments. */
   spans_experiments: boolean;
   /** Beamtime provenance: the members' single experiment's `name` when the
    *  series does NOT span experiments; null when spanning, memberless, or the single experiment has no name. */
@@ -784,10 +1021,6 @@ export const listSeries = () =>
 /** Full nested detail for one series (#175 builder reuses this). */
 export const getSeries = (id: number) =>
   request<Series>("GET", `/api/series/${id}`);
-
-/** Forks of one series — same SeriesSummary[] shape as the listing. */
-export const forksOfSeries = (id: number) =>
-  request<SeriesSummary[]>("GET", `/api/series/${id}/forks`);
 
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 

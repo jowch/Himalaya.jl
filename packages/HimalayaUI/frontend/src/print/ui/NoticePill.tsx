@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type NoticePillTone = "new" | "draft";
+export type NoticePillTone = "new" | "draft" | "success" | "warning" | "scanning";
 
 interface NoticePillProps {
   tone: NoticePillTone;
@@ -43,6 +43,60 @@ export function NoticePill({
           letterSpacing: "0.03em",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-accent) 14%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  if (tone === "success") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="success"
+        className={cx(baseClasses, "text-success border border-success", className)}
+        style={{
+          fontSize: "10px",
+          letterSpacing: "0.03em",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-success) 10%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  if (tone === "warning") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="warning"
+        className={cx(baseClasses, "text-warning border border-warning", className)}
+        style={{
+          fontSize: "10px",
+          letterSpacing: "0.03em",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-warning) 10%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  if (tone === "scanning") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="scanning"
+        className={cx(baseClasses, "text-print-accent border border-accent", className)}
+        style={{
+          fontSize: "10px",
+          letterSpacing: "0.03em",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-accent) 10%, transparent)",
         }}
       >
         {children}

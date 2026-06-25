@@ -13,11 +13,11 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
-| App shell + routing | `print/shell/` | `CorpusShell`, `CorpusTopbar`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
+| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector,comb,export}/` (and `print/waterfall/`) | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder). The `lint:design` appearance guard excludes `print/{plot,detector,comb,export}/` only — `print/waterfall/` is NOT exempt |
-| Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `CorpusShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
+| Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `AppShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
 | Hooks | `hooks/` | `useFocusTrap`, `useGlobalShortcuts`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
@@ -76,7 +76,7 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,export}/` render-layer prefixes, `print/main.tsx`). Note `print/waterfall/` is NOT among the exempt prefixes — its appearance (line colour, bead glyphs, axis strokes) lives inside the already-exempt `print/plot/` layer it composes, so a raw SVG colour literal surfacing in `print/waterfall/` must move into `print/plot/` or become a `--color-*` token. Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: `docs/design-system.html`; full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,export}/` render-layer prefixes, `print/main.tsx`). Note `print/waterfall/` is NOT among the exempt prefixes — its appearance (line colour, bead glyphs, axis strokes) lives inside the already-exempt `print/plot/` layer it composes, so a raw SVG colour literal surfacing in `print/waterfall/` must move into `print/plot/` or become a `--color-*` token. Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: Storybook (`npm run storybook`); full system: root `DESIGN.md`.
 
 `check-design.mjs` also enforces a **`no-legacy-import` rule** (`scanLegacyImports`) alongside the appearance guard: it fails the build if any `src/print/**` file relatively imports from top-level `src/components/**` or `src/pages/**`. Those legacy dirs are gone post-cutover, so the rule now functions as a regression tripwire against re-introducing the retired tree.
 
@@ -104,18 +104,9 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See `docs/contract-testing.md` for canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
 
-## SA-ROVING data grid (contact sheet)
+## Samples contact sheet (`SheetTable`)
 
-The samples contact sheet (`SheetTable`) is an APG roving-tabindex grid. Three-layer split:
-
-- **Pure reducer** `src/lib/grid/rovingGrid.ts` (`nextGridCoord`) — coordinate math, no React.
-- **Hook + provider** `src/lib/grid/useRovingGrid.ts` (`useRovingGrid` / `RovingGridProvider`). The context default is **INERT** (`tabIndexFor` returns `undefined`, `registerCellEl` is a no-op) so a non-roving `SheetTable` carries zero grid behaviour until a `roving` boolean prop opts in.
-- **Wiring** `SheetTable.tsx` via the `roving?: boolean` prop.
-
-Load-bearing details:
-- **SSE focus-yank guard.** The hook only calls `focus()` when a `wantFocus` ref is set — and it is set *only* by user-driven coord changes (keydown / `requestActivate` / enter/exit interaction), consumed in a `useLayoutEffect`. A foreign SSE re-render must never steal focus. (Same discipline as the `RepresentativeBox` switch.)
-- **Interaction mode** for multi-widget cells: `INTERACTION_COLS = new Set([2, 4])` (Exposures/`ThumbnailGallery`, Tags/`TagList`). Enter or F2 enters interaction mode (focus the first inner widget, arrows rove within, Escape returns to the gridcell in navigation mode).
-- **jsdom can't honestly test the multi-listener focus path** — the e2e spec (real Chrome) is the gate, not the Vitest unit tests (see the jsdom-dispatch false-green gotcha: a microtask checkpoint between listeners lets React unmount mid-dispatch).
+`SheetTable` renders a plain `<table>` (`role="table"`, body cells `role="cell"`). The data-grid keyboard system (`src/lib/grid/`) was removed in the ingestion-redesign branch (T2.2); keyboard navigation is now owned at the page level.
 
 ## Anti-patterns
 

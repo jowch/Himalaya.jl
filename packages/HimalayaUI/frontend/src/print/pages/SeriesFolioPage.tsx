@@ -205,7 +205,7 @@ export function SeriesFolioPage(): JSX.Element {
   // FOL P2-3: the controls live in the URL (the house permalink convention —
   // ?q=&filter=&sort=, defaults absent), so reload/share keeps the view.
   // Writes use replace, not push: a keystroke must not become a history entry
-  // (same reason SamplesPage's beamtime select doesn't spam Back).
+  // (same reason SamplesPage's experiment filter doesn't spam Back).
   const [searchParams, setSearchParams] = useSearchParams();
   const controls = useMemo(
     () => folioControlsFromParams(searchParams),
@@ -285,7 +285,7 @@ export function SeriesFolioPage(): JSX.Element {
       <FolioHeader
         kicker="Folio"
         title="Saved series"
-        subtitle="Every comparison you've built, across all beamtimes. Pick one up where you left off, or select samples on the contact sheet to start a new one."
+        subtitle="Every comparison you've built, across all experiments. Pick one up where you left off, or select samples on the contact sheet to start a new one."
         count={listQ.isLoading ? null : summaries.length}
         countLabel="series in the folio"
         className="mb-5"
@@ -388,7 +388,7 @@ export function SeriesFolioPage(): JSX.Element {
                 title="No series yet"
                 body="The folio holds every comparison you save. New series start from samples selected on the contact sheet."
                 action={
-                  <Button variant="outline" onClick={() => navigate("/samples")}>
+                  <Button variant="outline" onClick={() => navigate("/experiments")}>
                     Open the contact sheet
                   </Button>
                 }

@@ -7,6 +7,34 @@ const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
+# Sentinel marker names for the ingestion-redesign Phase A schema migrations.
+const MIGRATION_LOADS_TABLE             = "loads_table_v1"
+const MIGRATION_EXPOSURES_EXPERIMENT_ID = "exposures_experiment_id_v1"
+const MIGRATION_EXPERIMENTS_GEOMETRY    = "experiments_geometry_v1"
+const MIGRATION_SAMPLES_NAME_COLLAPSE   = "samples_name_collapse_v1"
+
+# Sentinel marker name for the ingestion-redesign Phase D merged_into_id column.
+const MIGRATION_SAMPLES_MERGED_INTO = "samples_merged_into_v1"
+
+# Sentinel marker name for the ingestion-redesign Phase E1 editable config columns.
+const MIGRATION_EXPERIMENTS_CONFIG_COLS = "experiments_config_cols_v1"
+
+# Sentinel marker name for the session_id backfill on existing loads.
+const MIGRATION_LOAD_SESSIONS_BACKFILL = "load_sessions_backfill_v1"
+
+# Sentinel helpers (ingestion redesign): gate-read and marker-write for the
+# `schema_migrations` table. Mirrors the inlined pattern in
+# `migrate_assignments!` / `migrate_comparisons_to_series!`.
+_migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
+    "SELECT 1 FROM schema_migrations WHERE name = ?", [name])))
+_record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db,
+    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", [name, comparison_now_iso()])
+
+# Column names of a table — lets ADD COLUMN migrations stay idempotent on a
+# partially-migrated DB by skipping columns that already exist.
+cols_of(db, table) = String.(getproperty.(Tables.rowtable(
+    DBInterface.execute(db, "PRAGMA table_info($table)")), :name))
+
 const SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
@@ -24,9 +52,38 @@ CREATE TABLE IF NOT EXISTS experiments (
     manifest_path   TEXT,
     config          TEXT,
     experiment_type TEXT,
+    image_pattern        TEXT,
+    metadata_pattern     TEXT,
+    integration_pattern  TEXT,
     energy_kev      REAL,
     flight_path_m   REAL,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    energy_kev_source        TEXT DEFAULT 'default',
+    flight_path_m_source     TEXT DEFAULT 'default',
+    beam_center_x            REAL,
+    beam_center_x_source     TEXT DEFAULT 'default',
+    beam_center_y            REAL,
+    beam_center_y_source     TEXT DEFAULT 'default',
+    pixel_size_um            REAL,
+    pixel_size_um_source     TEXT DEFAULT 'default',
+    q_units                  TEXT,
+    q_units_source           TEXT DEFAULT 'default',
+    last_scanned_at          TEXT,
+    scan_signature           TEXT,
+    ingest_status            TEXT DEFAULT 'idle',
+    last_scan_tier           TEXT DEFAULT 'fast',
+    consecutive_empty_ticks  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS loads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id INTEGER NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+    load_index    INTEGER NOT NULL,
+    session_id    INTEGER,
+    start_time    TEXT,
+    end_time      TEXT,
+    frame_count   INTEGER NOT NULL DEFAULT 0,
+    note          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS samples (
@@ -34,7 +91,11 @@ CREATE TABLE IF NOT EXISTS samples (
     experiment_id INTEGER REFERENCES experiments(id),
     name          TEXT,
     display_name  TEXT,
-    notes         TEXT
+    notes         TEXT,
+    load_id          INTEGER REFERENCES loads(id),
+    slot_index       INTEGER,
+    grouping_source  TEXT DEFAULT 'auto_position',
+    name_source      TEXT DEFAULT 'auto'
 );
 
 CREATE TABLE IF NOT EXISTS sample_tags (
@@ -54,7 +115,16 @@ CREATE TABLE IF NOT EXISTS exposures (
     status               TEXT CHECK (status IN ('accepted', 'rejected')),
     image_path           TEXT,
     trace_hash           TEXT,
-    analysis_inputs_hash TEXT
+    analysis_inputs_hash TEXT,
+    experiment_id        INTEGER REFERENCES experiments(id) ON DELETE CASCADE,
+    prp_path             TEXT,
+    timestamp            TEXT,
+    exposure_time        REAL,
+    horizontal_position  REAL,
+    scan_id              INTEGER,
+    frame_no             INTEGER,
+    load_id              INTEGER REFERENCES loads(id),
+    content_fingerprint  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -418,6 +488,313 @@ function migrate_schema!(db::SQLite.DB)
     # longer load-bearing at runtime since `experiments.config` is the
     # source of truth for `analyze_exposure!`.
     migrate_experiment_config_label_to_name!(db)
+
+    # Ingestion redesign (Phase A): additive schema scaffolding. Sentinel-gated
+    # stubs for now — later tasks fill in the real DDL. Run AFTER
+    # migrate_samples_naming!, in dependency order:
+    # loads → exposures denorm → experiments geometry → samples collapse.
+    migrate_loads_table!(db)
+    migrate_exposures_experiment_id!(db)
+    migrate_experiments_geometry!(db)
+    migrate_samples_name_collapse!(db)
+
+    # Ingestion redesign (Phase D): nullable merged_into_id on samples for
+    # soft-retire on merge (spec §9.3). Run AFTER migrate_samples_name_collapse!
+    # so the samples table is fully settled before this column is added.
+    migrate_samples_merged_into!(db)
+
+    # Ingestion redesign (Phase E1): editable config columns on experiments
+    # (description + 3 pattern fields). Additive; no dependency on Phase D.
+    migrate_experiments_config_cols!(db)
+
+    # Session-id backfill: assign macro-session indices to all existing loads whose
+    # session_id is NULL. Run AFTER migrate_loads_table! (the loads table must exist).
+    backfill_load_sessions!(db)
+end
+
+# ── Ingestion redesign Phase A migrations ───────────────────────────────────
+# Sentinel-gated stubs (Task 1). Later tasks replace the bodies with real DDL;
+# each is idempotent via its `schema_migrations` sentinel.
+
+function migrate_loads_table!(db::SQLite.DB)
+    _migrated(db, MIGRATION_LOADS_TABLE) && return nothing
+    SQLite.transaction(db) do
+        DBInterface.execute(db, """
+            CREATE TABLE IF NOT EXISTS loads (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+                load_index   INTEGER NOT NULL,
+                session_id   INTEGER,
+                start_time   TEXT,
+                end_time     TEXT,
+                frame_count  INTEGER NOT NULL DEFAULT 0,
+                note         TEXT
+            )
+        """)
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS loads_experiment_idx ON loads(experiment_id)")
+        _record_migration!(db, MIGRATION_LOADS_TABLE)
+    end
+end
+
+function migrate_exposures_experiment_id!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_EXPERIMENT_ID) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        adds = [
+            ("experiment_id", "INTEGER REFERENCES experiments(id) ON DELETE CASCADE"),
+            ("prp_path", "TEXT"), ("timestamp", "TEXT"), ("exposure_time", "REAL"),
+            ("horizontal_position", "REAL"), ("scan_id", "INTEGER"),
+            ("frame_no", "INTEGER"), ("load_id", "INTEGER REFERENCES loads(id)"),
+            ("content_fingerprint", "TEXT"),
+        ]
+        for (name, decl) in adds
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE exposures ADD COLUMN $name $decl")
+        end
+
+        # backfill experiment_id from the samples JOIN (sample_id may be NULL on some rows)
+        DBInterface.execute(db, """
+            UPDATE exposures
+               SET experiment_id = (SELECT s.experiment_id FROM samples s WHERE s.id = exposures.sample_id)
+             WHERE experiment_id IS NULL AND sample_id IS NOT NULL
+        """)
+
+        # FAIL-FAST: any exposure with no derivable experiment_id is a data error (spec §10 / P1-5)
+        orphans = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, filename FROM exposures WHERE experiment_id IS NULL"))
+        isempty(orphans) || error(
+            "migrate_exposures_experiment_id!: $(length(orphans)) exposures have no derivable " *
+            "experiment_id (orphaned sample_id). Resolve manually before migrating. ids: " *
+            join(getproperty.(orphans, :id), ", "))
+
+        # PREFLIGHT (dedupe-then-enforce, spec §10): the new key is (experiment_id, filename).
+        # Collisions that were legal under the old (sample_id, filename) key would otherwise
+        # make the CREATE UNIQUE INDEX below throw SQLite's terse "UNIQUE constraint failed"
+        # on every open_db. Resolve them in two ways:
+        #   * A group whose rows share EXACTLY ONE non-NULL image_path (np == 1) is a proven
+        #     redundant duplicate (the real-data case: same physical frame re-attached under
+        #     two samples). Keep one survivor and DELETE the rest (+ their FK children) — safe.
+        #   * Any other group cannot be proven redundant, so we fail loudly rather than risk
+        #     deleting real data. Two cases (both absent in real data, both fail the proof):
+        #       - np > 1: rows span DISTINCT image_paths — genuinely-distinct files.
+        #       - np == 0: ALL image_paths NULL — no evidence the rows are the same frame, so
+        #         a silent delete could drop a distinct exposure. (np counts only non-NULLs.)
+        # filename IS NOT NULL: a UNIQUE index treats multiple NULLs as distinct, so NULL
+        # filenames are not collisions and must be excluded from the GROUP BY.
+        dupes = Tables.rowtable(DBInterface.execute(db, """
+            SELECT experiment_id, filename,
+                   COUNT(*) AS n, COUNT(DISTINCT image_path) AS np
+              FROM exposures
+             WHERE filename IS NOT NULL
+             GROUP BY experiment_id, filename HAVING n > 1
+        """))
+
+        # Dedup only groups proven redundant by a single shared non-NULL image_path (np == 1).
+        unproven = filter(d -> d.np != 1, dupes)
+        isempty(unproven) || error(
+            "migrate_exposures_experiment_id!: $(length(unproven)) (experiment_id, filename) groups " *
+            "have duplicate exposures that cannot be proven redundant (DISTINCT image_paths, or " *
+            "all image_paths NULL) — legal under the old (sample_id, filename) key. Manual merge " *
+            "required before the unique index can be enforced. groups: " *
+            join(["(exp=$(d.experiment_id), $(d.filename))" for d in unproven], ", "))
+
+        # Same-image_path collisions: pick a survivor per group and delete the rest.
+        # Survivor = analyzed-first (trace_hash present), lowest-id tiebreak.
+        nonsurvivors = Int[]
+        for d in dupes  # only np==1 (proven-redundant) groups remain (the rest errored above)
+            rows = Tables.rowtable(DBInterface.execute(db, """
+                SELECT id FROM exposures
+                 WHERE experiment_id IS ? AND filename = ?
+                 ORDER BY (trace_hash IS NULL), id
+            """, [d.experiment_id, d.filename]))
+            append!(nonsurvivors, Int.(getproperty.(rows[2:end], :id)))  # all but the survivor
+        end
+
+        if !isempty(nonsurvivors)
+            # Delete the non-survivors' FK children in strict child→parent order, scoped to
+            # the non-survivor id set, BEFORE the exposure rows. FK enforcement is ON inside
+            # this transaction (earlier migrations leave PRAGMA foreign_keys=ON and the pragma
+            # cannot change inside an open transaction), so this order is load-bearing.
+            # Mirrors the canonical delete order in routes_experiments.jl.
+            idset = join(nonsurvivors, ", ")  # internal integer ids — safe to interpolate
+            # grandchildren first: index_peaks / index_group_members via indices JOIN exposures
+            DBInterface.execute(db, """
+                DELETE FROM index_peaks WHERE index_id IN
+                  (SELECT id FROM indices WHERE exposure_id IN ($idset))""")
+            DBInterface.execute(db, """
+                DELETE FROM index_group_members WHERE index_id IN
+                  (SELECT id FROM indices WHERE exposure_id IN ($idset))""")
+            # exposure-keyed children
+            for tbl in ("assignment_members", "assignments", "index_groups",
+                        "indices", "auto_peaks", "peak_curations")
+                DBInterface.execute(db,
+                    "DELETE FROM $tbl WHERE exposure_id IN ($idset)")
+            end
+            # exposure_sources keys two exposure columns; clean both.
+            DBInterface.execute(db, """
+                DELETE FROM exposure_sources
+                 WHERE averaged_exposure_id IN ($idset)
+                    OR source_exposure_id IN ($idset)""")
+            DBInterface.execute(db,
+                "DELETE FROM exposure_tags WHERE exposure_id IN ($idset)")
+            # finally the non-survivor exposure rows themselves.
+            DBInterface.execute(db,
+                "DELETE FROM exposures WHERE id IN ($idset)")
+        end
+
+        # swap the dedup key: drop old (sample_id, filename), add (experiment_id, filename)
+        DBInterface.execute(db, "DROP INDEX IF EXISTS exposures_unique_filename")
+        DBInterface.execute(db,
+            "CREATE UNIQUE INDEX exposures_unique_filename ON exposures(experiment_id, filename)")
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS exposures_experiment_idx ON exposures(experiment_id)")
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS exposures_load_idx ON exposures(load_id)")
+        _record_migration!(db, MIGRATION_EXPOSURES_EXPERIMENT_ID)
+    end
+end
+
+function migrate_experiments_geometry!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPERIMENTS_GEOMETRY) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "experiments")
+        adds = [
+            ("beam_center_x", "REAL"), ("beam_center_y", "REAL"),
+            ("pixel_size_um", "REAL"), ("q_units", "TEXT"),
+            ("energy_kev_source", "TEXT DEFAULT 'default'"),
+            ("flight_path_m_source", "TEXT DEFAULT 'default'"),
+            ("beam_center_x_source", "TEXT DEFAULT 'default'"),
+            ("beam_center_y_source", "TEXT DEFAULT 'default'"),
+            ("pixel_size_um_source", "TEXT DEFAULT 'default'"),
+            ("q_units_source", "TEXT DEFAULT 'default'"),
+            ("last_scanned_at", "TEXT"), ("scan_signature", "TEXT"),
+            ("ingest_status", "TEXT DEFAULT 'idle'"),
+            ("last_scan_tier", "TEXT DEFAULT 'fast'"),
+            ("consecutive_empty_ticks", "INTEGER NOT NULL DEFAULT 0"),
+        ]
+        for (name, decl) in adds
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE experiments ADD COLUMN $name $decl")
+        end
+        _record_migration!(db, MIGRATION_EXPERIMENTS_GEOMETRY)
+    end
+    nothing
+end
+
+function migrate_samples_name_collapse!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLES_NAME_COLLAPSE) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "samples")
+        # 1. grouping columns (additive, idempotent)
+        for (name, decl) in [
+                ("load_id", "INTEGER REFERENCES loads(id)"),
+                ("slot_index", "INTEGER"),
+                ("grouping_source", "TEXT DEFAULT 'auto_position'"),
+                ("name_source", "TEXT DEFAULT 'auto'")]
+            name in existing || DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN $name $decl")
+        end
+        # 2. collapse the two text columns to one. Guard so the migration is idempotent and
+        #    safe on DBs that never had both columns.
+        if "display_name" in existing
+            # DROP the unique index FIRST: SQLite re-points indexes onto a renamed column,
+            # so a surviving samples_unique_name would re-impose label uniqueness post-rename.
+            DBInterface.execute(db, "DROP INDEX IF EXISTS samples_unique_name")
+            if "name" in existing
+                DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN name")
+            end
+            DBInterface.execute(db, "ALTER TABLE samples RENAME COLUMN display_name TO name")
+        end
+        # 3. NO new UNIQUE on the label.
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS samples_experiment_idx ON samples(experiment_id)")
+        DBInterface.execute(db,
+            "CREATE INDEX IF NOT EXISTS samples_load_slot_idx ON samples(load_id, slot_index)")
+        _record_migration!(db, MIGRATION_SAMPLES_NAME_COLLAPSE)
+    end
+    nothing
+end
+
+function migrate_samples_merged_into!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLES_MERGED_INTO) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "samples")
+        "merged_into_id" in existing || DBInterface.execute(db,
+            "ALTER TABLE samples ADD COLUMN merged_into_id INTEGER REFERENCES samples(id)")
+        _record_migration!(db, MIGRATION_SAMPLES_MERGED_INTO)
+    end
+end
+
+function migrate_experiments_config_cols!(db::SQLite.DB)
+    # Phase E1: editable config columns on experiments (description + 3 pattern fields).
+    # Additive — safe to run against old DBs (ADD COLUMN does not rewrite existing rows).
+    _migrated(db, MIGRATION_EXPERIMENTS_CONFIG_COLS) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "experiments")
+        for (name, decl) in [
+            ("description",         "TEXT"),
+            ("image_pattern",       "TEXT"),
+            ("metadata_pattern",    "TEXT"),
+            ("integration_pattern", "TEXT"),
+        ]
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE experiments ADD COLUMN $name $decl")
+        end
+        _record_migration!(db, MIGRATION_EXPERIMENTS_CONFIG_COLS)
+    end
+    nothing
+end
+
+"""
+    backfill_load_sessions!(db)
+
+Assign `session_id` to existing loads that still have NULL. For each experiment
+with any NULL-session_id load, reads the ordered load start times, applies
+`_assign_sessions` (spec §5: >3 h gap → new macro-session), and UPDATEs each
+load row. Idempotent: experiments whose loads all already have a non-NULL
+`session_id` are skipped entirely. Sentinel-gated.
+
+Called from `migrate_schema!` after `migrate_loads_table!`.
+"""
+function backfill_load_sessions!(db::SQLite.DB)
+    _migrated(db, MIGRATION_LOAD_SESSIONS_BACKFILL) && return nothing
+    # Tolerate the loads table not yet existing (very old DBs where
+    # migrate_loads_table! hasn't installed it — the sentinel below still fires
+    # so a subsequent open_db doesn't re-run and hit the missing table again).
+    has_loads = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='loads'")))
+    if has_loads
+        # Experiments that have at least one load with NULL session_id.
+        exp_ids = Int[Int(r.experiment_id) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT DISTINCT experiment_id FROM loads WHERE session_id IS NULL"))]
+        for eid in exp_ids
+            # Read ALL of this experiment's loads (no NULL filter): session assignment
+            # is holistic over the ordered start-times, and `_assign_sessions` is a pure
+            # deterministic function of that full set — so re-deriving every load is safe
+            # even if some already held a session_id (a mixed state no writer produces).
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, start_time FROM loads WHERE experiment_id = ? ORDER BY start_time",
+                [eid]))
+            isempty(rows) && continue
+            # Parse start_time strings to DateTime (NULL → missing).
+            parsed = Union{Dates.DateTime, Missing}[
+                (r.start_time === nothing || r.start_time === missing) ?
+                    missing : Dates.DateTime(String(r.start_time), "yyyy-mm-ddTHH:MM:SS")
+                for r in rows]
+            session_ids = _assign_sessions(parsed)
+            SQLite.transaction(db) do
+                for (row, sid) in zip(rows, session_ids)
+                    DBInterface.execute(db,
+                        "UPDATE loads SET session_id = ? WHERE id = ?",
+                        [sid, Int(row.id)])
+                end
+            end
+        end
+    end
+    SQLite.transaction(db) do
+        _record_migration!(db, MIGRATION_LOAD_SESSIONS_BACKFILL)
+    end
+    nothing
 end
 
 """
@@ -1434,6 +1811,12 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
     # No samples table yet (partial legacy fixture or pre-create_schema! call) — skip.
     # create_schema! will create it with the canonical shape; nothing to rename.
     isempty(cols) && return nothing
+    # Post-redesign shape: a single `name` label, no `display_name`/`label`. Nothing to rename.
+    # Without this, the name-collapse migration (migrate_samples_name_collapse!) is silently
+    # reverted on every open_db. (Phase-A P0-1.)
+    if "name" in cols && !("display_name" in cols) && !("label" in cols)
+        return nothing
+    end
     if "display_name" in cols && !("label" in cols)
         return nothing  # already migrated
     end
@@ -1459,35 +1842,9 @@ function migrate_samples_naming!(db::SQLite.DB)::Nothing
             try DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN label")
             catch e; occursin("no such column", sprint(showerror, e)) || rethrow(); end
         end
-        # Duplicate suffix pass (oldest id keeps bare name).
-        # Collision-safe: track existing (experiment_id, name) pairs so a user-named
-        # sample literally called "<name>-2" doesn't conflict with our rename target.
-        existing = Set{Tuple{Int64,String}}(
-            (Int64(r.experiment_id), String(r.name))
-            for r in Tables.rowtable(DBInterface.execute(db,
-                "SELECT experiment_id, name FROM samples WHERE name IS NOT NULL AND experiment_id IS NOT NULL")))
-        dups = Tables.rowtable(DBInterface.execute(db, """
-            SELECT experiment_id, name FROM samples
-            GROUP BY experiment_id, name HAVING COUNT(*) > 1"""))
-        for d in dups
-            ids = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM samples WHERE experiment_id = ? AND name = ? ORDER BY id ASC",
-                [d.experiment_id, d.name]))
-            for (i, row) in enumerate(ids)
-                i == 1 && continue  # oldest keeps the bare name
-                # Pick the next suffix that isn't already taken by a user-named sample.
-                suffix_n = i
-                new_name = "$(d.name)-$(suffix_n)"
-                while (Int64(d.experiment_id), new_name) in existing
-                    suffix_n += 1
-                    new_name = "$(d.name)-$(suffix_n)"
-                end
-                push!(existing, (Int64(d.experiment_id), new_name))
-                @warn "Renamed duplicate sample" experiment_id=d.experiment_id old=d.name new=new_name id=row.id
-                DBInterface.execute(db, "UPDATE samples SET name = ? WHERE id = ?",
-                    [new_name, row.id])
-            end
-        end
+        # Duplicate-label disambiguation retired (ingestion redesign): sample labels may
+        # legitimately repeat across loads (e.g. two `HA85 (S01P15)`); identity is (load_id, slot_index),
+        # not the label. See migrate_samples_name_collapse! and spec §10.
         DBInterface.execute(db,
             "CREATE UNIQUE INDEX IF NOT EXISTS samples_unique_name ON samples(experiment_id, name)")
         # Old idempotent_responses rows carry pre-rename payload shape; purge to
@@ -1813,41 +2170,103 @@ function create_experiment!(db::SQLite.DB;
         manifest_path::Union{String,Nothing} = nothing,
         config::Union{String,Nothing} = nothing,
         experiment_type::Union{String,Nothing} = nothing,
+        image_pattern::Union{String,Nothing} = nothing,
+        metadata_pattern::Union{String,Nothing} = nothing,
+        integration_pattern::Union{String,Nothing} = nothing,
         energy_kev::Union{Float64,Nothing} = nothing,
-        flight_path_m::Union{Float64,Nothing} = nothing)
-    result = DBInterface.execute(db,
-        """INSERT INTO experiments
-             (name, path, data_dir, analysis_dir, manifest_path,
-              config, experiment_type, energy_kev, flight_path_m)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [name, path, data_dir, analysis_dir, manifest_path,
-         config, experiment_type, energy_kev, flight_path_m])
-    Int(DBInterface.lastrowid(result))
+        flight_path_m::Union{Float64,Nothing} = nothing,
+        # --- new (Phase A) ---
+        energy_kev_source = "default", flight_path_m_source = "default",
+        beam_center_x = nothing, beam_center_x_source = "default",
+        beam_center_y = nothing, beam_center_y_source = "default",
+        pixel_size_um = nothing, pixel_size_um_source = "default",
+        q_units = nothing, q_units_source = "default",
+        last_scanned_at = nothing, scan_signature = nothing, ingest_status = "idle")
+    result = DBInterface.execute(db, """
+        INSERT INTO experiments
+            (name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
+             image_pattern, metadata_pattern, integration_pattern,
+             energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
+             beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
+             pixel_size_um, pixel_size_um_source, q_units, q_units_source,
+             last_scanned_at, scan_signature, ingest_status)
+        VALUES (?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?)
+    """, [name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
+          image_pattern, metadata_pattern, integration_pattern,
+          energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
+          beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
+          pixel_size_um, pixel_size_um_source, q_units, q_units_source,
+          last_scanned_at, scan_signature, ingest_status])
+    return Int(DBInterface.lastrowid(result))
 end
 
-function create_sample!(db::SQLite.DB;
-        experiment_id::Int,
-        name::Union{String,Nothing}         = nothing,
-        display_name::Union{String,Nothing} = nothing,
-        notes::Union{String,Nothing}        = nothing)
-    result = DBInterface.execute(db,
-        "INSERT INTO samples (experiment_id, name, display_name, notes) VALUES (?, ?, ?, ?)",
-        [experiment_id, name, display_name, notes])
-    Int(DBInterface.lastrowid(result))
+function create_load!(db::SQLite.DB;
+        experiment_id::Integer,
+        load_index::Integer,
+        session_id::Union{Integer, Nothing}    = nothing,
+        start_time::Union{String, Nothing}     = nothing,
+        end_time::Union{String, Nothing}       = nothing,
+        frame_count::Integer                   = 0,
+        note::Union{String, Nothing}           = nothing)
+    res = DBInterface.execute(db, """
+        INSERT INTO loads (experiment_id, load_index, session_id, start_time, end_time, frame_count, note)
+        VALUES (?,?,?,?,?,?,?)
+    """, [experiment_id, load_index, session_id, start_time, end_time, frame_count, note])
+    Int(DBInterface.lastrowid(res))
+end
+
+function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractString,
+        notes=nothing, load_id=nothing, slot_index=nothing,
+        grouping_source="auto_position", name_source="auto")
+    res = DBInterface.execute(db, """
+        INSERT INTO samples (experiment_id, name, notes, load_id, slot_index, grouping_source, name_source)
+        VALUES (?,?,?,?,?,?,?)
+    """, [experiment_id, name, notes, load_id, slot_index, grouping_source, name_source])
+    return Int(DBInterface.lastrowid(res))
+end
+
+"""
+    retire_sample!(db, loser_id; merged_into_id)
+
+Mark a sample as retired by pointing its `merged_into_id` at the survivor.
+Does NOT hard-delete the row — FKs from `series_samples` etc. are re-pointed
+before this is called (see merge route). Sets `merged_into_id` only; no SSE.
+"""
+function retire_sample!(db::SQLite.DB, loser_id::Integer;
+                         merged_into_id::Integer)
+    DBInterface.execute(db,
+        "UPDATE samples SET merged_into_id = ? WHERE id = ?",
+        [Int(merged_into_id), Int(loser_id)])
+    nothing
 end
 
 function create_exposure!(db::SQLite.DB;
-        sample_id::Int,
-        filename::Union{String,Nothing}  = nothing,
-        kind::String                     = "file",
-        selected::Bool                   = false,
-        status::Union{String,Nothing}    = nothing,
-        image_path::Union{String,Nothing} = nothing)
-    result = DBInterface.execute(db,
-        "INSERT INTO exposures (sample_id, filename, kind, selected, status, image_path)
-         VALUES (?, ?, ?, ?, ?, ?)",
-        [sample_id, filename, kind, Int(selected), status, image_path])
-    Int(DBInterface.lastrowid(result))
+        experiment_id::Int,                              # required (Phase A)
+        sample_id::Union{Int,Nothing}      = nothing,    # optional (transient pre-group state)
+        filename::Union{String,Nothing}    = nothing,
+        kind::String                       = "file",
+        selected::Bool                     = false,
+        status::Union{String,Nothing}      = nothing,
+        image_path::Union{String,Nothing}  = nothing,
+        # --- new PRP fields (Phase A) ---
+        prp_path          = nothing,
+        timestamp         = nothing,
+        exposure_time     = nothing,
+        horizontal_position = nothing,
+        scan_id           = nothing,
+        frame_no          = nothing,
+        load_id           = nothing,
+        content_fingerprint = nothing)
+    result = DBInterface.execute(db, """
+        INSERT INTO exposures
+            (experiment_id, sample_id, filename, kind, selected, status, image_path,
+             prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
+             load_id, content_fingerprint)
+        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?)
+    """, [experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
+          prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
+          load_id, content_fingerprint])
+    return Int(DBInterface.lastrowid(result))
 end
 
 function get_experiment(db::SQLite.DB, id::Int)
@@ -1865,6 +2284,101 @@ end
 function get_exposures(db::SQLite.DB, sample_id::Int)
     Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sample_id]))
+end
+
+"""
+    get_loads_rollup(db, experiment_id) -> Vector{NamedTuple}
+
+Return the Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface,
+in the exact nested shape spec §8.8 pins (field names are load-bearing — the
+frontend `Load`/`LoadSample`/`LoadExposure` interfaces mirror them verbatim).
+
+Each Load NamedTuple:
+    (load_id, load_index, session_id, start_time, end_time, frame_count, note, samples)
+each LoadSample NamedTuple:
+    (sample_id, name, slot_index, grouping_source, name_source,
+     merged_into_id, flag, exposures)
+each LoadExposure NamedTuple:
+    (id, filename, horizontal_position, timestamp)
+
+`flag` is the per-sample merge/split suggestion: it is NOT a stored column —
+it is produced by Phase B Task 12's `derive_sample_flags` (§9.1) over the nested
+rows this function just read, THEN any flag whose sample has a non-undone
+`grouping_flag_dismissed` event is suppressed to `nothing`. Phase B is a
+prerequisite; `derive_sample_flags` must be present or this call throws loudly.
+
+Only non-retired samples (merged_into_id IS NULL) are included.
+Re-derived from (load_id, slot_index) — NOT replayed from the event log.
+"""
+function get_loads_rollup(db::SQLite.DB, experiment_id::Integer)
+    loads = Tables.rowtable(DBInterface.execute(db,
+        """SELECT id AS load_id, load_index, session_id,
+                  start_time, end_time, frame_count, note
+           FROM loads
+           WHERE experiment_id = ?
+           ORDER BY load_index""", [Int(experiment_id)]))
+
+    # Samples whose flag is dismissed by a NON-UNDONE grouping_flag_dismissed
+    # event. A *dismiss* is a grouping_flag_dismissed row with NO undoes_event_id
+    # (an undo is also a grouping_flag_dismissed row but CARRIES undoes_event_id,
+    # so `ua.undoes_event_id IS NULL` excludes undo rows from being counted as
+    # dismisses-of-their-own — Task 8b). A dismiss is "undone" iff a later event
+    # carries `undoes_event_id = <dismiss id>`; the NOT EXISTS drops those.
+    # (entity_type='sample', so this never collides with exposure-keyed events.)
+    dismissed_rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT DISTINCT ua.entity_id AS sample_id
+           FROM user_actions ua
+           JOIN samples s ON s.id = ua.entity_id
+           WHERE ua.action = 'grouping_flag_dismissed'
+             AND ua.entity_type = 'sample'
+             AND ua.undoes_event_id IS NULL
+             AND s.experiment_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM user_actions u2
+               WHERE u2.undoes_event_id = ua.id
+             )""", [Int(experiment_id)]))
+    dismissed = Set(Int(r.sample_id) for r in dismissed_rows)
+
+    nested = map(loads) do ld
+        samples = Tables.rowtable(DBInterface.execute(db,
+            """SELECT id AS sample_id, name, slot_index,
+                      grouping_source, name_source, merged_into_id
+               FROM samples
+               WHERE load_id = ? AND (merged_into_id IS NULL)
+               ORDER BY slot_index""", [Int(ld.load_id)]))
+
+        samples_with_exposures = map(samples) do sm
+            exposures = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id, filename, horizontal_position, timestamp
+                   FROM exposures
+                   WHERE sample_id = ?
+                   ORDER BY frame_no, id""", [Int(sm.sample_id)]))
+            # `flag` is filled in below from derive_sample_flags; seed nothing.
+            merge(sm, (flag = nothing, exposures = exposures))
+        end
+
+        merge(ld, (samples = samples_with_exposures,))
+    end
+
+    # Attach the derived per-sample flag (Phase B §9.1). derive_sample_flags
+    # is pure over the nested rows above and returns
+    # Dict{Int sample_id => GroupingFlag (a NamedTuple) | nothing}. We pass it
+    # the load rows it needs (each sample's slot_index/name + its exposures'
+    # horizontal_position/timestamp/filename) — exactly the nested shape it
+    # documents. Suppress any flag whose sample is in the dismissed set.
+    # Phase B is a prerequisite; a missing derive_sample_flags should throw loudly,
+    # not be silently swallowed.
+    flags = derive_sample_flags(nested)        # Dict{Int, Any}
+    nested = map(nested) do ld
+        new_samples = map(ld.samples) do sm
+            f = get(flags, Int(sm.sample_id), nothing)
+            Int(sm.sample_id) in dismissed && (f = nothing)
+            merge(sm, (flag = f,))
+        end
+        merge(ld, (samples = new_samples,))
+    end
+
+    return nested
 end
 
 """

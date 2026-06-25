@@ -17,6 +17,10 @@ export interface PopoverProps {
    *  panel, so its ref is set by the time the open effect runs. Falls back to
    *  the panel when absent (the default). */
   initialFocusRef?: RefObject<HTMLElement | null>;
+  /** Stretch the trigger wrapper to the full width of its container (block flex
+   *  instead of the default inline-flex). For a full-width combobox bar; the
+   *  trigger itself must also be `w-full`. Default false (inline). */
+  fullWidth?: boolean;
   /** PLACEMENT-ONLY on the popover panel. */
   className?: string;
 }
@@ -47,6 +51,7 @@ export function Popover({
   side = "bottom",
   label,
   initialFocusRef,
+  fullWidth = false,
   className = "",
 }: PopoverProps): JSX.Element {
   const panelId = useId();
@@ -120,7 +125,7 @@ export function Popover({
   };
 
   return (
-    <span ref={wrapperRef} className="relative inline-flex">
+    <span ref={wrapperRef} className={cx("relative", fullWidth ? "flex w-full" : "inline-flex")}>
       {wiredTrigger}
       {open && (
         <div

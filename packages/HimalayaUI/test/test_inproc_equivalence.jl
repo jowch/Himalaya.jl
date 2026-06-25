@@ -44,7 +44,7 @@ function _seed(dir)
     exp_id = HimalayaUI.init_experiment!(db; path=dir,
         data_dir=joinpath(dir, "data"), analysis_dir=analysis_dir)
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     (; db, exp_id, s_id, e_id)
 end
@@ -76,8 +76,8 @@ end
             save(tiff, Gray.(rand(Float32, 512, 384)))
             db = HimalayaUI.open_db(joinpath(d, "h.db"))   # M0.4 predates M2; use open_db
             exp_id = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, image_path=tiff)
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, image_path=tiff)
             path = "/api/exposures/$e_id/image?thumb=0"   # explicit full branch; exercises query parsing
             w  = with_test_server(db) do port, base; HTTP.get("$base$path"; status_exception=false) end
             ip = with_inproc_routes(db) do call; call("GET", path) end

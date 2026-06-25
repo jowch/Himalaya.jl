@@ -15,10 +15,10 @@ using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
     HimalayaUI.create_schema!(db)
     HimalayaUI.migrate_schema!(db)
     exp_id  = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-    samp_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-    eid     = HimalayaUI.create_exposure!(db; sample_id=samp_id, image_path=tiff_path)
-    eid_noi = HimalayaUI.create_exposure!(db; sample_id=samp_id)  # no image
-    eid_gone = HimalayaUI.create_exposure!(db; sample_id=samp_id, image_path=missing_path)  # path set, file missing
+    samp_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+    eid     = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=samp_id, image_path=tiff_path)
+    eid_noi = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=samp_id)  # no image
+    eid_gone = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=samp_id, image_path=missing_path)  # path set, file missing
 
     with_inproc_routes(db) do call
         # Full image
@@ -63,9 +63,9 @@ end
     db = SQLite.DB()
     HimalayaUI.create_schema!(db); HimalayaUI.migrate_schema!(db)
     exp  = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-    samp = HimalayaUI.create_sample!(db; experiment_id=exp)
-    big  = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=big_path)
-    small = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=small_path)
+    samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
+    big  = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=big_path)
+    small = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=small_path)
 
     decode_dims(body) = size(FileIO.load(FileIO.Stream{FileIO.format"PNG"}(IOBuffer(body))))
 
@@ -91,9 +91,9 @@ end
     db = SQLite.DB()
     HimalayaUI.create_schema!(db); HimalayaUI.migrate_schema!(db)
     exp  = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-    samp = HimalayaUI.create_sample!(db; experiment_id=exp)
-    big  = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=big_path)
-    rect = HimalayaUI.create_exposure!(db; sample_id=samp, image_path=rect_path)
+    samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
+    big  = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=big_path)
+    rect = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=rect_path)
 
     with_inproc_routes(db) do call
         rb = call("GET", "/api/exposures/$big/image")

@@ -52,7 +52,7 @@ export function proposeOrdering(
     const value = tag?.value ?? "";
     return {
       sampleId: s.sample.id,
-      sampleName: s.sample.display_name ?? s.sample.name ?? "",
+      sampleName: s.sample.name,
       value,
       flagged: value === "",
       include: true, // D5: every member candidate starts included

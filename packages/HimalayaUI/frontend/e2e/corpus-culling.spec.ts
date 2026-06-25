@@ -40,6 +40,8 @@ async function mockCorpus(page: Page): Promise<void> {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([EXPERIMENT]) }));
   await page.route("**/api/experiments/1", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPERIMENT) }));
+  await page.route("**/api/experiments/1/loads", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SAMPLES) }));
   await page.route("**/api/samples/10/exposures*", (r) =>
@@ -65,150 +67,6 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test("cull: rejecting a selected exposure via X dims its thumbnail and PATCHes status", async ({ page }) => {
-  // Greenfield contact sheet: single-thumb reject is "click-to-select, then X".
-  // The thumb gains data-state="selected"; the page-global CullBar appears; the
-  // X key drops the selection (the same path the CullBar "Drop" button drives).
-  // After the PATCH resolves + the exposures query updates, the optimistic
-  // status flips to "rejected" so the thumb re-renders dimmed.
-  let patchedBody: unknown = null;
-  await mockCorpus(page);
-  await page.route("**/api/exposures/1/status", async (route) => {
-    patchedBody = route.request().postDataJSON();
-    await route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({ id: 1, status: "rejected" }),
-    });
-  });
-
-  await page.goto("/samples");
-  const row = page.getByTestId("sample-table-row").first();
-  await expect(row).toBeVisible();
-
-  // Mock EXPOSURES order is ids 1,2,3 → nth(0) is exposure 1.
-  const thumb1 = row.getByTestId("thumbnail").nth(0);
-  await thumb1.click();
-  await expect(thumb1).toHaveAttribute("data-state", /selected/);
-  await expect(page.getByTestId("cull-bar")).toHaveAttribute("data-show", "true");
-
-  await page.keyboard.press("x");
-
-  // The dropped thumb re-renders rejected (state token + dimmed image).
-  await expect(thumb1).toHaveAttribute("data-state", /rejected/);
-  await expect(thumb1.locator('[data-dimmed="true"]')).toBeVisible();
-  await expect.poll(() => patchedBody).toMatchObject({ status: "rejected" });
-  // Drop clears the selection → the cull bar hides.
-  await expect(page.getByTestId("cull-bar")).toHaveAttribute("data-show", "false");
-});
-
-// SA-SCREENED: the Keep verb. Diligent screening of CLEAN samples needs an
-// explicit accept — select a frame, press K (the CullBar "Keep" button drives
-// the same path), the status PATCHes to "accepted" and the bar hides.
-test("keep: selecting a frame and pressing K PATCHes status accepted and hides the bar", async ({ page }) => {
-  let patchedBody: unknown = null;
-  await mockCorpus(page);
-  await page.route("**/api/exposures/1/status", async (route) => {
-    patchedBody = route.request().postDataJSON();
-    await route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({ id: 1, status: "accepted" }),
-    });
-  });
-
-  await page.goto("/samples");
-  const row = page.getByTestId("sample-table-row").first();
-  await expect(row).toBeVisible();
-
-  await row.getByTestId("thumbnail").nth(0).click();
-  const cullBar = page.getByTestId("cull-bar");
-  await expect(cullBar).toHaveAttribute("data-show", "true");
-  await expect(cullBar.getByRole("button", { name: /Keep/ })).toBeVisible();
-
-  await page.keyboard.press("k");
-
-  await expect.poll(() => patchedBody).toMatchObject({ status: "accepted" });
-  // Keep clears the selection → the cull bar hides.
-  await expect(cullBar).toHaveAttribute("data-show", "false");
-});
-
-test("batch-reject: multi-select then reject PATCHes each selected exposure", async ({ page }) => {
-  // Click two thumb bodies to add them to the page-global selection, then hit
-  // the CullBar "Drop" button. Each selected exposure fires a status PATCH.
-  const patched: string[] = [];
-  await mockCorpus(page);
-  await page.route(/\/api\/exposures\/\d+\/status$/, async (route) => {
-    patched.push(new URL(route.request().url()).pathname);
-    await route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({ status: "rejected" }),
-    });
-  });
-
-  await page.goto("/samples");
-  const row = page.getByTestId("sample-table-row").first();
-  await expect(row).toBeVisible();
-
-  // EXPOSURES order ids 1,2,3 → nth 0,2 are exposures 1 and 3.
-  await row.getByTestId("thumbnail").nth(0).click();
-  await row.getByTestId("thumbnail").nth(2).click();
-
-  const cullBar = page.getByTestId("cull-bar");
-  await expect(cullBar).toHaveAttribute("data-show", "true");
-  await cullBar.getByRole("button", { name: /Drop/ }).click();
-
-  await expect.poll(() => patched.length).toBe(2);
-  expect(patched.some((p) => p.endsWith("/exposures/1/status"))).toBe(true);
-  expect(patched.some((p) => p.endsWith("/exposures/3/status"))).toBe(true);
-  // Exposure 2 was not selected → no op.
-  expect(patched.some((p) => p.endsWith("/exposures/2/status"))).toBe(false);
-});
-
-// SA-CULLFOCUS (WCAG 4.1.2): the cull bar hides via the native `inert`
-// attribute, not aria-hidden + tabIndex=-1. The failing ordering was a mouse
-// CLICK on Drop: the button holds focus, the handler empties the selection,
-// the bar hides — aria-hidden would then land on an ancestor of the focused
-// button and Chrome blocks it with a console warning. inert blurs the focused
-// descendant itself, so this pins (a) focus leaves the bar and (b) no
-// aria-hidden warning is emitted. Real-browser only — JSDOM has no inert
-// semantics (the unit tests assert just the attribute).
-test("cull bar: clicking Drop moves focus out of the hidden bar with no aria-hidden warning", async ({ page }) => {
-  const consoleMessages: string[] = [];
-  page.on("console", (msg) => consoleMessages.push(msg.text()));
-
-  await mockCorpus(page);
-  await page.route("**/api/exposures/1/status", (route) =>
-    route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({ id: 1, status: "rejected" }),
-    }));
-
-  await page.goto("/samples");
-  const row = page.getByTestId("sample-table-row").first();
-  await expect(row).toBeVisible();
-  await row.getByTestId("thumbnail").nth(0).click();
-
-  const cullBar = page.getByTestId("cull-bar");
-  await expect(cullBar).toHaveAttribute("data-show", "true");
-
-  // Mouse click (not keyboard) so the Drop button holds focus as the bar hides.
-  await cullBar.getByRole("button", { name: /Drop/ }).click();
-  await expect(cullBar).toHaveAttribute("data-show", "false");
-
-  // inert blurred the focused descendant: focus is no longer inside the bar.
-  const focusInBar = await page.evaluate(() =>
-    document.activeElement
-      ? document.activeElement.closest('[data-testid="cull-bar"]') !== null
-      : false,
-  );
-  expect(focusInBar).toBe(false);
-
-  // Belt-and-braces only: headless Chromium was NOT observed emitting the
-  // blocked-aria-hidden warning through page.on("console"), so this line
-  // alone would not fail under the old code — the focus assertion above is
-  // the load-bearing regression pin.
-  expect(consoleMessages.filter((m) => m.includes("aria-hidden"))).toEqual([]);
-});
-
 test("representative: picking a representative in the loupe PATCHes select", async ({ page }) => {
   // R2-M11 (#207): the per-thumb rep ⊙ button is gone — representative pick
   // lives in the loupe sidebar's "Set as representative" affordance (and the
@@ -224,7 +82,7 @@ test("representative: picking a representative in the loupe PATCHes select", asy
     });
   });
 
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
   // Open the loupe on exposure 2 by clicking its strip thumbnail (frameNo 2 →
   // nth(1)). Every greenfield strip thumb shares data-testid="thumbnail".
@@ -251,7 +109,7 @@ test("loupe: dropping the representative shows the rep-dropped warning; restore 
     });
   });
 
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
   // The loupe opens on the representative (exposure 1) — kept, so no warning.
   await expect(page.getByTestId("rep-dropped-warning")).toBeHidden();
@@ -268,7 +126,7 @@ test("loupe: dropping the representative shows the rep-dropped warning; restore 
 
 test("loupe-flip: arrow keys move between exposures in the loupe", async ({ page }) => {
   await mockCorpus(page);
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
   // Loupe opens on the representative (exposure 1, frame 1). The greenfield
   // page has no filename row; assert the active frame via the BigFrame caption.
@@ -304,7 +162,7 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
   await page.route("**/api/samples/11/messages", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
 
-  await page.goto("/samples/loupe/11");
+  await page.goto("/sample/11/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
 
   // The filmstrip genuinely overflows its column (so the guard is meaningful)…
@@ -320,7 +178,7 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
 // SA-RESP (WCAG 1.4.10): the sheet grid's intrinsic min-width (~1054px with the
 // checkbox track) exceeds a 1024px viewport. SheetTable wraps header + rows in
 // ONE shared horizontal scroller with sticky identity columns, so a narrow
-// viewport SCROLLS to the Status column instead of silently clipping it.
+// viewport SCROLLS to the Phase column instead of silently clipping it.
 //
 // The mock sample carries MANY exposures on purpose: the table wrapper is
 // min-w-min, so the scroller's width must stay at the grid's track-min sum
@@ -328,7 +186,7 @@ test("loupe layout: a many-exposure filmstrip keeps the side panel on-screen", a
 // max-content wrapper regressed this live: a real 8-exposure corpus unwrapped
 // the flex-nowrap gallery and blew the scroller out to ~3400px — Status ended
 // up 2.3 viewports away. Few-exposure mocks could not see that.)
-test("narrow viewport: Status column is reachable by scrolling; Sample column sticks", async ({ page }) => {
+test("narrow viewport: Phase column is reachable by scrolling; Sample column sticks", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await mockCorpus(page);
   // Registered AFTER mockCorpus → takes precedence (Playwright matches the
@@ -341,7 +199,7 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
   }));
   await page.route("**/api/samples/10/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MANY) }));
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
   await expect(page.getByTestId("thumbnail")).toHaveCount(12);
 
@@ -362,12 +220,12 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
     await gallery.evaluate((g) => g.scrollWidth > g.clientWidth + 1),
   ).toBe(true);
 
-  const status = page.getByRole("columnheader", { name: "Status" });
+  const status = page.getByRole("columnheader", { name: "Phase" });
   const sample = page.getByRole("columnheader", { name: "Sample" });
   const sampleBefore = await sample.boundingBox();
   expect(sampleBefore).not.toBeNull();
 
-  // Scroll the container to the far right: the Status column must be REACHABLE
+  // Scroll the container to the far right: the Phase column must be REACHABLE
   // (fully inside the viewport) — the 1.4.10 substance.
   await scroll.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
   const statusBox = await status.boundingBox();
@@ -390,7 +248,7 @@ test("narrow viewport: Status column is reachable by scrolling; Sample column st
 // non-navigating bespoke button (a strip thumbnail) for the no-ring half.
 test("focus-visible: keyboard focus draws the 2px accent ring on a bespoke button; mouse click draws none", async ({ page }) => {
   await mockCorpus(page);
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
 
   // Tab-walk (bounded) until the bespoke loupe-back button holds focus.
@@ -433,7 +291,7 @@ test("focus-visible: keyboard focus draws the 2px accent ring on a bespoke butto
 test("wide viewport: the sheet does not scroll horizontally (unchanged layout)", async ({ page }) => {
   // Playwright's default 1280×720 viewport is the wide case.
   await mockCorpus(page);
-  await page.goto("/samples");
+  await page.goto("/experiments/1/corpus");
   await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
   const widths = await page.getByTestId("sheet-scroll").evaluate((el) => ({
     scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
@@ -460,7 +318,7 @@ test("loupe tags: the tag-remove × has a ≥24×24 hit target inside the pill's
       }]),
     }));
 
-  await page.goto("/samples/loupe/10");
+  await page.goto("/sample/10/loupe");
   await expect(page.getByTestId("loupe-page")).toBeVisible();
 
   const pill = page.getByTestId("tag-pill").first();

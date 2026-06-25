@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:oklch(0.978 0.006 85);--paper-sunk:oklch(0.951 0.008 84);--plate:oklch(0.992 0.004 90);
+    --ink:oklch(0.265 0.013 68);--ink-soft:oklch(0.467 0.012 70);--ink-faint:oklch(0.640 0.010 74);
+    --hair:oklch(0.882 0.008 80);--hair-strong:oklch(0.806 0.010 78);
+    --accent:oklch(0.555 0.150 38);--success:oklch(0.520 0.120 162);--warning:oklch(0.620 0.130 70);
+    --frame-edge:oklch(0.150 0.010 55);
+    --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,sans-serif;--font-serif:"Newsreader",Georgia,serif;--font-mono:ui-monospace,Menlo,monospace;
+    --shadow-plate-lift:0 1px 0 rgba(255,255,255,.6) inset,0 6px 24px -8px rgba(40,30,20,.14);
+    --shadow-dock:0 -7px 24px -10px rgba(40,30,20,.22);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#cfc8bd;font-family:var(--font-sans);font-size:13px;-webkit-font-smoothing:antialiased}
+  .page{width:1180px;background:var(--paper);color:var(--ink);margin:0 auto;display:flex;flex-direction:column;min-height:560px}
+  .ftitle{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);padding:8px 30px 4px}
+  .top{display:flex;align-items:center;gap:18px;height:56px;padding:0 28px;border-bottom:1px solid var(--hair);flex:none}
+  .wm{font-family:var(--font-serif);font-weight:600;font-size:18px}.wmt{color:var(--ink-faint);font-weight:400;margin-left:6px;font-size:14px}
+  .sect{display:inline-flex;gap:3px;margin-left:10px}
+  .sect a{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);padding:6px 12px;border-radius:6px;display:inline-flex;align-items:center;gap:7px}
+  .sect a.on{color:var(--ink);background:var(--paper-sunk)}.sect a .d{width:5px;height:5px;border-radius:9999px;background:var(--accent)}
+  .top .sp{flex:1}
+  .gear{width:32px;height:32px;border-radius:8px;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
+  .main{flex:1;padding:24px 40px 24px;min-height:0}.frame{max-width:1020px;margin:0 auto}
+  .kicker{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.10em;color:var(--accent)}
+  .disp{font-family:var(--font-serif);font-size:30px;font-weight:500;line-height:1.1;margin-top:4px}
+  .dir{font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);margin-top:6px}
+  .btn{font-size:12px;font-weight:600;border-radius:7px;padding:7px 14px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap}
+  .btn.accent{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  .btn.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
+  .btn.warn{color:var(--warning);border-color:color-mix(in oklch,var(--warning) 45%,white)}
+  .card{background:var(--plate);border:1px solid var(--hair-strong);border-radius:9px;box-shadow:var(--shadow-plate-lift);padding:18px}
+  .ct{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft)}
+  .src{font-family:var(--font-mono);font-size:9.5px;font-weight:600;border-radius:4px;padding:1px 6px;border:1px solid var(--hair-strong);color:var(--ink-soft);background:var(--paper-sunk)}
+  .chip{display:inline-flex;align-items:center;font-size:10px;font-weight:600;border-radius:9999px;padding:2px 9px;border:1px solid}
+  /* key/value table */
+  .kv{display:grid;grid-template-columns:104px 1fr auto;align-items:center;gap:12px;font-family:var(--font-mono);font-size:12px;padding:6px 0;border-top:1px solid var(--hair)}
+  .kv:first-of-type{border-top:none}
+  .kv .k{color:var(--ink-soft)}.kv .v{text-align:right;color:var(--ink)}
+  .kv .field{justify-self:end;border:1px solid var(--hair-strong);border-radius:6px;padding:3px 9px;background:var(--paper)}
+  .undo{display:inline-flex;gap:2px}.ub{width:24px;height:24px;border:1px solid var(--hair-strong);background:var(--paper);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:13px}
+  .ub.off{color:var(--ink-faint);opacity:.5}
+  .actionbar{flex:none;display:flex;align-items:center;gap:12px;height:58px;padding:0 24px;background:var(--plate);border-top:1px solid var(--hair-strong);box-shadow:var(--shadow-dock)}
+  .actionbar .note{font-size:11.5px;color:var(--ink-soft)}.actionbar .sp{flex:1}
+  .kb{font-family:var(--font-mono);font-size:11px;line-height:1;color:currentColor;border:1px solid color-mix(in oklch,currentColor 32%,transparent);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;height:16px;min-width:16px;padding:0 4px;margin-left:6px}
+  .kb.frost{background:color-mix(in oklch,currentColor 16%,transparent);border-color:color-mix(in oklch,currentColor 45%,transparent)}
+  .note-strip{display:flex;gap:24px;padding:13px 30px 18px;border-top:1px dashed var(--hair-strong);background:var(--paper-sunk);flex:none}
+  .note-strip .n{display:flex;gap:8px;max-width:330px;font-size:11px;color:var(--ink);line-height:1.45}
+  .note-strip .k{font-family:var(--font-mono);font-size:10px;font-weight:700;color:var(--paper);background:var(--accent);border-radius:4px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+  /* gallery timeline */
+  .gshell{display:flex;gap:28px}
+  .tl{width:120px;flex:none;padding-top:48px}
+  .tl .tlh{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:12px}
+  .tl .yrow{display:flex;align-items:center;gap:9px;padding:7px 0;position:relative}
+  .tl .dotline{position:absolute;left:4px;top:0;bottom:0;width:1px;background:var(--hair-strong)}
+  .tl .dot{width:9px;height:9px;border-radius:9999px;background:var(--paper);border:2px solid var(--hair-strong);z-index:1}
+  .tl .yrow.on .dot{border-color:var(--accent);background:var(--accent)}
+  .tl .yl{font-family:var(--font-serif);font-size:16px}.tl .yc{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft)}
+  .yhead{font-family:var(--font-serif);font-size:18px;color:var(--ink-soft);margin:22px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--hair)}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .xc{background:var(--plate);border:1px solid var(--hair-strong);border-radius:9px;box-shadow:var(--shadow-plate-lift);padding:15px}
+  .xc .xn{font-family:var(--font-serif);font-size:17px}
+  .xc .xd{font-family:var(--font-mono);font-size:10px;color:var(--ink-soft);margin-top:5px}
+  .xc .xs{display:flex;gap:13px;margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)}
+  .confirm{display:inline-flex;align-items:center;gap:10px;background:color-mix(in oklch,var(--warning) 9%,var(--paper));border:1px solid color-mix(in oklch,var(--warning) 45%,white);border-radius:8px;padding:5px 6px 5px 12px}
+  .confirm .ct2{font-size:11.5px;color:var(--ink)}
+</style></head>
+<body>
+
+<!-- ===== 1 · GALLERY (year groups + timeline) ===== -->
+<section class="page">
+  <div class="ftitle">New surface · Experiments gallery — grouped by year + timeline rail</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span><span class="sp"></span><span class="gear">⚙</span></header>
+  <div class="main"><div class="frame">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between"><div><div class="kicker">Experiments</div><div class="disp">All experiments</div></div><button class="btn accent">+ New experiment</button></div>
+    <div class="gshell">
+      <aside class="tl">
+        <div class="tlh">Timeline</div>
+        <div class="yrow on"><span class="dotline"></span><span class="dot"></span><div><div class="yl">2026</div><div class="yc">3 sessions</div></div></div>
+        <div class="yrow"><span class="dotline"></span><span class="dot"></span><div><div class="yl">2025</div><div class="yc">2 sessions</div></div></div>
+      </aside>
+      <div style="flex:1;min-width:0">
+        <div class="yhead">2026</div>
+        <div class="cards">
+          <div class="xc"><div style="display:flex;justify-content:space-between;align-items:start"><div class="xn">SSRL April 2026 · 1p7m</div><span class="chip" style="color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)">up to date</span></div><div class="xd">/Volumes/data/ssrl/2026_04/1p7m</div><div class="xs"><span><b style="color:var(--ink)">170</b> samples</span><span><b style="color:var(--ink)">682</b> exp</span><span><b style="color:var(--ink)">13</b> loads</span></div></div>
+          <div class="xc"><div style="display:flex;justify-content:space-between;align-items:start"><div class="xn">SSRL March 2026 · 1p7m</div><span class="chip" style="color:var(--warning);border-color:color-mix(in oklch,var(--warning) 45%,white)">4 to review</span></div><div class="xd">/Volumes/data/ssrl/2026_03/1p7m</div><div class="xs"><span><b style="color:var(--ink)">278</b> samples</span><span><b style="color:var(--ink)">1102</b> exp</span><span><b style="color:var(--ink)">24</b> loads</span></div></div>
+          <div class="xc"><div style="display:flex;justify-content:space-between;align-items:start"><div class="xn">SSRL Jan 2026 · 0p7m</div><span class="chip" style="color:var(--accent);border-color:color-mix(in oklch,var(--accent) 40%,white)">scanning…</span></div><div class="xd">/Volumes/data/ssrl/2026_01/0p7m</div><div class="xs"><span>indexing 201 files…</span></div></div>
+        </div>
+        <div class="yhead">2025</div>
+        <div class="cards">
+          <div class="xc"><div style="display:flex;justify-content:space-between;align-items:start"><div class="xn">DOPC dose series</div><span class="chip" style="color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)">up to date</span></div><div class="xd">/Volumes/data/aps/2025_11/dopc</div><div class="xs"><span><b style="color:var(--ink)">36</b> samples</span><span><b style="color:var(--ink)">144</b> exp</span><span><b style="color:var(--ink)">3</b> loads</span></div></div>
+          <div class="xc"><div style="display:flex;justify-content:space-between;align-items:start"><div class="xn">2025 GISAXS</div><span class="chip" style="color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)">up to date</span></div><div class="xd">/Volumes/data/aps/2025_06/gisaxs</div><div class="xs"><span><b style="color:var(--ink)">84</b> samples</span><span><b style="color:var(--ink)">410</b> exp</span><span><b style="color:var(--ink)">6</b> loads</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="note-strip"><div class="n"><span class="k">1</span>Cards grouped under year headings, newest first. The left timeline rail jumps between years (kept slim — drop it if it reads as noise).</div><div class="n"><span class="k">2</span>State chip per card. Click → that experiment's Corpus.</div></div>
+</section>
+
+<!-- ===== 2 · PICKER (commit + dup check) ===== -->
+<section class="page">
+  <div class="ftitle">New surface · New experiment — directory picker (commit a path)</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span><span class="sp"></span><span class="gear">⚙</span></header>
+  <div class="main"><div class="frame" style="max-width:760px">
+    <div class="kicker">New experiment</div><div class="disp">Point at a directory</div>
+    <p style="color:var(--ink-soft);margin-top:8px;max-width:620px">Pick the folder for this experiment. The next step indexes it and lets you review before anything is created.</p>
+    <div class="card" style="margin-top:20px">
+      <div class="ct" style="margin-bottom:12px">Directory</div>
+      <div style="font-family:var(--font-mono);font-size:13px;border:1px solid var(--hair-strong);border-radius:7px;padding:9px 12px;background:var(--paper)">/Volumes/data/ssrl/2026_04/1p7m<span style="color:var(--ink-faint)">▏</span></div>
+      <div style="margin-top:8px;border:1px solid var(--hair);border-radius:7px;overflow:hidden;font-family:var(--font-mono);font-size:11.5px">
+        <div style="padding:7px 12px;background:var(--paper-sunk);color:var(--ink-soft)">/Volumes/data/ssrl/2026_04/1p7m</div>
+        <div style="padding:7px 12px;border-top:1px solid var(--hair);color:var(--ink-soft)">/Volumes/data/ssrl/2026_04/0p7m</div>
+        <div style="padding:7px 12px;border-top:1px solid var(--hair);color:var(--ink-soft)">/Volumes/data/ssrl/2026_04/wide</div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:22px;font-size:12px;font-weight:600">
+        <span style="color:var(--success)">✓ directory exists</span>
+        <span style="color:var(--success)">✓ not already an experiment</span>
+      </div>
+    </div>
+  </div></div>
+  <div class="actionbar"><span class="note">Nothing is created — the next step indexes &amp; lets you review.</span><span class="sp"></span><span class="btn ghost">Cancel</span><span class="btn accent">Review →</span></div>
+  <div class="note-strip"><div class="n"><span class="k">1</span>Two checks before you can continue: the directory exists, AND it isn't already an experiment (backend 409 + this inline guard). If it's taken, Review is blocked with the offending experiment named.</div><div class="n"><span class="k">2</span>Indexing starts on the next screen (Configuration), so you commit the path first.</div></div>
+</section>
+
+<!-- ===== 3 · CONFIGURATION (indexing + review, table, gray chips, undo) ===== -->
+<section class="page">
+  <div class="ftitle">New surface · Configuration — indexing + review (creation boundary)</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span><span class="sp"></span><span class="gear">⚙</span></header>
+  <div class="main"><div class="frame">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end">
+      <div><div class="kicker">New experiment · review before scan</div><div class="disp" style="font-size:24px">SSRL April 2026 · 1p7m</div><div class="dir">/Volumes/data/ssrl/2026_04/1p7m</div></div>
+      <div class="undo" title="Undo / redo edits"><span class="ub">⤺</span><span class="ub off">⤻</span></div>
+    </div>
+    <div style="margin:16px 0 4px;display:flex;align-items:center;gap:14px">
+      <span style="display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>Indexing directory…</span>
+      <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--ink-soft)">682 matched · 700 seen</span>
+      <div style="flex:1;max-width:340px;height:5px;background:var(--paper-sunk);border-radius:9999px;overflow:hidden"><i style="display:block;height:100%;width:46%;background:var(--accent);border-radius:9999px;opacity:.75"></i></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px">
+      <div class="card"><div class="ct" style="margin-bottom:6px">Sources — file patterns</div>
+        <div class="kv"><span class="k">image</span><span></span><span class="field">*.tif</span></div>
+        <div class="kv"><span class="k">metadata</span><span></span><span class="field">*.prp</span></div>
+        <div class="kv"><span class="k">integration</span><span></span><span class="field">*_tot.dat</span></div>
+        <div style="margin-top:10px;font-size:10.5px;color:var(--ink-soft)">Editing a pattern restarts the index. Undo/redo applies to every field.</div>
+      </div>
+      <div class="card"><div class="ct" style="margin-bottom:6px">Geometry — auto-derived</div>
+        <div class="kv"><span class="k">beam center</span><span class="v">421.4, 836.9 px</span><span class="src">setup</span></div>
+        <div class="kv"><span class="k">flight path</span><span class="v">1.8095 m</span><span class="src">setup</span></div>
+        <div class="kv"><span class="k">pixel size</span><span class="v">172 µm</span><span class="src">prp</span></div>
+        <div class="kv"><span class="k">energy</span><span class="v">9.0 keV</span><span class="src">prp</span></div>
+        <div style="margin-top:10px;font-size:10.5px;color:var(--ink-soft)">Source tag: prp = sidecar · setup = beamline · computed. Override any field.</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;padding:14px 18px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div class="ct">Latest files scanned</div><div style="font-family:var(--font-mono);font-size:10.5px;color:var(--ink-soft)">682 matched</div></div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--ink-soft);columns:2;column-gap:30px;line-height:1.75">
+        <div>JC_C09_2_S2538_0_001.tif</div><div>JC_C09_1_S2537_0_001.tif</div><div>HA_5_044_S1991_0_001.tif</div><div>HA_5_043_S1990_0_001.tif</div><div>RY_BL3_S1780_0_001.tif</div><div>agbe_S2099_0_001.tif <span style="color:var(--ink-faint)">· calibration</span></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="actionbar"><span class="note">Approve creates the experiment &amp; starts the full scan — <b style="color:var(--ink)">enabled when indexing finishes</b>.</span><span class="sp"></span><span class="btn ghost">Cancel</span><span class="btn accent" style="opacity:.6">Indexing…<span style="font-family:var(--font-mono);font-size:11px;margin-left:6px">682</span></span></div>
+  <div class="note-strip"><div class="n"><span class="k">1</span>Geometry + sources read as one aligned table; source tags are quiet gray (no decorative colour). Undo/redo (top-right) reuses the app's existing ⌘Z/⌘⇧Z.</div><div class="n"><span class="k">2</span>"Latest files scanned" shows the most-recent matches (so you can sanity-check the right files are coming in); Approve unlocks when phase-1 completes.</div></div>
+</section>
+
+<!-- ===== 4 · SCAN + GROUPING (combined; review as loads land) ===== -->
+<section class="page">
+  <div class="ftitle">New surface · Scan + grouping review combined (review as loads land)</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span><span class="sp"></span><span class="gear">⚙</span></header>
+  <div class="main"><div class="frame">
+    <div class="kicker">Scanning · review groups as they land</div><div class="disp" style="font-size:24px">SSRL April 2026 · 1p7m</div>
+    <div style="margin:14px 0 4px;display:flex;align-items:center;gap:14px">
+      <span style="display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>Parsing exposures…</span>
+      <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--ink-soft)">418 / ~682 · 8 loads · 102 samples</span>
+      <div style="flex:1;max-width:300px;height:5px;background:var(--paper-sunk);border-radius:9999px;overflow:hidden"><i style="display:block;height:100%;width:61%;background:var(--accent);border-radius:9999px"></i></div>
+      <span style="font-size:11px;font-weight:600;color:var(--warning)">3 flags to review</span>
+    </div>
+    <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+      <!-- flagged completed load (reviewable now) -->
+      <div class="card" style="padding:0;border-color:color-mix(in oklch,var(--warning) 40%,var(--hair-strong))">
+        <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--hair)"><span style="font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)">load 06</span><span style="font-weight:600;font-size:12.5px">12 samples</span><span style="font-size:10px;font-weight:600;color:var(--warning);background:color-mix(in oklch,var(--warning) 10%,var(--paper));border:1px solid color-mix(in oklch,var(--warning) 40%,white);border-radius:9999px;padding:1px 8px">2 need review</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;font-family:var(--font-mono);font-size:12px"><span style="color:var(--ink-soft);width:54px">slot 5</span><span style="font-weight:600;color:var(--ink);font-family:var(--font-sans)">2-2 + LL37 1:1</span><span style="color:var(--ink-soft);font-size:11px">stage jump → maybe same sample as slot 4</span><span style="margin-left:auto;display:flex;gap:6px"><span class="btn" style="padding:3px 9px;font-size:11px">Keep separate</span><span class="btn warn" style="padding:3px 9px;font-size:11px">Merge ↑</span></span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid var(--hair);font-family:var(--font-mono);font-size:12px"><span style="color:var(--ink-soft);width:54px">slot 9</span><span style="font-weight:600;color:var(--ink);font-family:var(--font-sans)">CM1 Only</span><span style="color:var(--ink-soft);font-size:11px">counter reset mid-load</span><span style="margin-left:auto;display:flex;gap:6px"><span class="btn" style="padding:3px 9px;font-size:11px">Keep</span><span class="btn warn" style="padding:3px 9px;font-size:11px">Split…</span></span></div>
+      </div>
+      <!-- clean completed load (collapsed) -->
+      <div class="card" style="padding:11px 16px;display:flex;align-items:center;gap:12px"><span style="font-family:var(--font-mono);font-size:11px;color:var(--ink-soft)">load 07</span><span style="font-weight:600;font-size:12.5px">10 samples</span><span style="font-size:11px;color:var(--success);font-weight:600">✓ clean</span><span style="margin-left:auto;color:var(--ink-faint);font-size:11px">▸ expand</span></div>
+      <!-- still loading -->
+      <div class="card" style="padding:11px 16px;display:flex;align-items:center;gap:12px;background:linear-gradient(90deg,var(--paper-sunk),transparent)"><span style="font-family:var(--font-mono);font-size:11px;color:var(--ink-faint)">load 09</span><span style="color:var(--ink-faint);font-size:12px">unfolding…</span></div>
+    </div>
+  </div></div>
+  <div class="actionbar"><span class="note">Review flags as loads land. Confirm unlocks when the scan finishes — later loads can still raise flags.</span><span class="sp"></span><span class="btn accent" style="opacity:.55">Confirm groups <span style="font-family:var(--font-mono);font-size:11px;margin-left:4px">scanning…</span></span></div>
+  <div class="note-strip"><div class="n"><span class="k">1</span>Scanning + grouping are one surface. Settled loads are immediately reviewable (flag → Keep separate / Merge / Split, via the existing structural-edit events); still-loading loads show "unfolding…".</div><div class="n"><span class="k">2</span>Safe because ingest is additive (settled loads never re-touched) and edits use the event log. "Confirm groups" stays disabled until the scan completes, then commits. This same surface is the standalone /grouping route for rescans.</div></div>
+</section>
+
+<!-- ===== 5 · SCAN FAILED (debug + fix) ===== -->
+<section class="page">
+  <div class="ftitle">New surface · Scan failed — debug + fix (open configuration primary)</div>
+  <header class="top"><span class="wm">Himalaya<span class="wmt">· SAXS</span></span><span class="sect"><a class="on"><span class="d"></span>Experiments</a><a>Series</a></span><span class="sp"></span><span class="gear">⚙</span></header>
+  <div class="main"><div class="frame">
+    <div class="kicker" style="color:var(--warning)">Scan incomplete</div><div class="disp" style="font-size:24px">SSRL April 2026 · 1p7m</div>
+    <div style="margin-top:14px;font-size:13px;color:var(--ink)"><b>658 of 682 parsed.</b> <span style="color:var(--ink-soft)">24 couldn't be paired — mostly missing integration traces, a few metadata / image mismatches. Each row shows the nearest file that <i>does</i> exist, so you can see what to match.</span></div>
+    <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:16px;margin-top:16px">
+      <div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px;border-bottom:1px solid var(--hair)"><div class="ct">Didn't parse — 24 files</div><span style="font-family:var(--font-mono);font-size:10px;color:var(--ink-faint)">scroll ↓</span></div>
+        <div style="max-height:236px;overflow-y:auto;padding:12px 18px 16px;font-family:var(--font-mono);font-size:11px;display:flex;flex-direction:column;gap:9px">
+          <div style="font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft)">Missing integration · 19</div>
+          <div><div style="color:var(--ink)">HA_5_044_S1991_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">HA_5_044_S1991_<b>total</b>.dat</span></div></div>
+          <div><div style="color:var(--ink)">HA_5_043_S1990_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">HA_5_043_S1990_<b>total</b>.dat</span></div></div>
+          <div><div style="color:var(--ink)">HA_5_042_S1989_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">HA_5_042_S1989_<b>total</b>.dat</span></div></div>
+          <div><div style="color:var(--ink)">HA_5_041_S1988_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">HA_5_041_S1988_<b>total</b>.dat</span></div></div>
+          <div style="color:var(--ink-faint)">… 15 more integration</div>
+          <div style="font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft);margin-top:4px">Missing metadata · 3</div>
+          <div><div style="color:var(--ink)">RY_BL3_S1780_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">RY_BL3_S1780.<b>PRP</b></span> (vs *.prp)</div></div>
+          <div><div style="color:var(--ink)">RY_BL2_S1779_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">RY_BL2_S1779.<b>PRP</b></span> (vs *.prp)</div></div>
+          <div><div style="color:var(--ink)">RY_BL1_S1778_0_001.tif</div><div style="color:var(--ink-soft);font-size:10.5px">nearest <span style="color:var(--warning)">RY_BL1_S1778.<b>PRP</b></span> (vs *.prp)</div></div>
+          <div style="font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft);margin-top:4px">Image mismatch · 2</div>
+          <div><div style="color:var(--ink)">LL_2_003_S1820.<b style="color:var(--warning)">tiff</b></div><div style="color:var(--ink-soft);font-size:10.5px">extension .tiff · pattern is *.tif</div></div>
+          <div><div style="color:var(--ink)">LL_2_002_S1819.<b style="color:var(--warning)">tiff</b></div><div style="color:var(--ink-soft);font-size:10.5px">extension .tiff · pattern is *.tif</div></div>
+        </div>
+      </div>
+      <div class="card"><div class="ct" style="margin-bottom:6px">Test patterns</div>
+        <div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:14px">One field per file type with misses (adaptive). Edit until each clears.</div>
+        <div style="margin-bottom:13px"><div style="display:grid;grid-template-columns:78px 1fr;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px"><span style="color:var(--ink-soft)">integration</span><span class="field" style="justify-self:end">*_total.dat</span></div><div style="text-align:right;font-size:11px;color:var(--success);font-weight:600;margin-top:5px">✓ 19 / 19</div></div>
+        <div style="margin-bottom:13px"><div style="display:grid;grid-template-columns:78px 1fr;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px"><span style="color:var(--ink-soft)">metadata</span><span class="field" style="justify-self:end">*.[Pp][Rr][Pp]</span></div><div style="text-align:right;font-size:11px;color:var(--success);font-weight:600;margin-top:5px">✓ 3 / 3</div></div>
+        <div style="margin-bottom:16px"><div style="display:grid;grid-template-columns:78px 1fr;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px"><span style="color:var(--ink-soft)">image</span><span class="field" style="justify-self:end">*.tif*</span></div><div style="text-align:right;font-size:11px;color:var(--success);font-weight:600;margin-top:5px">✓ 2 / 2</div></div>
+        <button class="btn accent" style="width:100%;justify-content:center">Apply all in Configuration →</button>
+      </div>
+    </div>
+  </div></div>
+  <div class="actionbar">
+    <span class="note">A failed scan is usually a configuration issue.</span>
+    <span class="sp"></span>
+    <span class="confirm"><span style="color:var(--warning);display:flex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span class="ct2">Ingest 658, skip 24?</span><span class="btn ghost" style="padding:4px 9px">No</span><span class="btn warn" style="padding:4px 9px">Yes, ingest 658</span></span>
+    <span class="btn accent">Open configuration<span class="kb frost">↵</span></span>
+  </div>
+  <div class="note-strip"><div class="n"><span class="k">1</span>A failed scan is usually a config issue → <b>Open configuration</b> is primary. Each unmatched file is paired with the nearest existing file (integration / metadata / image), so you see the discrepancy to fix.</div><div class="n"><span class="k">2</span>"Test patterns" is adaptive — a field per file type that has misses (integration / metadata / image), each clearing as you fix it; "Apply all" pre-fills Configuration. The list scrolls so a fix can be verified against every miss. "Ingest N" replaces itself in place with a Yes/No confirm.</div></div>
+</section>
+
+</body></html>

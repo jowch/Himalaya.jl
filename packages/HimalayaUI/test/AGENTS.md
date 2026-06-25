@@ -81,9 +81,9 @@ To assert SSE fanout, register a `(pending = Channel{String}(64),)` directly on 
 
 `_fix_fk_references_after_autoincrement_migration!(db)` should be invoked **directly** from tests rather than through `open_db`, because `open_db` runs `create_schema!` migrations that expect full production schemas — synthetic FK fixtures (`refs_to_samples`, `_migrate_old_*`) break the migration chain. See `test_db.jl` FK-heal regression tests for the pattern.
 
-## Read-only-dir regression
+## Read-only experiment directories
 
-`test_pipeline.jl` snapshots an experiment-directory's contents before/after `cli_init_with_db!` and asserts equality. Keep this test green — Himalaya must never create, modify, or delete files inside an experiment dir at runtime (except `himalaya config new`).
+Himalaya must never create, modify, or delete files inside an experiment dir at runtime (except `himalaya config new`). Ingestion is read-only with respect to the experiment dir and now lives in the HTTP scan path (`scan_and_group!` in `ingest.jl`), not the CLI — the manifest-driven `init`/`reingest` CLI ingest was deleted by the ingestion redesign. Tests that need a populated DB without a real on-disk scan use `seed_experiment!` (`test/seed.jl`), which writes experiment/sample/exposure rows directly via the Phase-A writers.
 
 ## Curation lifecycle
 

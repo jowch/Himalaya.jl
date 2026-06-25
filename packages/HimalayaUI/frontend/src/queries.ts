@@ -1,10 +1,9 @@
 import { useMemo, useRef } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
-import { isSampleScreened } from "./lib/sample/screened";
 import {
   updateSampleMutator,
   addSampleTagMutator,
@@ -14,7 +13,6 @@ import {
   editCorpusSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
-  postSampleMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -37,7 +35,12 @@ import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
 import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
+import {
+  moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
+  splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
+} from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
+import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
 
@@ -50,6 +53,8 @@ export const queryKeys = {
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
+  loads:      (id: number | undefined) =>
+    ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "exposures"] as const,
   trace:      (exposureId: number | undefined) =>
@@ -88,7 +93,6 @@ export const queryKeys = {
   seriesTraces: (id: number | undefined) =>
     ["series", id ?? "none", "traces"] as const,
   seriesList: ["series-list"] as const,
-  seriesPins: ["series-pins"] as const,
   // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
   // and the corpus picker projection. Foreign add_tag replay invalidates both
   // (applyRemoteToCache add_tag/sample branch) so a peer's scoping write
@@ -117,6 +121,36 @@ export function useExperiment(id: number) {
     // we don't hit GET /api/experiments/0 → 404 (and retries) on every chip
     // mount before the user picks an experiment.
     enabled: id > 0,
+    // Self-heal a stuck scan (8c): if the SSE `ingest_complete` frame is dropped
+    // (EventSource reconnect mid-scan), poll the resting `ingest_status` so the
+    // surface flips to the post-scan review without a manual reload. Polls ONLY
+    // while a scan/analyze is in flight — idle/complete/failed rows don't poll.
+    // react-query dedupes by query key, so N mounted observers share one poll.
+    refetchInterval: (q) => {
+      const s = q.state.data?.ingest_status;
+      return s === "scanning" || s === "analyzing" ? 2500 : false;
+    },
+  });
+}
+
+/** The Load ▸ Sample ▸ Exposures roll-up (grouping-review + Configuration
+ *  acquisition timeline read off this; spec §9.2/§9.6). Gated id>0 like
+ *  useExperiment so a zero/undefined experiment never hits /loads.
+ *
+ *  `refetchWhileScanning` is the robust floor for live-unfold: during an initial
+ *  scan, the SSE `ingest_progress`/`ingest_complete` frames invalidate this query
+ *  — but React Query ABSORBS an invalidation that lands while a fetch is already
+ *  in flight (the frame burst overlaps the first, empty, mid-scan fetch), and
+ *  `staleTime` then keeps that empty result "fresh", so nothing re-fetches until a
+ *  manual reload. Polling while the scan is live (mirrors useExperiment's ingest
+ *  self-heal) picks up the committed loads regardless of the invalidation race;
+ *  it stops the moment the caller's `scanning` flag clears. */
+export function useLoads(id: number, refetchWhileScanning = false) {
+  return useQuery({
+    queryKey: queryKeys.loads(id),
+    queryFn: () => api.listLoads(id),
+    enabled: id > 0,
+    refetchInterval: refetchWhileScanning ? 2000 : false,
   });
 }
 
@@ -190,32 +224,6 @@ export function useCorpusExposures(
   }
   const isLoading = queries.some((q) => q.isLoading);
   return { byId, isLoading };
-}
-
-/**
- * Page-level screened-progress aggregate for the contact-sheet header (M-1):
- * "N / M samples screened". Runs `useQueries` over the visible samples,
- * sharing the exact `queryKeys.exposures(id)` cache rows each ContactSheetRow
- * fetches — no double-fetch. `screened` is derived per-sample by the shared
- * helper (lib/sample/screened.ts), so it tracks #162's flag when that lands.
- *
- * `total` is the number of samples passed in; `screened` counts those whose
- * derivation resolves true once their exposures have loaded.
- */
-export function useScreenedProgress(
-  samples: readonly api.CorpusSample[],
-): { screened: number; total: number } {
-  const queries = useQueries({
-    queries: samples.map((s) => ({
-      queryKey: queryKeys.exposures(s.id),
-      queryFn: () => api.listExposures(s.id),
-    })),
-  });
-  const screened = samples.reduce(
-    (n, s, i) => (isSampleScreened(s, queries[i]?.data) ? n + 1 : n),
-    0,
-  );
-  return { screened, total: samples.length };
 }
 
 export function useTrace(exposureId: number | undefined) {
@@ -305,51 +313,6 @@ export function useMemberIndices(exposureIds: number[]): Map<number, api.IndexEn
   return useStableQueryMap(exposureIds, (id) => ({
     queryKey: queryKeys.indices(id),
     queryFn: () => api.listIndices(id),
-  }));
-}
-
-/**
- * Sibling of `useMemberTraces` that surfaces a single boolean — true when
- * any underlying trace fetch is in its cold-loading state. Used by the
- * Compare-page skeleton wrappers to gate plot + gutter.
- *
- * Mirrors the boneyard rule (CLAUDE.md): gate on `query.isLoading`, NOT
- * `isPending` — disabled queries (empty `exposureIds`) and background
- * refetches must NOT trigger the skeleton.
- */
-export function useMemberTracesLoading(exposureIds: number[]): boolean {
-  const queries = useQueries({
-    queries: exposureIds.map((id) => ({
-      queryKey: queryKeys.trace(id),
-      queryFn: () => api.getTrace(id),
-    })),
-  });
-  return queries.some((q) => q.isLoading);
-}
-
-/**
- * Sibling of `useMemberTraces` that hydrates per-member EXPOSURE rows. Compare
- * review-mode pages use `sampleIdFor` and label resolution that depend on the
- * exposure cache being populated; without an explicit subscription the cache
- * never warms (only the trace key is fetched), and downstream readers fall
- * back to the orphan path. Issue #61 / #52.
- */
-export function useMemberExposures(exposureIds: number[]): Map<number, api.Exposure> {
-  return useStableQueryMap(exposureIds, (id) => ({
-    queryKey: queryKeys.exposure(id),
-    queryFn: () => api.getExposure(id),
-  }));
-}
-
-/**
- * Hydrates per-member SAMPLE rows. Used together with `useMemberExposures`
- * by the Compare review-mode label resolver — a member's display label is
- * `${sample.display_name || sample.name} · ${exposure.filename}` (issue #52).
- */
-export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
-  return useStableQueryMap(sampleIds, (id) => ({
-    queryKey: queryKeys.sample(id),
-    queryFn: () => api.getSample(id),
   }));
 }
 
@@ -531,29 +494,6 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
     addSampleTagMutator,
     { experimentId, sampleId, username, clientId: CLIENT_ID },
   );
-}
-
-export function useSampleMessages(sampleId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.messages(sampleId),
-    queryFn: () => api.listSampleMessages(sampleId as number),
-    enabled: sampleId !== undefined,
-  });
-}
-
-// Adapter: useQueueMutation flat-spreads input into the payload, but the
-// existing consumers call `postMsg.mutate(body: string)`. Wrap to package the
-// string under a `body` key for the mutator.
-export function usePostSampleMessage(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    postSampleMessageMutator,
-    { sampleId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (body: string) => inner.mutate({ body }),
-  };
 }
 
 export function useRemoveSampleTag(experimentId: number, sampleId: number) {
@@ -816,6 +756,84 @@ export function useSeriesTraces(seriesId: number | undefined) {
     queryKey: queryKeys.seriesTraces(seriesId),
     queryFn: () => api.getSeriesTraces(seriesId as number),
     enabled: seriesId !== undefined,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Structural-edit hooks (spec §9.6) — one hook per experiment, not per row.
+// Entity ids (sampleId / exposureId) ride in the mutate() input, NOT the scope.
+// This lets Task 14 instantiate each hook once and dispatch to any row.
+// ---------------------------------------------------------------------------
+
+export function useRenameSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(renameSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useMoveExposure(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(moveExposureMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+// merge: scope = experiment + identity ONLY; the caller passes { loserId, survivorId }
+// as the mutate() input (MergeSamplesInput, decided in Task 5) — no `as never`.
+export function useMergeSamples(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(mergeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useSplitSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(splitSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useDismissGroupingFlag(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(dismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useUndoDismissGroupingFlag(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(undoDismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+/** Trigger a rescan of a single experiment (cheap change-check then additive
+ *  ingest of new files). Plain TanStack mutation — not a queue mutator because
+ *  the scan is idempotent and emits its own SSE progress frames. Invalidates
+ *  the experiment detail on success so the header stats / status chip refresh.
+ *
+ *  `mutate(true)` bypasses the cheap change-check (force flag) — used when a
+ *  pattern field edit changes which files the scan discovers. */
+export function useTriggerScan(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  const inner = useMutation({
+    mutationFn: (force: boolean) =>
+      api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), force),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
+  });
+  return {
+    ...inner,
+    mutate: (force = false) => inner.mutate(force),
+  };
+}
+
+/** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
+ *  read hooks for experiments). Wraps E1's `updateExperiment(id, patch)` fetcher;
+ *  this is a plain TanStack mutation (not a queue mutator — geometry override is
+ *  not part of the structural-edit event log) that invalidates the experiment
+ *  detail on success so the provenance chips re-render. */
+export function useUpdateExperiment(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: api.ExperimentPatch) =>
+      api.updateExperiment(experimentId, patch, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
   });
 }
 

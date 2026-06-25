@@ -13,8 +13,13 @@ function short(p: string): string { return PHASE_SHORT[p] ?? p; }
 interface PhaseChipProps
   extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "children"> {
   /** Phase name, e.g. "Pn3m". Rendered as the chip's text (the always-on
-   *  second channel) AND drives the hue via phaseColor() internally. */
-  phase: string;
+   *  second channel) AND drives the hue via phaseColor() internally. Optional
+   *  only because a `formFactor` chip carries no phase. */
+  phase?: string;
+  /** A form-factor classification: indexed-but-phaseless (a real, terminal
+   *  result), so it reads as a CHIP distinct from the grey "Not indexed" text —
+   *  tinted NEUTRAL since it has no crystalline-phase hue. Ignores `phase`. */
+  formFactor?: boolean;
   /** Optional coexisting phases beyond the dominant `phase`. When non-empty the
    *  chip reads `<short(phase)> + <short(a)> + <short(b)>…` in the DOMINANT
    *  (`phase`) color — a single tinted chip listing all phases, never a split.
@@ -57,17 +62,39 @@ function variantStyle(variant: PhaseChipVariant, color: string): CSSProperties {
 export function PhaseChip({
   phase,
   coexistWith,
+  formFactor = false,
   variant = "tint",
   size = "sm",
   className = "",
   ...props
 }: PhaseChipProps): JSX.Element {
-  const color = phaseColor(phase);
+  if (formFactor) {
+    // Neutral chip — a real, terminal classification, NOT the grey unindexed
+    // text. Tokens (ui/ is design-guard exempt) keep it on the warm-paper system.
+    return (
+      <span
+        data-testid="phase-chip"
+        data-form-factor="true"
+        data-size={size}
+        className={`${base} ${sizeClass[size]} ${className}`}
+        style={{
+          color: "var(--color-ink-soft)",
+          background: "var(--color-paper-sunk)",
+          borderColor: "var(--color-hair-strong)",
+        }}
+        {...props}
+      >
+        Form factor
+      </span>
+    );
+  }
+  const p = phase ?? "";
+  const color = phaseColor(p);
   const coexist = coexistWith ?? [];
   const text =
     coexist.length > 0
-      ? [phase, ...coexist].map(short).join(" + ")
-      : phase;
+      ? [p, ...coexist].map(short).join(" + ")
+      : p;
   return (
     <span
       data-testid="phase-chip"

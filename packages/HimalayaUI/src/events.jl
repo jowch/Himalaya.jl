@@ -398,6 +398,15 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         return nothing
     end
 
+    if kind == "exposure_moved"
+        # payload.sample_id: the destination sample. UPDATE is naturally idempotent —
+        # replaying sets the same value, so rebuild_views_from_log! is safe.
+        DBInterface.execute(db,
+            "UPDATE exposures SET sample_id = ? WHERE id = ?",
+            [Int(payload.sample_id), Int(entity_id)])
+        return nothing
+    end
+
     # M2.1 trivial-route migrations: routes write to view tables directly,
     # so the dispatcher is a no-op for these kinds. Branches exist for
     # exhaustiveness so the rebuild_views_from_log! property test treats
@@ -409,6 +418,15 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "post_message" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
+
+    # Structural grouping edits (routes_grouping.jl): the route handlers write the
+    # samples / flag rows directly (like exposure_moved above), so the dispatcher is
+    # a no-op. Explicit guards for exhaustiveness so rebuild_views_from_log! treats
+    # them as known kinds rather than silently falling through to the default.
+    kind == "sample_renamed" && return nothing
+    kind == "sample_created" && return nothing
+    kind == "sample_split" && return nothing
+    kind == "grouping_flag_dismissed" && return nothing
 
     # Speculative index lifecycle: route handlers insert/delete the indices
     # row directly (the speculative create/delete paths in routes_analysis.jl
@@ -1117,6 +1135,72 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
     )
     post_state === nothing || (fields[:post_state] = post_state)
     msg = JSON3.write(fields)
+    frame = "event: curation\ndata: $msg\n\n"
+    lock(SSE_LOCK) do
+        to_drop = []
+        for sub in SSE_SUBSCRIBERS[]
+            _try_put!(sub.pending, frame) || push!(to_drop, sub)
+        end
+        for sub in to_drop
+            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
+        end
+    end
+    nothing
+end
+
+"""
+    broadcast_progress!(experiment_id; kind, processed, total, kwargs...)
+
+Emit a transient ingest-progress SSE frame WITHOUT writing a `user_actions` row.
+Calls `_try_put!` directly (per spec §9.3): no `event_id`, no FK contract.
+
+Rides the `"curation"` SSE event name so the existing frontend subscriber
+(`App.tsx` `addEventListener("curation", …)`) receives the frame without a new
+event type. The frame is PAYLOAD-WRAPPED, mirroring `broadcast_event!`
+(events.jl:1107-1120): `kind` is top-level and the experiment/count fields live
+under a `payload` sub-object, so the frame parses through the same `curation`
+path as every structural event. The `applyRemoteToCache` four `ingest_*` arms
+discriminate on the top-level `kind`; the companion `App.tsx` listener updates
+`ingestInFlight` from the same frames.
+
+`kind` must be one of: `ingest_started`, `ingest_progress`, `ingest_complete`,
+`ingest_failed`. The `experiment_id` is always a non-zero positive integer (the
+real experiments.id); the frontend reads `payload.experiment_id`, never
+`remote.entity_id`.
+
+Progress frames are best-effort: the SSE channel cap is 64 (server.jl:92); a
+680-exposure scan may drop intermediate `ingest_progress` frames. Treat
+`ingest_complete` / `ingest_failed` as the authoritative terminal state and
+always broadcast those, tolerating drops of intermediate progress ticks.
+"""
+function broadcast_progress!(experiment_id::Integer;
+                              kind::String,
+                              processed::Integer = 0,
+                              total::Integer     = 0,
+                              kwargs...)
+    # Build the wire dict ONCE. The events.jl Dates import is selective
+    # (`using Dates: now, UTC, format, @dateformat_str`) — bare `Dates` is NOT
+    # bound, so use the same unqualified `format(now(UTC), dateformat"…")`
+    # expression broadcast_event! uses (events.jl ~line 1115).
+    #
+    # Frame shape MIRRORS broadcast_event! (events.jl:1107-1120): `:kind` is
+    # TOP-LEVEL (the frontend discriminates on it) and the experiment/count
+    # fields live under a `:payload` sub-object, so the frame parses exactly like
+    # every other `"curation"` frame and the frontend reads `payload.experiment_id`
+    # (never a flat top-level field). `:ts` rides top-level, same as broadcast_event!.
+    ts      = format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ")
+    payload = Dict{Symbol, Any}(
+        :experiment_id => Int(experiment_id),
+        :processed     => Int(processed),
+        :total         => Int(total),
+    )
+    merge!(payload, Dict{Symbol, Any}(kwargs))
+    fields = Dict{Symbol, Any}(
+        :kind    => kind,
+        :ts      => ts,
+        :payload => payload,
+    )
+    msg   = JSON3.write(fields)
     frame = "event: curation\ndata: $msg\n\n"
     lock(SSE_LOCK) do
         to_drop = []

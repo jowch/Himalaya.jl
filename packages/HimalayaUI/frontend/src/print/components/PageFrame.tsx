@@ -10,6 +10,8 @@ export const PAGE_WIDTHS = {
   folio: "max-w-[1380px]",
   scoping: "max-w-[760px]",
   builder: "max-w-[1180px]",
+  home: "max-w-[1080px]",
+  experiment: "max-w-[1280px]",
 } as const;
 
 export type PageWidth = keyof typeof PAGE_WIDTHS;

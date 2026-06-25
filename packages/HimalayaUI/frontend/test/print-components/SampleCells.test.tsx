@@ -30,27 +30,22 @@ describe("<SpecCell> name and id", () => {
   });
 });
 
-describe("<SpecCell> screened prop (flag-the-exception)", () => {
-  it("does NOT render a leading checkbox/check-circle (it reads as selection)", () => {
-    const { container } = render(<SpecCell name="Sample A" sampleId="s-001" />);
-    expect(container.querySelector("[data-testid='check-circle']")).not.toBeInTheDocument();
-  });
-
-  it("shows the 'Needs review' chip when screened=false", () => {
-    render(<SpecCell name="Sample A" sampleId="s-001" screened={false} />);
-    const chip = screen.getByTestId("needs-review");
+describe("<SpecCell> slot chip", () => {
+  it("renders a slot-chip when slotIndex is provided", () => {
+    render(<SpecCell name="Sample A" sampleId="s-001" slotIndex={3} />);
+    const chip = screen.getByTestId("slot-chip");
     expect(chip).toBeInTheDocument();
-    expect(chip).toHaveTextContent("Needs review");
+    expect(chip).toHaveTextContent("slot 3");
   });
 
-  it("shows the 'Needs review' chip when screened is omitted", () => {
+  it("renders no slot-chip when slotIndex is absent", () => {
     render(<SpecCell name="Sample A" sampleId="s-001" />);
-    expect(screen.getByTestId("needs-review")).toBeInTheDocument();
+    expect(screen.queryByTestId("slot-chip")).toBeNull();
   });
 
-  it("does NOT show the 'Needs review' chip when screened=true", () => {
+  it("renders no slot-chip when slotIndex is absent (even when screened)", () => {
     render(<SpecCell name="Sample A" sampleId="s-001" screened />);
-    expect(screen.queryByTestId("needs-review")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("slot-chip")).toBeNull();
   });
 
   it("renders the root data-testid=spec-cell", () => {

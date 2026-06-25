@@ -7,24 +7,6 @@ const row = (id: string) => (
   <SampleTableRow key={id} name={`Sample ${id}`} sampleId={id} exposures={[]} kept={1} total={1} tags={[]} />
 );
 
-/** A row wired the way SamplesPage wires it under roving: checkbox column +
- *  rowIndex + the nav-seam handlers (so each cell has a real focusable widget). */
-const gridRow = (id: string, rowIndex: number) => (
-  <SampleTableRow
-    key={id}
-    rowIndex={rowIndex}
-    name={`Sample ${id}`}
-    sampleId={id}
-    exposures={[{ id: 1, src: null, frameNo: "1" }]}
-    kept={1}
-    total={1}
-    tags={[{ key: "t" }]}
-    onCheck={() => {}}
-    onOpenLoupe={() => {}}
-    onOpenFocus={() => {}}
-  />
-);
-
 const checkRow = (id: string) => (
   <SampleTableRow
     key={id}
@@ -42,7 +24,7 @@ describe("SheetTable", () => {
   it("renders the five aligned column headers", () => {
     render(<SheetTable>{[row("a")]}</SheetTable>);
     const head = screen.getByTestId("sheet-head");
-    ["Sample", "Exposures", "Frames kept", "Tags", "Status"].forEach((label) =>
+    ["Sample", "Exposures", "Kept", "Tags", "Phase"].forEach((label) =>
       expect(head.textContent).toContain(label),
     );
   });
@@ -68,7 +50,7 @@ describe("SheetTable a11y semantics (WCAG 1.3.1 / 4.1.2)", () => {
   it("exposes the five column headers by name (no checkbox column)", () => {
     render(<SheetTable>{[row("a")]}</SheetTable>);
     const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["Sample", "Exposures", "Frames kept", "Tags", "Status"]);
+    expect(headers).toEqual(["Sample", "Exposures", "Kept", "Tags", "Phase"]);
   });
 
   it("column-header kickers use the soft tone (WCAG 1.4.3 on the sunk header band)", () => {
@@ -151,7 +133,7 @@ describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () =>
         {[checkRow("a")]}
       </SheetTable>,
     );
-    for (const label of ["Sample", "Exposures", "Frames kept", "Status"]) {
+    for (const label of ["Sample", "Exposures", "Kept", "Phase"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
     // Tags stays a non-button label (multi-valued → not sortable).
@@ -167,7 +149,7 @@ describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () =>
     );
     fireEvent.click(screen.getByRole("button", { name: "Exposures" }));
     expect(onSort).toHaveBeenCalledWith("exposures");
-    fireEvent.click(screen.getByRole("button", { name: "Frames kept" }));
+    fireEvent.click(screen.getByRole("button", { name: "Kept" }));
     expect(onSort).toHaveBeenCalledWith("kept");
   });
 
@@ -178,7 +160,7 @@ describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () =>
       </SheetTable>,
     );
     expect(getHeader("Sample")).toHaveAttribute("aria-sort", "descending");
-    for (const label of ["Exposures", "Frames kept", "Status"]) {
+    for (const label of ["Exposures", "Kept", "Phase"]) {
       expect(getHeader(label)).toHaveAttribute("aria-sort", "none");
     }
   });
@@ -189,7 +171,7 @@ describe("SheetTable sortable columns (SA-SORT, WAI-ARIA sortable table)", () =>
         {[checkRow("a")]}
       </SheetTable>,
     );
-    expect(getHeader("Frames kept")).toHaveAttribute("aria-sort", "ascending");
+    expect(getHeader("Kept")).toHaveAttribute("aria-sort", "ascending");
     expect(getHeader("Sample")).toHaveAttribute("aria-sort", "none");
   });
 
@@ -224,8 +206,8 @@ describe("SheetTable horizontal scroll + sticky identity (WCAG 1.4.10)", () => {
   it("the sheet-scroll horizontal scroller carries tabindex=-1 (must NOT be an auto Tab-stop)", () => {
     // Chrome auto-adds an overflow-x-auto container with overflowing content to
     // the Tab order; tabindex=-1 opts the table's own scroller out so it never
-    // traps focus before the roving grid is exited (SA-ROVING BUG D). Horizontal
-    // scroll stays reachable via the grid's arrow-key cell navigation.
+    // becomes a stray Tab stop. Horizontal scroll stays reachable via the
+    // table's keyboard navigation.
     render(<SheetTable>{[row("a")]}</SheetTable>);
     expect(screen.getByTestId("sheet-scroll")).toHaveAttribute("tabindex", "-1");
   });
@@ -277,122 +259,28 @@ describe("SheetTable horizontal scroll + sticky identity (WCAG 1.4.10)", () => {
   });
 });
 
-describe("SheetTable roving data grid (SA-ROVING)", () => {
-  function renderGrid() {
-    return render(
-      <SheetTable
-        checkboxColumn
-        roving
-        dataRowCount={2}
-        onSort={() => {}}
-        sort={{ key: null, dir: "asc" }}
-      >
-        {[gridRow("a", 1), gridRow("b", 2)]}
-      </SheetTable>,
-    );
-  }
-
-  it("becomes a role=grid (not role=table) when roving is on", () => {
-    renderGrid();
-    expect(screen.getByRole("grid", { name: "Samples" })).toBeInTheDocument();
-    expect(screen.queryByRole("table")).toBeNull();
+describe("SheetTable plain table semantics", () => {
+  it("renders a plain table (role=table, not role=grid)", () => {
+    render(<SheetTable>{[row("a")]}</SheetTable>);
+    expect(screen.queryByRole("grid")).toBeNull();
+    expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
-  it("body cells become role=gridcell (was role=cell)", () => {
-    renderGrid();
+  it("always renders role=table (never role=grid)", () => {
+    render(<SheetTable checkboxColumn>{[checkRow("a"), checkRow("b")]}</SheetTable>);
+    expect(screen.getByRole("table", { name: "Samples" })).toBeInTheDocument();
+    expect(screen.queryByRole("grid")).toBeNull();
+  });
+
+  it("body cells are always role=cell (never gridcell)", () => {
+    render(<SheetTable checkboxColumn>{[checkRow("a"), checkRow("b")]}</SheetTable>);
     const bodyRows = screen
       .getAllByRole("row")
       .filter((r) => within(r).queryAllByRole("columnheader").length === 0);
     expect(bodyRows).toHaveLength(2);
     bodyRows.forEach((r) => {
-      expect(within(r).getAllByRole("gridcell")).toHaveLength(6);
-      expect(within(r).queryAllByRole("cell")).toHaveLength(0);
+      expect(within(r).getAllByRole("cell")).toHaveLength(6);
+      expect(within(r).queryAllByRole("gridcell")).toHaveLength(0);
     });
-  });
-
-  it("focusOnMountRow lands focus on that data row's Sample cell on mount (LO-FOCUSRET)", () => {
-    render(
-      <SheetTable
-        checkboxColumn
-        roving
-        dataRowCount={3}
-        focusOnMountRow={2}
-        onSort={() => {}}
-        sort={{ key: null, dir: "asc" }}
-      >
-        {[gridRow("a", 1), gridRow("b", 2), gridRow("c", 3)]}
-      </SheetTable>,
-    );
-    const bodyRows = screen
-      .getAllByRole("row")
-      .filter((r) => within(r).queryAllByRole("columnheader").length === 0);
-    expect(bodyRows).toHaveLength(3);
-    // Focus restored to the SECOND data row (row "b"), not <body> or row 1.
-    expect(document.activeElement).not.toBe(document.body);
-    expect(bodyRows[1]!.contains(document.activeElement)).toBe(true);
-    expect(bodyRows[0]!.contains(document.activeElement)).toBe(false);
-    // And it is the active (tabindex=0) Sample gridcell of that row.
-    const active = document.activeElement as HTMLElement;
-    expect(active.getAttribute("tabindex")).toBe("0");
-  });
-
-  it("without focusOnMountRow an ordinary mount steals no focus", () => {
-    render(
-      <SheetTable
-        checkboxColumn
-        roving
-        dataRowCount={2}
-        onSort={() => {}}
-        sort={{ key: null, dir: "asc" }}
-      >
-        {[gridRow("a", 1), gridRow("b", 2)]}
-      </SheetTable>,
-    );
-    expect(document.activeElement).toBe(document.body);
-  });
-
-  it("has EXACTLY one element with tabindex=0 in the grid at rest", () => {
-    const { container } = renderGrid();
-    const grid = screen.getByRole("grid", { name: "Samples" });
-    const tabbable = grid.querySelectorAll('[tabindex="0"]');
-    expect(tabbable).toHaveLength(1);
-    // Everything else in the grid is tabindex=-1 (one tab stop).
-    expect(grid.querySelectorAll('[tabindex="-1"]').length).toBeGreaterThan(0);
-    expect(container).toBeTruthy();
-  });
-
-  it("the single tab stop defaults to the first data Sample cell's widget", () => {
-    renderGrid();
-    const grid = screen.getByRole("grid", { name: "Samples" });
-    const active = grid.querySelector('[tabindex="0"]')!;
-    // Sample col widget is the spec-name button.
-    expect(active).toHaveAttribute("data-role", "spec-name");
-  });
-
-  it("keeps aria-sort headers under roving (SA-SORT preserved)", () => {
-    renderGrid();
-    const sample = screen
-      .getAllByRole("columnheader")
-      .find((h) => h.textContent?.includes("Sample"))!;
-    expect(sample).toHaveAttribute("aria-sort", "none");
-    // The sort buttons still exist and are clickable.
-    expect(screen.getByRole("button", { name: "Exposures" })).toBeInTheDocument();
-  });
-
-  it("clicking a sortable header still sorts (pointer parity) under roving", () => {
-    const onSort = vi.fn();
-    render(
-      <SheetTable checkboxColumn roving dataRowCount={1} onSort={onSort} sort={{ key: null, dir: "asc" }}>
-        {[gridRow("a", 1)]}
-      </SheetTable>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Frames kept" }));
-    expect(onSort).toHaveBeenCalledWith("kept");
-  });
-
-  it("the static (roving-off) path keeps role=table and role=cell", () => {
-    render(<SheetTable checkboxColumn>{[row("a")]}</SheetTable>);
-    expect(screen.getByRole("table", { name: "Samples" })).toBeInTheDocument();
-    expect(screen.queryByRole("grid")).toBeNull();
   });
 });

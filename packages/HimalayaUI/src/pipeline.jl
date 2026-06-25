@@ -881,6 +881,44 @@ function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
 end
 
 """
+    resolve_trace_path(analysis_dir, integration_pattern, filename) -> String | nothing
+
+Resolve an exposure's integration `.dat` under `analysis_dir`. Tries the exact
+per-frame name (`integration_pattern` with `{name}` => `filename`) first, then
+falls back to the per-acquisition name with the trailing `_<rep>_<frame>` suffix
+dropped: the real beamline `_tot.dat` total integration is named by the
+acquisition stem and shared across that acquisition's per-frame exposures. The
+migration rewrites `exposures.filename` to the full per-frame stem (for rescan
+dedup), so every `.dat` consumer — analyze, the trace route, series traces — must
+resolve through here. Returns the path if found, else `nothing`.
+"""
+function resolve_trace_path(analysis_dir::AbstractString,
+                            integration_pattern::AbstractString,
+                            filename::AbstractString)
+    exact = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
+    isfile(exact) && return exact
+    stripped = replace(filename, r"_\d+_\d+$" => "")
+    if stripped != filename
+        alt = joinpath(analysis_dir, replace(integration_pattern, "{name}" => stripped))
+        isfile(alt) && return alt
+    end
+    return nothing
+end
+
+"""
+    analyze_exposure!(db, exposure_id; kwargs...)
+
+2-arg convenience overload: resolves `analysis_dir` via `_resolve_analysis_dir`
+(reads `exposures.experiment_id` directly, sample_id-independent), then delegates
+to the 3-arg method.
+"""
+function analyze_exposure!(db::SQLite.DB, exposure_id::Integer; kwargs...)
+    analysis_dir = _resolve_analysis_dir(db, Int(exposure_id))
+    analysis_dir === nothing && error("exposure $exposure_id not found")
+    return analyze_exposure!(db, exposure_id, analysis_dir; kwargs...)
+end
+
+"""
     analyze_exposure!(db, exposure_id, analysis_dir; trace_known_unchanged=false)
         -> NamedTuple{(:dropped_assignment_phases,)}
 
@@ -917,18 +955,13 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     t0 = time()
 
     rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT e.filename, x.id AS experiment_id
-           FROM exposures e
-           JOIN samples s ON s.id = e.sample_id
-           JOIN experiments x ON x.id = s.experiment_id
-           WHERE e.id = ?""", [exposure_id]))
+        "SELECT filename, experiment_id FROM exposures WHERE id = ?", [Int(exposure_id)]))
     isempty(rows) && error("exposure $exposure_id not found")
     filename      = rows[1].filename
     experiment_id = rows[1].experiment_id
 
     cfg = config_from_db(db, experiment_id)
-    pattern_filename = replace(cfg.integration_pattern, "{name}" => filename)
-    dat_path = joinpath(analysis_dir, pattern_filename)
+    dat_path = joinpath(analysis_dir, replace(cfg.integration_pattern, "{name}" => filename))
 
     # DB-only reads first so the fast path can short-circuit before any file I/O.
     stored_trace_hash  = read_trace_hash(db, exposure_id)
@@ -954,8 +987,11 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         end
     end
 
-    # Slow path: from here on, behavior mirrors the pre-refactor implementation.
-    isfile(dat_path) || error("dat file not found: $dat_path")
+    # Slow path: resolve the trace (per-frame name, else the shared per-acquisition
+    # `_tot.dat` — see resolve_trace_path).
+    resolved = resolve_trace_path(analysis_dir, cfg.integration_pattern, String(filename))
+    resolved === nothing && error("dat file not found: $dat_path")
+    dat_path = resolved
 
     if new_trace_hash === nothing
         new_trace_hash = hash_trace_file(dat_path)
