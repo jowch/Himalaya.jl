@@ -1,10 +1,8 @@
 import { forwardRef } from "react";
 import type { HTMLAttributes } from "react";
 import { CheckCircle } from "./CheckCircle";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "onChange"> {
   checked?: boolean;

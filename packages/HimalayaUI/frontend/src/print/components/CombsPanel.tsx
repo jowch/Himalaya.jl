@@ -4,10 +4,8 @@ import { CombChart, ResidualChart, type CombSeries } from "../comb";
 import { PanelHeader } from "./PanelHeader";
 import { CombLegend } from "./CombLegend";
 import { ResidualLegend } from "./ResidualLegend";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export type CombView = "comb" | "resid";
 

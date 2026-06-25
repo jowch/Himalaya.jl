@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Menu } from "./Menu";
 import type { MenuOption } from "./Menu";
+import { cx } from "../../lib/cx";
 
 export interface FieldProps {
   value: string;
@@ -23,9 +24,6 @@ export interface FieldProps {
   className?: string; // PLACEMENT ONLY
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** The `.field` ordering-variable control: a bordered, clickable row showing a
  *  value on the left and a `▾` chevron (ink-faint) on the right.

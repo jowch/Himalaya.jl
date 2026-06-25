@@ -4,10 +4,8 @@ import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
 import { WaterfallChart } from "../waterfall";
 import type { WaterfallRow } from "../waterfall/waterfallModel";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export type SeriesScale = "log" | "lin";
 

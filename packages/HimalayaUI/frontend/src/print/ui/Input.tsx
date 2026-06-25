@@ -1,9 +1,7 @@
 import { forwardRef } from "react";
 import type { InputHTMLAttributes, MutableRefObject, ReactNode, Ref } from "react";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** Apply one node to several refs (forwarded `ref` + the `inputRef` prop). */
 function setRefs<T>(node: T | null, ...refs: Array<Ref<T> | undefined>): void {

@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { phaseColor } from "../../phases";
+import { cx } from "../../lib/cx";
 
 /**
  * PhaseStrip — one cell per series member coloured by that member's confirmed
@@ -69,9 +70,6 @@ export interface PhaseStripProps {
 
 const UNINDEXED = "var(--color-ink-faint)";
 
-function cx(...parts: Array<string | false | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 const sizeClass: Record<PhaseStripSize, string> = {
   sm: "h-2 gap-0.5", // 8px bar

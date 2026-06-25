@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { FlagButton, GripHandle, IconButton, Input } from "../ui";
 import { Sparkline } from "../plot/Sparkline";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface ScopeSampleRowProps {
   name: string;

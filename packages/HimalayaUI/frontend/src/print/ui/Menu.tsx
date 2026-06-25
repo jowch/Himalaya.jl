@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode, KeyboardEvent } from "react";
+import { cx } from "../../lib/cx";
 
 /**
  * Menu<T> — the plate dropdown popover (closed look / open placement).
@@ -53,9 +54,6 @@ export interface MenuProps<T extends string> {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export function Menu<T extends string>({
   open,

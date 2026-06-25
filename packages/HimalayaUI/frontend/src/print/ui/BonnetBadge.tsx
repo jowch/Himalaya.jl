@@ -1,12 +1,10 @@
+import { cx } from "../../lib/cx";
 interface BonnetBadgeProps {
   /** PLACEMENT ONLY — margin / inline position. Appearance utilities are
    *  banned by the lint:design guard; the look lives in this file. */
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** A small terracotta-tinted pill flagging the Gauss–Bonnet ratio signal on a
  *  candidate. Decorative status flag — non-interactive (no C/D interaction

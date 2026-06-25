@@ -3,10 +3,8 @@ import { CardFigure } from "../waterfall/CardFigure";
 import { Card, PhaseStrip, NoticePill, Button } from "../ui";
 import type { PhaseSegment } from "../ui";
 import type { WaterfallRow } from "../waterfall/waterfallModel";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface SeriesCardProps {
   /** Mini-waterfall rows, low→high; drives <CardFigure>. */

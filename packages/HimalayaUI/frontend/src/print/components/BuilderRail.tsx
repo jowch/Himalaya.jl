@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import { Button, IconButton, Kicker, Slider, NoticePill } from "../ui";
 import { RailSection } from "./RailSection";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface BuilderRailProps {
   onConfirm?: () => void;

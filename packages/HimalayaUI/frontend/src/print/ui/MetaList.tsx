@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 export interface MetaEntry {
   key: string;
@@ -11,9 +12,6 @@ interface MetaListProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** Mono key/value list — measured values / ids / timestamps paired with their
  *  labels. Semantic <dl>/<dt>/<dd> carries the term/definition pairing into the

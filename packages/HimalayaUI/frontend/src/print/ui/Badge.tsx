@@ -1,13 +1,11 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 interface BadgeProps extends Omit<HTMLAttributes<HTMLSpanElement>, "children"> {
   children: ReactNode;
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** Inline mono count carried alongside a button label (the notes-button "3").
  *  Flat by design: a measured count, not a status pill — no fill, border, or

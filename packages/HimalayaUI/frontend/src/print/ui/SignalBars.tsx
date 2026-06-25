@@ -1,3 +1,4 @@
+import { cx } from "../../lib/cx";
 interface SignalBarsProps {
   /** Strength reading, on the same scale as `max`. Mapped onto 5 bars. */
   value: number;
@@ -8,9 +9,6 @@ interface SignalBarsProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** A 5-bar signal-strength indicator. The active COUNT = round(value/max * 5),
  *  clamped to 0..5.

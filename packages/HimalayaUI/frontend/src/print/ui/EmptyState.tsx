@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 interface EmptyStateProps {
   title: string;

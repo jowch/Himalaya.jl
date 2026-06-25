@@ -1,6 +1,4 @@
-function cx(...p: Array<string | false | null | undefined>): string {
-  return p.filter(Boolean).join(" ");
-}
+import { cx } from "../../lib/cx";
 
 export interface FitMetadataProps {
   landed: number;

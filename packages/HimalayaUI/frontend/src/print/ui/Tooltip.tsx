@@ -1,5 +1,6 @@
 import { cloneElement, useId, useState } from "react";
 import type { ReactElement } from "react";
+import { cx } from "../../lib/cx";
 
 interface TooltipProps {
   /** The caption text shown in the popover. */
@@ -15,9 +16,6 @@ interface TooltipProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /**
  * Caption popover that shows on hover AND focus around a single trigger child.

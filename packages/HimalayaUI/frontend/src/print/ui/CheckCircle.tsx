@@ -1,6 +1,4 @@
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
+import { cx } from "../../lib/cx";
 
 interface CheckCircleProps {
   checked: boolean;

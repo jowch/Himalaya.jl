@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 export type ChipVariant = "static" | "removable" | "add" | "toggle" | "trigger";
 
@@ -36,9 +37,6 @@ interface ChipProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** Shared pill geometry for every variant — the one base that FacetChip,
  *  FilterChip and TagPill collapse onto. Appearance lives here; the consumer's

@@ -1,4 +1,5 @@
 import { KbKey } from "./KbKey";
+import { cx } from "../../lib/cx";
 
 export interface Shortcut {
   keyLabel: string;
@@ -13,9 +14,6 @@ interface KbLegendProps {
   testId?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** KbLegend — a flat row of shortcut hints, each pairing a KbKey cap with a
  *  short description. Composes KbKey (DRY); the legend is a single flat row of

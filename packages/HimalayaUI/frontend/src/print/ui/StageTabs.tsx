@@ -1,4 +1,5 @@
 import { Dot } from "./Dot";
+import { cx } from "../../lib/cx";
 
 export type StageKey = "samples" | "index" | "series";
 
@@ -8,9 +9,6 @@ interface StageTabsProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 const STAGES: ReadonlyArray<{ key: StageKey; label: string }> = [
   { key: "samples", label: "Samples" },

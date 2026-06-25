@@ -1,3 +1,4 @@
+import { cx } from "../../lib/cx";
 /**
  * RailBack — floating tab that restores a collapsed editing rail.
  *
@@ -13,9 +14,6 @@
  * `8px 0 0 8px` (the tab fuses to the right edge of the viewport).
  */
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface RailBackProps {
   /** Vertical-text label. Default "Compose". */

@@ -2,10 +2,8 @@ import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Menu } from "./Menu";
 import type { MenuOption } from "./Menu";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface DropdownProps<T extends string> {
   /** Required: names the control for assistive tech. */

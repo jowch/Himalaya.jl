@@ -1,3 +1,4 @@
+import { cx } from "../../lib/cx";
 interface ToggleSwitchProps {
   checked: boolean;
   onChange: (v: boolean) => void;
@@ -8,9 +9,6 @@ interface ToggleSwitchProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** A 32x18 pill switch with a 14px plate knob that slides 14px when on, plus a
  *  text label beside it. Built pseudo-free (a `<button role="switch">` + spans)

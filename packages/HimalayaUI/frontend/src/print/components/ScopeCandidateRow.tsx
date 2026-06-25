@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
 import { Sparkline } from "../plot/Sparkline";
 import { Button } from "../ui";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface ScopeCandidateRowProps {
   name: string;

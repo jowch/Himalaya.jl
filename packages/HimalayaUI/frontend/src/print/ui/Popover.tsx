@@ -1,5 +1,6 @@
 import { cloneElement, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement, ReactNode, RefObject } from "react";
+import { cx } from "../../lib/cx";
 
 export interface PopoverProps {
   /** The trigger element. Cloned to wire click + aria. Must be a single
@@ -25,9 +26,6 @@ export interface PopoverProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /**
  * Popover — a click/focus-triggered LIGHT-plate popover holding ARBITRARY,

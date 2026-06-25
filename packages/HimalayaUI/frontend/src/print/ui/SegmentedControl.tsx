@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import type { ReactNode, KeyboardEvent } from "react";
+import { cx } from "../../lib/cx";
 
 /**
  * SegmentedControl<T> — the canonical single-select button group.
@@ -60,9 +61,6 @@ export interface SegmentedControlProps<T extends string> {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 const containerClass: Record<SegmentedVariant, string> = {
   bordered: "inline-flex overflow-hidden rounded border border-hair-strong divide-x divide-hair-strong",

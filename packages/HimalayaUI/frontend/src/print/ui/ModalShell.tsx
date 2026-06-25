@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { cx } from "../../lib/cx";
 
 export type ModalSize = "sm" | "md" | "lg";
 export type ModalAlign = "center" | "top";
@@ -40,10 +41,6 @@ const alignClass: Record<ModalAlign, string> = {
   top: "items-start justify-center pt-[12vh]",
 };
 
-/** Tiny placement-only class joiner (brief-sanctioned; no cva/clsx/tailwind-merge). */
-function cx(...parts: (string | false | undefined)[]): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export function ModalShell({
   open,

@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import { Kicker } from "../ui";
+import { cx } from "../../lib/cx";
 
-function cx(...p: Array<string | false | null | undefined>): string {
-  return p.filter(Boolean).join(" ");
-}
 
 export interface RailSectionProps {
   label: ReactNode;

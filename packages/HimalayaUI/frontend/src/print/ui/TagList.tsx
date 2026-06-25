@@ -5,6 +5,7 @@ import type { ChipSize } from "./Chip";
 import { TagEditor } from "./TagEditor";
 import { Popover } from "./Popover";
 import type { Tag } from "./tag";
+import { cx } from "../../lib/cx";
 
 interface TagListProps {
   tags: Tag[];
@@ -37,9 +38,6 @@ interface TagListProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** A wrapping list of key-value {@link TagPill}s plus an optional add affordance.
  *  Composes TagPill, the base {@link Chip} `add` variant, and {@link TagEditor}.
