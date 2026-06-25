@@ -8,6 +8,7 @@ import { MemberList } from "../components/MemberList";
 import { IconButton, Button, EmptyState, Input, GripHandle, Swatch, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
 import { dominantPhase } from "../../lib/series/memberRead";
+import { sampleDisplayName } from "../../lib/sample/displayName";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
 import { useReorderShortcuts } from "../shell/useReorderShortcuts";
@@ -1294,6 +1295,6 @@ function RecipeRow({
 
 function sampleNameMap(corpus: api.CorpusSample[]): Record<number, string> {
   const out: Record<number, string> = {};
-  for (const s of corpus) out[s.id] = s.name || `Sample ${s.id}`;
+  for (const s of corpus) out[s.id] = sampleDisplayName(s);
   return out;
 }

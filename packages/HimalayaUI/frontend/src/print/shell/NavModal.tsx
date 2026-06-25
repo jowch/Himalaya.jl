@@ -5,6 +5,7 @@ import { useAppState } from "../../state";
 import { useCorpusSamples, useExperiments, useSamples } from "../../queries";
 import type { CorpusSample, Experiment, Sample } from "../../api";
 import { IconButton, ModalShell } from "../ui";
+import { sampleDisplayName } from "../../lib/sample/displayName";
 
 function navSkeletonRows(n: number): JSX.Element {
   return (
@@ -127,7 +128,7 @@ export function NavModal(): JSX.Element | null {
         }))
       : filteredSamples.map((s) => ({
           id: s.id,
-          primary: s.name || `Sample ${s.id}`,
+          primary: sampleDisplayName(s),
           secondary: "",
         }));
 
@@ -351,7 +352,7 @@ export function NavModal(): JSX.Element | null {
                           }
                         >
                           <span className="font-medium">
-                            {s.name || `Sample ${s.id}`}
+                            {sampleDisplayName(s)}
                           </span>
                           <span className="text-ink-soft text-sm font-sans">
                             {experimentName(s.experiment_id)}

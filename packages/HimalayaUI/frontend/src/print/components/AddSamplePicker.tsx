@@ -3,6 +3,7 @@ import type { KeyboardEvent } from "react";
 import { Button, Input, Popover } from "../ui";
 import type { CorpusSample, Experiment } from "../../api";
 import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
+import { sampleDisplayName } from "../../lib/sample/displayName";
 
 export interface AddSamplePickerProps {
   /** Addable corpus samples (those not already in the recipe). */
@@ -14,9 +15,6 @@ export interface AddSamplePickerProps {
   className?: string;
 }
 
-function sampleLabel(s: CorpusSample): string {
-  return s.name || `Sample ${s.id}`;
-}
 
 /**
  * AddSamplePicker (BU-PICKER) — replaces the Series Builder's ~130-option flat
@@ -51,7 +49,7 @@ export function AddSamplePicker({
     () =>
       options.filter((s) => {
         if (q === "") return true;
-        const name = sampleLabel(s).toLowerCase();
+        const name = sampleDisplayName(s).toLowerCase();
         const exp = (expName.get(s.experiment_id) ?? "").toLowerCase();
         return (
           name.includes(q) || `smp_${s.id}`.includes(q) || exp.includes(q)
@@ -189,7 +187,7 @@ export function AddSamplePicker({
                     }`}
                   >
                     <span className="flex-1 min-w-0 truncate">
-                      {sampleLabel(s)}
+                      {sampleDisplayName(s)}
                     </span>
                     <span className="flex-shrink-0 font-mono text-caption text-ink-soft">
                       smp_{s.id}
