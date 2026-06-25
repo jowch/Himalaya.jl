@@ -26,6 +26,9 @@ function GroupingReviewRoute(): JSX.Element {
   const experimentId = id ? Number(id) : 0;
   return (
     <GroupingReviewPage
+      // Remount per experiment so ephemeral selection/cursor state can't carry a
+      // stale multi-selection across an experiment switch (mirrors SeriesBuilderRoute).
+      key={experimentId}
       experimentId={experimentId}
       // Absolute target: `/grouping` is a top-level takeover route (not nested
       // under the experiment shell), so a relative `../corpus` resolves to bare

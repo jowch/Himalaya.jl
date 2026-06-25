@@ -432,6 +432,32 @@ end
         end
     end
 
+    @testset "dedup-emptied parent sample is reaped by regroup (no ghost)" begin
+        # Collision (a) empties sample 11: its sole exposure (101) is the dedup
+        # non-survivor. After regroup it must NOT linger as a ghost (load_id NULL,
+        # 0 exposures) — that row is invisible in load rollups but counted by
+        # _experiment_stats and listed by /api/samples (both key on experiment_id).
+        path, info = build_legacy_db(mktempdir())
+        with_migration_db(path) do db
+            HimalayaUI.migrate_schema!(db)
+            # sample 11 is empty post-dedup, pre-regroup (precondition for the ghost).
+            @test first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM exposures WHERE sample_id = 11"))).c == 0
+            HimalayaUI.regroup_experiment!(db, 1; dry_run = false, analyze = false)
+        end
+        with_migration_db(path) do db
+            # the emptied parent is gone, not lingering.
+            @test isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM samples WHERE id = 11")))
+            # and no empty, never-grouped sample remains for the experiment.
+            @test first(Tables.rowtable(DBInterface.execute(db,
+                """SELECT COUNT(*) AS c FROM samples s
+                   WHERE s.experiment_id = 1 AND s.load_id IS NULL AND s.merged_into_id IS NULL
+                     AND s.id NOT IN (SELECT DISTINCT sample_id FROM exposures
+                                      WHERE sample_id IS NOT NULL)"""))).c == 0
+        end
+    end
+
     @testset "Task 1 dedup — non-survivor curation is dropped, survivor kept" begin
         # Make the NON-survivor (lower analyzed priority) carry curation so the
         # dedup must delete real children — proves count_curation drops by

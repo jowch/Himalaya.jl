@@ -180,15 +180,15 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     renameMutate({ sampleId, name: newName });
     if (prevName !== undefined) {
       const prev = prevName;
-      undoStack.push({
-        label: "rename",
-        undo: () => renameMutate({ sampleId, name: prev }),
-      });
+      // Capture THIS action's inverse so the toast undoes the rename, not whatever
+      // is on top of the shared stack (rename-then-move + clicking the rename toast
+      // must not undo the move). The push remains for ⌘Z global undo.
+      const undoRename = () => renameMutate({ sampleId, name: prev });
+      undoStack.push({ label: "rename", undo: undoRename });
+      showToast("Renamed", "info", { label: "Undo", onClick: undoRename });
+    } else {
+      showToast("Renamed", "info");
     }
-    showToast("Renamed", "info", {
-      label: "Undo",
-      onClick: () => { const e = undoStack.pop(); if (e) e.undo(); },
-    });
   };
 
   const handleSplit = (sampleId: number) => {
@@ -276,14 +276,9 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     const { exposureId, fromSampleId } = movePicker;
     setMovePicker(null);
     moveMutate({ exposureId, sampleId: destSampleId });
-    undoStack.push({
-      label: "move",
-      undo: () => moveMutate({ exposureId, sampleId: fromSampleId }),
-    });
-    showToast("Moved exposure", "info", {
-      label: "Undo",
-      onClick: () => { const e = undoStack.pop(); if (e) e.undo(); },
-    });
+    const undoMove = () => moveMutate({ exposureId, sampleId: fromSampleId });
+    undoStack.push({ label: "move", undo: undoMove });
+    showToast("Moved exposure", "info", { label: "Undo", onClick: undoMove });
   };
 
   const openBulkMergeConfirm = () => {

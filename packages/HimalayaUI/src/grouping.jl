@@ -496,8 +496,10 @@ function derive_sample_flags(load_rows;
         length(distinct_loads) < 2 && continue
         for (sid, lid) in members
             haskey(flags, sid) && continue  # split wins
-            # Point at the first OTHER sample with this label in a different load
-            # (lowest sample_id for determinism).
+            # Point at the first OTHER sample sharing this label (lowest sample_id
+            # for determinism). `members` only contains labels recurring across ≥2
+            # loads, so in practice the other sample is in a different load, but the
+            # selection itself is not load-restricted — any other same-label sample.
             others = sort([s for (s, l) in members if s != sid])
             isempty(others) && continue
             flags[sid] = MergeFlag(first(others), label)

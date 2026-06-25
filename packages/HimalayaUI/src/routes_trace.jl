@@ -5,8 +5,7 @@ function register_trace_routes!()
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT e.filename, e.kind, x.id AS experiment_id, x.analysis_dir
-             FROM exposures e JOIN samples s ON s.id = e.sample_id
-             JOIN experiments x ON x.id = s.experiment_id
+             FROM exposures e JOIN experiments x ON x.id = e.experiment_id
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],

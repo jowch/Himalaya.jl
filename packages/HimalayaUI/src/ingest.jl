@@ -222,6 +222,19 @@ function scan_and_group!(
             # ponytail: tick every exposure; the SSE 64-cap drops surplus, terminal frame is authoritative.
             on_progress === nothing || on_progress(i, total)
         end
+
+        # Prewarm the thumbnail disk cache for the freshly-ingested exposures so the
+        # first contact-sheet visit is fast (cold lazy generation staggers badly over
+        # SMB — the exact case prewarm exists for, issue #261). The scan→ingest rewrite
+        # dropped the old init/reingest call sites; this restores it on the live path.
+        # overwrite=true defeats whole-second mtime granularity on a re-scan. Prewarm
+        # is a non-essential cache warm — an unreadable TIFF must never fail the ingest
+        # (the thumb then just generates lazily on first view).
+        try
+            prewarm_thumbnails!(db; overwrite = true)
+        catch e
+            @warn "scan_and_group!: thumbnail prewarm failed (non-fatal)" exception=e
+        end
     end
 
     return (
@@ -365,13 +378,21 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         "SELECT DISTINCT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
         [experiment_id])))
     dbkey_of_stem = Dict{String, String}()  # scan stem => DB filename, only for stems with a row
+    claimed_dk    = Dict{String, String}()  # DB filename => the scan stem that claimed it
     for s in keys(byfile)
-        if s in existing_fn
-            dbkey_of_stem[s] = s
-        else
-            mk = manifest_key(s)
-            mk in existing_fn && (dbkey_of_stem[s] = mk)
-        end
+        dk = (s in existing_fn) ? s :
+             (manifest_key(s) in existing_fn ? manifest_key(s) : nothing)
+        dk === nothing && continue
+        # Fail loudly on a multi-frame collapse (two distinct full stems truncating
+        # to one manifest key) rather than silently relinking only one frame and
+        # dropping the other. Single-frame is the supported case (verified 1:1);
+        # this is the fail-fast tripwire for when multi-frame data first appears.
+        prior = get(claimed_dk, dk, nothing)
+        prior === nothing || error("regroup_experiment!: scan stems \"$prior\" and " *
+            "\"$s\" both map to DB filename \"$dk\" (multi-frame collapse); per-frame " *
+            "relink is unsupported — single-frame only.")
+        claimed_dk[dk] = s
+        dbkey_of_stem[s] = dk
     end
 
     # Reshoot count (read-only): old samples whose stems span ≥2 derived cells — a
@@ -596,6 +617,30 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                 # Delete the now-empty displaced row.
                 DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [old_sid])
                 samples_displaced += 1
+            end
+
+            # 3d′. Reap dedup-orphaned ghosts. A same-image_path collision deleted by
+            # migrate_exposures_experiment_id! (schema migration) can empty a sample
+            # whose sole exposure was the non-survivor frame. That row is empty but
+            # never in absorb_tally (its exposure was deleted, not absorbed) and never
+            # relinked (no stem left to match), so it would linger as a ghost (load_id
+            # NULL, 0 exposures) — invisible in load rollups but counted by
+            # _experiment_stats and listed by /api/samples (both key on experiment_id),
+            # over-reporting the migrated experiment. Reap any still-empty, never-grouped
+            # row, dropping its sample-keyed children first (FK enforcement is ON).
+            for r in Tables.rowtable(DBInterface.execute(db,
+                    """SELECT id FROM samples
+                       WHERE experiment_id = ? AND merged_into_id IS NULL AND load_id IS NULL
+                         AND id NOT IN (SELECT DISTINCT sample_id FROM exposures
+                                        WHERE sample_id IS NOT NULL)""", [experiment_id]))
+                gid = Int(r.id)
+                DBInterface.execute(db, "DELETE FROM series_samples WHERE sample_id = ?", [gid])
+                DBInterface.execute(db, "DELETE FROM sample_tags    WHERE sample_id = ?", [gid])
+                DBInterface.execute(db, "DELETE FROM sample_messages WHERE sample_id = ?", [gid])
+                DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [gid])
+                # Not counted as `displaced` — a reaped dedup-orphan was never part of
+                # the new partition (no exposures to absorb), a distinct concept from a
+                # sample whose frames were absorbed by a sibling.
             end
 
             # 3e. Geometry (never-clobber 'user').
