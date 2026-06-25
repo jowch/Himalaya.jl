@@ -108,7 +108,7 @@ export function ScopePlate({
         )}
       </h1>
 
-      <AutoGroup variant="summary" className="mt-4">
+      <AutoGroup className="mt-4">
         {grouping}
       </AutoGroup>
 

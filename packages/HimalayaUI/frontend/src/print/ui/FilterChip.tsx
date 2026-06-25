@@ -21,8 +21,7 @@ interface FilterChipProps {
 /** Toggle pill (mockup `.chip`): a stateful filter that flips between resting
  *  and selected. Now a thin wrapper over the base `Chip` `toggle` variant, which
  *  owns the appearance (ink/paper inversion on active, focus-visible accent ring);
- *  FilterChip keeps its own `data-testid="filter-chip"` contract via `testId`.
- *  Distinct from FacetChip, a dropdown trigger (`aria-haspopup`) not a toggle. */
+ *  FilterChip keeps its own `data-testid="filter-chip"` contract via `testId`. */
 export function FilterChip({
   label,
   active,

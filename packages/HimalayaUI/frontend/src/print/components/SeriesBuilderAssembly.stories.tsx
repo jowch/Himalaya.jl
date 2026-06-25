@@ -3,7 +3,6 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { BuilderRail } from "./BuilderRail";
 import { SeriesPlate, type SeriesScale } from "./SeriesPlate";
 import { MemberRow } from "./MemberRow";
-import { RailBack } from "./RailBack";
 import { useDragReorder, reorder } from "./useDragReorder";
 import { TRANSITION } from "../waterfall/waterfall.fixtures";
 
@@ -11,12 +10,7 @@ import { TRANSITION } from "../waterfall/waterfall.fixtures";
  * Page simulation (NOT a component): assembles the figure (`SeriesPlate`) on the
  * left and the `BuilderRail` editing rail on the right into the series-builder
  * view. The page owns the cross-component state the components are forbidden to
- * hold — offset, scale (the figure↔rail link is the SAME state), and the
- * collapsed/full-bleed mode.
- *
- * When collapsed the rail is UNMOUNTED (the figure goes full-bleed) and the
- * floating `RailBack` tab + `OffsetDock` offset control take over — mirroring the
- * mockup's full-bleed reading mode.
+ * hold — offset and scale (the figure↔rail link is the SAME state).
  *
  * The Layer-4 builder page (plate shell, nav, top bar) is deferred; this story
  * only simulates the page's state ownership. Rows reuse the shared
@@ -46,7 +40,6 @@ const TRACES: TraceDatum[] = [
 function SeriesBuilderView(): JSX.Element {
   const [offset, setOffset] = useState(1.2);
   const [scale, setScale] = useState<SeriesScale>("log");
-  const [collapsed, setCollapsed] = useState(false);
   const [traceOrder, setTraceOrder] = useState<TraceDatum[]>(TRACES);
 
   // The rail's "Traces · drag to reorder" label is honest: dragging a row
@@ -94,22 +87,15 @@ function SeriesBuilderView(): JSX.Element {
           />
         </div>
 
-        {!collapsed && (
-          <div className="w-[336px] shrink-0">
-            <BuilderRail
-              offset={offset}
-              onOffsetChange={setOffset}
-              traces={traces}
-              reorderable
-              onCollapse={() => setCollapsed(true)}
-            />
-          </div>
-        )}
+        <div className="w-[336px] shrink-0">
+          <BuilderRail
+            offset={offset}
+            onOffsetChange={setOffset}
+            traces={traces}
+            reorderable
+          />
+        </div>
       </div>
-
-      {collapsed && (
-        <RailBack onClick={() => setCollapsed(false)} />
-      )}
     </div>
   );
 }

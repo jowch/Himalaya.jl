@@ -10,8 +10,6 @@ import { phaseColor } from "../../src/phases";
 import {
   toTraceModel,
   peakClickAction,
-  losingPeakIds,
-  complementPeakIds,
   toDetectorRings,
   toCombSeries,
   customIndexPreview,
@@ -97,65 +95,6 @@ describe("toTraceModel", () => {
     const empty: Trace = { q: [], I: [], sigma: [] };
     const tm = toTraceModel(empty, [peak({ id: 1, intensity: null })], null);
     expect("intensity" in tm.peaks[0]!).toBe(false);
-  });
-});
-
-// ── losingPeakIds (PlotCard 250-263 verbatim semantics) ──────────────────────
-
-describe("losingPeakIds", () => {
-  it("returns empty when there is no hovered candidate", () => {
-    const active = [ix({ id: 1, peaks: [ref({ peak_id: 10 })] })];
-    expect(losingPeakIds(undefined, active).size).toBe(0);
-  });
-
-  it("returns empty when the hovered candidate is already active", () => {
-    const hovered = ix({ id: 1, peaks: [ref({ peak_id: 10 })] });
-    const active = [ix({ id: 1, peaks: [ref({ peak_id: 10 })] })];
-    expect(losingPeakIds(hovered, active).size).toBe(0);
-  });
-
-  it("returns empty when the hovered candidate shares NO peak with any active (independent coexists)", () => {
-    const hovered = ix({ id: 2, peaks: [ref({ peak_id: 20 }), ref({ peak_id: 21 })] });
-    const active = [ix({ id: 1, peaks: [ref({ peak_id: 10 }), ref({ peak_id: 11 })] })];
-    expect(losingPeakIds(hovered, active).size).toBe(0);
-  });
-
-  it("returns the active phase's NON-shared peak ids when it overlaps the hovered candidate", () => {
-    // active phase 1 claims {10, 11, 12}; hovered claims {11, 30}; overlap on 11
-    // -> phase 1 would lose 10 and 12 (its peaks not in the hovered claim).
-    const hovered = ix({ id: 2, peaks: [ref({ peak_id: 11 }), ref({ peak_id: 30 })] });
-    const active = [
-      ix({ id: 1, peaks: [ref({ peak_id: 10 }), ref({ peak_id: 11 }), ref({ peak_id: 12 })] }),
-    ];
-    const losing = losingPeakIds(hovered, active);
-    expect([...losing].sort((a, b) => a - b)).toEqual([10, 12]);
-  });
-
-  it("only counts active phases that overlap; independent active phases lose nothing", () => {
-    const hovered = ix({ id: 3, peaks: [ref({ peak_id: 11 })] });
-    const active = [
-      ix({ id: 1, peaks: [ref({ peak_id: 10 }), ref({ peak_id: 11 })] }), // overlaps -> loses 10
-      ix({ id: 2, peaks: [ref({ peak_id: 40 }), ref({ peak_id: 41 })] }), // independent -> loses nothing
-    ];
-    expect([...losingPeakIds(hovered, active)].sort((a, b) => a - b)).toEqual([10]);
-  });
-});
-
-// ── complementPeakIds ─────────────────────────────────────────────────────────
-
-describe("complementPeakIds", () => {
-  it("returns all ids minus the losing set", () => {
-    const all = [1, 2, 3, 4];
-    const out = complementPeakIds(all, new Set([2, 3]));
-    expect([...out].sort((a, b) => a - b)).toEqual([1, 4]);
-  });
-
-  it("returns all ids when the losing set is empty", () => {
-    expect([...complementPeakIds([1, 2, 3], new Set())].sort((a, b) => a - b)).toEqual([1, 2, 3]);
-  });
-
-  it("handles losing ⊆ all (subset) — only present ids are removed", () => {
-    expect([...complementPeakIds([1, 2], new Set([1, 99]))]).toEqual([2]);
   });
 });
 
