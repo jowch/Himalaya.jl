@@ -13,8 +13,10 @@ import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText, EmptyState, Button, IconButton, KbKey } from "../ui";
+import { HintText, EmptyState, Button, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
+import { DockStepper } from "../ui/DockStepper";
+import { DockUpLink } from "../ui/DockUpLink";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
@@ -885,51 +887,32 @@ export function FocusPage(): JSX.Element {
       <Dock>
         {/* Up-link: Series when from=series, else Corpus */}
         {searchParams.get("from") === "series" ? (
-          <button
-            onClick={() => navigate("/series")}
-            className="text-meta font-semibold text-print-accent hover:underline mr-1"
-            data-testid="dock-up-link"
-          >
-            ‹ Series
-          </button>
+          <DockUpLink label="Series" onClick={() => navigate("/series")} className="mr-1" />
         ) : (
-          <button
+          <DockUpLink
+            label="Corpus"
             onClick={() => navigate(`/experiments/${experimentId}/corpus`)}
-            className="text-meta font-semibold text-print-accent hover:underline mr-1"
-            data-testid="dock-up-link"
-          >
-            ‹ Corpus
-          </button>
+            className="mr-1"
+          />
         )}
 
         <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
         {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
-        <div className="flex items-center gap-1">
-          <span className="text-meta text-ink-soft">Sample</span>
-          <IconButton
-            label="Previous sample"
-            tone="ghost"
-            disabled={prevSibling === undefined}
-            onClick={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
-            data-testid="dock-prev-sample"
-          >
-            ↑
-          </IconButton>
-          {siblingIndex >= 0 && siblings.length > 0 && (
-            <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
-              data-testid="dock-sample-count">{siblingIndex + 1} / {siblings.length}</span>
-          )}
-          <IconButton
-            label="Next sample"
-            tone="ghost"
-            disabled={nextSibling === undefined}
-            onClick={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
-            data-testid="dock-next-sample"
-          >
-            ↓
-          </IconButton>
-        </div>
+        <DockStepper
+          label="Sample"
+          axis="vertical"
+          testIdBase="sample"
+          prevDisabled={prevSibling === undefined}
+          onPrev={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
+          nextDisabled={nextSibling === undefined}
+          onNext={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
+          count={
+            siblingIndex >= 0 && siblings.length > 0
+              ? `${siblingIndex + 1} / ${siblings.length}`
+              : undefined
+          }
+        />
 
         {/* Spacer — right-anchors the destination (§7) */}
         <div className="flex-1" />

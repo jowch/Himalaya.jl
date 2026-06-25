@@ -7,6 +7,8 @@ import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
 import { IconButton, Button, EmptyState, Input, GripHandle, Swatch, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
+import { DockStepper } from "../ui/DockStepper";
+import { DockUpLink } from "../ui/DockUpLink";
 import { dominantPhase } from "../../lib/series/memberRead";
 import { sampleDisplayName } from "../../lib/sample/displayName";
 import { useDragReorder } from "../components/useDragReorder";
@@ -651,13 +653,7 @@ export function SeriesBuilderPage(): JSX.Element {
         trace colour on the overlay (phase-keyed). An empty member list shows only
         the up-link. */}
     <Dock>
-      <button
-        onClick={() => navigate("/series")}
-        className="text-meta font-semibold text-print-accent hover:underline"
-        data-testid="dock-up-link"
-      >
-        ‹ All series
-      </button>
+      <DockUpLink label="All series" onClick={() => navigate("/series")} />
 
       {navSamples.length > 0 && (
         <>
@@ -665,18 +661,16 @@ export function SeriesBuilderPage(): JSX.Element {
 
           {/* Sample stepper — ↑/↓ axis, current / total readout (mirrors the
               prevSample/nextSample keyboard handlers; same clamping setters). */}
-          <div className="flex items-center gap-1">
-            <span className="text-meta text-ink-soft">Sample</span>
-            <IconButton label="Previous sample" tone="ghost" disabled={selectedIndex === 0}
-              onClick={() => setSelectedIndex((i) => Math.max(0, i - 1))}
-              data-testid="dock-prev-sample">↑</IconButton>
-            <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
-              data-testid="dock-sample-count">{selectedIndex + 1} / {navSamples.length}</span>
-            <IconButton label="Next sample" tone="ghost"
-              disabled={selectedIndex >= navSamples.length - 1}
-              onClick={() => setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1))}
-              data-testid="dock-next-sample">↓</IconButton>
-          </div>
+          <DockStepper
+            label="Sample"
+            axis="vertical"
+            testIdBase="sample"
+            prevDisabled={selectedIndex === 0}
+            onPrev={() => setSelectedIndex((i) => Math.max(0, i - 1))}
+            nextDisabled={selectedIndex >= navSamples.length - 1}
+            onNext={() => setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1))}
+            count={`${selectedIndex + 1} / ${navSamples.length}`}
+          />
 
           {cursorIdentity && (
             <>

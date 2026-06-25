@@ -13,8 +13,10 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button, IconButton, KbKey } from "../ui";
+import { EmptyState, Button, KbKey } from "../ui";
 import { Dock } from "../ui/Dock";
+import { DockStepper } from "../ui/DockStepper";
+import { DockUpLink } from "../ui/DockUpLink";
 import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
@@ -506,71 +508,42 @@ export function LoupePage(): JSX.Element {
             Each verb calls the SAME callback the keyboard shortcut uses. */}
         <Dock>
           {/* Up-link back to corpus */}
-          <button
-            onClick={goBack}
-            className="text-meta font-semibold text-print-accent hover:underline mr-1"
-            data-testid="dock-up-link"
-          >
-            ‹ Corpus
-          </button>
+          <DockUpLink label="Corpus" onClick={goBack} className="mr-1" />
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
           {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
-          <div className="flex items-center gap-1">
-            <span className="text-meta text-ink-soft">Sample</span>
-            <IconButton
-              label="Previous sample"
-              tone="ghost"
-              disabled={prevSampleId === undefined}
-              onClick={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
-              data-testid="dock-prev-sample"
-            >
-              ↑
-            </IconButton>
-            {sampleIndex >= 0 && (
-              <span className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
-                data-testid="dock-sample-count">{sampleIndex + 1} / {orderedSampleIds.length}</span>
-            )}
-            <IconButton
-              label="Next sample"
-              tone="ghost"
-              disabled={nextSampleId === undefined}
-              onClick={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
-              data-testid="dock-next-sample"
-            >
-              ↓
-            </IconButton>
-          </div>
+          <DockStepper
+            label="Sample"
+            axis="vertical"
+            testIdBase="sample"
+            prevDisabled={prevSampleId === undefined}
+            onPrev={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
+            nextDisabled={nextSampleId === undefined}
+            onNext={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
+            count={sampleIndex >= 0 ? `${sampleIndex + 1} / ${orderedSampleIds.length}` : undefined}
+          />
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 
-          {/* Frame stepper — labeled ‹/› axis + current / total readout (§7) */}
-          <div className="flex items-center gap-1">
-            <span className="text-meta text-ink-soft">Frame</span>
-            <IconButton
-              label="Previous frame"
-              tone="ghost"
-              disabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
-              onClick={() => flip(-1)}
-              data-testid="dock-prev-frame"
-            >
-              ←
-            </IconButton>
-            {activeExposure !== undefined && (
-              <span className="text-data tabular-nums text-ink text-center min-w-[2.75rem]"
-                data-testid="dock-frame-count">{exposures.indexOf(activeExposure) + 1} / {exposures.length}</span>
-            )}
-            <IconButton
-              label="Next frame"
-              tone="ghost"
-              disabled={activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1}
-              onClick={() => flip(1)}
-              data-testid="dock-next-frame"
-            >
-              →
-            </IconButton>
-          </div>
+          {/* Frame stepper — labeled ←/→ axis + current / total readout (§7) */}
+          <DockStepper
+            label="Frame"
+            axis="horizontal"
+            testIdBase="frame"
+            countWidthClass="min-w-[2.75rem]"
+            prevDisabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
+            onPrev={() => flip(-1)}
+            nextDisabled={
+              activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1
+            }
+            onNext={() => flip(1)}
+            count={
+              activeExposure !== undefined
+                ? `${exposures.indexOf(activeExposure) + 1} / ${exposures.length}`
+                : undefined
+            }
+          />
 
           <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
 

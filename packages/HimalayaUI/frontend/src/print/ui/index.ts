@@ -69,3 +69,5 @@ export { StatBar } from "./StatBar";
 export type { StatBarProps, StatBarStat } from "./StatBar";
 export { Dock } from "./Dock";
 export type { DockProps } from "./Dock";
+export { DockStepper } from "./DockStepper";
+export { DockUpLink } from "./DockUpLink";
