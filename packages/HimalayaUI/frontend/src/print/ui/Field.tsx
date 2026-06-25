@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Menu } from "./Menu";
 import type { MenuOption } from "./Menu";
 import { cx } from "../../lib/cx";
+import { useClickOutside } from "../../hooks/useClickOutside";
 
 export interface FieldProps {
   value: string;
@@ -70,16 +71,7 @@ export function Field({
 
   // Outside-click closes the menu (mirrors Popover's outside-pointerdown
   // pattern); bound only while open.
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent): void => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+  useClickOutside(open, wrapRef, () => setOpen(false));
 
   // controls-don't-lie: a Field with neither `options` (dropdown) nor `onClick`
   // (trigger) is INERT — it must read as a static read-only value, not as a

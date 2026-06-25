@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Button, Input, Popover } from "../ui";
 import type { CorpusSample, Experiment } from "../../api";
+import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
 
 export interface AddSamplePickerProps {
   /** Addable corpus samples (those not already in the recipe). */
@@ -99,14 +100,8 @@ export function AddSamplePicker({
     const next = i < 0 ? 0 : (i + delta + flat.length) % flat.length;
     const id = flat[next]!.id;
     setActiveId(id);
-    // Keep the active option in view. Guarded: jsdom has no real layout and
-    // throws "Not implemented" on scrollIntoView; the keyboard nav must not.
-    const el = document.getElementById(`add-opt-${id}`);
-    try {
-      el?.scrollIntoView({ block: "nearest" });
-    } catch {
-      /* no layout engine (jsdom) — cosmetic only */
-    }
+    // Keep the active option in view (no-op under jsdom — see safeScrollIntoView).
+    safeScrollIntoView(document.getElementById(`add-opt-${id}`));
   }
 
   function add(id: number): void {

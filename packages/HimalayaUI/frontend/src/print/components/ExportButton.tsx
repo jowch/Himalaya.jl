@@ -1,7 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Button, IconButton, Menu } from "../ui";
 import { cx } from "../../lib/cx";
+import { useClickOutside } from "../../hooks/useClickOutside";
 
 
 export interface ExportButtonProps {
@@ -70,16 +71,7 @@ export function ExportButton({
 
   // Outside-pointerdown closes the menu (mirrors Field/Popover). Bound only
   // while open.
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent): void => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+  useClickOutside(open, wrapRef, () => setOpen(false));
 
   const copyOff = disabled || copyDisabled;
   const pngOff = disabled || pngDisabled;

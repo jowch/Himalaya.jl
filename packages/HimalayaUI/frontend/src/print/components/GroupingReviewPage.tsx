@@ -6,6 +6,7 @@ import {
   useSplitSample, useDismissGroupingFlag, useUndoDismissGroupingFlag,
 } from "../../queries";
 import { useAppState } from "../../state";
+import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
 import { LoadFold } from "./LoadFold";
 import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -323,13 +324,10 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     !scanning && movePicker === null,
   );
 
-  // Keep the cursored row in view as it moves. Guarded: jsdom has no layout
-  // engine and throws "Not implemented" on scrollIntoView (cosmetic only).
+  // Keep the cursored row in view as it moves (no-op under jsdom — see safeScrollIntoView).
   useEffect(() => {
     if (cursorId == null) return;
-    try {
-      document.querySelector('[data-cursored="true"]')?.scrollIntoView({ block: "nearest" });
-    } catch { /* no layout engine (jsdom) */ }
+    safeScrollIntoView(document.querySelector('[data-cursored="true"]'));
   }, [cursorId]);
 
   return (
