@@ -28,10 +28,7 @@ export function InteractionDock(): JSX.Element | null {
           testIdBase={stepper.testIdBase}
           count={stepper.count}
           onPrev={stepper.onPrev}
-          onNext={() => {
-            stepper.onNext?.();
-            cursor?.moveBy(1);
-          }}
+          onNext={stepper.onNext}
           prevDisabled={stepper.prevDisabled}
           nextDisabled={stepper.nextDisabled}
         />

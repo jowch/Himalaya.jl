@@ -5,12 +5,25 @@ import { useInteraction } from "../../src/print/interaction/registry";
 import { core, page } from "../../src/print/interaction/core";
 import type { ListCursor } from "../../src/print/interaction/types";
 
-const fakeCursor = (over: Partial<ListCursor> = {}): ListCursor => ({
-  cursorId: 1, selected: new Set(), setCursor: () => {}, moveBy: vi.fn(),
-  activate: () => {}, toggleSelect: () => {}, rowProps: () => ({} as never),
-  stepperProps: () => ({ label: "Sample", axis: "vertical", testIdBase: "sample", count: "1 / 3", onPrev: () => {}, onNext: () => {}, prevDisabled: true, nextDisabled: false }),
-  ...over,
-});
+const fakeCursor = (over: Partial<ListCursor> = {}): ListCursor => {
+  const moveBy = (over.moveBy ?? vi.fn()) as ListCursor["moveBy"];
+  return {
+    cursorId: 1,
+    selected: new Set(),
+    setCursor: () => {},
+    moveBy,
+    activate: () => {},
+    toggleSelect: () => {},
+    rowProps: () => ({} as never),
+    stepperProps: () => ({
+      label: "Sample", axis: "vertical", testIdBase: "sample", count: "1 / 3",
+      onPrev: () => moveBy(-1), onNext: () => moveBy(1),
+      prevDisabled: true, nextDisabled: false,
+    }),
+    ...over,
+    moveBy, // ensure the exposed moveBy is the SAME ref stepperProps closes over
+  };
+};
 
 afterEach(() => { useInteraction.getState().clearPage(); cleanup(); });
 
