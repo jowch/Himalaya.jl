@@ -47,7 +47,7 @@ describe("useListCursor", () => {
     });
     act(() => result.current.setCursor(20));
     rerender({ ids: [10, 30] }); // the cursored item itself removed
-    expect([10, 30]).toContain(result.current.cursorId);
+    expect(result.current.cursorId).toBe(30); // nearest surviving index: was index 1 → still index 1
   });
 
   it("toggleSelect maintains a Set orthogonal to the cursor", () => {
