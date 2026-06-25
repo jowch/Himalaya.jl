@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
 import { FlagButton, GripHandle, IconButton, Input } from "../ui";
+import { useInlineEdit } from "../../hooks/useInlineEdit";
 import { Sparkline } from "../plot/Sparkline";
 import { cx } from "../../lib/cx";
 
@@ -65,35 +65,14 @@ export function ScopeSampleRow({
   onEditValue,
   className,
 }: ScopeSampleRowProps): JSX.Element {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Focus + select on entering edit so the misread value can be retyped or
-  // corrected without first clicking into the field.
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
-  function startEdit(): void {
-    setDraft(value);
-    setEditing(true);
-  }
-  // Commit only a CHANGED, non-empty value: an unchanged commit must not push a
-  // history entry, and `value:""` would corrupt the sample on the batch write
-  // (the commit gate filters it, but never let it leave this control either).
-  function commit(): void {
-    const next = draft.trim();
-    if (next !== "" && next !== value && onEditValue) onEditValue(next);
-    setEditing(false);
-  }
-  function cancel(): void {
-    setDraft(value);
-    setEditing(false);
-  }
+  // Commit only a non-empty value (the hook already skips an unchanged one):
+  // `value:""` would corrupt the sample on the batch write (the commit gate
+  // filters it, but never let it leave this control either). The hook focuses +
+  // selects the field on open so a misread value can be retyped immediately.
+  const { editingKey, draft, setDraft, inputRef, begin, commit, cancel } =
+    useInlineEdit<true>((_key, next) => {
+      if (next !== "" && onEditValue) onEditValue(next);
+    });
 
   return (
     <div
@@ -148,7 +127,7 @@ export function ScopeSampleRow({
         <div className="text-body font-semibold text-ink">{name}</div>
         <div className="text-caption font-mono text-ink-soft">{sampleId}</div>
       </div>
-      {editing ? (
+      {editingKey !== null ? (
         /* draggable={false} releases this cluster from the row wrapper's
            draggable=true (useDragReorder) so the value text stays
            click-selectable instead of starting a row drag. */
@@ -203,7 +182,7 @@ export function ScopeSampleRow({
             <IconButton
               label={`Edit value for ${name}`}
               tone="ghost"
-              onClick={startEdit}
+              onClick={() => begin(true, value)}
               className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             >
               ✎

@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, type JSX } from "react";
+import { type JSX } from "react";
+import { useInlineEdit } from "../../hooks/useInlineEdit";
 import type { LoadSample } from "../../api";
 import { Checkbox } from "../ui/Checkbox";
 import { Button } from "../ui/Button";
@@ -42,28 +43,20 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
       ? Math.min(Math.max(flag.split_at_index - 1, 1), s.exposures.length - 1)
       : -1;
 
-  // Inline rename state: null = not editing; string = draft value being edited.
-  const [renameDraft, setRenameDraft] = useState<string | null>(null);
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const isRenaming = renameDraft !== null;
-
-  // Focus the input whenever rename mode opens.
-  useEffect(() => {
-    if (isRenaming) renameInputRef.current?.select();
-  }, [isRenaming]);
-
-  const activateRename = () => setRenameDraft(s.name);
-
-  const commitRename = () => {
-    if (renameDraft === null) return;
-    const trimmed = renameDraft.trim();
-    setRenameDraft(null);
-    if (trimmed && trimmed !== s.name) {
-      props.onRename(s.sample_id, trimmed);
-    }
-  };
-
-  const cancelRename = () => setRenameDraft(null);
+  // Inline rename: the hook focuses+selects on open, trims, and skips a no-op.
+  // A blank rename is ignored here (never blank a sample's name).
+  const {
+    editingKey,
+    draft: renameDraft,
+    setDraft: setRenameDraft,
+    inputRef: renameInputRef,
+    begin,
+    commit: commitRename,
+    cancel: cancelRename,
+  } = useInlineEdit<true>((_key, trimmed) => {
+    if (trimmed) props.onRename(s.sample_id, trimmed);
+  });
+  const isRenaming = editingKey !== null;
 
   return (
     <div
@@ -124,7 +117,7 @@ export function SampleFold(props: SampleFoldProps): JSX.Element {
             </button>
             {/* Pencil sits next to the name (the funnel rename idiom), not as a
                 far-right button. */}
-            <IconButton label="Rename sample" tone="ghost" onClick={activateRename}>
+            <IconButton label="Rename sample" tone="ghost" onClick={() => begin(true, s.name)}>
               {"✎"}
             </IconButton>
           </div>

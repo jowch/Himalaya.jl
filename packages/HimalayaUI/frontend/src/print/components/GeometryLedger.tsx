@@ -1,4 +1,5 @@
-import { useRef, useState, type JSX } from "react";
+import { type JSX } from "react";
+import { useInlineEdit } from "../../hooks/useInlineEdit";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -41,33 +42,10 @@ const SOURCE_LABEL: Record<GeometrySource, string> = {
 };
 
 export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  // Synchronous guard: a blur firing right after Enter must not commit twice
-  // (a double commit would push two undo entries for one edit). State alone is
-  // too late -- the blur handler closes over the pre-update render -- so the ref
-  // is cleared inside commit() before the second call can read it.
-  const editingRef = useRef<string | null>(null);
-
-  const begin = (r: GeometryRow) => {
-    if (r.editValue === undefined) return;
-    editingRef.current = r.key;
-    setEditingKey(r.key);
-    setDraft(r.editValue);
-  };
-
-  const commit = () => {
-    const key = editingRef.current;
-    if (key === null) return;
-    editingRef.current = null;
-    setEditingKey(null);
-    p.onCommit(key, draft);
-  };
-
-  const cancel = () => {
-    editingRef.current = null;
-    setEditingKey(null);
-  };
+  // The hook owns the blur-after-Enter double-commit guard and skips no-ops; the
+  // parent still parses the (now trimmed) value and decides no-op vs PATCH.
+  const { editingKey, draft, setDraft, inputRef, begin, commit, cancel } =
+    useInlineEdit<string>(p.onCommit);
 
   return (
     <Card className={p.className}>
@@ -125,7 +103,7 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
                   onValueChange={setDraft}
                   aria-label={`Override ${r.label}`}
                   className="w-32"
-                  autoFocus
+                  inputRef={inputRef}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") { e.preventDefault(); commit(); }
                     if (e.key === "Escape") { e.preventDefault(); cancel(); }
@@ -152,7 +130,9 @@ export function GeometryLedger(p: GeometryLedgerProps): JSX.Element {
                   <Button
                     variant="ghost"
                     aria-label={`Override ${r.label}`}
-                    onClick={() => begin(r)}
+                    onClick={() => {
+                      if (r.editValue !== undefined) begin(r.key, r.editValue);
+                    }}
                   >
                     {r.source === "user" ? "Edit" : "Override"}
                   </Button>

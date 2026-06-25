@@ -1,4 +1,5 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, type JSX } from "react";
+import { useInlineEdit } from "../../hooks/useInlineEdit";
 import { useExperiment, useLoads, useUpdateExperiment, useTriggerScan } from "../../queries";
 import { useUndoStack } from "../../hooks/useUndoStack";
 import { suppressGlobalKeys } from "../../lib/keys";
@@ -96,9 +97,6 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
 
   const undoStack = useUndoStack<UndoEntry>();
 
-  // Description editing state.
-  const [editingDesc, setEditingDesc] = useState(false);
-  const [descDraft, setDescDraft] = useState("");
 
   // --- Build geometry rows ---
   // Raw, unit-less seed for a row's inline editor (undefined = nothing to edit).
@@ -255,19 +253,18 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
     rescanMutate();
   };
 
-  // --- Description edit handlers ---
-  const beginDescEdit = () => {
-    setDescDraft(exp?.description ?? "");
-    setEditingDesc(true);
-  };
-
-  const commitDesc = () => {
-    const trimmed = descDraft.trim();
-    updateMutate({ description: trimmed || null });
-    setEditingDesc(false);
-  };
-
-  const cancelDescEdit = () => setEditingDesc(false);
+  // --- Description edit (inline-edit hook). Multi-line, so the textarea keeps
+  // its own autoFocus + Cmd/Ctrl+Enter to commit; an empty value clears to null. ---
+  const {
+    editingKey: descEditingKey,
+    draft: descDraft,
+    setDraft: setDescDraft,
+    begin: beginDesc,
+    commit: commitDesc,
+    cancel: cancelDescEdit,
+  } = useInlineEdit<true>((_key, trimmed) => updateMutate({ description: trimmed || null }));
+  const editingDesc = descEditingKey !== null;
+  const beginDescEdit = () => beginDesc(true, exp?.description ?? "");
 
   return (
     <div className="flex flex-col gap-6">
