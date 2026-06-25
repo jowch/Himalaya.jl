@@ -30,6 +30,15 @@ describe("useInlineEdit", () => {
     expect(result.current.editingKey).toBeNull();
   });
 
+  it("commit does NOT fire onCommit when a whitespace-padded seed is left unchanged", () => {
+    const onCommit = vi.fn();
+    const { result } = renderHook(() => useInlineEdit<string>(onCommit));
+    act(() => result.current.begin("k", "  alpha  ")); // padded seed
+    // draft left exactly as seeded (user opened the field and hit Enter)
+    act(() => result.current.commit());
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it("double commit (Enter then blur) fires onCommit exactly once", () => {
     const onCommit = vi.fn();
     const { result } = renderHook(() => useInlineEdit<string>(onCommit));

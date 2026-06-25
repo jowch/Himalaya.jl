@@ -62,7 +62,9 @@ export function useInlineEdit<K>(
     guardRef.current = null;
     setEditingKey(null);
     const next = draft.trim();
-    if (next !== seedRef.current) onCommit(key, next);
+    // Compare trimmed-to-trimmed so a whitespace-padded seed left unchanged
+    // still counts as a no-op (the draft side is already trimmed above).
+    if (next !== seedRef.current.trim()) onCommit(key, next);
   };
 
   const cancel = (): void => {

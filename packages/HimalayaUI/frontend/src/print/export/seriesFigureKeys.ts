@@ -23,7 +23,7 @@ export interface SeriesFigureKeyContext {
 }
 
 /** Lattice symbol: cubics report the lattice parameter `a`; lamellar / hexagonal
- *  report the d-spacing `d` (mirrors seriesReading.latticeSymbol). */
+ *  report the d-spacing `d`. */
 function latticeSymbol(phase: string): "a" | "d" {
   return CUBIC_PHASES.has(phase) ? "a" : "d";
 }
