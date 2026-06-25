@@ -1,8 +1,6 @@
 import { Slider, Input } from "../ui";
+import { cx } from "../../lib/cx";
 
-function cx(...p: Array<string | false | null | undefined>): string {
-  return p.filter(Boolean).join(" ");
-}
 
 export interface LatticeParamControlProps {
   value: string;

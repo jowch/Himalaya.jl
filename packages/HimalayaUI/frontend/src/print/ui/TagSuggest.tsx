@@ -1,10 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "./Input";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface TagSuggestOption {
   label: string;

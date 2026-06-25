@@ -1,10 +1,8 @@
 // src/print/components/PanelHeader.tsx
 import type { ReactNode } from "react";
 import { Kicker } from "../ui";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface PanelHeaderProps {
   /** The uppercase section label (.panel-h), e.g. "Detector image". */

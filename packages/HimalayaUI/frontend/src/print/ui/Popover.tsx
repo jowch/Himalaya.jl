@@ -1,5 +1,7 @@
 import { cloneElement, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement, ReactNode, RefObject } from "react";
+import { cx } from "../../lib/cx";
+import { useClickOutside } from "../../hooks/useClickOutside";
 
 export interface PopoverProps {
   /** The trigger element. Cloned to wire click + aria. Must be a single
@@ -25,9 +27,6 @@ export interface PopoverProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /**
  * Popover — a click/focus-triggered LIGHT-plate popover holding ARBITRARY,
@@ -61,17 +60,7 @@ export function Popover({
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside pointerdown. Bound only while open.
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent): void => {
-      if (!wrapperRef.current) return;
-      if (!wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+  useClickOutside(open, wrapperRef, () => setOpen(false));
 
   // Move focus into the panel when it opens, so keyboard users land on the
   // revealed content (and Escape has a focused target). A search-first popover

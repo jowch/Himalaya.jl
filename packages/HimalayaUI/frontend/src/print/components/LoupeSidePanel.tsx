@@ -4,10 +4,8 @@ import type { MetaEntry, Tag, Shortcut } from "../ui";
 import type { LoupeTag } from "../pages/loupeAdapters";
 import { Verdict } from "./Verdict";
 import { RepresentativeBox } from "./RepresentativeBox";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface LoupeSidePanelProps {
   /** "This exposure" metadata rows. */

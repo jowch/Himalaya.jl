@@ -10,6 +10,7 @@ import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
 import { EmptyState, Button, Card, Dot, Field, Input, Kicker, PhaseChip } from "../ui";
 import { Dock } from "../ui/Dock";
+import { DockUpLink } from "../ui/DockUpLink";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { SampleTagPair, Trace } from "../../api";
 import {
@@ -1166,13 +1167,7 @@ export function SeriesScopingPage(): JSX.Element {
 
       {/* ── Contextual bottom dock (Series grammar §3.3) ─────────────────────── */}
       <Dock>
-        <button
-          onClick={() => navigate("/series")}
-          className="text-meta font-semibold text-print-accent hover:underline mr-1"
-          data-testid="dock-up-link"
-        >
-          ‹ All series
-        </button>
+        <DockUpLink label="All series" onClick={() => navigate("/series")} className="mr-1" />
       </Dock>
     </PageFrame>
   );

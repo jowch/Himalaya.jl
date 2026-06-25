@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 interface KbKeyProps {
   children: ReactNode;
@@ -9,9 +10,6 @@ interface KbKeyProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 // Per-variant appearance. `plate` is the standalone chip (its own surface);
 // `frost` is a translucent currentColor fill so the chip reads as part of a

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode, KeyboardEvent } from "react";
+import { cx } from "../../lib/cx";
+import { findNextEnabled } from "../../lib/findNextEnabled";
 
 /**
  * Menu<T> — the plate dropdown popover (closed look / open placement).
@@ -53,9 +55,6 @@ export interface MenuProps<T extends string> {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export function Menu<T extends string>({
   open,
@@ -104,16 +103,8 @@ export function Menu<T extends string>({
   const isValueSelector = activeValue !== undefined;
 
   const move = (delta: number, from: number): void => {
-    const n = options.length;
-    if (n === 0) return;
-    let i = from;
-    for (let step = 0; step < n; step++) {
-      i = (i + delta + n) % n;
-      if (!options[i].disabled) {
-        itemRefs.current[i]?.focus();
-        return;
-      }
-    }
+    const i = findNextEnabled(options, from, delta);
+    if (i !== null) itemRefs.current[i]?.focus();
   };
 
   const onItemKeyDown = (e: KeyboardEvent<HTMLButtonElement>, idx: number): void => {

@@ -2,10 +2,8 @@ import type { ReactNode } from "react";
 import { Card, Kicker, PhaseStrip, Dot, Button, Field } from "../ui";
 import type { PhaseSegment } from "../ui";
 import { AutoGroup } from "./AutoGroup";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface ScopePlateProps {
   seriesName: string;
@@ -110,7 +108,7 @@ export function ScopePlate({
         )}
       </h1>
 
-      <AutoGroup variant="summary" className="mt-4">
+      <AutoGroup className="mt-4">
         {grouping}
       </AutoGroup>
 

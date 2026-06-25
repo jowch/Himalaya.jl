@@ -30,6 +30,15 @@ describe("SourcesCard", () => {
     expect(onEdit).toHaveBeenCalledWith("image_pattern", "{name}.tif");
   });
 
+  it("opening an editable row focuses AND selects the input (immediate retype)", () => {
+    render(<SourcesCard rows={ROWS} onEdit={() => {}} onRescan={() => {}} />);
+    fireEvent.click(screen.getByText("{name}.tiff"));
+    const input = screen.getByDisplayValue("{name}.tiff") as HTMLInputElement;
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe("{name}.tiff".length);
+  });
+
   it("read-only directory rows have no edit control", () => {
     render(<SourcesCard rows={ROWS} onEdit={() => {}} onRescan={() => {}} />);
     // The directory value should be plain text, not a button or input

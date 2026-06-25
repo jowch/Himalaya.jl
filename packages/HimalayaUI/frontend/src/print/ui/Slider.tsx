@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 interface SliderProps {
   value: number;
@@ -16,9 +17,6 @@ interface SliderProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** A styled `<input type="range">` with a thin hair-strong track and an accent
  *  thumb, plus an optional label/value row above it. The custom thumb + track

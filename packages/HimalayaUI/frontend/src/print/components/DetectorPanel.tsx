@@ -5,10 +5,8 @@ import { DetectorImage, DetectorRings, buildRingPlacements } from "../detector";
 import type { DetectorLutVariant } from "../detector/detectorLut";
 import type { DetectorCalibration, RingInput } from "../detector/detectorGeometry";
 import { PanelHeader } from "./PanelHeader";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface DetectorPanelProps {
   /** Current exposure image URL; null → DetectorImage placeholder. */

@@ -1,6 +1,4 @@
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
+import { cx } from "../../lib/cx";
 
 export interface FlagButtonProps {
   /** Parsed value, e.g. "1 : 0.25", rendered mono. */

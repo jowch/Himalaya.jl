@@ -4,10 +4,8 @@ import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
 import { TracePlot, type TraceModel, type TracePlotInteraction } from "../plot/TracePlot";
 import type { PeakFocusRequest } from "../plot/marks/PlotPeaks";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export type TraceScale = "log" | "lin";
 

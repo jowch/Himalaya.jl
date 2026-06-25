@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 interface WordmarkProps {
   children: ReactNode;
@@ -7,9 +8,6 @@ interface WordmarkProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** The brand wordmark (mockup `.wordmark`): SANS, uppercase, weight 700,
  *  wide tracking — NOT a serif title (serif is reserved for plate titles).

@@ -4,10 +4,8 @@ import { Input } from "./Input";
 import { Button } from "./Button";
 import { Chip } from "./Chip";
 import type { Tag } from "./tag";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface TagEditorProps {
   onCommit: (tag: Tag) => void;

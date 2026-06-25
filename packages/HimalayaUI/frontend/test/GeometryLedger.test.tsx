@@ -78,12 +78,22 @@ describe("GeometryLedger", () => {
     expect(onCommit).toHaveBeenCalledWith("beam_energy", "10.00");
   });
 
-  it("blur commits via onCommit", () => {
+  it("blur commits a changed value via onCommit", () => {
+    const onCommit = vi.fn();
+    render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
+    fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10.00" } });
+    fireEvent.blur(inp);
+    expect(onCommit).toHaveBeenCalledWith("beam_energy", "10.00");
+  });
+
+  it("an unchanged value does NOT fire onCommit (no no-op write)", () => {
     const onCommit = vi.fn();
     render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
     fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
     fireEvent.blur(screen.getByRole("textbox", { name: /override beam energy/i }));
-    expect(onCommit).toHaveBeenCalledWith("beam_energy", "9.00");
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it("Enter then a trailing blur commits exactly once (no double undo push)", () => {
@@ -91,6 +101,7 @@ describe("GeometryLedger", () => {
     render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
     fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
     const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10.00" } });
     fireEvent.keyDown(inp, { key: "Enter" });
     fireEvent.blur(inp);
     expect(onCommit).toHaveBeenCalledTimes(1);
@@ -103,11 +114,13 @@ describe("GeometryLedger", () => {
     const onCommit = vi.fn();
     render(<GeometryLedger rows={ROWS} {...cb} onCommit={onCommit} />);
     fireEvent.click(screen.getByRole("button", { name: /override beam energy/i }));
-    fireEvent.blur(screen.getByRole("textbox", { name: /override beam energy/i }));
+    const inp = screen.getByRole("textbox", { name: /override beam energy/i });
+    fireEvent.change(inp, { target: { value: "10.00" } });
+    fireEvent.blur(inp);
     fireEvent.click(screen.getByRole("button", { name: /override beam center x/i }));
     expect(screen.getByRole("textbox", { name: /override beam center x/i })).toBeInTheDocument();
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith("beam_energy", "9.00");
+    expect(onCommit).toHaveBeenCalledWith("beam_energy", "10.00");
   });
 
   it("Escape exits edit mode without committing", () => {

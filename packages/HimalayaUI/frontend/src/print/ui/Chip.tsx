@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 export type ChipVariant = "static" | "removable" | "add" | "toggle" | "trigger";
 
@@ -21,7 +22,7 @@ interface ChipProps {
   removeLabel?: string;
   /** Overrides the root element's `data-testid` (default `"chip"`). Lets the
    *  specialized chips that compose this base preserve their own contract
-   *  (FilterChip → "filter-chip", FacetChip → "facet-chip", TagPill → "tag-pill"). */
+   *  (FilterChip → "filter-chip", TagPill → "tag-pill"). */
   testId?: string;
   /** Optional native tooltip text (hover/focus). Used by the `toggle` variant
    *  to explain a filter's meaning; omitted ⇒ no `title` attribute (existing
@@ -36,12 +37,9 @@ interface ChipProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
-/** Shared pill geometry for every variant — the one base that FacetChip,
- *  FilterChip and TagPill collapse onto. Appearance lives here; the consumer's
+/** Shared pill geometry for every variant — the one base that FilterChip
+ *  and TagPill collapse onto. Appearance lives here; the consumer's
  *  `className` is placement-only and appended last. Size (padding + text) is an
  *  orthogonal axis applied via {@link sizeClass}, NOT baked into this base. */
 const pillBase =

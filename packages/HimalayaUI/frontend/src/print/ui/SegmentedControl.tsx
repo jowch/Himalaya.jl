@@ -1,5 +1,7 @@
 import { useRef } from "react";
 import type { ReactNode, KeyboardEvent } from "react";
+import { cx } from "../../lib/cx";
+import { findNextEnabled } from "../../lib/findNextEnabled";
 
 /**
  * SegmentedControl<T> — the canonical single-select button group.
@@ -60,9 +62,6 @@ export interface SegmentedControlProps<T extends string> {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 const containerClass: Record<SegmentedVariant, string> = {
   bordered: "inline-flex overflow-hidden rounded border border-hair-strong divide-x divide-hair-strong",
@@ -104,16 +103,10 @@ export function SegmentedControl<T extends string>({
   const segRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const move = (delta: number, from: number): void => {
-    const n = options.length;
-    if (n === 0) return;
-    let i = from;
-    for (let step = 0; step < n; step++) {
-      i = (i + delta + n) % n;
-      if (!options[i].disabled) {
-        onChange(options[i].value);
-        segRefs.current[i]?.focus();
-        return;
-      }
+    const i = findNextEnabled(options, from, delta);
+    if (i !== null) {
+      onChange(options[i].value);
+      segRefs.current[i]?.focus();
     }
   };
 

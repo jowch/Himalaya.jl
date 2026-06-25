@@ -7,10 +7,8 @@ import { ModalHead } from "./ModalHead";
 import { ModalFooter } from "./ModalFooter";
 import type { LoupeTag } from "../pages/loupeAdapters";
 import { announce } from "../../lib/announce";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface ManageTagsModalProps {
   open: boolean;

@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
-function cx(...p: Array<string | false | null | undefined>): string {
-  return p.filter(Boolean).join(" ");
-}
 
 export interface ModalFooterProps {
   note?: ReactNode;

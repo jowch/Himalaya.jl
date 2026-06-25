@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 export type NoticePillTone = "new" | "draft" | "success" | "warning" | "scanning";
 
@@ -8,9 +9,6 @@ interface NoticePillProps {
   className?: string;
 }
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** A compact 10px pill shown in the kick-row of a Series folio card.
  *

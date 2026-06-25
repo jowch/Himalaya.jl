@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Tooltip } from "./Tooltip";
+import { cx } from "../../lib/cx";
 
 export type IconButtonTone = "ghost" | "accent" | "danger";
 
@@ -29,9 +30,6 @@ const toneClass: Record<IconButtonTone, string> = {
   danger: "text-error hover:bg-error/10",
 };
 
-function cx(...parts: Array<string | false | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 // forwardRef so owners can hold the DOM button — e.g. ExportButton returns
 // focus to its menu trigger on keyboard close (APG menu-button).

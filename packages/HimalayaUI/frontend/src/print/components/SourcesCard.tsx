@@ -1,7 +1,8 @@
-import { useState, type JSX } from "react";
+import { type JSX } from "react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { useInlineEdit } from "../../hooks/useInlineEdit";
 
 export interface SourceRow {
   key: string;
@@ -28,22 +29,8 @@ export interface SourcesCardProps {
  *
  *  Presentational: the page owns the row data, mutation wiring, and onRescan. */
 export function SourcesCard(p: SourcesCardProps): JSX.Element {
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-
-  const begin = (r: SourceRow) => {
-    setEditing(r.key);
-    setDraft(r.value);
-  };
-
-  const commit = () => {
-    if (editing) {
-      p.onEdit(editing, draft.trim());
-    }
-    setEditing(null);
-  };
-
-  const cancel = () => setEditing(null);
+  const { editingKey, draft, setDraft, inputRef, begin, commit, cancel } =
+    useInlineEdit<string>(p.onEdit);
 
   return (
     <Card className={p.className}>
@@ -60,10 +47,10 @@ export function SourcesCard(p: SourcesCardProps): JSX.Element {
           >
             <span className="w-40 shrink-0 text-xs text-ink-soft">{r.label}</span>
 
-            {editing === r.key ? (
+            {editingKey === r.key ? (
               <Input
                 mono
-                autoFocus
+                inputRef={inputRef}
                 value={draft}
                 onValueChange={setDraft}
                 aria-label={r.label}
@@ -80,7 +67,7 @@ export function SourcesCard(p: SourcesCardProps): JSX.Element {
               <button
                 type="button"
                 className="font-mono text-sm text-ink"
-                onClick={() => begin(r)}
+                onClick={() => begin(r.key, r.value)}
               >
                 {r.value}
               </button>

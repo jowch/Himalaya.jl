@@ -17,6 +17,7 @@ import { IconButton } from "../ui/IconButton";
 import { KbKey } from "../ui/KbKey";
 import { ProgressBar } from "../ui/ProgressBar";
 import { Dock } from "../ui/Dock";
+import { DockUpLink } from "../ui/DockUpLink";
 import { ScanFailedPage } from "./ScanFailedPage";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
@@ -588,14 +589,7 @@ export function ExperimentCorpusPage(): JSX.Element {
           Segments are grouped (each a flex child of the Dock's gap-2 row); a
           flex-1 spacer right-anchors the destinations. */}
       <Dock>
-        <a
-          href="/experiments"
-          onClick={(e) => { e.preventDefault(); navigate("/experiments"); }}
-          className="text-meta font-semibold text-print-accent hover:underline"
-          data-testid="dock-up-link"
-        >
-          ‹ Experiments
-        </a>
+        <DockUpLink label="Experiments" href="/experiments" onClick={() => navigate("/experiments")} />
 
         <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
 

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cx } from "../../lib/cx";
 
 /** Single source of truth for per-surface content widths (mockup values).
  *  Changing a surface's width is a one-line edit here. Centred surfaces only —
@@ -16,9 +17,6 @@ export const PAGE_WIDTHS = {
 
 export type PageWidth = keyof typeof PAGE_WIDTHS;
 
-function cx(...p: Array<string | false | null | undefined>): string {
-  return p.filter(Boolean).join(" ");
-}
 
 /** Centers + caps a page body at its surface width. Greenfield pages wrap their
  *  body in this instead of a hand-rolled `mx-auto max-w-[…]`. PLACEMENT-ONLY

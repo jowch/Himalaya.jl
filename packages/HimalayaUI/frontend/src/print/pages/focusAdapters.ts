@@ -99,48 +99,6 @@ export function peakClickAction(
   return { kind: "remove" };
 }
 
-// ── losing / complement peak sets (PlotCard.tsx 250-263, verbatim) ───────────
-
-/**
- * The peaks an active phase would orphan if the hovered candidate were added.
- * Ported VERBATIM from PlotCard's `losingPeakIds` useMemo: for each active
- * index that shares ≥1 claimed peak with the hovered candidate, every claimed
- * peak it does NOT share is "losing". Empty set when there is no hover, the
- * hovered candidate is already active, or it overlaps no active phase
- * (independent phases coexist and lose nothing).
- */
-export function losingPeakIds(
-  hovered: IndexEntry | undefined,
-  activeIndices: IndexEntry[],
-): Set<number> {
-  const losing = new Set<number>();
-  if (!hovered) return losing;
-  const alreadyActive = activeIndices.some((ix) => ix.id === hovered.id);
-  if (alreadyActive) return losing;
-  const claim = new Set(hovered.peaks.map((p) => p.peak_id));
-  for (const active of activeIndices) {
-    const activePeakIds = active.peaks.map((p) => p.peak_id);
-    const overlaps = activePeakIds.some((id) => claim.has(id));
-    if (!overlaps) continue; // independent phase → coexists, nothing lost
-    for (const id of activePeakIds) if (!claim.has(id)) losing.add(id);
-  }
-  return losing;
-}
-
-/**
- * The complement of `losing` within `allPeakIds`. TracePlot's
- * `highlightPeakIds` KEEPS the peaks in its set (dimming the rest); to dim the
- * LOSING peaks we therefore pass everything EXCEPT the losing set.
- */
-export function complementPeakIds(
-  allPeakIds: Iterable<number>,
-  losing: Set<number>,
-): Set<number> {
-  const out = new Set<number>();
-  for (const id of allPeakIds) if (!losing.has(id)) out.add(id);
-  return out;
-}
-
 // ── detector rings (FocusDetectorPanel.tsx 52-77) ────────────────────────────
 
 /**

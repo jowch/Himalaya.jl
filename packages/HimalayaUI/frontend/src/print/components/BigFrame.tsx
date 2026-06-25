@@ -2,10 +2,8 @@ import type { ReactNode } from "react";
 import { DetectorImage } from "../detector";
 import type { DetectorLutVariant } from "../detector/detectorLut";
 import { RejectOverlay } from "../ui";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 export interface BigFrameProps {
   /** Detector image URL; null → DetectorImage frame-window placeholder. */

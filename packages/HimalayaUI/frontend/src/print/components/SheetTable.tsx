@@ -3,10 +3,8 @@ import type { ReactNode } from "react";
 import { Card, Kicker, ColumnSortButton } from "../ui";
 import type { ColumnSortDir } from "../ui";
 import { sampleTableCols, CHECKBOX_TRACK_PX } from "./SampleTableRow";
+import { cx } from "../../lib/cx";
 
-function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(" ");
-}
 
 /** The page-owned sort the header reflects. `key` is one of the four sortable
  *  column keys (or null = ingest order); `dir` only matters when key is set. */
