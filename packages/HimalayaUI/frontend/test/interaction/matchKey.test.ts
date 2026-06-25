@@ -31,6 +31,10 @@ describe("matchesKeys", () => {
     expect(matchesKeys(key({ key: "z", metaKey: true }), ["Mod+z"])).toBe(true);
     expect(matchesKeys(key({ key: "z" }), ["Mod+z"])).toBe(false);
   });
+  it("matches a declared \" \" against the space bar (Space-normalized both sides)", () => {
+    expect(matchesKeys(key({ key: " " }), [" "])).toBe(true);
+    expect(matchesKeys(key({ key: " " }), ["Space"])).toBe(true);
+  });
 });
 
 describe("isBareKey", () => {

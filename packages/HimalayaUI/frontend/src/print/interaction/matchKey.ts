@@ -19,12 +19,15 @@ export function matchesKeys(e: KeyboardEvent, keys: string[]): boolean {
   return keys.some((want) => {
     const parts = want.split("+");
     const k = parts.pop()!;
-    const norm = [...parts, k.length === 1 ? k.toLowerCase() : k].join("+");
+    const kn = k === " " ? "Space" : k.length === 1 ? k.toLowerCase() : k;
+    const norm = [...parts, kn].join("+");
     return norm === got;
   });
 }
 
 export function isBareKey(e: KeyboardEvent): boolean {
+  // Shift is intentionally NOT excluded: Shift+letter is capital-letter typing,
+  // which must still count as "bare" so the keyboard layer suppresses it in inputs.
   return !e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1;
 }
 
@@ -32,5 +35,7 @@ export function isTyping(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   const tag = t.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return t.isContentEditable || t.getAttribute("contenteditable") === "true";
+  if (t.isContentEditable) return true;
+  const ce = t.getAttribute("contenteditable");
+  return ce === "true" || ce === "";
 }
