@@ -18,6 +18,8 @@ import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
+import { InteractionDock } from "../interaction/InteractionDock";
+import { useKeyboardLayer } from "../interaction/useKeyboardLayer";
 
 /** Thin wrapper that reads :id from the route and passes it to GroupingReviewPage. */
 function GroupingReviewRoute(): JSX.Element {
@@ -69,6 +71,7 @@ function PageBody(): JSX.Element {
  * Replaces the three legacy shells (deleted in T3.2).
  */
 function AppShell(): JSX.Element {
+  useKeyboardLayer(); // one window listener for the whole app
   return (
     <div
       data-testid="app-shell"
@@ -78,6 +81,7 @@ function AppShell(): JSX.Element {
       <main className="flex-1 min-h-0 overflow-auto">
         <Outlet />
       </main>
+      <InteractionDock />
     </div>
   );
 }
