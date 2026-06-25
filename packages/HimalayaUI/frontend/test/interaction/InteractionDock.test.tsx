@@ -11,7 +11,6 @@ const fakeCursor = (over: Partial<ListCursor> = {}): ListCursor => {
     cursorId: 1,
     selected: new Set(),
     setCursor: () => {},
-    moveBy,
     activate: () => {},
     toggleSelect: () => {},
     rowProps: () => ({} as never),
