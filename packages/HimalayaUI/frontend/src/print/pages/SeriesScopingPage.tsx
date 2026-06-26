@@ -412,6 +412,9 @@ export function SeriesScopingPage(): JSX.Element {
       return;
     }
     applyReorder(i, i + delta);
+    // Re-anchor cursor to the moved row so the focus guard in useListCursor can
+    // keep focus on whatever child (grip button, input) the user was using.
+    cursor.setCursor(r.sampleId);
     announceReorder(`Moved ${r.sampleName} to position ${i + delta + 1} of ${sorted.length}.`);
   };
 

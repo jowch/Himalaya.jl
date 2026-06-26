@@ -54,13 +54,19 @@ export function useListCursor(opts: Opts): ListCursor {
   }, [ids]);
 
   // Cursor === DOM focus: move focus to the cursored row.
+  // Guard: if a focused interactive child (e.g. an edit input or a grip button)
+  // already lives inside the row, defer to it — stealing focus would blur the
+  // child and fire its onBlur (commit / cancel), which is wrong.
   useEffect(() => {
     if (cursorId === null) return;
     const el = elements.current.get(cursorId);
-    if (el) {
-      el.focus();
+    if (!el) return;
+    if (el !== document.activeElement && el.contains(document.activeElement)) {
       safeScrollIntoView(el, { block: "nearest" });
+      return;
     }
+    el.focus();
+    safeScrollIntoView(el, { block: "nearest" });
   }, [cursorId]);
 
   const indexOf = useCallback((id: number | null) => (id === null ? -1 : ids.indexOf(id)), [ids]);

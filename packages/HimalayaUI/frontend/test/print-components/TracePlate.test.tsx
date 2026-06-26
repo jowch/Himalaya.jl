@@ -310,54 +310,8 @@ describe("TracePlate", () => {
     expect(tip).not.toMatch(/remove|toggle off/);
   });
 
-  // ── F7: Escape disarms the armed + Peak mode ─────────────────────────────────
-  // The armed mode had no keyboard exit. Escape disarms via onToggleAddPeak,
-  // with a modal dialog winning (ModalShell owns Escape-to-close and stamps
-  // preventDefault on the press it consumes), and the hint names the exit.
-
-  it("Escape disarms: fires onToggleAddPeak while armed", () => {
-    const onToggleAddPeak = vi.fn();
-    render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        onToggleAddPeak={onToggleAddPeak}
-        interaction={{ onXDomain: () => {}, onAddPeak: () => {} }}
-      />,
-    );
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(onToggleAddPeak).toHaveBeenCalledTimes(1);
-  });
-
-  it("Escape-disarm re-anchors focus to '+ Peak' when a peak mark held focus (WCAG 2.4.3)", () => {
-    // FO-FOCUSRETURN: disarming strips every mark's tabIndex/role, so an Escape
-    // exit while a mark holds keyboard focus would drop focus to <body>. The
-    // handler re-anchors to the "+ Peak" button -- the keyboard user's stable
-    // handle -- before the disarm re-render makes the mark inert.
-    const { container } = render(
-      <TracePlate
-        {...base}
-        addPeakArmed
-        onToggleAddPeak={() => {}}
-        interaction={{ onXDomain: () => {}, onAddPeak: () => {}, onClickPeak: () => {} }}
-      />,
-    );
-    const mark = container.querySelector(
-      '[data-role="plot-peaks"] [role="button"]',
-    ) as HTMLElement;
-    expect(mark).toBeTruthy();
-    // Resolve the toolbar button via raw DOM: RTL's accessible-name engine trips
-    // (reads `.name` of undefined) when it has to compute a role for the SVG
-    // <g role="button"> peak marks, so getByRole/getByText cannot be used here.
-    const addPeakBtn = [...container.querySelectorAll("button")].find(
-      (b) => b.textContent?.trim() === "+ Peak",
-    ) as HTMLElement;
-    expect(addPeakBtn).toBeTruthy();
-    mark.focus();
-    expect(document.activeElement).toBe(mark);
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(document.activeElement).toBe(addPeakBtn);
-  });
+  // Escape-disarm window listener removed in interaction-arch (Phase 4); disarm
+  // moved to FocusPage.escapeLadder — covered by test/FocusPage.actions.test.tsx.
 
   it("Escape-disarm leaves focus alone when no peak mark held it (no yank)", () => {
     // The re-anchor is scoped to the about-to-go-inert marks: pressing Escape

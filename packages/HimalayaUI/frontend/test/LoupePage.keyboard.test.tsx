@@ -83,12 +83,8 @@ beforeEach(() => {
 // ── T2.5 axis contract ────────────────────────────────────────────────────────
 
 describe("Loupe T2.5 keyboard: rev-2 axis contract", () => {
-  it("←/→ flip frames (prevDetail/nextDetail) — ArrowRight moves to frame 2", () => {
-    renderAt(11);
-    // Frame 2 is rejected; ArrowRight flips to it.
-    fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
-  });
+  // ArrowRight/Left on window removed in interaction-arch; scope-container arrows
+  // covered by test/LoupePage.actions.test.tsx "ArrowRight on the scope container".
 
   it("←/→ flip frames — ArrowLeft goes back", () => {
     renderAt(11);
@@ -117,24 +113,10 @@ describe("Loupe T2.5 keyboard: rev-2 axis contract", () => {
     expect(screen.queryByTestId("sheet")).toBeNull();
   });
 
-  it("r sets the representative (representative = r key)", () => {
-    renderAt(11);
-    // Flip to frame 2 (not selected) so r can actually mutate.
-    fireEvent.keyDown(window, { key: "ArrowRight" });
-    fireEvent.keyDown(window, { key: "r" });
-    expect(selectMutate).toHaveBeenCalled();
-  });
-
-  it("Backspace restores the active frame (restore = Backspace → setStatus null)", () => {
-    renderAt(11);
-    // Flip to frame 2 (rejected) so restore makes sense.
-    fireEvent.keyDown(window, { key: "ArrowRight" });
-    fireEvent.keyDown(window, { key: "Backspace" });
-    expect(setStatusMutate).toHaveBeenCalledWith(
-      { exposureId: 2, status: null },
-      expect.anything(),
-    );
-  });
+  // r via window keyboard layer covered by test/LoupePage.actions.test.tsx
+  //   "r (representative) through the keyboard layer fires setRepresentative".
+  // Backspace (restore) intentionally has NO keyboard binding in the new model
+  //   (would collide with text editing in tag input); dock button remains.
 
   it("[ and ] are no longer bound as sample nav — loupe uses ↑/↓", () => {
     renderAt(11);

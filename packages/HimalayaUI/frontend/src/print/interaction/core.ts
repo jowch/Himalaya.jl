@@ -65,7 +65,7 @@ export function assertNoCoreCollision(actions: Action[]): void {
     if (coreIds.has(a.id)) continue;
     for (const k of a.keys ?? []) {
       if (CORE_KEYS.has(k)) {
-        throw new Error(`Action "${a.id}" reuses core key "${k}" — use core("${k}") or pick another key.`);
+        throw new Error(`Action "${a.id}" reuses core key "${k}"; use core("${k}") or pick another key.`);
       }
     }
   }
