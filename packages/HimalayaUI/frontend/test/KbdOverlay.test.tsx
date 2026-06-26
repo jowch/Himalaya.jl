@@ -5,17 +5,19 @@
 // Pins:
 //   - Renders the KbdLegend (keyboard shortcut list) when open.
 //   - Esc closes it (via ModalShell's built-in closeOnEsc).
-//   - ? key opens it (wired in useGlobalShortcuts).
+//   - ? key opens it (wired through the shell-action registry + useKeyboardLayer).
 //
 // The overlay is controlled by useAppState.helpOverlayOpen / openHelpOverlay /
 // closeHelpOverlay. We drive it through the real Zustand store so the
-// useGlobalShortcuts ↔ KbdOverlay integration is tested end-to-end.
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+// shellActions ↔ KbdOverlay integration is tested end-to-end.
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { useAppState } from "../src/state";
 import { KbdOverlay } from "../src/print/shell/KbdOverlay";
-import { useGlobalShortcuts } from "../src/hooks/useGlobalShortcuts";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
+import { useInteraction } from "../src/print/interaction/registry";
+import { core } from "../src/print/interaction/core";
 
 // useFocusTrap uses MutationObserver which JSDOM stubs but doesn't implement
 // fully. Stub it to avoid noise.
@@ -23,10 +25,16 @@ vi.mock("../src/hooks/useFocusTrap", () => ({
   useFocusTrap: () => {},
 }));
 
+/** Mirrors AppShell's role: mounts the keyboard layer and seeds the help shell action. */
 function HarnessWithOverlay(): JSX.Element {
-  useGlobalShortcuts();
+  useKeyboardLayer();
   return <KbdOverlay />;
 }
+
+afterEach(() => {
+  useInteraction.getState().setShellActions([]);
+  cleanup();
+});
 
 function renderHarness() {
   return render(
@@ -64,7 +72,11 @@ describe("KbdOverlay — T2.5 ? help overlay", () => {
     expect(useAppState.getState().helpOverlayOpen).toBe(false);
   });
 
-  it("? key opens the overlay via useGlobalShortcuts", () => {
+  it("? key opens the overlay via the shell-action registry + useKeyboardLayer", () => {
+    // Seed the help shell action — this is what AppShell's useEffect does on mount.
+    useInteraction.getState().setShellActions([
+      core("help", { run: () => useAppState.getState().openHelpOverlay() }),
+    ]);
     renderHarness();
     expect(screen.queryByTestId("kbd-overlay")).toBeNull();
     fireEvent.keyDown(window, { key: "?" });

@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
 import { Outlet } from "react-router-dom";
 import { useAppState } from "../../state";
-import { useGlobalShortcuts } from "../../hooks/useGlobalShortcuts";
+import { useInteraction } from "../interaction/registry";
+import { core } from "../interaction/core";
 import { TopNav } from "./TopNav";
 import { ExperimentShell } from "./ExperimentShell";
 import { LoupePage } from "../pages/LoupePage";
@@ -72,6 +74,22 @@ function PageBody(): JSX.Element {
  */
 function AppShell(): JSX.Element {
   useKeyboardLayer(); // one window listener for the whole app
+
+  // Register the shell-level global shortcuts once.  These are scope-exempt
+  // (bypass the bare-key inPageScope guard) so `/`, `?`, and ⌘K work from
+  // anywhere in the app, not just inside [data-interaction-scope] elements.
+  useEffect(() => {
+    useInteraction.getState().setShellActions([
+      core("find", {
+        run: () => {
+          const s = useAppState.getState();
+          s.openNavModal(s.activeExperimentId === undefined ? "experiment" : "sample");
+        },
+      }),
+      core("help", { run: () => useAppState.getState().openHelpOverlay() }),
+    ]);
+  }, []);
+
   return (
     <div
       data-testid="app-shell"
@@ -122,13 +140,6 @@ export function AppRoutes(): JSX.Element {
   // R0a (#221): the theme-class effect is gone. "The Print" is the single
   // identity defined statically in styles.css `@theme`; there is no
   // `theme-light` class to toggle on <html>.
-
-  // Global keyboard shortcuts — hoisted above the shell so they work app-wide.
-  // KEYS-LIB step 2: this now binds only the find/jump chord (`/`, `⌘K`); the
-  // sample step `[`/`]` and every other gesture are surface-owned through the
-  // shortcut library (print/shell/shortcuts.ts), so the per-experiment samples
-  // list this used to thread for the old `,`/`.` stepper is no longer needed.
-  useGlobalShortcuts();
 
   return (
     <Routes>

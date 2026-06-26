@@ -27,11 +27,17 @@ export function useKeyboardLayer(): void {
       // not the page's undo action.)
       if (isTyping(e.target)) return;
 
-      const { actions } = useInteraction.getState();
-      for (const a of actions) {
+      const { actions, shellActions } = useInteraction.getState();
+      // shellActions are scope-exempt (global shortcuts like /, ?, ⌘K).
+      // page actions are scope-gated (WCAG 2.1.4: bare key fires only inside interaction scope).
+      for (const [a, isShell] of [
+        ...shellActions.map((a) => [a, true] as const),
+        ...actions.map((a) => [a, false] as const),
+      ]) {
         if (!a.keys || !matchesKeys(e, a.keys)) continue;
-        // WCAG 2.1.4: bare single-key actions fire only inside the page scope.
-        if (isBareKey(e) && !inPageScope(e.target)) continue;
+        // WCAG 2.1.4: bare single-key page actions fire only inside the page scope.
+        // Shell actions bypass this guard (they are always global).
+        if (!isShell && isBareKey(e) && !inPageScope(e.target)) continue;
         // Enter on a native interactive control (button/link/input/select/textarea/
         // contenteditable) activates THAT control — don't let the page's Enter action
         // (openFocus/"Apply") hijack it. Space is already covered (it is bare → scope-gated).
