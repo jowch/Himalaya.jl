@@ -312,6 +312,14 @@
   [data-focus-ring="inset"]:focus-visible {
     outline-offset: -2px;
   }
+
+  /* The interaction-scope container is a tabIndex=-1 keyboard-capture anchor that
+     receives focus PROGRAMMATICALLY (not via Tab). Its UA focus outline is visual
+     noise — the cursored row (`[data-cursored]`) and the dock stepper count are the
+     real position indicators, so suppress the box outline on the anchor itself. */
+  [data-interaction-scope]:focus {
+    outline: none;
+  }
 }
 
 /*
