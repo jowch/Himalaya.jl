@@ -203,31 +203,39 @@ beforeEach(() => {
 describe("SeriesBuilderPage interaction (task 5.2)", () => {
   // ── cursor identity ─────────────────────────────────────────────────────────
   it("cursor is by sample_id, surviving a recipe edit (was selectedIndex bug)", () => {
-    // Pre-condition: cursor on sample 1 (recipe index 0), then remove sample 2.
-    // With the old selectedIndex, removing index 1 would keep selectedIndex=0
-    // still pointing to the same element — OK in this case. But adding to the
-    // top and removing from the middle used to shift the selection.
-    // Here we verify the ID-based cursor stays on sample_id=1 after removing
-    // sample 2 from the draft.
+    // Verify the ID-based cursor distinguishes itself from old index-based behavior.
+    // Set up: cursor on sample_id=1 (position 1/3), then move to sample_id=2 (position 2/3).
+    // Test: remove sample_id=1 (first row, recipe index 0).
+    // Expected: cursor stays on sample_id=2 (now position 1/2).
+    // Old bug: index 1 would remain index 1 (out of bounds after removal of index 0),
+    // so it might shift or clamp to sample_id=2 anyway, but at index 0 (WRONG, loses position).
     renderBuilder();
     startEdit();
 
-    // Cursor starts on sample_id=1 (recipe[0], BOTTOM visually).
-    const countBefore = screen.getByTestId("dock-sample-count").textContent;
-    expect(countBefore).toBe("1 / 3");
+    // Cursor starts on sample_id=1 (position 1 / 3).
+    expect(screen.getByTestId("dock-sample-count")).toHaveTextContent("1 / 3");
+    expect(screen.getByTestId("dock-identity-name")).toHaveTextContent("A");
 
-    // Remove sample 2 via the Remove button in the recipe editor row.
-    // Find the recipe rows and click Remove on the middle one (index 1 in visual order,
-    // which is recipe index 1 = sample_id=2).
+    // Move cursor to sample_id=2 (position 2 / 3) by pressing ArrowDown once.
+    const scope = getScope();
+    act(() => { fireEvent.keyDown(scope, { key: "ArrowDown" }); });
+
+    expect(screen.getByTestId("dock-sample-count")).toHaveTextContent("2 / 3");
+    expect(screen.getByTestId("dock-identity-name")).toHaveTextContent("B");
+
+    // Remove sample_id=1 (bottom visual row = recipe[0], last Remove button due to BU-INVERT).
+    // With old index-based cursor: index 1 would stay at index 1, but now there's no
+    // index 1 (only 0 left), so it would clamp/wrap, staying on sample_id=2 but
+    // at a different index/position (WRONG — wrong index even if same sample).
+    // With ID-based cursor: we stay on sample_id=2 at position 1/2 (CORRECT).
     const removeBtns = screen.getAllByRole("button", { name: /remove/i });
-    // Middle visual row = recipe row index 1 (BU-INVERT: visual reversal, middle stays middle)
-    act(() => { fireEvent.click(removeBtns[1]!); });
+    // Visual order is inverted (BU-INVERT), so removeBtns[2] is the bottom row (recipe[0]).
+    act(() => { fireEvent.click(removeBtns[2]!); });
 
-    // After removing sample 2, recipe has [sample_id=1, sample_id=3] — 2 samples.
-    // Cursor should still be on sample_id=1 (index 0), readout 1 / 2.
+    // After removing sample_id=1, recipe has [sample_id=2, sample_id=3] — 2 samples.
+    // Cursor should still be on sample_id=2 (now position 1 / 2, since sample_id=2 moves to recipe[0]).
     expect(screen.getByTestId("dock-sample-count")).toHaveTextContent("1 / 2");
-    // The dock-prev should be disabled (still at first position).
-    expect(screen.getByTestId("dock-prev-sample")).toBeDisabled();
+    expect(screen.getByTestId("dock-identity-name")).toHaveTextContent("B");
   });
 
   // ── Enter → Focus ────────────────────────────────────────────────────────────
