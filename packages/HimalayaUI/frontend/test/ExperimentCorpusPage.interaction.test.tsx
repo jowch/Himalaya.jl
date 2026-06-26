@@ -59,6 +59,8 @@ vi.mock("../src/queries", () => ({
     return { byId, isLoading: false };
   },
   useSetExposureStatusBatch: () => ({ mutate: batchMutate }),
+  useSetExposureStatus: () => ({ mutate: vi.fn() }),
+  useSelectExposure: () => ({ mutate: vi.fn() }),
 }));
 
 // Zustand store: ingestInFlight stays null so no takeover state pre-empts the

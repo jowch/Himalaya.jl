@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../../state";
@@ -9,6 +9,8 @@ import {
   useCorpusSamples,
   useCorpusExposures,
   useSetExposureStatusBatch,
+  useSetExposureStatus,
+  useSelectExposure,
 } from "../../queries";
 import * as api from "../../api";
 import { Button } from "../ui/Button";
@@ -23,9 +25,6 @@ import { useListCursor } from "../interaction/useListCursor";
 import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
-
-/** Exposure screening verdict applied by the cull verbs (null = unscreened). */
-type Verdict = "accepted" | "rejected" | null;
 
 /**
  * ExperimentCorpusPage — the experiment's Corpus home (the index route under
@@ -154,85 +153,38 @@ export function ExperimentCorpusPage(): JSX.Element {
   const [frameIndex, setFrameIndex] = useState(0);
   useEffect(() => { setFrameIndex(0); }, [sampleCursor.cursorId]);
 
-  // --- Selection state ---
-  // SAMPLE-grain selection lives on the cursor (`sampleCursor.selected`) — one
-  // selection state, driven by the row checkbox. The EXPOSURE-grain `selected`
-  // Set below is a distinct page-local concern (which thumbnails are highlighted
-  // within a row); it does not feed the dock's cull verbs.
-  const [selected, setSelected] = useState<Set<number>>(() => new Set());
-  const anchorRef = useRef<{ sampleId: number; exposureId: number } | null>(null);
-  const shiftRef = useRef(false);
+  // Sample-grain selection lives on the cursor (`sampleCursor.selected`, the row
+  // checkbox) — it feeds compose / + New series. Per-exposure verdicts (drop /
+  // keep / representative) act on the FRAME cursor — the ←/→ thumbnail — mirroring
+  // the Loupe, not a separate multi-select.
+  const activeFrames = activeSample ? (corpusExposures.byId.get(activeSample.id) ?? []) : [];
+  const activeFrame = activeFrames[frameIndex];
+  const setExposureStatus = useSetExposureStatus(activeSample?.id ?? 0);
+  const setRepresentative = useSelectExposure(activeSample?.id ?? 0);
 
-  // SA-STALESELECT: navigating between experiment ids re-renders this route
-  // (same path, new :id) without remounting, so a working selection from the
-  // prior experiment is no longer on screen. Clear the exposure grain on expId
-  // change (the sample grain on `sampleCursor.selected` self-prunes when the id
-  // set swaps); on mount this is a no-op.
-  useEffect(() => {
-    setSelected(new Set());
-    anchorRef.current = null;
-    setFrameIndex(0);
-  }, [expId]);
-
-  // Shift-anchor tracking for contiguous range selection.
-  useEffect(() => {
-    function onShiftDown(e: KeyboardEvent): void { if (e.key === "Shift") shiftRef.current = true; }
-    function onShiftUp(e: KeyboardEvent): void { if (e.key === "Shift") shiftRef.current = false; }
-    window.addEventListener("keydown", onShiftDown);
-    window.addEventListener("keyup", onShiftUp);
-    return () => {
-      window.removeEventListener("keydown", onShiftDown);
-      window.removeEventListener("keyup", onShiftUp);
-    };
-  }, []);
-
-  function toggleSelect(sampleId: number, exposureId: number): void {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      const anchor = anchorRef.current;
-      if (shiftRef.current && anchor && anchor.sampleId === sampleId) {
-        const ids = (corpusExposures.byId.get(sampleId) ?? []).map((e) => e.id);
-        const a = ids.indexOf(anchor.exposureId);
-        const b = ids.indexOf(exposureId);
-        if (a >= 0 && b >= 0) {
-          const lo = Math.min(a, b);
-          const hi = Math.max(a, b);
-          for (let i = lo; i <= hi; i++) next.add(ids[i]!);
-          return next;
-        }
-      }
-      if (next.has(exposureId)) next.delete(exposureId);
-      else next.add(exposureId);
-      anchorRef.current = { sampleId, exposureId };
-      return next;
-    });
-  }
+  // SA-STALESELECT: this route re-renders on :id change without remounting, so
+  // reset the frame cursor when the experiment swaps (the per-sample reset lives
+  // in the cursorId effect above).
+  useEffect(() => { setFrameIndex(0); }, [expId]);
 
 
-
-  // --- Sample-grain cull actions (declared to the interaction registry) ---
-  // All three read the ONE sample selection (`sampleCursor.selected`) and apply
-  // the verdict across every exposure of each selected sample. `toggleSelect()`
-  // with no arg clears nothing; we clear by toggling each selected id off after
-  // the batch so the selection resets (mirrors the old set-clear).
-  const cullSelected = useCallback(
-    (status: Verdict, verb: string) => {
-      const ids = [...sampleCursor.selected];
-      for (const sampleId of ids) {
-        const exps = corpusExposures.byId.get(sampleId) ?? [];
-        for (const e of exps) batch.mutate({ sampleId, exposureId: e.id, status });
-      }
-      const n = ids.length;
-      if (n > 0) showToast(`${n} sample${n === 1 ? "" : "s"} ${verb}`, "success");
-      for (const sampleId of ids) sampleCursor.toggleSelect(sampleId);
-    },
-    [sampleCursor, corpusExposures.byId, batch],
-  );
-  const dropSelected = useCallback(() => cullSelected("rejected", "dropped"), [cullSelected]);
-  const keepSelected = useCallback(() => cullSelected("accepted", "kept"), [cullSelected]);
-  const restoreSelected = useCallback(() => cullSelected(null, "restored"), [cullSelected]);
-
-  const mode = sampleCursor.selected.size > 0 ? "selection" : "browse";
+  // --- Per-exposure verdicts on the FRAME cursor (declared to the registry) ---
+  // The current thumbnail (the ←/→ frame cursor) takes Drop / Keep / Set
+  // representative, mirroring the Loupe. Drop/Keep toggle (a second press on an
+  // already-dropped/kept frame clears the verdict).
+  const dropFrame = useCallback(() => {
+    if (!activeFrame) return;
+    const dropping = activeFrame.status !== "rejected";
+    setExposureStatus.mutate({ exposureId: activeFrame.id, status: dropping ? "rejected" : null });
+  }, [activeFrame, setExposureStatus]);
+  const keepFrame = useCallback(() => {
+    if (!activeFrame) return;
+    const keeping = activeFrame.status !== "accepted";
+    setExposureStatus.mutate({ exposureId: activeFrame.id, status: keeping ? "accepted" : null });
+  }, [activeFrame, setExposureStatus]);
+  const representativeFrame = useCallback(() => {
+    if (activeFrame) setRepresentative.mutate(activeFrame.id);
+  }, [activeFrame, setRepresentative]);
 
   usePageActions({
     cursor: sampleCursor,
@@ -257,32 +209,29 @@ export function ExperimentCorpusPage(): JSX.Element {
         dock: true,
         enabled: () => activeSample != null,
       }),
-      page("cull", {
+      page("drop", {
         label: "Drop",
         keys: ["x"],
         group: "Act",
-        mode: "selection",
-        enabled: () => mode === "selection",
         dock: true,
-        run: () => dropSelected(),
+        enabled: () => activeFrame != null,
+        run: () => dropFrame(),
       }),
       page("keep", {
         label: "Keep",
         keys: ["k"],
         group: "Act",
-        mode: "selection",
-        enabled: () => mode === "selection",
         dock: true,
-        run: () => keepSelected(),
+        enabled: () => activeFrame != null,
+        run: () => keepFrame(),
       }),
-      page("restore", {
-        label: "Restore",
+      page("representative", {
+        label: "Set representative",
         keys: ["r"],
         group: "Act",
-        mode: "selection",
-        enabled: () => mode === "selection",
         dock: true,
-        run: () => restoreSelected(),
+        enabled: () => activeFrame != null,
+        run: () => representativeFrame(),
       }),
     ],
   });
@@ -321,10 +270,6 @@ export function ExperimentCorpusPage(): JSX.Element {
       />
     );
   }
-
-  // Active frame for cursoredExposureId highlight in the gallery.
-  const activeFrames = activeSample ? (corpusExposures.byId.get(activeSample.id) ?? []) : [];
-  const activeFrame = activeFrames[frameIndex];
 
   // ── Corpus sheet + cull/compose/dock ─────────────────────────────────────
   return (
@@ -424,13 +369,13 @@ export function ExperimentCorpusPage(): JSX.Element {
                   {...(sampleCursor.cursorId === s.id && activeFrame
                     ? { cursoredExposureId: activeFrame.id }
                     : {})}
-                  selectedExposureIds={selected}
                   onSelectExposure={(eid) => {
+                    // Click a thumbnail → park the sample + frame cursor on it
+                    // (the Drop/Keep/Set-representative verbs then act on it).
                     sampleCursor.setCursor(s.id);
                     const frames = corpusExposures.byId.get(s.id) ?? [];
                     const fi = frames.findIndex((e) => e.id === eid);
                     if (fi >= 0) setFrameIndex(fi);
-                    toggleSelect(s.id, eid);
                   }}
                   onActivateExposure={(eid) => {
                     sampleCursor.setCursor(s.id);

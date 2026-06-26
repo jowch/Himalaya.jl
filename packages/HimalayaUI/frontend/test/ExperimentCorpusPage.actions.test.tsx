@@ -8,7 +8,7 @@
 // without actual routing.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type React from "react";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { CorpusSample, Exposure } from "../src/api";
@@ -28,6 +28,8 @@ const actionsState = {
 // Stable batch spy so keyboard-triggered cull verbs are assertable (the inline
 // `vi.fn()` in the factory would mint a fresh fn per call and lose the calls).
 const batchMutate = vi.fn();
+const setStatusMutate = vi.fn();
+const setRepMutate = vi.fn();
 
 vi.mock("../src/queries", () => ({
   useExperiment: () => ({ data: undefined, isLoading: false }),
@@ -43,6 +45,8 @@ vi.mock("../src/queries", () => ({
     return { byId, isLoading: false };
   },
   useSetExposureStatusBatch: () => ({ mutate: batchMutate }),
+  useSetExposureStatus: () => ({ mutate: setStatusMutate }),
+  useSelectExposure: () => ({ mutate: setRepMutate }),
 }));
 
 vi.mock("../src/state", () => ({
@@ -108,6 +112,8 @@ function renderCorpus(
 beforeEach(() => {
   navigateSpy.mockClear();
   batchMutate.mockClear();
+  setStatusMutate.mockClear();
+  setRepMutate.mockClear();
   actionsState.samples = [];
   actionsState.byId = new Map();
   useInteraction.getState().clearPage();
@@ -129,13 +135,13 @@ describe("Corpus action declaration", () => {
     expect(screen.getByText("B").closest('[role="row"]')).toHaveAttribute("data-cursored", "true");
   });
 
-  it("cull (x) dock button is enabled only in selection mode", async () => {
-    renderCorpus([{ id: 10, name: "A" }]);
-    const row = (await screen.findByText("A")).closest('[role="row"]')!;
-    // browse mode: no Cull dock button (mode-gated action hidden when not enabled)
-    expect(screen.queryByTestId("dock-action-cull")).toBeNull();
-    fireEvent.click(within(row).getByRole("checkbox")); // → selection mode
-    expect(screen.getByTestId("dock-action-cull")).toBeEnabled();
+  it("Drop / Keep / Set-representative dock buttons are enabled when a frame is cursored", async () => {
+    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: null })]]]);
+    renderCorpus([{ id: 10, name: "A" }], { byId });
+    await screen.findByText("A"); // cursor parks on sample 10 → frame 100
+    expect(screen.getByTestId("dock-action-drop")).toBeEnabled();
+    expect(screen.getByTestId("dock-action-keep")).toBeEnabled();
+    expect(screen.getByTestId("dock-action-representative")).toBeEnabled();
   });
 
   it("Enter (through the window keyboard layer) navigates to Focus", async () => {
@@ -154,42 +160,36 @@ describe("Corpus action declaration", () => {
     expect(navigateSpy).toHaveBeenCalledWith("/sample/10/loupe");
   });
 
-  it("x (cull/drop) fires the batch verdict on the selected sample's frames", async () => {
-    const byId = new Map<number, Exposure[]>([
-      [10, [makeExposure({ id: 100, sample_id: 10 }), makeExposure({ id: 101, sample_id: 10 })]],
-    ]);
+  it("x (Drop) toggles the cursored frame's status to rejected", async () => {
+    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: null })]]]);
     renderCorpus([{ id: 10, name: "A" }], { byId });
-    const row = (await screen.findByText("A")).closest('[role="row"]')!;
-    fireEvent.click(within(row).getByRole("checkbox")); // select → selection mode
+    await screen.findByText("A");
+    // Cursor parks on sample 10 → frame 100; x drops THAT frame (no selection needed).
     fireEvent.keyDown(window, { key: "x" });
-    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 10, exposureId: 100, status: "rejected" });
-    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 10, exposureId: 101, status: "rejected" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 100, status: "rejected" });
   });
 
-  it("k (keep) fires the accepted verdict on the selected sample's frames", async () => {
-    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10 })]]]);
+  it("k (Keep) toggles the cursored frame's status to accepted", async () => {
+    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: null })]]]);
     renderCorpus([{ id: 10, name: "A" }], { byId });
-    const row = (await screen.findByText("A")).closest('[role="row"]')!;
-    fireEvent.click(within(row).getByRole("checkbox"));
+    await screen.findByText("A");
     fireEvent.keyDown(window, { key: "k" });
-    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 10, exposureId: 100, status: "accepted" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 100, status: "accepted" });
   });
 
-  it("r (restore) fires the null verdict on the selected sample's frames", async () => {
-    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10 })]]]);
-    renderCorpus([{ id: 10, name: "A" }], { byId });
-    const row = (await screen.findByText("A")).closest('[role="row"]')!;
-    fireEvent.click(within(row).getByRole("checkbox"));
-    fireEvent.keyDown(window, { key: "r" });
-    expect(batchMutate).toHaveBeenCalledWith({ sampleId: 10, exposureId: 100, status: null });
-  });
-
-  it("x is inert in browse mode (mode-gated action not enabled)", async () => {
+  it("r (Set representative) selects the cursored frame as representative", async () => {
     const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10 })]]]);
     renderCorpus([{ id: 10, name: "A" }], { byId });
     await screen.findByText("A");
-    fireEvent.keyDown(window, { key: "x" }); // no selection → browse → inert
-    expect(batchMutate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "r" });
+    expect(setRepMutate).toHaveBeenCalledWith(100);
+  });
+
+  it("x is inert when the cursored sample has no frames", async () => {
+    renderCorpus([{ id: 10, name: "A" }], { byId: new Map<number, Exposure[]>() });
+    await screen.findByText("A");
+    fireEvent.keyDown(window, { key: "x" }); // no frame → activeFrame undefined → inert
+    expect(setStatusMutate).not.toHaveBeenCalled();
   });
 });
 

@@ -37,6 +37,8 @@ vi.mock("../src/queries", () => ({
     return { byId, isLoading: false };
   },
   useSetExposureStatusBatch: () => ({ mutate: vi.fn() }),
+  useSetExposureStatus: () => ({ mutate: vi.fn() }),
+  useSelectExposure: () => ({ mutate: vi.fn() }),
 }));
 
 vi.mock("../src/state", () => ({

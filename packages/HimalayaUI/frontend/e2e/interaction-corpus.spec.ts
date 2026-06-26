@@ -9,17 +9,16 @@
  *   dock-prev-sample / dock-next-sample / dock-sample-count  — DockStepper
  *   dock-primary      — openFocus (Focus button, always; disabled when no cursor)
  *   dock-up-link      — DockUpLink "‹ Experiments"
- *   dock-action-<id>  — page actions: openLoupe, cull, keep, restore
+ *   dock-action-<id>  — page actions: openLoupe, drop, keep, representative
  *
  * Covered cases:
  *   IC-1  Click a row → data-cursored="true"; Enter navigates to /sample/<id>
  *   IC-2  dock-next-sample and ArrowDown land on the SAME cursored row (parity)
  *   IC-3  Exactly one [role="row"][tabindex="0"] at a time (roving invariant)
- *   IC-4  Checking a row reveals dock-action-cull enabled; clicking it fires
- *          the status PATCH (mocked mutation route)
- *   IC-5  Pressing x when selection is active also fires the cull via the
- *          keyboard layer (the Checkbox is a <span>, not an <input>, so
- *          isTyping() returns false even while the checkbox has focus)
+ *   IC-4  Drop dock button acts on the cursored frame → status PATCH rejected
+ *          (mocked mutation route; per-exposure model, no row selection)
+ *   IC-5  Pressing x drops the cursored frame via the keyboard layer (after a
+ *          row click parks the cursor + puts focus in the interaction scope)
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -208,14 +207,14 @@ test("IC-3: exactly one [role='row'][tabindex='0'] exists at a time (roving inva
 });
 
 // ---------------------------------------------------------------------------
-// IC-4: Checking a row → dock-action-cull visible → clicking fires PATCH
+// IC-4: Drop dock button acts on the cursored frame → PATCH rejected
 // ---------------------------------------------------------------------------
 
-test("IC-4: checking a row shows dock-action-cull enabled; clicking fires status PATCH", async ({ page }) => {
+test("IC-4: the Drop dock button is enabled and clicking it PATCHes the cursored frame to rejected", async ({ page }) => {
   await mockCorpus(page, 1);
 
-  // Capture the PATCH request to /api/exposures/{id}/status (registered AFTER
-  // mockCorpus so Playwright's most-recently-added route wins).
+  // Capture the PATCH to /api/exposures/{id}/status (registered AFTER mockCorpus
+  // so Playwright's most-recently-added route wins).
   let patchedStatus: string | null | undefined;
   await page.route("**/api/exposures/*/status", async (route) => {
     const body = route.request().postDataJSON() as { status: string | null };
@@ -229,29 +228,22 @@ test("IC-4: checking a row shows dock-action-cull enabled; clicking fires status
   await page.goto(`/experiments/${EXPERIMENT_ID}/corpus`);
   await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
 
-  // Browse mode: mode-gated dock-action-cull is hidden (InteractionDock filters
-  // out enabled()=false mode actions entirely — not just disabled, absent).
-  await expect(page.getByTestId("dock-action-cull")).toHaveCount(0);
+  // The cursor parks on the first sample's first frame, so Drop acts on it
+  // directly — no row selection needed (per-exposure model, mirroring the Loupe).
+  await expect(page.getByTestId("dock-action-drop")).toBeVisible();
+  await expect(page.getByTestId("dock-action-drop")).toBeEnabled();
 
-  // Check the row checkbox (role="checkbox" aria-label="Select sample") →
-  // sampleCursor.selected gains the id → mode flips to "selection".
-  await page.getByRole("checkbox", { name: "Select sample" }).first().click();
-
-  // Selection mode: cull button appears and is enabled.
-  await expect(page.getByTestId("dock-action-cull")).toBeVisible();
-  await expect(page.getByTestId("dock-action-cull")).toBeEnabled();
-
-  // Click the cull button → cullSelected("rejected") → PATCH /api/exposures/200/status.
-  await page.getByTestId("dock-action-cull").click();
+  // Click Drop → setExposureStatus.mutate(rejected) → PATCH /api/exposures/{id}/status.
+  await page.getByTestId("dock-action-drop").click();
 
   await expect.poll(() => patchedStatus).toBe("rejected");
 });
 
 // ---------------------------------------------------------------------------
-// IC-5: `x` keyboard shortcut fires the cull when a sample is selected
+// IC-5: `x` drops the cursored frame via the keyboard layer
 // ---------------------------------------------------------------------------
 
-test("IC-5: pressing x with a sample selected fires the cull via keyboard layer", async ({ page }) => {
+test("IC-5: pressing x drops the cursored frame via the keyboard layer", async ({ page }) => {
   await mockCorpus(page, 1);
 
   let patchedStatus: string | null | undefined;
@@ -267,14 +259,9 @@ test("IC-5: pressing x with a sample selected fires the cull via keyboard layer"
   await page.goto(`/experiments/${EXPERIMENT_ID}/corpus`);
   await expect(page.getByTestId("sample-table-row").first()).toBeVisible();
 
-  // Check the row checkbox → selection active.
-  // The Checkbox primitive is a <span role="checkbox">, not an <input>, so
-  // matchKey.isTyping() returns false even while the span has DOM focus.
-  // The keyboard layer therefore fires bare-key `x` correctly.
-  await page.getByRole("checkbox", { name: "Select sample" }).first().click();
-  await expect(page.getByTestId("dock-action-cull")).toBeVisible();
-
-  // Press x — fires cull action via useKeyboardLayer → dropSelected().
+  // Click the first row to park the sample+frame cursor (and put focus in the
+  // interaction scope), then press the bare-key `x` to drop the cursored frame.
+  await page.getByTestId("sample-table-row").first().click();
   await page.keyboard.press("x");
 
   await expect.poll(() => patchedStatus).toBe("rejected");

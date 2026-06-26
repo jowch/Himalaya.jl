@@ -15,9 +15,9 @@ export interface SampleTableRowProps {
   exposures: GalleryExposure[];
   /** Single highlighted exposure (loupe "current frame" model). */
   selectedExposureId?: number;
-  /** Multi-select highlight set (contact-sheet *cull* model — several frames in
-   *  this row flagged for dropping at once). Forwarded to the gallery's
-   *  `selectedIds`; OR'd with `selectedExposureId`. */
+  /** Multi-select highlight set, forwarded to the gallery's `selectedIds`.
+   *  Optional — the Corpus page drives per-exposure verdicts off the frame
+   *  cursor, not this set; kept for the contact-sheet assembly story. */
   selectedExposureIds?: ReadonlySet<number>;
   /** The roving cursor's active frame within this row → a double-border cue on
    *  that thumb, distinct from the solid cull-selection border. */
