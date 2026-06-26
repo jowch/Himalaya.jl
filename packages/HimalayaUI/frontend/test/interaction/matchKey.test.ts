@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { comboOf, matchesKeys, isTyping, isBareKey } from "../../src/print/interaction/matchKey";
+import { comboOf, matchesKeys, isTyping } from "../../src/print/interaction/matchKey";
 
 function key(init: Partial<KeyboardEvent> & { key: string }): KeyboardEvent {
   return new KeyboardEvent("keydown", init);
@@ -34,16 +34,6 @@ describe("matchesKeys", () => {
   it("matches a declared \" \" against the space bar (Space-normalized both sides)", () => {
     expect(matchesKeys(key({ key: " " }), [" "])).toBe(true);
     expect(matchesKeys(key({ key: " " }), ["Space"])).toBe(true);
-  });
-});
-
-describe("isBareKey", () => {
-  it("is true for a single char with no modifiers", () => {
-    expect(isBareKey(key({ key: "x" }))).toBe(true);
-  });
-  it("is false for Mod-chords and for Escape", () => {
-    expect(isBareKey(key({ key: "z", metaKey: true }))).toBe(false);
-    expect(isBareKey(key({ key: "Escape" }))).toBe(false);
   });
 });
 

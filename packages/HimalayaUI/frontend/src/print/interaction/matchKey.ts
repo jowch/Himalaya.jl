@@ -25,12 +25,6 @@ export function matchesKeys(e: KeyboardEvent, keys: string[]): boolean {
   });
 }
 
-export function isBareKey(e: KeyboardEvent): boolean {
-  // Shift is intentionally NOT excluded: Shift+letter is capital-letter typing,
-  // which must still count as "bare" so the keyboard layer suppresses it in inputs.
-  return !e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1;
-}
-
 export function isTyping(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   const tag = t.tagName;

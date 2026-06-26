@@ -26,8 +26,8 @@
  *    before the modal's focus trap engages.
  *
  * Modifier-key chords (⌘/Ctrl/Alt) are deliberately NOT handled here: some
- * callers bind chords themselves (useGlobalShortcuts owns ⌘K, the scoping
- * page owns ⌘Z), so each mutating call site keeps its own
+ * callers bind chords themselves (the interaction layer's shell actions own ⌘K;
+ * page action declarations own ⌘Z), so each mutating call site keeps its own
  * `if (e.metaKey || e.ctrlKey || e.altKey) return;` line where appropriate.
  *
  * The contenteditable check pairs the spec'd `isContentEditable` property
