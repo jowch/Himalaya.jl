@@ -55,13 +55,30 @@ describe("useKeyboardLayer", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("still fires a Mod-chord while typing (undo)", () => {
+  // Regression: Mod+z inside a text input must NOT fire the page's undo action —
+  // the native text-undo must reach the input's own edit history. (Previously the
+  // guard only suppressed bare keys while typing; now it suppresses ALL shortcuts
+  // so chorded gestures like Mod+z also reach native handlers.)
+  it("Mod+z while typing in an input does NOT fire the registered undo action", () => {
     const run = vi.fn();
     useInteraction.getState().setPage(null, [core("undo", { run })]);
     render(<><Harness /><input data-testid="field" /></>);
     const input = document.querySelector<HTMLInputElement>('[data-testid="field"]')!;
     input.focus();
     fireEvent.keyDown(input, { key: "z", metaKey: true });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  // Preservation: Mod+z outside a text field (e.g. on the scope container) DOES
+  // fire the registered undo action — the widening must not suppress global-scope
+  // chorded shortcuts.
+  it("Mod+z on a non-typing element (scope container) DOES fire the registered undo action", () => {
+    const run = vi.fn();
+    useInteraction.getState().setPage(null, [core("undo", { run })]);
+    render(<Harness />);
+    const scope = document.querySelector<HTMLElement>('[data-interaction-scope]')!;
+    scope.focus();
+    fireEvent.keyDown(scope, { key: "z", metaKey: true });
     expect(run).toHaveBeenCalledTimes(1);
   });
 

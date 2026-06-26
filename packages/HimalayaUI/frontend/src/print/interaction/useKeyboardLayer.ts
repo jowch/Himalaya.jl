@@ -21,7 +21,11 @@ export function useKeyboardLayer(): void {
       // Rung 1/2 already handled it (the microtask-race fix — guard the signal,
       // never querySelector('[aria-modal]')).
       if (e.defaultPrevented) return;
-      if (isTyping(e.target) && isBareKey(e)) return;
+      // Focus in a text field → the field owns the keyboard (native undo/redo/
+      // select-all, typing). No registry shortcut fires through it. (Was bare-only;
+      // widened so chorded editing shortcuts like Mod+z reach native text-undo,
+      // not the page's undo action.)
+      if (isTyping(e.target)) return;
 
       const { actions } = useInteraction.getState();
       for (const a of actions) {
