@@ -20,15 +20,18 @@ These files live under `src/print/`, so the `lint:design` import-boundary guard 
 
 `shortcuts.ts` is the **display/legend table only** — it names every gesture (`SHORTCUTS`, `ShortcutId`, `ShortcutDef`) and provides label helpers (`keyComboLabel`, `shortcutLabel`) consumed by `<KbdLegend>` and `<KbdOverlay>`. It is NOT a handler registry; gesture handling lives in the interaction system (`src/print/interaction/`).
 
-**Interaction model:** Pages declare their cursor and gestures via `usePageActions({ cursor, actions, extraSteppers?, dockExtra? })` using `core(id, override)` (fixed cross-page gestures from `CORE` in `core.ts`) or `page(id, def)` (page-specific gestures). Shell-global actions (help `?`, find `/`/`⌘K`) are registered once via `setShellActions()` in `AppRoutes`. A single `useKeyboardLayer()` window listener (mounted in `PrintApp`) dispatches all keyboard events through this guard chain:
+**Interaction model:** Pages declare their cursor and gestures via `usePageActions({ cursor, actions, extraSteppers?, dockExtra?, arrowHandler? })` using `core(id, override)` (fixed cross-page gestures from `CORE` in `core.ts`) or `page(id, def)` (page-specific gestures). Shell-global actions (help `?`, find `/`/`⌘K`) are registered once via `setShellActions()` in `AppRoutes`. A single `useKeyboardLayer()` window listener (mounted in `PrintApp`) dispatches all keyboard events through this guard chain:
 
-1. `defaultPrevented` → skip (a closer handler already consumed the key)
+1. `defaultPrevented` → skip (a closer handler already consumed the key — incl. arrow-consuming widgets like `SegmentedControl`/listboxes that `preventDefault`)
 2. `isTyping(e.target)` → skip (INPUT/TEXTAREA/SELECT/contenteditable own the event)
-3. `matchesKeys(e, a.keys)` → walk registered actions looking for a match
-4. scope-gate → page actions require a `[data-interaction-scope]` or `[data-cursored]` ancestor of the target; shell actions bypass this guard
-5. Enter + `isNativeInteractiveTarget(e)` → skip (button/link/input activates natively)
-6. `enabled()` → if false, return without claiming (no `preventDefault`)
-7. `run(e)` + `e.preventDefault()`
+3. **Arrow\* → `arrowHandler(e)` SCOPE-EXEMPT.** Arrow nav drives the active surface globally (arrows are not WCAG-2.1.4 character shortcuts, so they need no focus container — this is what stops the page scrolling when focus sits outside the surface). The page `preventDefault`s the arrows it claims; an unclaimed arrow (e.g. `Alt`/`Shift`+Arrow reorder/jump) falls through to the action loop below.
+4. `matchesKeys(e, a.keys)` → walk registered actions looking for a match
+5. scope-gate → page actions require a `[data-interaction-scope]` or `[data-cursored]` ancestor of the target; shell actions bypass this guard
+6. Enter + `isNativeInteractiveTarget(e)` → skip (button/link/input activates natively)
+7. `enabled()` → if false, return without claiming (no `preventDefault`)
+8. `run(e)` + `e.preventDefault()`
+
+Arrow nav was lifted off the per-page scope-container `onKeyDown` into `arrowHandler` for exactly this reason; the scope container still exists for cold-load focus + the letter-shortcut scope gate. Stray UA focus outlines are killed app-wide by `[tabindex="-1"]:focus { outline: none }` in `styles.css` (programmatic anchors: scope/scroll/menu shells); the `Dock` suppresses focus capture via `onMouseDown preventDefault` so clicking a dock control never strands keyboard focus outside the scope.
 
 `InteractionDock` renders the dock UI directly from the live registry — no separate legend-sync step. `useListCursor` is the cursor primitive: ID-based, roving tabindex, SSE-survival heal.
 
