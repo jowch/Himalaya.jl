@@ -169,12 +169,28 @@ describe("Corpus action declaration", () => {
     expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 100, status: "rejected" });
   });
 
+  it("x (Drop) on an already-rejected frame toggles the verdict OFF (status: null)", async () => {
+    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: "rejected" })]]]);
+    renderCorpus([{ id: 10, name: "A" }], { byId });
+    await screen.findByText("A");
+    fireEvent.keyDown(window, { key: "x" }); // already rejected → clear
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 100, status: null });
+  });
+
   it("k (Keep) toggles the cursored frame's status to accepted", async () => {
     const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: null })]]]);
     renderCorpus([{ id: 10, name: "A" }], { byId });
     await screen.findByText("A");
     fireEvent.keyDown(window, { key: "k" });
     expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 100, status: "accepted" });
+  });
+
+  it("k (Keep) on an already-accepted frame toggles the verdict OFF (status: null)", async () => {
+    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: "accepted" })]]]);
+    renderCorpus([{ id: 10, name: "A" }], { byId });
+    await screen.findByText("A");
+    fireEvent.keyDown(window, { key: "k" }); // already accepted → clear
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 100, status: null });
   });
 
   it("r (Set representative) selects the cursored frame as representative", async () => {
