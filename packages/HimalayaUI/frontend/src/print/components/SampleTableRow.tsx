@@ -194,7 +194,11 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
       {...(onClick ? { onClick } : {})}
       {...(onDoubleClick ? { onDoubleClick } : {})}
       {...(ariaCurrent !== undefined ? { "aria-current": ariaCurrent } : {})}
-      className={`group/row scroll-mb-14 border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
+      // The roving cursor focuses this div programmatically; the bg-row-cursor
+      // band (above) IS the focus indicator, so suppress the UA outline that would
+      // otherwise paint a clipped blue box over the sticky cells (the very clipping
+      // the band was chosen to avoid).
+      className={`group/row scroll-mb-14 border-b border-hair focus:outline-none${rowBg}${className ? ` ${className}` : ""}`}
     >
       <div
         role="presentation"
