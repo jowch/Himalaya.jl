@@ -176,6 +176,11 @@ describe("SeriesScopingPage interaction", () => {
     expect(rowsAfter[0]).toHaveAttribute("data-reorder-index", "0");
     // tabindex=0 is on the same element
     expect(rowsAfter[0]).toHaveAttribute("tabindex", "0");
+
+    // Live-region must announce the reorder (regression guard for screen readers).
+    // S2 moved from index 1 → index 0 = position 1 of 3.
+    const liveRegion = screen.getByTestId("reorder-announcement");
+    expect(liveRegion.textContent?.trim()).toBe("Moved S2 to position 1 of 3.");
   });
 
   it("Alt+ArrowDown moves the cursored row down and cursor follows the item", async () => {
@@ -196,6 +201,11 @@ describe("SeriesScopingPage interaction", () => {
     // The second row should now be cursored (id=1 moved down)
     expect(rowsAfter[1]).toHaveAttribute("data-cursored", "true");
     expect(rowsAfter[1]).toHaveAttribute("tabindex", "0");
+
+    // Live-region must announce the reorder (regression guard for screen readers).
+    // S1 moved from index 0 → index 1 = position 2 of 3.
+    const liveRegion = screen.getByTestId("reorder-announcement");
+    expect(liveRegion.textContent?.trim()).toBe("Moved S1 to position 2 of 3.");
   });
 
   it("⌘Z fires undo (reverses a reorder) via core(undo)", async () => {

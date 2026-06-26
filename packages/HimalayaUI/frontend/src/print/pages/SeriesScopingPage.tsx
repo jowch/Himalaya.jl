@@ -572,7 +572,7 @@ export function SeriesScopingPage(): JSX.Element {
           const id = cursor.cursorId;
           if (id == null) return;
           const i = order.indexOf(id);
-          if (i > 0) { applyReorder(i, i - 1); cursor.setCursor(id); }
+          if (i > 0) { moveRow(i, -1); cursor.setCursor(id); }
         },
       }),
       page("reorderDown", {
@@ -583,7 +583,7 @@ export function SeriesScopingPage(): JSX.Element {
           const id = cursor.cursorId;
           if (id == null) return;
           const i = order.indexOf(id);
-          if (i < order.length - 1) { applyReorder(i, i + 1); cursor.setCursor(id); }
+          if (i < order.length - 1) { moveRow(i, +1); cursor.setCursor(id); }
         },
       }),
     ],
