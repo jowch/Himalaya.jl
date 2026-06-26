@@ -10,8 +10,9 @@ export function InteractionDock(): JSX.Element | null {
   const cursor = useInteraction((s) => s.cursor);
   const actions = useInteraction((s) => s.actions);
   const extraSteppers = useInteraction((s) => s.extraSteppers);
+  const dockExtra = useInteraction((s) => s.dockExtra);
 
-  if (cursor === null && actions.length === 0 && extraSteppers.length === 0) return null;
+  if (cursor === null && actions.length === 0 && extraSteppers.length === 0 && !dockExtra) return null;
 
   const back = actions.find((a) => a.id === "back");
   const primary = actions.find((a) => a.dock === "primary");
@@ -54,6 +55,11 @@ export function InteractionDock(): JSX.Element | null {
           nextDisabled={stepper.nextDisabled}
         />
       )}
+
+      {/* dockExtra: non-interactive slot between stepper and action buttons.
+          Renders page-local content (e.g. cursor identity readout) without
+          needing an Action wrapper. InteractionDock owns spacing. */}
+      {dockExtra}
 
       <div className="flex-1" />
 

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { ReactNode } from "react";
 import type { Action, CursorStepperProps, ListCursor } from "./types";
 import { useInteraction } from "./registry";
 import { assertNoCoreCollision } from "./core";
@@ -11,6 +12,7 @@ export function usePageActions(decl: {
   cursor?: ListCursor | null;
   actions: Action[];
   extraSteppers?: CursorStepperProps[];
+  dockExtra?: ReactNode;
 }): void {
   const setPage = useInteraction((s) => s.setPage);
   const clearPage = useInteraction((s) => s.clearPage);
@@ -19,7 +21,7 @@ export function usePageActions(decl: {
 
   // No dependency array: refresh the registry on every commit.
   useEffect(() => {
-    setPage(decl.cursor ?? null, decl.actions, decl.extraSteppers ?? []);
+    setPage(decl.cursor ?? null, decl.actions, decl.extraSteppers ?? [], decl.dockExtra ?? null);
   });
 
   useEffect(() => clearPage, [clearPage]); // unmount only

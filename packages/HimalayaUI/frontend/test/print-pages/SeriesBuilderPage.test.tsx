@@ -98,8 +98,23 @@ vi.mock("boneyard-js/react", () => ({
 
 import { SeriesBuilderPage } from "../../src/print/pages/SeriesBuilderPage";
 import { setToastImpl } from "../../src/lib/toast";
+import { InteractionDock } from "../../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../../src/print/interaction/useKeyboardLayer";
+import { useInteraction } from "../../src/print/interaction/registry";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
+// TestShell mounts the keyboard layer + InteractionDock so dock buttons and
+// keyboard-triggered actions flow through the real registry path.
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return (
+    <>
+      {children}
+      <InteractionDock />
+    </>
+  );
+}
+
 function member(id: number, over: Partial<SeriesMember> = {}): SeriesMember {
   return {
     id,
@@ -167,7 +182,7 @@ function renderPage(): { rerender: () => void } {
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/series/10"]}>
         <Routes>
-          <Route path="/series/:id" element={<SeriesBuilderPage />} />
+          <Route path="/series/:id" element={<TestShell><SeriesBuilderPage /></TestShell>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -189,6 +204,7 @@ function startEdit(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useInteraction.getState().clearPage();
   state.seriesById = new Map([[10, baseSeries()]]);
   state.seriesUpdatedAt = 1000;
   state.traces = {};
@@ -966,19 +982,15 @@ describe("SeriesBuilderPage", () => {
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
   });
 
-  // BU-REORDER-ALT: the unified Alt+↑/↓ reorder power-gesture (shared registry
-  // reorderUp/Down) mirrors clicking the row's ▲▼ buttons, so the same gesture
-  // reorders on the Builder as on the Scoping worksheet.
-  it("Alt+↓ on a recipe row reorders it, mirroring the ▼ Move-down button", () => {
+  // BU-REORDER-ALT: clicking the ▼ Move-down button reorders the top visual row.
+  // Alt+↑/↓ reorder via the keyboard layer is covered in SeriesBuilderPage.actions.test.tsx
+  // (cursor-driven, needs cursor at non-boundary position).
+  it("clicking the ▼ Move-down button reorders the first recipe row", () => {
     renderPage();
     startEdit();
     const firstSampleId = useAppState.getState().seriesDraft!.recipe[0]!.sample_id;
-    // Alt+ArrowDown fired from a control in the top visual row mirrors clicking
-    // that row's ▼ Move-down.
-    fireEvent.keyDown(screen.getAllByTestId("builder-recipe-down")[0]!, {
-      key: "ArrowDown",
-      altKey: true,
-    });
+    // Click the ▼ Move-down button on the first (topmost visual) recipe row.
+    fireEvent.click(screen.getAllByTestId("builder-recipe-down")[0]!);
     expect(useAppState.getState().seriesDraft!.recipe[1]!.sample_id).toBe(firstSampleId);
   });
 
@@ -1498,7 +1510,7 @@ describe("SeriesBuilderPage", () => {
         <QueryClientProvider client={qc}>
           <MemoryRouter initialEntries={["/series/10"]}>
             <Routes>
-              <Route path="/series/:id" element={<SeriesBuilderPage />} />
+              <Route path="/series/:id" element={<TestShell><SeriesBuilderPage /></TestShell>} />
               <Route path="/sample/:id" element={<div data-testid="focus-stub" />} />
             </Routes>
           </MemoryRouter>
@@ -1514,7 +1526,7 @@ describe("SeriesBuilderPage", () => {
       expect(screen.getByTestId("dock-prev-sample")).toBeDisabled(); // at index 0
       expect(screen.getByTestId("dock-next-sample")).not.toBeDisabled();
       // The unambiguous primary destination.
-      expect(screen.getByTestId("dock-focus")).toBeInTheDocument();
+      expect(screen.getByTestId("dock-primary")).toBeInTheDocument();
     });
 
     it("the ↓ stepper advances the cursor and the readout", () => {
@@ -1547,7 +1559,7 @@ describe("SeriesBuilderPage", () => {
 
     it("Focus opens the cursor member's sample in Focus (with ?from=series)", () => {
       renderWithFocusStub();
-      fireEvent.click(screen.getByTestId("dock-focus"));
+      fireEvent.click(screen.getByTestId("dock-primary"));
       expect(screen.getByTestId("focus-stub")).toBeInTheDocument();
     });
 
@@ -1557,7 +1569,7 @@ describe("SeriesBuilderPage", () => {
       expect(screen.getByTestId("dock-up-link")).toBeInTheDocument();
       expect(screen.queryByTestId("dock-sample-count")).toBeNull();
       expect(screen.queryByTestId("dock-identity")).toBeNull();
-      expect(screen.queryByTestId("dock-focus")).toBeNull();
+      expect(screen.queryByTestId("dock-primary")).toBeNull();
     });
   });
 });

@@ -5,16 +5,14 @@ import { PageFrame } from "../components/PageFrame";
 import { SeriesPlate } from "../components/SeriesPlate";
 import { BuilderRail } from "../components/BuilderRail";
 import { MemberList } from "../components/MemberList";
-import { IconButton, Button, EmptyState, Input, GripHandle, Swatch, KbKey } from "../ui";
-import { Dock } from "../ui/Dock";
-import { DockStepper } from "../ui/DockStepper";
-import { DockUpLink } from "../ui/DockUpLink";
+import { IconButton, Button, EmptyState, Input, GripHandle, Swatch } from "../ui";
 import { dominantPhase } from "../../lib/series/memberRead";
 import { sampleDisplayName } from "../../lib/sample/displayName";
 import { useDragReorder } from "../components/useDragReorder";
 import type { DragItemProps } from "../components/useDragReorder";
-import { useReorderShortcuts } from "../shell/useReorderShortcuts";
-import { useShortcuts } from "../shell/useShortcuts";
+import { useListCursor } from "../interaction/useListCursor";
+import { usePageActions } from "../interaction/usePageActions";
+import { core, page } from "../interaction/core";
 import { shortcutLabel } from "../shell/shortcuts";
 import {
   useSeries,
@@ -43,7 +41,6 @@ import { isSeriesDraftDirty } from "../../lib/series/isSeriesDraftDirty";
 import { buildPlateFromRecipe } from "../../lib/series/buildPlateFromRecipe";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
 import { buildSeriesFigureKeys } from "../export/seriesFigureKeys";
-import { isNativeInteractiveTarget } from "../../lib/keys";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { showToast } from "../../lib/toast";
@@ -75,6 +72,8 @@ const BUILDER_FIXTURE = (
  */
 export function SeriesBuilderPage(): JSX.Element {
   const navigate = useNavigate();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const id = Number(useParams<{ id: string }>().id);
   const seriesQ = useSeries(Number.isFinite(id) ? id : undefined);
   const tracesQ = useSeriesTraces(Number.isFinite(id) ? id : undefined);
@@ -189,6 +188,7 @@ export function SeriesBuilderPage(): JSX.Element {
   const leftOutRef = useRef(0);
 
   const series = seriesQ.data;
+  const isLoading = seriesQ.isLoading || series === undefined;
   // The active draft only counts when it targets THIS series.
   const liveDraft = draft !== null && series !== undefined && draft.id === series.id ? draft : null;
 
@@ -202,18 +202,17 @@ export function SeriesBuilderPage(): JSX.Element {
   // the listener closes over a stable ref, never a stale or not-yet-defined
   // binding.
   const navSamples = liveDraft ? liveDraft.recipe : (series?.samples ?? []);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  // Clamp the cursor into the live member list (it shrinks on remove, grows on
-  // add). An empty list parks the cursor at 0 (Enter declines).
-  useEffect(() => {
-    setSelectedIndex((i) => {
-      if (navSamples.length === 0) return 0;
-      return Math.max(0, Math.min(navSamples.length - 1, i));
-    });
-  }, [navSamples.length]);
-  // sample id under the cursor (for Enter → Focus). Undefined when the list is
-  // empty.
-  const cursorSampleId = navSamples[selectedIndex]?.sample_id;
+  // ID-based cursor: survives recipe edits (fixes the selectedIndex bug where
+  // removing a row above the cursor silently jumped to the wrong sample).
+  const ids = useMemo(() => navSamples.map((r) => r.sample_id), [navSamples]);
+  const cursor = useListCursor({
+    ids,
+    onActivate: (id) => navigateRef.current(`/sample/${id}?from=series`),
+    stepperLabel: "Sample",
+    stepperTestIdBase: "sample",
+    axis: "vertical",
+  });
+  const cursorSampleId = cursor.cursorId ?? undefined;
 
   // ── Dock identity segment (§7) ──────────────────────────────────────────────
   // sample.id → { name, experiment_id }, from the corpus-picker projection (the
@@ -256,49 +255,84 @@ export function SeriesBuilderPage(): JSX.Element {
     const phase = exposureId != null ? phaseByExposure.get(exposureId) ?? null : null;
     return { name, experimentName, phase };
   }, [cursorSampleId, sampleMeta, experimentNameById, exposureBySample, phaseByExposure]);
+  // ── Scope focus (mirrors SeriesScopingPage) ───────────────────────────────────
+  const scopeEl = useRef<HTMLDivElement | null>(null);
+  const focusedRef = useRef<boolean>(false);
+  const scopeRef = useCallback((el: HTMLDivElement | null) => { scopeEl.current = el; }, []);
+  useEffect(() => {
+    if (isLoading) return;
+    if (focusedRef.current) return;
+    if (scopeEl.current) { focusedRef.current = true; scopeEl.current.focus({ preventScroll: true }); }
+  }, [isLoading]);
   // Late-bound handler refs (assigned each render, below the early return).
   const confirmRef = useRef<() => void>(() => {});
-  const navigateRef = useRef(navigate);
-  navigateRef.current = navigate;
-  useShortcuts({
-    undo,
-    redo,
-    prevSample: () => {
-      if (navSamples.length === 0) return false;
-      setSelectedIndex((i) => Math.max(0, i - 1));
-      return undefined;
-    },
-    nextSample: () => {
-      if (navSamples.length === 0) return false;
-      setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1));
-      return undefined;
-    },
-    openFocus: (e) => {
-      if (isNativeInteractiveTarget(e)) return false;
-      if (cursorSampleId === undefined) return false;
-      navigateRef.current(`/sample/${cursorSampleId}?from=series`);
-      return undefined;
-    },
-    addSample: () => {
-      // Open the existing add-sample affordance (the AddSamplePicker popover
-      // trigger). It only renders under a live draft with addable samples;
-      // clicking it through the DOM reuses the picker's own open/focus flow.
-      const btn = document.querySelector<HTMLButtonElement>(
-        '[data-testid="builder-add-sample"]',
-      );
-      if (!btn) return false;
-      btn.click();
-      return undefined;
-    },
-    confirm: () => {
-      // Decline (leave ⌘Enter un-prevented) when Confirm is disabled — the
-      // same gate onConfirm itself enforces. The picker popover, when open,
-      // is a `[role="dialog"]` and is already suppressed by suppressGlobalKeys,
-      // so ⌘Enter there can't reach this handler.
-      if (!liveDraft || stage.current !== "idle" || !resolverReady) return false;
-      confirmRef.current();
-      return undefined;
-    },
+  const reorderUpRef = useRef<() => void>(() => {});
+  const reorderDownRef = useRef<() => void>(() => {});
+  // ── Interaction declaration ────────────────────────────────────────────────
+  // dockExtra: identity readout (Swatch + name + experiment) rendered between
+  // the stepper and the action buttons by InteractionDock. Non-interactive
+  // content — can't fit in an Action — so threaded via the dockExtra slot.
+  // DROP the leading bg-hair divider: InteractionDock owns spacing now.
+  usePageActions({
+    cursor: ids.length > 0 ? cursor : null,
+    dockExtra: cursorIdentity != null ? (
+      <div className="flex items-center gap-1.5 min-w-0" data-testid="dock-identity">
+        {cursorIdentity.phase != null
+          ? <Swatch phase={cursorIdentity.phase} />
+          : <Swatch phase="" empty />}
+        <span className="text-data text-ink truncate" data-testid="dock-identity-name">
+          {cursorIdentity.name}
+        </span>
+        {cursorIdentity.experimentName != null && (
+          <span className="text-meta text-ink-soft truncate">
+            from {cursorIdentity.experimentName}
+          </span>
+        )}
+      </div>
+    ) : null,
+    actions: [
+      core("back", { label: "All series", run: () => navigate("/series"), dock: true }),
+      ...(ids.length > 0 ? [core("openFocus", {
+        run: () => cursor.activate(),
+        dock: "primary",
+        enabled: () => cursor.cursorId !== null,
+      })] : []),
+      core("undo", { run: undo, enabled: () => undoPast.length > 0 }),
+      core("redo", { run: redo, enabled: () => undoFuture.length > 0 }),
+      page("addSample", {
+        label: "Add sample",
+        keys: ["a"],
+        group: "Act",
+        dock: true,
+        run: () =>
+          document
+            .querySelector<HTMLButtonElement>('[data-testid="builder-add-sample"]')
+            ?.click(),
+      }),
+      page("confirm", {
+        label: "Confirm",
+        keys: ["Mod+Enter"],
+        group: "Act",
+        dock: true,
+        enabled: () => !!liveDraft && stage.current === "idle" && resolverReady,
+        run: () => confirmRef.current(),
+      }),
+      // BU-INVERT: visual up = recipe index +1; visual down = recipe index -1.
+      // Implementations assigned after the honest-state early return (they close
+      // over onReorderSample which is defined there). Stable via refs.
+      page("reorderUp", {
+        label: "Move up",
+        keys: ["Alt+ArrowUp"],
+        group: "Edit",
+        run: () => reorderUpRef.current(),
+      }),
+      page("reorderDown", {
+        label: "Move down",
+        keys: ["Alt+ArrowDown"],
+        group: "Edit",
+        run: () => reorderDownRef.current(),
+      }),
+    ],
   });
 
   // BU-NAMES: one shared identity token across the builder's member views. The
@@ -535,6 +569,22 @@ export function SeriesBuilderPage(): JSX.Element {
     reorderSample(from, to);
   };
 
+  // BU-INVERT: recipe position 0 = BOTTOM visually (RecipeEditor reverses).
+  // "Move up visually" = toward last recipe index (visual top) = ri + 1.
+  // Stable ref so usePageActions closures always call the current-render fn.
+  reorderUpRef.current = () => {
+    const id = cursor.cursorId;
+    if (id == null) return;
+    const ri = navSamples.findIndex((r) => r.sample_id === id);
+    if (ri >= 0 && ri < navSamples.length - 1) onReorderSample(ri, ri + 1);
+  };
+  reorderDownRef.current = () => {
+    const id = cursor.cursorId;
+    if (id == null) return;
+    const ri = navSamples.findIndex((r) => r.sample_id === id);
+    if (ri > 0) onReorderSample(ri, ri - 1);
+  };
+
   const onConfirm = (): void => {
     // `resolverReady` mirrors the rail's disabled gate: without the picker
     // projection every recipe sample is "unresolvable" and the chain would
@@ -593,7 +643,6 @@ export function SeriesBuilderPage(): JSX.Element {
         : "Confirming…";
 
   return (
-    <>
     <Skeleton
       name="series-builder"
       // Full-height flex column so the builder grid stretches to the bottom of the
@@ -607,109 +656,60 @@ export function SeriesBuilderPage(): JSX.Element {
       fixture={BUILDER_FIXTURE}
       fallback={<div className="p-8 text-sm text-ink-soft">Loading series…</div>}
     >
-      {series && (
-        <BuilderBody
-          series={series}
-          tracesById={tracesQ.data ?? {}}
-          tracesLoading={tracesQ.isLoading}
-          tracesError={tracesQ.isError}
-          corpus={corpusQ.data ?? []}
-          experiments={experimentsQ.data ?? []}
-          liveDraft={liveDraft}
-          offset={offset}
-          onOffsetChange={setOffset}
-          scale={scale}
-          onScaleChange={setScale}
-          hoveredKey={hoveredKey}
-          onHoverRow={setHoveredKey}
-          showPeakTicks={showPeakTicks}
-          showPeakLabels={showPeakLabels}
-          onToggleTicks={() => setShowPeakTicks(!showPeakTicks)}
-          onToggleLabels={() => setShowPeakLabels(!showPeakLabels)}
-          onEditTitle={onEditTitle}
-          onAddSample={onAddSample}
-          onRemoveSample={onRemoveSample}
-          onReorderSample={onReorderSample}
-          ensureDraft={ensureDraft}
-          onConfirm={onConfirm}
-          onCancel={onCancel}
-          onUndo={undo}
-          canUndo={undoPast.length > 0}
-          confirmBusy={confirmBusy}
-          confirmLabel={confirmProgressLabel}
-          confirmReady={resolverReady}
-          resolverError={pickerQ.isError}
-          resolverLoading={!resolverReady && !pickerQ.isError}
-          chainErrorMessage={chainErrorMessage}
-          figureLabelBySample={figureLabelBySample}
-          figureTraceKeys={figureTraceKeys}
-        />
-      )}
-    </Skeleton>
-    {/* ── Contextual bottom dock (Series grammar §7) ───────────────────────────
-        ‹ All series │ Sample ↑ N/total ↓ │ swatch · name · from <experiment> ──→ Focus[↵]
-        The unit is "Sample" (members are samples); no cull (a series has nothing
-        to keep or reject). The swatch matches the cursor member's highlighted
-        trace colour on the overlay (phase-keyed). An empty member list shows only
-        the up-link. */}
-    <Dock>
-      <DockUpLink label="All series" onClick={() => navigate("/series")} />
-
-      {navSamples.length > 0 && (
-        <>
-          <span className="w-px self-stretch bg-hair" aria-hidden />
-
-          {/* Sample stepper — ↑/↓ axis, current / total readout (mirrors the
-              prevSample/nextSample keyboard handlers; same clamping setters). */}
-          <DockStepper
-            label="Sample"
-            axis="vertical"
-            testIdBase="sample"
-            prevDisabled={selectedIndex === 0}
-            onPrev={() => setSelectedIndex((i) => Math.max(0, i - 1))}
-            nextDisabled={selectedIndex >= navSamples.length - 1}
-            onNext={() => setSelectedIndex((i) => Math.min(navSamples.length - 1, i + 1))}
-            count={`${selectedIndex + 1} / ${navSamples.length}`}
+      {/* Scope container: roving-tabindex anchor for the sample cursor.
+          Focused once after isLoading resolves (boneyard overlay lifts).
+          Arrow ↑/↓ navigate the cursor; Alt+↑/↓ are reorder actions
+          (keyboard layer, NOT here). */}
+      <div
+        ref={scopeRef}
+        tabIndex={-1}
+        data-interaction-scope
+        className="flex flex-col min-h-full"
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" && !e.altKey) { e.preventDefault(); cursor.moveBy(-1); }
+          else if (e.key === "ArrowDown" && !e.altKey) { e.preventDefault(); cursor.moveBy(1); }
+        }}
+      >
+        {series && (
+          <BuilderBody
+            series={series}
+            tracesById={tracesQ.data ?? {}}
+            tracesLoading={tracesQ.isLoading}
+            tracesError={tracesQ.isError}
+            corpus={corpusQ.data ?? []}
+            experiments={experimentsQ.data ?? []}
+            liveDraft={liveDraft}
+            offset={offset}
+            onOffsetChange={setOffset}
+            scale={scale}
+            onScaleChange={setScale}
+            hoveredKey={hoveredKey}
+            onHoverRow={setHoveredKey}
+            showPeakTicks={showPeakTicks}
+            showPeakLabels={showPeakLabels}
+            onToggleTicks={() => setShowPeakTicks(!showPeakTicks)}
+            onToggleLabels={() => setShowPeakLabels(!showPeakLabels)}
+            onEditTitle={onEditTitle}
+            onAddSample={onAddSample}
+            onRemoveSample={onRemoveSample}
+            onReorderSample={onReorderSample}
+            ensureDraft={ensureDraft}
+            onConfirm={onConfirm}
+            onCancel={onCancel}
+            onUndo={undo}
+            canUndo={undoPast.length > 0}
+            confirmBusy={confirmBusy}
+            confirmLabel={confirmProgressLabel}
+            confirmReady={resolverReady}
+            resolverError={pickerQ.isError}
+            resolverLoading={!resolverReady && !pickerQ.isError}
+            chainErrorMessage={chainErrorMessage}
+            figureLabelBySample={figureLabelBySample}
+            figureTraceKeys={figureTraceKeys}
           />
-
-          {cursorIdentity && (
-            <>
-              <span className="w-px self-stretch bg-hair" aria-hidden />
-              {/* Current-member identity — swatch (overlay-matched phase colour) +
-                  name + faint "from <experiment>". */}
-              <div className="flex items-center gap-1.5 min-w-0" data-testid="dock-identity">
-                {cursorIdentity.phase
-                  ? <Swatch phase={cursorIdentity.phase} />
-                  : <Swatch phase="" empty />}
-                <span className="text-data text-ink truncate" data-testid="dock-identity-name">
-                  {cursorIdentity.name}
-                </span>
-                {cursorIdentity.experimentName && (
-                  <span className="text-meta text-ink-soft truncate">
-                    from {cursorIdentity.experimentName}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Spacer — right-anchors the Focus destination */}
-          <div className="flex-1" />
-
-          {/* Focus — the unambiguous primary destination; opens the cursor
-              member's sample (matches the openFocus keyboard binding). */}
-          <Button variant="accent" data-testid="dock-focus"
-            disabled={cursorSampleId === undefined}
-            onClick={() => {
-              if (cursorSampleId === undefined) return;
-              navigate(`/sample/${cursorSampleId}?from=series`);
-            }}>
-            Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey>
-          </Button>
-        </>
-      )}
-    </Dock>
-    </>
+        )}
+      </div>
+    </Skeleton>
   );
 }
 
@@ -1129,18 +1129,6 @@ function RecipeEditor({
   const reorderVisual = (fromV: number, toV: number): void =>
     onReorder(toRecipe(fromV), toRecipe(toV));
   const { dragItemProps, dropEdge } = useDragReorder(reorderVisual);
-  // Unified Alt+↑/↓ reorder power-gesture (shared registry). Routes through the
-  // focused row's own ▲▼ Move buttons so their boundary focus-retention dance
-  // (BU-MOVEFOCUS) and disabled-at-extreme guard are reused verbatim.
-  useReorderShortcuts({
-    rowSelector: "[data-reorder-row]",
-    move: (_index, delta, row) => {
-      const btn = row.querySelector<HTMLButtonElement>(
-        delta < 0 ? '[data-testid="builder-recipe-up"]' : '[data-testid="builder-recipe-down"]',
-      );
-      if (btn && !btn.disabled) btn.click();
-    },
-  });
   return (
     <div className="flex flex-col gap-0.5" data-testid="builder-recipe">
       {visual.map((row, i) => {

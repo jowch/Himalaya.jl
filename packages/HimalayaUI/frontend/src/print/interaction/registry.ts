@@ -1,11 +1,13 @@
 import { create } from "zustand";
+import type { ReactNode } from "react";
 import type { Action, CursorStepperProps, ListCursor } from "./types";
 
 interface InteractionState {
   cursor: ListCursor | null;
   actions: Action[];
   extraSteppers: CursorStepperProps[];
-  setPage: (cursor: ListCursor | null, actions: Action[], extraSteppers?: CursorStepperProps[]) => void;
+  dockExtra: ReactNode | null;
+  setPage: (cursor: ListCursor | null, actions: Action[], extraSteppers?: CursorStepperProps[], dockExtra?: ReactNode | null) => void;
   clearPage: () => void;
 }
 
@@ -15,6 +17,7 @@ export const useInteraction = create<InteractionState>((set) => ({
   cursor: null,
   actions: [],
   extraSteppers: [],
-  setPage: (cursor, actions, extraSteppers = []) => set({ cursor, actions, extraSteppers }),
-  clearPage: () => set({ cursor: null, actions: [], extraSteppers: [] }),
+  dockExtra: null,
+  setPage: (cursor, actions, extraSteppers = [], dockExtra = null) => set({ cursor, actions, extraSteppers, dockExtra }),
+  clearPage: () => set({ cursor: null, actions: [], extraSteppers: [], dockExtra: null }),
 }));

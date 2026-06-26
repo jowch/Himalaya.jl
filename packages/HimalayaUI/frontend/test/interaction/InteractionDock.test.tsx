@@ -95,4 +95,12 @@ describe("InteractionDock", () => {
     const frameCount = screen.getByTestId("dock-frame-count");
     expect(sampleCount.compareDocumentPosition(frameCount) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("renders dockExtra content when provided (dock shows even without cursor/actions)", () => {
+    useInteraction.getState().setPage(null, [], [], <div data-testid="dock-extra-slot">identity</div>);
+    render(<InteractionDock />);
+    // The dock renders because dockExtra is truthy
+    expect(screen.getByTestId("dock-extra-slot")).toHaveTextContent("identity");
+    expect(screen.getByTestId("dock")).toBeInTheDocument();
+  });
 });
