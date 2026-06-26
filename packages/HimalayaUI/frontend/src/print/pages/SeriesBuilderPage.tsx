@@ -275,6 +275,12 @@ export function SeriesBuilderPage(): JSX.Element {
   // DROP the leading bg-hair divider: InteractionDock owns spacing now.
   usePageActions({
     cursor: ids.length > 0 ? cursor : null,
+    // ↑/↓ move the member cursor (Alt+↑/↓ is left for the reorder actions).
+    // Scope-exempt so arrows control the surface instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowUp" && !e.altKey) { e.preventDefault(); cursor.moveBy(-1); }
+      else if (e.key === "ArrowDown" && !e.altKey) { e.preventDefault(); cursor.moveBy(1); }
+    },
     dockExtra: cursorIdentity != null ? (
       <div className="flex items-center gap-1.5 min-w-0" data-testid="dock-identity">
         {cursorIdentity.phase != null
@@ -665,10 +671,6 @@ export function SeriesBuilderPage(): JSX.Element {
         tabIndex={-1}
         data-interaction-scope
         className="flex flex-col min-h-full"
-        onKeyDown={(e) => {
-          if (e.key === "ArrowUp" && !e.altKey) { e.preventDefault(); cursor.moveBy(-1); }
-          else if (e.key === "ArrowDown" && !e.altKey) { e.preventDefault(); cursor.moveBy(1); }
-        }}
       >
         {series && (
           <BuilderBody

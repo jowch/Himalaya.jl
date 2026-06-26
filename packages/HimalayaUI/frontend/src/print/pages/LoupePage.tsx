@@ -383,6 +383,14 @@ export function LoupePage(): JSX.Element {
   usePageActions({
     cursor: frameCursor,
     extraSteppers: [sampleStepper],
+    // ←/→ flip the frame; ↑/↓ step the sample. Scope-exempt so arrows control the
+    // surface wherever focus sits, instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); flipFrame(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); flipFrame(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
+    },
     actions: [
       core("back", { label: "Corpus", run: goBack, dock: true }),
       core("openFocus", {
@@ -478,12 +486,6 @@ export function LoupePage(): JSX.Element {
                   tabIndex={-1}
                   data-interaction-scope
                   className="min-w-0 w-full max-w-[640px] mx-auto"
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft") { e.preventDefault(); flipFrame(-1); }
-                    else if (e.key === "ArrowRight") { e.preventDefault(); flipFrame(1); }
-                    else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
-                    else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
-                  }}
                 >
                   <BigFrame
                     src={buildExposureImageUrl(activeExposure)}

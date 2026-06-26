@@ -1,15 +1,21 @@
 // test/ExperimentCorpusPage.cursor.test.tsx
 //
 // ID-based cursor tests for ExperimentCorpusPage: roving tabindex, click-to-park,
-// and Arrow key navigation on the corpus grid container.
-// These tests do NOT need the shell keyboard layer — Arrow keys are handled by the
-// grid's own onKeyDown; Enter is handled by rowProps.onKeyDown on each row.
+// and Arrow key navigation. Arrow nav now flows through the shell window keyboard
+// layer (scope-exempt), so the harness mounts it via KbLayer; the event still
+// bubbles from the grid to the window listener.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { CorpusSample, Exposure } from "../src/api";
 import { ExperimentCorpusPage } from "../src/print/pages/ExperimentCorpusPage";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
+
+function KbLayer({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}</>;
+}
 
 // ── mock data plane ──────────────────────────────────────────────────────────
 const cursorState = {
@@ -54,10 +60,12 @@ function renderCorpus(samples: Array<{ id: number; name: string }>, expId = 1) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[`/experiments/${expId}/corpus`]}>
-        <Routes>
-          <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
-          <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
-        </Routes>
+        <KbLayer>
+          <Routes>
+            <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
+            <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
+          </Routes>
+        </KbLayer>
       </MemoryRouter>
     </QueryClientProvider>,
   );

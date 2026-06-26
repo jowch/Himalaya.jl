@@ -13,6 +13,9 @@ export function usePageActions(decl: {
   actions: Action[];
   extraSteppers?: CursorStepperProps[];
   dockExtra?: ReactNode;
+  /** Page arrow-key handler. Runs scope-exempt for Arrow* keys so the surface
+   *  cursor responds wherever focus sits (the page preventDefaults what it claims). */
+  arrowHandler?: (e: KeyboardEvent) => void;
 }): void {
   const setPage = useInteraction((s) => s.setPage);
   const clearPage = useInteraction((s) => s.clearPage);
@@ -21,7 +24,7 @@ export function usePageActions(decl: {
 
   // No dependency array: refresh the registry on every commit.
   useEffect(() => {
-    setPage(decl.cursor ?? null, decl.actions, decl.extraSteppers ?? [], decl.dockExtra ?? null);
+    setPage(decl.cursor ?? null, decl.actions, decl.extraSteppers ?? [], decl.dockExtra ?? null, decl.arrowHandler ?? null);
   });
 
   useEffect(() => clearPage, [clearPage]); // unmount only

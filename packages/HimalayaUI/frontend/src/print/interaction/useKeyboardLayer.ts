@@ -27,7 +27,21 @@ export function useKeyboardLayer(): void {
       // not the page's undo action.)
       if (isTyping(e.target)) return;
 
-      const { actions, shellActions } = useInteraction.getState();
+      const { actions, shellActions, arrowHandler } = useInteraction.getState();
+
+      // Arrow navigation drives the active surface GLOBALLY — scope-exempt,
+      // because arrows are not WCAG-2.1.4 character shortcuts, so they need no
+      // focus container. This is what stops the page from scrolling when focus
+      // sits outside the surface (on body, a dock button, blank space). Widgets
+      // that legitimately consume arrows (SegmentedControl, listboxes) call
+      // preventDefault and were already returned at the top; text fields are
+      // caught by isTyping. The page claims the arrows it handles via
+      // preventDefault; an unclaimed arrow (e.g. Alt+Arrow reorder) falls through
+      // to the scope-gated action loop below.
+      if (arrowHandler && e.key.startsWith("Arrow")) {
+        arrowHandler(e);
+        if (e.defaultPrevented) return;
+      }
       // shellActions are scope-exempt (global shortcuts like /, ?, ⌘K).
       // page actions are scope-gated (WCAG 2.1.4: bare key fires only inside interaction scope).
       for (const [a, isShell] of [

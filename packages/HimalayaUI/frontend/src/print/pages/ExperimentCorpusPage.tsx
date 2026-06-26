@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAppState } from "../../state";
@@ -236,6 +236,15 @@ export function ExperimentCorpusPage(): JSX.Element {
 
   usePageActions({
     cursor: sampleCursor,
+    // ↑/↓ drive the sample cursor; ←/→ walk the active sample's frame axis.
+    // Scope-exempt (the shell keyboard layer runs it) so arrows control the
+    // surface wherever focus sits, instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); sampleCursor.moveBy(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); sampleCursor.moveBy(-1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); setFrameIndex((i) => Math.max(0, i - 1)); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); setFrameIndex((i) => Math.min(Math.max(activeFrames.length - 1, 0), i + 1)); }
+    },
     actions: [
       core("back", { label: "Experiments", run: () => navigate("/experiments"), dock: true }),
       core("openFocus", {
@@ -382,20 +391,6 @@ export function ExperimentCorpusPage(): JSX.Element {
         aria-multiselectable
         data-testid="corpus-grid"
         data-interaction-scope
-        onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
-          // ↑/↓ drive the sample cursor; ←/→ walk the active sample's frame axis
-          // (page-local this phase — the frame DOCK stepper is deferred). Clamped,
-          // non-circular, mirroring the sample stepper.
-          if (e.key === "ArrowDown") { e.preventDefault(); sampleCursor.moveBy(1); }
-          else if (e.key === "ArrowUp") { e.preventDefault(); sampleCursor.moveBy(-1); }
-          else if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            setFrameIndex((i) => Math.max(0, i - 1));
-          } else if (e.key === "ArrowRight") {
-            e.preventDefault();
-            setFrameIndex((i) => Math.min(Math.max(activeFrames.length - 1, 0), i + 1));
-          }
-        }}
       >
         {corpusQuery.isLoading ? (
           <div className="p-8 text-sm text-ink-soft">Loading samples…</div>

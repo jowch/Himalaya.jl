@@ -8,7 +8,12 @@ interface InteractionState {
   shellActions: Action[];
   extraSteppers: CursorStepperProps[];
   dockExtra: ReactNode | null;
-  setPage: (cursor: ListCursor | null, actions: Action[], extraSteppers?: CursorStepperProps[], dockExtra?: ReactNode | null) => void;
+  /** Page-declared arrow-key handler. Invoked by useKeyboardLayer for Arrow*
+   *  keys SCOPE-EXEMPT (arrows aren't WCAG-2.1.4 character shortcuts), so the
+   *  active surface's cursor responds no matter where focus sits — never the
+   *  page scroll. The page preventDefaults the arrows it claims. */
+  arrowHandler: ((e: KeyboardEvent) => void) | null;
+  setPage: (cursor: ListCursor | null, actions: Action[], extraSteppers?: CursorStepperProps[], dockExtra?: ReactNode | null, arrowHandler?: ((e: KeyboardEvent) => void) | null) => void;
   clearPage: () => void;
   setShellActions: (a: Action[]) => void;
 }
@@ -21,7 +26,8 @@ export const useInteraction = create<InteractionState>((set) => ({
   shellActions: [],
   extraSteppers: [],
   dockExtra: null,
-  setPage: (cursor, actions, extraSteppers = [], dockExtra = null) => set({ cursor, actions, extraSteppers, dockExtra }),
-  clearPage: () => set({ cursor: null, actions: [], extraSteppers: [], dockExtra: null }),
+  arrowHandler: null,
+  setPage: (cursor, actions, extraSteppers = [], dockExtra = null, arrowHandler = null) => set({ cursor, actions, extraSteppers, dockExtra, arrowHandler }),
+  clearPage: () => set({ cursor: null, actions: [], extraSteppers: [], dockExtra: null, arrowHandler: null }),
   setShellActions: (a) => set({ shellActions: a }),
 }));

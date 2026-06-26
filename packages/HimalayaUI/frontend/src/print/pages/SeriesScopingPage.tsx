@@ -563,6 +563,12 @@ export function SeriesScopingPage(): JSX.Element {
   // Undo/Redo buttons for mouse. back is dock:true so the shell renders the up-link.
   usePageActions({
     cursor,
+    // ↑/↓ move the member cursor (Alt+↑/↓ is left for the reorder actions).
+    // Scope-exempt so arrows control the surface instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowUp" && !e.altKey) { e.preventDefault(); cursor.moveBy(-1); }
+      else if (e.key === "ArrowDown" && !e.altKey) { e.preventDefault(); cursor.moveBy(1); }
+    },
     actions: [
       core("back", { label: "All series", run: () => navigate("/series"), dock: true }),
       core("undo", { run: undo, enabled: () => undoStack.canUndo }),
@@ -1009,10 +1015,6 @@ export function SeriesScopingPage(): JSX.Element {
               tabIndex={-1}
               data-interaction-scope
               data-testid="scoping-scope"
-              onKeyDown={(e) => {
-                if (e.key === "ArrowUp" && !e.altKey) { e.preventDefault(); cursor.moveBy(-1); }
-                else if (e.key === "ArrowDown" && !e.altKey) { e.preventDefault(); cursor.moveBy(1); }
-              }}
             >
             <ScopePlate
               seriesName={`Series by ${keyLabel}`}

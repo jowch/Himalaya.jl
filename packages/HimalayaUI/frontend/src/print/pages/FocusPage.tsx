@@ -364,6 +364,14 @@ export function FocusPage(): JSX.Element {
   usePageActions({
     cursor: candidateCursor,
     extraSteppers: [sampleStepper],
+    // ←/→ move the candidate cursor; ↑/↓ step the sample. Scope-exempt so arrows
+    // control the surface wherever focus sits, instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); candidateCursor.moveBy(-1); setPreviewWasExplicit(true); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); candidateCursor.moveBy(1); setPreviewWasExplicit(true); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
+    },
     actions: [
       core("back", { label: backLabel, run: escapeLadder, dock: true }),
       core("openFocus", {
@@ -812,12 +820,6 @@ export function FocusPage(): JSX.Element {
           data-interaction-scope
           data-testid="focus-workspace"
           className={FOCUS_PAGE_GRID}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowLeft") { e.preventDefault(); candidateCursor.moveBy(-1); setPreviewWasExplicit(true); }
-            else if (e.key === "ArrowRight") { e.preventDefault(); candidateCursor.moveBy(1); setPreviewWasExplicit(true); }
-            else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
-            else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
-          }}
         >
           {/* work column — full-bleed; inner content capped at 1180px (mockup .work / .work-inner) */}
           <div className="min-w-0 px-8 pt-7 pb-13">

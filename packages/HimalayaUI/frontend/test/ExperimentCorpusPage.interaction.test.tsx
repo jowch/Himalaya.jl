@@ -74,6 +74,14 @@ vi.mock("../src/print/detector/DetectorImage", () => ({
 }));
 
 import { ExperimentCorpusPage } from "../src/print/pages/ExperimentCorpusPage";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
+
+/** Mounts the shell window keyboard layer, the way AppShell does — arrow nav now
+ *  flows through it (scope-exempt), not a container onKeyDown. */
+function KbLayer({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}</>;
+}
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
@@ -97,11 +105,13 @@ function renderAt(expId = 1) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[`/experiments/${expId}/corpus`]}>
-        <Routes>
-          <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
-          <Route path="/sample/:sampleId/loupe" element={<div data-testid="loupe-route" />} />
-          <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
-        </Routes>
+        <KbLayer>
+          <Routes>
+            <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
+            <Route path="/sample/:sampleId/loupe" element={<div data-testid="loupe-route" />} />
+            <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
+          </Routes>
+        </KbLayer>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -112,11 +122,11 @@ beforeEach(() => {
 });
 
 // ── grid Arrow navigation (cursor movement only; no keyboard layer here) ─────
-// This harness mounts the page WITHOUT the shell keyboard layer, so it proves
-// the grid container's own ↑/↓/←/→ onKeyDown drives the cursor / frame axis.
-// Enter→navigate flows through the window keyboard layer and is proven in
-// ExperimentCorpusPage.actions.test.tsx (which mounts useKeyboardLayer).
-describe("ExperimentCorpusPage — grid Arrow navigation", () => {
+// Arrow nav flows through the shell window keyboard layer (mounted via KbLayer),
+// SCOPE-EXEMPT: ↑/↓/←/→ drive the cursor / frame axis from anywhere, so the page
+// never scrolls when focus sits outside the grid. The last case fires on
+// document.body to pin that global reach.
+describe("ExperimentCorpusPage — Arrow navigation", () => {
   // Three scoped samples (experiment_id=1) so the cursor can step 0→1→2; S0
   // carries two frames so the ←/→ frame axis has a target.
   const S0 = corpus({ id: 10, experiment_id: 1, name: "Sample 10" });
@@ -176,6 +186,15 @@ describe("ExperimentCorpusPage — grid Arrow navigation", () => {
     fireEvent.keyDown(grid, { key: "ArrowRight" }); // frame 0 → 1
     const thumbsAfter = screen.getAllByTestId("thumbnail");
     expect(thumbsAfter[1]!.getAttribute("data-state")).toContain("cursored");
+  });
+
+  it("arrows drive the cursor even when focus is OUTSIDE the grid (on body)", () => {
+    // The regression guard for the global-arrow change: with focus on
+    // document.body (never the scope), ArrowDown still moves the surface cursor
+    // instead of scrolling the page.
+    renderAt(1);
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(cursoredRowName()).toBe("Sample 11");
   });
 });
 

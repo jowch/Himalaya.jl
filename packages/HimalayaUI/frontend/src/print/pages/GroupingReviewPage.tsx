@@ -327,6 +327,12 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   // divider — InteractionDock owns spacing.
   usePageActions({
     cursor: flatSampleIds.length > 0 ? cursor : null,
+    // ↑/↓ move the sample cursor (Shift+↑/↓ is left for the flagged-jump actions).
+    // Scope-exempt so arrows control the surface instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowUp" && !e.shiftKey) { e.preventDefault(); cursor.moveBy(-1); }
+      else if (e.key === "ArrowDown" && !e.shiftKey) { e.preventDefault(); cursor.moveBy(1); }
+    },
     dockExtra: selection.length > 0 ? (
       <span
         data-testid="grouping-selection-count"
@@ -467,10 +473,6 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
           tabIndex={-1}
           data-interaction-scope
           data-testid="grouping-scope"
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp" && !e.shiftKey) { e.preventDefault(); cursor.moveBy(-1); }
-            else if (e.key === "ArrowDown" && !e.shiftKey) { e.preventDefault(); cursor.moveBy(1); }
-          }}
         >
           {visible.map(({ load, samples }) => (
             <LoadFold
