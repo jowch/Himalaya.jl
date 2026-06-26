@@ -1,4 +1,4 @@
-import type { ReactNode, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 
 export type ActionGroup = "Navigate" | "Act" | "Screen" | "Edit";
 
@@ -38,7 +38,6 @@ export interface RowProps {
   role: "row";
   "aria-current": "true" | undefined;
   "data-cursored": "true" | "false";
-  onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => void;
 }
 
 /** Feeds the shell's DockStepper. Mirrors DockStepperProps minus appearance. */

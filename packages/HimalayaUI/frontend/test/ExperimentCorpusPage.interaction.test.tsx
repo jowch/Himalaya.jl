@@ -111,9 +111,14 @@ beforeEach(() => {
   batchMutate.mockClear();
 });
 
-// ── keyboard cursor (ID-based, grid Arrow nav + row Enter) ──────────────────
-describe("ExperimentCorpusPage — keyboard cursor", () => {
-  // Three scoped samples (experiment_id=1) so the cursor can step 0→1→2.
+// ── grid Arrow navigation (cursor movement only; no keyboard layer here) ─────
+// This harness mounts the page WITHOUT the shell keyboard layer, so it proves
+// the grid container's own ↑/↓/←/→ onKeyDown drives the cursor / frame axis.
+// Enter→navigate flows through the window keyboard layer and is proven in
+// ExperimentCorpusPage.actions.test.tsx (which mounts useKeyboardLayer).
+describe("ExperimentCorpusPage — grid Arrow navigation", () => {
+  // Three scoped samples (experiment_id=1) so the cursor can step 0→1→2; S0
+  // carries two frames so the ←/→ frame axis has a target.
   const S0 = corpus({ id: 10, experiment_id: 1, name: "Sample 10" });
   const S1 = corpus({ id: 11, experiment_id: 1, name: "Sample 11" });
   const S2 = corpus({ id: 12, experiment_id: 1, name: "Sample 12" });
@@ -121,7 +126,7 @@ describe("ExperimentCorpusPage — keyboard cursor", () => {
   function seedKeyboard(): void {
     state.samples = [S0, S1, S2];
     state.byId = new Map<number, Exposure[]>([
-      [10, []],
+      [10, [exp({ id: 100, sample_id: 10 }), exp({ id: 101, sample_id: 10 })]],
       [11, []],
       [12, []],
     ]);
@@ -129,16 +134,19 @@ describe("ExperimentCorpusPage — keyboard cursor", () => {
 
   beforeEach(seedKeyboard);
 
-  it("ArrowDown on the grid moves the sample cursor forward", () => {
+  function cursoredRowName(): string | null {
+    const row = document.querySelector('[data-cursored="true"]');
+    return row?.textContent?.includes("Sample 12") ? "Sample 12"
+      : row?.textContent?.includes("Sample 11") ? "Sample 11"
+      : row?.textContent?.includes("Sample 10") ? "Sample 10" : null;
+  }
+
+  it("ArrowDown on the grid moves the sample cursor forward (by id)", () => {
     renderAt(1);
-    // Cursor starts at S0 (id 10). ArrowDown twice → S2 (id 12).
     const grid = screen.getByTestId("corpus-grid");
     fireEvent.keyDown(grid, { key: "ArrowDown" });
     fireEvent.keyDown(grid, { key: "ArrowDown" });
-    // Enter on the cursored row → navigate to /sample/12
-    const cursoredRow = document.querySelector('[data-cursored="true"]') as HTMLElement;
-    fireEvent.keyDown(cursoredRow, { key: "Enter" });
-    expect(screen.getByTestId("focus-route")).toBeInTheDocument();
+    expect(cursoredRowName()).toBe("Sample 12");
   });
 
   it("ArrowDown clamps at the last sample (not circular)", () => {
@@ -147,18 +155,27 @@ describe("ExperimentCorpusPage — keyboard cursor", () => {
     fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S1
     fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S2
     fireEvent.keyDown(grid, { key: "ArrowDown" }); // stays S2
-    const cursoredRow = document.querySelector('[data-cursored="true"]') as HTMLElement;
-    fireEvent.keyDown(cursoredRow, { key: "Enter" });
-    // S2 (id 12) → focus route (clamped, did not wrap to 0).
-    expect(screen.getByTestId("focus-route")).toBeInTheDocument();
+    expect(cursoredRowName()).toBe("Sample 12");
   });
 
-  it("Enter (openFocus) on a row navigates to /sample/:id", () => {
+  it("ArrowUp moves the cursor back", () => {
     renderAt(1);
-    // Cursor starts at S0. Enter on its row → /sample/10.
-    const cursoredRow = document.querySelector('[data-cursored="true"]') as HTMLElement;
-    fireEvent.keyDown(cursoredRow, { key: "Enter" });
-    expect(screen.getByTestId("focus-route")).toBeInTheDocument();
+    const grid = screen.getByTestId("corpus-grid");
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S1
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S2
+    fireEvent.keyDown(grid, { key: "ArrowUp" });   // → S1
+    expect(cursoredRowName()).toBe("Sample 11");
+  });
+
+  it("ArrowRight walks the active sample's frame axis (cursored thumbnail moves)", () => {
+    renderAt(1);
+    const grid = screen.getByTestId("corpus-grid");
+    // Cursor on S0 (id 10), which has two frames. Frame 0 is cursored at start.
+    const thumbsBefore = screen.getAllByTestId("thumbnail");
+    expect(thumbsBefore[0]!.getAttribute("data-state")).toContain("cursored");
+    fireEvent.keyDown(grid, { key: "ArrowRight" }); // frame 0 → 1
+    const thumbsAfter = screen.getAllByTestId("thumbnail");
+    expect(thumbsAfter[1]!.getAttribute("data-state")).toContain("cursored");
   });
 });
 

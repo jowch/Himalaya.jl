@@ -67,7 +67,6 @@ export interface SampleTableRowProps {
   /** Root-level click for cursor parking (from rowProps). */
   onClick?: (e: import("react").MouseEvent<HTMLElement>) => void;
   onDoubleClick?: (e: import("react").MouseEvent<HTMLElement>) => void;
-  onKeyDown?: (e: import("react").KeyboardEvent<HTMLElement>) => void;
   "aria-current"?: "true" | undefined;
   "data-cursored"?: "true" | "false";
   role?: "row";
@@ -152,7 +151,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
   tabIndex,
   onClick,
   onDoubleClick,
-  onKeyDown,
   "aria-current": ariaCurrent,
   "data-cursored": dataCursored,
   role: roleProp,
@@ -195,7 +193,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
       {...(tabIndex !== undefined ? { tabIndex } : {})}
       {...(onClick ? { onClick } : {})}
       {...(onDoubleClick ? { onDoubleClick } : {})}
-      {...(onKeyDown ? { onKeyDown } : {})}
       {...(ariaCurrent !== undefined ? { "aria-current": ariaCurrent } : {})}
       className={`group/row scroll-mb-14 border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
     >

@@ -14,6 +14,11 @@ export function InteractionDock(): JSX.Element | null {
 
   const back = actions.find((a) => a.id === "back");
   const primary = actions.find((a) => a.dock === "primary");
+  // Mode-gated actions (mode !== undefined) are HIDDEN entirely when enabled()
+  // is false — a verb that only lives in "selection" mode shouldn't sit greyed in
+  // browse mode. Non-mode actions still render (and grey) when disabled. NOTE: if
+  // a future action is disabled for a NON-mode reason (e.g. transiently loading)
+  // and declares a mode, this would hide rather than grey it — revisit then.
   const buttons = actions.filter((a) => a.dock === true && a.id !== "back" && (a.mode === undefined || enabledOf(a)));
   const stepper = cursor ? cursor.stepperProps() : null;
 

@@ -24,6 +24,8 @@ import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
 
+/** Exposure screening verdict applied by the cull verbs (null = unscreened). */
+type Verdict = "accepted" | "rejected" | null;
 
 /**
  * ExperimentCorpusPage — the experiment's Corpus home (the index route under
@@ -152,28 +154,22 @@ export function ExperimentCorpusPage(): JSX.Element {
   const [frameIndex, setFrameIndex] = useState(0);
   useEffect(() => { setFrameIndex(0); }, [sampleCursor.cursorId]);
 
-  // --- Selection state: exposure-grain cull + sample-grain pick ---
+  // --- Selection state ---
+  // SAMPLE-grain selection lives on the cursor (`sampleCursor.selected`) — one
+  // selection state, driven by the row checkbox. The EXPOSURE-grain `selected`
+  // Set below is a distinct page-local concern (which thumbnails are highlighted
+  // within a row); it does not feed the dock's cull verbs.
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const anchorRef = useRef<{ sampleId: number; exposureId: number } | null>(null);
   const shiftRef = useRef(false);
-  const [checkedSamples, setCheckedSamples] = useState<Set<number>>(() => new Set());
-
-  function toggleSampleCheck(sampleId: number): void {
-    setCheckedSamples((prev) => {
-      const next = new Set(prev);
-      if (next.has(sampleId)) next.delete(sampleId);
-      else next.add(sampleId);
-      return next;
-    });
-  }
 
   // SA-STALESELECT: navigating between experiment ids re-renders this route
   // (same path, new :id) without remounting, so a working selection from the
-  // prior experiment is no longer on screen. Clear both grains on expId change;
-  // on mount this is a no-op (both sets start empty).
+  // prior experiment is no longer on screen. Clear the exposure grain on expId
+  // change (the sample grain on `sampleCursor.selected` self-prunes when the id
+  // set swaps); on mount this is a no-op.
   useEffect(() => {
     setSelected(new Set());
-    setCheckedSamples(new Set());
     anchorRef.current = null;
     setFrameIndex(0);
   }, [expId]);
@@ -215,43 +211,28 @@ export function ExperimentCorpusPage(): JSX.Element {
 
 
   // --- Sample-grain cull actions (declared to the interaction registry) ---
-  const dropSelected = useCallback(() => {
-    for (const sampleId of checkedSamples) {
-      const exps = corpusExposures.byId.get(sampleId) ?? [];
-      for (const e of exps) {
-        batch.mutate({ sampleId, exposureId: e.id, status: "rejected" });
+  // All three read the ONE sample selection (`sampleCursor.selected`) and apply
+  // the verdict across every exposure of each selected sample. `toggleSelect()`
+  // with no arg clears nothing; we clear by toggling each selected id off after
+  // the batch so the selection resets (mirrors the old set-clear).
+  const cullSelected = useCallback(
+    (status: Verdict, verb: string) => {
+      const ids = [...sampleCursor.selected];
+      for (const sampleId of ids) {
+        const exps = corpusExposures.byId.get(sampleId) ?? [];
+        for (const e of exps) batch.mutate({ sampleId, exposureId: e.id, status });
       }
-    }
-    const n = checkedSamples.size;
-    showToast(`${n} sample${n === 1 ? "" : "s"} dropped`, "success");
-    setCheckedSamples(new Set());
-  }, [checkedSamples, corpusExposures.byId, batch]);
+      const n = ids.length;
+      if (n > 0) showToast(`${n} sample${n === 1 ? "" : "s"} ${verb}`, "success");
+      for (const sampleId of ids) sampleCursor.toggleSelect(sampleId);
+    },
+    [sampleCursor, corpusExposures.byId, batch],
+  );
+  const dropSelected = useCallback(() => cullSelected("rejected", "dropped"), [cullSelected]);
+  const keepSelected = useCallback(() => cullSelected("accepted", "kept"), [cullSelected]);
+  const restoreSelected = useCallback(() => cullSelected(null, "restored"), [cullSelected]);
 
-  const keepSelected = useCallback(() => {
-    for (const sampleId of checkedSamples) {
-      const exps = corpusExposures.byId.get(sampleId) ?? [];
-      for (const e of exps) {
-        batch.mutate({ sampleId, exposureId: e.id, status: "accepted" });
-      }
-    }
-    const n = checkedSamples.size;
-    showToast(`${n} sample${n === 1 ? "" : "s"} kept`, "success");
-    setCheckedSamples(new Set());
-  }, [checkedSamples, corpusExposures.byId, batch]);
-
-  const restoreSelected = useCallback(() => {
-    for (const sampleId of checkedSamples) {
-      const exps = corpusExposures.byId.get(sampleId) ?? [];
-      for (const e of exps) {
-        batch.mutate({ sampleId, exposureId: e.id, status: null });
-      }
-    }
-    const n = checkedSamples.size;
-    showToast(`${n} sample${n === 1 ? "" : "s"} restored`, "success");
-    setCheckedSamples(new Set());
-  }, [checkedSamples, corpusExposures.byId, batch]);
-
-  const mode = checkedSamples.size > 0 ? "selection" : "browse";
+  const mode = sampleCursor.selected.size > 0 ? "selection" : "browse";
 
   usePageActions({
     cursor: sampleCursor,
@@ -398,13 +379,22 @@ export function ExperimentCorpusPage(): JSX.Element {
       )}
 
       <div
-        role="grid"
         aria-multiselectable
         data-testid="corpus-grid"
         data-interaction-scope
         onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
+          // ↑/↓ drive the sample cursor; ←/→ walk the active sample's frame axis
+          // (page-local this phase — the frame DOCK stepper is deferred). Clamped,
+          // non-circular, mirroring the sample stepper.
           if (e.key === "ArrowDown") { e.preventDefault(); sampleCursor.moveBy(1); }
-          if (e.key === "ArrowUp") { e.preventDefault(); sampleCursor.moveBy(-1); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); sampleCursor.moveBy(-1); }
+          else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            setFrameIndex((i) => Math.max(0, i - 1));
+          } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            setFrameIndex((i) => Math.min(Math.max(activeFrames.length - 1, 0), i + 1));
+          }
         }}
       >
         {corpusQuery.isLoading ? (
@@ -434,8 +424,8 @@ export function ExperimentCorpusPage(): JSX.Element {
                   {...(m.phase !== undefined ? { phase: m.phase } : {})}
                   {...(m.formFactor ? { formFactor: true } : {})}
                   {...(slotBySample.has(s.id) ? { slotIndex: slotBySample.get(s.id)! } : {})}
-                  checked={checkedSamples.has(s.id)}
-                  onCheck={() => toggleSampleCheck(s.id)}
+                  checked={sampleCursor.selected.has(s.id)}
+                  onCheck={() => sampleCursor.toggleSelect(s.id)}
                   cursored={sampleCursor.cursorId === s.id}
                   {...(sampleCursor.cursorId === s.id && activeFrame
                     ? { cursoredExposureId: activeFrame.id }
@@ -471,17 +461,17 @@ export function ExperimentCorpusPage(): JSX.Element {
         )}
       </div>
 
-      {/* Compose segment — appears when samples are checked. Sample-grain picker
-          for building a new series. Distinct from the frame-grain cull selection. */}
-      {checkedSamples.size > 0 && (
+      {/* Compose segment — appears when samples are selected. Reads the ONE
+          sample selection (`sampleCursor.selected`) to build a new series. */}
+      {sampleCursor.selected.size > 0 && (
         <div className="flex items-center gap-2 px-4 py-2" data-testid="dock-compose">
           <span className="text-meta text-ink-soft">
-            {checkedSamples.size} sample{checkedSamples.size === 1 ? "" : "s"}
+            {sampleCursor.selected.size} sample{sampleCursor.selected.size === 1 ? "" : "s"}
           </span>
           <Button variant="accent" data-testid="dock-new-series"
-            onClick={() => navigateToNewSeries(checkedSamples, navigate)}>+ New series</Button>
+            onClick={() => navigateToNewSeries(sampleCursor.selected, navigate)}>+ New series</Button>
           <Button variant="ghost" data-testid="dock-clear-checks"
-            onClick={() => setCheckedSamples(new Set())}>Clear</Button>
+            onClick={() => { for (const sid of [...sampleCursor.selected]) sampleCursor.toggleSelect(sid); }}>Clear</Button>
         </div>
       )}
     </div>

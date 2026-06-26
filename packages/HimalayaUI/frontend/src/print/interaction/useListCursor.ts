@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ListCursor, RowProps, CursorStepperProps } from "./types";
 import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
 
@@ -36,6 +35,23 @@ export function useListCursor(opts: Opts): ListCursor {
     setCursorId(fallback);
     prevIds.current = ids;
   }, [ids, cursorId]);
+
+  // Selection is ID-based too: prune any selected id that left the list (an SSE
+  // remove, or a re-scope that swaps the whole `ids` set). Without this a sample
+  // selected under one scope would linger after switching scope with no row left
+  // to clear it (the SA-STALESELECT hazard). Orthogonality is preserved — this
+  // fires only on `ids` membership change, never on cursor movement.
+  useEffect(() => {
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const id of prev) {
+        if (ids.includes(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [ids]);
 
   // Cursor === DOM focus: move focus to the cursored row.
   useEffect(() => {
@@ -94,12 +110,6 @@ export function useListCursor(opts: Opts): ListCursor {
       role: "row",
       "aria-current": id === cursorId ? "true" : undefined,
       "data-cursored": id === cursorId ? "true" : "false",
-      onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          onActivate?.(id);
-        }
-      },
     }),
     [cursorId, onActivate],
   );
