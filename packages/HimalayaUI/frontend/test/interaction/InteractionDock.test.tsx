@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { InteractionDock } from "../../src/print/interaction/InteractionDock";
 import { useInteraction } from "../../src/print/interaction/registry";
 import { core, page } from "../../src/print/interaction/core";
-import type { ListCursor } from "../../src/print/interaction/types";
+import type { CursorStepperProps, ListCursor } from "../../src/print/interaction/types";
 
 const fakeCursor = (over: Partial<ListCursor> = {}): ListCursor => {
   const moveBy = (over.moveBy ?? vi.fn()) as ListCursor["moveBy"];
@@ -69,5 +69,30 @@ describe("InteractionDock", () => {
     useInteraction.getState().setPage(null, [core("back", { run: () => {}, label: "Corpus", dock: true })]);
     render(<InteractionDock />);
     expect(screen.getByTestId("dock-up-link")).toHaveTextContent("Corpus");
+  });
+
+  it("renders extraSteppers BEFORE the cursor stepper when both are present", () => {
+    const extraStepper: CursorStepperProps = {
+      label: "Sample", axis: "vertical", testIdBase: "sample",
+      count: "2 / 5", onPrev: vi.fn(), onNext: vi.fn(),
+      prevDisabled: false, nextDisabled: false,
+    };
+    // fakeCursor uses testIdBase "sample" → reuse but supply a frame-axis cursor
+    const frameCursor: ListCursor = {
+      ...fakeCursor(),
+      stepperProps: () => ({
+        label: "Frame", axis: "horizontal", testIdBase: "frame", count: "1 / 3",
+        onPrev: vi.fn(), onNext: vi.fn(), prevDisabled: true, nextDisabled: false,
+      }),
+    };
+    useInteraction.getState().setPage(frameCursor, [], [extraStepper]);
+    render(<InteractionDock />);
+    // Both steppers are present
+    expect(screen.getByTestId("dock-sample-count")).toHaveTextContent("2 / 5");
+    expect(screen.getByTestId("dock-frame-count")).toHaveTextContent("1 / 3");
+    // Extra stepper (sample) appears BEFORE cursor stepper (frame) in DOM
+    const sampleCount = screen.getByTestId("dock-sample-count");
+    const frameCount = screen.getByTestId("dock-frame-count");
+    expect(sampleCount.compareDocumentPosition(frameCount) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

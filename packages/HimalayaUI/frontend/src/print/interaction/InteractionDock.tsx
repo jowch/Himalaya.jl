@@ -9,8 +9,9 @@ function enabledOf(a: Action): boolean {
 export function InteractionDock(): JSX.Element | null {
   const cursor = useInteraction((s) => s.cursor);
   const actions = useInteraction((s) => s.actions);
+  const extraSteppers = useInteraction((s) => s.extraSteppers);
 
-  if (cursor === null && actions.length === 0) return null;
+  if (cursor === null && actions.length === 0 && extraSteppers.length === 0) return null;
 
   const back = actions.find((a) => a.id === "back");
   const primary = actions.find((a) => a.dock === "primary");
@@ -25,6 +26,21 @@ export function InteractionDock(): JSX.Element | null {
   return (
     <Dock>
       {back && <DockUpLink label={back.label} onClick={() => back.run()} />}
+
+      {/* Extra steppers (e.g. sample axis) render BEFORE the cursor stepper. */}
+      {extraSteppers.map((s) => (
+        <DockStepper
+          key={s.testIdBase}
+          label={s.label}
+          axis={s.axis}
+          testIdBase={s.testIdBase}
+          count={s.count}
+          onPrev={s.onPrev}
+          onNext={s.onNext}
+          prevDisabled={s.prevDisabled}
+          nextDisabled={s.nextDisabled}
+        />
+      ))}
 
       {stepper && (
         <DockStepper

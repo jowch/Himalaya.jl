@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { Action, ListCursor } from "./types";
+import type { Action, CursorStepperProps, ListCursor } from "./types";
 import { useInteraction } from "./registry";
 import { assertNoCoreCollision } from "./core";
 
@@ -7,7 +7,11 @@ import { assertNoCoreCollision } from "./core";
  *  dependency-less effect so it runs every commit — the closures captured in
  *  enabled()/run are therefore always the latest (no manual stateRef). The
  *  store clears on unmount so an un-migrated next page shows no stale dock. */
-export function usePageActions(decl: { cursor?: ListCursor | null; actions: Action[] }): void {
+export function usePageActions(decl: {
+  cursor?: ListCursor | null;
+  actions: Action[];
+  extraSteppers?: CursorStepperProps[];
+}): void {
   const setPage = useInteraction((s) => s.setPage);
   const clearPage = useInteraction((s) => s.clearPage);
 
@@ -15,7 +19,7 @@ export function usePageActions(decl: { cursor?: ListCursor | null; actions: Acti
 
   // No dependency array: refresh the registry on every commit.
   useEffect(() => {
-    setPage(decl.cursor ?? null, decl.actions);
+    setPage(decl.cursor ?? null, decl.actions, decl.extraSteppers ?? []);
   });
 
   useEffect(() => clearPage, [clearPage]); // unmount only

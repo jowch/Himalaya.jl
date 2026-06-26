@@ -1,10 +1,11 @@
 import { create } from "zustand";
-import type { Action, ListCursor } from "./types";
+import type { Action, CursorStepperProps, ListCursor } from "./types";
 
 interface InteractionState {
   cursor: ListCursor | null;
   actions: Action[];
-  setPage: (cursor: ListCursor | null, actions: Action[]) => void;
+  extraSteppers: CursorStepperProps[];
+  setPage: (cursor: ListCursor | null, actions: Action[], extraSteppers?: CursorStepperProps[]) => void;
   clearPage: () => void;
 }
 
@@ -13,6 +14,7 @@ interface InteractionState {
 export const useInteraction = create<InteractionState>((set) => ({
   cursor: null,
   actions: [],
-  setPage: (cursor, actions) => set({ cursor, actions }),
-  clearPage: () => set({ cursor: null, actions: [] }),
+  extraSteppers: [],
+  setPage: (cursor, actions, extraSteppers = []) => set({ cursor, actions, extraSteppers }),
+  clearPage: () => set({ cursor: null, actions: [], extraSteppers: [] }),
 }));

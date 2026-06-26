@@ -13,16 +13,10 @@ import {
   useCorpusSampleTags,
 } from "../../queries";
 import type { Tag } from "../ui";
-import { EmptyState, Button, KbKey } from "../ui";
-import { Dock } from "../ui/Dock";
-import { DockStepper } from "../ui/DockStepper";
-import { DockUpLink } from "../ui/DockUpLink";
-import { resolveSampleOrder, sampleNeighbors } from "../../lib/sample/sampleOrder";
+import { EmptyState, Button } from "../ui";
+import { resolveSampleOrder } from "../../lib/sample/sampleOrder";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
-import { useShortcuts } from "../shell/useShortcuts";
-import { isNativeInteractiveTarget } from "../../lib/keys";
-import { KbdLegend } from "../shell/KbdLegend";
 import { isValidationError } from "../../lib/queue/errors";
 import { BigFrame } from "../components/BigFrame";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
@@ -37,6 +31,10 @@ import {
   toLoupeTags,
 } from "./loupeAdapters";
 import type { SampleTagPair } from "../../api";
+import { useListCursor } from "../interaction/useListCursor";
+import { useStepperOnly } from "../interaction/useStepperOnly";
+import { usePageActions } from "../interaction/usePageActions";
+import { core, page } from "../interaction/core";
 
 // Boneyard fixture — a real render with mock props so the headless capture CLI
 // measures the greenfield loupe body. image_path:null → DetectorImage takes its
@@ -109,10 +107,16 @@ export function LoupePage(): JSX.Element {
   const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
   const isLoading = corpusQ.isLoading || exposuresQ.isLoading;
 
-  // Active exposure — local state, defaulted by defaultExposureId, reset on
-  // sample change so the next sample picks its own default.
-  const [activeId, setActiveId] = useState<number | undefined>(undefined);
-  useEffect(() => { setActiveId(undefined); }, [sampleId]);
+  // Frame axis — ID-based cursor (roving tabindex lives on the scope container,
+  // not on rows; Enter = openFocus, not frame-activate — no onActivate here).
+  const exposureIds = useMemo(() => exposures.map((e) => e.id), [exposures]);
+  const frameCursor = useListCursor({
+    ids: exposureIds,
+    stepperLabel: "Frame",
+    stepperTestIdBase: "frame",
+    axis: "horizontal",
+  });
+
   const computedDefault = defaultExposureId(exposures);
 
   // SA-F2: ?exposure=<id> preselects the frame the contact sheet was
@@ -126,28 +130,32 @@ export function LoupePage(): JSX.Element {
     exposureParam !== null && /^\d+$/.test(exposureParam)
       ? Number(exposureParam)
       : undefined;
-  // LO-STALEACTIVEID: heal a selection that is unset OR no longer present. The
-  // second case fires when another user drops the shown frame via SSE — without
-  // it `activeExposure` resolves undefined and the page falsely claims "no
-  // exposures" while frames still exist. The URL ?exposure= param seeds the
-  // INITIAL selection only (activeId === undefined); a vanished-frame heal goes
-  // straight to the computed default, never back to the stale permalink seed.
-  const activeStillPresent = activeId !== undefined && exposures.some((e) => e.id === activeId);
+
+  // Per-sample reseed: on sample change, useListCursor position-heals the
+  // cursor to a frame *by index* in the new sample — NOT the computed default.
+  // Force the new sample's default once per sample to fix this subtle bug.
+  // Also handles the initial ?exposure= seed and SSE-heal on the same sample.
+  const seededFor = useRef<number | null>(null);
   useEffect(() => {
-    if (activeStillPresent) return;
+    if (seededFor.current === sampleId) return; // already seeded this sample
+    if (exposures.length === 0) return;          // wait for load
     const seed =
-      activeId === undefined && requestedId !== undefined && exposures.some((e) => e.id === requestedId)
+      requestedId !== undefined && exposures.some((e) => e.id === requestedId)
         ? requestedId
         : computedDefault;
-    if (seed !== undefined && seed !== activeId) setActiveId(seed);
-  }, [activeStillPresent, activeId, computedDefault, exposures, requestedId]);
-  // Resolve the rendered frame resiliently so the one paint before the heal
+    if (seed !== undefined) {
+      frameCursor.setCursor(seed);
+      seededFor.current = sampleId;
+    }
+  }, [sampleId, exposures, requestedId, computedDefault, frameCursor]);
+
+  // Resolve the rendered frame resiliently so the one paint before the reseed
   // effect runs shows the surviving default, not the empty state. When the list
   // is non-empty `computedDefault` is always a real id, so `activeExposure` is
   // defined whenever a frame exists — the empty state is reserved for the
   // genuinely-frameless case (exposures.length === 0).
   const activeExposure =
-    exposures.find((e) => e.id === activeId) ??
+    exposures.find((e) => e.id === frameCursor.cursorId) ??
     exposures.find((e) => e.id === computedDefault);
 
   const frameIndex = activeExposure
@@ -158,6 +166,12 @@ export function LoupePage(): JSX.Element {
   // "exposure" on the same screen.
   const exposurePosition =
     frameIndex >= 0 ? `frame ${frameIndex + 1} of ${exposures.length}` : "—";
+
+  // Scope container ref — the detector column is the interaction scope so
+  // arrow keys and action keys are anchored to a predictable DOM subtree.
+  const scopeRef = useRef<HTMLDivElement>(null);
+  // Auto-focus on mount so keyboard works immediately on arrival.
+  useEffect(() => { scopeRef.current?.focus({ preventScroll: true }); }, []);
 
   const setStatus = useSetExposureStatus(hasValidId ? sampleId : 0);
   const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);
@@ -278,23 +292,13 @@ export function LoupePage(): JSX.Element {
     removeTag.mutate(tagId);
   }, [removeTag]);
 
-  const flip = useCallback((delta: number) => {
-    if (activeId === undefined || exposures.length === 0) return;
-    const idx = exposures.findIndex((e) => e.id === activeId);
-    if (idx < 0) return;
-    const next = Math.min(Math.max(idx + delta, 0), exposures.length - 1);
-    setActiveId(exposures[next]!.id);
-    // High-frequency, immediately-visible navigation → SR-only (not a toast).
-    announce(`Frame ${next + 1} of ${exposures.length}`);
-  }, [activeId, exposures]);
-
-  // Thumbnail-click selection routes through the SAME announcement as the
-  // keyboard flip so mouse and keyboard navigation are consistent for SR users.
+  // Thumbnail-click selection: set the frame cursor to the clicked id and
+  // announce for SR users so mouse and keyboard navigation stay consistent.
   const selectFrame = useCallback((id: number) => {
-    setActiveId(id);
+    frameCursor.setCursor(id);
     const idx = exposures.findIndex((e) => e.id === id);
     if (idx >= 0) announce(`Frame ${idx + 1} of ${exposures.length}`);
-  }, [exposures]);
+  }, [exposures, frameCursor]);
 
   const goBack = useCallback(() => {
     // App-shell unification: the corpus lives at /experiments/:id/corpus. The
@@ -322,7 +326,7 @@ export function LoupePage(): JSX.Element {
       ? Number(experimentParam2)
       : undefined;
   // Shared with the app shell sample stepper (resolveSampleOrder), so the
-  // topbar's ‹ › and the loupe's own `[`/`]` keyboard nav always agree.
+  // topbar's ‹ › and the loupe's own keyboard nav always agree.
   const orderedSampleIds = useMemo(
     () =>
       resolveSampleOrder(
@@ -332,10 +336,6 @@ export function LoupePage(): JSX.Element {
         (location.state as { sampleOrder?: number[] } | null)?.sampleOrder,
       ),
     [location.state, corpusQ.data, experimentId, sampleId],
-  );
-  const { index: sampleIndex, prevId: prevSampleId, nextId: nextSampleId } = sampleNeighbors(
-    orderedSampleIds,
-    sampleId,
   );
   const gotoSample = useCallback(
     (id: number): void => {
@@ -351,36 +351,50 @@ export function LoupePage(): JSX.Element {
     [navigate, experimentId, orderedSampleIds],
   );
 
-  // Loupe keyboard, via the shared shortcut library. The vocabulary nests:
-  // ← → step the FRAME, [ ] step the SAMPLE; x/k/r screen the active frame;
-  // Esc backs out to the sheet. Modifier chords (⌘R reload, ⌘X cut) never match
-  // the registry's bare combos, and typing/modal suppression is handled inside
-  // useShortcuts — so the per-key guards the old ad-hoc handler spelled out are
-  // now owned uniformly by the library.
-  useShortcuts({
-    // ←/→ = frame (detail) axis — renamed from prevExposure/nextExposure in T2.5.
-    prevDetail: () => flip(-1),
-    nextDetail: () => flip(1),
-    drop: () => handleDropToggle(),
-    keep: () => handleKeepToggle(),
-    representative: () => handleSetRepresentative(),
-    restore: () => handleRestore(),
-    prevSample: () => {
-      if (prevSampleId !== undefined) gotoSample(prevSampleId);
-    },
-    nextSample: () => {
-      if (nextSampleId !== undefined) gotoSample(nextSampleId);
-    },
-    // Enter opens Focus for this sample (b4: "Focus is the forward step,
-    // Enter") — makes the dock's frosted ↵ chip honest. §8 invariant (b): on a
-    // native interactive target (a dock button) Enter activates it natively.
-    openFocus: (e) => {
-      if (isNativeInteractiveTarget(e)) return false;
-      if (!hasValidId) return false;
-      navigate(`/sample/${sampleId}`);
-      return undefined;
-    },
-    dismiss: () => goBack(),
+  // Sample axis — URL-driven stepper (no in-page roving focus).
+  const sampleStepper = useStepperOnly({
+    ids: orderedSampleIds,
+    currentId: sampleId,
+    onGo: gotoSample,
+    label: "Sample",
+    testIdBase: "sample",
+    axis: "vertical",
+  });
+
+  // Declare cursor + actions to the shell interaction registry. The registry
+  // drives InteractionDock (buttons + steppers) and useKeyboardLayer (keys).
+  // Loupe verbs are NOT mode-gated — single active frame, no selection model.
+  usePageActions({
+    cursor: frameCursor,
+    extraSteppers: [sampleStepper],
+    actions: [
+      core("back", { label: "Corpus", run: goBack, dock: true }),
+      core("openFocus", {
+        run: () => { if (hasValidId) navigate(`/sample/${sampleId}`); },
+        dock: "primary",
+        enabled: () => hasValidId,
+      }),
+      page("cull", {
+        label: "Drop", keys: ["x"], group: "Act", dock: true,
+        enabled: () => activeExposure != null,
+        run: () => handleDropToggle(),
+      }),
+      page("keep", {
+        label: "Keep", keys: ["k"], group: "Act", dock: true,
+        enabled: () => activeExposure != null,
+        run: () => handleKeepToggle(),
+      }),
+      page("representative", {
+        label: "Set representative", keys: ["r"], group: "Act", dock: true,
+        enabled: () => activeExposure != null,
+        run: () => handleSetRepresentative(),
+      }),
+      page("restore", {
+        label: "Restore", group: "Act", dock: true,
+        enabled: () => activeExposure != null,
+        run: () => handleRestore(),
+      }),
+    ],
   });
 
   if (!corpusQ.isLoading && !sample) {
@@ -417,9 +431,9 @@ export function LoupePage(): JSX.Element {
   return (
     <PageFrame width="loupe" className="px-8 py-7">
       <div data-testid="loupe-page">
-        {/* The inter-sample stepper lives in the Dock (§3.3); the loupe's own
-            `[`/`]` keyboard nav still steps via gotoSample, sharing
-            resolveSampleOrder. */}
+        {/* The inter-sample stepper lives in the Dock via sampleStepper; the
+            loupe's own keyboard nav steps via gotoSample through sampleStepper,
+            sharing resolveSampleOrder. */}
         <div className="mb-3.5 flex items-center gap-3">
           <button data-testid="loupe-back" onClick={goBack} className="text-sm font-semibold text-print-accent hover:underline">
             ← Back to the sheet
@@ -438,10 +452,22 @@ export function LoupePage(): JSX.Element {
             {sample && activeExposure ? (
               <>
                 {/* LO-STRIP-OVERHANG: cap the whole detector stack (frame +
-                    filmstrip + legend) at the frame's max width and centre it, so
-                    the filmstrip aligns to the frame edges instead of overhanging
-                    it by ~a hundred px each side. */}
-                <div className="min-w-0 w-full max-w-[640px] mx-auto">
+                    filmstrip) at the frame's max width and centre it, so the
+                    filmstrip aligns to the frame edges instead of overhanging
+                    it by ~a hundred px each side. The scope container holds
+                    focus for arrow-key frame/sample navigation. */}
+                <div
+                  ref={scopeRef}
+                  tabIndex={-1}
+                  data-interaction-scope
+                  className="min-w-0 w-full max-w-[640px] mx-auto"
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowLeft") { e.preventDefault(); frameCursor.moveBy(-1); }
+                    else if (e.key === "ArrowRight") { e.preventDefault(); frameCursor.moveBy(1); }
+                    else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
+                    else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
+                  }}
+                >
                   <BigFrame
                     src={buildExposureImageUrl(activeExposure)}
                     caption={`frame ${frameIndex + 1} of ${exposures.length} · ${verdictWord}`}
@@ -455,18 +481,6 @@ export function LoupePage(): JSX.Element {
                     size="lg"
                     align="center"
                     className="mt-3"
-                  />
-                  {/* LO-KBDLEGEND: a registry-driven key legend so the loupe's
-                      shortcuts are discoverable on the surface itself. Curated to
-                      the screen verbs ALONE — the frame arrows are conventional
-                      (and their registry label says "exposure", which LO-TERM
-                      keeps off the loupe), and the sample steps ([ ]) are
-                      advertised by the Dock's stepper buttons (LO-STEPDEDUP),
-                      so repeating them here is redundant. */}
-                  <KbdLegend
-                    ids={["drop", "keep", "representative"]}
-                    testId="loupe-kbd-legend"
-                    className="mt-4"
                   />
                 </div>
                 <LoupeSidePanel
@@ -502,101 +516,6 @@ export function LoupePage(): JSX.Element {
             )}
           </div>
         </Skeleton>
-
-        {/* ── Contextual bottom dock (Loupe grammar §3.3) ──────────────────────────
-            ‹ Corpus · Sample↑↓ · Frame←→ · Drop · Keep · Set representative · Restore · Focus
-            Each verb calls the SAME callback the keyboard shortcut uses. */}
-        <Dock>
-          {/* Up-link back to corpus */}
-          <DockUpLink label="Corpus" onClick={goBack} className="mr-1" />
-
-          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-
-          {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
-          <DockStepper
-            label="Sample"
-            axis="vertical"
-            testIdBase="sample"
-            prevDisabled={prevSampleId === undefined}
-            onPrev={() => prevSampleId !== undefined && gotoSample(prevSampleId)}
-            nextDisabled={nextSampleId === undefined}
-            onNext={() => nextSampleId !== undefined && gotoSample(nextSampleId)}
-            count={sampleIndex >= 0 ? `${sampleIndex + 1} / ${orderedSampleIds.length}` : undefined}
-          />
-
-          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-
-          {/* Frame stepper — labeled ←/→ axis + current / total readout (§7) */}
-          <DockStepper
-            label="Frame"
-            axis="horizontal"
-            testIdBase="frame"
-            countWidthClass="min-w-[2.75rem]"
-            prevDisabled={activeExposure === undefined || exposures.indexOf(activeExposure) <= 0}
-            onPrev={() => flip(-1)}
-            nextDisabled={
-              activeExposure === undefined || exposures.indexOf(activeExposure) >= exposures.length - 1
-            }
-            onNext={() => flip(1)}
-            count={
-              activeExposure !== undefined
-                ? `${exposures.indexOf(activeExposure) + 1} / ${exposures.length}`
-                : undefined
-            }
-          />
-
-          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-
-          {/* Cull verbs — coloured outlines + key-chips (§7) */}
-          <Button
-            variant="outlineAccent"
-            onClick={handleDropToggle}
-            data-testid="dock-drop"
-          >
-            Drop<KbKey className="ml-1.5">X</KbKey>
-          </Button>
-          <Button
-            variant="outlineSuccess"
-            onClick={handleKeepToggle}
-            data-testid="dock-keep"
-          >
-            Keep<KbKey className="ml-1.5">K</KbKey>
-          </Button>
-
-          <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-
-          {/* Set representative (Loupe-only — NOT on Corpus), key-chipped R */}
-          <Button
-            variant="ghost"
-            onClick={handleSetRepresentative}
-            data-testid="dock-set-representative"
-          >
-            Set representative<KbKey className="ml-1.5">R</KbKey>
-          </Button>
-
-          {/* Restore — un-cull to neutral (Backspace); plain, like Corpus */}
-          <Button
-            variant="ghost"
-            onClick={handleRestore}
-            data-testid="dock-restore"
-          >
-            Restore
-          </Button>
-
-          {/* Spacer — right-anchors the destination (§7) */}
-          <div className="flex-1" />
-
-          {/* Focus destination — the unambiguous primary */}
-          <Button
-            variant="accent"
-            onClick={() => {
-              if (hasValidId) navigate(`/sample/${sampleId}`);
-            }}
-            data-testid="dock-focus"
-          >
-            Focus<KbKey variant="frost" className="ml-1.5">↵</KbKey>
-          </Button>
-        </Dock>
       </div>
     </PageFrame>
   );
