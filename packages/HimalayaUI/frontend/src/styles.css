@@ -313,11 +313,14 @@
     outline-offset: -2px;
   }
 
-  /* The interaction-scope container is a tabIndex=-1 keyboard-capture anchor that
-     receives focus PROGRAMMATICALLY (not via Tab). Its UA focus outline is visual
-     noise — the cursored row (`[data-cursored]`) and the dock stepper count are the
-     real position indicators, so suppress the box outline on the anchor itself. */
-  [data-interaction-scope]:focus {
+  /* tabindex=-1 elements are programmatic focus ANCHORS, never Tab destinations:
+     interaction-scope containers (the cursored row / dock count are the real
+     indicators), overflow scrollers (sheet-scroll, thumbnail-gallery, opted out
+     of the scroller tab-order), and menu/popover/onboarding shells (their items
+     show focus). None of them want the UA focus box — suppress it app-wide so
+     programmatic/click focus never paints a stray blue outline. Roving rows
+     (tabindex=0 when cursored) keep their own treatment. */
+  [tabindex="-1"]:focus {
     outline: none;
   }
 }
