@@ -5,7 +5,13 @@ export function comboOf(e: KeyboardEvent): string {
   const parts: string[] = [];
   if (e.metaKey || e.ctrlKey) parts.push("Mod");
   if (e.altKey) parts.push("Alt");
-  if (e.shiftKey) parts.push("Shift");
+  // Shift is a real modifier for named keys (Shift+ArrowUp) and alphanumerics
+  // (Mod+Shift+z). But a shifted PUNCTUATION key already bakes Shift into the
+  // produced character — a real `?` is Shift+/ and `e.key` is `"?"`, declared as
+  // `"?"`. Adding "Shift" there yields "Shift+?" and the bare-"?" help shortcut
+  // never matches. So skip Shift only for a single non-alphanumeric character.
+  const shiftEncodedInChar = e.key.length === 1 && !/[A-Za-z0-9]/.test(e.key);
+  if (e.shiftKey && !shiftEncodedInChar) parts.push("Shift");
   let k = e.key;
   if (k === " ") k = "Space";
   else if (k.length === 1) k = k.toLowerCase();

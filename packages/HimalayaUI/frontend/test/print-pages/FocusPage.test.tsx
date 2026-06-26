@@ -237,7 +237,10 @@ describe("FocusPage", () => {
     state.sibIndex = 0;
     renderAt(42);
     expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 2");
-    expect(within(screen.getByTestId("dock-action-openLoupe")).getByTestId("kbkey").textContent).toBe("l");
+    // Dock key-caps route through keyComboLabel now (review round 1): single
+    // letters render UPPERCASE, matching the help legend (and combos get glyphs:
+    // Mod+Enter → ⌘↵, Space → space).
+    expect(within(screen.getByTestId("dock-action-openLoupe")).getByTestId("kbkey").textContent).toBe("L");
   });
 
   it("the candidate-rail note is the distilled one-sentence guide (DI-FOCUSNOTE)", () => {

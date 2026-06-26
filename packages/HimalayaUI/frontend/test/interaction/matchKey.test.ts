@@ -20,8 +20,14 @@ describe("comboOf", () => {
   it("maps space to Space", () => {
     expect(comboOf(key({ key: " " }))).toBe("Space");
   });
-  it("passes ? through verbatim (layout-stable)", () => {
-    expect(comboOf(key({ key: "?" }))).toBe("?");
+  it("passes ? through as bare '?' even though the real keystroke carries Shift", () => {
+    // A real `?` is Shift+/, so the event has shiftKey:true and key:"?". The
+    // shifted-punctuation char already encodes Shift → combo is bare "?", not
+    // "Shift+?" (which would never match the help action's keys:["?"]).
+    expect(comboOf(key({ key: "?", shiftKey: true }))).toBe("?");
+  });
+  it("keeps Shift as a modifier for alphanumerics (Mod+Shift+z redo)", () => {
+    expect(comboOf(key({ key: "z", metaKey: true, shiftKey: true }))).toBe("Mod+Shift+z");
   });
 });
 

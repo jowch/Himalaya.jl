@@ -1,6 +1,7 @@
 import { Dock, DockUpLink, DockStepper, Button, KbKey } from "../ui";
 import type { Action } from "./types";
 import { useInteraction } from "./registry";
+import { keyComboLabel } from "../shell/shortcuts";
 
 function enabledOf(a: Action): boolean {
   return a.enabled ? a.enabled() : true;
@@ -30,7 +31,7 @@ export function InteractionDock(): JSX.Element | null {
         <DockUpLink
           label={back.label}
           onClick={() => back.run()}
-          {...(back.keys?.[0] ? { kbd: back.keys[0] === "Escape" ? "esc" : back.keys[0] } : {})}
+          {...(back.keys?.[0] ? { kbd: keyComboLabel(back.keys[0]) } : {})}
         />
       )}
 
@@ -78,7 +79,7 @@ export function InteractionDock(): JSX.Element | null {
           data-testid={`dock-action-${a.id}`}
         >
           {a.label}
-          {a.keys?.[0] && <KbKey className="ml-1.5">{a.keys[0]}</KbKey>}
+          {a.keys?.[0] && <KbKey className="ml-1.5">{keyComboLabel(a.keys[0])}</KbKey>}
         </Button>
       ))}
 

@@ -1047,8 +1047,12 @@ export function SeriesScopingPage(): JSX.Element {
                 return (
                   <div
                     key={r.sampleId}
-                    {...crprops}
+                    // Drag props first, cursor rowProps last: the cursor's
+                    // interactive contract (ref / onClick / tabIndex) must win if
+                    // dragItemProps ever grows an overlapping key (today it has
+                    // none — but the order shouldn't be load-bearing).
                     {...dprops}
+                    {...crprops}
                     data-reorder-row
                     data-reorder-index={i}
                     className={`relative cursor-grab${dprops["data-dragging"] ? " opacity-50" : ""}`}

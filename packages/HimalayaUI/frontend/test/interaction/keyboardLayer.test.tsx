@@ -136,4 +136,35 @@ describe("useKeyboardLayer", () => {
     fireEvent.keyDown(row, { key: "Enter" });
     expect(run).toHaveBeenCalledTimes(1);
   });
+
+  // Regression: a focus-trapped overlay ([role="dialog"]) owns the keyboard —
+  // scope-exempt arrows must NOT navigate the surface behind an open modal
+  // (ModalShell only preventDefaults Escape, never arrows).
+  it("an arrow inside an open [role=dialog] does NOT fire the page arrowHandler", () => {
+    const arrow = vi.fn();
+    useInteraction.getState().setPage(null, [], [], null, arrow);
+    render(
+      <>
+        <Harness />
+        <div role="dialog" aria-modal="true">
+          <button data-testid="dlg-btn">Cancel</button>
+        </div>
+      </>
+    );
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="dlg-btn"]')!;
+    btn.focus();
+    fireEvent.keyDown(btn, { key: "ArrowDown" });
+    expect(arrow).not.toHaveBeenCalled();
+  });
+
+  // Preservation: the same arrow OUTSIDE any overlay (on the scope) DOES fire.
+  it("an arrow on the scope container DOES fire the page arrowHandler", () => {
+    const arrow = vi.fn();
+    useInteraction.getState().setPage(null, [], [], null, arrow);
+    render(<Harness />);
+    const scope = document.querySelector<HTMLElement>('[data-interaction-scope]')!;
+    scope.focus();
+    fireEvent.keyDown(scope, { key: "ArrowDown" });
+    expect(arrow).toHaveBeenCalledTimes(1);
+  });
 });

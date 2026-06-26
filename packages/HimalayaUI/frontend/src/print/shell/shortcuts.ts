@@ -94,6 +94,8 @@ const GLYPH: Record<string, string> = {
   ArrowUp: "↑",
   ArrowDown: "↓",
   Escape: "Esc",
+  Enter: "↵",
+  Space: "space",
 };
 
 /** Render one normalized combo for display (mac glyphs vs spelled-out words). */

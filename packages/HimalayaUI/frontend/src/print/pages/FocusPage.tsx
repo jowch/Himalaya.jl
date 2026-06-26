@@ -307,6 +307,10 @@ export function FocusPage(): JSX.Element {
   const candidateCursor = useListCursor({
     ids: candidatePoolIds,
     onActivate: toggleAssignmentForId,
+    // Any candidate move — ←/→ OR the dock Candidate stepper — makes the comb
+    // preview explicit (and enables Apply). Centralizing it here keeps the two
+    // controls consistent (the stepper used to skip it).
+    onMove: () => setPreviewWasExplicit(true),
     stepperLabel: "Candidate",
     stepperTestIdBase: "candidate",
     axis: "horizontal",
@@ -367,8 +371,8 @@ export function FocusPage(): JSX.Element {
     // ←/→ move the candidate cursor; ↑/↓ step the sample. Scope-exempt so arrows
     // control the surface wherever focus sits, instead of scrolling the page.
     arrowHandler: (e) => {
-      if (e.key === "ArrowLeft") { e.preventDefault(); candidateCursor.moveBy(-1); setPreviewWasExplicit(true); }
-      else if (e.key === "ArrowRight") { e.preventDefault(); candidateCursor.moveBy(1); setPreviewWasExplicit(true); }
+      if (e.key === "ArrowLeft") { e.preventDefault(); candidateCursor.moveBy(-1); }   // moveBy → onMove sets previewWasExplicit
+      else if (e.key === "ArrowRight") { e.preventDefault(); candidateCursor.moveBy(1); }
       else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
       else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
     },

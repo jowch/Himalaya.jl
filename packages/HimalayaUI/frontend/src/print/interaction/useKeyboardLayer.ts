@@ -10,6 +10,16 @@ function inPageScope(target: EventTarget | null): boolean {
   return target.closest("[data-interaction-scope],[data-cursored]") !== null;
 }
 
+/** An open dialog/popover (`[role="dialog"]` — ModalShell, Popover) or inline-edit
+ *  trap (`[data-keys-trap]`) OWNS the keyboard while focus is inside it. Because
+ *  those overlays focus-trap, the event target sits within them — so this is
+ *  target-scoped and RACE-FREE (no global `[aria-modal]` querySelector, which
+ *  loses to the dialog-close microtask between the dialog's and the window's
+ *  listeners). Returns true → the keyboard layer must claim nothing. */
+function inOverlay(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('[role="dialog"],[data-keys-trap]') !== null;
+}
+
 function isEnabled(a: Action): boolean {
   return a.enabled ? a.enabled() : true;
 }
@@ -26,6 +36,11 @@ export function useKeyboardLayer(): void {
       // widened so chorded editing shortcuts like Mod+z reach native text-undo,
       // not the page's undo action.)
       if (isTyping(e.target)) return;
+      // A focus-trapped dialog/popover/inline-edit overlay owns the keyboard —
+      // claim nothing through it. Critically this stops scope-exempt arrows from
+      // navigating the surface BEHIND an open modal (ModalShell preventDefaults
+      // only Escape, never arrows).
+      if (inOverlay(e.target)) return;
 
       const { actions, shellActions, arrowHandler } = useInteraction.getState();
 
@@ -55,7 +70,7 @@ export function useKeyboardLayer(): void {
         // Enter on a native interactive control (button/link/input/select/textarea/
         // contenteditable) activates THAT control — don't let the page's Enter action
         // (openFocus/"Apply") hijack it. Space is already covered (it is bare → scope-gated).
-        if (e.key === "Enter" && isNativeInteractiveTarget(e)) continue;
+        if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && isNativeInteractiveTarget(e)) continue;
         if (!isEnabled(a)) return; // matched but inert — claim nothing, swallow nothing
         e.preventDefault();
         a.run(e);

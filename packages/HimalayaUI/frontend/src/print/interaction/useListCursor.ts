@@ -5,13 +5,18 @@ import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
 interface Opts {
   ids: number[];
   onActivate?: (id: number) => void;
+  /** Fired on every `moveBy` (the path BOTH the arrow keys and the dock stepper
+   *  take), so a page-local side-effect of cursor movement stays consistent no
+   *  matter which control drove it — e.g. Focus marking its candidate preview
+   *  "explicit". */
+  onMove?: () => void;
   stepperLabel?: string;
   stepperTestIdBase?: string;
   axis?: "vertical" | "horizontal";
 }
 
 export function useListCursor(opts: Opts): ListCursor {
-  const { ids, onActivate, stepperLabel = "Item", stepperTestIdBase = "item", axis = "vertical" } = opts;
+  const { ids, onActivate, onMove, stepperLabel = "Item", stepperTestIdBase = "item", axis = "vertical" } = opts;
 
   const [cursorId, setCursorId] = useState<number | null>(ids[0] ?? null);
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
@@ -76,11 +81,12 @@ export function useListCursor(opts: Opts): ListCursor {
   const moveBy = useCallback(
     (delta: number) => {
       if (ids.length === 0) return;
+      onMove?.();
       const from = Math.max(0, indexOf(cursorId));
       const next = Math.min(Math.max(from + delta, 0), ids.length - 1);
       setCursorId(ids[next]!);
     },
-    [ids, cursorId, indexOf],
+    [ids, cursorId, indexOf, onMove],
   );
 
   const activate = useCallback(() => {

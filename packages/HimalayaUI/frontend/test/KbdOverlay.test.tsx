@@ -79,7 +79,7 @@ describe("KbdOverlay — T2.5 ? help overlay", () => {
     ]);
     renderHarness();
     expect(screen.queryByTestId("kbd-overlay")).toBeNull();
-    fireEvent.keyDown(window, { key: "?" });
+    fireEvent.keyDown(window, { key: "?", shiftKey: true }); // real `?` is Shift+/
     expect(useAppState.getState().helpOverlayOpen).toBe(true);
     // Re-render to reflect state change (not using act here as state is sync).
     // The overlay should now render.

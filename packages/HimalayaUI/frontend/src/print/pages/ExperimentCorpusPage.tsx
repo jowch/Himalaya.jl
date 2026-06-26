@@ -388,7 +388,6 @@ export function ExperimentCorpusPage(): JSX.Element {
       )}
 
       <div
-        aria-multiselectable
         data-testid="corpus-grid"
         data-interaction-scope
       >

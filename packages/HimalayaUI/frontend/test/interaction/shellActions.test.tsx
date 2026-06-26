@@ -75,7 +75,7 @@ describe("shellActions — find/help bypass the bare-key scope guard", () => {
     const spy = vi.spyOn(useAppState.getState(), "openHelpOverlay");
     seedShellActions();
     render(<TestShell />);
-    fireEvent.keyDown(document.body, { key: "?" });
+    fireEvent.keyDown(document.body, { key: "?", shiftKey: true }); // real `?` is Shift+/
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
