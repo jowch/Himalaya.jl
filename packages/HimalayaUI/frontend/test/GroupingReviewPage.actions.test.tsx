@@ -256,6 +256,37 @@ describe("GroupingReviewPage interaction", () => {
     expect(dismissMutate).not.toHaveBeenCalled();
   });
 
+  it("Space typed in a rename input (isTyping guard) does NOT toggle page selection", () => {
+    // M1: paired pin for the isTyping guard. Space (key: " ", keyCode 32) is the
+    // select action trigger when fired on window. When focus is inside a rename
+    // input the guard must intercept it — the cursored sample's checkbox must
+    // remain unchecked. Mirrors the x-dismiss guard above exactly.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Shell({ children }: { children: React.ReactNode }): JSX.Element {
+      useKeyboardLayer();
+      return (
+        <>
+          {children}
+          <input data-testid="rename-input" defaultValue="" />
+          <InteractionDock />
+        </>
+      );
+    }
+    render(
+      <QueryClientProvider client={qc}>
+        <Shell>
+          <GroupingReviewPage experimentId={7} onBack={vi.fn()} />
+        </Shell>
+      </QueryClientProvider>,
+    );
+    // cursor starts on S2 (flagged) in attn filter
+    const input = screen.getByTestId("rename-input");
+    act(() => { input.focus(); });
+    act(() => { fireEvent.keyDown(input, { key: " " }); });
+    // Space must NOT fire the select action — S2's checkbox stays unchecked
+    expect(within(foldFor("S2")).getByRole("checkbox")).not.toBeChecked();
+  });
+
   it("confirm dock button is enabled when not scanning", () => {
     renderGrouping();
     expect(screen.getByTestId("dock-action-confirm")).toBeEnabled();

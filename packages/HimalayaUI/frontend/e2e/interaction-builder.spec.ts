@@ -219,6 +219,16 @@ test("IB-3: Enter cold-load (no prior click) fires openFocus → /sample/10?from
   // DO NOT click before this point — the scope must auto-focus.
   await expect(page.getByTestId("dock-sample-count")).toHaveText(/1 \/ 2/);
 
+  // Await the scope div having ACTUAL DOM focus before pressing Enter.
+  // dock-sample-count visible means isLoading→false (same React render), but the
+  // scope's focus() call is in a useEffect that runs *after* that render. Under a
+  // parallel Playwright suite the effect may not have fired by the time the
+  // keypress lands.  waitForFunction polls the real browser activeElement, which
+  // is the only reliable pre-condition gate for the cold-load Enter path.
+  await page.waitForFunction(
+    () => document.activeElement === document.querySelector("[data-interaction-scope]"),
+  );
+
   // Press Enter — cold load, no prior click.
   // Target is the scope div (tabIndex=-1), which is NOT a native interactive
   // element, so the isNativeInteractiveTarget guard does NOT block openFocus.
