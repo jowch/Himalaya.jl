@@ -25,12 +25,13 @@ const loupeState = {
   exposures: [] as Exposure[],
 };
 const setStatusMutate = vi.fn();
+const selectExposureMutate = vi.fn();
 
 vi.mock("../src/queries", () => ({
   useCorpusSamples: () => ({ data: loupeState.samples, isLoading: false }),
   useExposures: () => ({ data: loupeState.exposures, isLoading: false }),
   useSetExposureStatus: () => ({ mutate: setStatusMutate }),
-  useSelectExposure: () => ({ mutate: vi.fn() }),
+  useSelectExposure: () => ({ mutate: selectExposureMutate }),
   useAddCorpusSampleTag: () => ({ mutate: vi.fn() }),
   useRemoveCorpusSampleTag: () => ({ mutate: vi.fn() }),
   useEditCorpusSampleTag: () => ({ mutate: vi.fn() }),
@@ -109,6 +110,7 @@ function renderLoupe(
 beforeEach(() => {
   navigateSpy.mockClear();
   setStatusMutate.mockClear();
+  selectExposureMutate.mockClear();
   loupeState.samples = [];
   loupeState.exposures = [];
   useInteraction.getState().clearPage();
@@ -267,12 +269,11 @@ describe("LoupePage action declaration", () => {
     renderLoupe(42, { exposures: [makeExposure(100, { selected: false })] });
     await screen.findByTestId("loupe-page");
     // r should trigger handleSetRepresentative → setRepresentative.mutate
-    // Since it's not the representative, it calls mutate
+    // Since it's not the representative, it calls selectExposureMutate (not setStatusMutate).
     fireEvent.keyDown(window, { key: "r" });
-    // setStatusMutate is for setStatus; representative uses selectMutate — but we only
-    // mocked setStatusMutate here. We can verify the action runs by checking it doesn't
-    // throw and that setStatusMutate is NOT called (wrong hook).
     expect(setStatusMutate).not.toHaveBeenCalled();
+    expect(selectExposureMutate).toHaveBeenCalledOnce();
+    expect(selectExposureMutate).toHaveBeenCalledWith(100, expect.anything());
   });
 });
 

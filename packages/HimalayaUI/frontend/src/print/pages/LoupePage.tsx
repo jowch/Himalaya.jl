@@ -167,11 +167,17 @@ export function LoupePage(): JSX.Element {
   const exposurePosition =
     frameIndex >= 0 ? `frame ${frameIndex + 1} of ${exposures.length}` : "—";
 
-  // Scope container ref — the detector column is the interaction scope so
-  // arrow keys and action keys are anchored to a predictable DOM subtree.
-  const scopeRef = useRef<HTMLDivElement>(null);
-  // Auto-focus on mount so keyboard works immediately on arrival.
-  useEffect(() => { scopeRef.current?.focus({ preventScroll: true }); }, []);
+  // Scope container ref — callback form so focus lands when the scope div
+  // actually mounts (cold cache: activeExposure is undefined at mount-time,
+  // so the div isn't rendered yet and a useRef + useEffect would be a no-op).
+  // Fires once per sample (re-anchors keyboard focus on sample navigation).
+  const focusedSampleRef = useRef<number | null>(null);
+  const scopeRef = useCallback((el: HTMLDivElement | null) => {
+    if (el && focusedSampleRef.current !== sampleId) {
+      focusedSampleRef.current = sampleId;
+      el.focus({ preventScroll: true });
+    }
+  }, [sampleId]);
 
   const setStatus = useSetExposureStatus(hasValidId ? sampleId : 0);
   const setRepresentative = useSelectExposure(hasValidId ? sampleId : 0);
@@ -300,6 +306,16 @@ export function LoupePage(): JSX.Element {
     if (idx >= 0) announce(`Frame ${idx + 1} of ${exposures.length}`);
   }, [exposures, frameCursor]);
 
+  // Arrow frame navigation — announces `Frame N of M` for SR users (mirrors
+  // selectFrame; the dock stepper's visible count readout covers the sighted path).
+  const flipFrame = useCallback((delta: number) => {
+    const i = exposures.findIndex((e) => e.id === frameCursor.cursorId);
+    if (i < 0) { frameCursor.moveBy(delta); return; }
+    const next = Math.min(Math.max(i + delta, 0), exposures.length - 1);
+    announce(`Frame ${next + 1} of ${exposures.length}`);
+    frameCursor.moveBy(delta);
+  }, [exposures, frameCursor]);
+
   const goBack = useCallback(() => {
     // App-shell unification: the corpus lives at /experiments/:id/corpus. The
     // legacy target (/experiments?experiment=N, the experiments LIST) sent
@@ -390,6 +406,7 @@ export function LoupePage(): JSX.Element {
         run: () => handleSetRepresentative(),
       }),
       page("restore", {
+        // No keyboard accel: the old Backspace binding would collide with text editing in the tag input under the new layer (Backspace is non-bare, so typing-suppression doesn't catch it). Dock-button only.
         label: "Restore", group: "Act", dock: true,
         enabled: () => activeExposure != null,
         run: () => handleRestore(),
@@ -462,8 +479,8 @@ export function LoupePage(): JSX.Element {
                   data-interaction-scope
                   className="min-w-0 w-full max-w-[640px] mx-auto"
                   onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft") { e.preventDefault(); frameCursor.moveBy(-1); }
-                    else if (e.key === "ArrowRight") { e.preventDefault(); frameCursor.moveBy(1); }
+                    if (e.key === "ArrowLeft") { e.preventDefault(); flipFrame(-1); }
+                    else if (e.key === "ArrowRight") { e.preventDefault(); flipFrame(1); }
                     else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
                     else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
                   }}
