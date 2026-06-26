@@ -329,19 +329,16 @@ export function FocusPage(): JSX.Element {
 
   // ── scope container (focus anchor) ──────────────────────────────────────────
   // scopeEl: imperative .focus() in escapeLadder (WCAG 2.4.3 re-anchor).
-  // scopeRef: callback ref — auto-focuses on sample change, like Loupe.
+  // scopeRef: callback ref — ONLY stores the element; focus-on-attach is NOT
+  //   used here because the scope div renders inside a <Skeleton> and attaches
+  //   while visibility:hidden (boneyard overlay), causing Chromium to silently
+  //   drop the .focus() call. Focus is instead deferred to a useEffect that
+  //   fires once isLoading transitions to false (the skeleton reveals content).
   const scopeEl = useRef<HTMLDivElement | null>(null);
   const focusedSampleRef = useRef<number | null>(null);
-  const scopeRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      scopeEl.current = el;
-      if (el && focusedSampleRef.current !== activeSampleId) {
-        focusedSampleRef.current = activeSampleId ?? null;
-        el.focus({ preventScroll: true });
-      }
-    },
-    [activeSampleId],
-  );
+  const scopeRef = useCallback((el: HTMLDivElement | null) => {
+    scopeEl.current = el;
+  }, []);
 
   // ── action declaration ───────────────────────────────────────────────────────
   const fromSeries = searchParams.get("from") === "series";
@@ -505,6 +502,18 @@ export function FocusPage(): JSX.Element {
     corpusQ.isLoading ||
     resolvingExposure ||
     (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
+
+  // ── focus the scope when the skeleton reveals content (cold-load arrow nav) ──
+  // The scope div attaches while the boneyard overlay is still visibility:hidden,
+  // so el.focus() in the callback ref is silently dropped by Chromium. This effect
+  // fires once per sample AFTER isLoading goes false (skeleton reveals the real
+  // content), guaranteeing the scope is focusable before the first arrow keydown.
+  useEffect(() => {
+    if (isLoading) return;
+    if (focusedSampleRef.current === activeSampleId) return;
+    const el = scopeEl.current;
+    if (el) { focusedSampleRef.current = activeSampleId ?? null; el.focus({ preventScroll: true }); }
+  }, [isLoading, activeSampleId]);
 
   // FO-COMB-AXIS: the q-domain the comb shares with the trace. A manual zoom
   // (`xDomain`) wins; otherwise the trace auto-fits to its data extent, so the

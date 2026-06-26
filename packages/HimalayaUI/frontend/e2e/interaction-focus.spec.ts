@@ -231,12 +231,9 @@ test("IF-2: ArrowRight/ArrowLeft and dock-next-candidate advance the candidate c
   await expect(page.getByTestId("dock-candidate-count")).toHaveText(/1 \/ 2/);
 
   // --- ArrowRight: moveBy(1) → cursor to CANDIDATE_B (id=2); previewWasExplicit=true ---
-  // FocusPage's scope onKeyDown handles ArrowRight directly (not through the
-  // keyboard layer). Explicit focus required: scopeRef auto-focus fires while the
-  // content div still has visibility:hidden (Skeleton bones overlay), so the
-  // el.focus() call is silently dropped. We explicitly focus here so this test
-  // covers the ArrowRight handler logic rather than the auto-focus mechanism.
-  await page.locator('[data-interaction-scope]').focus();
+  // FocusPage's scope is auto-focused once isLoading→false (skeleton reveals
+  // content). ArrowRight is handled by the scope's own onKeyDown; no prior click
+  // or explicit focus is needed. This path is the cold-load regression guard.
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("dock-candidate-count")).toHaveText(/2 \/ 2/);
   // Im3m (CANDIDATE_B) is now previewed: CandidateRow → Card → data-previewed="true".
@@ -300,9 +297,8 @@ test("IF-3: Enter toggles assignment (not navigation); dock-primary click does t
   await expect(page.getByTestId("dock-candidate-count")).toHaveText(/1 \/ 2/);
 
   // Establish an explicit preview: ArrowRight moves cursor to CANDIDATE_B (id=2)
-  // and sets previewWasExplicit=true. The "Apply" button becomes enabled.
-  // (Explicit focus — see IF-2 comment about boneyard visibility:hidden auto-focus issue.)
-  await page.locator('[data-interaction-scope]').focus();
+  // and sets previewWasExplicit=true. The scope is auto-focused after load, so
+  // the ArrowRight reaches the scope's onKeyDown without any prior click.
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("dock-primary")).toBeEnabled();
 
@@ -347,9 +343,8 @@ test("IF-4: Enter on dock-action-addPeak does not fire assignment — isNativeIn
   await expect(page.getByTestId("dock-candidate-count")).toHaveText(/1 \/ 2/);
 
   // Establish explicit preview (previewWasExplicit=true) so openFocus is enabled
-  // and WOULD fire if focus were on the scope div.
-  // (Explicit focus — see IF-2 comment about boneyard visibility:hidden auto-focus issue.)
-  await page.locator('[data-interaction-scope]').focus();
+  // and WOULD fire if focus were on the scope div. The scope is auto-focused
+  // after load, so ArrowRight reaches the scope's onKeyDown without a prior click.
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("dock-primary")).toBeEnabled();
 
@@ -385,17 +380,16 @@ test("IF-5: cold-load p arms addPeak via scope auto-focus; Escape ladder disarms
   await mockFocus(page);
   await page.goto(`/sample/${SAMPLE_A.id}`);
 
-  // Wait for the scope div to mount and auto-focus (scopeRef callback fires).
+  // Wait for the scope to auto-focus (isLoading→false; the useEffect fires and
+  // el.focus() is NOT dropped because the skeleton has revealed real content).
   // "1 / 2" confirms indices loaded and the candidate cursor is seeded.
   // DO NOT click before this point — the scope must auto-focus for bare keys.
   await expect(page.getByTestId("dock-candidate-count")).toHaveText(/1 \/ 2/);
 
   // Press p — bare key; isBareKey=true so the keyboard layer checks inPageScope.
-  // inPageScope(document.body) returns true explicitly, so `p` fires even with
-  // focus on body. This cold-load test is valid: no prior click anywhere on the
-  // page. (Note: the scope div is NOT auto-focused due to the boneyard
-  // visibility:hidden issue documented in IF-2 — `p` works here because body is
-  // an explicit allow-list in inPageScope, not because the scope is focused.)
+  // The scope div is now auto-focused (cold-load fix), so the layer fires the
+  // addPeak action. This cold-load test is valid: no prior click anywhere on
+  // the page.
   await page.keyboard.press("p");
 
   // addPeak armed: TracePlate "+ Peak" button receives armed=true →
@@ -403,10 +397,8 @@ test("IF-5: cold-load p arms addPeak via scope auto-focus; Escape ladder disarms
   await expect(page.locator('[data-armed="true"]')).toBeVisible();
 
   // Arm the Escape ladder's middle rung by setting an explicit preview.
-  // ArrowRight is handled by the scope's own onKeyDown. Focus the scope
-  // explicitly here: `p` above fires via body-scope (not via scope auto-focus),
-  // so focus is still on body. After `p`, scope auto-focus still has not fired.
-  await page.locator('[data-interaction-scope]').focus();
+  // ArrowRight is handled by the scope's own onKeyDown. The scope is auto-
+  // focused, so ArrowRight reaches it without an explicit .focus() call.
   await page.keyboard.press("ArrowRight");
   // dock-primary enables when previewWasExplicit=true && cursorId!==null.
   await expect(page.getByTestId("dock-primary")).toBeEnabled();
@@ -440,9 +432,7 @@ test("IF-6: ArrowDown and dock-next-sample navigate to the sibling sample URL", 
   await expect(page.getByTestId("dock-candidate-count")).toHaveText(/1 \/ 2/);
 
   // ArrowDown → scope onKeyDown fires sampleStepper.onNext()
-  // → navigate(`/sample/${SAMPLE_B.id}`).
-  // (Explicit focus — see IF-2 comment about boneyard visibility:hidden auto-focus issue.)
-  await page.locator('[data-interaction-scope]').focus();
+  // → navigate(`/sample/${SAMPLE_B.id}`). The scope is auto-focused after load.
   await page.keyboard.press("ArrowDown");
   await expect(page).toHaveURL(new RegExp(`/sample/${SAMPLE_B.id}`));
 
