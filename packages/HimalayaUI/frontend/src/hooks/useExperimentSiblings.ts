@@ -9,8 +9,8 @@ import {
 /**
  * useExperimentSiblings — the live wiring of `deriveExperimentSiblings`:
  * corpus cache (TanStack) × active sample (Zustand). F5: shared by the topbar
- * sample stepper AND the Focus `[`/`]` sample step (FocusPage, via useShortcuts)
- * so both step through the identical sibling list. Deliberately does NOT depend
+ * sample stepper AND the Focus sample step (FocusPage, via the page's interaction
+ * declaration) so both step through the identical sibling list. Deliberately does NOT depend
  * on `activeExperimentId` (only the NavModal picker / recoverFromStaleUrl write
  * that) — the experiment scope comes from the active sample's own `experiment_id`.
  *

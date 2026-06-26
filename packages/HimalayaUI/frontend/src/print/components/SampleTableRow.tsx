@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { SpecCell } from "./SpecCell";
 import { ThumbnailGallery } from "./ThumbnailGallery";
 import type { GalleryExposure } from "./ThumbnailGallery";
@@ -14,9 +15,9 @@ export interface SampleTableRowProps {
   exposures: GalleryExposure[];
   /** Single highlighted exposure (loupe "current frame" model). */
   selectedExposureId?: number;
-  /** Multi-select highlight set (contact-sheet *cull* model — several frames in
-   *  this row flagged for dropping at once). Forwarded to the gallery's
-   *  `selectedIds`; OR'd with `selectedExposureId`. */
+  /** Multi-select highlight set, forwarded to the gallery's `selectedIds`.
+   *  Optional — the Corpus page drives per-exposure verdicts off the frame
+   *  cursor, not this set; kept for the contact-sheet assembly story. */
   selectedExposureIds?: ReadonlySet<number>;
   /** The roving cursor's active frame within this row → a double-border cue on
    *  that thumb, distinct from the solid cull-selection border. */
@@ -60,6 +61,15 @@ export interface SampleTableRowProps {
   cursored?: boolean;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
+  // Roving-cursor DOM props — spread from cursor.rowProps(id) after destructuring ref.
+  // SheetTable/SampleFold pass none of these → unchanged behavior.
+  tabIndex?: 0 | -1;
+  /** Root-level click for cursor parking (from rowProps). */
+  onClick?: (e: import("react").MouseEvent<HTMLElement>) => void;
+  onDoubleClick?: (e: import("react").MouseEvent<HTMLElement>) => void;
+  "aria-current"?: "true" | undefined;
+  "data-cursored"?: "true" | "false";
+  role?: "row";
 }
 
 /** The 5-column grid track shared by every row AND the table header — keeping
@@ -112,7 +122,7 @@ const CELL = "flex items-center px-3 h-[92px] min-w-0";
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a
  *  fixed 5-column grid. Unscreened rows carry a faint resting tint; screened rows
  *  sit transparent over the table plate. */
-export function SampleTableRow({
+export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(function SampleTableRow({
   name,
   sampleId,
   screened = false,
@@ -138,8 +148,14 @@ export function SampleTableRow({
   indeterminate,
   onCheck,
   cursored = false,
+  tabIndex,
+  onClick,
+  onDoubleClick,
+  "aria-current": ariaCurrent,
+  "data-cursored": dataCursored,
+  role: roleProp,
   className,
-}: SampleTableRowProps): JSX.Element {
+}: SampleTableRowProps, ref): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
   // Cursor cue (item 4): the roving ↑/↓ row reads as one opaque yellowish band
@@ -169,11 +185,20 @@ export function SampleTableRow({
 
   return (
     <div
+      ref={ref}
       data-testid="sample-table-row"
-      role="row"
+      role={roleProp ?? "row"}
       data-screened={screened ? "true" : "false"}
-      data-cursored={cursored ? "true" : "false"}
-      className={`group/row scroll-mb-14 border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
+      data-cursored={dataCursored ?? (cursored ? "true" : "false")}
+      {...(tabIndex !== undefined ? { tabIndex } : {})}
+      {...(onClick ? { onClick } : {})}
+      {...(onDoubleClick ? { onDoubleClick } : {})}
+      {...(ariaCurrent !== undefined ? { "aria-current": ariaCurrent } : {})}
+      // The roving cursor focuses this div programmatically; the bg-row-cursor
+      // band (above) IS the focus indicator, so suppress the UA outline that would
+      // otherwise paint a clipped blue box over the sticky cells (the very clipping
+      // the band was chosen to avoid).
+      className={`group/row scroll-mb-14 border-b border-hair focus:outline-none${rowBg}${className ? ` ${className}` : ""}`}
     >
       <div
         role="presentation"
@@ -256,4 +281,4 @@ export function SampleTableRow({
       </div>
     </div>
   );
-}
+});

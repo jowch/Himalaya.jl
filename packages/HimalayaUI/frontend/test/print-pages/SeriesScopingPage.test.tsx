@@ -11,6 +11,9 @@ import type {
   IndexEntry,
   Series,
 } from "../../src/api";
+import { InteractionDock } from "../../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../../src/print/interaction/useKeyboardLayer";
+import { useInteraction } from "../../src/print/interaction/registry";
 
 // ── navigate spy ─────────────────────────────────────────────────────────────
 const navigateSpy = vi.fn();
@@ -128,6 +131,11 @@ vi.mock("boneyard-js/react", () => ({
 
 import { SeriesScopingPage } from "../../src/print/pages/SeriesScopingPage";
 
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}<InteractionDock /></>;
+}
+
 function renderPage(seedSampleIds?: number[]): { rerender: () => void } {
   const qc = new QueryClient();
   const entry =
@@ -137,7 +145,9 @@ function renderPage(seedSampleIds?: number[]): { rerender: () => void } {
   const tree = (): JSX.Element => (
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[entry]}>
-        <SeriesScopingPage />
+        <TestShell>
+          <SeriesScopingPage />
+        </TestShell>
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -234,6 +244,7 @@ beforeEach(() => {
   requestedTraceExposureIds = [];
   phaseByExposure = {};
   seed();
+  useInteraction.getState().clearPage();
 });
 
 describe("SeriesScopingPage", () => {
@@ -1449,10 +1460,14 @@ describe("SeriesScopingPage", () => {
       seed3();
       renderPage();
       expect(renderedNames()).toEqual(["A", "B", "C"]);
+      // cursor starts at A (ids[0]); ArrowDown on scope moves cursor from A→B.
+      fireEvent.keyDown(screen.getByTestId("scoping-scope"), { key: "ArrowDown" });
       const gripB = screen.getByRole("button", { name: /^reorder B$/i });
+      // Alt+↑ on gripB: grip returns early (altKey), bubbles to keyboard layer,
+      // reorderUp fires with cursor.cursorId=B → moves B up.
       fireEvent.keyDown(gripB, { key: "ArrowUp", altKey: true });
       expect(renderedNames()).toEqual(["B", "A", "C"]);
-      // Alt+↓ from the same row (now at the top) steps it back down.
+      // Alt+↓ from the same row (cursor.setCursor kept B cursored after the reorder).
       fireEvent.keyDown(screen.getByRole("button", { name: /^reorder B$/i }), {
         key: "ArrowDown",
         altKey: true,

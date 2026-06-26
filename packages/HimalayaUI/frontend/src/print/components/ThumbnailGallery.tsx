@@ -15,10 +15,10 @@ export interface ThumbnailGalleryProps {
   exposures: GalleryExposure[];
   /** Single currently-selected exposure id (the loupe "current frame" model). */
   selectedId?: number;
-  /** Multi-select highlight set (the contact-sheet *cull* model, where several
-   *  frames in one row can be flagged for dropping at once). A thumb renders
-   *  `selected` if its id is in this set OR equals `selectedId` — so a gallery
-   *  can use either model, or both. */
+  /** Multi-select highlight set (a contact-sheet model where several frames are
+   *  flagged at once). A thumb renders `selected` if its id is in this set OR
+   *  equals `selectedId`. Optional — the Corpus page drives per-exposure verdicts
+   *  off the frame cursor, not this set. */
   selectedIds?: ReadonlySet<number>;
   /** The roving keyboard cursor's active frame (distinct from selection). Renders
    *  a double border on that thumb so the cursor is legible even on a selected

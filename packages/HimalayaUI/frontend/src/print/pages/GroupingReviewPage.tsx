@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { Load, LoadSample } from "../../api";
 import {
   useLoads, useExperiment,
@@ -7,23 +7,22 @@ import {
 } from "../../queries";
 import { useAppState } from "../../state";
 import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
-import { LoadFold } from "./LoadFold";
+import { LoadFold } from "../components/LoadFold";
 import { SearchInput } from "../ui/SearchInput";
 import { SegmentedControl } from "../ui/SegmentedControl";
-import { KbKey } from "../ui/KbKey";
-import { useShortcuts } from "../shell/useShortcuts";
 import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
 import { ProgressBar } from "../ui/ProgressBar";
 import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
-import { IconButton } from "../ui/IconButton";
-import { Dock } from "../ui/Dock";
 import { Menu } from "../ui/Menu";
 import { matchSample } from "../../lib/matchSample";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
 import { showToast } from "../../lib/toast";
 import { useUndoStack } from "../../hooks/useUndoStack";
+import { useListCursor } from "../interaction/useListCursor";
+import { usePageActions } from "../interaction/usePageActions";
+import { core, page } from "../interaction/core";
 
 type Filter = "attn" | "all";
 
@@ -83,9 +82,11 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   const { data: loads = [], isLoading } = useLoads(experimentId, scanning);
   const [filter, setFilter] = useState<Filter>("attn");
   const [search, setSearch] = useState("");
-  // ORDERED selection (first-selected = bulk-merge survivor -- Task 15). Membership
+  // ORDERED selection (first-selected = bulk-merge survivor — Task 15). Membership
   // checks use `.includes`; the LoadFold/SampleFold `selected` prop takes a Set,
   // so derive one. Selection PERSISTS across filter changes (never cleared here).
+  // NOTE: Do NOT route through cursor.selected — the generic cursor Set is
+  // unordered. Survivor-order is load-bearing domain meaning.
   const [selection, setSelection] = useState<number[]>([]);
   const selectedSet = useMemo(() => new Set(selection), [selection]);
   const [openLoads, setOpenLoads] = useState<Set<number>>(new Set());
@@ -135,31 +136,21 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
       .filter((x) => x.samples.length > 0);
   }, [loads, filter, q, selectedSet, scanning]);
 
-  // Keyboard cursor (↑/↓ nav). Tracked by sample id so it survives list
-  // reorders / filter changes; lands on the first visible sample on the first
-  // key. The cursor is DISTINCT from the multi-select `selection`.
+  // HEADLESS cursor: no rowProps spread on LoadFold rows (LoadFold/SampleFold are
+  // complex; leave them). The scope container (below) holds focus. Cursor is
+  // ID-based so it survives list reorders / filter changes.
   const flatSamples = useMemo(() => visible.flatMap((v) => v.samples), [visible]);
-  const [cursorId, setCursorId] = useState<number | null>(null);
-  const cursorIdx = flatSamples.findIndex((s) => s.sample_id === cursorId);
+  const flatSampleIds = useMemo(() => flatSamples.map((s) => s.sample_id), [flatSamples]);
+  const cursor = useListCursor({ ids: flatSampleIds, stepperLabel: "Sample", stepperTestIdBase: "sample" });
+  const cursorIdx = flatSamples.findIndex((s) => s.sample_id === cursor.cursorId);
   const cursorSample = cursorIdx >= 0 ? flatSamples[cursorIdx] : undefined;
-  // Footer nav-stepper readout (mirrors the corpus Dock's "N / M"): 1-based
-  // cursor position over the visible samples, 0 when the cursor is unplaced.
-  const navTotal = flatSamples.length;
-  const navPos = cursorIdx >= 0 ? cursorIdx + 1 : 0;
-
-  const moveCursor = (delta: number) => {
-    if (flatSamples.length === 0) return;
-    const from = cursorIdx < 0 ? (delta > 0 ? -1 : 0) : cursorIdx;
-    const next = Math.min(Math.max(from + delta, 0), flatSamples.length - 1);
-    setCursorId(flatSamples[next]!.sample_id);
-  };
 
   // Shift+↑/↓: jump the cursor to the prev/next FLAGGED sample.
   const jumpFlagged = (dir: number) => {
     if (flatSamples.length === 0) return;
     const start = cursorIdx < 0 ? (dir > 0 ? -1 : flatSamples.length) : cursorIdx;
     for (let i = start + dir; i >= 0 && i < flatSamples.length; i += dir) {
-      if (flatSamples[i]!.flag) { setCursorId(flatSamples[i]!.sample_id); return; }
+      if (flatSamples[i]!.flag) { cursor.setCursor(flatSamples[i]!.sample_id); return; }
     }
   };
 
@@ -303,32 +294,84 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     showToast(`Merged ${loserIds.length + 1} samples into ${survivorLabel}`, "info");
   };
 
-  // Keyboard: roving cursor + select/dismiss verbs (registry-aligned, so the
-  // keys mean the same as elsewhere). useShortcuts' suppressGlobalKeys already
-  // ignores keys while a field/modal/popover is focused, so the search + rename
-  // inputs and the ModalShell confirms aren't hijacked (Space types a space in
-  // the search box, etc.). The Move picker is a bare `role="menu"` (NOT a
-  // dialog), so suppressGlobalKeys does NOT catch it — gate on it explicitly so
-  // x/space/arrows don't act on the sample underneath the open picker (and the
-  // arrows don't double-fire with the menu's own item nav). Disabled while
-  // scanning too.
-  useShortcuts(
-    {
-      prevSample: () => moveCursor(-1),
-      nextSample: () => moveCursor(1),
-      prevFlagged: () => jumpFlagged(-1),
-      nextFlagged: () => jumpFlagged(1),
-      toggleSelect: () => { if (cursorSample) toggleSelect(cursorSample.sample_id); },
-      drop: () => { if (cursorSample?.flag) handleDismissFlag(cursorSample.sample_id); },
-    },
-    !scanning && movePicker === null,
-  );
-
-  // Keep the cursored row in view as it moves (no-op under jsdom — see safeScrollIntoView).
+  // Headless cursor: preserve manual scroll-into-view (built-in focus won't fire
+  // without rowProps). Keep the cursored row visible as it moves.
   useEffect(() => {
-    if (cursorId == null) return;
+    if (cursor.cursorId == null) return;
     safeScrollIntoView(document.querySelector('[data-cursored="true"]'));
-  }, [cursorId]);
+  }, [cursor.cursorId]);
+
+  // Scope focus: grant keyboard focus once when data lands. Guard on !scanning
+  // (during scanning there is no stable list to focus into). The scope div
+  // attaches while data may still be loading, so defer to an isLoading-keyed
+  // effect (mirrors SeriesScopingPage's focusedRef pattern).
+  const scopeEl = useRef<HTMLDivElement | null>(null);
+  const focusedRef = useRef<boolean>(false);
+  const scopeRef = useCallback((el: HTMLDivElement | null) => { scopeEl.current = el; }, []);
+  useEffect(() => {
+    if (isLoading) return;
+    if (scanning) return;
+    if (focusedRef.current) return;
+    if (scopeEl.current) { focusedRef.current = true; scopeEl.current.focus({ preventScroll: true }); }
+  }, [isLoading, scanning]);
+
+  // All page verbs gate on !scanning && movePicker === null (the old useShortcuts
+  // enabled-arg). The Move picker is a bare role="menu" (NOT a dialog), so the
+  // isTyping guard does NOT catch it — gate explicitly so x/Space/arrows don't
+  // act on the sample underneath an open picker.
+  const gated = () => !scanning && movePicker === null;
+
+  // ── Action declaration (replaces useShortcuts + hand-built Dock) ─────────────
+  // dockExtra: selection-count badge (non-interactive slot rendered between the
+  // stepper and the action buttons by InteractionDock). Drops the old bg-hair
+  // divider — InteractionDock owns spacing.
+  usePageActions({
+    cursor: flatSampleIds.length > 0 ? cursor : null,
+    // ↑/↓ move the sample cursor (Shift+↑/↓ is left for the flagged-jump actions).
+    // Scope-exempt so arrows control the surface instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowUp" && !e.shiftKey) { e.preventDefault(); cursor.moveBy(-1); }
+      else if (e.key === "ArrowDown" && !e.shiftKey) { e.preventDefault(); cursor.moveBy(1); }
+    },
+    dockExtra: selection.length > 0 ? (
+      <span
+        data-testid="grouping-selection-count"
+        className="inline-flex items-center gap-2 text-meta font-semibold text-ink"
+      >
+        <span className="inline-block h-2 w-2 rounded-sm bg-accent" aria-hidden />
+        {selection.length} selected
+      </span>
+    ) : null,
+    actions: [
+      core("back", { label: "Samples", run: onBack, dock: true }),
+      page("select", { label: "Select", keys: ["Space"], group: "Act", dock: true,
+        enabled: () => gated() && !!cursorSample,
+        run: () => { if (cursor.cursorId != null) toggleSelect(cursor.cursorId); } }),
+      page("split", { label: "Split", group: "Act", dock: true,
+        enabled: () => gated() && !!cursorSample && (cursorSample.exposures.length >= 2),
+        run: () => { if (cursorSample) handleSplit(cursorSample.sample_id); } }),
+      // mode: "selection" → InteractionDock HIDES these when enabled() is false,
+      // so they appear only when there's a selection (merge greys until ≥2).
+      page("merge", { label: "Merge", group: "Act", dock: true, mode: "selection",
+        enabled: () => gated() && selection.length >= 2, run: openBulkMergeConfirm }),
+      page("clearSelection", { label: "Clear", group: "Act", dock: true, mode: "selection",
+        enabled: () => selection.length > 0, run: () => setSelection([]) }),
+      // keyboard-only (no dock: true) — no dock button for dismissFlag
+      page("dismissFlag", { label: "Dismiss flag", keys: ["x"], group: "Act",
+        enabled: () => gated() && !!cursorSample,
+        run: () => { if (cursorSample) handleDismissFlag(cursorSample.sample_id); } }),
+      page("prevFlagged", { label: "Prev flagged", keys: ["Shift+ArrowUp"], group: "Navigate",
+        enabled: gated, run: () => jumpFlagged(-1) }),
+      page("nextFlagged", { label: "Next flagged", keys: ["Shift+ArrowDown"], group: "Navigate",
+        enabled: gated, run: () => jumpFlagged(1) }),
+      // dock: true (regular outline button). Do NOT use dock: "primary" — that adds
+      // an Enter ↵ chip, but Confirm is NOT Enter-bound (misleading). The accent
+      // emphasis is a visual follow-up, out of interaction-arch scope.
+      page("confirm", { label: scanning ? "Confirm groups · scanning…" : "Confirm groups",
+        group: "Act", dock: true, enabled: () => !scanning,
+        run: () => (onConfirm ?? onBack)() }),
+    ],
+  });
 
   return (
     <div className={`mx-auto max-w-[1180px] px-10 pb-18 pt-6${className ? ` ${className}` : ""}`}>
@@ -420,30 +463,42 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
           <EmptyState title="No samples in this experiment" />
         )
       ) : (
-        visible.map(({ load, samples }) => (
-          <LoadFold
-            key={load.load_id}
-            load={load}
-            open={openLoads.has(load.load_id) || !!q || load.samples.some((s) => s.flag) || (filter === "all" && !scanning)}
-            visibleSamples={samples}
-            openSamples={openSamples}
-            selected={selectedSet}
-            onToggleLoad={(id) => toggleSet(id, setOpenLoads)}
-            onToggleSampleOpen={(id) => toggleSet(id, setOpenSamples)}
-            onToggleSelect={toggleSelect}
-            onRename={handleRename}
-            onSplit={handleSplit}
-            onMerge={handleMerge}
-            onDismissFlag={handleDismissFlag}
-            onMoveExposure={handleMoveExposure}
-            // Detector thumbnail per exposure. The thumb route reads image_path
-            // from the DB by id (LoadExposure carries no image_path), 404s when
-            // absent → DetectorImage placeholder. Lazy-loaded + only for OPEN
-            // folds, so the image fan-out stays bounded.
-            thumbSrcFor={(exposureId) => `/api/exposures/${exposureId}/image?thumb=1`}
-            cursoredId={cursorId}
-          />
-        ))
+        // Scope container: holds keyboard focus for ↑/↓ cursor navigation.
+        // Plain Arrow moves cursor; !e.shiftKey lets Shift+Arrow bubble to
+        // the keyboard layer for prevFlagged/nextFlagged.
+        // Focused once after isLoading+scanning resolves (mirroring
+        // SeriesScopingPage's focusedRef approach).
+        <div
+          ref={scopeRef}
+          tabIndex={-1}
+          data-interaction-scope
+          data-testid="grouping-scope"
+        >
+          {visible.map(({ load, samples }) => (
+            <LoadFold
+              key={load.load_id}
+              load={load}
+              open={openLoads.has(load.load_id) || !!q || load.samples.some((s) => s.flag) || (filter === "all" && !scanning)}
+              visibleSamples={samples}
+              openSamples={openSamples}
+              selected={selectedSet}
+              onToggleLoad={(id) => toggleSet(id, setOpenLoads)}
+              onToggleSampleOpen={(id) => toggleSet(id, setOpenSamples)}
+              onToggleSelect={toggleSelect}
+              onRename={handleRename}
+              onSplit={handleSplit}
+              onMerge={handleMerge}
+              onDismissFlag={handleDismissFlag}
+              onMoveExposure={handleMoveExposure}
+              // Detector thumbnail per exposure. The thumb route reads image_path
+              // from the DB by id (LoadExposure carries no image_path), 404s when
+              // absent → DetectorImage placeholder. Lazy-loaded + only for OPEN
+              // folds, so the image fan-out stays bounded.
+              thumbSrcFor={(exposureId) => `/api/exposures/${exposureId}/image?thumb=1`}
+              cursoredId={cursor.cursorId}
+            />
+          ))}
+        </div>
       )}
 
       {/* Still-landing loads: a faint placeholder while the scan parses more. */}
@@ -540,125 +595,8 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
         );
       })() : null}
 
-      {/* Confirm-groups footer (p1-grouping): the surface's exit. Disabled while
-          the scan is in flight — settled loads are reviewable immediately, but
-          Confirm waits for the scan to finish (later loads can still raise flags).
-          Ingest is additive, so confirming never re-touches a settled load.
-          Reuses the shared Dock primitive (one bar height app-wide) with a
-          semantic testId. */}
-      <Dock testId="grouping-footer">
-        {scanning ? (
-          <span className="flex-1 text-meta text-ink-soft">
-            Review flags as loads land. Confirm unlocks when the scan finishes. Later loads can still raise flags.
-          </span>
-        ) : (
-          // Action bar (item 2), structured to mirror the corpus Dock: an up-link,
-          // a ↑/↓ nav-stepper section, then the bordered/coloured verb section.
-          <>
-            {/* Up-link — mirrors the corpus Dock's "‹ Experiments". */}
-            <button
-              type="button"
-              onClick={onBack}
-              className="text-meta font-semibold text-print-accent hover:underline"
-              data-testid="grouping-up-link"
-            >
-              ‹ Samples
-            </button>
-
-            <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
-
-            {/* Navigation section — roving ↑/↓ cursor over samples + readout
-                (pages2 dock: faint label, bordered ↑/↓ boxes, faint total). */}
-            <div className="flex items-center gap-1.5">
-              <span className="mr-0.5 text-meta text-ink-faint">Sample</span>
-              <IconButton
-                label="Previous sample"
-                tone="ghost"
-                boxed
-                disabled={navTotal === 0 || cursorIdx === 0}
-                onClick={() => moveCursor(-1)}
-                data-testid="grouping-prev-sample"
-              >
-                ↑
-              </IconButton>
-              <span
-                className="text-data tabular-nums text-ink text-center min-w-[3.5rem]"
-                data-testid="grouping-sample-count"
-              >
-                {navPos}<span className="font-normal text-ink-faint"> / {navTotal}</span>
-              </span>
-              <IconButton
-                label="Next sample"
-                tone="ghost"
-                boxed
-                disabled={navTotal === 0 || cursorIdx === navTotal - 1}
-                onClick={() => moveCursor(1)}
-                data-testid="grouping-next-sample"
-              >
-                ↓
-              </IconButton>
-            </div>
-
-            <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
-
-            {/* Action section — bordered, coloured verbs on the cursored sample
-                + the multi-select. */}
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                disabled={!cursorSample}
-                onClick={() => { if (cursorSample) toggleSelect(cursorSample.sample_id); }}
-                data-testid="grouping-select"
-              >
-                Select<KbKey className="ml-1.5">space</KbKey>
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!cursorSample || cursorSample.exposures.length < 2}
-                onClick={() => { if (cursorSample) handleSplit(cursorSample.sample_id); }}
-                data-testid="grouping-split"
-              >
-                Split
-              </Button>
-              {selection.length > 0 && (
-                <>
-                  <span className="mx-1 h-6 w-px bg-hair" aria-hidden />
-                  <span className="inline-flex items-center gap-2 text-meta font-semibold text-ink" data-testid="grouping-selection-count">
-                    <span className="h-2 w-2 rounded-sm bg-accent" aria-hidden />
-                    {selection.length} selected
-                  </span>
-                  <Button
-                    variant="outlineAccent"
-                    disabled={selection.length < 2}
-                    onClick={openBulkMergeConfirm}
-                    data-testid="grouping-merge"
-                  >
-                    Merge
-                  </Button>
-                  <Button variant="ghost" onClick={() => setSelection([])}>Clear</Button>
-                </>
-              )}
-            </div>
-
-            {/* Spacer — right-anchors Confirm (mirrors the corpus Dock). */}
-            <div className="flex-1" />
-
-            {/* No-button keys (↑/↓ are now visible steppers). */}
-            <div className="hidden items-center gap-3 text-meta text-ink-faint lg:flex" aria-hidden="true">
-              <span className="inline-flex items-center gap-1"><KbKey>⇧↑</KbKey><KbKey>⇧↓</KbKey> flagged</span>
-              <span className="inline-flex items-center gap-1"><KbKey>x</KbKey> dismiss flag</span>
-            </div>
-          </>
-        )}
-        <Button
-          variant="accent"
-          data-testid="grouping-confirm"
-          disabled={scanning}
-          onClick={() => (onConfirm ?? onBack)()}
-        >
-          {scanning ? "Confirm groups · scanning…" : "Confirm groups"}
-        </Button>
-      </Dock>
+      {/* InteractionDock is mounted by the shell (AppShell → AppRoutes); the
+          page only declares its actions via usePageActions above. */}
     </div>
   );
 }

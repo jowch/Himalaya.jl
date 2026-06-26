@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type React from "react";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import type { Load } from "../src/api";
-import { GroupingReviewPage } from "../src/print/components/GroupingReviewPage";
+import { GroupingReviewPage } from "../src/print/pages/GroupingReviewPage";
+import { InteractionDock } from "../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
 import { useAppState } from "../src/state";
 
 // The page reads loads (live-invalidated) + the experiment (name/ingest_status)
@@ -19,9 +21,17 @@ vi.mock("../src/queries", async (orig) => {
   };
 });
 
-function wrap(node: ReactNode) {
+// TestShell: needed so InteractionDock renders the dock-action-confirm button.
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}<InteractionDock /></>;
+}
+
+function wrap(node: React.ReactNode) {
   const qc = new QueryClient();
-  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={qc}><TestShell>{node}</TestShell></QueryClientProvider>,
+  );
 }
 
 const flaggedLoad: Load = {
@@ -59,8 +69,8 @@ describe("GroupingReviewPage scanning surface (p1-grouping)", () => {
     expect(screen.getByTestId("grouping-flag-count")).toHaveTextContent("1 flag to review");
     // processed (418) < total (682) → the "unfolding…" tail shows.
     expect(screen.getByTestId("grouping-unfolding")).toBeInTheDocument();
-    // Confirm is gated while scanning.
-    expect(screen.getByTestId("grouping-confirm")).toBeDisabled();
+    // Confirm is gated while scanning (dock-action-confirm rendered by InteractionDock).
+    expect(screen.getByTestId("dock-action-confirm")).toBeDisabled();
     // BOTH loads are visible during a scan: the clean load is shown (collapsed,
     // "grouped cleanly") rather than filtered out the way the post-scan attn
     // filter would hide it. The flagged load's sample is expanded.
@@ -74,7 +84,7 @@ describe("GroupingReviewPage scanning surface (p1-grouping)", () => {
     const onConfirm = vi.fn();
     wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} onConfirm={onConfirm} />);
     expect(screen.queryByTestId("grouping-scanning-header")).toBeNull();
-    const confirm = screen.getByTestId("grouping-confirm");
+    const confirm = screen.getByTestId("dock-action-confirm");
     expect(confirm).toBeEnabled();
     confirm.click();
     expect(onConfirm).toHaveBeenCalledTimes(1);

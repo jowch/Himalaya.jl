@@ -1,7 +1,8 @@
 // Unified keyboard shortcut library — the single source of truth for the app's
-// gesture vocabulary. Handlers (useShortcuts), on-screen hints, the legend
-// (<KbdLegend>) and aria-keyshortcuts all derive from this registry, so they can
-// never drift apart. Design: print/shell/AGENTS.md §"Keyboard shortcut registry"
+// gesture vocabulary. On-screen hints (<KbdLegend>/<KbdOverlay>) and
+// aria-keyshortcuts all derive from this registry. Gesture handling lives in
+// the interaction system (useKeyboardLayer / usePageActions / core.ts).
+// Design: print/shell/AGENTS.md §"Keyboard shortcut registry"
 //
 // Rev-2 axes (2026-06-21): ↑/↓ = sample nav, ←/→ = detail nav (frame on
 // Corpus/Loupe, candidate on Focus — same id, page-interpreted handler).
@@ -41,7 +42,7 @@ export type ShortcutGroup = "Navigate" | "Screen" | "Edit" | "General";
 
 export interface ShortcutDef {
   id: ShortcutId;
-  /** Normalized combos (see `eventCombo`): `"x"`, `"["`, `"ArrowLeft"`,
+  /** Normalized combos (see `comboOf` in matchKey.ts): `"x"`, `"["`, `"ArrowLeft"`,
    *  `"Mod+z"`, `"Mod+Shift+z"`, `"Alt+ArrowUp"`, `"/"`. `Mod` = ⌘ (mac) / Ctrl. */
   keys: string[];
   /** Human label for legends/tooltips (the action, not the key). */
@@ -87,40 +88,14 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   addPeak: { id: "addPeak", keys: ["p"], label: "Toggle add-peak mode", group: "Edit" },
 };
 
-/**
- * Normalize a keyboard event to a combo string in the registry's grammar:
- * `(Mod+)(Alt+)(Shift+)key`, where `Mod` collapses ⌘/Ctrl (cross-platform) and a
- * single character key is lowercased (so CapsLock-X and x both read `x`, while
- * Shift+X reads `Shift+x`). Named keys (ArrowLeft, Escape) pass through as-is.
- */
-export function eventCombo(e: KeyboardEvent): string {
-  // '?' is Shift+/ on US layouts but layout-variable; emit a stable token so the
-  // help binding is layout-robust (mirrors the single-char lowercasing below).
-  if (e.key === '?') return '?'
-  const parts: string[] = [];
-  if (e.metaKey || e.ctrlKey) parts.push("Mod");
-  if (e.altKey) parts.push("Alt");
-  if (e.shiftKey) parts.push("Shift");
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-  parts.push(k);
-  return parts.join("+");
-}
-
-/** Resolve a keyboard event to the action it triggers, or null. */
-export function matchShortcut(e: KeyboardEvent): ShortcutId | null {
-  const combo = eventCombo(e);
-  for (const def of Object.values(SHORTCUTS)) {
-    if (def.keys.includes(combo)) return def.id;
-  }
-  return null;
-}
-
 const GLYPH: Record<string, string> = {
   ArrowLeft: "←",
   ArrowRight: "→",
   ArrowUp: "↑",
   ArrowDown: "↓",
   Escape: "Esc",
+  Enter: "↵",
+  Space: "space",
 };
 
 /** Render one normalized combo for display (mac glyphs vs spelled-out words). */

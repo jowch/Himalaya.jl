@@ -9,8 +9,6 @@ import { ScopeSampleRow } from "../components/ScopeSampleRow";
 import { useDragReorder, reorder } from "../components/useDragReorder";
 import { Sparkline } from "../plot/Sparkline";
 import { EmptyState, Button, Card, Dot, Field, Input, Kicker, PhaseChip } from "../ui";
-import { Dock } from "../ui/Dock";
-import { DockUpLink } from "../ui/DockUpLink";
 import { ColdAssignPanel } from "../components/ColdAssignPanel";
 import type { SampleTagPair, Trace } from "../../api";
 import {
@@ -38,8 +36,9 @@ import {
   type ColdAssignRow,
 } from "./scopingDerive";
 import { readNewSeriesSeed } from "../../lib/series/newSeriesNav";
-import { suppressGlobalKeys } from "../../lib/keys";
-import { useReorderShortcuts } from "../shell/useReorderShortcuts";
+import { useListCursor } from "../interaction/useListCursor";
+import { usePageActions } from "../interaction/usePageActions";
+import { core, page } from "../interaction/core";
 
 const EMPTY_TRACE: Trace = { q: [], I: [], sigma: [] };
 
@@ -372,6 +371,14 @@ export function SeriesScopingPage(): JSX.Element {
   );
   const { dragItemProps, dropEdge } = useDragReorder(applyReorder);
 
+  // ── Member roving-tabindex cursor (over `order` — the displayed sample ids) ──
+  const cursor = useListCursor({
+    ids: order,
+    stepperLabel: "Member",
+    stepperTestIdBase: "member",
+    axis: "vertical",
+  });
+
   const byId = useMemo(() => new Map(rows.map((r) => [r.sampleId, r])), [rows]);
   const sorted = useMemo(
     () => order.map((id) => byId.get(id)).filter((r): r is OrderingRow => r != null),
@@ -405,17 +412,11 @@ export function SeriesScopingPage(): JSX.Element {
       return;
     }
     applyReorder(i, i + delta);
+    // Re-anchor cursor to the moved row so the focus guard in useListCursor can
+    // keep focus on whatever child (grip button, input) the user was using.
+    cursor.setCursor(r.sampleId);
     announceReorder(`Moved ${r.sampleName} to position ${i + delta + 1} of ${sorted.length}.`);
   };
-
-  // Unified Alt+↑/↓ reorder power-gesture (shared registry). Moves the focused
-  // worksheet row from any control inside it, mirroring the grip's own arrows;
-  // moveRow owns the clamp + SR announcement. The keyed row wrapper carries the
-  // data-reorder-index the hook reads.
-  useReorderShortcuts({
-    rowSelector: "[data-reorder-row]",
-    move: (i, delta) => moveRow(i, delta),
-  });
 
   // Routing for the ordering dropdown. The sentinel enters custom mode, seeding
   // the assign rows conditionally on the seed (re-entry deliberately re-seeds:
@@ -542,21 +543,60 @@ export function SeriesScopingPage(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [undoStack.popRedo]);
 
+  // ── Scope focus (cold-load arrow nav, mirrors FocusPage §scope) ─────────────
+  // The scope div attaches while the Skeleton overlay is still visibility:hidden,
+  // so a callback-ref focus-on-attach is silently dropped by Chromium. Defer to
+  // an isLoading-keyed effect that fires once the skeleton reveals real content.
+  const scopeEl = useRef<HTMLDivElement | null>(null);
+  const focusedRef = useRef<boolean>(false);
+  const scopeRef = useCallback((el: HTMLDivElement | null) => { scopeEl.current = el; }, []);
   useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        // Guard BEFORE preventDefault — ⌘Z inside an input must stay the
-        // browser's native text undo/redo, not the page's history.
-        if (suppressGlobalKeys(e)) return;
-        e.preventDefault();
-        // ⌘⇧Z is REDO, plain ⌘Z is UNDO.
-        if (e.shiftKey) redo();
-        else undo();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+    if (isLoading) return;
+    if (focusedRef.current) return;
+    if (scopeEl.current) { focusedRef.current = true; scopeEl.current.focus({ preventScroll: true }); }
+  }, [isLoading]);
+
+  // ── Action declaration ────────────────────────────────────────────────────────
+  // Reorder actions: capture the cursored id BEFORE applyReorder so cursor
+  // follows the item across the re-render (id is stable; slot is not).
+  // undo/redo are keyboard-only (no dock:true) — the page keeps its on-screen
+  // Undo/Redo buttons for mouse. back is dock:true so the shell renders the up-link.
+  usePageActions({
+    cursor,
+    // ↑/↓ move the member cursor (Alt+↑/↓ is left for the reorder actions).
+    // Scope-exempt so arrows control the surface instead of scrolling the page.
+    arrowHandler: (e) => {
+      if (e.key === "ArrowUp" && !e.altKey) { e.preventDefault(); cursor.moveBy(-1); }
+      else if (e.key === "ArrowDown" && !e.altKey) { e.preventDefault(); cursor.moveBy(1); }
+    },
+    actions: [
+      core("back", { label: "All series", run: () => navigate("/series"), dock: true }),
+      core("undo", { run: undo, enabled: () => undoStack.canUndo }),
+      core("redo", { run: redo, enabled: () => undoStack.canRedo }),
+      page("reorderUp", {
+        label: "Move up",
+        keys: ["Alt+ArrowUp"],
+        group: "Edit",
+        run: () => {
+          const id = cursor.cursorId;
+          if (id == null) return;
+          const i = order.indexOf(id);
+          if (i > 0) { moveRow(i, -1); cursor.setCursor(id); }
+        },
+      }),
+      page("reorderDown", {
+        label: "Move down",
+        keys: ["Alt+ArrowDown"],
+        group: "Edit",
+        run: () => {
+          const id = cursor.cursorId;
+          if (id == null) return;
+          const i = order.indexOf(id);
+          if (i < order.length - 1) { moveRow(i, +1); cursor.setCursor(id); }
+        },
+      }),
+    ],
+  });
 
   // Trace + dominant-phase maps, keyed exposure → sample (carried wiring).
   const pickerById = useMemo(() => {
@@ -966,6 +1006,16 @@ export function SeriesScopingPage(): JSX.Element {
               </div>
             </Card>
           ) : (
+            // ── Scope container: roving-tabindex anchor for the member list ──
+            // Attaches to the warm-path rows container; ref-focused once after
+            // isLoading goes false (boneyard overlay lifts). Arrow ↑/↓ navigate
+            // the cursor; Alt+↑/↓ are reorder actions (keyboard layer, NOT here).
+            <div
+              ref={scopeRef}
+              tabIndex={-1}
+              data-interaction-scope
+              data-testid="scoping-scope"
+            >
             <ScopePlate
               seriesName={`Series by ${keyLabel}`}
               grouping={
@@ -992,11 +1042,17 @@ export function SeriesScopingPage(): JSX.Element {
                 : {})}
               rows={sorted.map((r, i) => {
                 const dprops = dragItemProps(i);
+                const crprops = cursor.rowProps(r.sampleId);
                 const edge = dropEdge(i);
                 return (
                   <div
                     key={r.sampleId}
+                    // Drag props first, cursor rowProps last: the cursor's
+                    // interactive contract (ref / onClick / tabIndex) must win if
+                    // dragItemProps ever grows an overlapping key (today it has
+                    // none — but the order shouldn't be load-bearing).
                     {...dprops}
+                    {...crprops}
                     data-reorder-row
                     data-reorder-index={i}
                     className={`relative cursor-grab${dprops["data-dragging"] ? " opacity-50" : ""}`}
@@ -1161,14 +1217,10 @@ export function SeriesScopingPage(): JSX.Element {
               onBuild={handleBuild}
               discardSlot={discardControl}
             />
+            </div>
           )}
         </Skeleton>
       </div>
-
-      {/* ── Contextual bottom dock (Series grammar §3.3) ─────────────────────── */}
-      <Dock>
-        <DockUpLink label="All series" onClick={() => navigate("/series")} className="mr-1" />
-      </Dock>
     </PageFrame>
   );
 }

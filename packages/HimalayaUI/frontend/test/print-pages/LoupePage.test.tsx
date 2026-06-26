@@ -44,6 +44,9 @@ vi.mock("../../src/print/detector/DetectorImage", () => ({
 import { LoupePage } from "../../src/print/pages/LoupePage";
 import { setToastImpl } from "../../src/lib/toast";
 import { setAnnounceImpl } from "../../src/lib/announce";
+import { InteractionDock } from "../../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../../src/print/interaction/useKeyboardLayer";
+import { useInteraction } from "../../src/print/interaction/registry";
 
 function exp(over: Partial<Exposure>): Exposure {
   return {
@@ -66,6 +69,15 @@ function LocationProbe(): JSX.Element {
   );
 }
 
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}<InteractionDock /></>;
+}
+
+function getScope(): HTMLElement {
+  return document.querySelector("[data-interaction-scope]") as HTMLElement;
+}
+
 function renderAt(sampleId: number, search = "") {
   return render(
     <MemoryRouter initialEntries={[`/sample/${sampleId}/loupe${search}`]}>
@@ -73,10 +85,12 @@ function renderAt(sampleId: number, search = "") {
         <Route
           path="/sample/:sampleId/loupe"
           element={
-            <>
-              <LoupePage />
-              <LocationProbe />
-            </>
+            <TestShell>
+              <>
+                <LoupePage />
+                <LocationProbe />
+              </>
+            </TestShell>
           }
         />
         <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">sheet</div>} />
@@ -100,10 +114,12 @@ function renderWithOrder(sampleId: number, order: number[], search = "") {
         <Route
           path="/sample/:sampleId/loupe"
           element={
-            <>
-              <LoupePage />
-              <LocationProbe />
-            </>
+            <TestShell>
+              <>
+                <LoupePage />
+                <LocationProbe />
+              </>
+            </TestShell>
           }
         />
         <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">sheet</div>} />
@@ -124,6 +140,7 @@ function lastCbs(mock: ReturnType<typeof vi.fn>): MutateCbs {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useInteraction.getState().clearPage();
   state.samples = [{
     id: 42, experiment_id: 1, name: "JC042",
     notes: null, q_units: "A-1",
@@ -145,32 +162,9 @@ describe("LoupePage", () => {
     expect(screen.getByTestId("loupe-side-panel")).toBeInTheDocument();
   });
 
-  it("dock follows the §7 grammar: labeled Sample/Frame readouts, X/K/R chips, frosted Focus (5c)", () => {
-    renderAt(42);
-    // Labeled steppers with current / total readouts.
-    expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 1");
-    expect(screen.getByTestId("dock-frame-count").textContent).toBe("1 / 2");
-    // Cull verbs carry their key-chips (must match the real X/K/R bindings).
-    expect(within(screen.getByTestId("dock-drop")).getByTestId("kbkey").textContent).toBe("X");
-    expect(within(screen.getByTestId("dock-keep")).getByTestId("kbkey").textContent).toBe("K");
-    expect(within(screen.getByTestId("dock-set-representative")).getByTestId("kbkey").textContent).toBe("R");
-    // Focus is the primary destination with the frosted ↵ chip.
-    expect(within(screen.getByTestId("dock-focus")).getByTestId("kbkey").textContent).toBe("↵");
-  });
-
-  it("advertises only the loupe-unique screen verbs in the bottom legend (LO-KBDLEGEND)", () => {
-    renderAt(42);
-    const legend = screen.getByTestId("loupe-kbd-legend");
-    const caps = within(legend).getAllByTestId("kbkey").map((k) => k.textContent);
-    // the screen verbs (X/K/R) come straight from the registry
-    expect(caps).toEqual(expect.arrayContaining(["X", "K", "R"]));
-    // LO-STEPDEDUP: the sample steps ([ ]) are advertised by the Dock's
-    // stepper buttons, so they don't repeat in the inline kbd legend.
-    expect(caps).not.toContain("[");
-    expect(caps).not.toContain("]");
-    // LO-TERM: the loupe speaks "frame", so no "exposure"-worded entry leaks in
-    expect(legend.textContent ?? "").not.toMatch(/exposure/i);
-  });
+  // dock §7 grammar test removed in interaction-arch: dock-drop/dock-keep/dock-focus
+  // old testids no longer exist; dock stepper counts covered by LoupePage.actions.test.tsx.
+  // loupe-kbd-legend testid removed (kbd hints now live in the dock action chips).
 
   it("sample title renders as h1 — the document outline has a top-level anchor (LO-NOH1)", () => {
     renderAt(42);
@@ -224,12 +218,12 @@ describe("LoupePage", () => {
     const tree = () => (
       <MemoryRouter initialEntries={["/sample/42/loupe"]}>
         <Routes>
-          <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
+          <Route path="/sample/:sampleId/loupe" element={<TestShell><LoupePage /></TestShell>} />
         </Routes>
       </MemoryRouter>
     );
     const { rerender } = render(tree());
-    fireEvent.keyDown(window, { key: "ArrowRight" }); // → frame 2 (rejected)
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // → frame 2 (rejected)
     expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
 
     // SSE drop: frame 2 is gone from this sample's exposures.
@@ -251,7 +245,7 @@ describe("LoupePage", () => {
 
   it("frame flipping reads ?exposure once and never rewrites the URL", () => {
     renderAt(42, "?exposure=2");
-    fireEvent.keyDown(window, { key: "ArrowLeft" }); // flip back to frame 1
+    fireEvent.keyDown(getScope(), { key: "ArrowLeft" }); // flip back to frame 1
     expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected");
     // The param stays as the permalink wrote it — flipping is URL-silent.
     expect(screen.getByTestId("loc-probe")).toHaveAttribute(
@@ -281,7 +275,7 @@ describe("LoupePage", () => {
 
   it("K on a rejected frame sets accepted directly: last verb wins, no trip through null", () => {
     renderAt(42);
-    fireEvent.keyDown(window, { key: "ArrowRight" }); // frame 2 is rejected
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // frame 2 is rejected
     fireEvent.keyDown(window, { key: "k" });
     expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 2, status: "accepted" }, expect.anything());
   });
@@ -360,7 +354,7 @@ describe("LoupePage", () => {
     const { container } = renderAt(42); // frame 1 accepted, frame 2 rejected
     expect(container.querySelector('[data-role="kept-tag"]')).toBeInTheDocument();
     expect(container.querySelector('[data-role="dropped-tag"]')).not.toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     expect(container.querySelector('[data-role="kept-tag"]')).not.toBeInTheDocument();
     expect(container.querySelector('[data-role="dropped-tag"]')).toBeInTheDocument();
   });
@@ -381,7 +375,7 @@ describe("LoupePage", () => {
   it("R sets the representative when the active frame is NOT it", () => {
     renderAt(42);
     // Flip off the representative (frame 1) onto frame 2 first.
-    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "r" });
     expect(selectMutate).toHaveBeenCalledWith(2, expect.anything());
   });
@@ -406,7 +400,7 @@ describe("LoupePage", () => {
 
   it("ArrowRight flips to the next exposure", () => {
     renderAt(42);
-    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
   });
 
@@ -469,7 +463,7 @@ describe("LoupePage", () => {
     setToastImpl(toast);
     try {
       renderAt(42);
-      fireEvent.keyDown(window, { key: "ArrowRight" });
+      fireEvent.keyDown(getScope(), { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "r" });
       expect(toast).not.toHaveBeenCalled();
       lastCbs(selectMutate).onSuccess?.({});
@@ -484,7 +478,7 @@ describe("LoupePage", () => {
     setToastImpl(toast);
     try {
       renderAt(42);
-      fireEvent.keyDown(window, { key: "ArrowRight" });
+      fireEvent.keyDown(getScope(), { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "r" });
       lastCbs(selectMutate).onError?.(new TypeError("fetch failed"));
       expect(toast).toHaveBeenCalledWith(
@@ -522,7 +516,7 @@ describe("LoupePage", () => {
     expect(within(panel).getByText("reason")).toBeInTheDocument();
     expect(within(panel).getByText("beam flare")).toBeInTheDocument();
     // Flip to the kept frame — the reason row belongs to the dropped frame only.
-    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(getScope(), { key: "ArrowLeft" });
     expect(within(panel).queryByText("reason")).toBeNull();
     expect(within(panel).queryByText("beam flare")).toBeNull();
   });
@@ -542,7 +536,7 @@ describe("LoupePage", () => {
     // Opens on the (dropped) representative.
     expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
     // Still warned after flipping to a different, kept frame.
-    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
   });
 
@@ -550,7 +544,7 @@ describe("LoupePage", () => {
     renderAt(42);
     expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
     // A dropped NON-representative frame does not trigger it either.
-    fireEvent.keyDown(window, { key: "ArrowRight" }); // frame 2 is rejected in the fixture
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // frame 2 is rejected in the fixture
     expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
   });
 
@@ -561,7 +555,7 @@ describe("LoupePage", () => {
     setToastImpl(toast);
     try {
       renderAt(42);
-      fireEvent.keyDown(window, { key: "ArrowRight" });
+      fireEvent.keyDown(getScope(), { key: "ArrowRight" });
       expect(announce.mock.calls[0]?.[0]).toBe("Frame 2 of 2");
       expect(toast).not.toHaveBeenCalled();
     } finally {
@@ -690,7 +684,7 @@ describe("LoupePage", () => {
     renderAt(42);
     // Flip OFF the representative first so a leaked plain-r WOULD mutate —
     // keeps this chord test load-bearing under the R no-op guard.
-    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "r", metaKey: true });
     expect(selectMutate).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "x", metaKey: true });
@@ -723,18 +717,23 @@ describe("LoupePage", () => {
   });
 
   it("an open modal dialog suppresses X/R and Escape (no double action behind the modal)", () => {
+    // New arch: keyboard layer uses inPageScope(), not querySelector('[aria-modal]').
+    // Bare-key page actions are scope-gated: they only fire when e.target is inside
+    // [data-interaction-scope]. A modal appended outside the scope (to document.body)
+    // simulates focus-trapped focus; firing events ON the dialog element (not window)
+    // means inPageScope(e.target) returns false and the actions are suppressed.
     renderAt(42);
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-modal", "true");
     document.body.appendChild(dialog);
     try {
-      fireEvent.keyDown(window, { key: "x" });
-      fireEvent.keyDown(window, { key: "r" });
+      fireEvent.keyDown(dialog, { key: "x" });
+      fireEvent.keyDown(dialog, { key: "r" });
       expect(setStatusMutate).not.toHaveBeenCalled();
       expect(selectMutate).not.toHaveBeenCalled();
       // Escape must not ALSO navigate back while the modal owns it.
-      fireEvent.keyDown(window, { key: "Escape" });
+      fireEvent.keyDown(dialog, { key: "Escape" });
       expect(screen.queryByTestId("sheet")).toBeNull();
       expect(screen.getByTestId("loupe-page")).toBeInTheDocument();
     } finally {
@@ -759,31 +758,31 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
   // resolveSampleOrder with the Dock so the two can't disagree.
   it("↑ is a no-op on the first sample of the walk", () => {
     renderWithOrder(10, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "ArrowUp" });
+    fireEvent.keyDown(getScope(), { key: "ArrowUp" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/10/loupe");
   });
 
   it("↓ is a no-op on the last sample of the walk", () => {
     renderWithOrder(12, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(getScope(), { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
   it("↓ steps to the next sample, ↑ steps to the previous (←/→ still flip frames)", () => {
     renderWithOrder(11, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(getScope(), { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
   it("↑ steps to the previous sample", () => {
     renderWithOrder(11, [10, 11, 12]);
-    fireEvent.keyDown(window, { key: "ArrowUp" });
+    fireEvent.keyDown(getScope(), { key: "ArrowUp" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/10/loupe");
   });
 
   it("falls back to the beamtime-scoped corpus order on a direct URL (no router state)", () => {
     renderAt(11);
-    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(getScope(), { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
   });
 
@@ -793,53 +792,7 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
   });
 });
 
-describe("LoupePage dock composition (§3.3)", () => {
-  beforeEach(() => {
-    state.samples = [{
-      id: 42, experiment_id: 1, name: "JC042",
-      notes: null, q_units: "A-1",
-      tags: [],
-    }];
-    state.exposures = [exp({ id: 1, selected: true }), exp({ id: 2, status: "rejected" })];
-    state.loading = false;
-  });
-
-  it("Loupe dock includes Set representative AND Restore", () => {
-    renderAt(42);
-    expect(screen.getByTestId("dock-set-representative")).toBeInTheDocument();
-    expect(screen.getByTestId("dock-restore")).toBeInTheDocument();
-  });
-
-  it("Loupe dock has the corpus up-link, Drop, Keep, and Focus destination", () => {
-    renderAt(42);
-    expect(screen.getByTestId("dock-up-link").textContent).toMatch(/corpus/i);
-    expect(screen.getByTestId("dock-drop")).toBeInTheDocument();
-    expect(screen.getByTestId("dock-drop").getAttribute("data-variant")).toBe("outlineAccent");
-    expect(screen.getByTestId("dock-keep")).toBeInTheDocument();
-    expect(screen.getByTestId("dock-keep").getAttribute("data-variant")).toBe("outlineSuccess");
-    expect(screen.getByTestId("dock-focus")).toBeInTheDocument();
-  });
-
-  it("dock Drop calls setStatus.mutate with rejected for the active frame", () => {
-    renderAt(42);
-    fireEvent.click(screen.getByTestId("dock-drop"));
-    expect(setStatusMutate).toHaveBeenCalledWith(
-      { exposureId: 1, status: "rejected" },
-      expect.any(Object),
-    );
-  });
-
-  it("dock Set representative calls selectMutate for the active frame when not already representative", () => {
-    // Use exposure id=2 which is NOT the representative (selected: false).
-    // The default (id=1, selected: true) is already the representative —
-    // clicking it calls `announce` instead of mutating.
-    state.exposures = [
-      exp({ id: 1, selected: false, status: "accepted" }),
-      exp({ id: 2, selected: false, status: null }),
-    ];
-    renderAt(42);
-    fireEvent.click(screen.getByTestId("dock-set-representative"));
-    // id=1 is the accepted default; Set representative calls selectMutate for it.
-    expect(selectMutate).toHaveBeenCalledWith(1, expect.any(Object));
-  });
-});
+// LoupePage dock composition (§3.3) tests removed in interaction-arch:
+// dock-drop/dock-keep/dock-set-representative/dock-restore/dock-focus old testids gone.
+// Dock button behavior (cull/keep/representative/restore click handlers) covered by
+// test/LoupePage.actions.test.tsx with correct dock-action-<id> and dock-up-link testids.

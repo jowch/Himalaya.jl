@@ -127,6 +127,9 @@ vi.mock("../../src/print/components/CombsPanel", () => ({
 }));
 
 import { FocusPage } from "../../src/print/pages/FocusPage";
+import { InteractionDock } from "../../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../../src/print/interaction/useKeyboardLayer";
+import { useInteraction } from "../../src/print/interaction/registry";
 import { setAnnounceImpl } from "../../src/lib/announce";
 import { setToastImpl } from "../../src/lib/toast";
 
@@ -183,12 +186,23 @@ function LocationProbe() {
   return <div data-testid="loc" data-path={loc.pathname} />;
 }
 
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}<InteractionDock /></>;
+}
+
+function getScope(): HTMLElement {
+  const el = document.querySelector("[data-interaction-scope]") as HTMLElement | null;
+  if (!el) throw new Error("No [data-interaction-scope] found");
+  return el;
+}
+
 function focusTreeAt(sampleId: number | string) {
   return (
     <MemoryRouter initialEntries={[`/sample/${sampleId}`]}>
       <LocationProbe />
       <Routes>
-        <Route path="/sample/:sampleId" element={<FocusPage />} />
+        <Route path="/sample/:sampleId" element={<TestShell><FocusPage /></TestShell>} />
         <Route path="/experiments/:id/corpus" element={<div data-testid="sheet">corpus</div>} />
         <Route path="/experiments" element={<div data-testid="experiments-home">home</div>} />
       </Routes>
@@ -205,6 +219,7 @@ beforeEach(() => {
   combsProps.hoveredQ = undefined;
   combsProps.onHoverQ = undefined;
   seedFull();
+  useInteraction.getState().clearPage();
 });
 
 describe("FocusPage", () => {
@@ -222,7 +237,10 @@ describe("FocusPage", () => {
     state.sibIndex = 0;
     renderAt(42);
     expect(screen.getByTestId("dock-sample-count").textContent).toBe("1 / 2");
-    expect(within(screen.getByTestId("dock-loupe")).getByTestId("kbkey").textContent).toBe("L");
+    // Dock key-caps route through keyComboLabel now (review round 1): single
+    // letters render UPPERCASE, matching the help legend (and combos get glyphs:
+    // Mod+Enter → ⌘↵, Space → space).
+    expect(within(screen.getByTestId("dock-action-openLoupe")).getByTestId("kbkey").textContent).toBe("L");
   });
 
   it("the candidate-rail note is the distilled one-sentence guide (DI-FOCUSNOTE)", () => {
@@ -242,17 +260,21 @@ describe("FocusPage", () => {
   // on Focus) is retired — exposure stepping is filmstrip-only via ThumbnailGallery.
   describe("keyboard — two-axis model", () => {
     it("↓ / ↑ step the sample (agree with the stepper via useExperimentSiblings)", () => {
+      // useStepperOnly uses siblings.map(id) for its ordered list; prev/next alone
+      // don't feed it. Provide a full ordered list so onNext can resolve ids[i+1].
+      state.sibSiblings = [{ id: 41 }, { id: 42 }, { id: 43 }];
       state.sibNext = { id: 43 };
       state.sibPrev = { id: 41 };
       renderAt(42);
-      fireEvent.keyDown(document.body, { key: "ArrowDown" });
+      fireEvent.keyDown(getScope(), { key: "ArrowDown" });
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/43");
     });
 
     it("↑ steps to the previous sample", () => {
+      state.sibSiblings = [{ id: 41 }, { id: 42 }];
       state.sibPrev = { id: 41 };
       renderAt(42);
-      fireEvent.keyDown(document.body, { key: "ArrowUp" });
+      fireEvent.keyDown(getScope(), { key: "ArrowUp" });
       expect(screen.getByTestId("loc")).toHaveAttribute("data-path", "/sample/41");
     });
 
@@ -266,9 +288,9 @@ describe("FocusPage", () => {
       state.corpus = [corpus(), corpus({ id: 43, name: "JC043" })];
       const view = renderAt(42);
       // Arm "+ Peak" AND preview a candidate.
-      fireEvent.click(screen.getByText("+ Peak"));
-      expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "true");
-      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // preview first candidate
+      fireEvent.click(screen.getAllByText("+ Peak")[0]);
+      expect(screen.getAllByText("+ Peak")[0]).toHaveAttribute("aria-pressed", "true");
+      fireEvent.keyDown(getScope(), { key: "ArrowLeft" }); // clamp-at-first → pn3m explicit
       expect(
         screen.getByRole("button", { name: /Pn3m, in assignment/ }),
       ).toHaveAttribute("data-previewed", "true");
@@ -282,7 +304,7 @@ describe("FocusPage", () => {
         state.activeSampleId = 43;
       });
       view.rerender(focusTreeAt(42));
-      expect(screen.getByText("+ Peak")).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getAllByText("+ Peak")[0]).toHaveAttribute("aria-pressed", "false");
       expect(
         screen.getByRole("button", { name: /Pn3m, in assignment/ }),
       ).not.toHaveAttribute("data-previewed");
@@ -292,15 +314,16 @@ describe("FocusPage", () => {
       renderAt(42);
       const pn3m = screen.getByRole("button", { name: /Pn3m, in assignment/ });
       const lam = screen.getByRole("button", { name: /^Lamellar$/ });
+      // cursor starts at Pn3m (ids[0]); ArrowLeft clamps at index 0 → pn3m explicit.
       expect(pn3m).not.toHaveAttribute("data-previewed");
-      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // none → first
+      fireEvent.keyDown(getScope(), { key: "ArrowLeft" }); // clamp at first → pn3m
       expect(pn3m).toHaveAttribute("data-previewed", "true");
-      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // first → second
+      fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // first → second (lamellar)
       expect(lam).toHaveAttribute("data-previewed", "true");
       expect(pn3m).not.toHaveAttribute("data-previewed");
-      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // clamp at last
+      fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // clamp at last
       expect(lam).toHaveAttribute("data-previewed", "true");
-      fireEvent.keyDown(document.body, { key: "ArrowLeft" }); // back to first
+      fireEvent.keyDown(getScope(), { key: "ArrowLeft" }); // back to first
       expect(pn3m).toHaveAttribute("data-previewed", "true");
     });
 
@@ -319,7 +342,7 @@ describe("FocusPage", () => {
 
     it("Escape is a ladder: clear the candidate preview first, THEN back to the sheet", () => {
       renderAt(42);
-      fireEvent.keyDown(document.body, { key: "ArrowRight" }); // preview first candidate
+      fireEvent.keyDown(getScope(), { key: "ArrowLeft" }); // clamp-at-first → pn3m explicit
       const pn3m = () => screen.getByRole("button", { name: /Pn3m, in assignment/ });
       expect(pn3m()).toHaveAttribute("data-previewed", "true");
       // first Escape clears the preview, does NOT navigate
@@ -415,7 +438,7 @@ describe("FocusPage", () => {
 
   it("arming '+ Peak' then clicking the trace fires useAddPeak().mutate(q)", () => {
     const { container } = renderAt(42);
-    const addPeakBtn = screen.getByText("+ Peak");
+    const addPeakBtn = screen.getAllByText("+ Peak")[0];
     fireEvent.click(addPeakBtn);
     expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
     // The plot's add path: click empty plot space → interaction.onAddPeak(q).
@@ -509,7 +532,7 @@ describe("FocusPage", () => {
     setAnnounceImpl(announce);
     try {
       const { container } = renderAt(42);
-      fireEvent.click(screen.getByText("+ Peak"));
+      fireEvent.click(screen.getAllByText("+ Peak")[0]);
       const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
       fireEvent.click(svg, { clientX: 300, clientY: 150 });
       expect(announce.mock.calls[0]?.[0]).toBe("Peak added");
@@ -523,7 +546,7 @@ describe("FocusPage", () => {
     setAnnounceImpl(announce);
     try {
       renderAt(42); // default fixture peak id 1 is source:"auto"
-      fireEvent.click(screen.getByText("+ Peak"));
+      fireEvent.click(screen.getAllByText("+ Peak")[0]);
       const mark = screen.getByRole("button", { name: /Auto peak at q = 0\.2000/ });
       fireEvent.keyDown(mark, { key: "Enter" });
       // Auto peaks belong to the indexer — a click disables (excludes) them,
@@ -544,7 +567,7 @@ describe("FocusPage", () => {
     ];
     try {
       renderAt(42);
-      fireEvent.click(screen.getByText("+ Peak"));
+      fireEvent.click(screen.getAllByText("+ Peak")[0]);
       const mark = screen.getByRole("button", { name: /Auto peak at q = 0\.2000 \(excluded\)/ });
       fireEvent.keyDown(mark, { key: "Enter" });
       expect(setPeakExclMutate).toHaveBeenCalledWith({ peakId: 1, excluded: false });
@@ -562,7 +585,7 @@ describe("FocusPage", () => {
     ];
     try {
       renderAt(42);
-      fireEvent.click(screen.getByText("+ Peak"));
+      fireEvent.click(screen.getAllByText("+ Peak")[0]);
       const mark = screen.getByRole("button", { name: /Manual peak at q = 0\.2000/ });
       fireEvent.keyDown(mark, { key: "Enter" });
       expect(removePeakMutate).toHaveBeenCalledWith(5);
@@ -591,7 +614,7 @@ describe("FocusPage", () => {
 
   it("Escape sequence: an open custom-index modal closes first; only the NEXT Escape disarms '+ Peak' (F7)", () => {
     renderAt(42);
-    const addPeakBtn = screen.getByText("+ Peak");
+    const addPeakBtn = screen.getAllByText("+ Peak")[0];
     fireEvent.click(addPeakBtn);
     expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("custom-index-trigger"));

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
+import type React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import type { Load } from "../src/api";
-import { GroupingReviewPage } from "../src/print/components/GroupingReviewPage";
+import { GroupingReviewPage } from "../src/print/pages/GroupingReviewPage";
+import { InteractionDock } from "../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
 
 const LOADS: Load[] = [
   { load_id: 1, load_index: 1, session_id: null, start_time: "10:02", end_time: "10:38", frame_count: 0, note: null,
@@ -18,9 +20,18 @@ vi.mock("../src/queries", async (orig) => {
   return { ...actual, useLoads: () => ({ data: LOADS, isLoading: false }) };
 });
 
-function wrap(node: ReactNode) {
+// TestShell: needed so InteractionDock renders the dockExtra selection-count badge
+// (grouping-selection-count) when selection.length > 0.
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}<InteractionDock /></>;
+}
+
+function wrap(node: React.ReactNode) {
   const qc = new QueryClient();
-  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={qc}><TestShell>{node}</TestShell></QueryClientProvider>,
+  );
 }
 
 describe("GroupingReviewPage filter + persistent selection", () => {
@@ -44,7 +55,7 @@ describe("GroupingReviewPage filter + persistent selection", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /select HA85 \(S01P15\)/i }));
     // search to sample 20's load only -- sample 10 leaves the view
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "S02" } });
-    // the footer selection readout still reflects the 1 retained selection
+    // the dockExtra selection readout still reflects the 1 retained selection
     expect(screen.getByTestId("grouping-selection-count")).toHaveTextContent("1");
   });
 });

@@ -5,7 +5,7 @@ import type { ShortcutId } from "./shortcuts";
 
 /**
  * KbdOverlay — the `?` keyboard shortcut legend modal. Opened by the
- * `helpOverlay` binding in `useGlobalShortcuts`; Esc closes via ModalShell's
+ * `help` shell action (registered in AppRoutes); Esc closes via ModalShell's
  * built-in `closeOnEsc`. Lists the global/navigation keymap drawn directly from
  * the shortcut registry so the displayed keys can never drift from the live
  * bindings.

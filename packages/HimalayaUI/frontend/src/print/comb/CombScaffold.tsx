@@ -127,7 +127,10 @@ export function CombScaffold({ rows, xDomain, focusQRange, maxWidth, ariaLabel, 
           so the affordance is not a cryptic unlabelled scrollbar. */}
       <div
         ref={paneRef}
-        className="overflow-x-auto"
+        // Deliberate tab stop (FO-COMB-SCROLL) → needs a visible focus ring, but
+        // the app's accent (not the UA blue), drawn INSET so the overflow scroller
+        // doesn't clip it.
+        className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2 focus:outline-none"
         style={{ maxWidth: maxW - GUTTER_W }}
         tabIndex={0}
         role="group"

@@ -1,8 +1,8 @@
 // experimentSiblings.ts — single source of truth for "which samples does the
 // focus surface step between". F5: the app shell stepper and the
-// Focus `[`/`]` sample step (FocusPage, via useShortcuts) both consume this
-// derivation, so the two can never disagree (alignment invariant — the same
-// rule as the shared SAMPLE_TABLE_COLS grid constant).
+// Focus sample step (FocusPage, via the page's interaction declaration) both
+// consume this derivation, so the two can never disagree (alignment invariant
+// — the same rule as the shared SAMPLE_TABLE_COLS grid constant).
 import type { CorpusSample } from "../../api";
 
 export interface ExperimentSiblings {

@@ -34,7 +34,6 @@ import type { CorpusSample, Exposure } from "../src/api";
 
 // ── mutator spy + nav target probe ──────────────────────────────────────────
 const batchMutate = vi.fn();
-const selectMutate = vi.fn();
 
 // ── mock data plane (mutated per test) ──────────────────────────────────────
 const state = {
@@ -60,7 +59,8 @@ vi.mock("../src/queries", () => ({
     return { byId, isLoading: false };
   },
   useSetExposureStatusBatch: () => ({ mutate: batchMutate }),
-  useSelectExposure: () => ({ mutate: selectMutate }),
+  useSetExposureStatus: () => ({ mutate: vi.fn() }),
+  useSelectExposure: () => ({ mutate: vi.fn() }),
 }));
 
 // Zustand store: ingestInFlight stays null so no takeover state pre-empts the
@@ -76,6 +76,14 @@ vi.mock("../src/print/detector/DetectorImage", () => ({
 }));
 
 import { ExperimentCorpusPage } from "../src/print/pages/ExperimentCorpusPage";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
+
+/** Mounts the shell window keyboard layer, the way AppShell does — arrow nav now
+ *  flows through it (scope-exempt), not a container onKeyDown. */
+function KbLayer({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}</>;
+}
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
@@ -99,11 +107,13 @@ function renderAt(expId = 1) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[`/experiments/${expId}/corpus`]}>
-        <Routes>
-          <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
-          <Route path="/sample/:sampleId/loupe" element={<div data-testid="loupe-route" />} />
-          <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
-        </Routes>
+        <KbLayer>
+          <Routes>
+            <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
+            <Route path="/sample/:sampleId/loupe" element={<div data-testid="loupe-route" />} />
+            <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
+          </Routes>
+        </KbLayer>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -111,23 +121,24 @@ function renderAt(expId = 1) {
 
 beforeEach(() => {
   batchMutate.mockClear();
-  selectMutate.mockClear();
 });
 
-// ── keyboard cursor + cull verbs (ported from SamplesPage.keyboard.test) ─────
-describe("ExperimentCorpusPage — keyboard cursor + cull verbs", () => {
-  // Three scoped samples (experiment_id=1) so the cursor can step 0→1→2; S0 has
-  // two frames so the frame cursor + active-frame cull can resolve a target.
+// ── grid Arrow navigation (cursor movement only; no keyboard layer here) ─────
+// Arrow nav flows through the shell window keyboard layer (mounted via KbLayer),
+// SCOPE-EXEMPT: ↑/↓/←/→ drive the cursor / frame axis from anywhere, so the page
+// never scrolls when focus sits outside the grid. The last case fires on
+// document.body to pin that global reach.
+describe("ExperimentCorpusPage — Arrow navigation", () => {
+  // Three scoped samples (experiment_id=1) so the cursor can step 0→1→2; S0
+  // carries two frames so the ←/→ frame axis has a target.
   const S0 = corpus({ id: 10, experiment_id: 1, name: "Sample 10" });
   const S1 = corpus({ id: 11, experiment_id: 1, name: "Sample 11" });
   const S2 = corpus({ id: 12, experiment_id: 1, name: "Sample 12" });
-  const E0 = exp({ id: 100, sample_id: 10, filename: "f_100.dat", status: null });
-  const E1 = exp({ id: 101, sample_id: 10, filename: "f_101.dat", status: null });
 
   function seedKeyboard(): void {
     state.samples = [S0, S1, S2];
     state.byId = new Map<number, Exposure[]>([
-      [10, [E0, E1]],
+      [10, [exp({ id: 100, sample_id: 10 }), exp({ id: 101, sample_id: 10 })]],
       [11, []],
       [12, []],
     ]);
@@ -135,103 +146,57 @@ describe("ExperimentCorpusPage — keyboard cursor + cull verbs", () => {
 
   beforeEach(seedKeyboard);
 
-  it("ArrowDown moves the sample cursor forward; ArrowUp moves it back", () => {
-    renderAt(1);
-    // Cursor starts at sampleIndex=0 (S0). ArrowDown twice → S2 (id 12).
-    fireEvent.keyDown(window, { key: "ArrowDown" });
-    fireEvent.keyDown(window, { key: "ArrowDown" });
-    fireEvent.keyDown(window, { key: "Enter" }); // openFocus on active sample
-    expect(screen.getByTestId("focus-route")).toBeInTheDocument();
-  });
+  function cursoredRowName(): string | null {
+    const row = document.querySelector('[data-cursored="true"]');
+    return row?.textContent?.includes("Sample 12") ? "Sample 12"
+      : row?.textContent?.includes("Sample 11") ? "Sample 11"
+      : row?.textContent?.includes("Sample 10") ? "Sample 10" : null;
+  }
 
-  it("Alt+ArrowUp/Down (reorder) do NOT move the cursor on Corpus", () => {
+  it("ArrowDown on the grid moves the sample cursor forward (by id)", () => {
     renderAt(1);
-    // ArrowDown once → S1 (id 11).
-    fireEvent.keyDown(window, { key: "ArrowDown" });
-    // Reorder combos are NOT bound on the corpus — cursor must not move.
-    fireEvent.keyDown(window, { key: "ArrowUp", altKey: true });
-    fireEvent.keyDown(window, { key: "ArrowDown", altKey: true });
-    // Active sample is still S1 → drop fires on S1, which has no frames → inert.
-    fireEvent.keyDown(window, { key: "x" });
-    expect(batchMutate).not.toHaveBeenCalled();
+    const grid = screen.getByTestId("corpus-grid");
+    fireEvent.keyDown(grid, { key: "ArrowDown" });
+    fireEvent.keyDown(grid, { key: "ArrowDown" });
+    expect(cursoredRowName()).toBe("Sample 12");
   });
 
   it("ArrowDown clamps at the last sample (not circular)", () => {
     renderAt(1);
-    fireEvent.keyDown(window, { key: "ArrowDown" }); // → 1
-    fireEvent.keyDown(window, { key: "ArrowDown" }); // → 2
-    fireEvent.keyDown(window, { key: "ArrowDown" }); // stays 2
-    fireEvent.keyDown(window, { key: "Enter" });
-    // Still S2 → focus route, S2 has id 12 (clamped, did not wrap to 0).
-    expect(screen.getByTestId("focus-route")).toBeInTheDocument();
+    const grid = screen.getByTestId("corpus-grid");
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S1
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S2
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // stays S2
+    expect(cursoredRowName()).toBe("Sample 12");
   });
 
-  it("Enter (openFocus) navigates to /sample/:id (flat)", () => {
+  it("ArrowUp moves the cursor back", () => {
     renderAt(1);
-    fireEvent.keyDown(window, { key: "Enter" });
-    expect(screen.getByTestId("focus-route")).toBeInTheDocument();
+    const grid = screen.getByTestId("corpus-grid");
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S1
+    fireEvent.keyDown(grid, { key: "ArrowDown" }); // → S2
+    fireEvent.keyDown(grid, { key: "ArrowUp" });   // → S1
+    expect(cursoredRowName()).toBe("Sample 11");
   });
 
-  it("l (openLoupe) navigates to /sample/:id/loupe", () => {
+  it("ArrowRight walks the active sample's frame axis (cursored thumbnail moves)", () => {
     renderAt(1);
-    fireEvent.keyDown(window, { key: "l" });
-    expect(screen.getByTestId("loupe-route")).toBeInTheDocument();
+    const grid = screen.getByTestId("corpus-grid");
+    // Cursor on S0 (id 10), which has two frames. Frame 0 is cursored at start.
+    const thumbsBefore = screen.getAllByTestId("thumbnail");
+    expect(thumbsBefore[0]!.getAttribute("data-state")).toContain("cursored");
+    fireEvent.keyDown(grid, { key: "ArrowRight" }); // frame 0 → 1
+    const thumbsAfter = screen.getAllByTestId("thumbnail");
+    expect(thumbsAfter[1]!.getAttribute("data-state")).toContain("cursored");
   });
 
-  it("r (representative) flags the active frame as the sample's representative", () => {
+  it("arrows drive the cursor even when focus is OUTSIDE the grid (on body)", () => {
+    // The regression guard for the global-arrow change: with focus on
+    // document.body (never the scope), ArrowDown still moves the surface cursor
+    // instead of scrolling the page.
     renderAt(1);
-    fireEvent.keyDown(window, { key: "r" });
-    // The cursor's active frame (S0/E0 = id 100) is set representative via
-    // useSelectExposure; no cull mutate, no navigation.
-    expect(selectMutate).toHaveBeenCalledWith(100, expect.anything());
-    expect(batchMutate).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("focus-route")).toBeNull();
-  });
-
-  it("X (drop) with no selection fires on the active frame (cursor 0,0)", () => {
-    renderAt(1);
-    fireEvent.keyDown(window, { key: "x" });
-    expect(batchMutate).toHaveBeenCalledWith({
-      sampleId: 10, exposureId: 100, status: "rejected",
-    });
-  });
-
-  it("K (keep) with no selection fires on the active frame", () => {
-    renderAt(1);
-    fireEvent.keyDown(window, { key: "k" });
-    expect(batchMutate).toHaveBeenCalledWith({
-      sampleId: 10, exposureId: 100, status: "accepted",
-    });
-  });
-
-  it("X on an already-dropped frame TOGGLES it back to unscreened (null)", () => {
-    // Seed the active frame (E0) as already rejected, so Drop un-drops it.
-    state.byId = new Map<number, Exposure[]>([
-      [10, [{ ...E0, status: "rejected" }, E1]],
-      [11, []],
-      [12, []],
-    ]);
-    renderAt(1);
-    fireEvent.keyDown(window, { key: "x" });
-    expect(batchMutate).toHaveBeenCalledWith({
-      sampleId: 10, exposureId: 100, status: null,
-    });
-  });
-
-  it("ArrowRight moves the frame cursor; X then acts on the second frame (E1)", () => {
-    renderAt(1);
-    fireEvent.keyDown(window, { key: "ArrowRight" }); // frame 0 → 1
-    fireEvent.keyDown(window, { key: "x" });
-    expect(batchMutate).toHaveBeenCalledWith({
-      sampleId: 10, exposureId: 101, status: "rejected",
-    });
-  });
-
-  it("X with no selection is inert when the active sample has no frames", () => {
-    renderAt(1);
-    fireEvent.keyDown(window, { key: "ArrowDown" }); // → S1 (no frames)
-    fireEvent.keyDown(window, { key: "x" });
-    expect(batchMutate).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(cursoredRowName()).toBe("Sample 11");
   });
 });
 

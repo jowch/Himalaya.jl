@@ -18,13 +18,24 @@ These files live under `src/print/`, so the `lint:design` import-boundary guard 
 
 ## Keyboard shortcut registry
 
-`shortcuts.ts` is the single source of truth for all gesture vocabulary. `useShortcuts(bindings)`, `<KbdLegend group=…>`, and the `aria-keyshortcuts` on matching buttons all derive from the registry, so the live handler, the on-screen legend, and the a11y annotation can't drift apart. Load-bearing conventions:
+`shortcuts.ts` is the **display/legend table only** — it names every gesture (`SHORTCUTS`, `ShortcutId`, `ShortcutDef`) and provides label helpers (`keyComboLabel`, `shortcutLabel`) consumed by `<KbdLegend>` and `<KbdOverlay>`. It is NOT a handler registry; gesture handling lives in the interaction system (`src/print/interaction/`).
 
-- **DECLINE convention.** A `useShortcuts` handler that returns `false` *declines* the key: the event is left un-`preventDefault`ed so the next listener can act (e.g. `TracePlate`'s own Escape-to-disarm). Returning `undefined`/`void` *claims* the key and triggers `preventDefault`. (`useShortcuts.ts`: `if (handler(e) !== false) e.preventDefault()`.)
-- **Two-axis model (rev 2, app-wide — supersedes the 2026-06-13 `[`/`]` lock).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = detail (`prevDetail`/`nextDetail`) — candidate *preview* on Focus, frame on Loupe. On Focus the detail axis drives page-level `previewIndexId`/`previewedCandidate` state, **not** DOM focus, so the keyboard mirrors mouse-hover on the comb/rings. Exposure stepping is **filmstrip-only** — click `ThumbnailGallery`'s `onSelect`, there is no exposure key (`prevExposure`/`nextExposure` were removed from the registry).
-- **`useReorderShortcuts`** resolves the focused row via the `data-reorder-index` attribute on the closest `rowSelector` ancestor, then calls the surface's existing move callback; when focus is not inside a reorderable row it returns `false` (declines), preserving Alt+Arrow's native meaning.
-- **Builder undo/redo is snapshot-based** (structural edits — reorder/add/remove; the title field keeps native browser undo). Its `useShortcuts` call must live in the top hooks block, above every early return, or React throws "rendered fewer hooks."
-- **Scoping undo is a raw keydown effect binding `⌘Z` only — `⌘⇧Z` redo is NOT wired in Scoping** (Builder has both). This cross-surface inconsistency is known and intentional (out of scope for the shortcut-library pass).
+**Interaction model:** Pages declare their cursor and gestures via `usePageActions({ cursor, actions, extraSteppers?, dockExtra?, arrowHandler? })` using `core(id, override)` (fixed cross-page gestures from `CORE` in `core.ts`) or `page(id, def)` (page-specific gestures). Shell-global actions (help `?`, find `/`/`⌘K`) are registered once via `setShellActions()` in `AppRoutes`. A single `useKeyboardLayer()` window listener (mounted in `PrintApp`) dispatches all keyboard events through this guard chain:
+
+1. `defaultPrevented` → skip (a closer handler already consumed the key — incl. arrow-consuming widgets like `SegmentedControl`/listboxes that `preventDefault`)
+2. `isTyping(e.target)` → skip (INPUT/TEXTAREA/SELECT/contenteditable own the event)
+3. **Arrow\* → `arrowHandler(e)` SCOPE-EXEMPT.** Arrow nav drives the active surface globally (arrows are not WCAG-2.1.4 character shortcuts, so they need no focus container — this is what stops the page scrolling when focus sits outside the surface). The page `preventDefault`s the arrows it claims; an unclaimed arrow (e.g. `Alt`/`Shift`+Arrow reorder/jump) falls through to the action loop below.
+4. `matchesKeys(e, a.keys)` → walk registered actions looking for a match
+5. scope-gate → page actions require a `[data-interaction-scope]` or `[data-cursored]` ancestor of the target; shell actions bypass this guard
+6. Enter + `isNativeInteractiveTarget(e)` → skip (button/link/input activates natively)
+7. `enabled()` → if false, return without claiming (no `preventDefault`)
+8. `run(e)` + `e.preventDefault()`
+
+Arrow nav was lifted off the per-page scope-container `onKeyDown` into `arrowHandler` for exactly this reason; the scope container still exists for cold-load focus + the letter-shortcut scope gate. Stray UA focus outlines are killed app-wide by `[tabindex="-1"]:focus { outline: none }` in `styles.css` (programmatic anchors: scope/scroll/menu shells); the `Dock` suppresses focus capture via `onMouseDown preventDefault` so clicking a dock control never strands keyboard focus outside the scope.
+
+`InteractionDock` renders the dock UI directly from the live registry — no separate legend-sync step. `useListCursor` is the cursor primitive: ID-based, roving tabindex, SSE-survival heal.
+
+- **Two-axis model (rev 2, app-wide — supersedes the 2026-06-13 `[`/`]` lock).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = detail (`prevDetail`/`nextDetail`) — candidate *preview* on Focus, frame on Loupe. Exposure stepping is **filmstrip-only** — click `ThumbnailGallery`'s `onSelect`; there is no exposure key.
 
 ## The floatingDock lane protocol
 
