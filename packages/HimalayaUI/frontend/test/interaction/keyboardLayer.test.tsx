@@ -64,4 +64,59 @@ describe("useKeyboardLayer", () => {
     fireEvent.keyDown(input, { key: "z", metaKey: true });
     expect(run).toHaveBeenCalledTimes(1);
   });
+
+  // Regression: Enter on a native interactive target (button, input) must NOT
+  // fire the page's openFocus action — the control owns that Enter natively.
+  it("Enter on a native button target does NOT fire the registered Enter action", () => {
+    const run = vi.fn();
+    useInteraction.getState().setPage(null, [core("openFocus", { run })]);
+    render(
+      <>
+        <Harness />
+        <div data-interaction-scope>
+          <button data-testid="btn">Activate</button>
+        </div>
+      </>
+    );
+    const btn = document.querySelector<HTMLButtonElement>('[data-testid="btn"]')!;
+    btn.focus();
+    fireEvent.keyDown(btn, { key: "Enter" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("Enter on a native input target does NOT fire the registered Enter action", () => {
+    const run = vi.fn();
+    useInteraction.getState().setPage(null, [core("openFocus", { run })]);
+    render(
+      <>
+        <Harness />
+        <div data-interaction-scope>
+          <input data-testid="field" />
+        </div>
+      </>
+    );
+    const input = document.querySelector<HTMLInputElement>('[data-testid="field"]')!;
+    input.focus();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  // Preservation: Enter on a non-native row (div[role="row"]) must STILL fire —
+  // this is the Corpus/Loupe Enter-on-row navigation path.
+  it("Enter on a non-native row element (div[role=row]) DOES fire the registered Enter action", () => {
+    const run = vi.fn();
+    useInteraction.getState().setPage(null, [core("openFocus", { run })]);
+    render(
+      <>
+        <Harness />
+        <div data-interaction-scope>
+          <div role="row" data-testid="row" tabIndex={0}>Sample row</div>
+        </div>
+      </>
+    );
+    const row = document.querySelector<HTMLDivElement>('[data-testid="row"]')!;
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
 });

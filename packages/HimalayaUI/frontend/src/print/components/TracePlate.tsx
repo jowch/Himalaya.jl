@@ -124,7 +124,8 @@ export function TracePlate({
   // The click verb is provenance-split downstream (a manual peak removes, an
   // auto peak toggles off) — TracePlate cannot see a peak's source, so the
   // sentence names both outcomes generically rather than lying about one.
-  // "Esc exits." needs the toggle handler — that is what Escape disarms through.
+  // "Esc exits." is gated on onToggleAddPeak being wired, but Escape itself is
+  // handled by the page's escapeLadder — the page owns Escape-disarm.
   const hintSentences = [
     ...(interaction && interaction.onAddPeak
       ? ["Click the trace to add a peak."]

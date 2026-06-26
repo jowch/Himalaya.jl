@@ -679,6 +679,9 @@ export function FocusPage(): JSX.Element {
     return (
       // Placement-only wrapper: hover → transient hoverPreviewId; click → set
       // cursor + sticky preview (keyboard position follows pointer).
+      // Intentional dual-fire: the wrapper onClick sets the cursor position while
+      // CandidateRow's onClick (onToggle) toggles assignment. CandidateRow must
+      // NOT call e.stopPropagation() — doing so would silently break cursor-setting.
       <div
         key={ix.id}
         onMouseEnter={() => setHoverPreviewId(ix.id)}

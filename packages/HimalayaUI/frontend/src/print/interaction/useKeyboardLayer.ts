@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { Action } from "./types";
 import { useInteraction } from "./registry";
 import { isBareKey, isTyping, matchesKeys } from "./matchKey";
+import { isNativeInteractiveTarget } from "../../lib/keys";
 
 function inPageScope(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return true; // window/body-level keydown
@@ -27,6 +28,10 @@ export function useKeyboardLayer(): void {
         if (!a.keys || !matchesKeys(e, a.keys)) continue;
         // WCAG 2.1.4: bare single-key actions fire only inside the page scope.
         if (isBareKey(e) && !inPageScope(e.target)) continue;
+        // Enter on a native interactive control (button/link/input/select/textarea/
+        // contenteditable) activates THAT control — don't let the page's Enter action
+        // (openFocus/"Apply") hijack it. Space is already covered (it is bare → scope-gated).
+        if (e.key === "Enter" && isNativeInteractiveTarget(e)) continue;
         if (!isEnabled(a)) return; // matched but inert — claim nothing, swallow nothing
         e.preventDefault();
         a.run(e);
