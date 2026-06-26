@@ -14,7 +14,7 @@ export function InteractionDock(): JSX.Element | null {
 
   const back = actions.find((a) => a.id === "back");
   const primary = actions.find((a) => a.dock === "primary");
-  const buttons = actions.filter((a) => a.dock === true && a.id !== "back");
+  const buttons = actions.filter((a) => a.dock === true && a.id !== "back" && (a.mode === undefined || enabledOf(a)));
   const stepper = cursor ? cursor.stepperProps() : null;
 
   return (

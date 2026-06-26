@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { SpecCell } from "./SpecCell";
 import { ThumbnailGallery } from "./ThumbnailGallery";
 import type { GalleryExposure } from "./ThumbnailGallery";
@@ -60,6 +61,16 @@ export interface SampleTableRowProps {
   cursored?: boolean;
   /** PLACEMENT-ONLY. Appended last to the root. */
   className?: string;
+  // Roving-cursor DOM props — spread from cursor.rowProps(id) after destructuring ref.
+  // SheetTable/SampleFold pass none of these → unchanged behavior.
+  tabIndex?: 0 | -1;
+  /** Root-level click for cursor parking (from rowProps). */
+  onClick?: (e: import("react").MouseEvent<HTMLElement>) => void;
+  onDoubleClick?: (e: import("react").MouseEvent<HTMLElement>) => void;
+  onKeyDown?: (e: import("react").KeyboardEvent<HTMLElement>) => void;
+  "aria-current"?: "true" | undefined;
+  "data-cursored"?: "true" | "false";
+  role?: "row";
 }
 
 /** The 5-column grid track shared by every row AND the table header — keeping
@@ -112,7 +123,7 @@ const CELL = "flex items-center px-3 h-[92px] min-w-0";
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a
  *  fixed 5-column grid. Unscreened rows carry a faint resting tint; screened rows
  *  sit transparent over the table plate. */
-export function SampleTableRow({
+export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(function SampleTableRow({
   name,
   sampleId,
   screened = false,
@@ -138,8 +149,15 @@ export function SampleTableRow({
   indeterminate,
   onCheck,
   cursored = false,
+  tabIndex,
+  onClick,
+  onDoubleClick,
+  onKeyDown,
+  "aria-current": ariaCurrent,
+  "data-cursored": dataCursored,
+  role: roleProp,
   className,
-}: SampleTableRowProps): JSX.Element {
+}: SampleTableRowProps, ref): JSX.Element {
   const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
   // Cursor cue (item 4): the roving ↑/↓ row reads as one opaque yellowish band
@@ -169,10 +187,16 @@ export function SampleTableRow({
 
   return (
     <div
+      ref={ref}
       data-testid="sample-table-row"
-      role="row"
+      role={roleProp ?? "row"}
       data-screened={screened ? "true" : "false"}
-      data-cursored={cursored ? "true" : "false"}
+      data-cursored={dataCursored ?? (cursored ? "true" : "false")}
+      {...(tabIndex !== undefined ? { tabIndex } : {})}
+      {...(onClick ? { onClick } : {})}
+      {...(onDoubleClick ? { onDoubleClick } : {})}
+      {...(onKeyDown ? { onKeyDown } : {})}
+      {...(ariaCurrent !== undefined ? { "aria-current": ariaCurrent } : {})}
       className={`group/row scroll-mb-14 border-b border-hair${rowBg}${className ? ` ${className}` : ""}`}
     >
       <div
@@ -256,4 +280,4 @@ export function SampleTableRow({
       </div>
     </div>
   );
-}
+});

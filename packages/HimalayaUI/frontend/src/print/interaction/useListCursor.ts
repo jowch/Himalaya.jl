@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ListCursor, RowProps, CursorStepperProps } from "./types";
 import { safeScrollIntoView } from "../../lib/safeScrollIntoView";
 
@@ -93,6 +94,12 @@ export function useListCursor(opts: Opts): ListCursor {
       role: "row",
       "aria-current": id === cursorId ? "true" : undefined,
       "data-cursored": id === cursorId ? "true" : "false",
+      onKeyDown: (e: ReactKeyboardEvent<HTMLElement>) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onActivate?.(id);
+        }
+      },
     }),
     [cursorId, onActivate],
   );
