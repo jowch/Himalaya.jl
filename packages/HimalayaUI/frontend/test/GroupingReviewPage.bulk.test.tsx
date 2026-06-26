@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type React from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import type { Load } from "../src/api";
-import { GroupingReviewPage } from "../src/print/components/GroupingReviewPage";
+import { GroupingReviewPage } from "../src/print/pages/GroupingReviewPage";
+import { InteractionDock } from "../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
 
 const mergeMutate = vi.fn();
 const LOADS: Load[] = [
@@ -26,7 +28,19 @@ vi.mock("../src/queries", async (orig) => {
     useDismissGroupingFlag: (_experimentId: number) => ({ mutate: vi.fn() }),
   };
 });
-const wrap = (n: ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{n}</QueryClientProvider>);
+
+// TestShell: needed so InteractionDock renders the dock-action-merge button.
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return <>{children}<InteractionDock /></>;
+}
+
+const wrap = (n: React.ReactNode) => render(
+  <QueryClientProvider client={new QueryClient()}>
+    <TestShell>{n}</TestShell>
+  </QueryClientProvider>,
+);
+
 beforeEach(() => mergeMutate.mockClear());
 
 describe("bulk merge", () => {
@@ -36,10 +50,10 @@ describe("bulk merge", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: /select A/i }));   // survivor
     fireEvent.click(screen.getByRole("checkbox", { name: /select B/i }));
     fireEvent.click(screen.getByRole("checkbox", { name: /select C/i }));
-    // Footer action-bar Merge (item 2). Scope the modal-confirm click to the
-    // bulk-merge-confirm dialog so it doesn't collide with the footer's own
-    // "Merge", which stays mounted while the modal is open.
-    fireEvent.click(screen.getByTestId("grouping-merge"));
+    // Footer action-bar Merge (now rendered by InteractionDock as dock-action-merge).
+    // Scope the modal-confirm click to the bulk-merge-confirm dialog so it doesn't
+    // collide with the footer's own "Merge", which stays mounted while the modal is open.
+    fireEvent.click(screen.getByTestId("dock-action-merge"));
     fireEvent.click(
       within(screen.getByTestId("bulk-merge-confirm")).getByRole("button", { name: /^merge$/i }),
     );

@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { Load } from "../src/api";
-import { GroupingReviewPage } from "../src/print/components/GroupingReviewPage";
+import { GroupingReviewPage } from "../src/print/pages/GroupingReviewPage";
 
 // Regression: agbe (2 exposures) had a 1-BASED split_at_index of 2; the page
 // treated it as 0-based and sliced exposures.slice(2) === [] → the backend

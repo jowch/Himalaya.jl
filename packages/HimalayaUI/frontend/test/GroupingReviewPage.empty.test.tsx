@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { Load } from "../src/api";
-import { GroupingReviewPage } from "../src/print/components/GroupingReviewPage";
+import { GroupingReviewPage } from "../src/print/pages/GroupingReviewPage";
 
 // Mutable so each test can pose a different empty case. Regression for the
 // real-data sweep finding #5: all three empty cases used to collapse to the

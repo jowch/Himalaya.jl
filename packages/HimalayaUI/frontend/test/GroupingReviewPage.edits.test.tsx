@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { Load } from "../src/api";
-import { GroupingReviewPage } from "../src/print/components/GroupingReviewPage";
+import { GroupingReviewPage } from "../src/print/pages/GroupingReviewPage";
 
 const mergeMutate = vi.fn();
 const renameMutate = vi.fn();

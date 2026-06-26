@@ -13,7 +13,7 @@ import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
 import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
 import { ConfigurationPage } from "../pages/ConfigurationPage";
-import { GroupingReviewPage } from "../components/GroupingReviewPage";
+import { GroupingReviewPage } from "../pages/GroupingReviewPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
