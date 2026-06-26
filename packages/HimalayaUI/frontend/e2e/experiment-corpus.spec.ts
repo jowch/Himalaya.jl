@@ -147,8 +147,10 @@ test("experiment corpus shows the scoped sheet when complete with no flags", asy
   await page.goto("/experiments/7/corpus");
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByRole("row")).toHaveCount(3); // header + 2
-  // No banner when there are no grouping flags.
-  await expect(page.getByTestId("grouping-review-banner")).toHaveCount(0);
+  // The grouping-review banner now renders unconditionally when loads are
+  // known; with no flags it shows data-state="clear" ("Grouping looks settled.").
+  await expect(page.getByTestId("grouping-review-banner")).toHaveAttribute("data-state", "clear");
+  await expect(page.getByTestId("grouping-review-banner")).toContainText("Grouping looks settled");
 });
 
 test("experiment corpus shows review banner when loads have flagged samples", async ({ page }) => {
