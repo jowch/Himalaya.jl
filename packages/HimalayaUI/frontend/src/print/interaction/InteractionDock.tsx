@@ -26,7 +26,13 @@ export function InteractionDock(): JSX.Element | null {
 
   return (
     <Dock>
-      {back && <DockUpLink label={back.label} onClick={() => back.run()} />}
+      {back && (
+        <DockUpLink
+          label={back.label}
+          onClick={() => back.run()}
+          {...(back.keys?.[0] ? { kbd: back.keys[0] === "Escape" ? "esc" : back.keys[0] } : {})}
+        />
+      )}
 
       {/* Extra steppers (e.g. sample axis) render BEFORE the cursor stepper. */}
       {extraSteppers.map((s) => (
