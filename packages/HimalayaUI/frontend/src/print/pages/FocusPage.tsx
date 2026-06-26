@@ -13,10 +13,7 @@ import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText, EmptyState, Button, KbKey } from "../ui";
-import { Dock } from "../ui/Dock";
-import { DockStepper } from "../ui/DockStepper";
-import { DockUpLink } from "../ui/DockUpLink";
+import { HintText, EmptyState, Button } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
@@ -56,13 +53,15 @@ import { useSyncActiveSampleFromRoute } from "../../hooks/useSyncActiveSampleFro
 import { useAutoPickExposure, noUsableExposureState, resolveActiveExposure } from "../../hooks/useAutoPickExposure";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { useExperimentSiblings } from "../../hooks/useExperimentSiblings";
-import { useShortcuts } from "../shell/useShortcuts";
+import { useListCursor } from "../interaction/useListCursor";
+import { useStepperOnly } from "../interaction/useStepperOnly";
+import { usePageActions } from "../interaction/usePageActions";
+import { core, page } from "../interaction/core";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { sanitizeDashes } from "../../lib/copy";
 import { basisFor } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
-import { isNativeInteractiveTarget } from "../../lib/keys";
 import { showToast } from "../../lib/toast";
 import type { Trace, IndexEntry } from "../../api";
 
@@ -198,9 +197,8 @@ export function FocusPage(): JSX.Element {
   // switches; render reads the derived value so it never lags the store.
   const activeExposureId = resolveActiveExposure(storedExposureId, exposuresQ.data);
 
-  // Inter-sample order (the SAME derivation the topbar stepper uses) so the
-  // `[`/`]` shortcuts and the stepper always agree.
-  const { prev: prevSibling, next: nextSibling, index: siblingIndex, siblings } = useExperimentSiblings();
+  // Inter-sample order: siblings drives the URL-driven sampleStepper.
+  const { siblings } = useExperimentSiblings();
 
   const traceQ = useTrace(activeExposureId);
   const peaksQ = usePeaks(activeExposureId);
@@ -222,7 +220,11 @@ export function FocusPage(): JSX.Element {
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
   const [hoveredQ, setHoveredQ] = useState<number | undefined>(undefined);
   const [combView, setCombView] = useState<CombView>("comb");
-  const [previewIndexId, setPreviewIndexId] = useState<number | undefined>(undefined);
+  // preview-vs-cursor split (resolutions §"preview-vs-cursor reconciliation"):
+  // previewWasExplicit = user keyboard-navigated/clicked a candidate (sticky).
+  // hoverPreviewId = transient mouse hover. previewIndexId is DERIVED below.
+  const [previewWasExplicit, setPreviewWasExplicit] = useState(false);
+  const [hoverPreviewId, setHoverPreviewId] = useState<number | undefined>(undefined);
 
   // FO-NAV-STATE: FocusPage is NOT remounted on a same-route [ / ] sample step
   // (React Router reuses the routed element for the new :sampleId), so
@@ -237,7 +239,8 @@ export function FocusPage(): JSX.Element {
   useEffect(() => {
     setAddArmed(false);
     setXDomain(null);
-    setPreviewIndexId(undefined);
+    setPreviewWasExplicit(false);
+    setHoverPreviewId(undefined);
   }, [activeSampleId]);
 
   // ── keyboard focus re-anchor after a destructive peak edit (WCAG 2.4.3) ──────
@@ -268,9 +271,9 @@ export function FocusPage(): JSX.Element {
   const assignment = assignmentQ.data;
   const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
   const activeExposure = exposures.find((e) => e.id === activeExposureId);
-  // The arrow-cursor list for the ↑/↓ candidate preview (speculatives excluded —
-  // they are the custom-index outputs, toggled not previewed). Defined here (above
-  // the not-found early return) so the keyboard handler can close over it.
+  // The candidate cursor list (speculatives excluded — they are the custom-index
+  // outputs, toggled not previewed). Defined here (above the not-found early
+  // return) so hooks that follow can close over it.
   const candidatePool = indices.filter((i) => i.kind !== "speculative");
 
   const activeIndices = useMemo(
@@ -281,6 +284,114 @@ export function FocusPage(): JSX.Element {
     () => new Set(activeIndices.map((ix) => ix.id)),
     [activeIndices],
   );
+
+  // ── candidate cursor (headless — no roving rows; focus lives on scope) ───────
+  const candidatePoolIds = useMemo(
+    () => candidatePool.map((i) => i.id),
+    [candidatePool],
+  );
+  const toggleAssignmentForId = useCallback(
+    (id: number) => {
+      const ix = indices.find((i) => i.id === id);
+      if (!ix) return;
+      if (memberIds.has(ix.id)) {
+        removeAssignmentPhase.mutate(ix.id);
+        announce(`${ix.phase} removed from the call`);
+      } else {
+        addAssignmentPhase.mutate(ix.id);
+        announce(`${ix.phase} added to the call`);
+      }
+    },
+    [indices, memberIds, removeAssignmentPhase, addAssignmentPhase],
+  );
+  const candidateCursor = useListCursor({
+    ids: candidatePoolIds,
+    onActivate: toggleAssignmentForId,
+    stepperLabel: "Candidate",
+    stepperTestIdBase: "candidate",
+    axis: "horizontal",
+  });
+
+  // Derived preview: hover wins (transient), else the sticky keyboard preview,
+  // else nothing. Existing readers of previewIndexId keep working unchanged.
+  const previewIndexId: number | undefined =
+    hoverPreviewId ?? (previewWasExplicit ? (candidateCursor.cursorId ?? undefined) : undefined);
+
+  // ── sample stepper (URL-driven, extra) ───────────────────────────────────────
+  const sampleStepper = useStepperOnly({
+    ids: siblings.map((s) => s.id),
+    currentId: activeSampleId,
+    onGo: (id) => navigate(`/sample/${id}`),
+    label: "Sample",
+    testIdBase: "sample",
+    axis: "vertical",
+  });
+
+  // ── scope container (focus anchor) ──────────────────────────────────────────
+  // scopeEl: imperative .focus() in escapeLadder (WCAG 2.4.3 re-anchor).
+  // scopeRef: callback ref — auto-focuses on sample change, like Loupe.
+  const scopeEl = useRef<HTMLDivElement | null>(null);
+  const focusedSampleRef = useRef<number | null>(null);
+  const scopeRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      scopeEl.current = el;
+      if (el && focusedSampleRef.current !== activeSampleId) {
+        focusedSampleRef.current = activeSampleId ?? null;
+        el.focus({ preventScroll: true });
+      }
+    },
+    [activeSampleId],
+  );
+
+  // ── action declaration ───────────────────────────────────────────────────────
+  const fromSeries = searchParams.get("from") === "series";
+  const backLabel = fromSeries ? "Series" : "Corpus";
+  const goBack = useCallback(() => {
+    navigate(fromSeries ? "/series" : `/experiments/${experimentId}/corpus`);
+  }, [navigate, fromSeries, experimentId]);
+
+  // Escape ladder (innermost first): disarm addPeak → clear sticky preview → leave.
+  const escapeLadder = useCallback(() => {
+    if (addArmed) {
+      setAddArmed(false);
+      scopeEl.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (previewWasExplicit) {
+      setPreviewWasExplicit(false);
+      return;
+    }
+    goBack();
+  }, [addArmed, previewWasExplicit, goBack]);
+
+  usePageActions({
+    cursor: candidateCursor,
+    extraSteppers: [sampleStepper],
+    actions: [
+      core("back", { label: backLabel, run: escapeLadder, dock: true }),
+      core("openFocus", {
+        label: "Apply",
+        run: () => candidateCursor.activate(),
+        dock: "primary",
+        enabled: () => candidateCursor.cursorId !== null && previewWasExplicit,
+      }),
+      core("openLoupe", {
+        run: () => {
+          if (activeSampleId !== undefined)
+            navigate(`/sample/${activeSampleId}/loupe`);
+        },
+        dock: true,
+        enabled: () => activeSampleId !== undefined,
+      }),
+      page("addPeak", {
+        label: "+ Peak",
+        keys: ["p"],
+        group: "Edit",
+        dock: true,
+        run: () => setAddArmed((v) => !v),
+      }),
+    ],
+  });
 
   // Primary assigned phase: the first active index when the assignment is
   // `indexed` (mirrors the legacy trace-colour derivation, which reads the
@@ -474,72 +585,6 @@ export function FocusPage(): JSX.Element {
   );
   const fx = useFigureExport(renderSvg, filenameStem, "trace plot");
 
-  // ── keyboard: the Focus two-axis model (shared shortcut library) ──────────────
-  //   [ ]  = step the SAMPLE      (useExperimentSiblings — agrees with the stepper)
-  //   ← →  = step the EXPOSURE     (detector panel)
-  //   ↑ ↓  = move the previewed CANDIDATE (the keyboard equivalent of mouse-hover;
-  //          lights that candidate's comb via previewIndexId, no commit)
-  //   Esc  = ladder: clear the candidate preview first, else back to the sheet
-  // Clamp (no wrap) mirrors the sample stepper. suppressGlobalKeys (inputs, open
-  // popovers/modals) is honored by useShortcuts.
-  const stepInList = <T,>(list: T[], curIdx: number, dir: 1 | -1): T | undefined => {
-    if (list.length === 0) return undefined;
-    const next = curIdx === -1 ? (dir === 1 ? 0 : list.length - 1) : curIdx + dir;
-    return list[Math.max(0, Math.min(list.length - 1, next))];
-  };
-  useShortcuts({
-    prevSample: () => prevSibling && navigate(`/sample/${prevSibling.id}`),
-    nextSample: () => nextSibling && navigate(`/sample/${nextSibling.id}`),
-    // P = toggle add-peak mode — the SAME state the TracePlate "+ Peak" arm
-    // toggles (page-interpreted Edit verb, not in the overlay).
-    addPeak: () => setAddArmed((v) => !v),
-    // Enter (openFocus) is page-interpreted on Focus as "apply the focused
-    // candidate" (§8: one semantic id per physical key, the page interprets
-    // it). The focused candidate is the ↑/↓-previewed index (previewIndexId);
-    // applying it toggles its membership in the assignment, mirroring the
-    // CandidateRow click. Decline when nothing is focused (no preview) or the
-    // event lands on a native interactive control (§8 invariant (b)).
-    openFocus: (e) => {
-      if (isNativeInteractiveTarget(e)) return false;
-      if (previewIndexId === undefined) return false;
-      const ix = indices.find((i) => i.id === previewIndexId);
-      if (!ix) return false;
-      if (memberIds.has(ix.id)) {
-        removeAssignmentPhase.mutate(ix.id);
-        announce(`${ix.phase} removed from the call`);
-      } else {
-        addAssignmentPhase.mutate(ix.id);
-        announce(`${ix.phase} added to the call`);
-      }
-      return undefined;
-    },
-    // ←/→ = candidate detail axis (renamed from prevCandidate/nextCandidate in T2.5;
-    // exposure stepping now relies on the ThumbnailGallery onSelect filmstrip only).
-    prevDetail: () => {
-      const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), -1);
-      if (c) setPreviewIndexId(c.id);
-    },
-    nextDetail: () => {
-      const c = stepInList(candidatePool, candidatePool.findIndex((x) => x.id === previewIndexId), 1);
-      if (c) setPreviewIndexId(c.id);
-    },
-    openLoupe: () => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`),
-    dismiss: () => {
-      // Esc ladder (innermost first). An open modal/popover is already handled
-      // upstream (suppressGlobalKeys). Next rung is the armed "+ Peak" mode,
-      // which TracePlate's own Escape handler disarms — defer to it so a single
-      // Escape doesn't both disarm AND navigate away. Then clear a candidate
-      // preview; only a "nothing left to dismiss" Escape backs out to the sheet.
-      // Return false when armed so the un-prevented Escape reaches TracePlate's
-      // disarm handler (which also re-anchors focus per WCAG 2.4.3).
-      if (addArmed) return false;
-      if (previewIndexId !== undefined) setPreviewIndexId(undefined);
-      else if (searchParams.get("from") === "series") { navigate("/series"); }
-      else navigate(`/experiments/${experimentId}/corpus`);
-      return undefined;
-    },
-  });
-
   // ── early states ─────────────────────────────────────────────────────────────
   if (routeStatus === "unknown" || (!corpusQ.isLoading && !corpusSample)) {
     return (
@@ -632,13 +677,13 @@ export function FocusPage(): JSX.Element {
   function candidateRow(ix: IndexEntry): JSX.Element {
     const selected = memberIds.has(ix.id);
     return (
-      // Placement-only wrapper so the candidate-hover preview (losing-peak dim)
-      // can hang off mouseEnter/leave — CandidateRow itself is a presentational
-      // primitive with no hover hook.
+      // Placement-only wrapper: hover → transient hoverPreviewId; click → set
+      // cursor + sticky preview (keyboard position follows pointer).
       <div
         key={ix.id}
-        onMouseEnter={() => setPreviewIndexId(ix.id)}
-        onMouseLeave={() => setPreviewIndexId(undefined)}
+        onMouseEnter={() => setHoverPreviewId(ix.id)}
+        onMouseLeave={() => setHoverPreviewId(undefined)}
+        onClick={() => { candidateCursor.setCursor(ix.id); setPreviewWasExplicit(true); }}
       >
         <CandidateRow
           phase={ix.phase}
@@ -750,8 +795,17 @@ export function FocusPage(): JSX.Element {
         }
       >
         <div
+          ref={scopeRef}
+          tabIndex={-1}
+          data-interaction-scope
           data-testid="focus-workspace"
           className={FOCUS_PAGE_GRID}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") { e.preventDefault(); candidateCursor.moveBy(-1); setPreviewWasExplicit(true); }
+            else if (e.key === "ArrowRight") { e.preventDefault(); candidateCursor.moveBy(1); setPreviewWasExplicit(true); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); sampleStepper.onPrev(); }
+            else if (e.key === "ArrowDown") { e.preventDefault(); sampleStepper.onNext(); }
+          }}
         >
           {/* work column — full-bleed; inner content capped at 1180px (mockup .work / .work-inner) */}
           <div className="min-w-0 px-8 pt-7 pb-13">
@@ -878,54 +932,6 @@ export function FocusPage(): JSX.Element {
       </Skeleton>
 
       {modals}
-
-      {/* ── Contextual bottom dock (Focus grammar §3.3) ──────────────────────────
-          ‹ Corpus|Series · Sample↑↓ · Loupe
-          Up-link reads the `from=series` marker (T3.2) to choose between
-          ‹ Series and ‹ Corpus. Each verb calls the SAME callback the keyboard
-          shortcut uses — no divergence between key and button. */}
-      <Dock>
-        {/* Up-link: Series when from=series, else Corpus */}
-        {searchParams.get("from") === "series" ? (
-          <DockUpLink label="Series" onClick={() => navigate("/series")} className="mr-1" />
-        ) : (
-          <DockUpLink
-            label="Corpus"
-            onClick={() => navigate(`/experiments/${experimentId}/corpus`)}
-            className="mr-1"
-          />
-        )}
-
-        <span className="w-px self-stretch bg-hair mx-1" aria-hidden />
-
-        {/* Sample stepper — labeled ↑/↓ axis + current / total readout (§7) */}
-        <DockStepper
-          label="Sample"
-          axis="vertical"
-          testIdBase="sample"
-          prevDisabled={prevSibling === undefined}
-          onPrev={() => prevSibling && navigate(`/sample/${prevSibling.id}`)}
-          nextDisabled={nextSibling === undefined}
-          onNext={() => nextSibling && navigate(`/sample/${nextSibling.id}`)}
-          count={
-            siblingIndex >= 0 && siblings.length > 0
-              ? `${siblingIndex + 1} / ${siblings.length}`
-              : undefined
-          }
-        />
-
-        {/* Spacer — right-anchors the destination (§7) */}
-        <div className="flex-1" />
-
-        {/* Loupe destination — quiet neutral (on Focus the indexing IS the work) */}
-        <Button
-          variant="ghost"
-          onClick={() => activeSampleId !== undefined && navigate(`/sample/${activeSampleId}/loupe`)}
-          data-testid="dock-loupe"
-        >
-          Loupe<KbKey className="ml-1.5">L</KbKey>
-        </Button>
-      </Dock>
     </>
   );
 }

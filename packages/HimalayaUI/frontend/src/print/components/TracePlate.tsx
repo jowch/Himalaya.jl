@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import { Card, Button, SegmentedControl, Tooltip } from "../ui";
 import { PlateHeader } from "./PlateHeader";
 import { ToolBar } from "./ToolBar";
@@ -116,39 +116,6 @@ export function TracePlate({
   const onFocusFallback = useCallback(() => {
     addPeakButtonRef.current?.focus();
   }, []);
-
-  // ── F7: Escape disarms the armed mode (the keyboard exit) ──────────────────
-  // Precedence: an OPEN MODAL DIALOG wins — ModalShell owns Escape-to-close
-  // and stamps preventDefault on the press it consumes, so the closing press
-  // arrives here already-defaultPrevented; only a later Escape disarms. The
-  // defaultPrevented check is the load-bearing one: in a real browser a
-  // microtask checkpoint runs between the document-level close listener and
-  // this window-level one, so React has already unmounted the dialog by the
-  // time this fires — DOM presence alone misses the closing press (jsdom's
-  // synchronous dispatch hides this). The DOM check stays for open dialogs
-  // that keep Escape inert (closeOnEsc=false, parent-owned Escape). The
-  // suppressGlobalKeys is deliberately NOT used here: it suppresses ALL
-  // typing contexts, which would make Escape inert exactly where the armed
-  // mode parks the focus.
-  useEffect(() => {
-    if (!addPeakArmed || !onToggleAddPeak) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
-      if (e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"][aria-modal="true"]') !== null) return;
-      // WCAG 2.4.3 (FO-FOCUSRETURN): disarming strips every peak mark's
-      // tabIndex/role, so an Escape exit while a peak mark holds focus would
-      // drop focus to <body>. Re-anchor to the "+ Peak" button — the keyboard
-      // user's stable handle — in that case. Focus already on the toolbar
-      // button, or off the plate, is left alone (no yank).
-      const ae = document.activeElement;
-      const onVanishingControl = ae?.closest('[data-role="plot-peaks"]') != null;
-      onToggleAddPeak();
-      if (onVanishingControl) addPeakButtonRef.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [addPeakArmed, onToggleAddPeak]);
 
   // The hint promises only the verbs that are actually wired: with no
   // onAddPeak the add sentence would be false, and with no onClickPeak the

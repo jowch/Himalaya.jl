@@ -2,6 +2,7 @@
 // T3.2: Focus Esc dismiss — returns to /series when from=series, else to
 // /experiments/:expId/corpus
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type React from "react";
 import { render, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Trace } from "../src/api";
@@ -84,6 +85,20 @@ vi.mock("../src/print/components/CombsPanel", () => ({
 }));
 
 import { FocusPage } from "../src/print/pages/FocusPage";
+import { InteractionDock } from "../src/print/interaction/InteractionDock";
+import { useKeyboardLayer } from "../src/print/interaction/useKeyboardLayer";
+import { useInteraction } from "../src/print/interaction/registry";
+
+// ── shell (keyboard layer + dock, mirrors TestShell in other Focus tests) ─────
+function TestShell({ children }: { children: React.ReactNode }): JSX.Element {
+  useKeyboardLayer();
+  return (
+    <>
+      {children}
+      <InteractionDock />
+    </>
+  );
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function mkSample(id: number, experiment_id: number): CorpusSample {
@@ -104,7 +119,7 @@ function renderFocus(route: string) {
   return render(
     <MemoryRouter initialEntries={[route]}>
       <Routes>
-        <Route path="/sample/:sampleId" element={<FocusPage />} />
+        <Route path="/sample/:sampleId" element={<TestShell><FocusPage /></TestShell>} />
         <Route path="/series" element={<div data-testid="series-page">series</div>} />
         <Route path="/experiments/:id/corpus" element={<div data-testid="corpus-page">corpus</div>} />
       </Routes>
@@ -122,6 +137,7 @@ beforeEach(() => {
   state.assignment = undefined;
   state.trace = { q: [0.1, 0.2], I: [10, 20], sigma: [1, 1] };
   navigate.mockClear();
+  useInteraction.getState().clearPage();
 });
 
 // ── T3.2 dismiss return target ────────────────────────────────────────────────
