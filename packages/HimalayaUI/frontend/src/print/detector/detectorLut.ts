@@ -100,3 +100,26 @@ export function buildPrintDetectorLut(variant: DetectorLutVariant = "neutral"): 
   cache[variant] = lut;
   return lut;
 }
+
+/**
+ * The same 256-entry LUT expressed as SVG `<feFunc* type="table">` ramps — three
+ * space-separated 0..1 strings (R, G, B). Lets the browser apply the colormap as
+ * a GPU `<feComponentTransfer>` filter on the grayscale PNG instead of a
+ * per-pixel JS loop + canvas readback. Derived from `buildPrintDetectorLut`, so
+ * the filter and the (retired) loop share one colour source — no drift.
+ *
+ * Input is grayscale (R=G=B=t), so each output channel is just its table indexed
+ * by t — exactly `lut[t]`.
+ */
+export function detectorLutTableValues(
+  variant: DetectorLutVariant = "neutral",
+): { r: string; g: string; b: string } {
+  const lut = buildPrintDetectorLut(variant);
+  const r: string[] = [], g: string[] = [], b: string[] = [];
+  for (let i = 0; i < 256; i++) {
+    r.push((lut[i * 3] / 255).toFixed(4));
+    g.push((lut[i * 3 + 1] / 255).toFixed(4));
+    b.push((lut[i * 3 + 2] / 255).toFixed(4));
+  }
+  return { r: r.join(" "), g: g.join(" "), b: b.join(" ") };
+}
