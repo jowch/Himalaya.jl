@@ -3,7 +3,7 @@ import { useState } from "react";
 import { SheetTable } from "./SheetTable";
 import { SampleTableRow } from "./SampleTableRow";
 import type { GalleryExposure } from "./ThumbnailGallery";
-import { Kicker, ProgressBar } from "../ui";
+import { Kicker } from "../ui";
 import type { Tag } from "../ui";
 import thumb37 from "../fixtures/thumbs/37.png?url";
 import thumb65 from "../fixtures/thumbs/65.png?url";
@@ -14,22 +14,20 @@ import thumb93 from "../fixtures/thumbs/93.png?url";
 /**
  * Page simulation (NOT a component): assembles `SheetTable` + `SampleTableRow`
  * children + `CullBar` into the contact-sheet view as the mockup lays it out —
- * a flat sample list with batch-cull selection, a screened-progress bar in the
- * page head, and a floating dark CullBar that appears on first selection.
+ * a flat sample list with batch-cull selection and a floating dark CullBar that
+ * appears on first selection.
  *
  * The Layer-4 contact-sheet page (plate shell, nav, back button) is deferred;
- * this story owns the cross-component state (selected exposure ids, screened
- * count) that the page will own.
+ * this story owns the cross-component state (selected exposure ids) that the
+ * page will own.
  */
 
 interface SampleDatum {
   sampleId: string;
   name: string;
-  screened: boolean;
   phase: string | null;
   kept: number;
   total: number;
-  dropped?: number;
   exposures: GalleryExposure[];
   tags: Tag[];
 }
@@ -44,42 +42,37 @@ const SAMPLES: SampleDatum[] = [
   {
     sampleId: "s-001",
     name: "POPC + 20% cholesterol",
-    screened: true,
     phase: "Pn3m",
     kept: 4,
     total: 5,
-    dropped: 1,
     exposures: [
-      { id: 101, src: thumb37, frameNo: "37", representative: true, kept: true },
-      { id: 102, src: thumb65, frameNo: "65", kept: true },
+      { id: 101, src: thumb37, frameNo: "37", representative: true },
+      { id: 102, src: thumb65, frameNo: "65" },
       { id: 103, src: thumb66, frameNo: "66", rejected: true },
-      { id: 104, src: thumb67, frameNo: "67", kept: true },
-      { id: 105, src: thumb93, frameNo: "93", kept: true },
+      { id: 104, src: thumb67, frameNo: "67" },
+      { id: 105, src: thumb93, frameNo: "93" },
     ],
     tags: TAGS_A,
   },
   {
     sampleId: "s-002",
     name: "POPC + 40% cholesterol",
-    screened: true,
     phase: "Im3m",
     kept: 3,
     total: 3,
     exposures: [
-      { id: 201, src: thumb65, frameNo: "65", representative: true, kept: true },
-      { id: 202, src: thumb66, frameNo: "66", kept: true },
-      { id: 203, src: thumb67, frameNo: "67", kept: true },
+      { id: 201, src: thumb65, frameNo: "65", representative: true },
+      { id: 202, src: thumb66, frameNo: "66" },
+      { id: 203, src: thumb67, frameNo: "67" },
     ],
     tags: TAGS_B,
   },
   {
     sampleId: "s-003",
-    name: "MO + buffer (unscreened)",
-    screened: false,
+    name: "MO + buffer",
     phase: null,
-    kept: 0,
+    kept: 4,
     total: 4,
-    dropped: 0,
     exposures: [
       { id: 301, src: thumb93, frameNo: "93" },
       { id: 302, src: thumb37, frameNo: "37" },
@@ -91,9 +84,8 @@ const SAMPLES: SampleDatum[] = [
   {
     sampleId: "s-004",
     name: "DPPE monolayer",
-    screened: false,
     phase: null,
-    kept: 0,
+    kept: 2,
     total: 2,
     exposures: [
       { id: 401, src: thumb65, frameNo: "65" },
@@ -104,16 +96,15 @@ const SAMPLES: SampleDatum[] = [
   {
     sampleId: "s-005",
     name: "Ia3d reference",
-    screened: true,
     phase: "Ia3d",
     kept: 5,
     total: 5,
     exposures: [
-      { id: 501, src: thumb37, frameNo: "37", representative: true, kept: true },
-      { id: 502, src: thumb65, frameNo: "65", kept: true },
-      { id: 503, src: thumb66, frameNo: "66", kept: true },
-      { id: 504, src: thumb67, frameNo: "67", kept: true },
-      { id: 505, src: thumb93, frameNo: "93", kept: true },
+      { id: 501, src: thumb37, frameNo: "37", representative: true },
+      { id: 502, src: thumb65, frameNo: "65" },
+      { id: 503, src: thumb66, frameNo: "66" },
+      { id: 504, src: thumb67, frameNo: "67" },
+      { id: 505, src: thumb93, frameNo: "93" },
     ],
     tags: TAGS_E,
   },
@@ -122,8 +113,6 @@ const SAMPLES: SampleDatum[] = [
 function ContactSheetView(): JSX.Element {
   // selected = set of selected exposure ids across ALL rows (drives CullBar).
   const [selected, setSelected] = useState<Set<number>>(new Set());
-
-  const screenedCount = SAMPLES.filter((s) => s.screened).length;
 
   // Immutably toggle an exposure id in/out of the selection set.
   const toggle = (_sample: SampleDatum, id: number): void => {
@@ -141,25 +130,12 @@ function ContactSheetView(): JSX.Element {
   return (
     <div className="bg-paper p-6">
       <div className="max-w-[1240px] mx-auto">
-        {/* Page head: title/sub on the left, screened-count + progress on the right */}
-        <div className="flex items-end justify-between mb-5">
-          <div>
-            <Kicker tone="accent">Contact sheet</Kicker>
-            <p className="text-body text-ink-soft mt-1">
-              Dark frames on light paper — screen, tag, and cull before indexing.
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-body text-ink-soft">
-              {screenedCount} / {SAMPLES.length} screened
-            </p>
-            <ProgressBar
-              value={screenedCount}
-              total={SAMPLES.length}
-              label="samples screened"
-              className="w-40 mt-1"
-            />
-          </div>
+        {/* Page head */}
+        <div className="mb-5">
+          <Kicker tone="accent">Contact sheet</Kicker>
+          <p className="text-body text-ink-soft mt-1">
+            Dark frames on light paper — screen, tag, and cull before indexing.
+          </p>
         </div>
 
         {/* Sample table */}
@@ -179,16 +155,14 @@ function ContactSheetView(): JSX.Element {
                 key={s.sampleId}
                 name={s.name}
                 sampleId={s.sampleId}
-                {...(s.screened !== undefined ? { screened: s.screened } : {})}
                 exposures={s.exposures}
                 selectedExposureIds={selected}
                 onSelectExposure={(id) => toggle(s, id)}
                 kept={s.kept}
                 total={s.total}
-                {...(s.dropped != null ? { dropped: s.dropped } : {})}
                 tags={s.tags}
                 // phase: pass only when defined — StatusCell reads undefined as
-                // "not yet indexed" whereas null = "screened but no phase"
+                // "not yet indexed" whereas null = "indexed but no phase"
                 {...(s.phase !== undefined ? { phase: s.phase } : {})}
               />
             );

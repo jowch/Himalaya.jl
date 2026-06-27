@@ -10,20 +10,11 @@ const meta: Meta<typeof BigFrame> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** No verdict yet — no pill (SA-SCREENED tri-state). */
-export const Unscreened: Story = {
-  render: () => (
-    <div className="bg-paper p-6 w-[520px]">
-      <BigFrame src={thumb37} caption="frame 37 · 0.40 s" />
-    </div>
-  ),
-};
-
-/** Explicitly accepted — the constructive "Kept" pill, no dim. */
+/** Kept (the default) — no dim, no rejected overlay. */
 export const Kept: Story = {
   render: () => (
     <div className="bg-paper p-6 w-[520px]">
-      <BigFrame src={thumb37} caption="frame 37 · 0.40 s" accepted />
+      <BigFrame src={thumb37} caption="frame 37 · 0.40 s" />
     </div>
   ),
 };

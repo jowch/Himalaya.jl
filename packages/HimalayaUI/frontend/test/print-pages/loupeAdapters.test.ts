@@ -11,7 +11,7 @@ import {
 function exp(over: Partial<Exposure>): Exposure {
   return {
     id: 1, sample_id: 1, filename: "JC000-001.dat", kind: "file",
-    selected: false, status: "accepted", image_path: "/x.tif", image_version: "v9",
+    selected: false, status: null, image_path: "/x.tif", image_version: "v9",
     tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
   };
 }
@@ -20,8 +20,8 @@ describe("defaultExposureId", () => {
   it("prefers the representative (selected)", () => {
     expect(defaultExposureId([exp({ id: 1 }), exp({ id: 2, selected: true })])).toBe(2);
   });
-  it("falls back to first accepted", () => {
-    expect(defaultExposureId([exp({ id: 1, status: "rejected" }), exp({ id: 2, status: "accepted" })])).toBe(2);
+  it("falls back to the first kept (non-rejected) frame", () => {
+    expect(defaultExposureId([exp({ id: 1, status: "rejected" }), exp({ id: 2, status: null })])).toBe(2);
   });
   it("falls back to first exposure", () => {
     expect(defaultExposureId([exp({ id: 7, status: null }), exp({ id: 8, status: null })])).toBe(7);
@@ -47,18 +47,18 @@ describe("buildExposureImageUrl", () => {
 });
 
 describe("toGalleryExposures", () => {
-  it("maps id/src(thumb)/frameNo/rejected/kept/representative", () => {
+  it("maps id/src(thumb)/frameNo/rejected/representative (binary: kept needs no marker)", () => {
     const out = toGalleryExposures([
-      exp({ id: 10, selected: true, status: "accepted" }),
+      exp({ id: 10, selected: true, status: null }),
       exp({ id: 11, status: "rejected" }),
     ]);
-    expect(out[0]).toEqual({ id: 10, src: "/api/exposures/10/image?thumb=1&v=v9", frameNo: 1, representative: true, rejected: false, kept: true });
-    expect(out[1]).toEqual({ id: 11, src: "/api/exposures/11/image?thumb=1&v=v9", frameNo: 2, representative: false, rejected: true, kept: false });
+    expect(out[0]).toEqual({ id: 10, src: "/api/exposures/10/image?thumb=1&v=v9", frameNo: 1, representative: true, rejected: false });
+    expect(out[1]).toEqual({ id: 11, src: "/api/exposures/11/image?thumb=1&v=v9", frameNo: 2, representative: false, rejected: true });
   });
 
-  it("keeps the SA-SCREENED tri-state: an unscreened (null) frame is neither kept nor rejected", () => {
+  it("a kept (null-status) frame is simply not-rejected", () => {
     const out = toGalleryExposures([exp({ id: 12, status: null })]);
-    expect(out[0]).toMatchObject({ kept: false, rejected: false });
+    expect(out[0]).toMatchObject({ rejected: false });
   });
 });
 
@@ -112,7 +112,7 @@ describe("toMetaEntries", () => {
     ]);
     const kept = exp({
       id: 1,
-      status: "accepted",
+      status: null,
       tags: [{ id: 9, key: "rejection_reason", value: "stale", source: "manual" }],
     });
     expect(toMetaEntries(kept, [kept])).toEqual([

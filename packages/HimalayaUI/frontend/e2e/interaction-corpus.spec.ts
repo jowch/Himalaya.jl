@@ -9,7 +9,7 @@
  *   dock-prev-sample / dock-next-sample / dock-sample-count  — DockStepper
  *   dock-primary      — openFocus (Focus button, always; disabled when no cursor)
  *   dock-up-link      — DockUpLink "‹ Experiments"
- *   dock-action-<id>  — page actions: openLoupe, drop, keep, representative
+ *   dock-action-<id>  — page actions: openLoupe, drop, representative
  *
  * Covered cases:
  *   IC-1  Click a row → data-cursored="true"; Enter navigates to /sample/<id>

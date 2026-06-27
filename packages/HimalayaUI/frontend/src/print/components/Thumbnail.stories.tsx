@@ -28,14 +28,6 @@ export const Rejected: Story = {
   args: { rejected: true },
 };
 
-export const Kept: Story = {
-  args: { kept: true },
-};
-
-export const RepresentativeAndKept: Story = {
-  args: { representative: true, kept: true },
-};
-
 export const Selected: Story = {
   args: { selected: true },
 };
@@ -70,17 +62,11 @@ export const AllStates: Story = {
     );
     return (
       <div className="flex flex-wrap items-start gap-5">
-        <Cell label="Unscreened">
+        <Cell label="Default">
           <Thumbnail src={thumb65} frameNo="65" size="sm" />
-        </Cell>
-        <Cell label="Kept">
-          <Thumbnail src={thumb65} frameNo="65" kept size="sm" />
         </Cell>
         <Cell label="Representative">
           <Thumbnail src={thumb37} frameNo="37" representative size="sm" />
-        </Cell>
-        <Cell label="Representative + kept">
-          <Thumbnail src={thumb37} frameNo="37" representative kept size="sm" />
         </Cell>
         <Cell label="Selected">
           <Thumbnail src={thumb67} frameNo="67" selected size="sm" />

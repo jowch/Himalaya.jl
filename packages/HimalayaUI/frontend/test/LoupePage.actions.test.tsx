@@ -195,8 +195,8 @@ describe("LoupePage action declaration", () => {
     );
   });
 
-  it("x (cull) through the keyboard layer fires setStatus with rejected", async () => {
-    renderLoupe(42, { exposures: [makeExposure(100, { status: "accepted" })] });
+  it("x (drop) on a kept frame fires setStatus with rejected", async () => {
+    renderLoupe(42, { exposures: [makeExposure(100, { status: null })] });
     await screen.findByTestId("loupe-page");
     fireEvent.keyDown(window, { key: "x" });
     expect(setStatusMutate).toHaveBeenCalledWith(
@@ -205,14 +205,21 @@ describe("LoupePage action declaration", () => {
     );
   });
 
-  it("k (keep) through the keyboard layer fires setStatus with accepted", async () => {
-    renderLoupe(42, { exposures: [makeExposure(100, { status: null })] });
+  it("x (drop) on a dropped frame toggles it back to null (un-drop)", async () => {
+    renderLoupe(42, { exposures: [makeExposure(100, { status: "rejected" })] });
     await screen.findByTestId("loupe-page");
-    fireEvent.keyDown(window, { key: "k" });
+    fireEvent.keyDown(window, { key: "x" });
     expect(setStatusMutate).toHaveBeenCalledWith(
-      { exposureId: 100, status: "accepted" },
+      { exposureId: 100, status: null },
       expect.anything(),
     );
+  });
+
+  it("there is no K (keep) binding — pressing k does nothing", async () => {
+    renderLoupe(42, { exposures: [makeExposure(100, { status: "rejected" })] });
+    await screen.findByTestId("loupe-page");
+    fireEvent.keyDown(window, { key: "k" });
+    expect(setStatusMutate).not.toHaveBeenCalled();
   });
 
   it("Enter through the keyboard layer navigates to Focus (/sample/:id)", async () => {

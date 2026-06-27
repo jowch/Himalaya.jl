@@ -11,7 +11,7 @@
  *   dock-prev-frame  / dock-next-frame  / dock-frame-count   — cursor stepper (in-page)
  *   dock-primary     — openFocus (Focus button; Enter target)
  *   dock-up-link     — DockUpLink "‹ Corpus"
- *   dock-action-cull / dock-action-keep / dock-action-representative / dock-action-restore
+ *   dock-action-cull / dock-action-representative  (Drop is the sole cull verb, a toggle; no Keep)
  *
  * Covered cases:
  *   IL-1  Both dock-sample-count AND dock-frame-count render (two steppers)

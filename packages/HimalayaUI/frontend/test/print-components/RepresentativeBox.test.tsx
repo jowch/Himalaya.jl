@@ -95,7 +95,7 @@ describe("<RepresentativeBox> no onSetRepresentative", () => {
 
 describe("<RepresentativeBox> dropped-representative warning (LO-REPDROP)", () => {
   const WARNING_COPY =
-    "Warning. The representative frame is dropped. It still carries to the Index stage. Restore it or set another frame as representative.";
+    "Warning. The representative frame is dropped. It still carries to the Index stage. Press Drop again to bring it back, or set another frame as representative.";
 
   it("renders the warning when representativeDropped, leading with the severity word", () => {
     render(

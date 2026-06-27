@@ -1,6 +1,6 @@
 import { toSampleRowModel } from "../../src/print/pages/samplesAdapters";
 
-it("derives kept/total/dropped/screened/tags/phase from a sample + exposures", () => {
+it("derives kept/total/dropped/tags/phase from a sample + exposures", () => {
   const sample = {
     id: 9,
     experiment_id: 1,
@@ -12,7 +12,7 @@ it("derives kept/total/dropped/screened/tags/phase from a sample + exposures", (
     phase: null,
   } as any;
   const exposures = [
-    { id: 101, status: "accepted", selected: true, image_path: null, image_version: "" },
+    { id: 101, status: null, selected: true, image_path: null, image_version: "" },
     { id: 102, status: "rejected", selected: false, image_path: null, image_version: "" },
   ] as any;
   const m = toSampleRowModel(sample, exposures);
@@ -36,23 +36,22 @@ it("flags formFactor when the representative exposure's assignment_state is form
   expect(toSampleRowModel(base, []).formFactor).toBe(false); // absent → false
 });
 
-// SA-SCREENED: "Kept" on the sheet means EXPLICITLY accepted — the same truth
-// the loupe caption and the hero metric tell. An unscreened (null) frame is
-// neither kept nor dropped.
-it("a null-status frame counts neither kept nor dropped; accepted counts kept", () => {
+// Binary: "Kept" = not-dropped. A null-status frame is kept; only a rejected
+// frame is dropped. kept + dropped === total (no untriaged middle state).
+it("counts every non-rejected frame as kept; kept + dropped === total", () => {
   const sample = {
     id: 9, name: "JC009", display_name: null, notes: null,
     q_units: "nm^-1", tags: [], phase: null,
   } as any;
   const exposures = [
-    { id: 101, status: "accepted", selected: true, image_path: null, image_version: "" },
+    { id: 101, status: null, selected: true, image_path: null, image_version: "" },
     { id: 102, status: null, selected: false, image_path: null, image_version: "" },
     { id: 103, status: "rejected", selected: false, image_path: null, image_version: "" },
   ] as any;
   const m = toSampleRowModel(sample, exposures);
   expect(m.total).toBe(3);
-  expect(m.kept).toBe(1);    // only the accepted frame
-  expect(m.dropped).toBe(1); // only the rejected frame — null is NOT dropped
+  expect(m.kept).toBe(2);    // both null frames are kept
+  expect(m.dropped).toBe(1); // only the rejected frame
 });
 
 it("treats undefined exposures as not-yet-loaded (empty derivation)", () => {

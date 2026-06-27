@@ -71,6 +71,14 @@ broadcast routing through the dispatcher):
 dispatcher carries explicit no-op `return nothing` guards for the
 view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
 
+`set_exposure_status` is audit-only: it records a Drop action but
+produces no view. There is a single screening verb — **Drop** (the X key) —
+and it is a toggle: it flips status between `rejected` (dropped) and `null`
+(the default un-culled state, simply not-rejected). There is no distinct
+positive "kept" state and no separate Keep verb. The legacy `accepted` value
+is write-dead (the UI never emits it again) — the DB CHECK still permits it,
+so old logs fold cleanly and no migration is needed.
+
 `analyze_run` is *not* a `log_action!` event: it is emitted via
 `apply_event!(InTransaction(), …)` in `pipeline.jl` and broadcast through
 `_maybe_broadcast_event!`, with a dispatcher no-op `return nothing` guard

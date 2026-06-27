@@ -29,7 +29,7 @@
      band reads YELLOWISH (≈ oklch 0.911 0.022 79), not the pinker accent-wash.
      Named token so bg-row-cursor is a sanctioned utility. */
   --color-row-cursor: color-mix(in oklch, var(--color-accent) 10%, var(--color-paper-sunk));
-  /* Softened verb-border tints — the pages2 dock draws cull verbs (Drop/Keep) on
+  /* Softened verb-border tints — the pages2 dock draws the cull verb (Drop) on
      a 40%-accent/60%-white border over a transparent bar, not a full-saturation
      accent line. Named tokens so border-accent-soft / border-success-soft are
      sanctioned utilities. */

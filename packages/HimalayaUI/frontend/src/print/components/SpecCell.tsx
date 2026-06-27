@@ -4,7 +4,6 @@ import { Chip } from "../ui/Chip";
 export interface SpecCellProps {
   name: string;
   sampleId: string;
-  screened?: boolean;
   /** Slot coordinate shown as a chip in the identity cell (e.g. "slot 5").
    *  When undefined, no slot chip renders. */
   slotIndex?: number;

@@ -48,7 +48,7 @@ export const RepresentativeDropped: Story = {
 
 // The strongest state: the ACTIVE frame is the dropped representative —
 // accent header + warning together, and NO set button (controls-don't-lie;
-// the remedy is the Verdict block's Restore, which the warning copy names).
+// the remedy is pressing Drop again to un-cull, which the warning copy names).
 export const DroppedRepresentativeActive: Story = {
   args: {
     isRepresentative: true,

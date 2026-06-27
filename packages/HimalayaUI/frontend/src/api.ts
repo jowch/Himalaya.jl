@@ -110,17 +110,12 @@ export interface Load {
 // config) — the per-experiment Sample does not. Phase 3 normalization
 // reads this field. Returned by the corpus-wide GET /api/samples route.
 //
-// `screened` and `phase` are optional, forward-looking seams for the contact
-// sheet (R1 / #224):
-//   - `screened`: the per-sample triage flag owned by #162's backend (not yet
-//     wired). Until it lands, the contact sheet derives screened-ness from the
-//     exposures (see lib/sample/screened.ts); this field, when present, wins.
-//   - `phase`: the sample's resolved liquid-crystalline phase, surfaced by a
-//     future indexing-rollup route. When present the status cell shows a phase
-//     chip; when absent it shows the hollow-dot "Not indexed" affordance (M-6).
+// `phase` is an optional, forward-looking seam for the contact sheet (R1 / #224):
+// the sample's resolved liquid-crystalline phase, surfaced by a future
+// indexing-rollup route. When present the status cell shows a phase chip; when
+// absent it shows the "Not indexed" affordance (M-6).
 export interface CorpusSample extends Sample {
   q_units: string;
-  screened?: boolean;
   phase?: string | null;
   /** The representative exposure's durable assignment state (selected=1 else
    *  highest-id). Drives the contact-sheet status: `form_factor` shows a

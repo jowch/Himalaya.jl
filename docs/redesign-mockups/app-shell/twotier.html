@@ -65,7 +65,6 @@
   .dbtn.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
   .dbtn.accent{background:var(--accent);border-color:var(--accent);color:var(--paper)}
   .dbtn.danger{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 40%,white)}
-  .dbtn.ok{color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)}
   .kb{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-faint);border:1px solid var(--hair);border-radius:4px;padding:0 4px;margin-left:3px}
   .hintdock{color:var(--ink-soft);font-size:12px}
 
@@ -103,15 +102,13 @@
     <span class="selpill"><span class="p"></span>3 frames selected · across 2 samples</span>
     <div class="ddiv"></div>
     <span class="dbtn danger">Drop<span class="kb">X</span></span>
-    <span class="dbtn ok">Keep<span class="kb">K</span></span>
-    <span class="dbtn ghost">Restore</span>
     <span class="dbtn ghost">Clear<span class="kb">Esc</span></span>
     <div class="dsp"></div>
     <span class="dbtn accent">Open 2-2 + LL37 1:1 in Focus →</span>
   </div>
   <div class="note">
     <div class="n"><span class="k">▲</span><span class="t"><b>Top tier = high-level nav.</b> Sections (Experiments / Series) + the experiment switcher + ⚙ Config. "Where am I, where can I go."</span></div>
-    <div class="n"><span class="k">▼</span><span class="t"><b>Bottom tier = the dock.</b> Here it's the <b>cull</b> (Drop / Keep / Restore / Clear — its origin, X/K/Esc) + the way <b>into Focus</b>. Idle (nothing selected): a quiet "select frames to cull" hint + Select all.</span></div>
+    <div class="n"><span class="k">▼</span><span class="t"><b>Bottom tier = the dock.</b> Here it's the <b>cull</b> (Drop / Clear — its origin, X toggles drop / Esc) + the way <b>into Focus</b>. Idle (nothing selected): a quiet "select frames to cull" hint + Select all.</span></div>
     <div class="n"><span class="k">✓</span><span class="t"><b>Surface untouched:</b> click a row, sort a header, the checkboxes — all stay on the sheet.</span></div>
   </div>
 </section>
@@ -146,13 +143,12 @@
     <div class="ddiv"></div>
     <span class="selpill" style="font-weight:500;color:var(--ink-soft)">Frame 2 / 8</span>
     <span class="dbtn danger">Drop<span class="kb">X</span></span>
-    <span class="dbtn ok">Keep<span class="kb">K</span></span>
     <span class="dbtn ghost">Set representative<span class="kb">R</span></span>
     <div class="dsp"></div>
   </div>
   <div class="note">
     <div class="n"><span class="k">↩</span><span class="t"><b>Centralized at last:</b> 'Back to Corpus' + the <b>sample stepper</b> (moved out of the top chrome) now live in the dock — the "Focus is too hidden / no way back" fix.</span></div>
-    <div class="n"><span class="k">▼</span><span class="t"><b>Cull travels here too:</b> same Drop / Keep verbs, now acting on the current sample's frames (+ Set representative, like the Loupe). Same bar, same grammar.</span></div>
+    <div class="n"><span class="k">▼</span><span class="t"><b>Cull travels here too:</b> same Drop verb, now acting on the current sample's frames (+ Set representative, like the Loupe). Same bar, same grammar.</span></div>
     <div class="n"><span class="k">✓</span><span class="t"><b>The plate is exactly as refined:</b> scale, auto-fit, +Peak, export, the assignment sidebar — none of it moved.</span></div>
   </div>
 </section>
@@ -188,7 +184,7 @@
     <span class="dbtn accent">Open 2-2 + LL37 1:1 in Focus →</span>
   </div>
   <div class="note">
-    <div class="n"><span class="k">↻</span><span class="t"><b>The dock adapts.</b> No exposures to cull in a series, so the cull verbs drop away — the bar shows only member-stepping + the one-click into Focus.</span></div>
+    <div class="n"><span class="k">↻</span><span class="t"><b>The dock adapts.</b> No exposures to cull in a series, so the cull verb drops away — the bar shows only member-stepping + the one-click into Focus.</span></div>
     <div class="n"><span class="k">→</span><span class="t"><b>Series → Focus, one click.</b> 'Open … in Focus' is the missing path; from Focus the dock will read 'Back to Series' and step the series (1/6).</span></div>
     <div class="n"><span class="k">▲</span><span class="t"><b>Top tier flips to Series</b> (cross-experiment), so the experiment switcher steps aside — the section, not an experiment, is the scope.</span></div>
   </div>

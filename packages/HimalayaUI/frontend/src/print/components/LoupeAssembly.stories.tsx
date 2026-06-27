@@ -15,12 +15,9 @@ import thumb93 from "../fixtures/thumbs/93.png?url";
  * 2-col `1fr / 286px` body with the big detector frame and the exposure strip
  * on the left, the aside on the right. The Layer-4 loupe page (the plate shell,
  * back button, serif head) is deferred; this story owns the cross-component
- * state (selected frame, tri-state verdicts, representative) the page will own.
- * Verdicts mirror the LoupePage keyboard semantics (SA-SCREENED): X toggles
- * rejected/null, K toggles accepted/null, last verb wins.
+ * state (selected frame, binary verdicts, representative) the page will own.
+ * Verdicts mirror the LoupePage keyboard semantics: X drops, K keeps.
  */
-
-type Verdict = "accepted" | "rejected" | null;
 
 interface FrameDatum {
   id: number;
@@ -52,40 +49,27 @@ const TAGS: Tag[] = [{ key: "LL37" }, { key: "temp", value: "37C" }];
 
 function LoupeView(): JSX.Element {
   const [selectedId, setSelectedId] = useState(65);
-  const [verdicts, setVerdicts] = useState<Record<number, Verdict>>({
-    65: "accepted", 93: "rejected",
-  });
+  const [dropped, setDropped] = useState<Record<number, boolean>>({ 93: true });
   const [repId, setRepId] = useState<number | null>(65);
 
   const current = FRAMES.find((f) => f.id === selectedId) ?? FRAMES[0]!;
-  const status = verdicts[current.id] ?? null;
-  const isDropped = status === "rejected";
-  const isKept = status === "accepted";
-  const verdictWord = isDropped ? "dropped" : isKept ? "kept" : "unscreened";
+  const isDropped = dropped[current.id] ?? false;
+  const verdictWord = isDropped ? "dropped" : "kept";
 
   const exposures = useMemo<GalleryExposure[]>(
     () => FRAMES.map((f) => ({
       id: f.id,
       src: f.src,
       frameNo: f.frameNo,
-      rejected: verdicts[f.id] === "rejected",
-      kept: verdicts[f.id] === "accepted",
+      rejected: dropped[f.id] ?? false,
       representative: repId === f.id,
     })),
-    [verdicts, repId],
+    [dropped, repId],
   );
 
-  // Last verb wins: drop toggles rejected/null, keep toggles accepted/null.
-  const toggleDrop = (): void =>
-    setVerdicts((prev) => ({
-      ...prev,
-      [current.id]: prev[current.id] === "rejected" ? null : "rejected",
-    }));
-  const toggleKeep = (): void =>
-    setVerdicts((prev) => ({
-      ...prev,
-      [current.id]: prev[current.id] === "accepted" ? null : "accepted",
-    }));
+  // Binary verdict: Drop is a toggle (cull ↔ un-cull).
+  const onToggleDrop = (): void =>
+    setDropped((prev) => ({ ...prev, [current.id]: !(prev[current.id] ?? false) }));
 
   return (
     <div className="bg-paper p-7">
@@ -95,7 +79,6 @@ function LoupeView(): JSX.Element {
             src={current.src}
             caption={`frame ${current.frameNo} · ${verdictWord}`}
             rejected={isDropped}
-            accepted={isKept}
           />
           <ThumbnailGallery
             exposures={exposures}
@@ -109,11 +92,9 @@ function LoupeView(): JSX.Element {
         <LoupeSidePanel
           meta={current.meta}
           dropped={isDropped}
-          kept={isKept}
           isRepresentative={repId === current.id}
           tags={TAGS}
-          onToggleDrop={toggleDrop}
-          onToggleKeep={toggleKeep}
+          onToggleDrop={onToggleDrop}
           onSetRepresentative={() => setRepId(current.id)}
           onAddTag={() => {}}
           onRemoveTag={() => {}}

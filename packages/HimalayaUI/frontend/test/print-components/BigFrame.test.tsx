@@ -30,16 +30,7 @@ describe("BigFrame", () => {
     expect(screen.getByTestId("big-frame")).toHaveAttribute("data-rejected", "true");
   });
 
-  it("accepted: shows the Kept pill with no overlay and no dim (SA-SCREENED)", () => {
-    render(<BigFrame src={null} caption="f1" accepted />);
-    const tag = screen.getByText("Kept");
-    expect(tag).toHaveAttribute("data-role", "kept-tag");
-    expect(screen.queryByTestId("reject-overlay")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dropped")).not.toBeInTheDocument();
-    expect(screen.getByTestId("big-frame")).not.toHaveAttribute("data-rejected", "true");
-  });
-
-  it("unscreened (neither flag): no Kept pill and no Dropped pill", () => {
+  it("kept (default): no badge at all — kept is the implied state", () => {
     render(<BigFrame src={null} caption="f1" />);
     expect(screen.queryByText("Kept")).not.toBeInTheDocument();
     expect(screen.queryByText("Dropped")).not.toBeInTheDocument();
