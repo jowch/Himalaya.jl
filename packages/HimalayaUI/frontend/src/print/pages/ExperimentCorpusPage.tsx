@@ -355,7 +355,7 @@ export function ExperimentCorpusPage(): JSX.Element {
                     : {})}
                   onSelectExposure={(eid) => {
                     // Click a thumbnail → park the sample + frame cursor on it
-                    // (the Drop/Keep/Set-representative verbs then act on it).
+                    // (the Drop / Set-representative verbs then act on it).
                     sampleCursor.setCursor(s.id);
                     const frames = corpusExposures.byId.get(s.id) ?? [];
                     const fi = frames.findIndex((e) => e.id === eid);

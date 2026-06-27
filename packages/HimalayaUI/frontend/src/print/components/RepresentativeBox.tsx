@@ -76,7 +76,8 @@ export function RepresentativeBox({
           <p data-testid="rep-dropped-warning" className="text-caption mt-1.5">
             <strong className="font-bold text-ink">Warning.</strong> The
             representative frame is dropped. It still carries to the Index
-            stage. Restore it or set another frame as representative.
+            stage. Press Drop again to bring it back, or set another frame as
+            representative.
           </p>
         )}
 

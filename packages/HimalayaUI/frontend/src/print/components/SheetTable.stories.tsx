@@ -25,7 +25,7 @@ const EXPOSURES_ALL_KEPT: GalleryExposure[] = EXPOSURES.map((e) => ({
   rejected: false,
 }));
 
-const EXPOSURES_UNSCREENED: GalleryExposure[] = EXPOSURES.slice(0, 3).map(
+const EXPOSURES_THREE_KEPT: GalleryExposure[] = EXPOSURES.slice(0, 3).map(
   (e) => ({ ...e, rejected: false }),
 );
 
@@ -40,8 +40,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Full table: 4 rows — screened+indexed (Pn3m, 1 dropped), screened+indexed
- *  all-kept (Im3m), unscreened+not-indexed, unscreened+indexed (Ia3d). */
+/** Full table: 4 rows — indexed with one dropped frame (Pn3m), all-kept indexed
+ *  (Im3m), not-indexed (all kept), indexed (Ia3d, all kept). */
 export const Sheet: Story = {
   parameters: { layout: "fullscreen" },
   render: () => (
@@ -69,8 +69,8 @@ export const Sheet: Story = {
           name="MO + buffer"
           sampleId="s-003"
           phase={null}
-          exposures={EXPOSURES_UNSCREENED}
-          kept={0}
+          exposures={EXPOSURES_THREE_KEPT}
+          kept={3}
           total={3}
           tags={[]}
         />
@@ -78,8 +78,8 @@ export const Sheet: Story = {
           name="MO + PEG"
           sampleId="s-004"
           phase="Ia3d"
-          exposures={EXPOSURES_UNSCREENED}
-          kept={0}
+          exposures={EXPOSURES_THREE_KEPT}
+          kept={3}
           total={3}
           tags={[{ key: "lipid", value: "DOPC" }]}
         />

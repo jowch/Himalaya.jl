@@ -516,6 +516,27 @@ let
         end
     end
 
+    @testset "cli_analyze auto-selects the first non-rejected exposure when none is selected" begin
+        # Binary-status regression guard: with every exposure status=NULL (kept)
+        # and none selected, the fallback must pick the first NON-rejected frame.
+        # The pre-binary predicate keyed on status == "accepted", which nothing
+        # writes, so it silently left all-NULL samples with no representative.
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir     = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            seeded = setup_exp_dir(db, dir; name="ExpSel", stems=["ST001", "ST002"])
+            # Reject the first frame so the fallback must skip it and land on the
+            # second (the first KEPT frame) — exercises the `!= "rejected"` branch.
+            DBInterface.execute(db, "UPDATE exposures SET status='rejected' WHERE id=?",
+                                [seeded.exposure_ids[1]])
+            cli_analyze(["-e", dir])
+            selected = [Int(r.id) for r in DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE selected=1")]
+            @test selected == [seeded.exposure_ids[2]]
+        end
+    end
+
     @testset "_resolve_experiment errors when multiple experiments and no key" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()

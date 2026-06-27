@@ -14,12 +14,12 @@ import thumb93 from "../fixtures/thumbs/93.png?url";
 /**
  * Page simulation (NOT a component): assembles `SheetTable` + `SampleTableRow`
  * children + `CullBar` into the contact-sheet view as the mockup lays it out —
- * a flat sample list with batch-cull selection, a screened-progress bar in the
- * page head, and a floating dark CullBar that appears on first selection.
+ * a flat sample list with batch-cull selection and a floating dark CullBar that
+ * appears on first selection.
  *
  * The Layer-4 contact-sheet page (plate shell, nav, back button) is deferred;
- * this story owns the cross-component state (selected exposure ids, screened
- * count) that the page will own.
+ * this story owns the cross-component state (selected exposure ids) that the
+ * page will own.
  */
 
 interface SampleDatum {
