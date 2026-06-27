@@ -507,13 +507,18 @@ export function FocusPage(): JSX.Element {
   // loading: we're still resolving WHICH exposure to show whenever there's no
   // active exposure AND the sample isn't confirmed to have zero usable ones
   // (that case is the honest "no exposures" empty state, not a skeleton). The
-  // window ends when an exposure resolves (→ the trace/peaks check takes over).
+  // window ends when an exposure resolves (→ the page reveals; the trace plot
+  // then carries its own `traceLoading` skeleton until trace/peaks land).
   const { noUsable: noUsableExposure } = noUsableExposureState(exposuresQ.data);
   const resolvingExposure = activeExposureId === undefined && !noUsableExposure;
-  const isLoading =
-    corpusQ.isLoading ||
-    resolvingExposure ||
-    (activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading));
+  // Page-level skeleton gates ONLY on structure: corpus + which-exposure-to-show.
+  // The trace/peaks fetch no longer holds the whole page hostage — the detector,
+  // exposure strip, and phase rail depend only on the exposure, so they paint a
+  // round-trip earlier. The trace PLOT is the one piece that needs trace+peaks;
+  // it carries its own `loading` skeleton on the plate (TracePlate `loading`).
+  const isLoading = corpusQ.isLoading || resolvingExposure;
+  const traceLoading =
+    activeExposureId !== undefined && (traceQ.isLoading || peaksQ.isLoading);
 
   // ── focus the scope when the skeleton reveals content (cold-load arrow nav) ──
   // The scope div attaches while the boneyard overlay is still visibility:hidden,
@@ -833,6 +838,7 @@ export function FocusPage(): JSX.Element {
               title={sampleName}
               subtitle={subtitle}
               trace={traceModel}
+              loading={traceLoading}
               scale={scale}
               onScaleChange={setScale}
               // The Focus curve stays neutral gray (an assignment hue on the

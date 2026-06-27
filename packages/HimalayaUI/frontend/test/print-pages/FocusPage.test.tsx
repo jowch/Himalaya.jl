@@ -24,6 +24,9 @@ const state = {
   indices: [] as IndexEntry[],
   assignment: undefined as Assignment | undefined,
   loading: false,
+  // Trace/peaks loading INDEPENDENT of structure (corpus/exposures): the page
+  // reveals on structure and only the trace plot waits on this.
+  traceLoading: false,
   activeSampleId: undefined as number | undefined,
   activeExposureId: undefined as number | undefined,
   // sibling order for the [ ] sample-step shortcut (useExperimentSiblings mock)
@@ -45,8 +48,8 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", q_units: "A-1" } }),
   useExposures: () => ({ data: state.exposures, isLoading: state.loading }),
   useExposure: () => ({ data: state.exposures?.find((e) => e.id === state.activeExposureId) }),
-  useTrace: () => ({ data: state.trace, isLoading: state.loading }),
-  usePeaks: () => ({ data: state.peaks, isLoading: state.loading }),
+  useTrace: () => ({ data: state.trace, isLoading: state.traceLoading || state.loading }),
+  usePeaks: () => ({ data: state.peaks, isLoading: state.traceLoading || state.loading }),
   useIndices: () => ({ data: state.indices, isLoading: state.loading }),
   useAssignment: () => ({ data: state.assignment, isLoading: state.loading }),
   useAddPeak: () => ({ mutate: addPeakMutate }),
@@ -175,6 +178,7 @@ function seedFull(): void {
   ];
   state.assignment = { exposure_id: 7, state: "indexed", members: [1] };
   state.loading = false;
+  state.traceLoading = false;
   state.sibPrev = undefined;
   state.sibNext = undefined;
   state.sibSiblings = [];
@@ -741,6 +745,25 @@ describe("FocusPage", () => {
       "data-loading",
       "false",
     );
+  });
+
+  // Progressive load: the page reveals on STRUCTURE (corpus + exposure). The
+  // trace/peaks fetch no longer gates the whole page — only the trace plot waits,
+  // behind its own plate skeleton, so the detector + rail paint a round-trip
+  // earlier. (Detector regression: it depends only on the exposure.)
+  it("reveals the page while trace/peaks still load; only the trace plot skeletons", () => {
+    seedFull(); // structure (corpus + exposure 7) in hand
+    state.traceLoading = true; // trace/peaks still in flight
+    renderAt(42);
+    // Page is NOT held behind the whole-page skeleton…
+    expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+    // …the plate shell renders, but its plot is the skeleton, not the live plot.
+    expect(screen.getByTestId("trace-plate")).toBeInTheDocument();
+    expect(screen.getByTestId("trace-plate-skeleton")).toBeInTheDocument();
+    expect(screen.queryByTestId("trace-plate-plot")).toBeNull();
   });
 
   it("does not render a stale-index banner (peak edits auto-reanalyze server-side)", () => {
