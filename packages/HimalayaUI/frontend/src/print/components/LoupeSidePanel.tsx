@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
-import { Kicker, MetaList, TagList, KbLegend, Button } from "../ui";
-import type { MetaEntry, Tag, Shortcut } from "../ui";
+import { Kicker, MetaList, TagList, Button } from "../ui";
+import type { MetaEntry, Tag } from "../ui";
 import type { LoupeTag } from "../pages/loupeAdapters";
 import { Verdict } from "./Verdict";
 import { RepresentativeBox } from "./RepresentativeBox";
@@ -10,11 +10,9 @@ import { cx } from "../../lib/cx";
 export interface LoupeSidePanelProps {
   /** "This exposure" metadata rows. */
   meta: MetaEntry[];
-  /** Verdict state + toggles (tri-state: dropped / kept / unscreened). */
+  /** Verdict state + the single Drop toggle (binary: dropped / kept). */
   dropped: boolean;
-  kept?: boolean;
   onToggleDrop?: () => void;
-  onToggleKeep?: () => void;
   /** Representative state + setter. */
   isRepresentative: boolean;
   /** The sample's representative exposure (any frame) is dropped. */
@@ -31,27 +29,14 @@ export interface LoupeSidePanelProps {
   onManageTags?: () => void;
   /** Ref for the "Manage" button — forwarded to ManageTagsModal for focus-restore. */
   manageTagsTriggerRef?: RefObject<HTMLButtonElement>;
-  /** Key legend — defaults to the canonical loupe keys. */
-  shortcuts?: Shortcut[];
   /** PLACEMENT ONLY. */
   className?: string;
 }
 
-export const LOUPE_KEYS: Shortcut[] = [
-  { keyLabel: "← →", description: "flip frames" },
-  { keyLabel: "[ ]", description: "prev / next sample" },
-  { keyLabel: "X", description: "drop / restore" },
-  { keyLabel: "K", description: "keep / restore" },
-  { keyLabel: "R", description: "set representative" },
-  { keyLabel: "Esc", description: "back to the sheet" },
-];
-
 export function LoupeSidePanel({
   meta,
   dropped,
-  kept,
   onToggleDrop,
-  onToggleKeep,
   isRepresentative,
   representativeDropped,
   onSetRepresentative,
@@ -60,7 +45,6 @@ export function LoupeSidePanel({
   onRemoveTag,
   onManageTags,
   manageTagsTriggerRef,
-  shortcuts = LOUPE_KEYS,
   className,
 }: LoupeSidePanelProps): JSX.Element {
   return (
@@ -87,9 +71,7 @@ export function LoupeSidePanel({
       {/* Block 2: Verdict */}
       <Verdict
         dropped={dropped}
-        {...(kept !== undefined ? { kept } : {})}
         {...(onToggleDrop ? { onToggle: onToggleDrop } : {})}
-        {...(onToggleKeep ? { onToggleKeep } : {})}
       />
 
       {/* Block 3: RepresentativeBox */}
@@ -125,14 +107,6 @@ export function LoupeSidePanel({
           {...(onAddTag ? { onAdd: onAddTag } : {})}
           {...(onRemoveTag ? { onRemoveById: onRemoveTag } : {})}
         />
-      </div>
-
-      {/* Block 5: Keys */}
-      <div>
-        <Kicker tone="soft" as="h2" className="mb-2">
-          Keys
-        </Kicker>
-        <KbLegend shortcuts={shortcuts} className="flex-col gap-1" />
       </div>
     </aside>
   );

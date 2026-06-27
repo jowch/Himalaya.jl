@@ -13,10 +13,4 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Screened: Story = {
-  args: { screened: true },
-};
-
-export const Unscreened: Story = {
-  args: { screened: false },
-};
+export const Default: Story = {};

@@ -2,53 +2,36 @@ import type { ReactNode } from "react";
 import { Button, Dot } from "../ui";
 
 /**
- * Verdict — the loupe's tri-state screening verdict (SA-SCREENED).
+ * Verdict — the loupe's binary screening verdict.
  *
- * Three honest states: `dropped` (rejected), `kept` (explicitly accepted),
- * neither (unscreened). The old binary read "Kept" for a null status, which
- * made diligent screening of clean samples invisible — Keep is now a verb.
- *
- * Two toggles mirror the keyboard exactly:
- * - the drop toggle (`onToggle`, key X): Drop ↔ Restore (rejected/null)
- * - the keep toggle (`onToggleKeep`, key K): Keep ↔ Restore (accepted/null)
- * Last verb wins: Drop on a kept frame rejects directly; Keep on a dropped
- * frame accepts directly. No forced trip through unscreened.
+ * A frame is either kept (status null, the default) or dropped (status
+ * rejected). There is one verb: Drop — a TOGGLE. Dropping a kept frame culls
+ * it; pressing Drop again brings it back. There is no Keep / Restore action;
+ * "Kept" is just the un-culled state. State shows via the word + dot; the Drop
+ * button reflects the toggle with `aria-pressed`.
  */
 export interface VerdictProps {
-  /** true = exposure dropped/rejected. */
+  /** true = exposure dropped (status rejected); false = kept (status null). */
   dropped: boolean;
-  /** true = exposure explicitly kept/accepted. Ignored while `dropped`. */
-  kept?: boolean;
   /** Optional hint override (default copy depends on the state). */
   hint?: ReactNode;
-  /** Toggle drop/restore (the X verb). */
+  /** Drop toggle (key X): rejected ↔ null. */
   onToggle?: () => void;
-  /** Toggle keep/restore (the K verb). */
-  onToggleKeep?: () => void;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
 
 export function Verdict({
   dropped,
-  kept = false,
   hint,
   onToggle,
-  onToggleKeep,
   className,
 }: VerdictProps): JSX.Element {
-  const isKept = !dropped && kept;
-  const word = dropped ? "Dropped" : isKept ? "Kept" : "Unscreened";
+  const word = dropped ? "Dropped" : "Kept";
   const defaultHint = dropped
-    ? "Restore to clear the call."
-    : isKept
-      ? "Drop or restore to change the call."
-      : "Keep or drop to screen this frame."; // LO-TERM: "frame", not "exposure"
-  // LO-UNSCREENED-DOT: the unscreened state reads by SHAPE, not hue alone — a
-  // hollow `muted` ring (vs the filled accent/success dots) signals "pending"
-  // even in grayscale, instead of a near-invisible filled neutral dot. (The
-  // "Unscreened" word is the primary channel; the ring reinforces it.)
-  const tone = dropped ? "accent" : isKept ? "success" : "muted";
+    ? "Drop again to bring this frame back." // LO-TERM: "frame", not "exposure"
+    : "Drop to cull this frame.";
+  const tone = dropped ? "accent" : "success";
 
   return (
     <div
@@ -64,16 +47,11 @@ export function Verdict({
       </div>
 
       <Button
-        variant="outline"
-        {...(onToggleKeep ? { onClick: onToggleKeep } : {})}
-      >
-        {isKept ? "Restore" : "Keep"}
-      </Button>
-      <Button
-        variant="outline"
+        variant={dropped ? "accent" : "outline"}
+        aria-pressed={dropped}
         {...(onToggle ? { onClick: onToggle } : {})}
       >
-        {dropped ? "Restore" : "Drop"}
+        Drop
       </Button>
     </div>
   );

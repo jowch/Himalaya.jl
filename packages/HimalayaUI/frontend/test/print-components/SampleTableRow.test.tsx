@@ -113,23 +113,6 @@ describe("<SampleTableRow> status column", () => {
   });
 });
 
-describe("<SampleTableRow> screened reflection", () => {
-  it("(f) data-screened is 'true' when screened", () => {
-    renderRow({ screened: true });
-    expect(screen.getByTestId("sample-table-row")).toHaveAttribute("data-screened", "true");
-  });
-
-  it("(f) data-screened is 'false' when not screened", () => {
-    renderRow({ screened: false });
-    expect(screen.getByTestId("sample-table-row")).toHaveAttribute("data-screened", "false");
-  });
-
-  it("(f) data-screened is 'false' when screened is omitted", () => {
-    renderRow();
-    expect(screen.getByTestId("sample-table-row")).toHaveAttribute("data-screened", "false");
-  });
-});
-
 describe("<SampleTableRow> exposure selection", () => {
   it("(g) selecting a thumb bubbles onSelectExposure with that exposure id", () => {
     const onSelectExposure = vi.fn();

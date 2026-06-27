@@ -522,8 +522,7 @@ Two parallel sample-switchers exist — `[`/`]` on Loupe and `,`/`.` on the
 Focus stepper — neither shown on both surfaces (B4: unify into one set).
 The Samples contact-sheet X/K legend only appears once exposures are
 selected, so a first-timer never discovers the gesture (B5: show a resting
-hint). Also a `kept` frame in the Loupe `Verdict` shows a no-op **Restore**
-button alongside **Drop** — only Drop is meaningful when not dropped.
+hint).
 
 ## Frontend infrastructure
 

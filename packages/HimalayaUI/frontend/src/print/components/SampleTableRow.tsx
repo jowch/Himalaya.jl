@@ -11,7 +11,6 @@ import { Checkbox } from "../ui";
 export interface SampleTableRowProps {
   name: string;
   sampleId: string;
-  screened?: boolean;
   exposures: GalleryExposure[];
   /** Single highlighted exposure (loupe "current frame" model). */
   selectedExposureId?: number;
@@ -25,7 +24,6 @@ export interface SampleTableRowProps {
   onSelectExposure?: (id: number) => void;
   kept: number;
   total: number;
-  dropped?: number;
   /** The sample's exposures are LOADED and empty (SA-ZEROEXP) — there is nothing
    *  to index. Renders a terminal "No exposures" status. Supplied by the page only
    *  once the exposure fetch has resolved empty (never inferred from `total === 0`,
@@ -47,10 +45,6 @@ export interface SampleTableRowProps {
   /** When set, double-clicking a thumbnail fires this with the exposure id,
    *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
   onActivateExposure?: (id: number) => void;
-  /** When provided and `dropped > 0`, a Restore button appears in the Kept
-   *  cell — the pointer target for the Backspace=restore key. Mirrors the
-   *  CullBar restore verb (null-status batchSet on the sample's exposures). */
-  onRestore?: () => void;
   /** When provided, a checkbox column is rendered as the left-most cell. */
   checked?: boolean;
   indeterminate?: boolean;
@@ -120,12 +114,10 @@ const CELL = "flex items-center px-3 h-[92px] min-w-0";
 
 /** One full row of the contact-sheet samples table. Composes the cell composites
  *  (SpecCell / KeptCell / StatusCell), the ThumbnailGallery, and TagList across a
- *  fixed 5-column grid. Unscreened rows carry a faint resting tint; screened rows
- *  sit transparent over the table plate. */
+ *  fixed 5-column grid. */
 export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(function SampleTableRow({
   name,
   sampleId,
-  screened = false,
   exposures,
   selectedExposureId,
   selectedExposureIds,
@@ -133,7 +125,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
   onSelectExposure,
   kept,
   total,
-  dropped,
   noExposures = false,
   slotIndex,
   tags,
@@ -143,7 +134,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
   formFactor = false,
   onOpenLoupe,
   onActivateExposure,
-  onRestore,
   checked,
   indeterminate,
   onCheck,
@@ -156,7 +146,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
   role: roleProp,
   className,
 }: SampleTableRowProps, ref): JSX.Element {
-  const restTint = screened ? "" : " bg-paper-sunk";
   const hasCheckbox = onCheck !== undefined;
   // Cursor cue (item 4): the roving ↑/↓ row reads as one opaque yellowish band
   // (bg-row-cursor, the pages2 mockup's accent-into-paper-sunk mix). An `outline`
@@ -165,17 +154,16 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
   // sticky cells take the OPAQUE band instead (opaque so the frozen column still
   // hides content beneath). Distinct in hue from the neutral grey rest/hover, and
   // overrides hover so the cursor stays put under the mouse.
-  const rowBg = cursored ? " bg-row-cursor" : ` hover:bg-paper-sunk${restTint}`;
+  const rowBg = cursored ? " bg-row-cursor" : " hover:bg-paper-sunk";
   // The root also carries `scroll-mb-14` (56px): when the page scrolls the
   // cursored row into view (scrollIntoView), that bottom scroll-margin keeps a
   // downward-navigated row ABOVE the fixed Dock (~47px) instead of behind it.
 
   // Sticky identity cells (SheetTable owns the scroller; rows own the frozen
-  // cells). The opaque background must mirror the row's own surface — bg-plate
-  // for screened rows (transparent over the Card plate), bg-paper-sunk for the
-  // unscreened resting tint — and follow the row hover via group-hover, so the
-  // frozen column is indistinguishable from the row at wide viewports.
-  const stickyBg = screened ? "bg-plate" : "bg-paper-sunk";
+  // cells). The opaque background mirrors the row's own surface (bg-plate over
+  // the Card plate) and follows the row hover via group-hover, so the frozen
+  // column is indistinguishable from the row at wide viewports.
+  const stickyBg = "bg-plate";
   // The frozen cells follow the cursor band so the left column doesn't stay grey
   // while the body turns terracotta (the "broken border" the outline produced).
   const sticky = cursored
@@ -188,7 +176,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
       ref={ref}
       data-testid="sample-table-row"
       role={roleProp ?? "row"}
-      data-screened={screened ? "true" : "false"}
       data-cursored={dataCursored ?? (cursored ? "true" : "false")}
       {...(tabIndex !== undefined ? { tabIndex } : {})}
       {...(onClick ? { onClick } : {})}
@@ -228,7 +215,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
           <SpecCell
             name={name}
             sampleId={sampleId}
-            screened={screened}
             {...(onOpenLoupe ? { onOpenLoupe } : {})}
             {...(slotIndex !== undefined ? { slotIndex } : {})}
           />
@@ -252,8 +238,6 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
           <KeptCell
             kept={kept}
             total={total}
-            {...(dropped != null ? { dropped } : {})}
-            {...(onRestore ? { onRestore } : {})}
           />
         </div>
         <div

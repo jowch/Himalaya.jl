@@ -11,12 +11,12 @@ export interface LoupeTag extends Tag {
   source: string;
 }
 
-/** Default exposure when the loupe opens: representative → first accepted → first. */
+/** Default exposure when the loupe opens: representative → first kept → first. */
 export function defaultExposureId(exposures: Exposure[]): number | undefined {
   const representative = exposures.find((e) => e.selected);
   if (representative) return representative.id;
-  const firstAccepted = exposures.find((e) => e.status === "accepted");
-  if (firstAccepted) return firstAccepted.id;
+  const firstKept = exposures.find((e) => e.status !== "rejected");
+  if (firstKept) return firstKept.id;
   return exposures[0]?.id;
 }
 
@@ -37,10 +37,9 @@ export function buildExposureImageUrl(
   return `/api/exposures/${exposure.id}/image${qs ? `?${qs}` : ""}`;
 }
 
-/** Map the per-sample exposure list to the filmstrip view-model. The SA-SCREENED
- *  tri-state holds: kept means EXPLICITLY accepted (the same truth as the loupe
- *  caption and the contact-sheet Kept count); a null status is unscreened —
- *  neither kept nor rejected. */
+/** Map the per-sample exposure list to the filmstrip view-model. Status is
+ *  binary: a frame is either dropped (rejected) or kept (the default), so only
+ *  the `rejected` channel is carried — kept needs no marker. */
 export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
   return exposures.map((e, i) => ({
     id: e.id,
@@ -48,7 +47,6 @@ export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
     frameNo: i + 1,
     representative: e.selected,
     rejected: e.status === "rejected",
-    kept: e.status === "accepted",
   }));
 }
 

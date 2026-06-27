@@ -10,11 +10,9 @@ export interface BigFrameProps {
   src: string | null;
   /** Mono caption set over the dark frame (the `.frame-tag`), e.g. "frame 65 · 0.40 s". */
   caption?: ReactNode;
-  /** true → dims the image, shows the "Dropped" pill + the grease-pencil ✕. */
+  /** true → dims the image, shows the "Dropped" pill + the grease-pencil ✕.
+   *  A kept frame (the default) carries no badge — kept is the implied state. */
   rejected?: boolean;
-  /** true → shows the constructive "Kept" pill (explicit accept, SA-SCREENED).
-   *  No dim, no overlay — keeping is not an alarm. `rejected` wins if both. */
-  accepted?: boolean;
   /** Forwarded to DetectorImage (colormap). */
   lutVariant?: DetectorLutVariant;
   /** PLACEMENT ONLY. */
@@ -25,7 +23,6 @@ export function BigFrame({
   src,
   caption,
   rejected,
-  accepted,
   lutVariant,
   className,
 }: BigFrameProps): JSX.Element {
@@ -54,14 +51,6 @@ export function BigFrame({
           className="absolute left-3 top-3 bg-accent text-plate uppercase font-bold tracking-wide text-xs rounded-sm px-2 py-[3px]"
         >
           Dropped
-        </span>
-      )}
-      {!rejected && accepted && (
-        <span
-          data-role="kept-tag"
-          className="absolute left-3 top-3 bg-success text-plate uppercase font-bold tracking-wide text-xs rounded-sm px-2 py-[3px]"
-        >
-          Kept
         </span>
       )}
       {rejected && <RejectOverlay className="absolute inset-0" />}

@@ -41,7 +41,7 @@ import { core, page } from "../interaction/core";
 // placeholder branch (a plain rectangle at the frame's fixed aspect).
 const FIXTURE_EXPOSURE = {
   id: 0, sample_id: 0, filename: "JC000-001.dat", kind: "file" as const,
-  selected: false, status: "accepted" as const, image_path: null,
+  selected: false, status: null, image_path: null,
   image_version: "", tags: [], sources: [],
   trace_hash: null, analysis_inputs_hash: null,
 };
@@ -56,9 +56,9 @@ const LOUPE_BODY_GRID = "grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_286px] gap
 const LOUPE_FIXTURE = (
   <div className={LOUPE_BODY_GRID}>
     <div className="min-w-0">
-      <BigFrame src={null} caption="frame 1 of 1 · kept" accepted />
+      <BigFrame src={null} caption="frame 1 of 1 · kept" />
       <ThumbnailGallery
-        exposures={[{ id: 0, src: null, frameNo: 1, kept: true }]}
+        exposures={[{ id: 0, src: null, frameNo: 1 }]}
         selectedId={0}
         size="lg"
         align="center"
@@ -68,7 +68,6 @@ const LOUPE_FIXTURE = (
     <LoupeSidePanel
       meta={toMetaEntries(FIXTURE_EXPOSURE, [FIXTURE_EXPOSURE])}
       dropped={false}
-      kept
       isRepresentative={false}
       tags={[]}
     />
@@ -218,14 +217,17 @@ export function LoupePage(): JSX.Element {
     [corpusTags],
   );
 
-  const handleDropToggle = useCallback(() => {
+  // Drop verb (key X): the sole cull action, a TOGGLE. Dropping a kept frame
+  // rejects it; pressing Drop again on a dropped frame brings it back (status
+  // null). There is no separate Keep/Restore.
+  const handleToggleDrop = useCallback(() => {
     if (!activeExposure) return;
     const dropping = activeExposure.status !== "rejected";
-    // LO-LASTFRAME-NOGUARD: dropping the ONLY non-rejected frame leaves the
-    // sample with no kept frame at all — a consequential edge the bland "Frame
-    // dropped" copy hid. The action stays reversible (X toggles it back), so
-    // name both the consequence and the reversal gesture rather than guarding
-    // it outright (a sample legitimately may end up all-rejected).
+    // LO-LASTFRAME-NOGUARD: dropping the ONLY kept frame leaves the sample with
+    // no kept frame at all — a consequential edge the bland "Frame dropped" copy
+    // hid. The toggle stays reversible (X again brings it back), so name both the
+    // consequence and the reversal gesture rather than guarding it outright (a
+    // sample legitimately may end up all-rejected).
     const lastKept =
       dropping && exposures.filter((e) => e.status !== "rejected").length === 1;
     setStatus.mutate(
@@ -238,43 +240,15 @@ export function LoupePage(): JSX.Element {
           showToast(
             dropping
               ? lastKept
-                ? "Last kept frame dropped. This sample now has no kept frame; press X to restore it."
+                ? "Last kept frame dropped. This sample now has no kept frame; press X again to bring it back."
                 : "Frame dropped"
-              : "Frame restored",
+              : "Frame kept",
             lastKept ? "warning" : "success",
           ),
         onError: notifySaveFailed,
       },
     );
   }, [activeExposure, exposures, setStatus]);
-
-  // The Keep verb (SA-SCREENED): K toggles accepted ↔ null. On a rejected
-  // frame, K accepts directly — last verb wins, no trip through unscreened.
-  const handleKeepToggle = useCallback(() => {
-    if (!activeExposure) return;
-    const keeping = activeExposure.status !== "accepted";
-    setStatus.mutate(
-      { exposureId: activeExposure.id, status: keeping ? "accepted" : null },
-      {
-        onSuccess: () =>
-          showToast(keeping ? "Frame kept" : "Frame restored", "success"),
-        onError: notifySaveFailed,
-      },
-    );
-  }, [activeExposure, setStatus]);
-
-  // Restore: set the active frame's status back to null (unscreened). Mirrors
-  // the drop/keep toggle path — same setStatus mutation, status: null payload.
-  const handleRestore = useCallback(() => {
-    if (!activeExposure) return;
-    setStatus.mutate(
-      { exposureId: activeExposure.id, status: null },
-      {
-        onSuccess: () => showToast("Frame restored", "success"),
-        onError: notifySaveFailed,
-      },
-    );
-  }, [activeExposure, setStatus]);
 
   const handleSetRepresentative = useCallback(() => {
     if (!activeExposure) return;
@@ -399,25 +373,15 @@ export function LoupePage(): JSX.Element {
         enabled: () => hasValidId,
       }),
       page("cull", {
+        // Drop is the sole cull verb and a toggle (X drops, X again un-drops).
         label: "Drop", keys: ["x"], group: "Act", dock: true,
         enabled: () => activeExposure != null,
-        run: () => handleDropToggle(),
-      }),
-      page("keep", {
-        label: "Keep", keys: ["k"], group: "Act", dock: true,
-        enabled: () => activeExposure != null,
-        run: () => handleKeepToggle(),
+        run: () => handleToggleDrop(),
       }),
       page("representative", {
         label: "Set representative", keys: ["r"], group: "Act", dock: true,
         enabled: () => activeExposure != null,
         run: () => handleSetRepresentative(),
-      }),
-      page("restore", {
-        // No keyboard accel: the old Backspace binding would collide with text editing in the tag input under the new layer (Backspace is non-bare, so typing-suppression doesn't catch it). Dock-button only.
-        label: "Restore", group: "Act", dock: true,
-        enabled: () => activeExposure != null,
-        run: () => handleRestore(),
       }),
     ],
   });
@@ -444,9 +408,8 @@ export function LoupePage(): JSX.Element {
   }
 
   const isDropped = activeExposure?.status === "rejected";
-  const isKept = activeExposure?.status === "accepted";
-  // Honest tri-state caption: a null status is unscreened, never "kept".
-  const verdictWord = isDropped ? "dropped" : isKept ? "kept" : "unscreened";
+  // Binary caption: a frame is either dropped or kept (not-rejected).
+  const verdictWord = isDropped ? "dropped" : "kept";
   // Sample-level truth, not frame-level: the backend's Index-stage resolution
   // never consults status, so a dropped representative still carries forward.
   const representativeDropped = exposures.some(
@@ -491,7 +454,6 @@ export function LoupePage(): JSX.Element {
                     src={buildExposureImageUrl(activeExposure)}
                     caption={`frame ${frameIndex + 1} of ${exposures.length} · ${verdictWord}`}
                     rejected={isDropped}
-                    accepted={!!isKept}
                   />
                   <ThumbnailGallery
                     exposures={toGalleryExposures(exposures)}
@@ -505,12 +467,10 @@ export function LoupePage(): JSX.Element {
                 <LoupeSidePanel
                   meta={toMetaEntries(activeExposure, exposures)}
                   dropped={!!isDropped}
-                  kept={!!isKept}
                   isRepresentative={activeExposure.selected}
                   representativeDropped={representativeDropped}
                   tags={toLoupeTags(sample.tags)}
-                  onToggleDrop={handleDropToggle}
-                  onToggleKeep={handleKeepToggle}
+                  onToggleDrop={handleToggleDrop}
                   onSetRepresentative={handleSetRepresentative}
                   onAddTag={handleAddTag}
                   onRemoveTag={handleRemoveTag}

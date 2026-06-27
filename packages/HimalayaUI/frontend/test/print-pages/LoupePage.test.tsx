@@ -51,7 +51,7 @@ import { useInteraction } from "../../src/print/interaction/registry";
 function exp(over: Partial<Exposure>): Exposure {
   return {
     id: 1, sample_id: 1, filename: "JC000-001.dat", kind: "file",
-    selected: false, status: "accepted", image_path: "/x.tif", image_version: "v9",
+    selected: false, status: null, image_path: "/x.tif", image_version: "v9",
     tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
   };
 }
@@ -254,45 +254,33 @@ describe("LoupePage", () => {
     );
   });
 
-  it("drop toggle mutates status to rejected for the active exposure", () => {
-    renderAt(42);
+  it("X drops the active (kept) frame: status rejected", () => {
+    renderAt(42); // fixture frame 1 is kept (null)
     fireEvent.keyDown(window, { key: "x" });
     expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" }, expect.anything());
   });
 
-  it("K marks an unscreened active frame accepted (SA-SCREENED)", () => {
-    state.exposures = [exp({ id: 1, selected: true, status: null })];
+  it("X on a dropped frame toggles it back to null (un-drop)", () => {
     renderAt(42);
-    fireEvent.keyDown(window, { key: "k" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "accepted" }, expect.anything());
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // frame 2 is rejected
+    fireEvent.keyDown(window, { key: "x" });
+    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 2, status: null }, expect.anything());
   });
 
-  it("K on an accepted frame restores it to unscreened (toggle)", () => {
-    renderAt(42); // fixture frame 1 is status "accepted"
-    fireEvent.keyDown(window, { key: "k" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: null }, expect.anything());
-  });
-
-  it("K on a rejected frame sets accepted directly: last verb wins, no trip through null", () => {
+  it("there is no K (keep) binding — pressing k does nothing", () => {
     renderAt(42);
     fireEvent.keyDown(getScope(), { key: "ArrowRight" }); // frame 2 is rejected
     fireEvent.keyDown(window, { key: "k" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 2, status: "accepted" }, expect.anything());
+    expect(setStatusMutate).not.toHaveBeenCalled();
   });
 
-  it("X on an accepted frame sets rejected directly: last verb wins", () => {
-    renderAt(42); // fixture frame 1 is status "accepted"
-    fireEvent.keyDown(window, { key: "x" });
-    expect(setStatusMutate).toHaveBeenCalledWith({ exposureId: 1, status: "rejected" }, expect.anything());
-  });
-
-  it("K keep announces a toast ON CONFIRMATION, not before", () => {
+  it("un-dropping (X toggle) announces 'Frame kept' ON CONFIRMATION, not before", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      state.exposures = [exp({ id: 1, selected: true, status: null })];
+      state.exposures = [exp({ id: 1, selected: true, status: "rejected" })];
       renderAt(42);
-      fireEvent.keyDown(window, { key: "k" });
+      fireEvent.keyDown(window, { key: "x" }); // toggle the drop OFF
       // No premature success claim while the save is still in flight.
       expect(toast).not.toHaveBeenCalled();
       lastCbs(setStatusMutate).onSuccess?.({});
@@ -302,29 +290,16 @@ describe("LoupePage", () => {
     }
   });
 
-  it("K restore (accepted → null) announces 'Frame restored' on confirmation", () => {
-    const toast = vi.fn();
-    setToastImpl(toast);
-    try {
-      renderAt(42); // frame 1 accepted
-      fireEvent.keyDown(window, { key: "k" });
-      lastCbs(setStatusMutate).onSuccess?.({});
-      expect(toast).toHaveBeenCalledWith("Frame restored", "success");
-    } finally {
-      setToastImpl(null);
-    }
-  });
-
   it("dropping the LAST kept frame names the consequence + reversal, not a bland 'Frame dropped' (LO-LASTFRAME-NOGUARD)", () => {
     const toast = vi.fn();
     setToastImpl(toast);
     try {
-      // Default fixture: frame 1 accepted (the ONLY non-rejected frame), frame 2 rejected.
+      // Default fixture: frame 1 kept (the ONLY non-rejected frame), frame 2 rejected.
       renderAt(42);
       fireEvent.keyDown(window, { key: "x" }); // drop frame 1 — the last kept frame
       lastCbs(setStatusMutate).onSuccess?.({});
       expect(toast).toHaveBeenCalledWith(
-        "Last kept frame dropped. This sample now has no kept frame; press X to restore it.",
+        "Last kept frame dropped. This sample now has no kept frame; press X again to bring it back.",
         "warning",
       );
     } finally {
@@ -338,8 +313,8 @@ describe("LoupePage", () => {
     try {
       // Two kept frames — dropping one still leaves another, so no consequence copy.
       state.exposures = [
-        exp({ id: 1, selected: true, status: "accepted" }),
-        exp({ id: 2, status: "accepted" }),
+        exp({ id: 1, selected: true, status: null }),
+        exp({ id: 2, status: null }),
       ];
       renderAt(42);
       fireEvent.keyDown(window, { key: "x" }); // drop frame 1; frame 2 stays kept
@@ -350,26 +325,20 @@ describe("LoupePage", () => {
     }
   });
 
-  it("the Kept pill shows on an accepted frame; the Dropped pill on a rejected one", () => {
-    const { container } = renderAt(42); // frame 1 accepted, frame 2 rejected
-    expect(container.querySelector('[data-role="kept-tag"]')).toBeInTheDocument();
+  it("only the Dropped pill shows on a dropped frame; a kept frame carries no badge", () => {
+    const { container } = renderAt(42); // frame 1 kept, frame 2 rejected
     expect(container.querySelector('[data-role="dropped-tag"]')).not.toBeInTheDocument();
-    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     expect(container.querySelector('[data-role="kept-tag"]')).not.toBeInTheDocument();
+    fireEvent.keyDown(getScope(), { key: "ArrowRight" });
     expect(container.querySelector('[data-role="dropped-tag"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-role="kept-tag"]')).not.toBeInTheDocument();
   });
 
-  it("the frame caption reads the tri-state verdict word honestly", () => {
-    state.exposures = [exp({ id: 1, selected: true, status: null })];
-    const { container } = renderAt(42);
+  it("the frame caption reads the binary verdict word (kept)", () => {
+    const { container } = renderAt(42); // frame 1 kept
     expect(container.querySelector('[data-role="frame-caption"]')).toHaveTextContent(
-      "unscreened",
+      "kept",
     );
-  });
-
-  it("the loupe key legend documents K", () => {
-    renderAt(42);
-    expect(screen.getByText("keep / restore")).toBeInTheDocument();
   });
 
   it("R sets the representative when the active frame is NOT it", () => {
@@ -583,20 +552,20 @@ describe("LoupePage", () => {
     }
   });
 
-  it("filmstrip marks kept on accepted frames ONLY (LO-KEPTSTRIP tri-state)", () => {
+  it("filmstrip marks only the dropped frame; kept frames carry no status marker", () => {
     state.exposures = [
-      exp({ id: 1, selected: true, status: "accepted" }),
+      exp({ id: 1, selected: true, status: null }), // kept (default)
       exp({ id: 2, status: "rejected" }),
-      exp({ id: 3, status: null }), // unscreened — neither kept nor dropped
+      exp({ id: 3, status: null }), // kept
     ];
     renderAt(42);
     expect(
-      screen.getByRole("button", { name: "Frame 1, representative, kept" }),
+      screen.getByRole("button", { name: "Frame 1, representative" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Frame 2, dropped" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Frame 3" })).toBeInTheDocument();
     const thumbs = screen.getAllByTestId("thumbnail");
-    // The unscreened thumb stays "normal" — the regression this pin exists for.
+    // A kept thumb stays "normal" — kept is the implied default, no marker.
     expect(thumbs[2]).toHaveAttribute("data-state", "normal");
   });
 
@@ -691,7 +660,7 @@ describe("LoupePage", () => {
     expect(setStatusMutate).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "x", ctrlKey: true });
     fireEvent.keyDown(window, { key: "r", altKey: true });
-    // ⌘K belongs to the command palette / browser, never the keep verb.
+    // ⌘K belongs to the command palette / browser; bare k is unbound entirely.
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(setStatusMutate).not.toHaveBeenCalled();
@@ -784,11 +753,6 @@ describe("LoupePage · LO-NEXT sample navigation", () => {
     renderAt(11);
     fireEvent.keyDown(getScope(), { key: "ArrowDown" });
     expect(screen.getByTestId("loc-probe")).toHaveAttribute("data-pathname", "/sample/12/loupe");
-  });
-
-  it("documents the sample-step keys in the loupe legend", () => {
-    renderWithOrder(11, [10, 11, 12]);
-    expect(screen.getByText("prev / next sample")).toBeInTheDocument();
   });
 });
 

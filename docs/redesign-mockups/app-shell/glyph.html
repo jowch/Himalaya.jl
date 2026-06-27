@@ -20,7 +20,6 @@
   .v.fill{background:var(--accent);border-color:var(--accent);color:var(--paper)}
   .v.out{background:transparent;border-color:var(--accent);color:var(--accent)}
   .v.drop{background:transparent;color:var(--accent);border-color:color-mix(in oklch,var(--accent) 40%,white)}
-  .v.keep{background:transparent;color:var(--success);border-color:color-mix(in oklch,var(--success) 40%,white)}
   .v.neu{background:var(--paper);color:var(--ink);border-color:var(--hair-strong)}
 
   /* plain key chip — currentColor text, faint matching hairline, no fill.
@@ -41,16 +40,14 @@
     <div class="cell"><span class="v out">Focus<span class="kb">↵</span></span><span class="cap">OUTLINED · accent text · plain ↵</span></div>
   </div>
 
-  <h2>Cull verbs — colored, not filled → plain chip (no frost)</h2>
+  <h2>Cull verb — colored, not filled → plain chip (no frost)</h2>
   <div class="row">
-    <div class="cell"><span class="v drop">Drop<span class="kb letter">X</span></span><span class="cap">accent outline</span></div>
-    <div class="cell"><span class="v keep">Keep<span class="kb letter">K</span></span><span class="cap">success outline</span></div>
+    <div class="cell"><span class="v drop">Drop<span class="kb letter">X</span></span><span class="cap">accent outline · toggles</span></div>
   </div>
 
   <h2>Neutral pills — plain chip (no frost)</h2>
   <div class="row">
     <div class="cell"><span class="v neu">Loupe<span class="kb letter">L</span></span><span class="cap">neutral</span></div>
-    <div class="cell"><span class="v neu">Restore</span><span class="cap">no key</span></div>
     <div class="cell"><span class="v neu">Set representative<span class="kb letter">R</span></span><span class="cap">neutral</span></div>
   </div>
 

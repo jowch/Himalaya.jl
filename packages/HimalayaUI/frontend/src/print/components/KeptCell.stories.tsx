@@ -13,10 +13,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const WithDropped: Story = {
-  args: { dropped: 1 },
+export const Partial: Story = {
+  args: { kept: 4, total: 5 },
 };
 
 export const AllKept: Story = {
-  args: { kept: 5, total: 5, dropped: 0 },
+  args: { kept: 5, total: 5 },
 };

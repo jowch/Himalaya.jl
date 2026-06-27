@@ -11,7 +11,7 @@ import thumb93 from "../fixtures/thumbs/93.png?url";
 // Status-shaped fixtures: the strip's kept/rejected flags and the row's count
 // cells must tell the same story the real pages derive together from exposure
 // status (toGalleryExposures / toSampleRowModel).
-type FrameStatus = "accepted" | "rejected" | null;
+type FrameStatus = "rejected" | null;
 
 function expo(
   id: number,
@@ -25,29 +25,21 @@ function expo(
     frameNo: String(id),
     representative,
     rejected: status === "rejected",
-    kept: status === "accepted",
   };
 }
 
-// kept 4 / total 5 / dropped 1 — matches the meta count cells.
+// kept 4 / total 5 (one rejected) — matches the meta count cells.
 const EXPOSURES: GalleryExposure[] = [
-  expo(37, thumb37, "accepted", true),
-  expo(65, thumb65, "accepted"),
+  expo(37, thumb37, null, true),
+  expo(65, thumb65, null),
   expo(66, thumb66, "rejected"),
-  expo(67, thumb67, "accepted"),
-  expo(93, thumb93, "accepted"),
+  expo(67, thumb67, null),
+  expo(93, thumb93, null),
 ];
 
 const EXPOSURES_ALL_KEPT: GalleryExposure[] = EXPOSURES.map((e) => ({
   ...e,
   rejected: false,
-  kept: true,
-}));
-
-const EXPOSURES_UNSCREENED: GalleryExposure[] = EXPOSURES.map((e) => ({
-  ...e,
-  rejected: false,
-  kept: false,
 }));
 
 const TAGS: Tag[] = [{ key: "LL37" }, { key: "temperature", value: "37C" }];
@@ -68,36 +60,29 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Full row: indexed phase, screened, one dropped, representative + rejected thumbs. */
+/** Full row: indexed phase, one dropped frame, representative + rejected thumbs. */
 export const Indexed: Story = {
   args: {
-    screened: true,
     phase: "Pn3m",
-    dropped: 1,
   },
 };
 
-/** Not indexed and NOT screened — resting tint + "Not indexed"; every frame
- *  unscreened, so the strip shows no kept dots and the count cell says 0. */
+/** Not indexed — "Not indexed" status. */
 export const Unindexed: Story = {
   args: {
-    screened: false,
     phase: null,
-    exposures: EXPOSURES_UNSCREENED,
-    kept: 0,
-    dropped: 0,
+    exposures: EXPOSURES_ALL_KEPT,
+    kept: 5,
   },
 };
 
-/** dropped=0 → no dropped callout. */
+/** Every frame kept. */
 export const AllKept: Story = {
   args: {
-    screened: true,
     phase: "Im3m",
     exposures: EXPOSURES_ALL_KEPT,
     kept: 5,
     total: 5,
-    dropped: 0,
   },
 };
 
@@ -105,42 +90,34 @@ const STACK_ROWS = [
   {
     name: "POPC + 20% chol",
     sampleId: "s-001",
-    screened: true,
     phase: "Pn3m" as const,
     exposures: EXPOSURES,
     kept: 4,
     total: 5,
-    dropped: 1,
   },
   {
     name: "POPC + 40% chol",
     sampleId: "s-002",
-    screened: true,
     phase: "Im3m" as const,
     exposures: EXPOSURES_ALL_KEPT,
     kept: 5,
     total: 5,
-    dropped: 0,
   },
   {
     name: "MO + buffer",
     sampleId: "s-003",
-    screened: false,
     phase: null,
-    exposures: EXPOSURES_UNSCREENED.slice(0, 3),
-    kept: 0,
+    exposures: EXPOSURES_ALL_KEPT.slice(0, 3),
+    kept: 3,
     total: 3,
-    dropped: 0,
   },
   {
     name: "MO + PEG",
     sampleId: "s-004",
-    screened: false,
     phase: "Ia3d" as const,
-    exposures: EXPOSURES_UNSCREENED.slice(0, 3),
-    kept: 0,
+    exposures: EXPOSURES_ALL_KEPT.slice(0, 3),
+    kept: 3,
     total: 3,
-    dropped: 0,
   },
 ];
 
@@ -152,7 +129,7 @@ const MANY_EXPOSURES: GalleryExposure[] = Array.from(
     expo(
       200 + i,
       SRC_CYCLE[i % SRC_CYCLE.length]!,
-      i === 4 || i === 7 ? "rejected" : "accepted",
+      i === 4 || i === 7 ? "rejected" : null,
       i === 0,
     ),
 );
@@ -175,12 +152,10 @@ export const Overflowing: Story = {
       <SampleTableRow
         name="POPC + 20% chol (long batch)"
         sampleId="s-999"
-        screened
         phase="Pn3m"
         exposures={MANY_EXPOSURES}
         kept={10}
         total={12}
-        dropped={2}
         tags={MANY_TAGS}
       />
     </div>
@@ -210,12 +185,10 @@ export const Stack: Story = {
           key={row.sampleId}
           name={row.name}
           sampleId={row.sampleId}
-          screened={row.screened}
           phase={row.phase}
           exposures={row.exposures}
           kept={row.kept}
           total={row.total}
-          dropped={row.dropped}
           tags={TAGS}
         />
       ))}

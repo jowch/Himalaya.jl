@@ -23,10 +23,8 @@ export type ShortcutId =
   | "extendPrev"
   | "extendNext"
   | "selectAll"
-  | "restore"
   | "helpOverlay"
   | "drop"
-  | "keep"
   | "representative"
   | "dismiss"
   | "undo"
@@ -67,14 +65,13 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   extendPrev: { id: "extendPrev", keys: ["Shift+ArrowLeft"], label: "Extend selection left", group: "Navigate" },
   extendNext: { id: "extendNext", keys: ["Shift+ArrowRight"], label: "Extend selection right", group: "Navigate" },
   selectAll: { id: "selectAll", keys: ["Mod+a"], label: "Select all", group: "Navigate" },
-  restore: { id: "restore", keys: ["Backspace"], label: "Restore / remove from selection", group: "Navigate" },
   // General — help + dismiss + find.
   helpOverlay: { id: "helpOverlay", keys: ["?"], label: "Keyboard shortcuts", group: "General" },
   dismiss: { id: "dismiss", keys: ["Escape"], label: "Back / dismiss", group: "General" },
   find: { id: "find", keys: ["Mod+k", "/"], label: "Find a sample", group: "General" },
-  // Screen — exposure status verbs.
+  // Screen — exposure status verbs. Drop is a toggle (cull ↔ un-cull); there is
+  // no separate Keep verb.
   drop: { id: "drop", keys: ["x"], label: "Drop", group: "Screen" },
-  keep: { id: "keep", keys: ["k"], label: "Keep", group: "Screen" },
   representative: { id: "representative", keys: ["r"], label: "Set representative", group: "Screen" },
   // Edit — undoable mutations + list reorder.
   undo: { id: "undo", keys: ["Mod+z"], label: "Undo", group: "Edit" },

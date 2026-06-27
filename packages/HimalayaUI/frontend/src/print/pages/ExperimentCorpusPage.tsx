@@ -8,7 +8,6 @@ import {
   useTriggerScan,
   useCorpusSamples,
   useCorpusExposures,
-  useSetExposureStatusBatch,
   useSetExposureStatus,
   useSelectExposure,
 } from "../../queries";
@@ -20,7 +19,6 @@ import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { toSampleRowModel } from "./samplesAdapters";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
-import { showToast } from "../../lib/toast";
 import { useListCursor } from "../interaction/useListCursor";
 import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
@@ -136,7 +134,6 @@ export function ExperimentCorpusPage(): JSX.Element {
     [corpusQuery.data, expId],
   );
   const corpusExposures = useCorpusExposures(scopedSamples);
-  const batch = useSetExposureStatusBatch();
 
   // --- ID-based sample cursor (roving tabindex, Enter → navigate to Focus) ---
   const sampleIds = useMemo(() => scopedSamples.map((s) => s.id), [scopedSamples]);
@@ -169,18 +166,13 @@ export function ExperimentCorpusPage(): JSX.Element {
 
 
   // --- Per-exposure verdicts on the FRAME cursor (declared to the registry) ---
-  // The current thumbnail (the ←/→ frame cursor) takes Drop / Keep / Set
-  // representative, mirroring the Loupe. Drop/Keep toggle (a second press on an
-  // already-dropped/kept frame clears the verdict).
-  const dropFrame = useCallback(() => {
+  // The current thumbnail (the ←/→ frame cursor) takes Drop / Set representative,
+  // mirroring the Loupe. Drop is the sole cull verb and a TOGGLE: X drops a kept
+  // frame, X again brings it back (status null). A frame is dropped or kept.
+  const toggleDropFrame = useCallback(() => {
     if (!activeFrame) return;
     const dropping = activeFrame.status !== "rejected";
     setExposureStatus.mutate({ exposureId: activeFrame.id, status: dropping ? "rejected" : null });
-  }, [activeFrame, setExposureStatus]);
-  const keepFrame = useCallback(() => {
-    if (!activeFrame) return;
-    const keeping = activeFrame.status !== "accepted";
-    setExposureStatus.mutate({ exposureId: activeFrame.id, status: keeping ? "accepted" : null });
   }, [activeFrame, setExposureStatus]);
   const representativeFrame = useCallback(() => {
     if (activeFrame) setRepresentative.mutate(activeFrame.id);
@@ -204,26 +196,14 @@ export function ExperimentCorpusPage(): JSX.Element {
         dock: "primary",
         enabled: () => sampleCursor.cursorId !== null,
       }),
-      core("openLoupe", {
-        run: () => { if (activeSample) navigate(`/sample/${activeSample.id}/loupe`); },
-        dock: true,
-        enabled: () => activeSample != null,
-      }),
       page("drop", {
+        // Drop is the sole cull verb and a toggle (X drops, X again un-drops).
         label: "Drop",
         keys: ["x"],
         group: "Act",
         dock: true,
         enabled: () => activeFrame != null,
-        run: () => dropFrame(),
-      }),
-      page("keep", {
-        label: "Keep",
-        keys: ["k"],
-        group: "Act",
-        dock: true,
-        enabled: () => activeFrame != null,
-        run: () => keepFrame(),
+        run: () => toggleDropFrame(),
       }),
       page("representative", {
         label: "Set representative",
@@ -232,6 +212,13 @@ export function ExperimentCorpusPage(): JSX.Element {
         dock: true,
         enabled: () => activeFrame != null,
         run: () => representativeFrame(),
+      }),
+      // Loupe sits at the right edge of the action group, just left of the
+      // primary Focus button (dock renders non-primary buttons in array order).
+      core("openLoupe", {
+        run: () => { if (activeSample) navigate(`/sample/${activeSample.id}/loupe`); },
+        dock: true,
+        enabled: () => activeSample != null,
       }),
     ],
   });
@@ -345,7 +332,6 @@ export function ExperimentCorpusPage(): JSX.Element {
               const loadedExposures = corpusExposures.byId.get(s.id);
               const m = toSampleRowModel(s, loadedExposures);
               const noExposures = loadedExposures !== undefined && loadedExposures.length === 0;
-              const hasDrop = (m.dropped ?? 0) > 0;
               return (
                 <SampleTableRow
                   key={s.id}
@@ -353,11 +339,9 @@ export function ExperimentCorpusPage(): JSX.Element {
                   {...rowRest}
                   name={m.name}
                   sampleId={m.sampleId}
-                  screened={m.screened}
                   exposures={m.exposures}
                   kept={m.kept}
                   total={m.total}
-                  dropped={m.dropped}
                   noExposures={noExposures}
                   tags={m.tags}
                   {...(m.phase !== undefined ? { phase: m.phase } : {})}
@@ -385,14 +369,6 @@ export function ExperimentCorpusPage(): JSX.Element {
                     sampleCursor.setCursor(s.id);
                     navigate(loupeHref(s.id), { state: { sampleOrder } });
                   }}
-                  {...(hasDrop ? { onRestore: () => {
-                    const drops = (corpusExposures.byId.get(s.id) ?? [])
-                      .filter((e) => e.status === "rejected")
-                      .map((e) => e.id);
-                    if (drops.length === 0) return;
-                    for (const did of drops) batch.mutate({ sampleId: s.id, exposureId: did, status: null });
-                    showToast(`${drops.length} frame${drops.length === 1 ? "" : "s"} restored`, "success");
-                  } } : {})}
                 />
               );
             })}

@@ -24,10 +24,11 @@ describe("LoupeSidePanel", () => {
     expect(screen.getByText("This frame")).toBeInTheDocument();
     expect(screen.queryByText("This exposure")).toBeNull();
     expect(screen.getByText("Sample tags")).toBeInTheDocument();
-    expect(screen.getByText("Keys")).toBeInTheDocument();
     expect(screen.getByTestId("meta-list")).toBeInTheDocument();
     expect(screen.getByTestId("tag-list")).toBeInTheDocument();
-    expect(screen.getByTestId("kb-legend")).toBeInTheDocument();
+    // The "Keys" legend was removed — redundant with the dock.
+    expect(screen.queryByText("Keys")).toBeNull();
+    expect(screen.queryByTestId("kb-legend")).toBeNull();
   });
 
   it("suppresses the 'This frame' block when the only row is the redundant position (LO-EXPSPARSE)", () => {
@@ -52,34 +53,22 @@ describe("LoupeSidePanel", () => {
     expect(screen.getByText("beam dropout")).toBeInTheDocument();
   });
 
-  it("reflects kept verdict and wires the drop toggle", async () => {
+  it("reflects a kept verdict and wires the single Drop toggle", async () => {
     const onToggleDrop = vi.fn();
     setup({ onToggleDrop });
-    await userEvent.click(screen.getByRole("button", { name: /drop/i }));
+    // dropped=false → the Verdict reads "Kept".
+    expect(screen.getByText("Kept")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Drop" }));
     expect(onToggleDrop).toHaveBeenCalledOnce();
   });
 
-  it("threads the keep state and wires the keep toggle (SA-SCREENED)", async () => {
-    const onToggleKeep = vi.fn();
-    setup({ kept: true, onToggleKeep });
-    // kept=true → the Verdict reads "Kept" and the keep toggle reads Restore.
-    expect(screen.getByText("Kept")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
-    expect(onToggleKeep).toHaveBeenCalledOnce();
-  });
-
-  it("offers Keep on an unscreened exposure", async () => {
-    const onToggleKeep = vi.fn();
-    setup({ onToggleKeep });
-    expect(screen.getByText("Unscreened")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Keep" }));
-    expect(onToggleKeep).toHaveBeenCalledOnce();
-  });
-
-  it("documents K alongside X in the default key legend", () => {
-    setup();
-    expect(screen.getByText("drop / restore")).toBeInTheDocument();
-    expect(screen.getByText("keep / restore")).toBeInTheDocument();
+  it("a dropped verdict still offers the Drop toggle (press again to bring back)", async () => {
+    const onToggleDrop = vi.fn();
+    setup({ dropped: true, onToggleDrop });
+    expect(screen.getByText("Dropped")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Drop" }));
+    expect(onToggleDrop).toHaveBeenCalledOnce();
   });
 
   it("wires set-representative", async () => {
@@ -99,11 +88,6 @@ describe("LoupeSidePanel", () => {
     expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
   });
 
-  it("shows the default loupe keys", () => {
-    setup();
-    expect(screen.getByText("flip frames")).toBeInTheDocument();
-    expect(screen.getByText("set representative")).toBeInTheDocument();
-  });
 
   it("shows the add-tag affordance persistently (the loupe rule) and commits a new tag", async () => {
     const onAddTag = vi.fn();

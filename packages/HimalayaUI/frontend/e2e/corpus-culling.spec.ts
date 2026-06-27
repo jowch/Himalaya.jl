@@ -120,7 +120,7 @@ test("loupe: dropping the representative shows the rep-dropped warning; restore 
     "Warning. The representative frame is dropped.",
   );
 
-  await page.keyboard.press("x"); // restore it
+  await page.keyboard.press("x"); // press Drop again to un-drop (toggle)
   await expect(page.getByTestId("rep-dropped-warning")).toBeHidden();
 });
 

@@ -155,15 +155,14 @@ describe("<ThumbnailGallery> per-exposure flag passthrough", () => {
     expect(screen.queryByTestId("reject-overlay")).not.toBeInTheDocument();
   });
 
-  it("a kept exposure → its thumb renders [data-role='thumb-kept']; unscreened thumbs do not", () => {
+  it("a dropped exposure renders the rejected state; kept (default) thumbs read normal", () => {
     const exposures: GalleryExposure[] = [
-      { id: 37, src: null, frameNo: "37", kept: true },
-      { id: 65, src: null, frameNo: "65" }, // unscreened — no kept flag
+      { id: 37, src: null, frameNo: "37", rejected: true },
+      { id: 65, src: null, frameNo: "65" }, // kept (default) — no marker
     ];
-    const { container } = render(<ThumbnailGallery exposures={exposures} />);
-    expect(container.querySelectorAll("[data-role='thumb-kept']")).toHaveLength(1);
+    render(<ThumbnailGallery exposures={exposures} />);
     const thumbs = screen.getAllByTestId("thumbnail");
-    expect((thumbs[0].getAttribute("data-state") ?? "").split(" ")).toContain("kept");
+    expect((thumbs[0].getAttribute("data-state") ?? "").split(" ")).toContain("rejected");
     expect(thumbs[1]).toHaveAttribute("data-state", "normal");
   });
 });

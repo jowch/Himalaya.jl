@@ -46,7 +46,6 @@
   .cull{display:inline-flex;align-items:center;gap:6px}
   .v{font-size:12px;font-weight:600;border-radius:7px;padding:6px 12px;border:1px solid var(--hair-strong);background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
   .v.drop{color:var(--accent);border-color:color-mix(in oklch,var(--accent) 38%,white)}
-  .v.keep{color:var(--success);border-color:color-mix(in oklch,var(--success) 38%,white)}
   .v.ghost{border-color:transparent;background:transparent;color:var(--ink-soft)}
   .v.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
   /* key chip: currentColor + centered glyph (flex + line-height:1). Plain by
@@ -85,8 +84,6 @@
     <div class="ddiv"></div>
     <div class="cull">
       <span class="v drop">Drop<span class="kb">X</span></span>
-      <span class="v keep">Keep<span class="kb">K</span></span>
-      <span class="v ghost">Restore</span>
     </div>
     <div class="sp"></div>
     <span class="v">Loupe<span class="kb">L</span></span>
@@ -94,8 +91,8 @@
   </div>
   <div class="note">
     <div class="n"><span class="k">1</span><span class="t"><b>2D cursor, first-class.</b> ↑/↓ moves the sample row, ‹/› steps the exposures within it — the nav the sheet already has, now primary (no tab-in). The two steppers literally show the two axes.</span></div>
-    <div class="n"><span class="k">2</span><span class="t"><b>Cull acts on the current frame</b> (Drop X / Keep K / Restore), with Shift-select still batching across frames (then a count appears). The verbs sit between the cursor and the destinations.</span></div>
-    <div class="n"><span class="k">3</span><span class="t"><b>Destinations for the current row, right side:</b> <b>Focus</b> (primary, Enter) and <b>Loupe</b> (L). Whole sheet now drivable from the keyboard: ↑↓ rows · ‹› frames · X/K cull · Enter Focus · L loupe.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>Cull acts on the current frame</b> (Drop X — a toggle; X again un-drops), with Shift-select still batching across frames (then a count appears). The verb sits between the cursor and the destinations.</span></div>
+    <div class="n"><span class="k">3</span><span class="t"><b>Destinations for the current row, right side:</b> <b>Focus</b> (primary, Enter) and <b>Loupe</b> (L). Whole sheet now drivable from the keyboard: ↑↓ rows · ‹› frames · X drop (toggle) · Enter Focus · L loupe.</span></div>
   </div>
 </section>
 
@@ -118,7 +115,7 @@
   </div>
   <div class="note">
     <div class="n"><span class="k">1</span><span class="t"><b>Sample-level only.</b> ↑/↓ switches samples (same gesture as the sheet's row cursor); ‹ Corpus goes back up to the sheet. The stepper has left the top chrome for good.</span></div>
-    <div class="n"><span class="k">2</span><span class="t"><b>No cull here.</b> Keep / reject / set-representative are frame-level work and live in the Loupe. Focus is for indexing the representative trace — the plate + assignment sidebar own that, untouched.</span></div>
+    <div class="n"><span class="k">2</span><span class="t"><b>No cull here.</b> Drop / set-representative are frame-level work and live in the Loupe. Focus is for indexing the representative trace — the plate + assignment sidebar own that, untouched.</span></div>
     <div class="n"><span class="k">3</span><span class="t"><b>One destination:</b> Loupe (L) for this sample's frames. Drawn as a quiet button, not accent — on the Focus page the indexing IS the work, so the dock stays understated. Bump it to primary if you'd rather it lead.</span></div>
   </div>
 </section>
@@ -147,7 +144,7 @@
   <div class="note">
     <div class="n"><span class="k">1</span><span class="t"><b>Up/down steps samples</b> (a vertical list, same gesture and label as the corpus). No in-dock series switcher — switching series goes through the Series folio; ‹ All series goes back up.</span></div>
     <div class="n"><span class="k">2</span><span class="t"><b>"Which sample?" made explicit.</b> The cursor highlights the current sample's trace on the overlay AND names it in the dock — swatch + name + which experiment it's from. So you always see exactly what "Focus" will open.</span></div>
-    <div class="n"><span class="k">→</span><span class="t"><b>Focus</b> opens that current sample; from Focus the dock would read ‹ Series and step 1/6. No cull here (nothing to keep/reject in a series).</span></div>
+    <div class="n"><span class="k">→</span><span class="t"><b>Focus</b> opens that current sample; from Focus the dock would read ‹ Series and step 1/6. No cull here (nothing to drop in a series).</span></div>
   </div>
 </section>
 
@@ -169,14 +166,13 @@
     <div class="ddiv"></div>
     <div class="cull">
       <span class="v drop">Drop<span class="kb">X</span></span>
-      <span class="v keep">Keep<span class="kb">K</span></span>
       <span class="v">Set representative<span class="kb">R</span></span>
     </div>
     <div class="sp"></div>
     <span class="v primary">Focus<span class="kb frost">↵</span></span>
   </div>
   <div class="note">
-    <div class="n"><span class="k">1</span><span class="t"><b>The frame-cull surface.</b> This is where Drop / Keep / Set-rep moved out of Focus to — you're looking at one frame big, so culling it is the point. Same verbs, same X/K/R keys.</span></div>
+    <div class="n"><span class="k">1</span><span class="t"><b>The frame-cull surface.</b> This is where Drop / Set-rep moved out of Focus to — you're looking at one frame big, so culling it is the point. Same verbs, same X/R keys (X toggles drop).</span></div>
     <div class="n"><span class="k">2</span><span class="t"><b>Same 2D cursor as Corpus.</b> ‹/› steps frames (the filmstrip), ↑/↓ jumps to the prev/next sample's loupe. One consistent gesture across sheet ↔ loupe.</span></div>
     <div class="n"><span class="k">→</span><span class="t"><b>Focus is the forward step</b> (primary, Enter): once a sample's frames are culled, go index its representative. ‹ Corpus returns to the sheet.</span></div>
   </div>

@@ -43,8 +43,8 @@ describe("<SpecCell> slot chip", () => {
     expect(screen.queryByTestId("slot-chip")).toBeNull();
   });
 
-  it("renders no slot-chip when slotIndex is absent (even when screened)", () => {
-    render(<SpecCell name="Sample A" sampleId="s-001" screened />);
+  it("renders no slot-chip when slotIndex is absent", () => {
+    render(<SpecCell name="Sample A" sampleId="s-001" />);
     expect(screen.queryByTestId("slot-chip")).toBeNull();
   });
 
@@ -85,22 +85,11 @@ describe("<KeptCell> counts", () => {
   });
 });
 
-describe("<KeptCell> dropped span", () => {
-  it("renders data-role=kept-dropped with correct text when dropped > 0", () => {
-    const { container } = render(<KeptCell kept={4} total={5} dropped={1} />);
-    const el = container.querySelector("[data-role='kept-dropped']");
-    expect(el).toBeInTheDocument();
-    expect(el).toHaveTextContent("1 dropped");
-  });
-
-  it("does NOT render data-role=kept-dropped when dropped=0", () => {
-    const { container } = render(<KeptCell kept={5} total={5} dropped={0} />);
+describe("<KeptCell> is a plain count", () => {
+  it("renders no dropped caption and no Restore button (binary model)", () => {
+    const { container } = render(<KeptCell kept={4} total={5} />);
     expect(container.querySelector("[data-role='kept-dropped']")).not.toBeInTheDocument();
-  });
-
-  it("does NOT render data-role=kept-dropped when dropped is omitted", () => {
-    const { container } = render(<KeptCell kept={5} total={5} />);
-    expect(container.querySelector("[data-role='kept-dropped']")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
   });
 });
 
