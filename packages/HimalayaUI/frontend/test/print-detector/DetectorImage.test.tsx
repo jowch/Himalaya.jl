@@ -34,6 +34,14 @@ test("renders an <img> (role=img) fed by the fetched blob's object URL", async (
   await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-url"));
 });
 
+test("revokes the object URL on unmount (no blob leak)", async () => {
+  const { unmount } = render(<DetectorImage src="/x.png" size="full" />);
+  const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
+  await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-url"));
+  unmount();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+});
+
 test("fetches exactly the src it was given (no URL building inside)", async () => {
   const spy = vi.fn().mockResolvedValue({
     ok: true, blob: () => Promise.resolve(pngBlob()),

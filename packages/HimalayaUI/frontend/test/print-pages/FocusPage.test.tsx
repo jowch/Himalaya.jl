@@ -749,11 +749,19 @@ describe("FocusPage", () => {
 
   // Progressive load: the page reveals on STRUCTURE (corpus + exposure). The
   // trace/peaks fetch no longer gates the whole page — only the trace plot waits,
-  // behind its own plate skeleton, so the detector + rail paint a round-trip
-  // earlier. (Detector regression: it depends only on the exposure.)
-  it("reveals the page while trace/peaks still load; only the trace plot skeletons", () => {
-    seedFull(); // structure (corpus + exposure 7) in hand
-    state.traceLoading = true; // trace/peaks still in flight
+  // behind its own plate skeleton, so the detector + rail SHELL paint a
+  // round-trip earlier. (Detector depends only on the exposure.)
+  //
+  // Models the REAL production load window: trace/peaks in flight means their
+  // data is absent, so peaks/indices/assignment are empty here (not seedFull's
+  // populated arrays — that loaded+data-present combination can't happen).
+  it("reveals the page while trace/peaks still load; trace plot AND rail skeleton, no misleading copy", () => {
+    seedFull();
+    state.traceLoading = true;
+    state.trace = undefined;
+    state.peaks = [];
+    state.indices = [];
+    state.assignment = undefined;
     renderAt(42);
     // Page is NOT held behind the whole-page skeleton…
     expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
@@ -764,6 +772,11 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("trace-plate")).toBeInTheDocument();
     expect(screen.getByTestId("trace-plate-skeleton")).toBeInTheDocument();
     expect(screen.queryByTestId("trace-plate-plot")).toBeNull();
+    // …and the rail shows a neutral loading body, NOT the peak-derived empty copy
+    // that would tell the user to mark peaks on a trace that's still skeletoning.
+    expect(screen.getAllByTestId("rail-body-skeleton").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/No peaks marked/i)).toBeNull();
+    expect(screen.queryByText(/Candidates appear once peaks are marked/i)).toBeNull();
   });
 
   it("does not render a stale-index banner (peak edits auto-reanalyze server-side)", () => {

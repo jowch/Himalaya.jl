@@ -134,6 +134,14 @@ const FOCUS_FIXTURE = (
   </div>
 );
 
+/** Quiet placeholder for a rail section while trace/peaks load — a neutral pulse
+ *  (lighter than the rail's bg-paper-sunk) standing in for the not-yet-loaded
+ *  cart/candidate copy, so the rail never shows its peak-derived empty text
+ *  during the load window. Mirrors the trace plate's `loading` skeleton. */
+function RailBodySkeleton(): JSX.Element {
+  return <div data-testid="rail-body-skeleton" aria-hidden="true" className="h-16 rounded-md bg-paper animate-pulse" />;
+}
+
 /**
  * FocusPage (greenfield) — the Focus workspace at /sample/:sampleId.
  *
@@ -946,10 +954,16 @@ export function FocusPage(): JSX.Element {
             </div>
           ) : (
             <AssignmentRail
-              assignmentCount={activeIndices.length || undefined}
-              assignment={cart}
-              candidates={candidates}
-              candidatesNote="A sample can be multiphasic, so check every phase that fits."
+              // While trace/peaks are still loading the rail's content is empty
+              // (peaks/indices land a round-trip after the exposure). Its
+              // peak-derived empty copy ("No peaks marked. Find peaks on the
+              // trace…") would lie — the trace itself is skeletoning, so there's
+              // nothing to mark yet. Show a neutral loading block instead, in
+              // lockstep with the trace plate's own `loading` skeleton.
+              assignmentCount={traceLoading ? undefined : (activeIndices.length || undefined)}
+              assignment={traceLoading ? <RailBodySkeleton /> : cart}
+              candidates={traceLoading ? <RailBodySkeleton /> : candidates}
+              candidatesNote={traceLoading ? undefined : "A sample can be multiphasic, so check every phase that fits."}
             />
           )}
         </div>

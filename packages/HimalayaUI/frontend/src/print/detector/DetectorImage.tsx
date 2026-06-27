@@ -31,7 +31,11 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   // Object URL for the fetched blob. We fetch in JS (not a bare <img src>) ONLY
   // to read the X-Image-Width/Height calibration headers — a plain <img> exposes
   // just the capped naturalWidth, not the raw detector dims the q-rings need.
+  // `objectUrlRef` mirrors the committed URL so the lifecycle (revoke the prior
+  // one when a new blob lands, revoke the last on unmount) needs no state in the
+  // fetch effect's deps.
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const onRawSizeRef = useRef(onRawSize); onRawSizeRef.current = onRawSize;
   const onOrientRef = useRef(onOrient); onOrientRef.current = onOrient;
   // Raw detector dims (from headers). Aspect is preserved by the uniform 1536
@@ -68,7 +72,6 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   useEffect(() => {
     if (!src || !hasIntersected) return;
     let cancelled = false;
-    let created: string | null = null;
     void (async () => {
       const res = await fetch(src);
       if (cancelled || !res.ok) return;
@@ -80,28 +83,25 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
         onRawSizeRef.current?.(rw, rh);
       }
       const blob = await res.blob();
+      // `cancelled` is re-checked after every await, so a URL is only created
+      // for a still-live effect — never leaked past unmount / a src change.
       if (cancelled) return;
-      created = URL.createObjectURL(blob);
-      setObjectUrl(created);
+      const url = URL.createObjectURL(blob);
+      // Swap: revoke the URL this <img> was showing before pointing it at the new
+      // blob. One owner of the lifecycle (this ref), so no double-revoke.
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = url;
+      setObjectUrl(url);
       evaluateOrient();
     })();
-    return () => {
-      cancelled = true;
-      // Revoke only an in-flight URL that never reached state; the committed one
-      // is revoked by the objectUrl-lifecycle effect below.
-      if (created && created !== objectUrl) URL.revokeObjectURL(created);
-    };
-    // objectUrl intentionally omitted from deps: including it would re-fetch on
-    // every blob swap. The cleanup reads it via closure only to avoid double-revoke.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; };
   }, [src, hasIntersected, evaluateOrient]);
 
-  // Revoke the committed object URL when it is replaced or on unmount — frees the
-  // blob without a leak (each createObjectURL pins its blob until revoked).
-  useEffect(() => {
-    if (!objectUrl) return;
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [objectUrl]);
+  // Revoke the last committed URL on unmount (the swap above handles replacement
+  // while mounted). Frees the blob — createObjectURL pins it until revoked.
+  useEffect(() => () => {
+    if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null; }
+  }, []);
 
   useEffect(() => {
     if (hasIntersected) return;
