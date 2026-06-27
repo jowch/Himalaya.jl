@@ -48,6 +48,11 @@ export interface TracePlateProps {
   focusRequest?: PeakFocusRequest;
   /** Plot height in px. Default 360. */
   plotHeight?: number;
+  /** While true, the plot area renders a quiet skeleton block (the header stays
+   *  — the sample name/subtitle are meaningful the moment the exposure resolves,
+   *  before the trace/peaks fetch lands). Same height as the live plot, so the
+   *  load→loaded swap never shifts layout. */
+  loading?: boolean;
   /** Forwarded y-headroom: expands the y-domain top so the tallest peak's
    *  marker clears the ceiling instead of clamping onto the trace. */
   yHeadroom?: number;
@@ -86,6 +91,7 @@ export function TracePlate({
   showPeakLabels = false,
   actions,
   className,
+  loading = false,
 }: TracePlateProps): JSX.Element {
   // "+ Peak" arm gate: TracePlot edits peaks on a plot click — empty space
   // adds (onAddPeak), a peak removes / alt-excludes (onClickPeak). BOTH are
@@ -195,25 +201,34 @@ export function TracePlate({
           {actions}
         </ToolBar>
       </PlateHeader>
-      <TracePlot
-        trace={trace}
-        height={plotHeight}
-        xType={scale === "log" ? "log" : "linear"}
-        axes
-        {...(xDomain !== undefined ? { xDomain } : {})}
-        {...(gatedInteraction !== undefined ? { interaction: gatedInteraction } : {})}
-        {...(hoveredQ !== undefined ? { hoveredQ } : {})}
-        {...(onHoverQ !== undefined ? { onHoverQ } : {})}
-        {...(highlightPeakIds !== undefined ? { highlightPeakIds } : {})}
-        {...(focusRequest !== undefined ? { focusRequest, onFocusFallback } : {})}
-        {...(yHeadroom !== undefined ? { yHeadroom } : {})}
-        {...(neutralLine ? { neutralLine: true } : {})}
-        {...(showPeakLabels ? { show: { labels: true } } : {})}
-        figureLabel="Integration trace: intensity vs q"
-        paperColor="var(--color-plate)"
-        data-testid="trace-plate-plot"
-        className="mt-2"
-      />
+      {loading ? (
+        <div
+          data-testid="trace-plate-skeleton"
+          aria-hidden="true"
+          className="mt-2 rounded-md bg-paper-sunk animate-pulse"
+          style={{ height: plotHeight }}
+        />
+      ) : (
+        <TracePlot
+          trace={trace}
+          height={plotHeight}
+          xType={scale === "log" ? "log" : "linear"}
+          axes
+          {...(xDomain !== undefined ? { xDomain } : {})}
+          {...(gatedInteraction !== undefined ? { interaction: gatedInteraction } : {})}
+          {...(hoveredQ !== undefined ? { hoveredQ } : {})}
+          {...(onHoverQ !== undefined ? { onHoverQ } : {})}
+          {...(highlightPeakIds !== undefined ? { highlightPeakIds } : {})}
+          {...(focusRequest !== undefined ? { focusRequest, onFocusFallback } : {})}
+          {...(yHeadroom !== undefined ? { yHeadroom } : {})}
+          {...(neutralLine ? { neutralLine: true } : {})}
+          {...(showPeakLabels ? { show: { labels: true } } : {})}
+          figureLabel="Integration trace: intensity vs q"
+          paperColor="var(--color-plate)"
+          data-testid="trace-plate-plot"
+          className="mt-2"
+        />
+      )}
     </Card>
   );
 }

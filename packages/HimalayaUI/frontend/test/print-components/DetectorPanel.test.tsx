@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
-import { vi, beforeEach } from "vitest";
+import { vi, beforeEach, describe, it, test, expect } from "vitest";
 import { DetectorPanel } from "../../src/print/components/DetectorPanel";
 
 const TINY_PNG =
@@ -12,12 +12,8 @@ beforeEach(() => {
     blob: () => Promise.resolve(new Blob(
       [Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))], { type: "image/png" })),
   } as unknown as Response);
-  global.createImageBitmap = vi.fn().mockResolvedValue({ width: 1, height: 1, close: vi.fn() } as unknown as ImageBitmap);
-  const mockOffscreen = {
-    getContext: () => ({ drawImage: vi.fn(), getImageData: () => ({ data: new Uint8ClampedArray(4) }) }),
-  };
-  // @ts-expect-error JSDOM stub
-  global.OffscreenCanvas = vi.fn().mockImplementation(() => mockOffscreen);
+  // DetectorImage renders an <img> from an object URL (the canvas/createImageBitmap
+  // path is gone); URL.createObjectURL is stubbed globally in test/setup.ts.
 });
 
 const RINGS = [

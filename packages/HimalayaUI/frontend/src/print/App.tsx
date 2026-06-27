@@ -6,6 +6,7 @@ import { NavModal } from "./shell/NavModal";
 import { KbdOverlay } from "./shell/KbdOverlay";
 import { ToastContainer, LiveRegion } from "./ui";
 import { InfrastructureBanner } from "./shell/InfrastructureBanner";
+import { DetectorLutFilters } from "./detector";
 import { handleRemoteEvent } from "../lib/queue/replayCoordinator";
 import { invalidateIngestFrameCache } from "../lib/queue/applyRemoteToCache";
 import { attachPersistence, rehydrate } from "../lib/queue/persistence";
@@ -125,6 +126,9 @@ export function PrintApp(): JSX.Element {
       <ToastContainer />
       <LiveRegion />
       <InfrastructureBanner />
+      {/* Shared GPU colormap filters for every DetectorImage (Focus/Loupe/thumbs).
+          Mounted once here so `filter: url(#detector-lut-…)` resolves app-wide. */}
+      <DetectorLutFilters />
     </>
   );
 }

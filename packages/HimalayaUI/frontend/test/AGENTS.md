@@ -42,9 +42,9 @@ JSDOM doesn't ship `ResizeObserver`. `test/setup.ts` provides a no-op stub so co
 
 The hidden floating bars (CullBar, ComposeBar) hide via the `inert` attribute. JSDOM applies the attribute but implements none of its semantics: RTL role queries still match inert content, and `fireEvent` happily clicks inert buttons. Scope queries with `within(...)` when both bars are mounted, assert the attribute (`toHaveAttribute("inert")`) for the hide contract, and leave focus/AT semantics to the e2e real-browser pin (`e2e/corpus-culling.spec.ts`).
 
-## `ImageBitmap.close()` regression
+## `DetectorImage` object-URL stub
 
-`test/print-detector/DetectorImage.test.tsx` stubs `createImageBitmap` with a plain `{ width, height, close: vi.fn() }` mock. Production code captures `{ width, height }` before calling `close()`, so reading dimensions after close stays safe.
+`DetectorImage` recolors via a GPU SVG filter on a plain `<img>`: it fetches the image blob and shows it through `URL.createObjectURL`. JSDOM implements neither object-URL method, so `test/setup.ts` stubs both globally (any component rendering a detector image would otherwise throw). Tests asserting the value re-stub `URL.createObjectURL` locally (`() => "blob:mock-url"`) and assert `revokeObjectURL` for the unmount leak-freedom contract.
 
 ## Anti-patterns
 

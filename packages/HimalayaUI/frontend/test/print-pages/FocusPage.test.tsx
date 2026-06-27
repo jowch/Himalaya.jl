@@ -24,6 +24,9 @@ const state = {
   indices: [] as IndexEntry[],
   assignment: undefined as Assignment | undefined,
   loading: false,
+  // Trace/peaks loading INDEPENDENT of structure (corpus/exposures): the page
+  // reveals on structure and only the trace plot waits on this.
+  traceLoading: false,
   activeSampleId: undefined as number | undefined,
   activeExposureId: undefined as number | undefined,
   // sibling order for the [ ] sample-step shortcut (useExperimentSiblings mock)
@@ -45,8 +48,8 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", q_units: "A-1" } }),
   useExposures: () => ({ data: state.exposures, isLoading: state.loading }),
   useExposure: () => ({ data: state.exposures?.find((e) => e.id === state.activeExposureId) }),
-  useTrace: () => ({ data: state.trace, isLoading: state.loading }),
-  usePeaks: () => ({ data: state.peaks, isLoading: state.loading }),
+  useTrace: () => ({ data: state.trace, isLoading: state.traceLoading || state.loading }),
+  usePeaks: () => ({ data: state.peaks, isLoading: state.traceLoading || state.loading }),
   useIndices: () => ({ data: state.indices, isLoading: state.loading }),
   useAssignment: () => ({ data: state.assignment, isLoading: state.loading }),
   useAddPeak: () => ({ mutate: addPeakMutate }),
@@ -175,6 +178,7 @@ function seedFull(): void {
   ];
   state.assignment = { exposure_id: 7, state: "indexed", members: [1] };
   state.loading = false;
+  state.traceLoading = false;
   state.sibPrev = undefined;
   state.sibNext = undefined;
   state.sibSiblings = [];
@@ -741,6 +745,38 @@ describe("FocusPage", () => {
       "data-loading",
       "false",
     );
+  });
+
+  // Progressive load: the page reveals on STRUCTURE (corpus + exposure). The
+  // trace/peaks fetch no longer gates the whole page — only the trace plot waits,
+  // behind its own plate skeleton, so the detector + rail SHELL paint a
+  // round-trip earlier. (Detector depends only on the exposure.)
+  //
+  // Models the REAL production load window: trace/peaks in flight means their
+  // data is absent, so peaks/indices/assignment are empty here (not seedFull's
+  // populated arrays — that loaded+data-present combination can't happen).
+  it("reveals the page while trace/peaks still load; trace plot AND rail skeleton, no misleading copy", () => {
+    seedFull();
+    state.traceLoading = true;
+    state.trace = undefined;
+    state.peaks = [];
+    state.indices = [];
+    state.assignment = undefined;
+    renderAt(42);
+    // Page is NOT held behind the whole-page skeleton…
+    expect(screen.getByTestId("focus-skeleton-gate")).toHaveAttribute(
+      "data-loading",
+      "false",
+    );
+    // …the plate shell renders, but its plot is the skeleton, not the live plot.
+    expect(screen.getByTestId("trace-plate")).toBeInTheDocument();
+    expect(screen.getByTestId("trace-plate-skeleton")).toBeInTheDocument();
+    expect(screen.queryByTestId("trace-plate-plot")).toBeNull();
+    // …and the rail shows a neutral loading body, NOT the peak-derived empty copy
+    // that would tell the user to mark peaks on a trace that's still skeletoning.
+    expect(screen.getAllByTestId("rail-body-skeleton").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/No peaks marked/i)).toBeNull();
+    expect(screen.queryByText(/Candidates appear once peaks are marked/i)).toBeNull();
   });
 
   it("does not render a stale-index banner (peak edits auto-reanalyze server-side)", () => {

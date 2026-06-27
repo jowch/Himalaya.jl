@@ -1,23 +1,25 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { vi, beforeEach, test, expect } from "vitest";
 import { DetectorImage } from "../../src/print/detector/DetectorImage";
+import { detectorLutTableValues } from "../../src/print/detector/detectorLut";
 
 const TINY_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==";
+
+function pngBlob(): Blob {
+  return new Blob([Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))], { type: "image/png" });
+}
 
 beforeEach(() => {
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     headers: { get: (k: string) => (k === "X-Image-Width" ? "2048" : k === "X-Image-Height" ? "1024" : null) },
-    blob: () => Promise.resolve(new Blob(
-      [Uint8Array.from(atob(TINY_PNG), (c) => c.charCodeAt(0))], { type: "image/png" })),
+    blob: () => Promise.resolve(pngBlob()),
   } as unknown as Response);
-  global.createImageBitmap = vi.fn().mockResolvedValue({ width: 1, height: 1, close: vi.fn() } as unknown as ImageBitmap);
-  const mockOffscreen = {
-    getContext: () => ({ drawImage: vi.fn(), getImageData: () => ({ data: new Uint8ClampedArray(4) }) }),
-  };
-  // @ts-expect-error JSDOM stub
-  global.OffscreenCanvas = vi.fn().mockImplementation(() => mockOffscreen);
+  // JSDOM doesn't implement object URLs — stub them. The component creates one
+  // per blob and revokes on swap/unmount; assert nothing throws + img gets a src.
+  global.URL.createObjectURL = vi.fn(() => "blob:mock-url");
+  global.URL.revokeObjectURL = vi.fn();
 });
 
 test("shows the frame-window placeholder when src is null", () => {
@@ -25,14 +27,24 @@ test("shows the frame-window placeholder when src is null", () => {
   expect(screen.getByTestId("detector-image-placeholder")).toHaveAttribute("data-variant", "frame-window");
 });
 
-test("renders a canvas (role=img) when src is provided", async () => {
+test("renders an <img> (role=img) fed by the fetched blob's object URL", async () => {
   render(<DetectorImage src="/fixtures/thumbs/37.png" size="full" />);
-  await waitFor(() => expect(screen.getByRole("img", { hidden: true })).toBeInTheDocument());
+  const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
+  expect(img.tagName).toBe("IMG");
+  await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-url"));
+});
+
+test("revokes the object URL on unmount (no blob leak)", async () => {
+  const { unmount } = render(<DetectorImage src="/x.png" size="full" />);
+  const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
+  await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-url"));
+  unmount();
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
 });
 
 test("fetches exactly the src it was given (no URL building inside)", async () => {
   const spy = vi.fn().mockResolvedValue({
-    ok: true, blob: () => Promise.resolve(new Blob([new Uint8Array(0)], { type: "image/png" })),
+    ok: true, blob: () => Promise.resolve(pngBlob()),
   } as Response);
   global.fetch = spy;
   render(<DetectorImage src="/api/exposures/42/image?thumb=1&v=v1-9" size="thumb" />);
@@ -41,52 +53,56 @@ test("fetches exactly the src it was given (no URL building inside)", async () =
   expect(spy.mock.calls[0][1]).toBeUndefined();
 });
 
-test("portrait canvas fills the frame (object-fit contain, scales up AND down)", async () => {
+test("portrait image fills the frame (object-fit contain, scales up AND down)", async () => {
   render(<DetectorImage src="/x.png" size="full" />);
-  const canvas = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLCanvasElement);
+  const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
   // Fill the frame, aspect-preserved — NOT maxWidth:100% which only scaled down
   // and left a sub-frame image at native pixel size.
-  expect(canvas.style.objectFit).toBe("contain");
-  expect(canvas.style.width).toBe("100%");
-  expect(canvas.style.height).toBe("100%");
-  expect(canvas.style.transform).toBe(""); // portrait: no rotate
+  expect(img.style.objectFit).toBe("contain");
+  expect(img.style.width).toBe("100%");
+  expect(img.style.height).toBe("100%");
+  expect(img.style.transform).toBe(""); // portrait: no rotate
 });
 
-test("LUT is non-inverting — brighter source pixel -> lighter output", async () => {
-  // Two source pixels: intensity 0 and intensity 255 (R channel is read as t).
-  const srcData = new Uint8ClampedArray([0,0,0,255, 255,255,255,255]);
-  const mockOffscreen = { getContext: () => ({ drawImage: vi.fn(), getImageData: () => ({ data: srcData }) }) };
-  // @ts-expect-error JSDOM stub
-  global.OffscreenCanvas = vi.fn().mockImplementation(() => mockOffscreen);
-  global.createImageBitmap = vi.fn().mockResolvedValue({ width: 2, height: 1, close: vi.fn() } as unknown as ImageBitmap);
+test("recolors via the SVG colormap filter — neutral default, warm on request", async () => {
+  const { rerender } = render(<DetectorImage src="/x.png" size="full" />);
+  const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
+  expect(img.style.filter).toBe("url(#detector-lut-neutral)");
+  // Switching variants restyles the SAME element — and must NOT refetch.
+  const fetchCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+  rerender(<DetectorImage src="/x.png" size="full" lutVariant="warm" />);
+  expect(img.style.filter).toBe("url(#detector-lut-warm)");
+  expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(fetchCalls);
+});
 
-  let captured: Uint8ClampedArray | null = null;
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function () {
-    return {
-      drawImage: () => {},
-      putImageData: (img: ImageData) => { captured = img.data; },
-    } as unknown as CanvasRenderingContext2D;
-  } as typeof HTMLCanvasElement.prototype.getContext);
-
-  try {
-    render(<DetectorImage src="/x.png" size="full" />);
-    await waitFor(() => expect(captured).not.toBeNull());
-    const d = captured as unknown as Uint8ClampedArray;
-    const dark = d[0] + d[1] + d[2];
-    const bright = d[4] + d[5] + d[6];
-    expect(bright).toBeGreaterThan(dark);           // non-inverting
-    expect(d[0]).toBeGreaterThanOrEqual(d[2]);       // warm at the dark end (R >= B)
-  } finally {
-    vi.restoreAllMocks();
-  }
+test("LUT table values are non-inverting and warm at the dark end", () => {
+  // The colormap correctness that the old canvas-loop test asserted now lives in
+  // the SVG-filter table (one source: buildPrintDetectorLut). Verify the property
+  // at the source rather than through a JSDOM canvas it can't actually paint.
+  const { r, g, b } = detectorLutTableValues("neutral");
+  const R = r.split(" ").map(Number), G = g.split(" ").map(Number), B = b.split(" ").map(Number);
+  expect(R).toHaveLength(256);
+  const lum = (i: number): number => R[i] + G[i] + B[i];
+  expect(lum(255)).toBeGreaterThan(lum(0));   // brighter source → lighter output
+  expect(R[0]).toBeGreaterThanOrEqual(B[0]);  // warm (R >= B) at the dark end
 });
 
 /**
  * U-3: drive the orient decision toward landscape (wide container, tall
  * viewport, square image) and assert a THUMB stays locked to portrait while a
- * FULL frame still rotates. JSDOM has no layout, so clientWidth/clientHeight
+ * FULL frame still rotates. Image dims now come from the X-Image-Width/Height
+ * headers (aspect is preserved by the server's 1536 cap), so the tests feed a
+ * square detector via the headers. JSDOM has no layout, so clientWidth/Height
  * are stubbed via getters; window.innerWidth is forced past ROTATE_MIN_VIEWPORT.
  */
+function squareHeaders(): void {
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    headers: { get: (k: string) => (k === "X-Image-Width" || k === "X-Image-Height" ? "800" : null) },
+    blob: () => Promise.resolve(pngBlob()),
+  } as unknown as Response);
+}
+
 function forceWideGeometry(): () => void {
   const protoW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
   const protoH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
@@ -106,7 +122,7 @@ function forceWideGeometry(): () => void {
 }
 
 test("U-3: a thumb stays portrait even when geometry would rotate a full frame", async () => {
-  global.createImageBitmap = vi.fn().mockResolvedValue({ width: 8, height: 8, close: vi.fn() } as unknown as ImageBitmap);
+  squareHeaders();
   const restore = forceWideGeometry();
   try {
     render(<DetectorImage src="/x.png" size="thumb" />);
@@ -116,21 +132,21 @@ test("U-3: a thumb stays portrait even when geometry would rotate a full frame",
       return el;
     });
     expect(wrapper).toHaveAttribute("data-orient", "portrait");
-    const canvas = screen.getByRole("img", { hidden: true }) as HTMLCanvasElement;
-    expect(canvas.style.transform).toBe("");
+    const img = screen.getByRole("img", { hidden: true }) as HTMLImageElement;
+    expect(img.style.transform).toBe("");
   } finally {
     restore();
   }
 });
 
 test("U-3 regression: a full frame still rotates under the same wide geometry", async () => {
-  global.createImageBitmap = vi.fn().mockResolvedValue({ width: 8, height: 8, close: vi.fn() } as unknown as ImageBitmap);
+  squareHeaders();
   const restore = forceWideGeometry();
   try {
     render(<DetectorImage src="/x.png" size="full" />);
     await waitFor(() => {
-      const canvas = screen.getByRole("img", { hidden: true }) as HTMLCanvasElement;
-      expect(canvas.style.transform).toContain("rotate(90deg)");
+      const img = screen.getByRole("img", { hidden: true }) as HTMLImageElement;
+      expect(img.style.transform).toContain("rotate(90deg)");
     });
   } finally {
     restore();
@@ -146,7 +162,7 @@ test("reports raw image size from X-Image-Width/Height headers", async () => {
 test("a headerless response does not call onRawSize and does not throw", async () => {
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
-    blob: () => Promise.resolve(new Blob([new Uint8Array(0)], { type: "image/png" })),
+    blob: () => Promise.resolve(pngBlob()),
   } as unknown as Response);
   const onRawSize = vi.fn();
   render(<DetectorImage src="/x.png" size="full" onRawSize={onRawSize} />);
@@ -160,7 +176,7 @@ test("headers present but missing the keys (get→null) does not call onRawSize"
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     headers: { get: () => null },
-    blob: () => Promise.resolve(new Blob([new Uint8Array(0)], { type: "image/png" })),
+    blob: () => Promise.resolve(pngBlob()),
   } as unknown as Response);
   const onRawSize = vi.fn();
   render(<DetectorImage src="/x.png" size="full" onRawSize={onRawSize} />);
