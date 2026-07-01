@@ -36,6 +36,11 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   // fetch effect's deps.
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  // True while a fetch for the current `src` is in flight. The <img> keeps
+  // showing the PRIOR blob until the new one lands, so without this the frame
+  // silently displays a stale image on a sample/exposure switch. Drives the
+  // dim + spinner "new image coming" cue below.
+  const [loading, setLoading] = useState<boolean>(false);
   const onRawSizeRef = useRef(onRawSize); onRawSizeRef.current = onRawSize;
   const onOrientRef = useRef(onOrient); onOrientRef.current = onOrient;
   // Raw detector dims (from headers). Aspect is preserved by the uniform 1536
@@ -72,27 +77,35 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   useEffect(() => {
     if (!src || !hasIntersected) return;
     let cancelled = false;
+    setLoading(true);
     void (async () => {
-      const res = await fetch(src);
-      if (cancelled || !res.ok) return;
-      const rw = Number(res.headers?.get?.("X-Image-Width"));
-      const rh = Number(res.headers?.get?.("X-Image-Height"));
-      if (Number.isFinite(rw) && Number.isFinite(rh) && rw > 0 && rh > 0 &&
-          (rawSizeRef.current?.w !== rw || rawSizeRef.current?.h !== rh)) {
-        rawSizeRef.current = { w: rw, h: rh };
-        onRawSizeRef.current?.(rw, rh);
+      try {
+        const res = await fetch(src);
+        if (cancelled || !res.ok) return;
+        const rw = Number(res.headers?.get?.("X-Image-Width"));
+        const rh = Number(res.headers?.get?.("X-Image-Height"));
+        if (Number.isFinite(rw) && Number.isFinite(rh) && rw > 0 && rh > 0 &&
+            (rawSizeRef.current?.w !== rw || rawSizeRef.current?.h !== rh)) {
+          rawSizeRef.current = { w: rw, h: rh };
+          onRawSizeRef.current?.(rw, rh);
+        }
+        const blob = await res.blob();
+        // `cancelled` is re-checked after every await, so a URL is only created
+        // for a still-live effect — never leaked past unmount / a src change.
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        // Swap: revoke the URL this <img> was showing before pointing it at the new
+        // blob. One owner of the lifecycle (this ref), so no double-revoke.
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = url;
+        setObjectUrl(url);
+        evaluateOrient();
+      } finally {
+        // Clear the cue on success OR error, but NOT on cancel — a cancelled run
+        // means `src` changed and the next run already set loading=true, so the
+        // spinner should stay up for that in-flight fetch instead of flickering.
+        if (!cancelled) setLoading(false);
       }
-      const blob = await res.blob();
-      // `cancelled` is re-checked after every await, so a URL is only created
-      // for a still-live effect — never leaked past unmount / a src change.
-      if (cancelled) return;
-      const url = URL.createObjectURL(blob);
-      // Swap: revoke the URL this <img> was showing before pointing it at the new
-      // blob. One owner of the lifecycle (this ref), so no double-revoke.
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = url;
-      setObjectUrl(url);
-      evaluateOrient();
     })();
     return () => { cancelled = true; };
   }, [src, hasIntersected, evaluateOrient]);
@@ -146,16 +159,26 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
       // at its native pixel size and floated tiny in the box. The frame is the
       // canonical display size; the image fits it.
       : { width: "100%", height: "100%", objectFit: "contain" }),
+    // Dim the outgoing (stale) image while its replacement loads, so the frame
+    // reads as "new image coming" rather than silently showing the old one.
+    opacity: loading ? 0.4 : 1,
+    transition: "opacity 150ms ease",
   };
 
   return (
     <div ref={wrapperRef} data-orient={layout.orient}
-         className={`flex items-center justify-center w-full h-full overflow-hidden ${className ?? ""}`}>
+         className={`relative flex items-center justify-center w-full h-full overflow-hidden ${className ?? ""}`}>
       <img
         {...(objectUrl ? { src: objectUrl } : {})}
         alt="Detector image"
         style={imgStyle}
       />
+      {loading && (
+        <div data-testid="detector-image-loading"
+             className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className={`${size === "thumb" ? "h-4 w-4" : "h-6 w-6"} rounded-full border-2 border-frame-tag/30 border-t-frame-tag animate-spin`} />
+        </div>
+      )}
     </div>
   );
 }

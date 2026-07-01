@@ -34,6 +34,38 @@ test("renders an <img> (role=img) fed by the fetched blob's object URL", async (
   await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-url"));
 });
 
+test("shows a loading cue while a fetch is in flight, hides it once the blob lands", async () => {
+  // Gate fetch resolution so we can observe the in-flight state.
+  let resolveFetch: (r: Response) => void = () => {};
+  global.fetch = vi.fn(() => new Promise<Response>((r) => { resolveFetch = r; }));
+  render(<DetectorImage src="/x.png" size="full" />);
+  // Cue is up immediately (before the fetch resolves).
+  expect(screen.getByTestId("detector-image-loading")).toBeInTheDocument();
+  resolveFetch({
+    ok: true,
+    headers: { get: () => null },
+    blob: () => Promise.resolve(pngBlob()),
+  } as unknown as Response);
+  // Once the blob commits, the cue clears.
+  await waitFor(() => expect(screen.queryByTestId("detector-image-loading")).not.toBeInTheDocument());
+});
+
+test("re-raises the loading cue when src changes (stale image still shown)", async () => {
+  const { rerender } = render(<DetectorImage src="/a.png" size="full" />);
+  const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
+  await waitFor(() => expect(screen.queryByTestId("detector-image-loading")).not.toBeInTheDocument());
+  const staleSrc = img.getAttribute("src");
+  // Switch to a new src; the <img> keeps the old blob until the new one lands,
+  // so the cue must come back to signal the incoming image.
+  let resolveNext: (r: Response) => void = () => {};
+  global.fetch = vi.fn(() => new Promise<Response>((r) => { resolveNext = r; }));
+  rerender(<DetectorImage src="/b.png" size="full" />);
+  await waitFor(() => expect(screen.getByTestId("detector-image-loading")).toBeInTheDocument());
+  expect(img.getAttribute("src")).toBe(staleSrc); // old image still visible under the cue
+  resolveNext({ ok: true, headers: { get: () => null }, blob: () => Promise.resolve(pngBlob()) } as unknown as Response);
+  await waitFor(() => expect(screen.queryByTestId("detector-image-loading")).not.toBeInTheDocument());
+});
+
 test("revokes the object URL on unmount (no blob leak)", async () => {
   const { unmount } = render(<DetectorImage src="/x.png" size="full" />);
   const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
