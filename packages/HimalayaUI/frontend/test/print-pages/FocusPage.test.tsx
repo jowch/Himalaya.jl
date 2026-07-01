@@ -541,6 +541,17 @@ describe("FocusPage", () => {
     expect(screen.getByTestId("custom-index-modal")).toBeInTheDocument();
   });
 
+  it("custom-index modal opens seeded at the phase's def, with the widened floor as the slider min", () => {
+    // Seeding from the widened floor (10 Å) would open an off-scale 1 nm Pn3m comb;
+    // the initial value must come from def (197), while the widened floor reaches the
+    // slider bound (paramMin) — the FO-QWINDOW-BOUNDS wiring.
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("custom-index-trigger"));
+    const num = within(screen.getByTestId("custom-index-modal")).getByRole("spinbutton");
+    expect(num).toHaveValue(197);
+    expect(num).toHaveAttribute("min", "10");
+  });
+
   it("toggling a candidate phase announces SR-only (frequent → quiet channel)", () => {
     const announce = vi.fn();
     const toast = vi.fn();

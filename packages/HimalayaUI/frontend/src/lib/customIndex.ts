@@ -27,18 +27,53 @@ export interface SymmetrySpec {
 // h²+k² (2D) behind core Himalaya's `phaseratios` (src/phase.jl) — the single
 // source of truth — so a user-fit comb here reproduces the indexer's own ratio
 // series exactly. Fm3m / Fd3m / Square added in F13; their Ms mirror phase.jl
-// verbatim. The [def,min,max] bands are slider bounds (physically reasonable
-// lattice ranges for each phase), not part of the ratio physics.
+// verbatim.
+//
+// [min, max] is the BASELINE slider envelope (Å): deliberately wide — a 10 Å
+// (1 nm) floor for every phase and generous ceilings covering swollen extremes
+// (lamellar super-swells past 100 nm; bicontinuous/micellar cubics reach ~65 nm),
+// sized from a SAXS literature review (2026-07). `latticeBounds()` only ever
+// WIDENS this per-trace (never narrows), so the slider is never stricter than the
+// envelope. `def` is the initial slider value (used by stories); it stays inside
+// the envelope.
 export const SYMS: Record<string, SymmetrySpec> = {
-  Pn3m:      { kind: "cubic",    Ms: [2, 3, 4, 6, 8, 9],      param: "a", def: 197, min: 120, max: 320 },
-  Im3m:      { kind: "cubic",    Ms: [2, 4, 6, 8, 10, 12],    param: "a", def: 252, min: 120, max: 360 },
-  Ia3d:      { kind: "cubic",    Ms: [6, 8, 14, 16, 20, 22],  param: "a", def: 218, min: 120, max: 360 },
-  Fm3m:      { kind: "cubic",    Ms: [3, 4, 8, 11, 12],       param: "a", def: 200, min: 120, max: 400 },
-  Fd3m:      { kind: "cubic",    Ms: [3, 8, 11, 12, 16, 19, 24, 27, 32, 35, 36], param: "a", def: 250, min: 120, max: 500 },
-  Lamellar:  { kind: "lamellar", Ms: [1, 2, 3, 4, 5],         param: "d", def: 60,  min: 30,  max: 130 },
-  Hexagonal: { kind: "hex",      Ms: [1, 3, 4, 7, 9, 12],     param: "a", def: 70,  min: 40,  max: 160 },
-  Square:    { kind: "square",   Ms: [1, 2, 4, 5, 8, 9, 10, 13, 16, 17, 18, 20], param: "a", def: 80, min: 40, max: 200 },
+  Pn3m:      { kind: "cubic",    Ms: [2, 3, 4, 6, 8, 9],      param: "a", def: 197, min: 10, max: 500 },
+  Im3m:      { kind: "cubic",    Ms: [2, 4, 6, 8, 10, 12],    param: "a", def: 252, min: 10, max: 700 },
+  Ia3d:      { kind: "cubic",    Ms: [6, 8, 14, 16, 20, 22],  param: "a", def: 218, min: 10, max: 650 },
+  Fm3m:      { kind: "cubic",    Ms: [3, 4, 8, 11, 12],       param: "a", def: 200, min: 10, max: 500 },
+  Fd3m:      { kind: "cubic",    Ms: [3, 8, 11, 12, 16, 19, 24, 27, 32, 35, 36], param: "a", def: 250, min: 10, max: 600 },
+  Lamellar:  { kind: "lamellar", Ms: [1, 2, 3, 4, 5],         param: "d", def: 60,  min: 10, max: 1000 },
+  Hexagonal: { kind: "hex",      Ms: [1, 3, 4, 7, 9, 12],     param: "a", def: 70,  min: 10, max: 500 },
+  Square:    { kind: "square",   Ms: [1, 2, 4, 5, 8, 9, 10, 13, 16, 17, 18, 20], param: "a", def: 80, min: 10, max: 500 },
 };
+
+/**
+ * Slider bounds for the lattice parameter: the static per-phase envelope
+ * (SYMS.min/max) WIDENED by whatever the trace's own q-window can reach. We err
+ * wide — the range is never stricter than the envelope, and expands further when
+ * a trace reaches beyond it (a high q_max opens sub-1 nm lattices; a tiny q_min
+ * opens super-swollen ones), so no bound ever needs manual widening per-trace.
+ * The first order inverts the same law `customRefls` draws with:
+ *   a = 2π√(Ms[0])/q  (cubic / square / lamellar)   a = 4π/(√3·q)  (hex).
+ * q_max → smallest a, q_min → largest a. `qWindow === null` (trace not loaded) or
+ * a degenerate window → the bare envelope.
+ */
+export function latticeBounds(
+  sym: string,
+  qWindow: readonly [number, number] | null,
+): { min: number; max: number } {
+  const s = SYMS[sym];
+  if (!s) return { min: 0, max: 0 };
+  if (!qWindow) return { min: s.min, max: s.max };
+  const [qmin, qmax] = qWindow;
+  if (!(qmin > 0) || !(qmax > qmin)) return { min: s.min, max: s.max };
+  const aAtQ = (q: number) =>
+    s.kind === "hex"
+      ? (4 * Math.PI) / (Math.sqrt(3) * q)
+      : (TWO_PI * Math.sqrt(s.Ms[0]!)) / q;
+  // union with the envelope: widen only, never narrow.
+  return { min: Math.min(aAtQ(qmax), s.min), max: Math.max(aAtQ(qmin), s.max) };
+}
 
 export interface CustomReflection { N: number; q: number }
 
