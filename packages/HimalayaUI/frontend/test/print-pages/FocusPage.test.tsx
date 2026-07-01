@@ -283,11 +283,12 @@ describe("FocusPage", () => {
     });
 
     // FO-NAV-STATE: React Router does NOT remount FocusPage on a same-route
-    // ↑/↓ sample step, so page-owned interaction state (the "+ Peak" arm, the
-    // zoom window) would survive a sample switch — the first click on the next
-    // sample's trace would silently mutate ITS peaks. The arm must reset on the
-    // sample change.
-    it("resets per-sample interaction state (arm + candidate preview) when the active sample changes (FO-NAV-STATE)", () => {
+    // ↑/↓ sample step, so page-owned interaction state survives a sample switch.
+    // The "+ Peak" arm is INTENTIONALLY sticky (like scale/combView): once armed,
+    // stepping keeps you armed so you can edit peaks sample-to-sample. But the
+    // zoom window and candidate preview must still reset — a stale x-domain
+    // renders the next trace off-screen, and a stale preview eats the first Esc.
+    it("keeps the '+ Peak' arm but resets the candidate preview when the active sample changes (FO-NAV-STATE)", () => {
       seedFull();
       state.corpus = [corpus(), corpus({ id: 43, name: "JC043" })];
       const view = renderAt(42);
@@ -302,13 +303,13 @@ describe("FocusPage", () => {
       // production Zustand re-renders on that change; the mocked store is
       // non-reactive, so drive the sample change + re-render the SAME tree
       // (FocusPage is reused, not remounted — its useState survives). The reset
-      // effect keyed on activeSampleId must clear the arm, the zoom, AND the
-      // candidate preview (a stale preview would otherwise eat the first Escape).
+      // effect keyed on activeSampleId clears the zoom AND the candidate preview,
+      // but deliberately leaves the arm ON.
       act(() => {
         state.activeSampleId = 43;
       });
       view.rerender(focusTreeAt(42));
-      expect(screen.getAllByText("+ Peak")[0]).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getAllByText("+ Peak")[0]).toHaveAttribute("aria-pressed", "true");
       expect(
         screen.getByRole("button", { name: /Pn3m, in assignment/ }),
       ).not.toHaveAttribute("data-previewed");

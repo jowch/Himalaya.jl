@@ -237,15 +237,17 @@ export function FocusPage(): JSX.Element {
   // FO-NAV-STATE: FocusPage is NOT remounted on a same-route [ / ] sample step
   // (React Router reuses the routed element for the new :sampleId), so
   // page-owned interaction state would survive a sample switch. Reset the
-  // per-sample bits whenever the active sample changes: the "+ Peak" arm (else
-  // the first click on the next sample's trace silently mutates ITS peaks), the
-  // manual zoom window (else the next trace can render outside a stale x-domain),
-  // and the candidate preview (else the stale previewIndexId — which renders
-  // nothing, since the old index id never re-matches — still makes the Esc ladder
-  // eat the first Escape as a no-op clear instead of backing out to the sheet).
-  // scale / combView are sticky preferences and intentionally persist.
+  // per-sample bits whenever the active sample changes: the manual zoom window
+  // (else the next trace can render outside a stale x-domain), and the candidate
+  // preview (else the stale previewIndexId — which renders nothing, since the old
+  // index id never re-matches — still makes the Esc ladder eat the first Escape
+  // as a no-op clear instead of backing out to the sheet).
+  // scale / combView / the "+ Peak" arm are sticky preferences and intentionally
+  // persist across sample steps: once you arm, stepping keeps you armed so you can
+  // edit peaks sample-to-sample. (Trade-off: the first click on the next trace
+  // then mutates ITS peaks — intended, since you asked to stay armed. Arm still
+  // defaults off on a fresh landing via useState(false), and Esc disarms.)
   useEffect(() => {
-    setAddArmed(false);
     setXDomain(null);
     setPreviewWasExplicit(false);
     setHoverPreviewId(undefined);
