@@ -75,9 +75,13 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   // is a CSS/SVG filter applied at render, so a variant toggle re-styles without
   // re-downloading (the canvas path used to refetch on every toggle).
   useEffect(() => {
-    if (!src || !hasIntersected) return;
+    // Clear a stale cue if we're no longer fetching (e.g. src -> null): the
+    // placeholder branch renders instead, but keep `loading` honest.
+    if (!src || !hasIntersected) { setLoading(false); return; }
     let cancelled = false;
-    setLoading(true);
+    // Delay the cue so an instant / browser-cached fetch doesn't flash the
+    // spinner for one frame — only signal "coming" once the wait is perceptible.
+    const showTimer = setTimeout(() => { if (!cancelled) setLoading(true); }, 150);
     void (async () => {
       try {
         const res = await fetch(src);
@@ -102,12 +106,13 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
         evaluateOrient();
       } finally {
         // Clear the cue on success OR error, but NOT on cancel — a cancelled run
-        // means `src` changed and the next run already set loading=true, so the
+        // means `src` changed and the next run already re-armed the timer, so the
         // spinner should stay up for that in-flight fetch instead of flickering.
+        clearTimeout(showTimer);
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(showTimer); };
   }, [src, hasIntersected, evaluateOrient]);
 
   // Revoke the last committed URL on unmount (the swap above handles replacement
@@ -166,7 +171,7 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   };
 
   return (
-    <div ref={wrapperRef} data-orient={layout.orient}
+    <div ref={wrapperRef} data-orient={layout.orient} aria-busy={loading}
          className={`relative flex items-center justify-center w-full h-full overflow-hidden ${className ?? ""}`}>
       <img
         {...(objectUrl ? { src: objectUrl } : {})}
@@ -174,9 +179,9 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
         style={imgStyle}
       />
       {loading && (
-        <div data-testid="detector-image-loading"
+        <div data-testid="detector-image-loading" role="status" aria-label="Loading detector image"
              className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className={`${size === "thumb" ? "h-4 w-4" : "h-6 w-6"} rounded-full border-2 border-frame-tag/30 border-t-frame-tag animate-spin`} />
+          <div className={`${size === "thumb" ? "h-4 w-4" : "h-6 w-6"} rounded-full border-2 border-frame-tag/30 border-t-frame-tag motion-safe:animate-spin`} />
         </div>
       )}
     </div>

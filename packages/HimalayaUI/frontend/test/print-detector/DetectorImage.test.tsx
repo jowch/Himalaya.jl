@@ -39,8 +39,9 @@ test("shows a loading cue while a fetch is in flight, hides it once the blob lan
   let resolveFetch: (r: Response) => void = () => {};
   global.fetch = vi.fn(() => new Promise<Response>((r) => { resolveFetch = r; }));
   render(<DetectorImage src="/x.png" size="full" />);
-  // Cue is up immediately (before the fetch resolves).
-  expect(screen.getByTestId("detector-image-loading")).toBeInTheDocument();
+  // Cue is up while the (gated) fetch is in flight. It appears after the ~150ms
+  // delay-gate that suppresses a flash on instant/cached fetches.
+  await waitFor(() => expect(screen.getByTestId("detector-image-loading")).toBeInTheDocument());
   resolveFetch({
     ok: true,
     headers: { get: () => null },
@@ -51,18 +52,23 @@ test("shows a loading cue while a fetch is in flight, hides it once the blob lan
 });
 
 test("re-raises the loading cue when src changes (stale image still shown)", async () => {
+  // Distinct URL per blob so "still the FIRST image" is a real assertion — a
+  // constant stub would pass even on a premature swap to the new blob.
+  let n = 0;
+  global.URL.createObjectURL = vi.fn(() => `blob:mock-${++n}`);
   const { rerender } = render(<DetectorImage src="/a.png" size="full" />);
   const img = await waitFor(() => screen.getByRole("img", { hidden: true }) as HTMLImageElement);
+  await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-1"));
   await waitFor(() => expect(screen.queryByTestId("detector-image-loading")).not.toBeInTheDocument());
-  const staleSrc = img.getAttribute("src");
   // Switch to a new src; the <img> keeps the old blob until the new one lands,
   // so the cue must come back to signal the incoming image.
   let resolveNext: (r: Response) => void = () => {};
   global.fetch = vi.fn(() => new Promise<Response>((r) => { resolveNext = r; }));
   rerender(<DetectorImage src="/b.png" size="full" />);
   await waitFor(() => expect(screen.getByTestId("detector-image-loading")).toBeInTheDocument());
-  expect(img.getAttribute("src")).toBe(staleSrc); // old image still visible under the cue
+  expect(img.getAttribute("src")).toBe("blob:mock-1"); // first image still shown under the cue
   resolveNext({ ok: true, headers: { get: () => null }, blob: () => Promise.resolve(pngBlob()) } as unknown as Response);
+  await waitFor(() => expect(img.getAttribute("src")).toBe("blob:mock-2")); // new blob swapped in
   await waitFor(() => expect(screen.queryByTestId("detector-image-loading")).not.toBeInTheDocument());
 });
 
