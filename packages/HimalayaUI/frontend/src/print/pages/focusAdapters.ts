@@ -309,12 +309,13 @@ export const CUSTOM_SYMS: ReadonlyArray<{
   name: string;
   paramName: string;
   unit: string;
+  def: number;
   min: number;
   max: number;
   step?: number;
 }> = (["Pn3m", "Im3m", "Ia3d", "Fm3m", "Fd3m", "Lamellar", "Hexagonal", "Square"] as const).map((name) => {
   const s = SYMS[name]!;
-  return { name, paramName: s.param, unit: "Å", min: s.min, max: s.max, step: 1 };
+  return { name, paramName: s.param, unit: "Å", def: s.def, min: s.min, max: s.max, step: 1 };
 });
 
 /**

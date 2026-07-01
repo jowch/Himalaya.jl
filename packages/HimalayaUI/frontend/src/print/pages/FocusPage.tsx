@@ -269,8 +269,10 @@ export function FocusPage(): JSX.Element {
   // custom-index modal
   const [customOpen, setCustomOpen] = useState(false);
   const [customSym, setCustomSym] = useState<string>(CUSTOM_SYMS[0]!.name);
+  // Seed from the phase's def (a sensible on-scale lattice), NOT the widened floor
+  // (`min`, now 10 Å) — else the modal would open showing an off-scale 1 nm comb.
   const [customParam, setCustomParam] = useState<string>(
-    String(CUSTOM_SYMS[0]!.min),
+    String(CUSTOM_SYMS[0]!.def),
   );
 
   // ── derived ──────────────────────────────────────────────────────────────────
