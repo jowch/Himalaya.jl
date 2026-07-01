@@ -283,11 +283,12 @@ describe("FocusPage", () => {
     });
 
     // FO-NAV-STATE: React Router does NOT remount FocusPage on a same-route
-    // ↑/↓ sample step, so page-owned interaction state (the "+ Peak" arm, the
-    // zoom window) would survive a sample switch — the first click on the next
-    // sample's trace would silently mutate ITS peaks. The arm must reset on the
-    // sample change.
-    it("resets per-sample interaction state (arm + candidate preview) when the active sample changes (FO-NAV-STATE)", () => {
+    // ↑/↓ sample step, so page-owned interaction state survives a sample switch.
+    // The "+ Peak" arm is INTENTIONALLY sticky (like scale/combView): once armed,
+    // stepping keeps you armed so you can edit peaks sample-to-sample. But the
+    // zoom window and candidate preview must still reset — a stale x-domain
+    // renders the next trace off-screen, and a stale preview eats the first Esc.
+    it("keeps the '+ Peak' arm but resets the candidate preview when the active sample changes (FO-NAV-STATE)", () => {
       seedFull();
       state.corpus = [corpus(), corpus({ id: 43, name: "JC043" })];
       const view = renderAt(42);
@@ -302,13 +303,14 @@ describe("FocusPage", () => {
       // production Zustand re-renders on that change; the mocked store is
       // non-reactive, so drive the sample change + re-render the SAME tree
       // (FocusPage is reused, not remounted — its useState survives). The reset
-      // effect keyed on activeSampleId must clear the arm, the zoom, AND the
-      // candidate preview (a stale preview would otherwise eat the first Escape).
+      // effect keyed on activeSampleId clears the candidate preview (asserted
+      // below; the zoom also resets but is awkward to assert via public DOM), and
+      // deliberately leaves the arm ON.
       act(() => {
         state.activeSampleId = 43;
       });
       view.rerender(focusTreeAt(42));
-      expect(screen.getAllByText("+ Peak")[0]).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getAllByText("+ Peak")[0]).toHaveAttribute("aria-pressed", "true");
       expect(
         screen.getByRole("button", { name: /Pn3m, in assignment/ }),
       ).not.toHaveAttribute("data-previewed");
@@ -450,6 +452,31 @@ describe("FocusPage", () => {
     fireEvent.click(svg, { clientX: 300, clientY: 150 });
     expect(addPeakMutate).toHaveBeenCalledTimes(1);
     expect(typeof addPeakMutate.mock.calls[0]![0]).toBe("number");
+  });
+
+  // Guard for the sticky-arm trade-off: on a no-exposure sibling activeExposureId
+  // is undefined, so useAddPeak falls back to the sentinel exposure 0. A carried
+  // (or manual) arm must NOT POST a doomed /exposures/0/peaks nor announce a false
+  // "Peak added" — onAddPeak no-ops when there is no exposure.
+  it("an armed click on a no-exposure sample is an inert no-op (no sentinel POST, no false announce)", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    state.activeSampleId = 42;
+    state.activeExposureId = undefined; // no representative exposure
+    state.corpus = [corpus()];
+    state.exposures = []; // loaded + none usable → noUsableExposure, not a skeleton
+    state.trace = undefined;
+    state.peaks = [];
+    state.loading = false;
+    const { container } = renderAt(42);
+    // The interactive plate still renders (work column is ungated); arm it.
+    const addPeakBtn = screen.getAllByText("+ Peak")[0];
+    fireEvent.click(addPeakBtn);
+    expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
+    const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+    fireEvent.click(svg, { clientX: 300, clientY: 150 });
+    expect(addPeakMutate).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalledWith("Peak added");
   });
 
   it("wires the same q-link (hoveredQ/onHoverQ) into the combs panel and trace", () => {
