@@ -59,7 +59,7 @@ import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { sanitizeDashes } from "../../lib/copy";
-import { basisFor } from "../../lib/customIndex";
+import { basisFor, latticeBounds } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
@@ -487,8 +487,29 @@ export function FocusPage(): JSX.Element {
       .join(" · "),
   );
 
+  // Raw positive-q data extent of the 1D trace, independent of manual zoom — the
+  // source for both the comb's shared q-domain and the custom-index slider bounds
+  // (a zoom must not move the slider range).
+  const traceQExtent = useMemo<[number, number] | null>(() => {
+    const qs = traceQ.data?.q;
+    if (!qs || qs.length === 0) return null;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const q of qs) {
+      if (q > 0) {
+        if (q < lo) lo = q;
+        if (q > hi) hi = q;
+      }
+    }
+    return Number.isFinite(lo) && hi > lo ? [lo, hi] : null;
+  }, [traceQ.data]);
+
   // custom-index live preview
   const customMeta = CUSTOM_SYMS.find((s) => s.name === customSym) ?? CUSTOM_SYMS[0]!;
+  // FO-QWINDOW-BOUNDS: the lattice slider range is the phase's wide static
+  // envelope WIDENED (never narrowed) by what this trace's q-window can reach —
+  // so it errs wide and no bound needs manual widening per-instrument.
+  const { min: customMin, max: customMax } = latticeBounds(customSym, traceQExtent);
   const observedQs = peaks.filter((p) => !p.excluded).map((p) => p.q);
   const { previewSeries, fit } = customIndexPreview(
     customSym,
@@ -503,8 +524,8 @@ export function FocusPage(): JSX.Element {
   const customParamValid =
     customParam.trim() !== "" &&
     Number.isFinite(customParamNum) &&
-    customParamNum >= customMeta.min &&
-    customParamNum <= customMeta.max;
+    customParamNum >= customMin &&
+    customParamNum <= customMax;
 
   // FO-NAV-SKELETON: a sample switch ([ ]) clears activeExposureId (the
   // setActiveSample cascade) BEFORE the new sample's exposures round-trip and
@@ -544,20 +565,7 @@ export function FocusPage(): JSX.Element {
   // (`xDomain`) wins; otherwise the trace auto-fits to its data extent, so the
   // comb mirrors that positive-q extent. Keeps the comb's axis ticks + reflection
   // positions in the same q-space the trace shows above it.
-  const combSharedDomain = useMemo<[number, number] | null>(() => {
-    if (xDomain) return xDomain;
-    const qs = traceQ.data?.q;
-    if (!qs || qs.length === 0) return null;
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const q of qs) {
-      if (q > 0) {
-        if (q < lo) lo = q;
-        if (q > hi) hi = q;
-      }
-    }
-    return Number.isFinite(lo) && hi > lo ? [lo, hi] : null;
-  }, [xDomain, traceQ.data]);
+  const combSharedDomain = xDomain ?? traceQExtent;
 
   // ── figure export ─────────────────────────────────────────────────────────────
   // The single-trace Focus figure renders through the SAME greenfield builder as
@@ -791,8 +799,8 @@ export function FocusPage(): JSX.Element {
         symmetry={customSym}
         onSymmetryChange={setCustomSym}
         paramName={customMeta.paramName}
-        paramMin={customMeta.min}
-        paramMax={customMeta.max}
+        paramMin={customMin}
+        paramMax={customMax}
         {...(customMeta.step !== undefined ? { paramStep: customMeta.step } : {})}
         unit={customMeta.unit}
         paramValue={customParam}
