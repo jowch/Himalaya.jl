@@ -303,8 +303,9 @@ describe("FocusPage", () => {
       // production Zustand re-renders on that change; the mocked store is
       // non-reactive, so drive the sample change + re-render the SAME tree
       // (FocusPage is reused, not remounted — its useState survives). The reset
-      // effect keyed on activeSampleId clears the zoom AND the candidate preview,
-      // but deliberately leaves the arm ON.
+      // effect keyed on activeSampleId clears the candidate preview (asserted
+      // below; the zoom also resets but is awkward to assert via public DOM), and
+      // deliberately leaves the arm ON.
       act(() => {
         state.activeSampleId = 43;
       });
@@ -451,6 +452,31 @@ describe("FocusPage", () => {
     fireEvent.click(svg, { clientX: 300, clientY: 150 });
     expect(addPeakMutate).toHaveBeenCalledTimes(1);
     expect(typeof addPeakMutate.mock.calls[0]![0]).toBe("number");
+  });
+
+  // Guard for the sticky-arm trade-off: on a no-exposure sibling activeExposureId
+  // is undefined, so useAddPeak falls back to the sentinel exposure 0. A carried
+  // (or manual) arm must NOT POST a doomed /exposures/0/peaks nor announce a false
+  // "Peak added" — onAddPeak no-ops when there is no exposure.
+  it("an armed click on a no-exposure sample is an inert no-op (no sentinel POST, no false announce)", () => {
+    const announce = vi.fn();
+    setAnnounceImpl(announce);
+    state.activeSampleId = 42;
+    state.activeExposureId = undefined; // no representative exposure
+    state.corpus = [corpus()];
+    state.exposures = []; // loaded + none usable → noUsableExposure, not a skeleton
+    state.trace = undefined;
+    state.peaks = [];
+    state.loading = false;
+    const { container } = renderAt(42);
+    // The interactive plate still renders (work column is ungated); arm it.
+    const addPeakBtn = screen.getAllByText("+ Peak")[0];
+    fireEvent.click(addPeakBtn);
+    expect(addPeakBtn).toHaveAttribute("aria-pressed", "true");
+    const svg = container.querySelector('svg[data-testid="trace-plate-plot"]')!;
+    fireEvent.click(svg, { clientX: 300, clientY: 150 });
+    expect(addPeakMutate).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalledWith("Peak added");
   });
 
   it("wires the same q-link (hoveredQ/onHoverQ) into the combs panel and trace", () => {

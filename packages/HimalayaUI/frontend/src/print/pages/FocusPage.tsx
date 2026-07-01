@@ -246,7 +246,9 @@ export function FocusPage(): JSX.Element {
   // persist across sample steps: once you arm, stepping keeps you armed so you can
   // edit peaks sample-to-sample. (Trade-off: the first click on the next trace
   // then mutates ITS peaks — intended, since you asked to stay armed. Arm still
-  // defaults off on a fresh landing via useState(false), and Esc disarms.)
+  // defaults off on a fresh landing via useState(false), and Esc disarms. On a
+  // no-exposure sibling the arm carries over but onAddPeak no-ops — see its guard
+  // below — so a sticky arm can't POST against the sentinel exposure 0.)
   useEffect(() => {
     setXDomain(null);
     setPreviewWasExplicit(false);
@@ -870,6 +872,13 @@ export function FocusPage(): JSX.Element {
               interaction={{
                 onXDomain: setXDomain,
                 onAddPeak: (q) => {
+                  // No-exposure sibling: activeExposureId is undefined, so
+                  // useAddPeak fell back to the sentinel 0 (:217). A sticky arm
+                  // (or a manual arm on this sample) would otherwise POST a
+                  // doomed /exposures/0/peaks and announce a false success —
+                  // guard it to an inert no-op. Timing-independent, unlike
+                  // disarming on undefined (which is transient on every step).
+                  if (activeExposureId === undefined) return;
                   addPeak.mutate(q);
                   announce("Peak added");
                 },
