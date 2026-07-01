@@ -36,6 +36,11 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   // fetch effect's deps.
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  // True while a fetch for the current `src` is in flight. The <img> keeps
+  // showing the PRIOR blob until the new one lands, so without this the frame
+  // silently displays a stale image on a sample/exposure switch. Drives the
+  // dim + spinner "new image coming" cue below.
+  const [loading, setLoading] = useState<boolean>(false);
   const onRawSizeRef = useRef(onRawSize); onRawSizeRef.current = onRawSize;
   const onOrientRef = useRef(onOrient); onOrientRef.current = onOrient;
   // Raw detector dims (from headers). Aspect is preserved by the uniform 1536
@@ -70,31 +75,44 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   // is a CSS/SVG filter applied at render, so a variant toggle re-styles without
   // re-downloading (the canvas path used to refetch on every toggle).
   useEffect(() => {
-    if (!src || !hasIntersected) return;
+    // Clear a stale cue if we're no longer fetching (e.g. src -> null): the
+    // placeholder branch renders instead, but keep `loading` honest.
+    if (!src || !hasIntersected) { setLoading(false); return; }
     let cancelled = false;
+    // Delay the cue so an instant / browser-cached fetch doesn't flash the
+    // spinner for one frame — only signal "coming" once the wait is perceptible.
+    const showTimer = setTimeout(() => { if (!cancelled) setLoading(true); }, 150);
     void (async () => {
-      const res = await fetch(src);
-      if (cancelled || !res.ok) return;
-      const rw = Number(res.headers?.get?.("X-Image-Width"));
-      const rh = Number(res.headers?.get?.("X-Image-Height"));
-      if (Number.isFinite(rw) && Number.isFinite(rh) && rw > 0 && rh > 0 &&
-          (rawSizeRef.current?.w !== rw || rawSizeRef.current?.h !== rh)) {
-        rawSizeRef.current = { w: rw, h: rh };
-        onRawSizeRef.current?.(rw, rh);
+      try {
+        const res = await fetch(src);
+        if (cancelled || !res.ok) return;
+        const rw = Number(res.headers?.get?.("X-Image-Width"));
+        const rh = Number(res.headers?.get?.("X-Image-Height"));
+        if (Number.isFinite(rw) && Number.isFinite(rh) && rw > 0 && rh > 0 &&
+            (rawSizeRef.current?.w !== rw || rawSizeRef.current?.h !== rh)) {
+          rawSizeRef.current = { w: rw, h: rh };
+          onRawSizeRef.current?.(rw, rh);
+        }
+        const blob = await res.blob();
+        // `cancelled` is re-checked after every await, so a URL is only created
+        // for a still-live effect — never leaked past unmount / a src change.
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        // Swap: revoke the URL this <img> was showing before pointing it at the new
+        // blob. One owner of the lifecycle (this ref), so no double-revoke.
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = url;
+        setObjectUrl(url);
+        evaluateOrient();
+      } finally {
+        // Clear the cue on success OR error, but NOT on cancel — a cancelled run
+        // means `src` changed and the next run already re-armed the timer, so the
+        // spinner should stay up for that in-flight fetch instead of flickering.
+        clearTimeout(showTimer);
+        if (!cancelled) setLoading(false);
       }
-      const blob = await res.blob();
-      // `cancelled` is re-checked after every await, so a URL is only created
-      // for a still-live effect — never leaked past unmount / a src change.
-      if (cancelled) return;
-      const url = URL.createObjectURL(blob);
-      // Swap: revoke the URL this <img> was showing before pointing it at the new
-      // blob. One owner of the lifecycle (this ref), so no double-revoke.
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-      objectUrlRef.current = url;
-      setObjectUrl(url);
-      evaluateOrient();
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(showTimer); };
   }, [src, hasIntersected, evaluateOrient]);
 
   // Revoke the last committed URL on unmount (the swap above handles replacement
@@ -146,16 +164,26 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
       // at its native pixel size and floated tiny in the box. The frame is the
       // canonical display size; the image fits it.
       : { width: "100%", height: "100%", objectFit: "contain" }),
+    // Dim the outgoing (stale) image while its replacement loads, so the frame
+    // reads as "new image coming" rather than silently showing the old one.
+    opacity: loading ? 0.4 : 1,
+    transition: "opacity 150ms ease",
   };
 
   return (
-    <div ref={wrapperRef} data-orient={layout.orient}
-         className={`flex items-center justify-center w-full h-full overflow-hidden ${className ?? ""}`}>
+    <div ref={wrapperRef} data-orient={layout.orient} aria-busy={loading}
+         className={`relative flex items-center justify-center w-full h-full overflow-hidden ${className ?? ""}`}>
       <img
         {...(objectUrl ? { src: objectUrl } : {})}
         alt="Detector image"
         style={imgStyle}
       />
+      {loading && (
+        <div data-testid="detector-image-loading" role="status" aria-label="Loading detector image"
+             className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className={`${size === "thumb" ? "h-4 w-4" : "h-6 w-6"} rounded-full border-2 border-frame-tag/30 border-t-frame-tag motion-safe:animate-spin`} />
+        </div>
+      )}
     </div>
   );
 }
