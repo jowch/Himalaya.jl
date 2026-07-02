@@ -59,7 +59,7 @@ import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { sanitizeDashes } from "../../lib/copy";
-import { basisFor, latticeBounds } from "../../lib/customIndex";
+import { basisFor, latticeBounds, latticeForFirstOrderOnPeak } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
@@ -811,6 +811,7 @@ export function FocusPage(): JSX.Element {
         unit={customMeta.unit}
         paramValue={customParam}
         onParamChange={setCustomParam}
+        onSelectObserved={(q) => setCustomParam(String(latticeForFirstOrderOnPeak(customSym, q)))}
         previewSeries={previewSeries}
         observed={observedQs}
         fit={fit}
