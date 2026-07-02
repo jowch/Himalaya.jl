@@ -552,6 +552,24 @@ describe("FocusPage", () => {
     expect(num).toHaveAttribute("min", "10");
   });
 
+  it("clicking an observed peak in the preview snaps the lattice onto it (FO-CIX-SNAP)", async () => {
+    // Regression: onSelectObserved was dropped at this call site, silently
+    // removing click-to-snap (component tests + Storybook stayed green). Guard
+    // the wiring at the page level — the hit-targets render AND clicking one
+    // sets the lattice to the consumer's snap formula.
+    const { latticeForFirstOrderOnPeak } = await import("../../src/lib/customIndex");
+    const { CUSTOM_SYMS } = await import("../../src/print/pages/focusAdapters");
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("custom-index-trigger"));
+    const modal = screen.getByTestId("custom-index-modal");
+    const hit = modal.querySelector("[data-observed-hit]") as SVGElement | null;
+    expect(hit).not.toBeNull(); // click-to-snap targets present (absent when onSelectObserved is unwired)
+    const q = Number(hit!.getAttribute("data-observed-hit"));
+    fireEvent.click(hit!);
+    const num = within(modal).getByRole("spinbutton") as HTMLInputElement;
+    expect(Number(num.value)).toBeCloseTo(latticeForFirstOrderOnPeak(CUSTOM_SYMS[0]!.name, q), 5);
+  });
+
   it("toggling a candidate phase announces SR-only (frequent → quiet channel)", () => {
     const announce = vi.fn();
     const toast = vi.fn();
