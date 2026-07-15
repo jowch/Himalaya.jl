@@ -234,8 +234,7 @@ describe("<PhasePanel> — unresolved speculative chip", () => {
     renderWithProviders(<PhasePanel exposureId={42} />);
     const chip = await screen.findByTestId("index-unresolved-30");
     expect(chip).toHaveTextContent(/peaks unresolved/i);
-    const li = document.querySelector('li[data-index-id="30"]');
-    expect(li).toHaveAttribute("data-unresolved");
+    expect(chip.closest("li")).toHaveAttribute("data-unresolved");
   });
 
   it("speculative with peaks keeps the count pill, no chip", async () => {

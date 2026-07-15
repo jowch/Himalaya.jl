@@ -100,3 +100,48 @@ end
     @test ismissing(ha)          # gate reopened
     @test String(hb) == "bbbb"   # healthy exposure untouched
 end
+
+@testset "migration: backfill covers auto-kind rows and skips dangling/NULL-rpos rows" begin
+    fx = _mig_fixture()
+    res = DBInterface.execute(fx.db, """
+        INSERT INTO indices (exposure_id, phase, basis, status, kind)
+        VALUES (?, 'Lamellar', 0.05, 'candidate', 'speculative')""", [fx.exposure_id])
+    spec_id = Int(DBInterface.lastrowid(res))
+
+    # (a) auto-kind row joined to a real auto_peaks row — the dominant prod
+    # shape; must backfill an intent carrying the auto peak's q.
+    res = DBInterface.execute(fx.db, """
+        INSERT INTO auto_peaks (exposure_id, q, intensity, prominence, sharpness)
+        VALUES (?, 0.05, 100.0, 10.0, 1.5)""", [fx.exposure_id])
+    ap_id = Int(DBInterface.lastrowid(res))
+    DBInterface.execute(fx.db, """
+        INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+        VALUES (?, ?, 'auto', 1, 0.0)""", [spec_id, ap_id])
+
+    # (b) dangling peak_id (peak deleted before the migration): orphaned, must
+    # be skipped — no intent, no error.
+    DBInterface.execute(fx.db, """
+        INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+        VALUES (?, ?, 'auto', 2, 0.0)""", [spec_id, ap_id + 999])
+
+    # (c) NULL ratio_position (column is nullable in index_peaks, NOT NULL in
+    # intents): must be skipped, not abort the migration transaction. Backed
+    # by its own real auto peak so ONLY the rpos clause can be what skips it.
+    res = DBInterface.execute(fx.db, """
+        INSERT INTO auto_peaks (exposure_id, q, intensity, prominence, sharpness)
+        VALUES (?, 0.10, 80.0, 8.0, 1.2)""", [fx.exposure_id])
+    ap2_id = Int(DBInterface.lastrowid(res))
+    DBInterface.execute(fx.db, """
+        INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+        VALUES (?, ?, 'auto', NULL, 0.0)""", [spec_id, ap2_id])
+
+    _rearm!(fx.db)
+    HimalayaUI.migrate_speculative_peak_durability!(fx.db)
+
+    intents = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT ratio_position, q FROM speculative_peak_intents WHERE index_id = ? ORDER BY ratio_position",
+        [spec_id]))
+    @test length(intents) == 1
+    @test Int(intents[1].ratio_position) == 1
+    @test Float64(intents[1].q) ≈ 0.05 atol=1e-12
+end

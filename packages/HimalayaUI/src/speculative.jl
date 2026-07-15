@@ -214,9 +214,18 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
          built.score, built.r_squared, built.lattice_d, current_hash])
     new_id = Int(DBInterface.lastrowid(res))
 
-    q_by_id = Dict{Int, Float64}(Int(pr.id) => Float64(pr.q) for pr in peak_rows)
     for (rpos, peak_id) in ratio_to_peak_id
         pk_kind = _kind_for(db, exposure_id, peak_id)
+        # The intent q must come from the same table `_kind_for` resolved to:
+        # auto_peaks and peak_curations ids live in independent AUTOINCREMENT
+        # namespaces, so a bare-id dict over the UNION'd peak_rows would let a
+        # colliding curation row's q shadow an auto peak's (curation rows come
+        # last) — freezing the wrong q into durable intent state.
+        q_row = pk_kind == "auto" ?
+            Tables.rowtable(DBInterface.execute(db,
+                "SELECT q FROM auto_peaks WHERE id = ?", [peak_id])) :
+            Tables.rowtable(DBInterface.execute(db,
+                "SELECT q FROM peak_curations WHERE id = ?", [peak_id]))
         DBInterface.execute(db,
             """INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
                VALUES (?, ?, ?, ?, ?)""",
@@ -227,7 +236,7 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
         DBInterface.execute(db,
             """INSERT INTO speculative_peak_intents (index_id, ratio_position, q)
                VALUES (?, ?, ?)""",
-            [new_id, rpos, q_by_id[peak_id]])
+            [new_id, rpos, Float64(q_row[1].q)])
     end
     new_id
 end

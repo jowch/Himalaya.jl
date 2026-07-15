@@ -1080,6 +1080,10 @@ function migrate_speculative_peak_durability!(db::SQLite.DB)
                 [Float64(r.basis) * factor, Int(r.id)])
         end
 
+        # `ip.ratio_position IS NOT NULL`: the column is nullable in index_peaks
+        # but NOT NULL in intents — one anomalous legacy row must become a
+        # skipped row, not an aborted migration (the sentinel would never be
+        # written and every subsequent open_db would throw).
         DBInterface.execute(db, """
             INSERT OR IGNORE INTO speculative_peak_intents (index_id, ratio_position, q)
             SELECT ip.index_id, ip.ratio_position, COALESCE(ap.q, pc.q)
@@ -1087,7 +1091,9 @@ function migrate_speculative_peak_durability!(db::SQLite.DB)
             JOIN indices i ON i.id = ip.index_id AND i.kind = 'speculative'
             LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
             LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
-            WHERE COALESCE(ap.q, pc.q) IS NOT NULL""")
+                                        AND pc.kind = 'add'
+            WHERE ip.ratio_position IS NOT NULL
+              AND COALESCE(ap.q, pc.q) IS NOT NULL""")
 
         DBInterface.execute(db, """
             UPDATE exposures SET analysis_inputs_hash = NULL
@@ -1096,6 +1102,11 @@ function migrate_speculative_peak_durability!(db::SQLite.DB)
                              AND NOT EXISTS (SELECT 1 FROM index_peaks ip
                                               WHERE ip.index_id = i.id))""")
 
+        # Plain INSERT (never OR IGNORE): the basis rescale above is NOT
+        # idempotent under double application (×√2 twice = silent corruption),
+        # and the sentinel gate is read outside this transaction. The PK
+        # conflict on `schema_migrations.name` is the backstop that makes a
+        # concurrent-open race roll back the losing racer's whole tx.
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_SPECULATIVE_PEAK_DURABILITY, comparison_now_iso()])

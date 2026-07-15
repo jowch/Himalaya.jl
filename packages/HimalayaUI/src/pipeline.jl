@@ -269,7 +269,9 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
 
     # The user's durable ratio→q assignments. index_peaks is the per-analysis
     # resolved view (wiped and rebuilt below); intents are never wiped, so a
-    # failed re-resolution is retryable on every subsequent analysis.
+    # failed re-resolution is retryable whenever the indexpeaks stage runs
+    # (i.e., when the effective peak set changes — an unchanged-set analyze is
+    # hash-skipped as a provable no-op and does not re-enter this loop).
     speculative_intents = Tables.rowtable(DBInterface.execute(db, """
         SELECT spi.index_id, spi.ratio_position, spi.q AS q_value
         FROM speculative_peak_intents spi
@@ -388,15 +390,27 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             ratios_normed = Himalaya.phaseratios(P; normalize = true)
             n             = length(ratios_normed)
 
-            snaps = get(by_index, ix_id, NamedTuple[])
+            # Intents are durable data that can outlive a phase's ratio series
+            # (src/phase.jl trims/extends series tails); drop positions past
+            # the current series rather than BoundsError-ing every subsequent
+            # analyze of this exposure.
+            snaps = filter(s -> 1 <= Int(s.ratio_position) <= n,
+                           get(by_index, ix_id, NamedTuple[]))
             ratio_to_peak = Dict{Int, Tuple{Int, Float64, Float64}}()  # rpos → (peak_id, q, sharpness)
+            claimed_intent_pids = Set{Int}()
             for s in snaps
                 rpos = Int(s.ratio_position)
                 pid  = _resolve_intent_peak(Float64(s.q_value))
                 pid === nothing && continue
+                # One peak per ratio position: without this, two intents can
+                # fuzzy-resolve to the same peak — stats then count it twice
+                # while the (index_id, peak_id, peak_kind) PK silently drops
+                # the second resolved row.
+                pid in claimed_intent_pids && continue
                 pr = get(eff_by_id, pid, nothing)
                 pr === nothing && continue
                 ratio_to_peak[rpos] = (pid, Float64(pr.q), Float64(pr.sharpness))
+                push!(claimed_intent_pids, pid)
             end
 
             # Determine a working basis we can use to discover *new* peaks that
