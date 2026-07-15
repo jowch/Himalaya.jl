@@ -267,17 +267,13 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         WHERE g.exposure_id = ? AND g.kind = 'custom' AND i.kind = 'auto'
         """, [exposure_id]))
 
-    # Snapshot speculative indices' index_peaks rows by q-value. Auto peaks are
-    # about to be re-detected with new ids, so the FK in index_peaks would
-    # dangle without this remap.
-    speculative_assignments = Tables.rowtable(DBInterface.execute(db, """
-        SELECT i.id AS index_id, ip.ratio_position, ip.peak_kind,
-               ip.peak_id AS old_peak_id,
-               COALESCE(ap.q, pc.q) AS q_value
-        FROM indices i
-        JOIN index_peaks ip ON ip.index_id = i.id
-        LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id     AND ip.peak_kind = 'auto'
-        LEFT JOIN peak_curations pc ON pc.id = ip.peak_id     AND ip.peak_kind = 'curation'
+    # The user's durable ratio→q assignments. index_peaks is the per-analysis
+    # resolved view (wiped and rebuilt below); intents are never wiped, so a
+    # failed re-resolution is retryable on every subsequent analysis.
+    speculative_intents = Tables.rowtable(DBInterface.execute(db, """
+        SELECT spi.index_id, spi.ratio_position, spi.q AS q_value
+        FROM speculative_peak_intents spi
+        JOIN indices i ON i.id = spi.index_id
         WHERE i.exposure_id = ? AND i.kind = 'speculative'
         """, [exposure_id]))
     speculative_index_ids = Tables.rowtable(DBInterface.execute(db,
@@ -358,36 +354,28 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                                           peak_kind = eff.peak_kind[i])
         end
 
-        function _resolve_peak_id(snap_row)
-            snap_kind = String(snap_row.peak_kind)
-            if snap_kind == "curation"
-                # Curation-add peaks keep their id across reanalysis.
-                pid = Int(snap_row.old_peak_id)
-                return haskey(eff_by_id, pid) ? pid : nothing
-            else
-                # Auto peak — match by q-value within tolerance.
-                qv = Float64(snap_row.q_value)
-                # Exact match via eff_lookup
-                info = get(eff_lookup, qv, nothing)
-                info !== nothing && info[2] == :auto && return info[1]
-                # Fuzzy match (peak shifted slightly under new detection)
-                tol_val = max(EXCLUDE_TOL, abs(qv) * 0.001)
-                best, best_delta = nothing, Inf
-                for i in eachindex(eff.q)
-                    eff.peak_kind[i] == :auto || continue
-                    d = abs(eff.q[i] - qv)
-                    if d < best_delta && d <= tol_val
-                        best_delta = d
-                        best = eff.peak_id[i]
-                    end
+        # Match an intent q against the current effective peak set. Curation
+        # peaks keep their exact q across analyses (exact-lookup hit); auto
+        # peaks may drift slightly under re-detection (fuzzy fallback, same
+        # tolerance the old snapshot resolution used).
+        function _resolve_intent_peak(qv::Float64)
+            info = get(eff_lookup, qv, nothing)
+            info !== nothing && return info[1]
+            tol_val = max(EXCLUDE_TOL, abs(qv) * 0.001)
+            best, best_delta = nothing, Inf
+            for i in eachindex(eff.q)
+                d = abs(eff.q[i] - qv)
+                if d < best_delta && d <= tol_val
+                    best_delta = d
+                    best = eff.peak_id[i]
                 end
-                return best
             end
+            best
         end
 
-        # Group snapshot rows by index_id.
+        # Group intent rows by index_id.
         by_index = Dict{Int, Vector{NamedTuple}}()
-        for r in speculative_assignments
+        for r in speculative_intents
             push!(get!(by_index, Int(r.index_id), NamedTuple[]), r)
         end
 
@@ -404,42 +392,33 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             ratio_to_peak = Dict{Int, Tuple{Int, Float64, Float64}}()  # rpos → (peak_id, q, sharpness)
             for s in snaps
                 rpos = Int(s.ratio_position)
-                pid  = _resolve_peak_id(s)
+                pid  = _resolve_intent_peak(Float64(s.q_value))
                 pid === nothing && continue
                 pr = get(eff_by_id, pid, nothing)
                 pr === nothing && continue
-                sharp = Float64(pr.sharpness)
-                ratio_to_peak[rpos] = (pid, Float64(pr.q), sharp)
+                ratio_to_peak[rpos] = (pid, Float64(pr.q), Float64(pr.sharpness))
             end
 
             # Determine a working basis we can use to discover *new* peaks that
-            # fit the speculative's predicted ratio positions. Two paths:
-            #  - Survived snapshot has ≥ 2 peaks: refit basis from those.
-            #  - Stale-recovery path (< 2 survived): use the original q-values
-            #    from the snapshot — they encode the user's hypothesis even if
-            #    the underlying peaks no longer exist.
+            # fit the speculative's predicted ratio positions. Three paths, in
+            # order of preference — see the branch comments below.
             basis_for_snap = if length(ratio_to_peak) >= 2
                 # Nominal path: use currently-resolved peaks to refit basis.
-                rpos_seed = sort(collect(keys(ratio_to_peak)))
+                rpos_seed  = sort(collect(keys(ratio_to_peak)))
                 qvals_seed = [ratio_to_peak[r][2] for r in rpos_seed]
                 ratios_normed[rpos_seed] \ qvals_seed
+            elseif length(snaps) >= 2
+                # Recovery path: fit from the intent q's — they encode the
+                # user's hypothesis even if the underlying peaks are gone.
+                snap_pairs = sort([(Int(s.ratio_position), Float64(s.q_value)) for s in snaps])
+                ratios_normed[[first(p) for p in snap_pairs]] \ [last(p) for p in snap_pairs]
             else
-                # Stale-recovery path: use stored snapshot q-values, but skip
-                # any whose underlying peak has been deleted (q_value = NULL/missing).
-                valid_snaps = filter(s -> !ismissing(s.q_value), snaps)
-                if length(valid_snaps) >= 2
-                    snap_pairs = sort([(Int(s.ratio_position), Float64(s.q_value)) for s in valid_snaps])
-                    rpos_seed  = [first(p) for p in snap_pairs]
-                    qvals_seed = [last(p)  for p in snap_pairs]
-                    ratios_normed[rpos_seed] \ qvals_seed
+                # Last resort: the persisted (normalized) basis on the row.
+                if ismissing(ix_row.basis)
+                    nothing
                 else
-                    # Last resort: use the persisted basis on the indices row.
-                    if ismissing(ix_row.basis)
-                        nothing
-                    else
-                        stored = Float64(ix_row.basis)
-                        stored > 0 ? stored : nothing
-                    end
+                    stored = Float64(ix_row.basis)
+                    stored > 0 ? stored : nothing
                 end
             end
 
@@ -474,12 +453,15 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 end
             end
 
-            if length(ratio_to_peak) < 2
-                # Still not enough peaks to keep the index live — mark stale.
-                DBInterface.execute(db,
-                    "UPDATE indices SET status = 'stale' WHERE id = ?", [ix_id])
-                continue
-            end
+            # Non-destructive failure: zero resolved peaks leaves the resolved
+            # view empty for this run — intents survive and the next analysis
+            # retries from them. No status write: 'stale' is a dead enum value
+            # (db.jl R3.2 normalizes it to 'candidate' on every open); the UI
+            # signals this state from peaks.length === 0. One resolved peak is
+            # enough to keep the index live — anchor-only speculatives are
+            # legal at creation and stay legal here (their R² is NaN → NULL,
+            # which the serializers already guard).
+            isempty(ratio_to_peak) && continue
 
             rpos_sorted = sort(collect(keys(ratio_to_peak)))
             qvals      = [ratio_to_peak[r][2] for r in rpos_sorted]
