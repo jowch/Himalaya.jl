@@ -47,3 +47,29 @@ end
 
     close(db)
 end
+
+@testset "indices" begin
+    dir = mktempdir()
+    dbpath = joinpath(dir, "himalaya.db")
+    ids = build_fixture(dbpath, dir)
+    db = HimalayaDB.connect(dbpath)
+
+    cands = index_candidates(db, ids.exposure_id)
+    @test length(cands) == 1
+    @test cands[1].id == ids.index_id
+    @test cands[1].phase == "Pn3m"
+    @test cands[1].kind == "auto"
+
+    conf = confirmed_indices(db, ids.exposure_id)
+    @test length(conf) == 1
+    @test conf[1].id == ids.index_id
+    @test conf[1].phase == "Pn3m"
+
+    # uncurated exposure2: has a candidate index in an ACTIVE auto group, but no
+    # custom group -> confirmed_indices must be empty (filter is kind='custom',
+    # not active=1). index_candidates still sees the index.
+    @test length(index_candidates(db, ids.exposure2_id)) == 1
+    @test isempty(confirmed_indices(db, ids.exposure2_id))
+
+    close(db)
+end

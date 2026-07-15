@@ -64,3 +64,38 @@ curated_peaks(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterface
     WHERE exposure_id = ? AND kind = 'add'
     ORDER BY q
 """, [Int(exposure_id), Int(exposure_id)]))
+
+const _INDEX_COLS = "id, exposure_id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash"
+
+"""
+    index_candidates(db, exposure_id) -> Vector{<:NamedTuple}
+
+All candidate index-choices for an exposure (auto + speculative), sorted by score.
+Mirrors `HimalayaUI.get_indices_for_exposure`.
+"""
+index_candidates(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterface.execute(db,
+    "SELECT $_INDEX_COLS FROM indices WHERE exposure_id = ? ORDER BY score DESC",
+    [Int(exposure_id)]))
+
+"""
+    confirmed_indices(db, exposure_id) -> Vector{<:NamedTuple}
+
+The human-confirmed indices: members of the exposure's `kind='custom'` index
+group — what the curator committed to. Sorted by score. Empty when the curator
+has never touched the exposure (no custom group exists yet).
+
+Verified against HimalayaUI's write/read paths: human curation always lands in
+the on-demand `kind='custom'` group (routes_analysis.jl `ensure_custom_group!`),
+and `kind='custom' ⟹ active=1`, so filtering on `active=1` alone would wrongly
+include the pre-curation auto group. No single HimalayaUI getter returns this
+shape, so the members join is composed here.
+"""
+confirmed_indices(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterface.execute(db, """
+    SELECT i.id, i.exposure_id, i.phase, i.basis, i.score, i.r_squared,
+           i.lattice_d, i.status, i.kind, i.inputs_hash
+    FROM indices i
+    JOIN index_group_members m ON m.index_id = i.id
+    JOIN index_groups g        ON g.id = m.group_id
+    WHERE g.exposure_id = ? AND g.kind = 'custom'
+    ORDER BY i.score DESC
+""", [Int(exposure_id)]))
