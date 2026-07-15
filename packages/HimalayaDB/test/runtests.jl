@@ -8,4 +8,5 @@ include("fixture.jl")
     include("test_reconstruct.jl")
     include("test_trace.jl")
     include("test_dataframes.jl")
+    include("test_contract.jl")
 end
