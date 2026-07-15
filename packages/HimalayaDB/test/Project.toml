@@ -1,0 +1,12 @@
+[deps]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Himalaya = "c5c84187-0f9f-481b-afdc-282fe863df0d"
+HimalayaUI = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+[sources]
+Himalaya = {path = "../../.."}
+HimalayaUI = {path = "../../HimalayaUI"}
