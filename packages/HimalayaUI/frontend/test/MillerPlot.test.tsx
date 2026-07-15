@@ -66,3 +66,38 @@ describe("<MillerPlot>", () => {
     expect(Plot.linearRegressionY).toHaveBeenCalled();
   });
 });
+
+describe("<MillerPlot> — confidence band suppression", () => {
+  const ix = (peaks: IndexEntry["peaks"]): IndexEntry => ({
+    id: 5, exposure_id: 1, phase: "Hexagonal", basis: 0.1, score: 0.5,
+    r_squared: 1.0, lattice_d: 38, ngc: null, status: "candidate",
+    kind: "speculative", inputs_hash: null,
+    predicted_q: [0.1, 0.173, 0.2],
+    peaks,
+  });
+
+  it("passes ci: 0 for a 2-point regression (NaN band guard)", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.linearRegressionY as unknown as { mockClear: () => void }).mockClear();
+    render(<MillerPlot indices={[ix([
+      { peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.1 },
+      { peak_id: 2, ratio_position: 2, residual: 0, q_observed: 0.173 },
+    ])]} />);
+    const calls = (Plot.linearRegressionY as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect((calls[0]![1] as { ci?: number }).ci).toBe(0);
+  });
+
+  it("leaves ci at its default for a 3-point regression", async () => {
+    const Plot = await import("@observablehq/plot");
+    (Plot.linearRegressionY as unknown as { mockClear: () => void }).mockClear();
+    render(<MillerPlot indices={[ix([
+      { peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.1 },
+      { peak_id: 2, ratio_position: 2, residual: 0, q_observed: 0.173 },
+      { peak_id: 3, ratio_position: 3, residual: 0, q_observed: 0.2 },
+    ])]} />);
+    const calls = (Plot.linearRegressionY as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect((calls[0]![1] as { ci?: number }).ci).toBeUndefined();
+  });
+});

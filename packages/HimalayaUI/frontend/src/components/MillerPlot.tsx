@@ -91,6 +91,10 @@ export function MillerPlot({ indices, hoveredIndex }: MillerPlotProps): JSX.Elem
           stroke: color,
           strokeOpacity: opacity,
           strokeWidth: isHovered ? 1.5 : 1,
+          // n=2 has zero residual DOF: the confidence band divides by (n-2)
+          // and renders an all-NaN <path> (SVG console error on every draw).
+          // ci: 0 hides only the band; the regression line always renders.
+          ...(rows.length < 3 ? { ci: 0 } : {}),
           ...(dashed ? { strokeDasharray: isSpeculative ? "2,3" : "4,3" } : {}),
         }),
       );
