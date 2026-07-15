@@ -80,18 +80,21 @@ index_candidates(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterf
 """
     confirmed_indices(db, exposure_id) -> Vector{<:NamedTuple}
 
-The human-confirmed indices for an exposure — the phase(s) the curator committed
-to — sourced from the durable per-exposure assignment (`assignment_members` +
-`assignments`). Returns empty when the exposure has no confirmed assignment.
-Sorted by score.
+The exposure's durable *indexed assignment*: the index rows in `assignment_members`
+when the exposure's `assignments.state` is `'indexed'` (the state defaults to
+`'indexed'` when no assignments row exists). This is the same "confirmed index"
+HimalayaUI reads. Empty when the state is `form_factor`/`null`. Sorted by score.
 
-Mirrors HimalayaUI's confirmed-index read (comparisons.jl): members are gated by
-`assignments.state = 'indexed'`, defaulting to `'indexed'` when no assignments row
-exists. (`assignment_set_state` wipes members when leaving `'indexed'`, so in
-practice member presence already implies the indexed state; the COALESCE gate keeps
-this faithful to HimalayaUI including the no-row default.) The legacy
-`index_groups`/`index_group_members` `kind='custom'` path this used to read was
-retired by HimalayaUI's D-10 redesign — those tables persist only as historical data.
+A non-empty result is NOT by itself proof of an explicit human decision: HimalayaUI's
+D-10 migration backfills the auto group's pick into `assignment_members` at
+`state='indexed'` for already-analyzed exposures, so on upgraded databases this can
+return an auto-seeded index. To tell an auto seed from a curator's choice, read the
+assignment state — mirroring HimalayaUI's own guidance (comparisons.jl).
+
+Mirrors HimalayaUI's confirmed-index read: `assignment_members` JOIN `indices`, gated
+by `assignments.state = 'indexed'` (the `COALESCE` keeps the no-row default faithful).
+The legacy `index_groups`/`index_group_members` `kind='custom'` path this used to read
+was retired by the D-10 redesign; those tables persist only as historical data.
 """
 confirmed_indices(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterface.execute(db, """
     SELECT i.id, i.exposure_id, i.phase, i.basis, i.score, i.r_squared,

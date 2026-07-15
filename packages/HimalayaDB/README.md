@@ -15,7 +15,8 @@ dataframe(peaks)                     # -> DataFrame
 idx = reconstruct_index(db, cands[1].id)  # -> Himalaya.Index{Pn3m}
 q, I, σ = load_trace(db, exps[1].id)      # opt-in .dat loading
 
-# The curator's confirmed pick(s), if any — empty unless a human has confirmed
-# an assignment for this exposure.
+# The exposure's durable indexed assignment (the "confirmed index" HimalayaUI uses).
+# Empty when the assignment state is form_factor/null. Note: on upgraded DBs this can
+# be auto-seeded, so a non-empty result is not by itself proof of a human decision.
 confirmed = confirmed_indices(db, exps[1].id)
 ```

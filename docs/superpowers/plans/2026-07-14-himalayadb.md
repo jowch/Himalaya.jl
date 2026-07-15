@@ -1023,4 +1023,18 @@ git commit -m "test(HimalayaDB): contract cross-check vs HimalayaUI + README"
 
 **Placeholder scan:** No "TBD/TODO". The two `<..._UUID>` tokens are real values resolved in Task 1 Step 1 (not placeholders — the plan says exactly how to obtain them). The `[sources]` relative paths carry an explicit "adjust to actual worktree depth" instruction.
 
-**Type consistency:** `connect`/`curated_peaks`/`index_candidates`/`confirmed_indices`/`reconstruct_index`/`load_trace`/`load_dat`/`dataframe`/`resolve_phase`/`build_fixture` names and signatures are consistent across tasks and match the exports in Task 1. `curated_peaks` output columns (`id, exposure_id, q, intensity, prominence, sharpness, source, excluded`) match both the Task 3 SQL and the Task 8 contract assertion. `build_fixture` return fields (`experiment_id, sample_id, exposure_id, index_id, group_id, auto_peak_ids`) are used consistently in Tasks 1–8.
+**Type consistency:** `connect`/`curated_peaks`/`index_candidates`/`confirmed_indices`/`reconstruct_index`/`load_trace`/`load_dat`/`dataframe`/`resolve_phase`/`build_fixture` names and signatures are consistent across tasks and match the exports in Task 1. `curated_peaks` output columns (`id, exposure_id, q, intensity, prominence, sharpness, source, excluded`) match both the Task 3 SQL and the Task 8 contract assertion.
+
+---
+
+## Post-implementation corrections
+
+The plan above was written from a data-model map extracted against the *main clone*, which sat on an older branch (`speculative-peak-durability`) with a different schema than the worktree (`main`) the package was actually built and tested against. Two corrections were applied during execution; the **shipped `packages/HimalayaDB/` code is the source of truth**, not the code blocks above:
+
+1. **`samples` reader** — dropped `display_name` (the `migrate_samples_name_collapse!` migration renames `display_name`→`name` on every fresh DB, so no `display_name` column exists). Also: `create_exposure!` now requires `experiment_id`; `create_sample!` takes only `name` (no `display_name`). The fixture was adjusted accordingly.
+
+2. **`confirmed_indices` (Critical, caught by the final whole-branch review)** — the plan's `index_groups`/`index_group_members` `kind='custom'` path was **retired by HimalayaUI's D-10 plotting redesign**. Confirmation now lives in `assignments(exposure_id, state)` + `assignment_members(exposure_id, index_id)`. The shipped query reads `assignment_members JOIN indices` gated by `COALESCE(assignments.state,'indexed')='indexed'`, `ORDER BY i.score DESC NULLS LAST, i.id ASC` — mirroring HimalayaUI's own confirmed-index read. It returns the exposure's durable *indexed assignment* (which may be auto-seeded on migrated DBs), not strictly a human-only confirmation. The fixture confirms through the real `assignments`/`assignment_members` tables (and uses a `state='form_factor'` exposure to exercise the state gate); the `group_id` fixture field was removed.
+
+3. **`reconstruct_index` sizing** — `SparseVector` length uses `length(Himalaya.phaseratios(P))` (the codebase convention) rather than `maximum(ratio_position)`, so position-indexed access and `Base.show` are correct.
+
+**Known follow-ups (non-blocking):** `confirmed_indices` has no contract test (HimalayaUI exposes no single equivalent getter — its confirmed read lives inside `compute_member_snapshot`); assorted low-risk coverage gaps and defensive-polish Minors are recorded in the SDD progress ledger.
