@@ -572,3 +572,23 @@ end
     @test isempty(Tables.rowtable(DBInterface.execute(db,
         "SELECT 1 FROM speculative_peak_intents WHERE index_id = ?", [spec_id])))
 end
+
+@testset "analyze_run post_state carries healed speculative peaks (SSE contract)" begin
+    # A peak-less speculative heals during analysis; the post_state payload
+    # every SSE subscriber receives must contain its re-attached peaks —
+    # this is the only channel multiplayer clients converge through.
+    fx = _spec_synthetic_exposure([0.05, 0.10])
+    res = DBInterface.execute(fx.db, """
+        INSERT INTO indices (exposure_id, phase, basis, status, kind)
+        VALUES (?, 'Lamellar', 0.05, 'candidate', 'speculative')""",
+        [fx.exposure_id])
+    spec_id = Int(DBInterface.lastrowid(res))
+
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+
+    payload = HimalayaUI._serialized_indices_for_broadcast(fx.db, fx.exposure_id)
+    spec = only(filter(d -> Int(d[:id]) == spec_id, payload))
+    @test String(spec[:kind]) == "speculative"
+    @test length(spec[:peaks]) == 2
+    @test String(spec[:status]) == "candidate"
+end
