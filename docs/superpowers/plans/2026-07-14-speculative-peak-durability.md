@@ -71,7 +71,7 @@ end
 
 Run (from `packages/HimalayaUI/`):
 ```bash
-julia --project=. -e 'using HimalayaUI; include("test/test_speculative.jl")' 2>&1 | tail -20
+julia --project=. -e 'using HimalayaUI; include("test/test_http.jl"); include("test/test_speculative.jl")' 2>&1 | tail -20
 ```
 Expected: the new testset FAILS on `predicted[1] ≈ 0.1` (actual ≈ 0.0707). All pre-existing testsets in the file still pass (Lamellar's first ratio is 1, so its basis is identical under both conventions).
 
@@ -199,7 +199,7 @@ end
 
 Run (from `packages/HimalayaUI/`):
 ```bash
-julia --project=. -e 'using HimalayaUI; include("test/test_speculative.jl")' 2>&1 | tail -20
+julia --project=. -e 'using HimalayaUI; include("test/test_http.jl"); include("test/test_speculative.jl")' 2>&1 | tail -20
 ```
 Expected: new testset FAILS on `predicted[1] ≈ 0.1`. (Discovery may or may not find rp3 pre-fix; the basis assertion is the reliable failure.)
 
@@ -567,7 +567,7 @@ end
 
 Run (from `packages/HimalayaUI/`):
 ```bash
-julia --project=. -e 'using HimalayaUI; include("test/test_speculative.jl")' 2>&1 | tail -20
+julia --project=. -e 'using HimalayaUI; include("test/test_http.jl"); include("test/test_speculative.jl")' 2>&1 | tail -20
 ```
 Expected: new testset FAILS (0 intents rows). Note: Task 3's backfill testset deletes creation-written intents before re-arming, so it stays green after this task.
 
@@ -748,7 +748,7 @@ end
 
 Run (from `packages/HimalayaUI/`):
 ```bash
-julia --project=. -e 'using HimalayaUI; include("test/test_speculative.jl")' 2>&1 | tail -30
+julia --project=. -e 'using HimalayaUI; include("test/test_http.jl"); include("test/test_speculative.jl")' 2>&1 | tail -30
 ```
 Expected: the rewritten "survives losing its peaks" testset FAILS (current code marks stale + wipes; intents aren't read), "zero-resolution" FAILS (status flips are ephemeral but the wipe commits — `index_peaks` empty assertion passes, the intent-based heal assertion fails), "prod-shape heal" may already PASS (stored-basis fallback exists) — that one is a pin, not a change.
 
@@ -920,7 +920,7 @@ Note for the implementer: the payload Dicts are Symbol-keyed (built via `row_to_
 
 Run (from `packages/HimalayaUI/`):
 ```bash
-julia --project=. -e 'using HimalayaUI; include("test/test_speculative.jl")' 2>&1 | tail -10
+julia --project=. -e 'using HimalayaUI; include("test/test_http.jl"); include("test/test_speculative.jl")' 2>&1 | tail -10
 ```
 Expected: PASS immediately (Tasks 2+5 already made heal work; this pins the broadcast layer). If it fails on key spelling, fix the test's key access per the note — not the source.
 
