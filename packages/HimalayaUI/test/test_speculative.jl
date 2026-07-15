@@ -454,3 +454,30 @@ end
     # 1-peak fit has zero residual DOF ⇒ R² is NaN, bound as NULL by SQLite.
     @test ismissing(row.r_squared)
 end
+
+@testset "re-attach keeps the normalized basis convention (cubic)" begin
+    # Pn3m normalized ratios: [1, √3/√2, √4/√2, ...] ≈ [1, 1.2247, 1.4142, ...].
+    # Place peaks at basis 0.1 × those ratios; rp3 initially unassigned.
+    r = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)
+    fx = _spec_synthetic_exposure([0.1, 0.1 * r[2], 0.1 * r[3]])
+    p1, p2 = fx.peak_ids[1], fx.peak_ids[2]
+
+    spec_id = HimalayaUI.insert_speculative_index!(fx.db, fx.exposure_id, Himalaya.Pn3m,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+
+    row = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT basis FROM indices WHERE id = ?", [spec_id]))[1]
+    predicted = HimalayaUI.predicted_q_for_phase("Pn3m", Float64(row.basis))
+    # Post-reanalyze the recomputed basis must still be normalized: the first
+    # predicted position sits at the anchor q. Pre-fix, new_basis was fit
+    # against un-normalized ratios ⇒ predicted[1] ≈ 0.1/√2.
+    @test predicted[1] ≈ 0.1 rtol=1e-6
+    # And the mixed-scale discovery bug is gone: with a correct basis, rp3's
+    # predicted position (0.1·r[3]) finds the third peak.
+    ip = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT ratio_position FROM index_peaks WHERE index_id = ? ORDER BY ratio_position",
+        [spec_id]))
+    @test [Int(x.ratio_position) for x in ip] == [1, 2, 3]
+end

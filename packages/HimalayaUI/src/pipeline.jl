@@ -397,7 +397,6 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             P          = resolve_phase(phase_name)
             P === nothing && continue  # malformed phase string — leave as-is
 
-            ratios_unnorm = Himalaya.phaseratios(P)
             ratios_normed = Himalaya.phaseratios(P; normalize = true)
             n             = length(ratios_normed)
 
@@ -423,7 +422,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 # Nominal path: use currently-resolved peaks to refit basis.
                 rpos_seed = sort(collect(keys(ratio_to_peak)))
                 qvals_seed = [ratio_to_peak[r][2] for r in rpos_seed]
-                ratios_unnorm[rpos_seed] \ qvals_seed
+                ratios_normed[rpos_seed] \ qvals_seed
             else
                 # Stale-recovery path: use stored snapshot q-values, but skip
                 # any whose underlying peak has been deleted (q_value = NULL/missing).
@@ -432,7 +431,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                     snap_pairs = sort([(Int(s.ratio_position), Float64(s.q_value)) for s in valid_snaps])
                     rpos_seed  = [first(p) for p in snap_pairs]
                     qvals_seed = [last(p)  for p in snap_pairs]
-                    ratios_unnorm[rpos_seed] \ qvals_seed
+                    ratios_normed[rpos_seed] \ qvals_seed
                 else
                     # Last resort: use the persisted basis on the indices row.
                     if ismissing(ix_row.basis)
@@ -486,8 +485,10 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             qvals      = [ratio_to_peak[r][2] for r in rpos_sorted]
             sharpvals  = [ratio_to_peak[r][3] for r in rpos_sorted]
 
-            # Recompute basis/r²/d/score using new peak values
-            observed_ratios_used = ratios_unnorm[rpos_sorted]
+            # Recompute basis/r²/d/score using new peak values. Normalized
+            # ratios — indices.basis means "q of the first ratio position"
+            # for every kind (same convention as insert + auto indices).
+            observed_ratios_used = ratios_normed[rpos_sorted]
             new_basis = observed_ratios_used \ qvals
 
             peaks_sv     = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, qvals)
@@ -510,7 +511,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 else
                     "auto"
                 end
-                ideal = ratios_unnorm[rpos] * new_basis
+                ideal = ratios_normed[rpos] * new_basis
                 resid = abs(qv - ideal)
                 DBInterface.execute(db,
                     """INSERT OR IGNORE INTO index_peaks
