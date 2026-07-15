@@ -405,10 +405,10 @@ Samples, optionally filtered to one experiment id.
 function samples(db::SQLite.DB; experiment::Union{Integer,Nothing}=nothing)
     if experiment === nothing
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, experiment_id, name, display_name, notes FROM samples ORDER BY id"))
+            "SELECT id, experiment_id, name, notes FROM samples ORDER BY id"))
     else
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, experiment_id, name, display_name, notes FROM samples WHERE experiment_id = ? ORDER BY id",
+            "SELECT id, experiment_id, name, notes FROM samples WHERE experiment_id = ? ORDER BY id",
             [Int(experiment)]))
     end
 end
