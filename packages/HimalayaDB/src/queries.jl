@@ -42,7 +42,9 @@ end
     curated_peaks(db, exposure_id) -> Vector{<:NamedTuple}
 
 The effective (curated) peak set for an exposure: `auto_peaks ∪ adds − excludes`.
-Each row is tagged `source ∈ {"auto","manual"}` and `excluded ∈ {0,1}`.
+Each row is tagged `source ∈ {"auto","manual"}` and `excluded ∈ {0,1}` — excluded
+peaks are returned tagged, not removed from the result, so the truly-effective
+set is `filter(p -> p.excluded == 0, peaks)`.
 Excludes are matched to auto peaks by q within `MAX(1e-6, ABS(q)*0.001)`.
 
 Mirrors `HimalayaUI.get_peaks_for_exposure`; the contract test guards drift.

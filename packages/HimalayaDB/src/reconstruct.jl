@@ -16,6 +16,18 @@ end
 Rebuild a core `Himalaya.Index{P}` from an `indices` row and its `index_peaks`
 supporting peaks. Peaks/sharpness are sparse vectors indexed by ratio position.
 Throws `ArgumentError` if the index is missing or its phase name is unknown.
+
+**Fidelity note:** a supporting peak backed by an add-curation (`peak_kind =
+'curation'`) reconstructs with `sharpness = 0`, because `peak_curations` stores
+no sharpness column — the pipeline samples sharpness from the trace only to
+compute the stored `indices.score`, and does not persist that sample. As a
+result, `Himalaya.score` of a reconstructed index that includes an add-peak can
+diverge from the authoritative stored score (observed: ~0.434 reconstructed vs
+~0.469 stored, for a Pn3m index with one add-peak among its supporting peaks).
+`fit`, `predictpeaks`, `missingpeaks`, `==`, and `issubset` are unaffected by
+this gap — only sharpness-weighted scoring is. When you need the authoritative
+score, read it from `indices.score` (via `index_candidates`) rather than
+recomputing `Himalaya.score` on a reconstructed index.
 """
 function reconstruct_index(db::SQLite.DB, index_id::Integer)
     irows = Tables.rowtable(DBInterface.execute(db,

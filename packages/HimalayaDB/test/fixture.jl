@@ -39,12 +39,15 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
             push!(auto_peak_ids, Int(DBInterface.lastrowid(r)))
         end
 
+        # Near-boundary q (not an exact match to the auto peak's 0.1414): within
+        # the auto peak's MAX(1e-6, ABS(q)*0.001) ≈ 0.0001414 tolerance band, so
+        # this exercises curated_peaks' tolerance formula rather than equality.
         DBInterface.execute(db,
             "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
-            [exposure_id, 0.1414])
-        DBInterface.execute(db,
-            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
-            [exposure_id, 0.20])
+            [exposure_id, 0.14149])
+        radd = DBInterface.execute(db,
+            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)", [exposure_id, 0.20])
+        add_curation_id = Int(DBInterface.lastrowid(radd))
 
         ri = DBInterface.execute(db,
             "INSERT INTO indices (exposure_id, phase, basis, score, kind, status) VALUES (?, 'Pn3m', ?, ?, 'auto', 'candidate')",
@@ -56,6 +59,12 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
                 "INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position) VALUES (?, ?, 'auto', ?)",
                 [index_id, pid, pos])
         end
+        # third supporting peak, backed by the add-curation (not an auto peak):
+        # exercises reconstruct_index's peak_curations join and its sharpness=0
+        # fidelity gap (see reconstruct.jl docstring).
+        DBInterface.execute(db,
+            "INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position) VALUES (?, ?, 'curation', ?)",
+            [index_id, add_curation_id, 3])
 
         DBInterface.execute(db,
             "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [exposure_id])

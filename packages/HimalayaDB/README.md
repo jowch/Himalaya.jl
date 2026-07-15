@@ -6,7 +6,10 @@ Read-only, programmatic access to HimalayaUI's curated SAXS annotations.
 using HimalayaDB
 db = connect()                       # HIMALAYA_DB_PATH, or ~/.himalaya/himalaya.db
 exps = exposures(db; sample=1)
-peaks = curated_peaks(db, exps[1].id)   # auto ∪ adds − excludes
+peaks = curated_peaks(db, exps[1].id)   # auto ∪ adds − excludes; excluded peaks
+                                         # are returned tagged (excluded ∈ {0,1}),
+                                         # not removed — the truly-effective set
+                                         # is filter(p -> p.excluded == 0, peaks)
 cands = index_candidates(db, exps[1].id)  # every candidate index; populated whenever indices exist
 
 using DataFrames

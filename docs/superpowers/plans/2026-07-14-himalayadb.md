@@ -535,6 +535,8 @@ git commit -m "feat(HimalayaDB): curated_peaks effective-peaks UNION"
 
 ### Task 4: `index_candidates` and `confirmed_indices`
 
+> See "Post-implementation corrections" below — `confirmed_indices` shipped against the `assignments`/`assignment_members` model, not the `custom` `index_groups` model described here.
+
 **Files:**
 - Modify: `packages/HimalayaDB/src/queries.jl`
 - Test: `packages/HimalayaDB/test/test_queries.jl`

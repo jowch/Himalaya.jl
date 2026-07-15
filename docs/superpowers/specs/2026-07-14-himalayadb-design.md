@@ -56,6 +56,7 @@ All anchors are `packages/HimalayaUI/src/` unless noted.
   - **Effective (curated) peak set is computed, never stored** = `auto_peaks − excludes ∪ adds`, tolerance-matched on q. Reference implementations: `effective_peaks` (`pipeline.jl:103`) and the read-shaped `get_peaks_for_exposure` (`pipeline.jl:600-618`, UNION tagging `source ∈ {auto,manual}` + `excluded`).
   - `indices` (`db.jl:72-83`) — candidate index-choices; `kind ∈ {auto, speculative}`.
   - Confirmed phase = active/`custom` `index_groups` (`db.jl:121-128`) via `index_group_members` (`db.jl:133-137`), written by `index_confirmed`/`index_unconfirmed` events.
+    > **Superseded during implementation** — see the plan's "Post-implementation corrections"; the shipped code reads the `assignments` model and opens read-only via `PRAGMA query_only=ON`.
 - **Event log is source of truth; view tables are materialized and provably re-derivable** (`rebuild_views_from_log!`, `events.jl:1034`). Consequence: a reader reads the view tables directly — no event replay needed.
 - Trace (q, I) is **not** in SQLite. It lives in per-experiment `.dat` files under the experiment's `analysis_dir`; parser is `datfile.jl`. `exposures` (`db.jl:45-55`) holds `filename`, `image_path`, `trace_hash` — the pointers, not the arrays.
 - Core `Himalaya` types (repo-root `src/`): `Index{P<:Phase}` (`src/index.jl:7-11`) + the `Phase` hierarchy (`src/phase.jl:36-45`). **No `Peak` struct** — peaks are NamedTuples / rows. Phase short name is stored in `indices.phase` and reconstructed via `getfield(Himalaya, Symbol(name))`, validated `P isa Type && P <: Himalaya.Phase`.
@@ -69,6 +70,7 @@ connect(path = get(ENV, "HIMALAYA_DB_PATH", default_himalaya_db_path())) -> SQLi
 ```
 
 - Opens **read-only**: `mode=ro` URI + `PRAGMA query_only = ON`. **No migrations, no `chmod`** — unlike `HimalayaUI.open_db` (`db.jl:1767`), which mutates the file (runs migrations, `chmod` to 0664 at `db.jl:1819-1826`).
+  > **Superseded during implementation** — see the plan's "Post-implementation corrections"; the shipped `connect.jl` opens via plain `SQLite.DB(path)` + `PRAGMA query_only=ON` only, no `mode=ro` URI (SQLite.jl 1.8 exposes no readonly flag on `DB()`).
 - `default_himalaya_db_path()` mirrors HimalayaUI's default (`~/.himalaya/himalaya.db`) but must **not** create directories.
 
 > **Known implementation risk (resolve in the plan):** opening a WAL DB read-only *while HimalayaUI is concurrently writing* requires directory write access to create the `-shm`/`-wal` sidecars; `immutable=1` is **not** safe under a concurrent writer. For the primary offline use case (app not running) a plain `mode=ro` open is fine. The plan must pin the exact open string and cover both the offline and concurrent-reader cases, and decide what `connect` does when only the `.db` file (no sidecars, no dir write access) is present.
