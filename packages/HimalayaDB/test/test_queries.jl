@@ -23,3 +23,27 @@
 
     close(db)
 end
+
+@testset "curated_peaks" begin
+    dir = mktempdir()
+    dbpath = joinpath(dir, "himalaya.db")
+    ids = build_fixture(dbpath, dir)
+    db = HimalayaDB.connect(dbpath)
+
+    peaks = curated_peaks(db, ids.exposure_id)
+    # 3 auto + 1 manual add = 4 rows
+    @test length(peaks) == 4
+    autos = filter(p -> p.source == "auto", peaks)
+    manuals = filter(p -> p.source == "manual", peaks)
+    @test length(autos) == 3
+    @test length(manuals) == 1
+    @test manuals[1].q == 0.20
+    # the middle auto peak (0.1414) is excluded
+    excluded = filter(p -> p.excluded == 1, peaks)
+    @test length(excluded) == 1
+    @test excluded[1].q == 0.1414
+    # sorted by q
+    @test issorted([p.q for p in peaks])
+
+    close(db)
+end
