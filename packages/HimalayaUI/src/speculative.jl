@@ -116,24 +116,31 @@ function build_speculative_index(peak_rows, phase::Type{P},
     peaks_sv     = SparseVector{Float64, Int}(n, rpos_sorted, qvals)
     sharpness_sv = SparseVector{Float64, Int}(n, rpos_sorted, sharpvals)
 
-    # Least-squares fit through assigned (ratio, q) pairs (intercept fixed at 0).
-    # Mirrors `Himalaya.fit` exactly — extracts (idx, q) from the sparse vector.
-    observed_ratios_full = Himalaya.phaseratios(P)  # un-normalized
-    observed_ratios_used = observed_ratios_full[rpos_sorted]
-    basis_unnorm = observed_ratios_used \ qvals  # 1/d in fit's terms
+    # Least-squares fit through assigned (ratio, q) pairs (intercept fixed at
+    # 0), against NORMALIZED ratios so the stored basis means "q of the first
+    # ratio position" — the same convention auto indices use (core:
+    # predictpeaks = basis × phaseratios(normalize=true)). Every consumer
+    # (predicted_q_for_phase, MillerPlot) assumes this scale; fitting against
+    # un-normalized ratios shrank cubic predictions by the first raw ratio.
+    observed_ratios_used = ratios[rpos_sorted]
+    basis = observed_ratios_used \ qvals
 
-    idx = Himalaya.Index{P}(basis_unnorm, peaks_sv, sharpness_sv)
+    # Index basis is only carried, never read, by fit/score (fit refits d
+    # internally from peaks; score reads peaks + sharpness) — but pass the
+    # normalized value so the constructed Index is convention-correct.
+    idx = Himalaya.Index{P}(basis, peaks_sv, sharpness_sv)
     fit_result = Himalaya.fit(idx)
     s          = Himalaya.score(idx)
 
+    # Residuals are numerically identical under either convention
+    # (ratios_unnorm·basis_unnorm ≡ ratios_normed·basis_normed).
     residuals = Dict{Int, Float64}()
-    ratios_unnorm = observed_ratios_full
     for (rpos, qv) in zip(rpos_sorted, qvals)
-        ideal = ratios_unnorm[rpos] * basis_unnorm
+        ideal = ratios[rpos] * basis
         residuals[rpos] = abs(qv - ideal)
     end
 
-    (; basis = basis_unnorm,
+    (; basis = basis,
        score = s,
        r_squared = fit_result.R²,
        lattice_d = fit_result.d,

@@ -425,3 +425,32 @@ end
     @test length(rows) == 1
     @test String(rows[1].inputs_hash) == expected_hash
 end
+
+@testset "speculative basis uses the normalized convention (cubic)" begin
+    # Pn3m's first un-normalized ratio is √2. Before the fix the stored basis
+    # was fit against un-normalized ratios, so predicted_q came back shrunk
+    # by √2. The invariant: predicted_q[anchor_rpos] must equal the anchor q.
+    tmp = mktempdir()
+    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.1)", [e_id])
+    p1 = Int(DBInterface.lastrowid(res))
+
+    # 1-peak (anchor-only) fixture: the LSQ fit through one point is exact,
+    # so the assertion below is exact. A multi-peak fixture would deviate by
+    # the fit residual — do not tighten this test with more peaks.
+    new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Pn3m,
+        Dict{Int,Int}(1 => p1))
+
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT basis, r_squared FROM indices WHERE id = ?", [new_id]))[1]
+    predicted = HimalayaUI.predicted_q_for_phase("Pn3m", Float64(row.basis))
+    @test predicted[1] ≈ 0.1 atol=1e-9   # pre-fix: 0.1/√2 ≈ 0.0707
+    # 1-peak fit has zero residual DOF ⇒ R² is NaN, bound as NULL by SQLite.
+    @test ismissing(row.r_squared)
+end
