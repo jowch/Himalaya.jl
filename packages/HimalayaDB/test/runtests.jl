@@ -7,4 +7,5 @@ include("fixture.jl")
     include("test_queries.jl")
     include("test_reconstruct.jl")
     include("test_trace.jl")
+    include("test_dataframes.jl")
 end
