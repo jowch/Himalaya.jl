@@ -752,7 +752,7 @@ git commit -m "feat(HimalayaDB): reconstruct_index -> Himalaya.Index{P}"
 - Test: `packages/HimalayaDB/test/test_trace.jl`
 
 **Interfaces:**
-- Produces: `load_dat(path) -> (q, I, σ)` (three `Vector{Float64}`); `load_trace(db, exposure_id; pattern="{name}.dat") -> (q, I, σ)`. Throws with an actionable message if the exposure or `.dat` file is missing.
+- Produces: `load_dat(path) -> (q, I, σ)` (three `Vector{Float64}`); `load_trace(db, exposure_id; pattern=nothing) -> (q, I, σ)` (default pattern read from the experiment's `integration_pattern` column, falling back to `"{name}.dat"` when NULL). Throws with an actionable message if the exposure or `.dat` file is missing.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -775,12 +775,21 @@ git commit -m "feat(HimalayaDB): reconstruct_index -> Himalaya.Index{P}"
     @test I == [100.0, 50.0]
     @test σ == [1.0, 0.5]
 
+    # explicit pattern= override
+    open(joinpath(dir, "custom_s1.dat"), "w") do io
+        println(io, "0.30 10.0 0.1")
+    end
+    qo, Io, σo = load_trace(db, ids.exposure_id; pattern="custom_{name}.dat")
+    @test qo == [0.30]
+
     # missing exposure errors
     @test_throws ArgumentError load_trace(db, 999999)
     close(db)
 end
 ```
 Add `include("test_trace.jl")` to `runtests.jl`.
+
+Note: the fixture's experiment has `integration_pattern = NULL`, so `load_trace(db, exposure_id)` with no keyword exercises the NULL→`"{name}.dat"` fallback and resolves `s1.dat`; the second call exercises the explicit-override branch.
 
 - [ ] **Step 2: Run — verify it fails**
 
@@ -812,20 +821,20 @@ function load_dat(path::AbstractString)
 end
 
 """
-    load_trace(db, exposure_id; pattern="{name}.dat") -> (q, I, σ)
+    load_trace(db, exposure_id; pattern=nothing) -> (q, I, σ)
 
 Resolve an exposure's on-disk `.dat` path and parse it. The path is
-`joinpath(experiments.analysis_dir, replace(pattern, "{name}" => exposures.filename))`.
+`joinpath(experiments.analysis_dir, replace(pat, "{name}" => exposures.filename))`,
+where `pat` is the `pattern` keyword if given, else the experiment's
+`integration_pattern` column, else `"{name}.dat"` when that column is NULL.
 
-`pattern` defaults to `"{name}.dat"`.
-# ponytail: experiments whose config sets a non-default `integration_pattern`
-# (e.g. "{name}_tot.dat") must pass `pattern=`. Auto-resolving it from the
-# experiment config TOML is deferred — the file-not-found error names the path
-# it tried, which reveals a pattern mismatch.
+Pass `pattern=` to override (e.g. `"{name}_tot.dat"`). The file-not-found error
+names the path it tried, which reveals a pattern mismatch.
 """
-function load_trace(db::SQLite.DB, exposure_id::Integer; pattern::AbstractString="{name}.dat")
+function load_trace(db::SQLite.DB, exposure_id::Integer;
+                    pattern::Union{AbstractString,Nothing}=nothing)
     rows = Tables.rowtable(DBInterface.execute(db, """
-        SELECT e.filename, x.analysis_dir
+        SELECT e.filename, x.analysis_dir, x.integration_pattern
         FROM exposures e
         JOIN samples s     ON s.id = e.sample_id
         JOIN experiments x ON x.id = s.experiment_id
@@ -835,8 +844,10 @@ function load_trace(db::SQLite.DB, exposure_id::Integer; pattern::AbstractString
     row = rows[1]
     row.filename === missing && throw(ArgumentError(
         "load_trace: exposure $exposure_id has no filename"))
+    pat = pattern !== nothing ? String(pattern) :
+          (row.integration_pattern === missing ? "{name}.dat" : String(row.integration_pattern))
     path = joinpath(String(row.analysis_dir),
-                    replace(pattern, "{name}" => String(row.filename)))
+                    replace(pat, "{name}" => String(row.filename)))
     isfile(path) || throw(ArgumentError(
         "load_trace: trace file not found at $path (wrong `pattern=`, or data dir not present?)"))
     return load_dat(path)
