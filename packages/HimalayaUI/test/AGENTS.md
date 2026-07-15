@@ -25,6 +25,8 @@ end
 
 This bypasses `default_db_path()` (`HIMALAYA_DB_PATH` or `~/.himalaya/himalaya.db`) and gives every test its own clean DB. The central DB is for production CLI use; tests must not depend on its state.
 
+**In-memory fixtures need the migration chain too.** A bare `SQLite.DB(); create_schema!(db)` fixture under-provisions the schema: migration-created tables (`series*`, `comparison*`, `speculative_peak_intents`) won't exist, and `_persist_analysis_inner!` reads `speculative_peak_intents` unconditionally. Any fixture that calls `persist_analysis!`/`analyze_exposure!` must run `migrate_schema!(db)` after `create_schema!(db)` — or just use `open_db` on a tmp path.
+
 ## In-process SSE subscriber
 
 To assert SSE fanout in Julia tests, register a `(pending = Channel{String}(64),)` directly on `HimalayaUI.SSE_SUBSCRIBERS[]` under `HimalayaUI.SSE_LOCK` instead of opening an HTTP streaming connection. Faster, deterministic, no port management. `test_idempotency_replay_invariant.jl::_capture_sse_during` is the canonical pattern.

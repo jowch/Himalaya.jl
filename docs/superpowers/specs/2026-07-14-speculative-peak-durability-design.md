@@ -220,7 +220,10 @@ once intents + §B exist, this loss state can't be recreated, so no standing
 
 Ops runbook (prod):
 
-1. Deploy fixed build (rebuild sysimage; prod currently runs an older build —
+1. Deploy fixed build and retire ALL old builds before reopening the DB — the
+   sentinel migration will not re-run, so an old build writing un-normalized
+   cubic speculative bases afterwards would never be rescaled.
+   (Rebuild sysimage; prod currently runs an older build —
    schema shows pre-current-main vintage).
 2. Back up the prod DB file.
 3. `bin/himalaya analyze <experiment-dir>` per experiment (**not** `reingest` —
