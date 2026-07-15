@@ -214,12 +214,20 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
          built.score, built.r_squared, built.lattice_d, current_hash])
     new_id = Int(DBInterface.lastrowid(res))
 
+    q_by_id = Dict{Int, Float64}(Int(pr.id) => Float64(pr.q) for pr in peak_rows)
     for (rpos, peak_id) in ratio_to_peak_id
         pk_kind = _kind_for(db, exposure_id, peak_id)
         DBInterface.execute(db,
             """INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
                VALUES (?, ?, ?, ?, ?)""",
             [new_id, peak_id, pk_kind, rpos, built.residuals[rpos]])
+        # Durable intent: index_peaks is the per-analysis resolved view (wiped
+        # and rebuilt by _persist_analysis_inner!); this row is the user's
+        # assignment and survives every wipe. Frozen at creation.
+        DBInterface.execute(db,
+            """INSERT INTO speculative_peak_intents (index_id, ratio_position, q)
+               VALUES (?, ?, ?)""",
+            [new_id, rpos, q_by_id[peak_id]])
     end
     new_id
 end

@@ -481,3 +481,33 @@ end
         [spec_id]))
     @test [Int(x.ratio_position) for x in ip] == [1, 2, 3]
 end
+
+@testset "creation writes durable intents; index delete cascades them" begin
+    tmp = mktempdir()
+    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 1.0)", [e_id])
+    p1 = Int(DBInterface.lastrowid(res))
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 2.0)", [e_id])
+    p2 = Int(DBInterface.lastrowid(res))
+
+    spec_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+
+    intents = Tables.rowtable(DBInterface.execute(db,
+        """SELECT ratio_position, q FROM speculative_peak_intents
+           WHERE index_id = ? ORDER BY ratio_position""", [spec_id]))
+    @test [(Int(r.ratio_position), Float64(r.q)) for r in intents] == [(1, 1.0), (2, 2.0)]
+
+    # ON DELETE CASCADE (FK enforcement is ON via open_db).
+    # Must delete index_peaks first (has NO ACTION FK), then CASCADE cascades intents.
+    DBInterface.execute(db, "DELETE FROM index_peaks WHERE index_id = ?", [spec_id])
+    DBInterface.execute(db, "DELETE FROM indices WHERE id = ?", [spec_id])
+    @test isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM speculative_peak_intents WHERE index_id = ?", [spec_id])))
+end
