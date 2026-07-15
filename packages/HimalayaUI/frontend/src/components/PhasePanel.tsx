@@ -46,6 +46,9 @@ interface IndexCardProps {
 function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latticeUnit, curvatureUnit, "data-alternative-id": altId }: IndexCardProps): JSX.Element {
   const color = phaseColor(index.phase);
   const isSpeculative = index.kind === "speculative";
+  // Peak-less speculative: the durable intents exist server-side but no
+  // current peak resolves them (spec: 2026-07-14-speculative-peak-durability).
+  const unresolved = isSpeculative && index.peaks.length === 0;
   // R²-gate dimming: speculative indices bypass the gate entirely (a 2-peak fit
   // is R²=1 by construction, so the gate is meaningless — the "speculative"
   // label is the warning instead).
@@ -58,6 +61,7 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latt
       data-active={isActive || undefined}
       data-low-r2={lowR2 || undefined}
       data-speculative={isSpeculative || undefined}
+      data-unresolved={unresolved || undefined}
       className={[
         "grid items-stretch rounded-lg overflow-hidden transition-all",
         isSpeculative
@@ -99,9 +103,18 @@ function IndexCard({ index, isActive, onAction, onDelete, onHover, onLeave, latt
               <span className="text-fg-dim text-xs">{latticeUnit}</span>
             </span>
           )}
-          <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim shrink-0">
-            {index.peaks.length} peaks
-          </span>
+          {unresolved ? (
+            <span
+              data-testid={`index-unresolved-${index.id}`}
+              className="ml-auto px-1.5 py-0.5 border border-error rounded-full text-xs text-error shrink-0"
+            >
+              peaks unresolved
+            </span>
+          ) : (
+            <span className="ml-auto px-1.5 py-0.5 border border-border-soft rounded-full text-xs text-fg-dim shrink-0">
+              {index.peaks.length} peaks
+            </span>
+          )}
         </div>
 
         {/* Secondary row: score bar + R² + κ (cubic phases only) */}

@@ -218,3 +218,36 @@ describe("<PhasePanel> — alternatives", () => {
     expect(screen.queryByTestId("ngc-11")).toBeNull();
   });
 });
+
+describe("<PhasePanel> — unresolved speculative chip", () => {
+  const specBase = {
+    id: 30, exposure_id: 42, phase: "Hexagonal", basis: 0.19, score: null,
+    r_squared: null, lattice_d: 38.2, status: "candidate", kind: "speculative",
+    inputs_hash: null, predicted_q: [0.19, 0.33],
+  };
+
+  it("peak-less speculative shows the chip and data-unresolved", async () => {
+    mockAll(
+      [{ ...specBase, peaks: [] }],
+      [{ id: 2, exposure_id: 42, kind: "custom", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    const chip = await screen.findByTestId("index-unresolved-30");
+    expect(chip).toHaveTextContent(/peaks unresolved/i);
+    const li = document.querySelector('li[data-index-id="30"]');
+    expect(li).toHaveAttribute("data-unresolved");
+  });
+
+  it("speculative with peaks keeps the count pill, no chip", async () => {
+    mockAll(
+      [{ ...specBase, peaks: [
+        { peak_id: 1, ratio_position: 1, residual: 0, q_observed: 0.19 },
+      ] }],
+      [{ id: 2, exposure_id: 42, kind: "custom", active: true, members: [] }],
+    );
+    renderWithProviders(<PhasePanel exposureId={42} />);
+    await screen.findByText("Hexagonal");
+    expect(screen.queryByTestId("index-unresolved-30")).toBeNull();
+    expect(screen.getByText(/1 peaks/)).toBeInTheDocument();
+  });
+});
