@@ -6,4 +6,5 @@ include("fixture.jl")
     include("test_connect.jl")
     include("test_queries.jl")
     include("test_reconstruct.jl")
+    include("test_trace.jl")
 end
