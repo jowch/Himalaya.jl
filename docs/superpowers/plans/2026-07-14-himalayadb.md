@@ -58,7 +58,7 @@ packages/HimalayaDB/
 - Test: `packages/HimalayaDB/test/test_connect.jl`
 
 **Interfaces:**
-- Produces: `HimalayaDB.connect(path=default_himalaya_db_path()) -> SQLite.DB` (read-only); `HimalayaDB.default_himalaya_db_path() -> String`; test helper `build_fixture(path, analysis_dir) -> NamedTuple` with fields `experiment_id, sample_id, exposure_id, index_id, group_id, auto_peak_ids::Vector{Int}`.
+- Produces: `HimalayaDB.connect(path=default_himalaya_db_path()) -> SQLite.DB` (read-only); `HimalayaDB.default_himalaya_db_path() -> String`; test helper `build_fixture(path, analysis_dir) -> NamedTuple` with fields `experiment_id, sample_id, exposure_id, exposure2_id, index_id, group_id, auto_peak_ids::Vector{Int}` (`exposure2_id` is an uncurated exposure: active auto group, no custom group).
 
 - [ ] **Step 1: Mint a UUID and read the two path-dep UUIDs**
 
@@ -189,6 +189,9 @@ Create a schema-correct DB at `path` (via HimalayaUI.open_db) populated with a
 deterministic sample: 3 auto peaks (q = 0.10, 0.1414, 0.1732), one `exclude`
 curation on the middle peak, one `add` curation at q = 0.20, one candidate
 `Pn3m` index supported by two auto peaks, and a confirmed custom index group.
+Also creates a second, UNCURATED exposure (`exposure2_id`): an `active` auto
+group with a member but no custom group — used to prove `confirmed_indices`
+filters on `kind='custom'`, not `active=1`.
 Direct INSERTs are fine here — a reader only cares that the view tables are populated.
 """
 function build_fixture(path::AbstractString, analysis_dir::AbstractString)
@@ -235,7 +238,28 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
             "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",
             [group_id, index_id])
 
-        return (; experiment_id, sample_id, exposure_id, index_id, group_id, auto_peak_ids)
+        # Second, UNCURATED exposure: an active auto group with a member, but NO
+        # custom group. confirmed_indices must return EMPTY here (the curator
+        # committed nothing) — this pins the filter to kind='custom', not active=1.
+        exposure2_id = HimalayaUI.create_exposure!(db; sample_id=sample_id,
+            filename="s2", kind="file", status="accepted")
+        DBInterface.execute(db,
+            "INSERT INTO auto_peaks (exposure_id, q, intensity, prominence, sharpness, findpeaks_index) VALUES (?,?,?,?,?,?)",
+            [exposure2_id, 0.11, 100.0, 5.0, 1.0, 12])
+        ri2 = DBInterface.execute(db,
+            "INSERT INTO indices (exposure_id, phase, basis, score, kind, status) VALUES (?, 'Im3m', ?, ?, 'auto', 'candidate')",
+            [exposure2_id, 0.11, 0.5])
+        index2_id = Int(DBInterface.lastrowid(ri2))
+        rg2 = DBInterface.execute(db,
+            "INSERT INTO index_groups (exposure_id, kind, active) VALUES (?, 'auto', 1)",
+            [exposure2_id])
+        group2_id = Int(DBInterface.lastrowid(rg2))
+        DBInterface.execute(db,
+            "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",
+            [group2_id, index2_id])
+
+        return (; experiment_id, sample_id, exposure_id, exposure2_id,
+                  index_id, group_id, auto_peak_ids)
     finally
         close(db)
     end
@@ -347,7 +371,7 @@ git commit -m "feat(HimalayaDB): package skeleton + read-only connect + test fix
     @test length(exps_all) == 1
 
     exs = exposures(db; sample=ids.sample_id)
-    @test length(exs) == 1
+    @test length(exs) == 2                 # exposure_id + the uncurated exposure2_id
     @test exs[1].id == ids.exposure_id
     @test exs[1].filename == "s1"
 
@@ -539,6 +563,12 @@ Append to `packages/HimalayaDB/test/test_queries.jl`:
     @test conf[1].id == ids.index_id
     @test conf[1].phase == "Pn3m"
 
+    # uncurated exposure2: has a candidate index in an ACTIVE auto group, but no
+    # custom group -> confirmed_indices must be empty (filter is kind='custom',
+    # not active=1). index_candidates still sees the index.
+    @test length(index_candidates(db, ids.exposure2_id)) == 1
+    @test isempty(confirmed_indices(db, ids.exposure2_id))
+
     close(db)
 end
 ```
@@ -567,21 +597,29 @@ index_candidates(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterf
 """
     confirmed_indices(db, exposure_id) -> Vector{<:NamedTuple}
 
-The human-confirmed indices: those that are members of the exposure's `custom`
-index group (what the curator committed to). Sorted by score.
+The human-confirmed indices: members of the exposure's `kind='custom'` index
+group — what the curator committed to. Sorted by score. Empty when the curator
+has never touched the exposure (no custom group exists yet).
 
-There is no single HimalayaUI getter for this shape (get_groups_for_exposure is a
-plain SELECT * on index_groups); the members join is composed here.
+Verified against HimalayaUI's write/read paths: human curation always lands in
+the on-demand `kind='custom'` group (routes_analysis.jl `ensure_custom_group!`),
+and `kind='custom' ⟹ active=1`, so filtering on `active=1` alone would wrongly
+include the pre-curation auto group. No single HimalayaUI getter returns this
+shape, so the members join is composed here.
 """
 confirmed_indices(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterface.execute(db, """
-    SELECT $(replace(_INDEX_COLS, "id," => "i.id,", count=1)) FROM indices i
+    SELECT i.id, i.exposure_id, i.phase, i.basis, i.score, i.r_squared,
+           i.lattice_d, i.status, i.kind, i.inputs_hash
+    FROM indices i
     JOIN index_group_members m ON m.index_id = i.id
     JOIN index_groups g        ON g.id = m.group_id
     WHERE g.exposure_id = ? AND g.kind = 'custom'
     ORDER BY i.score DESC
 """, [Int(exposure_id)]))
 ```
-Note: the `replace(...)` disambiguates `i.id` in the join; all other `_INDEX_COLS` names are unambiguous across the joined tables. If any name collides in a future schema change, expand the column list inline.
+Note: every column is qualified with `i.` because `index_groups` shares the
+column names `exposure_id` and `kind` with `indices` — an unqualified SELECT
+list would throw `ambiguous column name`.
 
 - [ ] **Step 4: Run — verify pass**
 
