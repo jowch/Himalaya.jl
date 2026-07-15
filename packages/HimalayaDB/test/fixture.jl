@@ -7,10 +7,12 @@ import HimalayaUI
 Create a schema-correct DB at `path` (via HimalayaUI.open_db) populated with a
 deterministic sample: 3 auto peaks (q = 0.10, 0.1414, 0.1732), one `exclude`
 curation on the middle peak, one `add` curation at q = 0.20, one candidate
-`Pn3m` index supported by two auto peaks, and a confirmed custom index group.
-Also creates a second, UNCURATED exposure (`exposure2_id`): an `active` auto
-group with a member but no custom group — used to prove `confirmed_indices`
-filters on `kind='custom'`, not `active=1`.
+`Pn3m` index supported by two auto peaks, and a confirmed assignment
+(`assignments.state = 'indexed'` + an `assignment_members` row) for `exposure_id`.
+Also creates a second exposure (`exposure2_id`) with an assignment member row
+whose `assignments.state = 'form_factor'` (NOT `'indexed'`) — used to prove
+`confirmed_indices` gates on `assignments.state = 'indexed'`, not merely on
+`assignment_members` row presence.
 Direct INSERTs are fine here — a reader only cares that the view tables are populated.
 """
 function build_fixture(path::AbstractString, analysis_dir::AbstractString)
@@ -55,17 +57,15 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
                 [index_id, pid, pos])
         end
 
-        rg = DBInterface.execute(db,
-            "INSERT INTO index_groups (exposure_id, kind, active) VALUES (?, 'custom', 1)",
-            [exposure_id])
-        group_id = Int(DBInterface.lastrowid(rg))
         DBInterface.execute(db,
-            "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-            [group_id, index_id])
+            "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [exposure_id])
+        DBInterface.execute(db,
+            "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [exposure_id, index_id])
 
-        # Second, UNCURATED exposure: an active auto group with a member, but NO
-        # custom group. confirmed_indices must return EMPTY here (the curator
-        # committed nothing) — this pins the filter to kind='custom', not active=1.
+        # Second exposure: an assignment_members row exists, but its assignments
+        # row is state='form_factor' (NOT 'indexed'). confirmed_indices must return
+        # EMPTY here — this pins the filter to assignments.state='indexed', not
+        # merely the presence of an assignment_members row.
         exposure2_id = HimalayaUI.create_exposure!(db; experiment_id=experiment_id,
             sample_id=sample_id, filename="s2", kind="file", status="accepted")
         DBInterface.execute(db,
@@ -75,16 +75,13 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
             "INSERT INTO indices (exposure_id, phase, basis, score, kind, status) VALUES (?, 'Im3m', ?, ?, 'auto', 'candidate')",
             [exposure2_id, 0.11, 0.5])
         index2_id = Int(DBInterface.lastrowid(ri2))
-        rg2 = DBInterface.execute(db,
-            "INSERT INTO index_groups (exposure_id, kind, active) VALUES (?, 'auto', 1)",
-            [exposure2_id])
-        group2_id = Int(DBInterface.lastrowid(rg2))
         DBInterface.execute(db,
-            "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-            [group2_id, index2_id])
+            "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [exposure2_id])
+        DBInterface.execute(db,
+            "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [exposure2_id, index2_id])
 
         return (; experiment_id, sample_id, exposure_id, exposure2_id,
-                  index_id, group_id, auto_peak_ids)
+                  index_id, auto_peak_ids)
     finally
         close(db)
     end

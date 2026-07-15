@@ -38,7 +38,7 @@ function reconstruct_index(db::SQLite.DB, index_id::Integer)
         ORDER BY ip.ratio_position
     """, [Int(index_id)]))
 
-    n = isempty(prows) ? 0 : maximum(Int(r.ratio_position) for r in prows)
+    n = length(Himalaya.phaseratios(P))
     peaks = spzeros(Float64, n)
     sharp = spzeros(Float64, n)
     for r in prows

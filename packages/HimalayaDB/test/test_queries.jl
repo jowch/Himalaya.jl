@@ -65,9 +65,10 @@ end
     @test conf[1].id == ids.index_id
     @test conf[1].phase == "Pn3m"
 
-    # uncurated exposure2: has a candidate index in an ACTIVE auto group, but no
-    # custom group -> confirmed_indices must be empty (filter is kind='custom',
-    # not active=1). index_candidates still sees the index.
+    # exposure2: has an assignment_members row, but its assignments.state is
+    # 'form_factor', not 'indexed' -> confirmed_indices must be empty (the gate
+    # is assignments.state='indexed', not mere member-row presence).
+    # index_candidates still sees the index regardless of assignment state.
     @test length(index_candidates(db, ids.exposure2_id)) == 1
     @test isempty(confirmed_indices(db, ids.exposure2_id))
 

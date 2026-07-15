@@ -7,12 +7,15 @@ using HimalayaDB
 db = connect()                       # HIMALAYA_DB_PATH, or ~/.himalaya/himalaya.db
 exps = exposures(db; sample=1)
 peaks = curated_peaks(db, exps[1].id)   # auto ∪ adds − excludes
-idxs  = confirmed_indices(db, exps[1].id)
+cands = index_candidates(db, exps[1].id)  # every candidate index; populated whenever indices exist
 
 using DataFrames
 dataframe(peaks)                     # -> DataFrame
 
-using SparseArrays                   # opt-in typed reconstruction
-idx = reconstruct_index(db, idxs[1].id)   # -> Himalaya.Index{Pn3m}
+idx = reconstruct_index(db, cands[1].id)  # -> Himalaya.Index{Pn3m}
 q, I, σ = load_trace(db, exps[1].id)      # opt-in .dat loading
+
+# The curator's confirmed pick(s), if any — empty unless a human has confirmed
+# an assignment for this exposure.
+confirmed = confirmed_indices(db, exps[1].id)
 ```

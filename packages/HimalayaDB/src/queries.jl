@@ -80,22 +80,25 @@ index_candidates(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterf
 """
     confirmed_indices(db, exposure_id) -> Vector{<:NamedTuple}
 
-The human-confirmed indices: members of the exposure's `kind='custom'` index
-group — what the curator committed to. Sorted by score. Empty when the curator
-has never touched the exposure (no custom group exists yet).
+The human-confirmed indices for an exposure — the phase(s) the curator committed
+to — sourced from the durable per-exposure assignment (`assignment_members` +
+`assignments`). Returns empty when the exposure has no confirmed assignment.
+Sorted by score.
 
-Verified against HimalayaUI's write/read paths: human curation always lands in
-the on-demand `kind='custom'` group (routes_analysis.jl `ensure_custom_group!`),
-and `kind='custom' ⟹ active=1`, so filtering on `active=1` alone would wrongly
-include the pre-curation auto group. No single HimalayaUI getter returns this
-shape, so the members join is composed here.
+Mirrors HimalayaUI's confirmed-index read (comparisons.jl): members are gated by
+`assignments.state = 'indexed'`, defaulting to `'indexed'` when no assignments row
+exists. (`assignment_set_state` wipes members when leaving `'indexed'`, so in
+practice member presence already implies the indexed state; the COALESCE gate keeps
+this faithful to HimalayaUI including the no-row default.) The legacy
+`index_groups`/`index_group_members` `kind='custom'` path this used to read was
+retired by HimalayaUI's D-10 redesign — those tables persist only as historical data.
 """
 confirmed_indices(db::SQLite.DB, exposure_id::Integer) = Tables.rowtable(DBInterface.execute(db, """
     SELECT i.id, i.exposure_id, i.phase, i.basis, i.score, i.r_squared,
            i.lattice_d, i.status, i.kind, i.inputs_hash
-    FROM indices i
-    JOIN index_group_members m ON m.index_id = i.id
-    JOIN index_groups g        ON g.id = m.group_id
-    WHERE g.exposure_id = ? AND g.kind = 'custom'
-    ORDER BY i.score DESC
+    FROM assignment_members m
+    JOIN indices i          ON i.id = m.index_id
+    LEFT JOIN assignments a  ON a.exposure_id = m.exposure_id
+    WHERE m.exposure_id = ? AND COALESCE(a.state, 'indexed') = 'indexed'
+    ORDER BY i.score DESC NULLS LAST, i.id ASC
 """, [Int(exposure_id)]))
