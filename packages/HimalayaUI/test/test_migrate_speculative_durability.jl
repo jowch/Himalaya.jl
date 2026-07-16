@@ -10,7 +10,7 @@ function _mig_fixture()
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
     (; db, experiment_id = exp_id, exposure_id = e_id)
 end
 
@@ -81,7 +81,7 @@ end
 
     # Exposure B (same DB): healthy speculative → hash untouched.
     s2 = HimalayaUI.create_sample!(fx.db; experiment_id=fx.experiment_id, name="D2")
-    e2 = HimalayaUI.create_exposure!(fx.db; sample_id=s2, filename="y")
+    e2 = HimalayaUI.create_exposure!(fx.db; experiment_id=fx.experiment_id, sample_id=s2, filename="y")
     res = DBInterface.execute(fx.db,
         "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.05)", [e2])
     p1 = Int(DBInterface.lastrowid(res))
