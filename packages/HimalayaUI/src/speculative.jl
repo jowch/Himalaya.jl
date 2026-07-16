@@ -116,24 +116,31 @@ function build_speculative_index(peak_rows, phase::Type{P},
     peaks_sv     = SparseVector{Float64, Int}(n, rpos_sorted, qvals)
     sharpness_sv = SparseVector{Float64, Int}(n, rpos_sorted, sharpvals)
 
-    # Least-squares fit through assigned (ratio, q) pairs (intercept fixed at 0).
-    # Mirrors `Himalaya.fit` exactly — extracts (idx, q) from the sparse vector.
-    observed_ratios_full = Himalaya.phaseratios(P)  # un-normalized
-    observed_ratios_used = observed_ratios_full[rpos_sorted]
-    basis_unnorm = observed_ratios_used \ qvals  # 1/d in fit's terms
+    # Least-squares fit through assigned (ratio, q) pairs (intercept fixed at
+    # 0), against NORMALIZED ratios so the stored basis means "q of the first
+    # ratio position" — the same convention auto indices use (core:
+    # predictpeaks = basis × phaseratios(normalize=true)). Every consumer
+    # (predicted_q_for_phase, MillerPlot) assumes this scale; fitting against
+    # un-normalized ratios shrank cubic predictions by the first raw ratio.
+    observed_ratios_used = ratios[rpos_sorted]
+    basis = observed_ratios_used \ qvals
 
-    idx = Himalaya.Index{P}(basis_unnorm, peaks_sv, sharpness_sv)
+    # Index basis is only carried, never read, by fit/score (fit refits d
+    # internally from peaks; score reads peaks + sharpness) — but pass the
+    # normalized value so the constructed Index is convention-correct.
+    idx = Himalaya.Index{P}(basis, peaks_sv, sharpness_sv)
     fit_result = Himalaya.fit(idx)
     s          = Himalaya.score(idx)
 
+    # Residuals are numerically identical under either convention
+    # (ratios_unnorm·basis_unnorm ≡ ratios_normed·basis_normed).
     residuals = Dict{Int, Float64}()
-    ratios_unnorm = observed_ratios_full
     for (rpos, qv) in zip(rpos_sorted, qvals)
-        ideal = ratios_unnorm[rpos] * basis_unnorm
+        ideal = ratios[rpos] * basis
         residuals[rpos] = abs(qv - ideal)
     end
 
-    (; basis = basis_unnorm,
+    (; basis = basis,
        score = s,
        r_squared = fit_result.R²,
        lattice_d = fit_result.d,
@@ -209,10 +216,27 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
 
     for (rpos, peak_id) in ratio_to_peak_id
         pk_kind = _kind_for(db, exposure_id, peak_id)
+        # The intent q must come from the same table `_kind_for` resolved to:
+        # auto_peaks and peak_curations ids live in independent AUTOINCREMENT
+        # namespaces, so a bare-id dict over the UNION'd peak_rows would let a
+        # colliding curation row's q shadow an auto peak's (curation rows come
+        # last) — freezing the wrong q into durable intent state.
+        q_row = pk_kind == "auto" ?
+            Tables.rowtable(DBInterface.execute(db,
+                "SELECT q FROM auto_peaks WHERE id = ?", [peak_id])) :
+            Tables.rowtable(DBInterface.execute(db,
+                "SELECT q FROM peak_curations WHERE id = ?", [peak_id]))
         DBInterface.execute(db,
             """INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
                VALUES (?, ?, ?, ?, ?)""",
             [new_id, peak_id, pk_kind, rpos, built.residuals[rpos]])
+        # Durable intent: index_peaks is the per-analysis resolved view (wiped
+        # and rebuilt by _persist_analysis_inner!); this row is the user's
+        # assignment and survives every wipe. Frozen at creation.
+        DBInterface.execute(db,
+            """INSERT INTO speculative_peak_intents (index_id, ratio_position, q)
+               VALUES (?, ?, ?)""",
+            [new_id, rpos, Float64(q_row[1].q)])
     end
     new_id
 end

@@ -65,6 +65,8 @@ Helpers used by more than one file (`_setup_analyzed_exposure`, `_setup_for_reso
 
 `_DB_REF`, the Oxygen `CONTEXT[]`, `SSE_SUBSCRIBERS`, and `OP_LOCKS` are module-level globals — one per process. So **two route fixtures can't be live at once in a process**, and parallelism is achieved by **sharding across processes** (the GROUP buckets in `make test-parallel`), not by threads within one process. A route test file still can't run standalone (`julia test/test_routes_*.jl`) without first including `test_http.jl` (which pulls in `test_fixtures.jl` + `test_inproc.jl` + `test_template_db.jl`).
 
+**In-memory fixtures need the migration chain too.** A bare `SQLite.DB(); create_schema!(db)` fixture under-provisions the schema: migration-created tables (`series*`, `comparison*`, `speculative_peak_intents`) won't exist, and `_persist_analysis_inner!` reads `speculative_peak_intents` unconditionally. Any fixture that calls `persist_analysis!`/`analyze_exposure!` must run `migrate_schema!(db)` after `create_schema!(db)` — or just use `open_db` on a tmp path.
+
 ## In-process SSE subscriber
 
 To assert SSE fanout, register a `(pending = Channel{String}(64),)` directly on `HimalayaUI.SSE_SUBSCRIBERS[]` under `HimalayaUI.SSE_LOCK` instead of opening an HTTP stream. `test_idempotency_replay_invariant.jl::_capture_sse_during` is the canonical pattern.

@@ -16,6 +16,7 @@ _want(g) = GROUP == "All" || GROUP == g
 # per process.)
 const GROUPS = [
     ("db",       ["test_http.jl","test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+                  "test_migrate_speculative_durability.jl",
                   "test_ingestion_schema.jl","test_migrate_toml.jl"]),
     ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
                   "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
@@ -46,6 +47,7 @@ const GROUPS = [
 # Single source of truth for the serial bisect order — the exact historical
 # runtests include order. The buckets above must partition this same set.
 const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+                   "test_migrate_speculative_durability.jl",
                    "test_ingestion_schema.jl",
                    "test_datfile.jl","test_hash.jl",
                    "test_hash_peak_set_memoization.jl","test_pipeline.jl",

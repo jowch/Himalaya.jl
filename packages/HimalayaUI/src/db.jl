@@ -4,6 +4,9 @@ using Dates: now, UTC, format, @dateformat_str
 # Sentinel marker name for the I3.1 comparison→series data migration (#171).
 const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
 
+# Sentinel marker name for the speculative peak durability migration (2026-07-14).
+const MIGRATION_SPECULATIVE_PEAK_DURABILITY = "speculative_peak_durability"
+
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
@@ -510,6 +513,12 @@ function migrate_schema!(db::SQLite.DB)
     # Session-id backfill: assign macro-session indices to all existing loads whose
     # session_id is NULL. Run AFTER migrate_loads_table! (the loads table must exist).
     backfill_load_sessions!(db)
+
+    # Speculative peak durability (2026-07-14 spec): intents table + legacy
+    # basis rescale + heal trigger. Must run last — see the function docstring
+    # for the three ordering constraints (after the PK/AUTOINCREMENT rebuild +
+    # FK-heal, after migrate_r2_split_peaks!, after migrate_series!).
+    migrate_speculative_peak_durability!(db)
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────
@@ -1414,6 +1423,97 @@ function migrate_comparisons_to_series!(db::SQLite.DB)
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_COMPARISONS_TO_SERIES, comparison_now_iso()])
+    end
+    nothing
+end
+
+"""
+    migrate_speculative_peak_durability!(db)
+
+One-shot durability migration for speculative indices (spec:
+2026-07-14-speculative-peak-durability-design.md):
+
+1. Creates `speculative_peak_intents` — the durable record of the user's
+   ratio→q assignments, written at creation and never wiped by analysis.
+   Deliberately NOT in the `SCHEMA` const: `create_schema!` runs before
+   `migrate_pk_to_autoincrement!` rename-rebuilds `indices`, and SQLite's
+   RENAME tracking would rewrite this table's FK to `_migrate_old_indices`
+   (same hazard `migrate_compare!` documents).
+2. Rescales legacy speculative `basis` values from the un-normalized fit
+   convention to the normalized one (factor = first raw phase ratio: √2
+   Pn3m/Im3m, √3 Fm3m/Fd3m, √6 Ia3d; 1 elsewhere — no-op).
+3. Backfills intents from surviving `index_peaks` rows (best available proxy
+   for the creation-time assignment). Rows whose peak was deleted join to
+   NULL q and are skipped — orphaned before this table existed, unrecoverable.
+4. NULLs `exposures.analysis_inputs_hash` where a speculative index has zero
+   `index_peaks` rows, reopening the `indexpeaks_skipped` memoization gate so
+   the next analyze runs the re-attach loop (the heal pass). One-shot repair,
+   not a standing gate bypass.
+
+Steps 2-4 + the sentinel marker run in one transaction, sentinel-gated.
+Must be called at the END of `migrate_schema!`: after
+`migrate_pk_to_autoincrement!` + FK-heal (indices table settled), after
+`migrate_r2_split_peaks!` (backfill join needs the post-R2 peak tables), and
+after `migrate_series!` (creates `schema_migrations`).
+"""
+function migrate_speculative_peak_durability!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS speculative_peak_intents (
+            index_id       INTEGER NOT NULL REFERENCES indices(id) ON DELETE CASCADE,
+            ratio_position INTEGER NOT NULL,
+            q              REAL    NOT NULL,
+            PRIMARY KEY (index_id, ratio_position)
+        )""")
+
+    already = Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM schema_migrations WHERE name = ?",
+        [MIGRATION_SPECULATIVE_PEAK_DURABILITY]))
+    isempty(already) || return nothing
+
+    SQLite.transaction(db) do
+        spec_rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, phase, basis FROM indices WHERE kind = 'speculative'"))
+        for r in spec_rows
+            ismissing(r.basis) && continue
+            P = resolve_phase(String(r.phase))
+            P === nothing && continue
+            factor = Float64(first(Himalaya.phaseratios(P)))
+            factor == 1.0 && continue
+            DBInterface.execute(db,
+                "UPDATE indices SET basis = ? WHERE id = ?",
+                [Float64(r.basis) * factor, Int(r.id)])
+        end
+
+        # `ip.ratio_position IS NOT NULL`: the column is nullable in index_peaks
+        # but NOT NULL in intents — one anomalous legacy row must become a
+        # skipped row, not an aborted migration (the sentinel would never be
+        # written and every subsequent open_db would throw).
+        DBInterface.execute(db, """
+            INSERT OR IGNORE INTO speculative_peak_intents (index_id, ratio_position, q)
+            SELECT ip.index_id, ip.ratio_position, COALESCE(ap.q, pc.q)
+            FROM index_peaks ip
+            JOIN indices i ON i.id = ip.index_id AND i.kind = 'speculative'
+            LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+            LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+                                        AND pc.kind = 'add'
+            WHERE ip.ratio_position IS NOT NULL
+              AND COALESCE(ap.q, pc.q) IS NOT NULL""")
+
+        DBInterface.execute(db, """
+            UPDATE exposures SET analysis_inputs_hash = NULL
+             WHERE id IN (SELECT DISTINCT i.exposure_id FROM indices i
+                           WHERE i.kind = 'speculative'
+                             AND NOT EXISTS (SELECT 1 FROM index_peaks ip
+                                              WHERE ip.index_id = i.id))""")
+
+        # Plain INSERT (never OR IGNORE): the basis rescale above is NOT
+        # idempotent under double application (×√2 twice = silent corruption),
+        # and the sentinel gate is read outside this transaction. The PK
+        # conflict on `schema_migrations.name` is the backstop that makes a
+        # concurrent-open race roll back the losing racer's whole tx.
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_SPECULATIVE_PEAK_DURABILITY, comparison_now_iso()])
     end
     nothing
 end

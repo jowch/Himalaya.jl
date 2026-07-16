@@ -187,40 +187,101 @@ end
     @test String(rows[1].kind)   == "speculative"
 end
 
-@testset "speculative revives from stale when matching peaks return" begin
-    # Same Lamellar setup: peaks at 0.05, 0.10, 0.15.
+@testset "speculative survives losing its peaks and re-attaches from intents" begin
+    # Lamellar basis 0.05: peaks at 0.05 (rp1), 0.10 (rp2), 0.15 (rp3).
     fx = _spec_synthetic_exposure([0.05, 0.10, 0.15])
     p1, p2, p3 = fx.peak_ids[1], fx.peak_ids[2], fx.peak_ids[3]
     spec_id = HimalayaUI.insert_speculative_index!(fx.db, fx.exposure_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    # Force stale: remove anchor peaks (delete curation-add rows for p1, p2)
-    # so re-resolve drops them. With only p3 (which doesn't have an existing
-    # assignment) the index goes stale.
+    # Delete both assigned peaks. Intents (rp1→0.05, rp2→0.10) survive; the
+    # basis seed from intent q's lets discovery still snap p3 into rp3, so
+    # the index stays live with 1 resolved peak (old behavior: stale + wiped).
     DBInterface.execute(fx.db,
         "DELETE FROM peak_curations WHERE id IN (?, ?)", [p1, p2])
     _spec_run_reanalyze!(fx.db, fx.exposure_id)
-    @test String(Tables.rowtable(DBInterface.execute(fx.db,
-        "SELECT status FROM indices WHERE id = ?", [spec_id]))[1].status) == "stale"
-    @test length(Tables.rowtable(DBInterface.execute(fx.db,
-        "SELECT * FROM index_peaks WHERE index_id = ?", [spec_id]))) == 0
 
-    # Re-add the peaks. Snapshot is empty (index_peaks was wiped during the stale
-    # cycle), so basis_for_snap falls back to the persisted `basis` on the
-    # indices row. Auto-discovery then snaps all three peaks.
-    res = DBInterface.execute(fx.db,
-        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.05)", [fx.exposure_id])
-    new_p1 = Int(DBInterface.lastrowid(res))
-    res = DBInterface.execute(fx.db,
-        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.10)", [fx.exposure_id])
-    new_p2 = Int(DBInterface.lastrowid(res))
-    _spec_run_reanalyze!(fx.db, fx.exposure_id)
     @test String(Tables.rowtable(DBInterface.execute(fx.db,
         "SELECT status FROM indices WHERE id = ?", [spec_id]))[1].status) == "candidate"
     ip = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT ratio_position, peak_id FROM index_peaks WHERE index_id = ?", [spec_id]))
+    @test length(ip) == 1
+    @test Int(ip[1].ratio_position) == 3
+    intents = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT ratio_position FROM speculative_peak_intents WHERE index_id = ? ORDER BY ratio_position",
+        [spec_id]))
+    @test [Int(r.ratio_position) for r in intents] == [1, 2]  # intents untouched
+
+    # Re-add peaks at the intent positions: next analysis re-resolves them.
+    DBInterface.execute(fx.db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.05)",
+        [fx.exposure_id])
+    DBInterface.execute(fx.db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.10)",
+        [fx.exposure_id])
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+    ip = Tables.rowtable(DBInterface.execute(fx.db,
         "SELECT ratio_position FROM index_peaks WHERE index_id = ? ORDER BY ratio_position",
         [spec_id]))
-    @test length(ip) >= 2
+    @test [Int(r.ratio_position) for r in ip] == [1, 2, 3]
+end
+
+@testset "zero-resolution analysis is non-destructive" begin
+    # Only the two assigned peaks exist; delete both and give discovery
+    # nothing to find (no other peaks) — 0 resolved.
+    fx = _spec_synthetic_exposure([0.05, 0.10])
+    p1, p2 = fx.peak_ids[1], fx.peak_ids[2]
+    spec_id = HimalayaUI.insert_speculative_index!(fx.db, fx.exposure_id, Himalaya.Lamellar,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+    pre = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT basis, score FROM indices WHERE id = ?", [spec_id]))[1]
+
+    DBInterface.execute(fx.db,
+        "DELETE FROM peak_curations WHERE id IN (?, ?)", [p1, p2])
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+
+    row = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT status, basis, score FROM indices WHERE id = ?", [spec_id]))[1]
+    @test String(row.status) == "candidate"       # never 'stale' (dead enum)
+    @test Float64(row.basis) ≈ Float64(pre.basis) # last known stats kept
+    @test Float64(row.score) ≈ Float64(pre.score)
+    @test isempty(Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT 1 FROM index_peaks WHERE index_id = ?", [spec_id])))
+    @test length(Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT 1 FROM speculative_peak_intents WHERE index_id = ?", [spec_id]))) == 2
+
+    # Peaks return → heals on the next run, from intents alone.
+    DBInterface.execute(fx.db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.05)",
+        [fx.exposure_id])
+    DBInterface.execute(fx.db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.10)",
+        [fx.exposure_id])
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+    @test length(Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT 1 FROM index_peaks WHERE index_id = ?", [spec_id]))) == 2
+end
+
+@testset "prod-shape heal: peak-less speculative re-attaches from stored basis" begin
+    # The 11 prod rows: basis set, no intents, no index_peaks. Discovery from
+    # the stored (normalized) basis re-attaches everything it can.
+    fx = _spec_synthetic_exposure([0.05, 0.10, 0.15])
+    res = DBInterface.execute(fx.db, """
+        INSERT INTO indices (exposure_id, phase, basis, status, kind)
+        VALUES (?, 'Lamellar', 0.05, 'candidate', 'speculative')""",
+        [fx.exposure_id])
+    spec_id = Int(DBInterface.lastrowid(res))
+
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+
+    row = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT status, score FROM indices WHERE id = ?", [spec_id]))[1]
+    @test String(row.status) == "candidate"
+    @test !ismissing(row.score)                   # stats recomputed
+    ip = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT ratio_position FROM index_peaks WHERE index_id = ? ORDER BY ratio_position",
+        [spec_id]))
+    @test [Int(r.ratio_position) for r in ip] == [1, 2, 3]
 end
 
 @testset "speculative create is atomic: both indices row and user_actions row exist" begin
@@ -416,4 +477,110 @@ end
         "SELECT inputs_hash FROM indices WHERE id = ?", [new_id]))
     @test length(rows) == 1
     @test String(rows[1].inputs_hash) == expected_hash
+end
+
+@testset "speculative basis uses the normalized convention (cubic)" begin
+    # Pn3m's first un-normalized ratio is √2. Before the fix the stored basis
+    # was fit against un-normalized ratios, so predicted_q came back shrunk
+    # by √2. The invariant: predicted_q[anchor_rpos] must equal the anchor q.
+    tmp = mktempdir()
+    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
+
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.1)", [e_id])
+    p1 = Int(DBInterface.lastrowid(res))
+
+    # 1-peak (anchor-only) fixture: the LSQ fit through one point is exact,
+    # so the assertion below is exact. A multi-peak fixture would deviate by
+    # the fit residual — do not tighten this test with more peaks.
+    new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Pn3m,
+        Dict{Int,Int}(1 => p1))
+
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT basis, r_squared FROM indices WHERE id = ?", [new_id]))[1]
+    predicted = HimalayaUI.predicted_q_for_phase("Pn3m", Float64(row.basis))
+    @test predicted[1] ≈ 0.1 atol=1e-9   # pre-fix: 0.1/√2 ≈ 0.0707
+    # 1-peak fit has zero residual DOF ⇒ R² is NaN, bound as NULL by SQLite.
+    @test ismissing(row.r_squared)
+end
+
+@testset "re-attach keeps the normalized basis convention (cubic)" begin
+    # Pn3m normalized ratios: [1, √3/√2, √4/√2, ...] ≈ [1, 1.2247, 1.4142, ...].
+    # Place peaks at basis 0.1 × those ratios; rp3 initially unassigned.
+    r = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)
+    fx = _spec_synthetic_exposure([0.1, 0.1 * r[2], 0.1 * r[3]])
+    p1, p2 = fx.peak_ids[1], fx.peak_ids[2]
+
+    spec_id = HimalayaUI.insert_speculative_index!(fx.db, fx.exposure_id, Himalaya.Pn3m,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+
+    row = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT basis FROM indices WHERE id = ?", [spec_id]))[1]
+    predicted = HimalayaUI.predicted_q_for_phase("Pn3m", Float64(row.basis))
+    # Post-reanalyze the recomputed basis must still be normalized: the first
+    # predicted position sits at the anchor q. Pre-fix, new_basis was fit
+    # against un-normalized ratios ⇒ predicted[1] ≈ 0.1/√2.
+    @test predicted[1] ≈ 0.1 rtol=1e-6
+    # And the mixed-scale discovery bug is gone: with a correct basis, rp3's
+    # predicted position (0.1·r[3]) finds the third peak.
+    ip = Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT ratio_position FROM index_peaks WHERE index_id = ? ORDER BY ratio_position",
+        [spec_id]))
+    @test [Int(x.ratio_position) for x in ip] == [1, 2, 3]
+end
+
+@testset "creation writes durable intents; index delete cascades them" begin
+    tmp = mktempdir()
+    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 1.0)", [e_id])
+    p1 = Int(DBInterface.lastrowid(res))
+    res = DBInterface.execute(db,
+        "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 2.0)", [e_id])
+    p2 = Int(DBInterface.lastrowid(res))
+
+    spec_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
+        Dict{Int,Int}(1 => p1, 2 => p2))
+
+    intents = Tables.rowtable(DBInterface.execute(db,
+        """SELECT ratio_position, q FROM speculative_peak_intents
+           WHERE index_id = ? ORDER BY ratio_position""", [spec_id]))
+    @test [(Int(r.ratio_position), Float64(r.q)) for r in intents] == [(1, 1.0), (2, 2.0)]
+
+    # ON DELETE CASCADE (FK enforcement is ON via open_db).
+    # Must delete index_peaks first (has NO ACTION FK), then CASCADE cascades intents.
+    DBInterface.execute(db, "DELETE FROM index_peaks WHERE index_id = ?", [spec_id])
+    DBInterface.execute(db, "DELETE FROM indices WHERE id = ?", [spec_id])
+    @test isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM speculative_peak_intents WHERE index_id = ?", [spec_id])))
+end
+
+@testset "analyze_run post_state carries healed speculative peaks (SSE contract)" begin
+    # A peak-less speculative heals during analysis; the post_state payload
+    # every SSE subscriber receives must contain its re-attached peaks —
+    # this is the only channel multiplayer clients converge through.
+    fx = _spec_synthetic_exposure([0.05, 0.10])
+    res = DBInterface.execute(fx.db, """
+        INSERT INTO indices (exposure_id, phase, basis, status, kind)
+        VALUES (?, 'Lamellar', 0.05, 'candidate', 'speculative')""",
+        [fx.exposure_id])
+    spec_id = Int(DBInterface.lastrowid(res))
+
+    _spec_run_reanalyze!(fx.db, fx.exposure_id)
+
+    payload = HimalayaUI._serialized_indices_for_broadcast(fx.db, fx.exposure_id)
+    spec = only(filter(d -> Int(d[:id]) == spec_id, payload))
+    @test String(spec[:kind]) == "speculative"
+    @test length(spec[:peaks]) == 2
+    @test String(spec[:status]) == "candidate"
 end

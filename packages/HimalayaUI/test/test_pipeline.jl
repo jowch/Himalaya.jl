@@ -1,5 +1,6 @@
 using Test
 using Himalaya: indexpeaks, Index, peaks, score
+using HimalayaUI
 using HimalayaUI: auto_group
 
 @testset "auto_group" begin
@@ -20,7 +21,7 @@ using HimalayaUI: auto_group
     end
 end
 
-using HimalayaUI: create_schema!, create_experiment!, create_sample!,
+using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
                   create_exposure!, persist_analysis!, get_peaks_for_exposure,
                   get_indices_for_exposure, get_groups_for_exposure,
                   load_dat, auto_group, effective_peaks, diff_update_auto_peaks!
@@ -30,6 +31,7 @@ using SQLite
 @testset "persist_analysis!" begin
     db = SQLite.DB()
     create_schema!(db)
+    migrate_schema!(db)
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
                                      analysis_dir="/tmp/analysis")
     s_id    = create_sample!(db; experiment_id=exp_id, name="D1")
@@ -104,6 +106,7 @@ using Tables
     # hashes populated.
     db = SQLite.DB()
     create_schema!(db)
+    migrate_schema!(db)
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
                                      analysis_dir="/tmp/analysis")
     s_id    = create_sample!(db; experiment_id=exp_id, name="D1")
@@ -421,6 +424,7 @@ end
 
         db = SQLite.DB()
         HimalayaUI.create_schema!(db)
+        migrate_schema!(db)
 
         # Build a config with custom integration pattern
         toml_blob = """
