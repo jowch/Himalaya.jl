@@ -21,14 +21,6 @@
  *     adding kind-aware synthesis mapping `auto_peak_id → id` and switching
  *     onSuccess to merge fields onto the existing row (preserves
  *     intensity/prominence/sharpness which the SSE payload omits).
- *   - addIndexToGroup / removeIndexFromGroup: SSE payload is `{group_id,
- *     index_id}` — no `id`. Old code spliced via `g.id === row.id` which
- *     reduced to `g.id === undefined` and matched nothing. Worse, the
- *     first confirmation of an exposure creates a NEW custom group via
- *     `ensure_custom_group!` and demotes the auto group, so even HTTP-wins
- *     missed the cache (cache had auto id=1; response had custom id=5).
- *     Fixed by detecting id-mismatch in onSuccess and invalidating the
- *     groups query so the next read fetches the canonical structure.
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
@@ -42,12 +34,6 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 import { queryKeys } from "../../src/queries";
 
 describe("mutator onSuccess on SSE-wins synthetic responses", () => {
@@ -152,128 +138,6 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     expect(exp.analysis_inputs_hash).toBe("h1");
   });
 
-  it("addIndexToGroup.onSuccess invalidates when response id is not in cache (issue #37 Bug 1a, HTTP-wins, new custom group)", () => {
-    // Cache only has the auto group (id=1). The first confirmation triggers
-    // `ensure_custom_group!` which creates a fresh custom group (id=5) and
-    // demotes the auto group. The HTTP response is the new custom group.
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const origInvalidate = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return origInvalidate(filters);
-    };
-    // HTTP response shape (routes_analysis.jl POST /groups/:id/members).
-    // The response id (5) does NOT exist in the cache.
-    const httpResponse = {
-      id: 5, exposure_id: 5, kind: "custom", active: true, members: [42],
-      event_id: 11, view_row_id: 5,
-    } as any;
-    addIndexToGroupMutator.onSuccess(
-      { exposureId: 5, groupId: 1, indexId: 42,
-        username: "u", clientId: "c", clientOpId: "op-c1" } as any,
-      httpResponse,
-      qc,
-    );
-    expect(invalidated).toBe(true);
-  });
-
-  it("addIndexToGroup.onSuccess invalidates when synth lacks id (issue #37 Bug 1b, SSE-wins)", () => {
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const origInvalidate = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return origInvalidate(filters);
-    };
-    // Synth output for index_confirmed when SSE wins: only event metadata
-    // and the {group_id, index_id} payload. No `id`.
-    const sseSynth = {
-      event_id: 7,
-      client_op_id: "op-c2",
-      analysis_inputs_hash: undefined,
-      group_id: 5,
-      index_id: 42,
-    } as any;
-    addIndexToGroupMutator.onSuccess(
-      { exposureId: 5, groupId: 1, indexId: 42,
-        username: "u", clientId: "c", clientOpId: "op-c2" } as any,
-      sseSynth,
-      qc,
-    );
-    expect(invalidated).toBe(true);
-  });
-
-  it("addIndexToGroup.onSuccess splices when response id matches existing cache row (HTTP-wins, existing custom group)", () => {
-    // Subsequent confirmations: custom group already exists in cache.
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: false, members: [] },
-      { id: 5, exposure_id: 5, kind: "custom", active: true, members: [42] },
-    ]);
-    let invalidated = false;
-    const origInvalidate = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return origInvalidate(filters);
-    };
-    const httpResponse = {
-      id: 5, exposure_id: 5, kind: "custom", active: true, members: [42, 99],
-      event_id: 12, view_row_id: 5,
-    } as any;
-    addIndexToGroupMutator.onSuccess(
-      { exposureId: 5, groupId: 5, indexId: 99,
-        username: "u", clientId: "c", clientOpId: "op-c3" } as any,
-      httpResponse,
-      qc,
-    );
-    expect(invalidated).toBe(false);
-    const groups = qc.getQueryData<any[]>(queryKeys.groups(5))!;
-    const custom = groups.find((g) => g.id === 5)!;
-    expect(custom.members).toEqual([42, 99]);
-  });
-
-  it("removeIndexFromGroup.onSuccess invalidates when synth lacks id (SSE-wins)", () => {
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 5, exposure_id: 5, kind: "custom", active: true, members: [42] },
-    ]);
-    let invalidated = false;
-    const origInvalidate = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return origInvalidate(filters);
-    };
-    const sseSynth = {
-      event_id: 8,
-      client_op_id: "op-u1",
-      analysis_inputs_hash: undefined,
-      group_id: 5,
-      index_id: 42,
-    } as any;
-    removeIndexFromGroupMutator.onSuccess(
-      { exposureId: 5, groupId: 5, indexId: 42,
-        username: "u", clientId: "c", clientOpId: "op-u1" } as any,
-      sseSynth,
-      qc,
-    );
-    expect(invalidated).toBe(true);
-  });
-
   it("peakUnexclude.onSuccess writes canonical state from synth (SSE-wins)", () => {
     qc.setQueryData(queryKeys.peaks(5), [
       { id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
@@ -309,91 +173,6 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Compare page mutators (Phase 3). Three event-shape rows.
-  // -------------------------------------------------------------------------
-
-  it("saveComparison.onSuccess invalidates when response lacks full Comparison shape (SSE-wins, comparison_created)", () => {
-    qc.setQueryData(queryKeys.comparison(42), { id: 42, title: "stale" });
-    let invalidatedKeys: unknown[] = [];
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey); return orig(arg);
-    }) as typeof qc.invalidateQueries;
-    // Synth from `synthesizeResponseFromSse`: title/description/members ride
-    // as INPUT shape (no `id`s on members, no `is_stale`, no `content_hash`).
-    // The mutator's onSuccess must NOT splice this into cache — it would
-    // pollute with a malformed Comparison shape.
-    const sseSynth = {
-      event_id: 7, client_op_id: "op-cmp-create",
-      analysis_inputs_hash: undefined,
-      id: 42, title: "X", description: null,
-      members: [{ exposure_id: 100, display_order: 0,
-                  snapshot: { effective_peaks: [], confirmed_index: null,
-                              analysis_inputs_hash: "h" } }],
-    } as any;
-    saveComparisonMutator.onSuccess(
-      { id: 42, title: "X", members: [],
-        username: "u", clientId: "c", clientOpId: "op-cmp-create" } as any,
-      sseSynth, qc,
-    );
-    // The half-baked synth was NOT spliced. Cache is invalidated for refetch.
-    expect(qc.getQueryData(queryKeys.comparison(42))).toEqual({ id: 42, title: "stale" });
-    expect(invalidatedKeys).toContainEqual(queryKeys.comparison(42));
-    expect(invalidatedKeys).toContainEqual(queryKeys.comparisonMembers(42));
-    expect(invalidatedKeys).toContainEqual(["comparisons"]);
-  });
-
-  it("saveComparison.onSuccess splices when response has full Comparison shape (HTTP-wins, comparison_submitted)", () => {
-    const fullResponse = {
-      id: 42, title: "X edited", description: null,
-      content_hash: "sha256:new",
-      created_by: 1, created_at: "2026-05-06", updated_at: "2026-05-06",
-      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
-      members: [
-        { id: 999, comparison_id: 42, exposure_id: 100, display_order: 0,
-          band_height: 1, y_offset: 0, normalization: "none",
-          color_override: null, label_override: null,
-          q_window_min: null, q_window_max: null,
-          peak_display: null,
-          snapshot: { effective_peaks: [], confirmed_index: null,
-                      analysis_inputs_hash: "sha256:zero" },
-          is_stale: false, created_by: 1, created_at: "2026-05-06" },
-      ],
-    } as any;
-    saveComparisonMutator.onSuccess(
-      { id: 42, title: "X edited", members: [],
-        expected_content_hash: "sha256:base",
-        username: "u", clientId: "c", clientOpId: "op-cmp-submit" } as any,
-      fullResponse, qc,
-    );
-    expect(qc.getQueryData(queryKeys.comparison(42))).toEqual(fullResponse);
-    expect(qc.getQueryData(queryKeys.comparisonMembers(42))).toEqual(fullResponse.members);
-  });
-
-  it("deleteComparison.onSuccess removes entity caches and prunes listings (uniform across HTTP- and SSE-wins)", () => {
-    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
-    qc.setQueryData(queryKeys.comparisons("all"), [
-      { id: 42, title: "doomed", description: null, content_hash: "h",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null },
-    ]);
-    // SSE-wins synth for comparison_deleted is just `{event_id, client_op_id,
-    // analysis_inputs_hash, id}` — and the mutator only reads `p.id` from the
-    // flat input, never from the response. Pin: same observable behavior.
-    const sseSynth = {
-      event_id: 7, client_op_id: "op-cmp-del",
-      analysis_inputs_hash: undefined, id: 42,
-    } as any;
-    deleteComparisonMutator.onSuccess(
-      { id: 42, username: "u", clientId: "c", clientOpId: "op-cmp-del" } as any,
-      sseSynth, qc,
-    );
-    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
-    const listing = qc.getQueryData<{ id: number }[]>(queryKeys.comparisons("all"))!;
-    expect(listing).toEqual([]);
-  });
-
   it("corpus add_tag SSE-wins: addSampleTagMutator synth feeds the corpus onSuccess", () => {
     // Own corpus add_tag confirmed by SSE before HTTP returns.
     // synthesizeResponseFromSse picks the synth via
@@ -401,7 +180,7 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     // but the pending mutation is the CORPUS mutator, so ITS onSuccess
     // consumes that synth. Pin this cross-mutator handoff.
     const sample = {
-      id: 10, experiment_id: 1, name: "n", display_name: "D1", notes: null,
+      id: 10, experiment_id: 1, name: "D1", notes: null,
       q_units: "nm^-1",
       tags: [{ id: -1, key: "lipid", value: "DOPC", source: "manual" }],
     };
@@ -442,36 +221,36 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
 
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {
     const original = {
-      id: 5, experiment_id: 1, display_name: "S5", name: "old-id",
+      id: 5, experiment_id: 1, name: "old-name",
       notes: "old notes", tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     };
     qc.setQueryData(queryKeys.sample(5), original);
     qc.setQueryData(queryKeys.samples(1), [original]);
-    // SSE payload for update_sample is the diff; if only `display_name` was patched,
-    // `notes` and `name` are undefined in the synthesized response.
+    // SSE payload for update_sample is the diff; if only `name` was patched,
+    // `notes` is undefined in the synthesized response.
     const sseSynth = {
       event_id: 7,
       client_op_id: "op-update",
       analysis_inputs_hash: undefined,
-      display_name: "new display",
-      // notes: undefined, name: undefined  ← intentionally absent
+      name: "new name",
+      // notes: undefined  ← intentionally absent
     } as any;
     updateSampleMutator.onSuccess(
-      { sampleId: 5, experimentId: 1, display_name: "new display",
+      { sampleId: 5, experimentId: 1, name: "new name",
         username: "u", clientId: "c", clientOpId: "op-update" } as any,
       sseSynth,
       qc,
     );
     const single = qc.getQueryData<any>(queryKeys.sample(5));
-    // display_name updated; name/notes/tags preserved (NOT clobbered to undefined)
+    // name updated; notes/tags preserved (NOT clobbered to undefined)
     expect(single).toEqual({
-      id: 5, experiment_id: 1, display_name: "new display", name: "old-id",
+      id: 5, experiment_id: 1, name: "new name",
       notes: "old notes",
       tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });
     const list = qc.getQueryData<any[]>(queryKeys.samples(1));
     expect(list![0]).toEqual({
-      id: 5, experiment_id: 1, display_name: "new display", name: "old-id",
+      id: 5, experiment_id: 1, name: "new name",
       notes: "old notes",
       tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });

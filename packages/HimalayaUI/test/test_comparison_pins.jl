@@ -21,7 +21,7 @@ using HimalayaUI
 
     @testset "schema: comparison_pins exists with composite PK + index" begin
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             try
                 # The migration runs on open_db; the table should exist.
                 rows = Tables.rowtable(DBInterface.execute(db,

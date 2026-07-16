@@ -5,7 +5,7 @@
  * the HTTP body back to the browser, the self-echo path in
  * `replayCoordinator.handleRemoteEvent` ran but never applied `post_state`
  * to the cache. That left `exposure.analysis_inputs_hash` stale, and
- * StaleIndicesBanner — gated on (index.inputs_hash !== exposure.hash) —
+ * the stale-indices alert — gated on (index.inputs_hash !== exposure.hash) —
  * incorrectly fired and persisted until the next refresh.
  *
  * Post-fix: `applyPostStateOnly(remote, qc)` is extracted from
@@ -14,7 +14,7 @@
  * writes `analysis_inputs_hash` directly from the route response).
  *
  * The user-visible promise is the same regardless of which path won: after
- * a UI-driven peak op, the StaleIndicesBanner does NOT appear. Asserting
+ * a UI-driven peak op, the stale-indices alert does NOT appear. Asserting
  * that end-to-end exercises both paths in production conditions; the
  * deterministic SSE-wins coverage lives in `replayCoordinator.test.ts`.
  *
@@ -164,7 +164,7 @@ test.describe("issue #35 own-op peak op leaves banner hidden (Bug 1)", () => {
           i.inputs_hash === exp.analysis_inputs_hash);
       }, { timeout: 10_000 }).toBe(true);
 
-      // Bug 1's symptom is "StaleIndicesBanner stays VISIBLE after own peak
+      // Bug 1's symptom is "the stale-indices alert stays VISIBLE after own peak
       // op until manual refresh". Post-fix the banner clears as soon as
       // applyPostStateOnly propagates (own-op SSE) OR the indices query
       // refetches in the background. Pre-fix, neither happens — banner
@@ -174,7 +174,7 @@ test.describe("issue #35 own-op peak op leaves banner hidden (Bug 1)", () => {
       const banner = page.getByRole("alert").filter({ hasText: /stale/i });
       await expect(
         banner,
-        "StaleIndicesBanner must clear after own peak op (don't stick)",
+        "stale-indices alert must clear after own peak op (don't stick)",
       ).toHaveCount(0, { timeout: 12_000 });
     });
 });

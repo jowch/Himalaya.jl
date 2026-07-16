@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, render, screen, fireEvent } from "@testing-library/react";
-import { ToastContainer } from "../src/components/ui/Toast";
+import { ToastContainer } from "../src/print/ui/Toast";
 import { showToast, setToastImpl } from "../src/lib/toast";
 
 describe("Toast", () => {
@@ -19,6 +19,73 @@ describe("Toast", () => {
     });
     expect(screen.getByTestId("toast")).toHaveTextContent("hello");
     expect(screen.getByTestId("toast")).toHaveAttribute("data-toast-kind", "error");
+  });
+
+  it("shows a severity word label per kind", () => {
+    render(<ToastContainer />);
+    const cases: Array<[import("../src/lib/toast").ToastKind, string]> = [
+      ["error", "Error"],
+      ["warning", "Warning"],
+      ["success", "Success"],
+      ["info", "Info"],
+    ];
+    for (const [kind, word] of cases) {
+      act(() => {
+        showToast(`msg-${kind}`, kind);
+      });
+      const toast = screen.getByTestId("toast");
+      expect(toast).toHaveAttribute("data-toast-kind", kind);
+      // visible severity word
+      expect(toast).toHaveTextContent(word);
+      // accessible status icon naming the severity (second channel, not hue)
+      expect(toast.querySelector(`[aria-label="${word}"]`)).not.toBeNull();
+      act(() => {
+        fireEvent.click(screen.getByLabelText("Dismiss"));
+      });
+    }
+  });
+
+  it("announces error and warning toasts assertively (role=alert, aria-live=assertive)", () => {
+    render(<ToastContainer />);
+    for (const kind of ["error", "warning"] as const) {
+      act(() => {
+        showToast(`msg-${kind}`, kind);
+      });
+      const toast = screen.getByTestId("toast");
+      expect(toast).toHaveAttribute("role", "alert");
+      expect(toast).toHaveAttribute("aria-live", "assertive");
+      act(() => {
+        fireEvent.click(screen.getByLabelText("Dismiss"));
+      });
+    }
+  });
+
+  it("announces info and success toasts politely (role=status)", () => {
+    render(<ToastContainer />);
+    for (const kind of ["info", "success"] as const) {
+      act(() => {
+        showToast(`msg-${kind}`, kind);
+      });
+      const toast = screen.getByTestId("toast");
+      expect(toast).toHaveAttribute("role", "status");
+      // Positively lock the polite contract — an absent aria-live would also
+      // satisfy `not assertive`, so assert the attribute is present + "polite".
+      expect(toast).toHaveAttribute("aria-live", "polite");
+      act(() => {
+        fireEvent.click(screen.getByLabelText("Dismiss"));
+      });
+    }
+  });
+
+  it("uses a full hairline border, not a left-edge severity stripe", () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast("hello", "error");
+    });
+    const toast = screen.getByTestId("toast");
+    expect(toast.className).toContain("border-hair");
+    expect(toast.className).not.toContain("border-l-4");
+    expect(toast.className).not.toContain("border-error");
   });
 
   it("auto-dismisses error toast after 5000ms", () => {
@@ -106,5 +173,12 @@ describe("Toast", () => {
     showToast("after unmount", "error");
     expect(spy).toHaveBeenCalledWith("[toast:error] after unmount");
     spy.mockRestore();
+  });
+});
+
+describe("Toast barrel export", () => {
+  it("ToastContainer is exported from the ui barrel", async () => {
+    const mod = await import("../src/print/ui");
+    expect(typeof mod.ToastContainer).toBe("function");
   });
 });

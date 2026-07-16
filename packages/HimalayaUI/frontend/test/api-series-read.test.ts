@@ -24,6 +24,9 @@ const LISTING_ROW: SeriesSummary = {
   member_phases: ["Pn3m", "Lamellar"],
   member_phase_count: 2,
   has_stale_members: false,
+  ordering_variable: "LL37 : lipid ratio",
+  spans_experiments: false,
+  experiment_name: "exp-april",
 };
 
 describe("series read fetchers", () => {
@@ -73,11 +76,4 @@ describe("series read fetchers", () => {
     expect(s.members).toEqual([]);
   });
 
-  it("forksOfSeries GETs /api/series/:id/forks", async () => {
-    mockJson([]);
-    await api.forksOfSeries(7);
-    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain(
-      "/api/series/7/forks",
-    );
-  });
 });

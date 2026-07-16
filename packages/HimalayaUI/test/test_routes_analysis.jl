@@ -1,22 +1,22 @@
 using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 using Himalaya
 
-@testset "indices + groups routes" begin
+@testset "indices routes" begin
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Indices
-        r = HTTP.get("$base/api/exposures/$e_id/indices")
+        r = call("GET", "/api/exposures/$e_id/indices")
         @test r.status == 200
         indices = JSON3.read(String(r.body))
         @test length(indices) >= 1
@@ -48,83 +48,10 @@ using Himalaya
             end
         end
 
-        # Groups — auto only, active
-        r = HTTP.get("$base/api/exposures/$e_id/groups")
-        @test r.status == 200
-        groups = JSON3.read(String(r.body))
-        @test length(groups) == 1
-        @test groups[1].kind   == "auto"
-        @test groups[1].active === true
-        auto_gid  = groups[1].id
-        auto_mems = groups[1].members
-
-        # Find a candidate index NOT in the auto group
-        extra_candidate = nothing
-        for ix in indices
-            ix.id in auto_mems && continue
-            extra_candidate = ix.id
-            break
-        end
-
-        if extra_candidate !== nothing
-            r = HTTP.post("$base/api/groups/$auto_gid/members";
-                body = JSON3.write(Dict(:index_id => extra_candidate)),
-                headers = ["Content-Type" => "application/json",
-                           "X-Username"   => "alice"])
-            @test r.status == 200
-            body = JSON3.read(String(r.body))
-            @test body.kind   == "custom"
-            @test body.active === true
-            @test extra_candidate in body.members
-
-            r = HTTP.get("$base/api/exposures/$e_id/groups")
-            groups = JSON3.read(String(r.body))
-            @test length(groups) == 2
-            auto_g  = first(filter(g -> g.kind == "auto",   groups))
-            cust_g  = first(filter(g -> g.kind == "custom", groups))
-            @test auto_g.active === false
-            @test cust_g.active === true
-            @test extra_candidate in cust_g.members
-        end
-
-        # Reset groups, indices, and hashes, then re-run analyze for a clean DELETE test.
-        # Must also delete indices (and clear analysis_inputs_hash) so the hash guard
-        # in analyze_exposure! treats this as a fresh run rather than a no-op.
-        DBInterface.execute(db,
-            "DELETE FROM index_group_members WHERE group_id IN
-             (SELECT id FROM index_groups WHERE exposure_id = ?)", [e_id])
-        DBInterface.execute(db,
-            "DELETE FROM index_groups WHERE exposure_id = ?", [e_id])
-        DBInterface.execute(db, """
-            DELETE FROM index_peaks WHERE index_id IN
-              (SELECT id FROM indices WHERE exposure_id = ?)""", [e_id])
-        DBInterface.execute(db,
-            "DELETE FROM indices WHERE exposure_id = ?", [e_id])
-        DBInterface.execute(db,
-            "UPDATE exposures SET analysis_inputs_hash = NULL WHERE id = ?", [e_id])
-        HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
-
-        r = HTTP.get("$base/api/exposures/$e_id/groups")
-        groups = JSON3.read(String(r.body))
-        @test length(groups) == 1
-        auto_gid  = groups[1].id
-        auto_mems = groups[1].members
-        if !isempty(auto_mems)
-            removed = first(auto_mems)
-            r = HTTP.delete("$base/api/groups/$auto_gid/members/$removed";
-                headers = ["X-Username" => "alice"])
-            @test r.status == 200
-            body = JSON3.read(String(r.body))
-            @test body.kind == "custom"
-            @test !(removed in body.members)
-        end
-
-        # 404 on unknown group
-        r = HTTP.post("$base/api/groups/99999/members";
-            body = JSON3.write(Dict(:index_id => 1)),
-            headers = ["Content-Type" => "application/json"],
-            status_exception = false)
-        @test r.status == 404
+        # D-10: the legacy /groups routes (GET groups, POST/DELETE members) were
+        # retired — the active set is now the durable assignment, covered by the
+        # /assignment route tests (test_assignments.jl) and the assignment-native
+        # idempotency-replay invariant.
     end
 end
 
@@ -136,11 +63,11 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     peaks = Tables.rowtable(DBInterface.execute(db,
@@ -148,17 +75,17 @@ end
     p1 = Int(peaks[1].id)
     p2 = Int(peaks[2].id)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = Dict(:phase => "Lamellar",
                     :anchor_peak_id => p1, :anchor_ratio => 1,
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
         op_id = "uuid-m24-spec-1"
 
-        r1 = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
+        r1 = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type"   => "application/json",
                        "X-Username"     => "alice",
-                       "X-Client-Op-Id" => op_id])
+                       "X-Client-Op-Id" => op_id],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r1.status == 200
         body1 = String(copy(r1.body))
 
@@ -172,11 +99,11 @@ end
         @test events_after_first == 1
 
         # Same op_id → cached body returned, no new index, no new event row.
-        r2 = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
+        r2 = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type"   => "application/json",
                        "X-Username"     => "alice",
-                       "X-Client-Op-Id" => op_id])
+                       "X-Client-Op-Id" => op_id],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r2.status == 200
         @test String(copy(r2.body)) == body1
 
@@ -197,11 +124,11 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     peaks = Tables.rowtable(DBInterface.execute(db,
@@ -212,10 +139,10 @@ end
     new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         op_id = "uuid-m24-del-1"
 
-        r1 = HTTP.delete("$base/api/indices/$new_id";
+        r1 = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username"     => "alice",
                        "X-Client-Op-Id" => op_id])
         @test r1.status == 200
@@ -226,7 +153,7 @@ end
             [e_id]))).c
         @test events_after == 1
 
-        r2 = HTTP.delete("$base/api/indices/$new_id";
+        r2 = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username"     => "alice",
                        "X-Client-Op-Id" => op_id])
         @test r2.status == 200

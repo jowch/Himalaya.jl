@@ -1,10 +1,8 @@
 import { useMemo, useRef } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
-import { authOpts } from "./lib/authOpts";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
-import { newClientOpId } from "./lib/clientOpId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   updateSampleMutator,
@@ -12,10 +10,9 @@ import {
   removeSampleTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   addExposureTagMutator,
   removeExposureTagMutator,
-  postSampleMessageMutator,
-  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -24,20 +21,26 @@ import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "./lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "./lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./lib/queue/mutators/assignment";
+import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "./lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "./lib/queue/mutators/deleteComparison";
 import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
+import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
 import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
 import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
 import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
+import {
+  moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
+  splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
+} from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
+import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
 
@@ -50,6 +53,8 @@ export const queryKeys = {
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
+  loads:      (id: number | undefined) =>
+    ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "exposures"] as const,
   trace:      (exposureId: number | undefined) =>
@@ -58,8 +63,8 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "peaks"] as const,
   indices:    (exposureId: number | undefined) =>
     ["exposure", exposureId ?? "none", "indices"] as const,
-  groups:     (exposureId: number | undefined) =>
-    ["exposure", exposureId ?? "none", "groups"] as const,
+  assignment: (exposureId: number | undefined) =>
+    ["exposure", exposureId ?? "none", "assignment"] as const,
   messages:   (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
@@ -71,50 +76,29 @@ export const queryKeys = {
         phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
   // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
   // collisions with the existing collection keys (e.g., a future
-  // invalidate(["exposure", id]) would otherwise also blast peaks/indices/groups).
+  // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
   peak:     (id: number | undefined) => ["peak-entity", id ?? "none"] as const,
   index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
   sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
-  // Compare page (Plan §Phase 3). Listing key is parameterized by scope —
-  // pass "all" for the global listing, an experimentId for the per-experiment
-  // listing. Membership-derived listings can change in either direction when
-  // ANY exposure-touching event lands, so the SSE handler invalidates both
-  // forms with a prefix `["comparisons"]` invalidation.
-  comparisons:        (scope: number | "all") => ["comparisons", scope] as const,
-  comparison:         (id: number | undefined) =>
-    ["comparison", id ?? "none"] as const,
-  comparisonMembers:  (id: number | undefined) =>
-    ["comparison", id ?? "none", "members"] as const,
-  comparisonForks:    (id: number | undefined) =>
-    ["comparison", id ?? "none", "forks"] as const,
-  comparisonMessages: (id: number | undefined) =>
-    ["comparison", id ?? "none", "messages"] as const,
   // Series (#166/#167/#168). Detail root `["series", id]`, listing root
   // `["series-list"]` — distinct roots so a listing invalidation never
-  // clobbers a detail entry (mirrors the comparison/comparisons split). Read
-  // hooks (useSeriesList / useSeries) — see below (I3.3).
+  // clobbers a detail entry. Read hooks (useSeriesList / useSeries) — see
+  // below (I3.3).
   series:     (id: number | undefined) => ["series", id ?? "none"] as const,
+  // Nested under the series-detail prefix on purpose — `queryKeys.series(id)`
+  // invalidations (rename / member reorder / commit / SSE replay) prefix-match
+  // and re-pull the trace batch, which is the desired refresh-on-member-change
+  // behavior.
+  seriesTraces: (id: number | undefined) =>
+    ["series", id ?? "none", "traces"] as const,
   seriesList: ["series-list"] as const,
-  seriesPins: ["series-pins"] as const,
   // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
   // and the corpus picker projection. Foreign add_tag replay invalidates both
   // (applyRemoteToCache add_tag/sample branch) so a peer's scoping write
   // refreshes the /series/new proposal.
   corpusSampleTags:    ["corpus-sample-tags"] as const,
   corpusPickerSamples: ["corpus-picker-samples"] as const,
-  // Picker support routes (Plan §Phase 5, Task 5.2). Both are read-only —
-  // `recentlyPickedExposures` is per-user across all experiments; `sampleTags`
-  // is per-experiment (distinct (key, value) pairs).
-  recentlyPickedExposures: (userId: number | undefined, limit: number) =>
-    ["user", userId ?? "none", "recently-picked-exposures", limit] as const,
-  sampleTags: (experimentId: number | undefined) =>
-    ["experiment", experimentId ?? "none", "sample-tags"] as const,
-  pickerSamples: (experimentId: number | undefined) =>
-    ["experiment", experimentId ?? "none", "picker-samples"] as const,
-  // Phase 13 — comparison pins, scoped per-user via the X-Username header
-  // (no userId in the key — the cache row is implicitly per-tab/per-username).
-  comparisonPins: ["comparison-pins"] as const,
   // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
   // ["corpus", ...] namespace so corpus add_tag (#159) patches and
   // invalidations never collide with the per-experiment
@@ -137,6 +121,36 @@ export function useExperiment(id: number) {
     // we don't hit GET /api/experiments/0 → 404 (and retries) on every chip
     // mount before the user picks an experiment.
     enabled: id > 0,
+    // Self-heal a stuck scan (8c): if the SSE `ingest_complete` frame is dropped
+    // (EventSource reconnect mid-scan), poll the resting `ingest_status` so the
+    // surface flips to the post-scan review without a manual reload. Polls ONLY
+    // while a scan/analyze is in flight — idle/complete/failed rows don't poll.
+    // react-query dedupes by query key, so N mounted observers share one poll.
+    refetchInterval: (q) => {
+      const s = q.state.data?.ingest_status;
+      return s === "scanning" || s === "analyzing" ? 2500 : false;
+    },
+  });
+}
+
+/** The Load ▸ Sample ▸ Exposures roll-up (grouping-review + Configuration
+ *  acquisition timeline read off this; spec §9.2/§9.6). Gated id>0 like
+ *  useExperiment so a zero/undefined experiment never hits /loads.
+ *
+ *  `refetchWhileScanning` is the robust floor for live-unfold: during an initial
+ *  scan, the SSE `ingest_progress`/`ingest_complete` frames invalidate this query
+ *  — but React Query ABSORBS an invalidation that lands while a fetch is already
+ *  in flight (the frame burst overlaps the first, empty, mid-scan fetch), and
+ *  `staleTime` then keeps that empty result "fresh", so nothing re-fetches until a
+ *  manual reload. Polling while the scan is live (mirrors useExperiment's ingest
+ *  self-heal) picks up the committed loads regardless of the invalidation race;
+ *  it stops the moment the caller's `scanning` flag clears. */
+export function useLoads(id: number, refetchWhileScanning = false) {
+  return useQuery({
+    queryKey: queryKeys.loads(id),
+    queryFn: () => api.listLoads(id),
+    enabled: id > 0,
+    refetchInterval: refetchWhileScanning ? 2000 : false,
   });
 }
 
@@ -167,6 +181,49 @@ export function useExposures(sampleId: number | undefined) {
     queryFn: () => api.listExposures(sampleId as number),
     enabled: sampleId !== undefined,
   });
+}
+
+/**
+ * Bulk contact-sheet hook (#207, R2-M14). Replaces the per-row
+ * `useExposures(sample.id)` fan-out from `ContactSheetRow` — a single
+ * observer in `SamplesPage` runs all N queries through `useQueries`, sharing
+ * the same `queryKeys.exposures(id)` cache rows. The cache key matches
+ * `useExposures(id)`, so any later loupe / mutator read picks up these rows
+ * with no double-fetch.
+ *
+ * Why not one bulk HTTP route: a backend extension is out of scope for #207.
+ * The hook consolidates N per-row observer trees into a single `useQueries`
+ * call in `SamplesPage`; per-row `useExposures(undefined)` calls in the bulk
+ * path stay disabled and don't add a fetch. The HTTP request count stays N,
+ * but the *concurrent* fetch fan-out — the major contributor to the live
+ * `ERR_INSUFFICIENT_RESOURCES` — is now bounded by `useQueries`' shared
+ * scheduling, and the *image* fan-out (the other major contributor) is
+ * bounded by `DetectorImage`'s `IntersectionObserver` gate.
+ *
+ * Returns `{ byId, isLoading }`:
+ *   - `byId.get(sampleId)` is `Exposure[] | undefined`. `undefined` reads as
+ *     "not yet fetched" (the row shows its skeleton); an empty array reads
+ *     as "fetched, no exposures" (the row paints with the empty-strip state).
+ *   - `isLoading` is true while ANY underlying query is in its cold-loading
+ *     state (boneyard `isLoading`, not `isPending` — disabled queries / bg
+ *     refetches stay quiet).
+ */
+export function useCorpusExposures(
+  samples: readonly api.CorpusSample[],
+): { byId: Map<number, api.Exposure[]>; isLoading: boolean } {
+  const queries = useQueries({
+    queries: samples.map((s) => ({
+      queryKey: queryKeys.exposures(s.id),
+      queryFn: () => api.listExposures(s.id),
+    })),
+  });
+  const byId = new Map<number, api.Exposure[]>();
+  for (let i = 0; i < samples.length; i++) {
+    const d = queries[i]?.data;
+    if (d !== undefined) byId.set(samples[i]!.id, d);
+  }
+  const isLoading = queries.some((q) => q.isLoading);
+  return { byId, isLoading };
 }
 
 export function useTrace(exposureId: number | undefined) {
@@ -247,47 +304,15 @@ export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
 }
 
 /**
- * Sibling of `useMemberTraces` that surfaces a single boolean — true when
- * any underlying trace fetch is in its cold-loading state. Used by the
- * Compare-page skeleton wrappers to gate plot + gutter.
- *
- * Mirrors the boneyard rule (CLAUDE.md): gate on `query.isLoading`, NOT
- * `isPending` — disabled queries (empty `exposureIds`) and background
- * refetches must NOT trigger the skeleton.
+ * Sibling of `useMemberTraces`: fetch candidate indices for a variable list of
+ * exposure ids in parallel for the scoping worksheet's phase reads (sparkline
+ * colour + preview strip). Cache keys mirror `useIndices` so single-exposure
+ * pages and scoping share one cache row. Returns `Map<exposure_id, IndexEntry[]>`.
  */
-export function useMemberTracesLoading(exposureIds: number[]): boolean {
-  const queries = useQueries({
-    queries: exposureIds.map((id) => ({
-      queryKey: queryKeys.trace(id),
-      queryFn: () => api.getTrace(id),
-    })),
-  });
-  return queries.some((q) => q.isLoading);
-}
-
-/**
- * Sibling of `useMemberTraces` that hydrates per-member EXPOSURE rows. Compare
- * review-mode pages use `sampleIdFor` and label resolution that depend on the
- * exposure cache being populated; without an explicit subscription the cache
- * never warms (only the trace key is fetched), and downstream readers fall
- * back to the orphan path. Issue #61 / #52.
- */
-export function useMemberExposures(exposureIds: number[]): Map<number, api.Exposure> {
+export function useMemberIndices(exposureIds: number[]): Map<number, api.IndexEntry[]> {
   return useStableQueryMap(exposureIds, (id) => ({
-    queryKey: queryKeys.exposure(id),
-    queryFn: () => api.getExposure(id),
-  }));
-}
-
-/**
- * Hydrates per-member SAMPLE rows. Used together with `useMemberExposures`
- * by the Compare review-mode label resolver — a member's display label is
- * `${sample.display_name || sample.name} · ${exposure.filename}` (issue #52).
- */
-export function useMemberSamples(sampleIds: number[]): Map<number, api.Sample> {
-  return useStableQueryMap(sampleIds, (id) => ({
-    queryKey: queryKeys.sample(id),
-    queryFn: () => api.getSample(id),
+    queryKey: queryKeys.indices(id),
+    queryFn: () => api.listIndices(id),
   }));
 }
 
@@ -364,37 +389,55 @@ export function useReanalyzeExposure(exposureId: number) {
   );
 }
 
-export function useGroups(exposureId: number | undefined) {
+// Plan D: the assignment cart data layer. The source of the active phase set;
+// deriveActiveIndices(assignment, indices) yields the active indices.
+export function useAssignment(exposureId: number | undefined) {
   return useQuery({
-    queryKey: queryKeys.groups(exposureId),
-    queryFn: () => api.listGroups(exposureId as number),
+    queryKey: queryKeys.assignment(exposureId),
+    queryFn: () => api.getAssignment(exposureId as number),
     enabled: exposureId !== undefined,
   });
 }
 
-export function useAddIndexToGroup(exposureId: number, groupId: number) {
+export function useAddAssignmentPhase(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
-    addIndexToGroupMutator,
-    { exposureId, groupId, username, clientId: CLIENT_ID },
+    addAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useRemoveAssignmentPhase(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    removeAssignmentPhaseMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useSetAssignmentState(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    setAssignmentStateMutator,
+    { exposureId, username, clientId: CLIENT_ID },
+  );
+  return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
+}
+
+export function useCommitCustomIndex(exposureId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    customIndexMutator,
+    { exposureId, username, clientId: CLIENT_ID },
   );
   return {
     ...inner,
-    mutate: (indexId: number) => inner.mutate({ indexId }),
+    mutate: (phase: string, basis: number) => inner.mutate({ phase, basis }),
   };
 }
 
-export function useRemoveIndexFromGroup(exposureId: number, groupId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    removeIndexFromGroupMutator,
-    { exposureId, groupId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (indexId: number) => inner.mutate({ indexId }),
-  };
-}
 
 // Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
 // The hook is enabled-gated because the builder calls it after a phase + anchor
@@ -453,29 +496,6 @@ export function useAddSampleTag(experimentId: number, sampleId: number) {
   );
 }
 
-export function useSampleMessages(sampleId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.messages(sampleId),
-    queryFn: () => api.listSampleMessages(sampleId as number),
-    enabled: sampleId !== undefined,
-  });
-}
-
-// Adapter: useQueueMutation flat-spreads input into the payload, but the
-// existing consumers call `postMsg.mutate(body: string)`. Wrap to package the
-// string under a `body` key for the mutator.
-export function usePostSampleMessage(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    postSampleMessageMutator,
-    { sampleId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (body: string) => inner.mutate({ body }),
-  };
-}
-
 export function useRemoveSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
@@ -513,9 +533,48 @@ export function useRemoveCorpusSampleTag(sampleId: number) {
   };
 }
 
+/**
+ * Corpus contact-sheet tag editor (#LO-TAGDUP Slice 2). Scope carries `sampleId`
+ * only — same routing as useRemoveCorpusSampleTag — which routes the op to
+ * editCorpusSampleTagMutator via resolveMutator (edit_tag, sampleId-only).
+ */
+export function useEditCorpusSampleTag(sampleId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    editCorpusSampleTagMutator,
+    { sampleId, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (a: { tagId: number; key: string; value: string }) => inner.mutate(a),
+  };
+}
+
 export function useSetExposureStatus(sampleId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
+}
+
+/** Batch/cross-sample exposure-status setter for the contact-sheet cull.
+ *  Unlike useSetExposureStatus (one bound sample), the sampleId rides in the
+ *  per-call input and overrides the placeholder scope (useQueueMutation spreads
+ *  input over scope: payload = {kind, clientOpId, ...scope, ...input}), so one
+ *  hook dispatches reject/restore to ANY sample. Each mutate() mints its own
+ *  client_op_id and patches queryKeys.exposures(sampleId). */
+export function useSetExposureStatusBatch() {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(setExposureStatusMutator, {
+    sampleId: 0, username, clientId: CLIENT_ID,
+  });
+  return {
+    ...inner,
+    mutate: (v: { sampleId: number; exposureId: number; status: "accepted" | "rejected" | null }) =>
+      // sampleId rides in the input position → payload.sampleId === v.sampleId,
+      // overriding the placeholder scope.sampleId (0). The cast is required
+      // because SetExposureStatusInput doesn't declare sampleId; the runtime
+      // payload merge is what carries it.
+      inner.mutate(v as unknown as { exposureId: number; status: "accepted" | "rejected" | null }),
+  };
 }
 
 export function useSelectExposure(sampleId: number) {
@@ -523,7 +582,10 @@ export function useSelectExposure(sampleId: number) {
   const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
   return {
     ...inner,
-    mutate: (exposureId: number) => inner.mutate({ exposureId }),
+    // Threads the optional per-call callbacks through so consumers can toast
+    // on confirmation / terminal failure (see MutateCallbacks).
+    mutate: (exposureId: number, callbacks?: Parameters<typeof inner.mutate>[1]) =>
+      inner.mutate({ exposureId }, callbacks),
   };
 }
 
@@ -583,42 +645,6 @@ export function useSampleById(id: number | undefined) {
   });
 }
 
-// ─── Comparisons (Plan §Phase 4, Task 4.1 Step 2/3) ────────────────────────
-
-/**
- * List comparisons for the given scope.
- * - scope = experiment id → `/api/experiments/:eid/comparisons`
- * - scope = "all"         → `/api/comparisons`
- *
- * Returns the same `ComparisonSummary[]` shape from both routes so the
- * sidebar doesn't have to branch on scope.
- */
-export function useComparisons(scope: number | "all") {
-  return useQuery({
-    queryKey: queryKeys.comparisons(scope),
-    queryFn: () => scope === "all"
-      ? api.listComparisons()
-      : api.listExperimentComparisons(scope),
-  });
-}
-
-export function useComparison(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.comparison(id),
-    queryFn: () => api.getComparison(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
-}
-
-export function useComparisonForks(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.comparisonForks(id),
-    queryFn: () => api.getComparisonForks(id as number),
-    enabled: id !== undefined,
-  });
-}
-
 /**
  * Corpus-wide series listing — every saved series across all experiments,
  * sorted by recency (backend `last_event_at DESC`). Backs the series folio
@@ -662,6 +688,23 @@ export function useScopeSeries() {
 }
 
 /**
+ * Series CREATE (M-A: Op B of the scoping scope→create chain). A SINGLE-write
+ * queue op — `series_save` → POST /api/series (no id ⇒ create). Split out from
+ * the tag write (useScopeSeries, Op A) because the queue resolves an op's
+ * deferred with whichever lands first (HTTP return OR own-op SSE frame); a
+ * compound two-write op had its `add_tag` frame resolve the deferred before the
+ * create returned, so `mutation.data` was the tag confirmation, not the Series.
+ * As a single write, this op's only own-op frame is `series_created`, so
+ * `data` is reliably the created Series (like useSaveSeries, which the builder
+ * reads `.data.members` from). The page chains scopeSeries.mutate →
+ * createSeries.mutate via a ref state machine, then navigates to /series/:id.
+ */
+export function useCreateSeries() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(createSeriesMutator, { username, clientId: CLIENT_ID });
+}
+
+/**
  * Series recipe-save (I3.5b). `series_save` → POST /api/series (create) or
  * PATCH /api/series/:id (recipe edit; `payload.id` discriminates). Optimistic
  * surface is the `seriesDraft`; the mutator does no optimistic cache write.
@@ -674,10 +717,9 @@ export function useSaveSeries() {
 
 /**
  * Series plate-commit (I3.5b). `series_commit` → POST /api/series/:id/commit.
- * Spinner (no optimistic write). On 409 the fetcher throws `ConflictError`,
- * which the App-level `attachConflictBridge` routes to `pendingConflict`
- * (kind `series_commit`) — bridge-free here, single writer, mirroring
- * `useSaveComparison`.
+ * Spinner (no optimistic write). The commit route is last-write-wins (Plan 6a):
+ * the backend no longer 409s on a stale hash and the body carries no
+ * `expected_content_hash`, so there is no conflict surface here.
  */
 export function useCommitSeriesPlate() {
   const username = useAppState((s) => s.username);
@@ -700,148 +742,98 @@ export function useSeries(id: number | undefined) {
     queryKey: queryKeys.series(id),
     queryFn: () => api.getSeries(id as number),
     enabled: id !== undefined,
-    // Parity with useComparison (above): a missing/draft series should error
-    // fast rather than retry 3× — the I3.5a builder reuses this.
+    // A missing/draft series should error fast rather than retry 3× — the
+    // I3.5a builder reuses this.
     retry: false,
   });
 }
 
-export function useComparisonMessages(id: number | undefined) {
+/** Batch member traces for a series (one request, `exposure_id → Trace`). Feeds
+ *  the greenfield folio via `toWaterfallRows(members, tracesById)` (Plan 4b wires
+ *  `SeriesCard`→`CardFigure`); avoids the O(N×M) per-exposure fan-out. */
+export function useSeriesTraces(seriesId: number | undefined) {
   return useQuery({
-    queryKey: queryKeys.comparisonMessages(id),
-    queryFn: () => api.listComparisonMessages(id as number),
-    enabled: id !== undefined,
+    queryKey: queryKeys.seriesTraces(seriesId),
+    queryFn: () => api.getSeriesTraces(seriesId as number),
+    enabled: seriesId !== undefined,
   });
 }
 
-/**
- * Posts a chat message to the comparison thread. Mirrors
- * `usePostSampleMessage` — the registry discriminates by the presence of
- * `comparisonId` in the payload (vs `sampleId`) to select the right mutator.
- */
-export function usePostComparisonMessage(comparisonId: number) {
+// ---------------------------------------------------------------------------
+// Structural-edit hooks (spec §9.6) — one hook per experiment, not per row.
+// Entity ids (sampleId / exposureId) ride in the mutate() input, NOT the scope.
+// This lets Task 14 instantiate each hook once and dispatch to any row.
+// ---------------------------------------------------------------------------
+
+export function useRenameSample(experimentId: number) {
   const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    postComparisonMessageMutator,
-    { comparisonId, username, clientId: CLIENT_ID },
-  );
+  return useQueueMutation(renameSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useMoveExposure(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(moveExposureMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+// merge: scope = experiment + identity ONLY; the caller passes { loserId, survivorId }
+// as the mutate() input (MergeSamplesInput, decided in Task 5) — no `as never`.
+export function useMergeSamples(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(mergeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useSplitSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(splitSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useDismissGroupingFlag(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(dismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useUndoDismissGroupingFlag(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(undoDismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+/** Trigger a rescan of a single experiment (cheap change-check then additive
+ *  ingest of new files). Plain TanStack mutation — not a queue mutator because
+ *  the scan is idempotent and emits its own SSE progress frames. Invalidates
+ *  the experiment detail on success so the header stats / status chip refresh.
+ *
+ *  `mutate(true)` bypasses the cheap change-check (force flag) — used when a
+ *  pattern field edit changes which files the scan discovers. */
+export function useTriggerScan(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  const inner = useMutation({
+    mutationFn: (force: boolean) =>
+      api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), force),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
+  });
   return {
     ...inner,
-    mutate: (body: string) => inner.mutate({ body }),
+    mutate: (force = false) => inner.mutate(force),
   };
 }
 
-export function useSaveComparison() {
+/** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
+ *  read hooks for experiments). Wraps E1's `updateExperiment(id, patch)` fetcher;
+ *  this is a plain TanStack mutation (not a queue mutator — geometry override is
+ *  not part of the structural-edit event log) that invalidates the experiment
+ *  detail on success so the provenance chips re-render. */
+export function useUpdateExperiment(experimentId: number) {
   const username = useAppState((s) => s.username);
-  // Phase 12 — bridging ConflictError to Zustand's `pendingConflict` slot
-  // happens via a single MutationCache subscriber mounted in App.tsx (see
-  // `lib/queue/conflictBridge.ts`). The hook is intentionally bridge-free
-  // so multiple mount sites (ComparePageEdit's Save, ConflictModal's
-  // Overwrite) cannot race on the slot — there is one subscriber, one
-  // writer. Toast suppression on 409 still lives in useQueueMutation's
-  // onError (the conflict modal owns that surface).
-  return useQueueMutation(
-    saveComparisonMutator,
-    { username, clientId: CLIENT_ID },
-  );
-}
-
-export function useDeleteComparison() {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    deleteComparisonMutator,
-    { username, clientId: CLIENT_ID },
-  );
-}
-
-// ─── Picker support hooks (Plan §Phase 5, Task 5.2) ────────────────────────
-
-/**
- * Fetches the user's most-recently-picked exposures (across all comparisons
- * and experiments). Used by the comparison picker's "Recently used" section.
- * Disabled until `userId` is defined so an empty user state doesn't fire a
- * GET /api/users/undefined/recently-picked-exposures.
- */
-export function useRecentlyPickedExposures(
-  userId: number | undefined, limit = 20,
-) {
-  return useQuery({
-    queryKey: queryKeys.recentlyPickedExposures(userId, limit),
-    queryFn: () => api.getRecentlyPickedExposures(userId as number, limit),
-    enabled: userId !== undefined,
-  });
-}
-
-/**
- * Fetches distinct `(key, value)` sample-tag pairs for an experiment. Used
- * by the picker's tag-filter dropdown. Empty list when no tags exist.
- */
-export function useSampleTags(experimentId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.sampleTags(experimentId),
-    queryFn: () => api.getSampleTags(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
-}
-
-/**
- * Picker primary list. Returns one row per sample with the resolved
- * indexing-exposure id frozen at fetch time. Spec §PR1 backend.
- *
- * `enabled: experimentId !== undefined` matches `useSampleTags` — picker is
- * always opened from an experiment context, but the hook is shaped to
- * accept `undefined` so render isn't gated on experiment selection.
- */
-export function usePickerSamples(experimentId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.pickerSamples(experimentId),
-    queryFn: () => api.getPickerSamples(experimentId as number),
-    enabled: experimentId !== undefined,
-  });
-}
-
-// ─── Comparison pins (Plan §Phase 13, Task 13.2) ───────────────────────────
-//
-// Pin/unpin are trivial idempotent state toggles that don't go through
-// `useQueueMutation` (no cross-tab SSE, no `client_op_id` keying — the
-// backend uses plain `INSERT OR REPLACE` / `DELETE` with no event-log
-// emit). Plain `useMutation` + `invalidateQueries` is the cleanest fit.
-//
-// The cache key (`queryKeys.comparisonPins`) is global per-tab; if the
-// user changes their X-Username mid-session, a manual invalidation is
-// needed (out of scope — the username flow already requires a logout
-// → re-onboarding round trip).
-
-/** List of comparison ids the current user has pinned (most-recent first). */
-export function useComparisonPins() {
-  const username = useAppState((s) => s.username);
-  return useQuery({
-    queryKey: queryKeys.comparisonPins,
-    queryFn: () => api.listComparisonPins(authOpts(username, CLIENT_ID)),
-    enabled: username !== undefined,
-  });
-}
-
-export function usePinComparison() {
   const qc = useQueryClient();
-  const username = useAppState((s) => s.username);
   return useMutation({
-    // Mint clientOpId per call (not per hook mount) so retries reuse one
-    // idempotency key — without it, a network-blip retry would write a
-    // duplicate `comparison_pinned` row in user_actions even though the
-    // view-table state is already correct.
-    mutationFn: (id: number) =>
-      api.pinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
+    mutationFn: (patch: api.ExperimentPatch) =>
+      api.updateExperiment(experimentId, patch, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
   });
 }
 
-export function useUnpinComparison() {
-  const qc = useQueryClient();
-  const username = useAppState((s) => s.username);
-  return useMutation({
-    mutationFn: (id: number) =>
-      api.unpinComparison(id, authOpts(username, CLIENT_ID, newClientOpId())),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.comparisonPins }),
-  });
-}

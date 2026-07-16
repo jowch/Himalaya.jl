@@ -8,7 +8,7 @@ using HimalayaUI
 
 @testset "SSE: broadcast_event! puts a curation frame onto subscriber channels" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
 
         # Inject a fake subscriber into the registry.
@@ -60,7 +60,7 @@ end
 
 @testset "SSE: broadcast_event! with nil user_id sets actor to null" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
 
         pending = Channel{String}(64)
@@ -98,7 +98,7 @@ end
 
 @testset "SSE: broadcast_event! prunes closed subscriber channels" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
 
         dead = Channel{String}(1)
@@ -139,7 +139,7 @@ end
 
 @testset "SSE: broadcast_event! prunes slow (full) subscriber without blocking" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
 
         # A slow subscriber: channel capacity 4, intentionally NOT drained.
@@ -183,7 +183,7 @@ end
 
 @testset "SSE: analyze_run with both skip flags true does NOT broadcast" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
 
         # Seed FK chain so apply_event! on entity_id=1 succeeds.
@@ -230,7 +230,7 @@ end
 
 @testset "SSE: analyze_run with one skip flag true DOES broadcast" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
 
         DBInterface.execute(db,
@@ -274,7 +274,7 @@ end
 
 @testset "SSE: non-analyze_run events broadcast regardless of skip flags in payload" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
 
         DBInterface.execute(db,
@@ -318,7 +318,7 @@ end
 
 @testset "SSE: broadcast_event! emits post_state when provided" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         sub = (id = "t-postst", pending = Channel{String}(8))
         lock(HimalayaUI.SSE_LOCK) do
@@ -346,7 +346,7 @@ end
 
 @testset "SSE: broadcast_event! omits post_state when not provided" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         sub = (id = "t-no-postst", pending = Channel{String}(8))
         lock(HimalayaUI.SSE_LOCK) do
@@ -372,14 +372,14 @@ end
 
 @testset "SSE: lookup_username returns nothing for unknown id" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         @test HimalayaUI.lookup_username(db, 99999) === nothing
     end
 end
 
 @testset "SSE: lookup_username resolves known user" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         uid = HimalayaUI.get_or_create_user!(db, "bob")
         @test HimalayaUI.lookup_username(db, uid) == "bob"
     end
@@ -392,7 +392,7 @@ end
 
 @testset "SSE: /api/events endpoint headers and frame delivery" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         port = HimalayaUI.find_free_port()
         HimalayaUI.start_test_server!(db, port)
         try

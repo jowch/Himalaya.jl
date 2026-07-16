@@ -19,17 +19,20 @@
  * be wrong). Each mock fixture below is annotated with the file:line of
  * the route handler it mirrors.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator, removeIndexFromGroupMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "../../src/lib/queue/mutators/assignment";
+import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
@@ -38,9 +41,6 @@ import {
   addExposureTagMutator,
   postSampleMessageMutator,
 } from "../../src/lib/queue/mutators/trivial";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
-import type { ComparisonSummary } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
@@ -48,8 +48,8 @@ const PEAK_KEYS = new Set([
   "id", "exposure_id", "q", "intensity", "prominence", "sharpness",
   "source", "excluded",
 ]);
-const GROUP_KEYS = new Set([
-  "id", "exposure_id", "kind", "active", "members",
+const ASSIGNMENT_KEYS = new Set([
+  "exposure_id", "state", "members",
 ]);
 const SAMPLE_KEYS = new Set([
   "id", "experiment_id", "name", "display_name", "notes", "tags",
@@ -69,21 +69,6 @@ const INDEX_ENTRY_KEYS = new Set([
   "lattice_d", "ngc", "status", "kind", "inputs_hash",
   "peaks", "predicted_q",
 ]);
-const COMPARISON_KEYS = new Set([
-  "id", "title", "description", "content_hash",
-  "created_by", "created_at", "updated_at",
-  "forked_from_id", "forked_at_hash", "forked_from_title",
-  "members",
-]);
-const COMPARISON_MEMBER_KEYS = new Set([
-  "id", "comparison_id", "exposure_id", "display_order",
-  "band_height", "y_offset", "normalization",
-  "color_override", "label_override",
-  "q_window_min", "q_window_max",
-  "peak_display", "snapshot", "is_stale",
-  "created_by", "created_at",
-]);
-
 function mockFetchOnce(body: unknown, status = 200): void {
   const original = globalThis.fetch;
   globalThis.fetch = (async () => {
@@ -258,48 +243,135 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
   });
 
   // -------------------------------------------------------------------------
-  // Group / index mutators
+  // Assignment mutators (Plan D-3) — onSuccess writes ONLY the assignment
+  // cache (the 3-key Assignment shape); NEVER the exposure cache.
   // -------------------------------------------------------------------------
 
-  it("addIndexToGroup writes a GroupEntry with exactly 5 keys (issue #16)", async () => {
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
+  it("addAssignmentPhase writes an Assignment with exactly 3 keys (no exposure write)", async () => {
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
+    // Mock derived from routes_analysis.jl POST /assignment/members response.
     mockFetchOnce({
-      id: 1, exposure_id: 5, kind: "custom", active: true, members: [42],
-      event_id: 11, view_row_id: 1,
+      exposure_id: 5, state: "indexed", members: [42],
+      event_id: 21, view_row_id: 7,
     }, 200);
-    await runMutator(qc, addIndexToGroupMutator, {
-      kind: "index_confirmed",
-      clientOpId: "op-shape-6",
-      exposureId: 5, groupId: 1, username: "alice", clientId: "tab-1",
-      indexId: 42, payload: { groupId: 1, indexId: 42 },
+    await runMutator(qc, addAssignmentPhaseMutator, {
+      kind: "assignment_add",
+      clientOpId: "op-asg-1",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      indexId: 42, payload: { indexId: 42 },
     });
-    const groups = qc.getQueryData<unknown[]>(queryKeys.groups(5));
-    assertKeys(groups![0], GROUP_KEYS, "addIndexToGroup cache row");
+    const a = qc.getQueryData<unknown>(queryKeys.assignment(5));
+    assertKeys(a, ASSIGNMENT_KEYS, "addAssignmentPhase cache row");
+    // HIGH finding #2: the exposure hash must be untouched (never written with
+    // undefined from an assignment frame).
+    const exp = qc.getQueryData<{ analysis_inputs_hash: string }>(queryKeys.exposure(5));
+    expect(exp!.analysis_inputs_hash).toBe("h0");
   });
 
-  it("removeIndexFromGroup writes a GroupEntry with exactly 5 keys", async () => {
-    qc.setQueryData(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [42] },
-    ]);
+  it("removeAssignmentPhase writes an Assignment with exactly 3 keys", async () => {
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [42] });
     mockFetchOnce({
-      id: 1, exposure_id: 5, kind: "custom", active: true, members: [],
-      event_id: 12, view_row_id: 1,
+      exposure_id: 5, state: "indexed", members: [],
+      event_id: 22, view_row_id: 8,
     }, 200);
-    await runMutator(qc, removeIndexFromGroupMutator, {
-      kind: "index_unconfirmed",
-      clientOpId: "op-shape-7",
-      exposureId: 5, groupId: 1, username: "alice", clientId: "tab-1",
-      indexId: 42, payload: { groupId: 1, indexId: 42 },
+    await runMutator(qc, removeAssignmentPhaseMutator, {
+      kind: "assignment_remove",
+      clientOpId: "op-asg-2",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      indexId: 42, payload: { indexId: 42 },
     });
-    const groups = qc.getQueryData<unknown[]>(queryKeys.groups(5));
-    assertKeys(groups![0], GROUP_KEYS, "removeIndexFromGroup cache row");
+    assertKeys(qc.getQueryData(queryKeys.assignment(5)), ASSIGNMENT_KEYS, "removeAssignmentPhase cache row");
+  });
+
+  it("setAssignmentState writes an Assignment with exactly 3 keys (members cleared)", async () => {
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [42] });
+    mockFetchOnce({
+      exposure_id: 5, state: "form_factor", members: [],
+      event_id: 23, view_row_id: 9,
+    }, 200);
+    await runMutator(qc, setAssignmentStateMutator, {
+      kind: "assignment_set_state",
+      clientOpId: "op-asg-3",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      state: "form_factor", payload: { state: "form_factor" },
+    });
+    const a = qc.getQueryData<{ state: string; members: number[] }>(queryKeys.assignment(5));
+    assertKeys(a, ASSIGNMENT_KEYS, "setAssignmentState cache row");
+    expect(a!.state).toBe("form_factor");
+    expect(a!.members).toEqual([]);
+  });
+
+  it("two pending assignment_add ops converge (reverse-rollback + insertion-replay)", () => {
+    // Finding #5b: simulate two queued optimistic adds, then roll BOTH back in
+    // reverse order and replay in insertion order — both members must end up
+    // present (the rollback snapshots the whole Assignment, so it is symmetric).
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const op1 = { kind: "assignment_add" as const, clientOpId: "c1", exposureId: 5,
+      username: "a", clientId: "t", indexId: 10, payload: { indexId: 10 } };
+    const op2 = { kind: "assignment_add" as const, clientOpId: "c2", exposureId: 5,
+      username: "a", clientId: "t", indexId: 11, payload: { indexId: 11 } };
+    const ctx1 = addAssignmentPhaseMutator.onMutate(op1, qc);
+    const ctx2 = addAssignmentPhaseMutator.onMutate(op2, qc);
+    // reverse-rollback
+    ctx2.restore();
+    ctx1.restore();
+    expect(qc.getQueryData<{ members: number[] }>(queryKeys.assignment(5))!.members).toEqual([]);
+    // insertion-replay
+    addAssignmentPhaseMutator.onMutate(op1, qc);
+    addAssignmentPhaseMutator.onMutate(op2, qc);
+    expect(qc.getQueryData<{ members: number[] }>(queryKeys.assignment(5))!.members).toEqual([10, 11]);
+  });
+
+  it("customIndex appends the new IndexEntry and invalidates the assignment", async () => {
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const inval = vi.spyOn(qc, "invalidateQueries");
+    // Mock derived from routes_analysis.jl POST /custom-index response.
+    mockFetchOnce({
+      id: 77, exposure_id: 5, phase: "Pn3m", basis: 0.15, score: null, r_squared: null,
+      lattice_d: 197, ngc: -1.5, status: "candidate", kind: "speculative", inputs_hash: "h",
+      peaks: [], predicted_q: [0.15],
+      event_id: 30, view_row_id: 12,
+    }, 200);
+    await runMutator(qc, customIndexMutator, {
+      kind: "custom_index_commit", clientOpId: "op-ci-1",
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      phase: "Pn3m", basis: 0.15, payload: { phase: "Pn3m", basis: 0.15 },
+    });
+    const indices = qc.getQueryData<{ id: number }[]>(queryKeys.indices(5));
+    expect(indices!.some((i) => i.id === 77)).toBe(true);
+    expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
+  });
+
+  it("customIndex does NOT splice a phantom row on the SSE-wins synth (issue-#37)", () => {
+    // On the SSE-wins own-tab race the deferred resolves off the FIRST frame
+    // (speculative_created), whose mutator has no synthesizeFromSse — so the
+    // response handed to customIndexMutator.onSuccess is the generic synth
+    // {event_id, client_op_id, analysis_inputs_hash, index_id}, NOT a full
+    // IndexEntry. The guard must invalidate instead of splicing a phantom
+    // {id:undefined, phase:undefined} row.
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const inval = vi.spyOn(qc, "invalidateQueries");
+    const synth = {
+      event_id: 30, client_op_id: "op-ci-1", analysis_inputs_hash: "h", index_id: 77,
+    } as unknown as Parameters<typeof customIndexMutator.onSuccess>[1];
+    const flat = {
+      exposureId: 5, username: "alice", clientId: "tab-1",
+      phase: "Pn3m", basis: 0.15,
+    } as unknown as Parameters<typeof customIndexMutator.onSuccess>[0];
+    customIndexMutator.onSuccess(flat, synth, qc);
+    const indices = qc.getQueryData<{ id: number | undefined }[]>(queryKeys.indices(5));
+    // No phantom row landed (cache stays empty; converges via the invalidate).
+    expect(indices).toEqual([]);
+    expect(indices!.some((i) => i.id === undefined)).toBe(false);
+    expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.indices(5) });
+    expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
   it("createSpeculative writes an IndexEntry with exactly 13 keys", async () => {
     qc.setQueryData(queryKeys.indices(5), []);
-    qc.setQueryData(queryKeys.groups(5), []);
     // Mock derived from routes_analysis.jl POST /speculative response (~line 374-397).
     mockFetchOnce({
       id: 99, exposure_id: 5, phase: "Pn3m", basis: 0.123,
@@ -479,92 +551,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     expect(after.find(p => p.source === "manual")!.excluded).toBe(false);
   });
 
-  // -------------------------------------------------------------------------
-  // Compare page mutators (Phase 3). 3 event-shape rows: comparison_created
-  // (saveComparison create), comparison_submitted (saveComparison update),
-  // comparison_deleted (deleteComparison).
-  // -------------------------------------------------------------------------
-
-  function buildComparisonResponse(id: number, hash = "sha256:abc") {
-    return {
-      id, title: "X", description: null, content_hash: hash,
-      created_by: 1, created_at: "2026-05-06",
-      updated_at: "2026-05-06",
-      forked_from_id: null, forked_at_hash: null, forked_from_title: null,
-      members: [
-        {
-          id: 999, comparison_id: id, exposure_id: 100, display_order: 0,
-          band_height: 1, y_offset: 0, normalization: "none",
-          color_override: null, label_override: null,
-          q_window_min: null, q_window_max: null,
-          peak_display: null,
-          snapshot: { effective_peaks: [], confirmed_index: null,
-                      analysis_inputs_hash: "sha256:zero" },
-          is_stale: false, created_by: 1, created_at: "2026-05-06",
-        },
-      ],
-    };
-  }
-
-  it("saveComparison (create → comparison_created) writes a Comparison with exactly 11 keys", async () => {
-    mockFetchOnce(buildComparisonResponse(42), 201);
-    await runMutator(qc, saveComparisonMutator, {
-      kind: "comparison_save", clientOpId: "op-cmp-create",
-      username: "alice", clientId: "tab-1",
-      title: "X",
-      members: [{ exposure_id: 100, display_order: 0,
-                  snapshot: { effective_peaks: [], confirmed_index: null,
-                              analysis_inputs_hash: "sha256:zero" } }],
-      payload: {},
-    });
-    assertKeys(qc.getQueryData(queryKeys.comparison(42)), COMPARISON_KEYS,
-      "saveComparison(create) cache row");
-    const members = qc.getQueryData<unknown[]>(queryKeys.comparisonMembers(42))!;
-    assertKeys(members[0], COMPARISON_MEMBER_KEYS,
-      "saveComparison(create) member cache row");
-  });
-
-  it("saveComparison (submit → comparison_submitted) writes a Comparison with exactly 11 keys", async () => {
-    mockFetchOnce(buildComparisonResponse(42, "sha256:new"), 200);
-    await runMutator(qc, saveComparisonMutator, {
-      kind: "comparison_save", clientOpId: "op-cmp-submit",
-      username: "alice", clientId: "tab-1",
-      id: 42, title: "X edited",
-      members: [{ id: 999, exposure_id: 100, display_order: 0,
-                  snapshot: { effective_peaks: [], confirmed_index: null,
-                              analysis_inputs_hash: "sha256:zero" } }],
-      expected_content_hash: "sha256:abc",
-      payload: {},
-    });
-    assertKeys(qc.getQueryData(queryKeys.comparison(42)), COMPARISON_KEYS,
-      "saveComparison(submit) cache row");
-  });
-
-  it("deleteComparison (→ comparison_deleted) removes entity caches and prunes listings", async () => {
-    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
-    qc.setQueryData(queryKeys.comparisonMembers(42), []);
-    qc.setQueryData(queryKeys.comparisons("all"), [
-      { id: 42, title: "doomed", description: null, content_hash: "h",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null },
-      { id: 99, title: "kept", description: null, content_hash: "h2",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null },
-    ]);
-    mockFetchOnce({ id: 42, deleted: true, event_id: 7 }, 200);
-    await runMutator(qc, deleteComparisonMutator, {
-      kind: "comparison_delete", clientOpId: "op-cmp-del",
-      username: "alice", clientId: "tab-1",
-      id: 42, payload: { id: 42 },
-    });
-    // Removed (no cache entry, no error state)
-    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonMembers(42))).toBeUndefined();
-    // Listing filtered down
-    const listing = qc.getQueryData<{ id: number }[]>(queryKeys.comparisons("all"))!;
-    expect(listing.map((c) => c.id)).toEqual([99]);
-  });
-
   it("postSampleMessage writes a SampleMessage with exactly 6 keys", async () => {
     qc.setQueryData(queryKeys.messages(10), []);
     // Mock derived from routes_messages.jl POST /samples/:id/messages response.
@@ -582,66 +568,5 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const list = qc.getQueryData<unknown[]>(queryKeys.messages(10));
     expect(list).toHaveLength(1);
     assertKeys(list![0], SAMPLE_MESSAGE_KEYS, "postSampleMessage cache row");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Compare UX A-8 — ComparisonSummary listing projection shape.
-//
-// `_comparison_listing_rows` (backend, #137) emits denormalised projection
-// fields (author_username, member_count, member_phases, has_stale_members)
-// plus the persisted view-choice columns (view_*). These tests pin the shape
-// at the value layer — a compile-time `: ComparisonSummary` anchor only
-// catches a missing field, not a rename that leaves the old name aliased.
-// ---------------------------------------------------------------------------
-describe("comparison listing cache shape — Compare UX A-8", () => {
-  it("includes the new projection fields", () => {
-    const row: ComparisonSummary = {
-      id: 1,
-      title: "x",
-      description: null,
-      content_hash: "h",
-      created_by: 1,
-      created_at: null,
-      updated_at: null,
-      forked_from_id: null,
-      forked_at_hash: null,
-      view_grouping_mode: null,
-      view_show_peak_ticks: null,
-      view_show_peak_labels: null,
-      last_event_at: "2026-05-14T10:00:00Z",
-      author_username: "alice",
-      member_count: 3,
-      member_phases: ["Pn3m", "Hex"],
-      member_phase_count: 2,
-      has_stale_members: false,
-    };
-    expect(row.member_count).toBe(3);
-    expect(row.member_phases).toEqual(["Pn3m", "Hex"]);
-    expect(row.author_username).toBe("alice");
-    // Pin each new view_* field at the value layer — protects against a
-    // future refactor that renames (e.g. viewGroupingMode) while leaving
-    // the old name aliased; compile-time-only checks slip through.
-    expect(row.view_grouping_mode).toBeNull();
-    expect(row.view_show_peak_ticks).toBeNull();
-    expect(row.view_show_peak_labels).toBeNull();
-    expect(row.last_event_at).toBe("2026-05-14T10:00:00Z");
-    expect(row.has_stale_members).toBe(false);
-  });
-
-  it("accepts populated view_* values too", () => {
-    const row: ComparisonSummary = {
-      id: 2, title: "y", description: null, content_hash: "h2",
-      created_by: 1, created_at: null, updated_at: null,
-      forked_from_id: null, forked_at_hash: null,
-      view_grouping_mode: "byPhase",
-      view_show_peak_ticks: true,
-      view_show_peak_labels: false,
-      last_event_at: null, author_username: null,
-      member_count: 0, member_phases: [], member_phase_count: 0, has_stale_members: false,
-    };
-    expect(row.view_grouping_mode).toBe("byPhase");
-    expect(row.view_show_peak_ticks).toBe(true);
-    expect(row.view_show_peak_labels).toBe(false);
   });
 });

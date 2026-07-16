@@ -5,9 +5,9 @@ using HimalayaUI
 # one round trip. Read-only — no with_idempotency, no SSE, no events.
 #
 # Helpers `_setup_analyzed_exposure` (defined in test_route_response_shapes.jl)
-# and `with_test_server` (defined in test_http.jl) are available because
-# runtests.jl includes those files before this one. See Step 3 for the
-# correct ordering when adding the new include lines.
+# and `with_inproc_routes` (defined in test_inproc.jl via test_http.jl) are
+# available because runtests.jl includes those files before this one. See
+# Step 3 for the correct ordering when adding the new include lines.
 
 # `_setup_for_resolve` is defined in test_route_response_shapes.jl
 # (alongside `_setup_analyzed_exposure`) so both Task 2 and Task 4 can
@@ -17,8 +17,8 @@ using HimalayaUI
     @testset "200: experiment + sample + exposure happy path" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 @test body.experiment_id == ctx.experiment_id
@@ -34,8 +34,8 @@ using HimalayaUI
     @testset "200: experiment-only" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 @test body.experiment_id == ctx.experiment_id
@@ -48,8 +48,8 @@ using HimalayaUI
     @testset "200: id-form lookup returns names" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 @test body.experiment_name == "test-exp"
@@ -61,8 +61,8 @@ using HimalayaUI
     @testset "404: missing experiment" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=nope"; status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=nope")
                 @test r.status == 404
                 body = JSON3.read(String(r.body))
                 @test body.error == "not_found"
@@ -75,8 +75,8 @@ using HimalayaUI
     @testset "404: missing sample (experiment_resolved present)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=nope"; status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&sample=nope")
                 @test r.status == 404
                 body = JSON3.read(String(r.body))
                 @test body.error == "not_found"
@@ -91,8 +91,8 @@ using HimalayaUI
     @testset "404: missing exposure (experiment_resolved + sample_resolved present)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&exposure=nope"; status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&exposure=nope")
                 @test r.status == 404
                 body = JSON3.read(String(r.body))
                 @test body.error == "not_found"
@@ -107,8 +107,8 @@ using HimalayaUI
     @testset "400: malformed numeric param returns 400, not 500" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment_id=abc"; status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment_id=abc")
                 @test r.status == 400
                 body = JSON3.read(String(r.body))
                 @test body.error == "invalid_id"
@@ -121,10 +121,10 @@ using HimalayaUI
             ctx = _setup_for_resolve(tmp)
             DBInterface.execute(ctx.db, "UPDATE experiments SET name = 'test-exp-renamed' WHERE id = ?",
                                 [ctx.experiment_id])
-            with_test_server(ctx.db) do port, base
-                r1 = HTTP.get("$base/api/resolve?experiment=test-exp"; status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r1 = call("GET", "/api/resolve?experiment=test-exp")
                 @test r1.status == 404
-                r2 = HTTP.get("$base/api/resolve?experiment=test-exp-renamed")
+                r2 = call("GET", "/api/resolve?experiment=test-exp-renamed")
                 @test r2.status == 200
             end
         end
@@ -141,9 +141,8 @@ using HimalayaUI
             DBInterface.execute(ctx.db, "PRAGMA foreign_keys = OFF")
             DBInterface.execute(ctx.db, "DELETE FROM samples WHERE id = ?", [ctx.sample_id])
             DBInterface.execute(ctx.db, "PRAGMA foreign_keys = ON")
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)")
                 @test r.status == 404
                 body = JSON3.read(String(r.body))
                 @test body.missing == "sample"
@@ -154,9 +153,8 @@ using HimalayaUI
     @testset "400: ambiguous params (experiment + experiment_id)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)")
                 @test r.status == 400
                 body = JSON3.read(String(r.body))
                 @test body.error == "ambiguous_params"
@@ -167,9 +165,8 @@ using HimalayaUI
     @testset "400: ambiguous params (sample + sample_id)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample=S1&sample_id=$(ctx.sample_id)";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&sample_id=$(ctx.sample_id)")
                 @test r.status == 400
             end
         end
@@ -178,9 +175,9 @@ using HimalayaUI
     @testset "200: mixed name+id across entities is allowed" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)
-            with_test_server(ctx.db) do port, base
+            with_inproc_routes(ctx.db) do call
                 # name-form experiment + id-form sample is fine.
-                r = HTTP.get("$base/api/resolve?experiment=test-exp&sample_id=$(ctx.sample_id)")
+                r = call("GET", "/api/resolve?experiment=test-exp&sample_id=$(ctx.sample_id)")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 @test body.experiment_id == ctx.experiment_id
@@ -198,8 +195,8 @@ using HimalayaUI
             second_id = Int(DBInterface.lastrowid(res))
             @test second_id > ctx.experiment_id
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment=test-exp")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment=test-exp")
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 # Lowest id wins deterministically.
@@ -214,9 +211,8 @@ using HimalayaUI
             ctx = _setup_for_resolve(tmp)
             DBInterface.execute(ctx.db, "UPDATE samples SET name = NULL WHERE id = ?",
                                 [ctx.sample_id])
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)")
                 @test r.status == 404
                 body = JSON3.read(String(r.body))
                 @test body.missing == "sample"
@@ -233,9 +229,8 @@ using HimalayaUI
             ctx = _setup_for_resolve(tmp)
             DBInterface.execute(ctx.db, "UPDATE exposures SET filename = NULL WHERE id = ?",
                                 [ctx.exposure_id])
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)&exposure_id=$(ctx.exposure_id)";
-                             status_exception=false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/resolve?experiment_id=$(ctx.experiment_id)&sample_id=$(ctx.sample_id)&exposure_id=$(ctx.exposure_id)")
                 @test r.status == 404
                 body = JSON3.read(String(r.body))
                 @test body.missing == "exposure"

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppRoutes } from "../src/components/AppRoutes";
+import { AppRoutes } from "../src/print/shell/AppRoutes";
 import { useAppState } from "../src/state";
 
 beforeEach(() => {
@@ -12,7 +12,6 @@ beforeEach(() => {
     activeExposureId: undefined,
     activeExperimentId: undefined,
     username: "tester",
-    theme: "dark",
   });
   vi.stubGlobal(
     "fetch",
@@ -38,10 +37,10 @@ function renderAt(path: string) {
 }
 
 describe("/series routing", () => {
-  it("mounts SeriesFolioPage under the corpus shell", async () => {
+  it("mounts SeriesFolioPage under the unified app shell (T3.2)", async () => {
     renderAt("/series");
-    expect(await screen.findByTestId("series-folio-page")).toBeInTheDocument();
-    // proves it is under CorpusShell (the corpus topbar), not the legacy AppShell
-    expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
+    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
+    // T3.2: proves it is under the unified AppShell (TopNav), not the legacy CorpusShell
+    expect(screen.getByTestId("topnav")).toBeInTheDocument();
   });
 });

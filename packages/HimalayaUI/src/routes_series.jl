@@ -9,7 +9,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 # `with_idempotency` so a malformed payload returns an uncached 400.
 #
 # No route carries an `is_author` / 403 gate (architecture decision 3).
-# Existence (404) and optimistic-concurrency (409) checks remain.
+# Existence (404) checks remain; the `/commit` optimistic-concurrency (409) gate
+# was relaxed to last-write-wins (docs/event-log.md §"Conflict resolution").
 #
 # `_json_error` and `_view_fields_error` are shared route helpers defined in
 # `json.jl` (same module). I3.6 (#177) relocated them there from the now-deleted
@@ -88,6 +89,15 @@ function register_series_routes!()
         db = current_db()
         rows = forks_of_series(db, id)
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows))
+    end
+
+    @get "/api/series/{id}/traces" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT 1 FROM series WHERE id = ?", [id])))
+        exists || return _json_error(404, "series not found")
+        out = series_member_traces(db, id)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
     # ── Create (draft) ──────────────────────────────────────────────────────
@@ -222,27 +232,14 @@ function register_series_routes!()
         if !haskey(body, :members) || !(body.members isa AbstractVector)
             return _json_error(400, "members must be an array")
         end
-        expected_hash = haskey(body, :expected_content_hash) &&
-                        body.expected_content_hash !== nothing ?
-                        String(body.expected_content_hash) : nothing
-
         return with_idempotency(db, req) do
-            # Existence (404) before the conflict check (409) — HTTP semantics.
-            # No author gate (architecture decision 3).
+            # Existence (404) only — the optimistic-concurrency 409 gate was
+            # relaxed to last-write-wins (no conflict UI; docs/event-log.md
+            # §"Conflict resolution"). content_hash is still written by the committed event
+            # (post_state + future fork/stale checks), so compute_series_content_hash
+            # / current_series_content_hash stay defined and used in the event layer.
             if !series_exists(db, id)
                 return _json_error(404, "series not found")
-            end
-            # Optimistic-concurrency check (NOT the author gate): the stored
-            # hash must match the client's expected_content_hash, else 409.
-            current_hash = current_series_content_hash(db, id)
-            if expected_hash !== nothing && current_hash !== expected_hash
-                current_state = fetch_series_with_plate(db, id)
-                return HTTP.Response(409, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(
-                        :error         => "conflict",
-                        :current_hash  => current_hash,
-                        :current_state => current_state,
-                    )))
             end
 
             members_payload = [_series_member_payload(db, m) for m in body.members]

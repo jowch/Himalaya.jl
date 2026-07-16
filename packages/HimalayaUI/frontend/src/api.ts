@@ -1,5 +1,3 @@
-import type { GroupingMode } from "./lib/comparison/coloring";
-
 export interface User {
   id: number;
   username: string;
@@ -7,15 +5,43 @@ export interface User {
   last_name: string | null;
 }
 
+export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
+export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
+
 export interface Experiment {
   id: number;
   name: string | null;
+  description: string | null;     // Phase E1 additive column (Task 1c migration)
   path: string;
   data_dir: string;
   analysis_dir: string;
   manifest_path: string | null;
   created_at: string;
   q_units: string | null;
+  beam_center_x: number | null;
+  beam_center_y: number | null;
+  pixel_size_um: number | null;
+  energy_kev: number | null;
+  flight_path_m: number | null;
+  // Phase A typed-geometry per-field provenance + scan bookkeeping.
+  energy_kev_source: GeometrySource;
+  flight_path_m_source: GeometrySource;
+  beam_center_x_source: GeometrySource;
+  beam_center_y_source: GeometrySource;
+  pixel_size_um_source: GeometrySource;
+  q_units_source: GeometrySource;
+  last_scanned_at: string | null;
+  scan_signature: string | null;
+  ingest_status: IngestStatus;
+  // Phase E1 additive columns: editable file-pattern globs (Task 1c migration).
+  // NULL = use legacy experiment.toml fallback.
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
+  // Roll-up counts returned by both list and detail endpoints.
+  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null };
+  // Count of samples with a pending grouping flag (list endpoint only; absent on detail).
+  review_count?: number;
 }
 
 export interface SampleTag {
@@ -28,17 +54,75 @@ export interface SampleTag {
 export interface Sample {
   id: number;
   experiment_id: number;
-  name: string | null;
-  display_name: string | null;
+  name: string;            // non-null after the collapse (was `string | null` + `display_name`)
   notes: string | null;
   tags: SampleTag[];
+}
+
+/** A merge/split discrepancy flag the auto-grouper raised on a slot (spec §8.8).
+ *  `null` when the slot is clean. The structural-edit dismissal arm
+ *  (`grouping_flag_dismissed`, Phase D) clears it. */
+export type GroupingFlag =
+  | { kind: "merge"; merge_with_sample_id: number; merge_with_label: string }
+  // `split_at_index` is 1-BASED (grouping.jl): the exposure where the position
+  // jump lands. Consumers split BEFORE it → 0-based `split_at_index - 1`.
+  | { kind: "split"; split_at_index: number; jump_from: number; jump_to: number }
+  | null;
+
+/** One exposure leaf under a load's sample slot. */
+export interface LoadExposure {
+  id: number;
+  filename: string;
+  horizontal_position: number | null;
+  timestamp: string | null;
+}
+
+/** One sample slot inside a load (a (load, slot) coordinate). `name_source`/
+ *  `grouping_source` are provenance tags ("user" | "computed" | …);
+ *  `merged_into_id` is non-null when this slot was merged into a sibling. */
+export interface LoadSample {
+  sample_id: number;
+  name: string;
+  slot_index: number;
+  grouping_source: string;
+  name_source: string;
+  merged_into_id: number | null;
+  flag: GroupingFlag;
+  exposures: LoadExposure[];
+}
+
+/** One rack-load roll-up (Phase A `loads` table), returned NESTED by
+ *  `GET /api/experiments/:id/loads` (see Task 2): Load ▸ Sample ▸ Exposures.
+ *  Drives E2's LoadFold/SampleFold/ExposureLeaf + the grouping-review count
+ *  (samples whose `flag` is non-null). */
+export interface Load {
+  load_id: number;
+  load_index: number;
+  session_id: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  frame_count: number;
+  note: string | null;
+  samples: LoadSample[];
 }
 
 // Corpus samples carry q_units (resolved from the owning experiment's
 // config) — the per-experiment Sample does not. Phase 3 normalization
 // reads this field. Returned by the corpus-wide GET /api/samples route.
+//
+// `phase` is an optional, forward-looking seam for the contact sheet (R1 / #224):
+// the sample's resolved liquid-crystalline phase, surfaced by a future
+// indexing-rollup route. When present the status cell shows a phase chip; when
+// absent it shows the "Not indexed" affordance (M-6).
 export interface CorpusSample extends Sample {
   q_units: string;
+  phase?: string | null;
+  /** The representative exposure's durable assignment state (selected=1 else
+   *  highest-id). Drives the contact-sheet status: `form_factor` shows a
+   *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
+   *  everything else reads "Not indexed". Absent on older payloads → treated as
+   *  unindexed. */
+  assignment_state?: AssignmentState;
 }
 
 export class ApiError extends Error {
@@ -95,28 +179,201 @@ export const createUser = (
   opts?: AuthOpts,
 ) => request<User>("POST", "/api/users", { username, ...fields }, opts);
 
+/** Canonical PATCH body for `PATCH /api/experiments/:id`. **E1 DEFINES,
+ *  E2 IMPORTS — never redefine.** All fields are optional; the backend
+ *  writes what is present:
+ *  - name/description: plain writes, NO *_source stamp, NO rescan.
+ *  - Geometry ×6: each field written + *_source stamped 'user' server-side
+ *    (already built in Phase C — this widens the same route).
+ *  - File patterns ×3: plain write + scan_signature invalidated server-side
+ *    so the next scan re-discovers with the new glob.
+ *  - data_dir/analysis_dir/path are READ-ONLY (400 if sent). */
+export interface ExperimentPatch {
+  name?: string;
+  description?: string | null;
+  energy_kev?: number;
+  flight_path_m?: number;
+  beam_center_x?: number;
+  beam_center_y?: number;
+  pixel_size_um?: number;
+  q_units?: string;
+  image_pattern?: string;
+  metadata_pattern?: string;
+  integration_pattern?: string;
+}
+
 // Experiments
 export const listExperiments = () =>
   request<Experiment[]>("GET", "/api/experiments");
 export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
+
 export const updateExperiment = (
   id: number,
-  patch: Record<string, never>,
+  patch: ExperimentPatch,
   opts?: AuthOpts,
 ) => request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
+
+/** Create-from-directory (spec §9.2). Returns the new experiment id
+ *  immediately; the first scan runs async with progress over SSE. */
+export interface CreateExperimentBody {
+  /** Legacy single-path field (= data_dir). Optional now that the funnel sends
+   *  explicit data_dir/analysis_dir/name confirmed by the user in Configuration. */
+  path?: string;
+  data_dir?: string;
+  analysis_dir?: string;
+  name?: string;
+  patterns?: { image?: string; metadata?: string; integration?: string };
+  /** First-run geometry, committed at create. The funnel preview already derived
+   *  geometry (with the confirmed setup file), so Approve sends the WHOLE thing —
+   *  each value with its honest source ('setup'/'prp'/'computed', or 'user' for a
+   *  manual edit). Persisted verbatim; the scan only fills fields left unset, so
+   *  geometry is derived once. A value with no source defaults to 'user'. */
+  geometry?: {
+    beam_center_x?: number; beam_center_x_source?: string;
+    beam_center_y?: number; beam_center_y_source?: string;
+    flight_path_m?: number; flight_path_m_source?: string;
+    pixel_size_um?: number; pixel_size_um_source?: string;
+    energy_kev?: number;    energy_kev_source?: string;
+  };
+}
+export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
+  request<Experiment>("POST", "/api/experiments", body, opts);
+
+export const deleteExperiment = (id: number, opts?: AuthOpts) =>
+  request<void>("DELETE", `/api/experiments/${id}`, undefined, opts);
+
+/** Rescan: cheap change-check then additive ingest of new files. Idempotent.
+ *  Pass `force = true` to bypass the cheap change-check and always run a full
+ *  scan — used when a pattern field edit changes what files are discovered. */
+export const triggerScan = (id: number, opts?: AuthOpts, force = false) =>
+  request<Experiment>("POST", `/api/experiments/${id}/scan`, { force }, opts);
+
+/** The Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface
+ *  (spec §9.2 — a dedicated endpoint, distinct from the flat corpus samples). */
+export const listLoads = (id: number) =>
+  request<Load[]>("GET", `/api/experiments/${id}/loads`);
+
+/** Directory-picker path autocomplete (spec §9.2, read-only). */
+export interface PathSuggestResponse { suggestions: string[] }
+export const suggestPaths = (prefix: string) =>
+  request<PathSuggestResponse>(
+    "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+
+/** Structural experiment-layout resolver (funnel resolution). Given the picked
+ *  experiment ROOT, returns auto-discovered defaults the user corrects in
+ *  Configuration. `analysis_dir`/`setup_file` are null when nothing matched;
+ *  `setup_ambiguous` flags none/multiple setup files (the geometry source). */
+export interface ResolveLayoutResponse {
+  name: string;
+  data_dir: string;
+  analysis_dir: string | null;
+  setup_file: string | null;
+  setup_ambiguous: boolean;
+  /** Suggested file patterns when a known integration layout is detected (e.g.
+   *  the SSRL tot_files convention → `{name}_0_001.tif` / `{name}_tot.dat`).
+   *  Null when undetected — the funnel falls back to its `{name}.*` defaults. */
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
+}
+export const resolveLayout = (path: string) =>
+  request<ResolveLayoutResponse>(
+    "GET", `/api/fs/resolve?path=${encodeURIComponent(path)}`);
+
+/** Phase-1 manifest for the Configuration first-run step (spec §6.5).
+ *  `GET /api/fs/manifest` with query params derived from the draft path +
+ *  optional glob overrides. Returns per-type matched counts and the list of
+ *  unmatched files so the user can tune patterns before creating the
+ *  experiment. `patterns` keys are optional — omitting them lets the backend
+ *  use its defaults. */
+export interface ManifestUnmatched { file: string; miss: string; near?: string }
+export interface ManifestGeometry {
+  energy_kev: number | null; energy_kev_source: string;
+  flight_path_m: number | null; flight_path_m_source: string;
+  beam_center_x: number | null; beam_center_x_source: string;
+  beam_center_y: number | null; beam_center_y_source: string;
+  pixel_size_um: number | null; pixel_size_um_source: string;
+}
+export interface ManifestDiscrepancy { field: string; message: string }
+export interface ManifestResponse {
+  total: number;
+  matched: { image: number; metadata: number; integration: number };
+  unmatched: ManifestUnmatched[];
+  geometry?: ManifestGeometry;
+  discrepancies?: ManifestDiscrepancy[];
+  matched_files?: string[];
+}
+export const fetchManifest = (
+  path: string,
+  patterns: { image?: string; metadata?: string; integration?: string } = {},
+  setupFile?: string,
+  analysisDir?: string,
+): Promise<ManifestResponse> => {
+  const params = new URLSearchParams({ path });
+  if (setupFile)            params.set("setup_file",          setupFile);
+  // Integration (.dat) is matched against the analysis subtree, mirroring the
+  // real scan — so the preview's integration count reflects where .dat lives.
+  if (analysisDir)          params.set("analysis_dir",        analysisDir);
+  if (patterns.image)       params.set("image_pattern",       patterns.image);
+  if (patterns.metadata)    params.set("metadata_pattern",    patterns.metadata);
+  if (patterns.integration) params.set("integration_pattern", patterns.integration);
+  return request<ManifestResponse>("GET", `/api/fs/manifest?${params.toString()}`);
+};
+
+/** Directory-picker validate-path probe (spec §9.2). `matched`/`scanned` drive
+ *  the validation line; `ok=false` + `message` powers the failed-scan preview. */
+export interface ValidatePathResponse {
+  ok: boolean;
+  matched: number;
+  scanned: number;
+  message: string | null;
+}
+export const validatePath = (path: string) =>
+  request<ValidatePathResponse>(
+    "GET", `/api/fs/validate?path=${encodeURIComponent(path)}`);
 
 // Samples
 export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
 export const listCorpusSamples = (): Promise<CorpusSample[]> =>
   request<CorpusSample[]>("GET", "/api/samples");
-export const updateSample   = (id: number, patch: { display_name?: string; notes?: string }, opts?: AuthOpts) =>
+export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
 export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
   request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
 export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
   request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);
+export const editSampleTag = (id: number, tag_id: number, patch: { key?: string; value?: string }, opts?: AuthOpts) =>
+  request<SampleTag>("PATCH", `/api/samples/${id}/tags/${tag_id}`, patch, opts);
+
+// Structural sample/exposure edits (Phase E2 grouping-review surface)
+export const renameSample = (id: number, name: string, opts?: AuthOpts): Promise<Sample> =>
+  request<Sample>("PATCH", `/api/samples/${id}/name`, { name }, opts);
+
+export const moveExposure = (exposureId: number, sampleId: number, opts?: AuthOpts): Promise<Exposure> =>
+  request<Exposure>("POST", `/api/exposures/${exposureId}/move`, { sample_id: sampleId }, opts);
+
+export interface MergeSamplesResponse { loser_id: number; survivor_id: number }
+export const mergeSamples = (loserId: number, survivorId: number, opts?: AuthOpts): Promise<MergeSamplesResponse> =>
+  request<MergeSamplesResponse>("POST", `/api/samples/${loserId}/merge`, { survivor_id: survivorId }, opts);
+
+export interface SplitSampleResponse { new_sample_id: number }
+export const splitSample = (sampleId: number, exposureIds: number[], name: string, opts?: AuthOpts): Promise<SplitSampleResponse> =>
+  request<SplitSampleResponse>("POST", `/api/samples/${sampleId}/split`, { exposure_ids: exposureIds, name }, opts);
+
+/** "Keep separate" — durable dismissal of a backend-produced grouping flag
+ *  (spec §9.3: grouping_flag_dismissed; suppressed in get_loads_rollup, so it
+ *  stays gone across rescans). */
+export interface DismissGroupingFlagBody { flag_kind: "merge" | "split"; merge_with_sample_id?: number }
+export const dismissGroupingFlag = (sampleId: number, body: DismissGroupingFlagBody, opts?: AuthOpts): Promise<void> =>
+  request<void>("POST", `/api/samples/${sampleId}/dismiss-flag`, body, opts);
+
+/** Undo a previous dismissal — re-shows the flag so the sample re-enters
+ *  "Needs review". The backend route is POST /api/samples/:id/dismiss-flag/undo.
+ *  Symmetric inverse of dismissGroupingFlag (re-show ↔ suppress). */
+export const undoDismissGroupingFlag = (sampleId: number, opts?: AuthOpts): Promise<void> =>
+  request<void>("POST", `/api/samples/${sampleId}/dismiss-flag/undo`, {}, opts);
 
 // Exposures
 export interface ExposureTag {
@@ -181,6 +438,12 @@ export interface Trace {
 export const getTrace = (exposure_id: number) =>
   request<Trace>("GET", `/api/exposures/${exposure_id}/trace`);
 
+/** Batch member traces for a series, keyed by exposure_id. Matches the
+ *  `toWaterfallRows(members, tracesById)` contract (a plain Record, number index).
+ *  Unresolvable members (no exposure / derived / missing .dat) are absent from the map. */
+export const getSeriesTraces = (series_id: number) =>
+  request<Record<number, Trace>>("GET", `/api/series/${series_id}/traces`);
+
 // Peaks
 export interface Peak {
   id: number;
@@ -227,7 +490,7 @@ export interface PeakUpdatedResponse extends Peak {
 /**
  * Backend response for DELETE /api/peaks/:id. Carries the post-state hash so
  * the client can mark the exposure cache fresh inline with the optimistic
- * delete and avoid a transient StaleIndicesBanner flash before the SSE frame
+ * delete and avoid a transient stale-indices alert flash before the SSE frame
  * arrives.
  */
 export interface PeakRemoveResponse {
@@ -254,6 +517,14 @@ export interface IndexPeakRef {
   q_observed: number;
 }
 
+/** Gauss–Bonnet coexistence flag for an index candidate vs the current
+ *  assignment. Display-and-ranking only — never folded into `score` (which
+ *  stays coverage×consistency). Recomputed per request, never persisted. */
+export interface BonnetFlag {
+  predicted_a: number;
+  consistent: boolean;
+}
+
 export interface IndexEntry {
   id: number;
   exposure_id: number;
@@ -268,6 +539,9 @@ export interface IndexEntry {
   inputs_hash: string | null;
   peaks: IndexPeakRef[];
   predicted_q: number[];
+  /** Bonnet coexistence flag vs the assignment (null when N/A). Rendered as
+   *  the ⭙ Bonnet badge in Plan D. */
+  bonnet?: BonnetFlag | null;
 }
 
 export const listIndices = (exposure_id: number) =>
@@ -310,32 +584,58 @@ export const createSpeculative = (
   opts?: AuthOpts,
 ) => request<IndexEntry>("POST", `/api/exposures/${exposure_id}/speculative`, body, opts);
 
-// Groups
-export interface GroupEntry {
-  id: number;
+// Custom index (Plan D-9): a client-fitted lattice hypothesis. `basis` is the
+// q₁ slope the modal computes via physics (2π/a × first(phaseratios(P))). The
+// route persists a speculative index and adds it to the assignment. Response is
+// the new IndexEntry (+ queue metadata).
+export type CustomIndexResponse = IndexEntry & {
+  event_id: number;
+  view_row_id: number | null;
+};
+export const createCustomIndex = (
+  exposure_id: number, phase: string, basis: number, opts?: AuthOpts,
+) => request<CustomIndexResponse>(
+  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis }, opts);
+
+// Assignment (Plan D) — the durable per-exposure 3-state phase assignment cart.
+// `state` is explicit, never inferred from members.length: an `indexed`
+// assignment with 0 members is a "call in progress"; `form_factor`/`null`
+// always carry 0 members. Replaces the retired single-active group model.
+export type AssignmentState = "indexed" | "form_factor" | "null";
+
+export interface Assignment {
   exposure_id: number;
-  kind: "auto" | "custom";
-  active: boolean;
-  members: number[];
+  state: AssignmentState;
+  members: number[]; // index ids, ascending
 }
 
 /**
- * Mutation responses on group routes carry queue-framework metadata
- * (event_id, view_row_id) alongside the row. The mutator's onSuccess MUST
- * destructure these out before writing the row into the cache — otherwise
- * `GroupEntry` rows get polluted with queue plumbing fields.
+ * Assignment mutation responses carry queue-framework metadata (event_id,
+ * view_row_id) alongside the canonical Assignment body — the mutator's
+ * onSuccess strips these before writing the row into the cache.
  */
-export type GroupMutationResponse = GroupEntry & {
+export type AssignmentMutationResponse = Assignment & {
   event_id: number;
   view_row_id: number | null;
 };
 
-export const listGroups = (exposure_id: number) =>
-  request<GroupEntry[]>("GET", `/api/exposures/${exposure_id}/groups`);
-export const addIndexToGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupMutationResponse>("POST", `/api/groups/${group_id}/members`, { index_id }, opts);
-export const removeIndexFromGroup = (group_id: number, index_id: number, opts?: AuthOpts) =>
-  request<GroupMutationResponse>("DELETE", `/api/groups/${group_id}/members/${index_id}`, undefined, opts);
+export const getAssignment = (exposure_id: number) =>
+  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`);
+
+export const setAssignmentState = (
+  exposure_id: number, state: AssignmentState, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "POST", `/api/exposures/${exposure_id}/assignment/state`, { state }, opts);
+
+export const addAssignmentPhase = (
+  exposure_id: number, index_id: number, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "POST", `/api/exposures/${exposure_id}/assignment/members`, { index_id }, opts);
+
+export const removeAssignmentPhase = (
+  exposure_id: number, index_id: number, opts?: AuthOpts,
+) => request<AssignmentMutationResponse>(
+  "DELETE", `/api/exposures/${exposure_id}/assignment/members/${index_id}`, undefined, opts);
 
 // Sample messages (chat log)
 export interface SampleMessage {
@@ -348,9 +648,6 @@ export interface SampleMessage {
   created_at: string;
 }
 
-export const listSampleMessages = (sample_id: number) =>
-  request<SampleMessage[]>("GET", `/api/samples/${sample_id}/messages`);
-
 export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOpts) =>
   request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
 
@@ -358,7 +655,7 @@ export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOp
 export interface ReanalyzeResponse {
   id: number;
   analyzed: boolean;
-  /** New post-analyze hash. Used to clear StaleIndicesBanner inline with
+  /** New post-analyze hash. Used to clear the stale-indices alert inline with
    *  the HTTP response, before the SSE post_state arrives. */
   analysis_inputs_hash: string;
 }
@@ -371,14 +668,13 @@ export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indi
 export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
 export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);
 
-// ─── Comparisons (Plan §Phase 3) ────────────────────────────────────────────
+// ─── Member snapshots (shared by the Series plate) ──────────────────────────
 //
-// Shapes mirror the Julia route emit / `fetch_comparison_with_members` in
-// `comparisons.jl`. The `MemberSnapshot` type lives here because it must be
-// the single source of truth for both the HTTP response parser AND the SSE
-// `applyRemoteToCache` handler — both paths must produce the same parsed
-// shape to avoid cache divergence during reconciliation. (The Compare-era
-// client-side `lib/comparison/snapshot.ts` deriver was removed in I5.3 #184.)
+// The `MemberSnapshot` type lives here because it must be the single source of
+// truth for both the HTTP response parser AND the SSE `applyRemoteToCache`
+// handler — both paths must produce the same parsed shape to avoid cache
+// divergence during reconciliation. Consumed by `SeriesMember` (the going-
+// forward render-pipeline input type) and the series reading/figure helpers.
 
 export interface MemberSnapshotPeak {
   id: number;
@@ -397,180 +693,44 @@ export interface MemberSnapshotConfirmedIndex {
   peak_ids: number[];
 }
 
+/** One assigned phase + its fitted lattice (Plan E E-4). `lattice_d` is the
+ *  index lattice parameter (`a` for cubics, `d` for lamellar/hexagonal). */
+export interface MemberSnapshotPhase {
+  phase: string;
+  lattice_d: number | null;
+}
+
 export interface MemberSnapshot {
   effective_peaks: MemberSnapshotPeak[];
   confirmed_index: MemberSnapshotConfirmedIndex | null;
+  /** Durable 3-state assignment (Plan E E-7). Older snapshots predate this
+   *  field; treat a missing value as "indexed". */
+  assignment_state?: AssignmentState;
+  /** Distinct phases the member's assignment carries (Plan E E-4), each with
+   *  its fitted lattice. Drives the coexistence reading / member rows / strip
+   *  cells (both lattices under coexistence). Empty for form-factor / null
+   *  members. Missing on older snapshots → derive from confirmed_index. */
+  confirmed_phases?: MemberSnapshotPhase[];
   analysis_inputs_hash: string;
 }
 
-/** Per-member input shape sent to `POST /api/comparisons` and `/submit`. */
-export interface ComparisonMemberInput {
-  /** Existing member id (UPDATE on submit) or null/undefined (INSERT/create). */
-  id?: number | null;
-  exposure_id: number | null;
-  display_order: number;
-  band_height?: number;
-  y_offset?: number;
-  normalization?: string;
-  color_override?: string | null;
-  label_override?: string | null;
-  q_window_min?: number | null;
-  q_window_max?: number | null;
-  peak_display?: unknown;
-  snapshot: MemberSnapshot;
-}
-
-/** Per-member shape returned by GET / POST endpoints. Mirrors `fetch_comparison_with_members`. */
-export interface ComparisonMember {
-  id: number;
-  comparison_id: number;
-  exposure_id: number | null;
-  display_order: number;
-  band_height: number;
-  y_offset: number;
-  normalization: string;
-  color_override: string | null;
-  label_override: string | null;
-  q_window_min: number | null;
-  q_window_max: number | null;
-  peak_display: unknown;
-  snapshot: MemberSnapshot | null;
-  is_stale: boolean;
-  created_by: number | null;
-  created_at: string | null;
-}
-
-/**
- * Per-member shape returned by the series GET / POST endpoints.
- * Mirrors `fetch_series_with_plate` (packages/HimalayaUI/src/series.jl).
- * Field-for-field identical to `ComparisonMember` except `comparison_id` →
- * `series_id`. This is the render pipeline's going-forward input type.
- *
- * The two types are intentionally twinned until `ComparisonMember` is retired
- * (I3.6 / I5.3) — tighten a shared field (e.g. `peak_display: unknown`) in
- * both, or the render pipeline and Compare diverge.
- */
-export interface SeriesMember {
-  id: number;
-  series_id: number;
-  exposure_id: number | null;
-  display_order: number;
-  band_height: number;
-  y_offset: number;
-  normalization: string;
-  color_override: string | null;
-  label_override: string | null;
-  q_window_min: number | null;
-  q_window_max: number | null;
-  peak_display: unknown;
-  snapshot: MemberSnapshot | null;
-  is_stale: boolean;
-  created_by: number | null;
-  created_at: string | null;
-}
-
-export interface Comparison {
-  id: number;
-  title: string;
-  description: string | null;
-  content_hash: string;
-  created_by: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  forked_from_id: number | null;
-  forked_at_hash: string | null;
-  forked_from_title: string | null;
-  /** Author's persisted view choices (spec §6.4); NULL = author never picked. */
-  view_grouping_mode: string | null;
-  view_show_peak_ticks: boolean | null;
-  view_show_peak_labels: boolean | null;
-  last_event_at: string | null;
-  members: ComparisonMember[];
-}
-
 /** Lightweight summary row used by the listing endpoints. */
-export interface ComparisonSummary {
-  id: number;
-  title: string;
-  description: string | null;
-  content_hash: string;
-  created_by: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  forked_from_id: number | null;
-  forked_at_hash: string | null;
-  /**
-   * Author's persisted view choices (spec §6.4); NULL = author never picked.
-   * `view_grouping_mode` is intentionally loose (`string | null`) on read —
-   * permissive-read / strict-write; `SaveComparisonBody` uses `GroupingMode`.
-   * Populated by #137 (backend); reads `undefined` until that lands.
-   */
-  view_grouping_mode: string | null;
-  view_show_peak_ticks: boolean | null;
-  view_show_peak_labels: boolean | null;
-  last_event_at: string | null;
-  /**
-   * Listing projection fields (see `_comparison_listing_rows`).
-   * Populated by #137 (backend); reads `undefined` until that lands.
-   */
-  author_username: string | null;
-  member_count: number;
-  /** Backend-capped top-3 distinct phases (`_topk_phases`). */
-  member_phases: string[];
-  /** True distinct-phase total — drives the `+N more` overflow in the sidebar. */
-  member_phase_count: number;
-  has_stale_members: boolean;
-}
-
-export interface ComparisonMessage {
-  id: number;
-  comparison_id: number;
-  author_id: number | null;
-  author: string | null;
-  body: string;
-  created_at: string;
-}
-
 /**
- * Body shape posted to `POST /api/comparisons` (create) and
- * `POST /api/comparisons/:id/submit` (update). The mutator picks the route
- * based on the presence of `id` in the payload.
- */
-export interface SaveComparisonBody {
-  title: string;
-  description?: string | null;
-  members: ComparisonMemberInput[];
-  /** Required on submit (existing comparison); absent on create. */
-  expected_content_hash?: string;
-  /** Set when forking; both fields ride together or not at all. */
-  forked_from_id?: number | null;
-  forked_at_hash?: string | null;
-  /**
-   * Author's view choices (spec §6.4); omitted = not changed by this save.
-   * Strict `GroupingMode` on write vs. permissive `string | null` on the read
-   * types is deliberate — see the read-type comments.
-   */
-  view_grouping_mode?: GroupingMode | null;
-  view_show_peak_ticks?: boolean | null;
-  view_show_peak_labels?: boolean | null;
-}
-
-/**
- * Thrown by `saveComparison` when the server returns 409 (content_hash drift).
- * Carries the server's `current_hash` and `current_state` so the conflict
- * modal can render the diff. `status` is set to 409 so the queue's failure-
- * class router treats it as a validation error (no retry, surfaces in
- * `onError`); the modal opens off the typed throw, not the toast.
+ * Thrown by a fetcher when the server returns 409 (content_hash drift).
+ * Carries the server's `current_hash` and `current_state`. `status` is 409 so
+ * the queue's failure-class router treats it as a validation error (no retry,
+ * surfaces in `onError`); `useQueueMutation` suppresses the toast on it.
+ *
+ * There is no longer a conflict surface that consumes it. The series-commit
+ * route is last-write-wins (Plan 6a, no longer 409s). The type is kept because
+ * `commitSeriesPlate` still defensively parses a 409 should one ever arrive.
  */
 export class ConflictError extends Error {
   status = 409 as const;
   constructor(
     public current_hash: string | null,
-    // I3.5b — widened from `Comparison | null`. A comparison-submit 409 carries
-    // a `Comparison`; a series-commit 409 (`commitSeriesPlate`) carries a
-    // `Series`. No discriminator: each conflict wrapper (ConflictModal /
-    // SeriesCommitConflictModal) knows its own kind by where it is mounted.
-    public current_state: Comparison | Series | null,
+    // A series-commit 409 (`commitSeriesPlate`) carries a `Series`.
+    public current_state: Series | null,
     message?: string,
   ) {
     super(message ?? "content_hash conflict");
@@ -578,88 +738,22 @@ export class ConflictError extends Error {
   }
 }
 
-/**
- * Save a comparison — create (no id) or submit (id present). Internally calls
- * `POST /api/comparisons` or `POST /api/comparisons/:id/submit`. On 409,
- * throws `ConflictError` with the server's current state attached.
- *
- * Why this branches on id (rather than two separate fetchers): the queue
- * mutator's `request` function takes a single payload — branching here keeps
- * the OpKind-to-route mapping in one place and the mutator's `request`
- * trivially testable.
- */
-export async function saveComparison(
-  body: SaveComparisonBody,
-  comparisonId: number | undefined,
-  opts?: AuthOpts,
-): Promise<Comparison> {
-  const path = comparisonId === undefined
-    ? "/api/comparisons"
-    : `/api/comparisons/${comparisonId}/submit`;
-  try {
-    return await request<Comparison>("POST", path, body, opts);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 409) {
-      const b = err.body as
-        | { current_hash?: string; current_state?: Comparison }
-        | null;
-      throw new ConflictError(
-        b?.current_hash ?? null,
-        b?.current_state ?? null,
-        err.message,
-      );
-    }
-    throw err;
-  }
-}
+// ─── Picker / scoping shared types ──────────────────────────────────────────
 
-export const deleteComparison = (id: number, opts?: AuthOpts) =>
-  request<{ id: number; deleted: boolean; event_id: number }>(
-    "DELETE", `/api/comparisons/${id}`, undefined, opts);
-
-export const getComparison = (id: number) =>
-  request<Comparison>("GET", `/api/comparisons/${id}`);
-
-export const listComparisons = () =>
-  request<ComparisonSummary[]>("GET", "/api/comparisons");
-
-export const listExperimentComparisons = (experiment_id: number) =>
-  request<ComparisonSummary[]>("GET", `/api/experiments/${experiment_id}/comparisons`);
-
-export const getComparisonForks = (id: number) =>
-  request<ComparisonSummary[]>("GET", `/api/comparisons/${id}/forks`);
-
-export const listComparisonMessages = (comparison_id: number) =>
-  request<ComparisonMessage[]>("GET", `/api/comparisons/${comparison_id}/messages`);
-
-export const postComparisonMessage = (
-  comparison_id: number, body: string, opts?: AuthOpts,
-) => request<ComparisonMessage>(
-  "POST", `/api/comparisons/${comparison_id}/messages`, { body }, opts);
-
-// ─── Picker support routes (Plan §Phase 5, Task 5.2) ───────────────────────
-//
-// Read-only GETs feeding the comparison picker. `recently-picked` returns
-// a flat exposure-id list in most-recent-first order; `sample-tags` returns
-// distinct (key, value) pairs scoped to one experiment.
-
-/** Per-pair shape returned by `GET /api/experiments/:eid/sample-tags`. */
+/** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
+ *  the experiment-scoped `/api/experiments/:eid/sample-tags`.
+ *  `count` is the number of distinct samples carrying this (key, value) pair —
+ *  used by the Manage-tags modal to rank suggestions by frequency.
+ *  proposeOrdering (scoping) ignores this field and ranks by distinct-value
+ *  count instead. */
 export interface SampleTagPair {
   key: string;
   value: string;
+  count?: number;
 }
 
-export const getRecentlyPickedExposures = (
-  user_id: number, limit?: number,
-): Promise<number[]> => {
-  const qs = limit !== undefined ? `?limit=${limit}` : "";
-  return request<number[]>("GET", `/api/users/${user_id}/recently-picked-exposures${qs}`);
-};
-
-export const getSampleTags = (experiment_id: number): Promise<SampleTagPair[]> =>
-  request<SampleTagPair[]>("GET", `/api/experiments/${experiment_id}/sample-tags`);
-
-/** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`. */
+/** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`
+ *  and the corpus-wide `GET /api/picker-samples`. */
 export interface PickerSampleRow {
   sample: Sample;
   indexing_exposure_id: number | null;
@@ -672,12 +766,6 @@ export interface PickerSampleExposure {
   filename: string | null;
   selected: boolean;
 }
-
-export const getPickerSamples = (
-  experiment_id: number,
-): Promise<PickerSampleRow[]> =>
-  request<PickerSampleRow[]>(
-    "GET", `/api/experiments/${experiment_id}/picker-samples`);
 
 // ─── Corpus scoping reads (I0.2 / I0.3 corpus siblings; I3.4 consumer) ──────
 /** Corpus-wide distinct (key,value) tag pairs — GET /api/sample-tags. Reuses
@@ -706,32 +794,13 @@ export const batchSampleTags = (
   request<BatchSampleTagResult[]>(
     "POST", "/api/samples/tags/batch", { key, tags, source }, opts);
 
-// ─── Comparison pins (Plan §Phase 13, Task 13.2) ────────────────────────────
-//
-// Per-user pinned comparisons surface at the top of the sidebar. Pin/unpin
-// are trivial idempotent state toggles — no `with_idempotency`, no SSE — so
-// the API is a straightforward POST/DELETE pair. The list endpoint reads
-// `X-Username` and returns a flat array of comparison ids in
-// most-recently-pinned-first order.
-
-export const listComparisonPins = (opts?: AuthOpts): Promise<number[]> =>
-  request<number[]>("GET", "/api/users/me/comparison-pins", undefined, opts);
-
-export const pinComparison = (id: number, opts?: AuthOpts) =>
-  request<{ comparison_id: number; pinned: boolean }>(
-    "POST", `/api/comparisons/${id}/pin`, undefined, opts);
-
-export const unpinComparison = (id: number, opts?: AuthOpts) =>
-  request<{ comparison_id: number; pinned: boolean }>(
-    "DELETE", `/api/comparisons/${id}/pin`, undefined, opts);
-
 // ─── Series (#166 / #167 / #168 — series event-kind cluster) ────────────────
 //
 // Queue-side scaffolding (#198) + the folio read layer (#173 / I3.3): the
 // listing summary type `SeriesSummary` and the read fetchers
-// (listSeries / getSeries / forksOfSeries) below back the read hooks
+// (listSeries / getSeries) below back the read hooks
 // useSeriesList / useSeries in queries.ts. See the Decision Record in
-// docs/superpowers/plans/2026-05-18-series-event-kinds.md.
+// docs/event-log.md.
 // Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
 
 /**
@@ -765,6 +834,14 @@ export interface SeriesSummary {
   /** True distinct-phase total — for a `+N more` overflow if shown. */
   member_phase_count: number;
   has_stale_members: boolean;
+  /** Recipe ordering variable (e.g. "LL37 : lipid ratio"); null until scoped. */
+  ordering_variable: string | null;
+  /** True when the members resolve to >1 distinct `samples.experiment_id`.
+   *  Valid because q is absolute (Å⁻¹) — series may legitimately span experiments. */
+  spans_experiments: boolean;
+  /** Beamtime provenance: the members' single experiment's `name` when the
+   *  series does NOT span experiments; null when spanning, memberless, or the single experiment has no name. */
+  experiment_name: string | null;
 }
 
 /** The recipe membership — one `series_samples` row. */
@@ -777,7 +854,7 @@ export interface SeriesSample {
   excluded: boolean;
 }
 
-/** The plate — one `series_members` row. Mirrors `ComparisonMember`. */
+/** The plate — one `series_members` row. */
 export interface SeriesMember {
   id: number;
   series_id: number;
@@ -881,13 +958,12 @@ export interface SaveSeriesBody {
 /** Body for `POST /api/series/:id/commit`. */
 export interface CommitSeriesPlateBody {
   members: SeriesMemberInput[];
-  expected_content_hash?: string;
 }
 
 /**
  * Save a series — create (no id ⇒ `POST /api/series`) or recipe-edit
  * (id present ⇒ `PATCH /api/series/:id`). Branches on id so the queue
- * mutator's `request` stays a single-payload call (mirrors `saveComparison`).
+ * mutator's `request` stays a single-payload call.
  */
 export async function saveSeries(
   body: SaveSeriesBody,
@@ -902,7 +978,7 @@ export async function saveSeries(
 /**
  * Commit the plate (the old "submit"). On 409 (content_hash drift) throws the
  * typed `ConflictError` carrying the server's `current_hash` + `current_state`
- * (a `Series`), mirroring `saveComparison` (I3.5b). This is the ONLY series
+ * (a `Series`). This is the ONLY series
  * fetcher that throws `ConflictError`: recipe-save (`PATCH /api/series/:id`)
  * never reads `expected_content_hash` and never 409s, so `saveSeries` is left
  * untouched.
@@ -940,10 +1016,6 @@ export const listSeries = () =>
 /** Full nested detail for one series (#175 builder reuses this). */
 export const getSeries = (id: number) =>
   request<Series>("GET", `/api/series/${id}`);
-
-/** Forks of one series — same SeriesSummary[] shape as the listing. */
-export const forksOfSeries = (id: number) =>
-  request<SeriesSummary[]>("GET", `/api/series/${id}/forks`);
 
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 

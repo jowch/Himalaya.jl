@@ -14,7 +14,7 @@ This is the load-bearing reference for the Plan 7 architecture in
 
 Read this before touching `events.jl`, `hash.jl`, the `apply_event!` call
 sites in `routes_*.jl`, the SSE handler in `server.jl`, or the
-`StaleIndicesBanner` gating logic in the frontend.
+stale-indices reanalyze affordance in the frontend.
 
 ---
 
@@ -44,9 +44,10 @@ round-trip test in `test_events.jl`.
 |---|---|
 | `peak_added` | `INSERT INTO peak_curations(kind='add', q=…)` |
 | `peak_excluded` | `INSERT INTO peak_curations(kind='exclude', q=…)` |
-| `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (with `undoes_event_id` set when resolvable) |
-| `index_confirmed` | `INSERT OR IGNORE INTO index_group_members(group_id, index_id)` |
-| `index_unconfirmed` | `DELETE FROM index_group_members WHERE group_id=… AND index_id=…` |
+| `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (the route stamps `undoes_event_id` onto the `user_actions` row when resolvable — see Atomicity note) |
+| `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
+| `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
+| `assignment_set_state` | UPSERT `assignments.state`; clears `assignment_members` when state ≠ `indexed` (entity_type=`exposure`, payload `{state}`) |
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
 `peak_removed`, `speculative_created`, `speculative_deleted`. Using
@@ -54,10 +55,35 @@ round-trip test in `test_events.jl`.
 `idx_events_by_exposure` so per-exposure folds find them; the dispatcher
 returns `nothing` for these kinds.
 
+**Retired no-op guards:** `index_confirmed` and `index_unconfirmed` are
+legacy group-membership kinds (plotting redesign D-10). The dispatcher
+keeps explicit no-op guards for them
+(`(kind == "index_confirmed" || kind == "index_unconfirmed") && return nothing`)
+so old event logs still fold cleanly, but they write nothing. The
+`/groups` routes that emitted them are gone and the `index_group_members`
+write was removed; confirmation is now carried by `assignment_add` /
+`assignment_remove` writing `assignment_members`.
+
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_status`, `add_tag`, `remove_tag`, `post_message`, `update_sample`,
-`update_experiment`, `analyze`, `reingest`, `analyze_run`.
+`set_exposure_status`, `select_exposure`, `add_tag`, `remove_tag`,
+`edit_tag`, `post_message`, `update_sample`, `analyze`, `reingest`. The
+dispatcher carries explicit no-op `return nothing` guards for the
+view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
+
+`set_exposure_status` is audit-only: it records a Drop action but
+produces no view. There is a single screening verb — **Drop** (the X key) —
+and it is a toggle: it flips status between `rejected` (dropped) and `null`
+(the default un-culled state, simply not-rejected). There is no distinct
+positive "kept" state and no separate Keep verb. The legacy `accepted` value
+is write-dead (the UI never emits it again) — the DB CHECK still permits it,
+so old logs fold cleanly and no migration is needed.
+
+`analyze_run` is *not* a `log_action!` event: it is emitted via
+`apply_event!(InTransaction(), …)` in `pipeline.jl` and broadcast through
+`_maybe_broadcast_event!`, with a dispatcher no-op `return nothing` guard
+and the §3a no-op suppression rule (suppress both frame and durable row
+when both skip flags are true).
 
 ### Payload contract
 
@@ -72,10 +98,19 @@ neutralised at the boundary.
 
 `apply_event!` opens a single `SQLite.transaction` covering both the
 `user_actions` insert and the dispatcher's view writes. Either both
-commit or neither does. Routes that wrap multiple `apply_event!` calls
-(e.g. speculative create + delete) must open an outer
-`SQLite.transaction` themselves so the entire route is atomic; see
-`routes_peaks.jl` and `routes_analysis.jl` for the pattern.
+commit or neither does. Routes that wrap multiple events (e.g.
+speculative create + delete, or a curation followed by an `analyze_run`)
+run inside `with_idempotency(db, req) do … end`'s outer transaction and
+use the `apply_event!(InTransaction(), …)` variant, which participates in
+that outer tx and defers its SSE frame to the post-commit broadcast
+queue. See §3a for the full picture; `routes_peaks.jl` and
+`routes_analysis.jl` follow this pattern.
+
+The route also stamps `undoes_event_id` onto the `user_actions` row when
+an event undoes a prior one (e.g. `routes_peaks.jl` passes
+`undoes_event_id = undoes` for `peak_unexcluded`) — this is a call-site
+argument to `apply_event!`, not something the dispatcher's view DELETE
+writes.
 
 ### Return shape
 
@@ -100,7 +135,7 @@ Three SHA-256 hashes drive skip-when-unchanged:
 |---|---|---|
 | `exposures.trace_hash` | `hash_trace_file(.dat path)` — bytes of the integration file | `findpeaks` |
 | `exposures.analysis_inputs_hash` | `hash_peak_set(eff)` — sorted `(q, sharpness)` Float64 tuples | `indexpeaks` |
-| `indices.inputs_hash` | snapshot of the `analysis_inputs_hash` that produced this index | drives `StaleIndicesBanner` |
+| `indices.inputs_hash` | snapshot of the `analysis_inputs_hash` that produced this index | drives the stale-indices alert |
 
 **Skip predicate (both stages):**
 
@@ -115,10 +150,13 @@ actually having anything to read back. The `analyze_run` event payload
 records the full skip predicate's outcome — instrumentation must reflect
 the real branch taken, not the hash comparison alone.
 
-**Staleness banner:** `StaleIndicesBanner` renders when *any* index's
-`inputs_hash` differs from its exposure's current `analysis_inputs_hash`.
-This replaces the retired `status='stale'` enum — there is no longer any
-write-side "mark all indices stale" call. Staleness is purely derived.
+**Staleness is derived, not a named component.** A stale-indices `alert`
+(role=`alert`; there is no `StaleIndicesBanner` component) surfaces when
+*any* index's `inputs_hash` differs from its exposure's current
+`analysis_inputs_hash`; the reanalyze action is wired through
+`useReanalyzeExposure`. This replaces the retired `status='stale'` enum —
+there is no write-side "mark all indices stale" call. Staleness is purely
+derived from the hash comparison.
 
 **`hash_peak_set` is order-independent.** Inputs are sorted by `q` before
 hashing, so an exclude-then-add or add-then-exclude that lands on the
@@ -126,9 +164,60 @@ same final peak set produces the same hash. This is the contract that
 makes "no-op rerun → skip indexpeaks" hold across curation orderings.
 There is a regression test for this in `test_pipeline.jl`.
 
+**Why `peak_curations` has no `sharpness` column.** Sharpness is
+deliberately *not* persisted on curations: storing it would decouple it
+from the trace, so `analysis_inputs_hash` would lie when the trace bytes
+change but the curation `q` stays put. Instead `effective_peaks` re-derives
+sharpness for every `kind='add'` curation from `Himalaya.sharpness(I)` on
+each analyze call, so the `(q, sharpness)` tuples fed to `hash_peak_set`
+always reflect the current trace. Adding a `sharpness` column to
+`peak_curations` would silently break this memoization invariant.
+
 **Hash migration.** Pre-Plan-7 DBs have NULL hashes; the first
 `analyze_exposure!` on each exposure populates them. No backfill is
 needed.
+
+---
+
+## 2a. The analyze wipe / re-attach invariants
+
+Every `analyze_exposure!` **wipes and re-inserts** all `auto` indices and
+peaks with fresh PKs, then re-attaches the prior curation onto the new
+candidates. Three load-bearing invariants live only in `pipeline.jl`
+comments today:
+
+- **`MEMBER_REATTACH_RELTOL = 0.05`** (`pipeline.jl:83`). A pre-wipe
+  assignment member matches a post-rebuild candidate of the same phase
+  only within a 5% basis change (`|Δbasis| ≤ 0.05·basis`). Beyond that it
+  is silently dropped and reported in the SSE `assignment_dropped` field.
+- **One-candidate-per-identity.** Two snapshot members of the same phase
+  whose bases both fall within tolerance of *one* new candidate must NOT
+  merge: the new candidate is claimed by exactly one identity
+  (`claimed_new_ids`), and the later claimant (snapshot order is phase,
+  basis) is dropped+reported, not reassigned to the next-nearest
+  candidate. Re-attach is an identity match, not an assignment problem.
+- **Fresh analysis never seeds `assignment_members`.** A never-curated
+  exposure (`had_assignment_members` false) comes out with an empty
+  assignment and reads as unindexed; the auto group still computes (it
+  feeds scoring/ordering and the legacy `index_groups` export) but it no
+  longer seeds the durable cart. Only reanalysis of an already-curated
+  exposure re-attaches members. (`pipeline.jl:568-626`.)
+
+### Speculative indices survive the wipe; their `index_peaks` FKs are re-resolved
+
+User-drawn `speculative` indices persist as rows across the auto-peak
+wipe, but their `index_peaks` peak FKs would dangle (auto peaks are
+re-detected with new ids). They are re-resolved from a q-value snapshot
+taken **before** the wipe, with three fallbacks for the working basis: (1)
+≥2 snapshot peaks still match live peaks → refit basis from them; (2) <2
+survive → stale-recovery from the stored snapshot q-values (the user's
+hypothesis); (3) last resort → the persisted `indices.basis`. An
+auto-discovery pass then pulls in NEW peaks within `SNAP_TOL` (0.0025
+relative, `speculative.jl:11`) for unfilled ratio positions; an index that
+still can't fill ≥2 positions is marked `status='stale'`. Any new code
+path that mutates `auto_peaks` without going through this snapshot +
+re-resolve will silently corrupt speculative peak references on every
+future reanalysis. (`pipeline.jl:299-551`.)
 
 ---
 
@@ -164,8 +253,8 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on EventSource
-  reconnect via TanStack Query refetch — `App.tsx` invalidates the
-  exposure's query keys on the first reconnect.
+  reconnect via TanStack Query refetch — `src/print/App.tsx` (`PrintApp`)
+  invalidates the exposure's query keys on the first reconnect.
 - Slow subscribers (channel full) and disconnected subscribers (channel
   closed) are pruned via `_try_put!` rather than blocking the broadcast
   loop. A pruned subscriber reconnects on the EventSource side and gets
@@ -173,12 +262,13 @@ commits. Implications:
 
 ### Client side (`src/lib/queue/replayCoordinator.ts` + `applyRemoteToCache.ts`)
 
-`handleRemoteEvent(remote, ctx)` (in `replayCoordinator.ts`) drives SSE
+`handleRemoteEvent(remote, qc, mc)` (in `replayCoordinator.ts`) drives SSE
 intake; cache folding lives in `applyRemoteToCache(remote, qc)`
 (`applyRemoteToCache.ts`). Together they:
 
 1. Parse the JSON frame; ignore on parse error or missing `entity_id`.
-2. **Self-echo filter.** Skip if `event.client_id === ctx.clientId`. The
+2. **Self-echo filter.** Skip if `remote.client_id === getClientId()`
+   (the per-tab id from `lib/clientId.ts`). The
    `clientId` is a per-tab UUID minted into `sessionStorage` on first
    load (see `lib/clientId.ts`); it survives reload but is scoped to a
    single browser tab. Each mutation sends it via the `X-Client-Id`
@@ -193,25 +283,35 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    *all* tabs — there's no originating tab to suppress.
 4. Dispatch on `remote.kind` via `applyRemoteToCache`'s switch
    statement — each event kind has a per-kind cache merge branch
-   (e.g. `peak_added` writes the new peak row, `comparison_deleted`
-   removes comparison queries). No `entity_type` filter; all event
+   (e.g. `peak_added` writes the new peak row, `series_deleted`
+   removes the deleted series' queries). No `entity_type` filter; all event
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
-The EventSource connection is bound to `App.tsx`'s mount/unmount only;
-`clientId` is stable for the lifetime of the tab, so no listener
-recycling is needed.
+The EventSource connection is bound to `src/print/App.tsx` (`PrintApp`)'s
+mount/unmount only; `clientId` is stable for the lifetime of the tab, so
+no listener recycling is needed.
 
-### Conflict resolution (deferred)
+### Conflict resolution
+
+> **⚠ Superseded — decided 2026-06-03 (greenfield "The Print" rebuild).** The
+> optimistic-concurrency model described below (`If-Match` + 409-retry, Plan 7
+> R5b) is **cancelled, not deferred.** The product decision is that commit
+> conflicts should not surface as friction: multiplayer stays last-write-wins
+> permanently, and the positive replacement is **edit-tracking → undo/redo →
+> versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
+> conflict UI from this section. See `docs/future-feature-ideas.md`
+> §"Multi-user / review" and `docs/himalayaui-design.md` §2.10. The original
+> deferral note is retained below for historical context only.
 
 Optimistic concurrency via `If-Match` headers + 409-retry on the
-frontend (R5b in Plan 7) is **deferred**. The gate is R4 instrumentation
-showing real contention: ≥2% delta-event collision rate over ≥4 weeks /
-≥500 events. Until then, multiplayer is last-write-wins, which the
+frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
+instrumentation showing real contention: ≥2% delta-event collision rate over
+≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
 event log makes auditable after the fact.
 
-`exposures.selected` is intentionally LWW even after R5b ships — see the
-note in `CLAUDE.md`.
+`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
+the 2026-06-03 decision above, *all* entities follow this LWW grain.)
 
 ---
 
@@ -239,17 +339,42 @@ this doc:
 - **`broadcast_event!` SSE frames carry `client_op_id` and `ts`** in
   addition to the fields described in §3 above. Curation routes that
   recompute analysis also attach an optional `post_state` envelope
-  (`{ analysis_inputs_hash, indices }`) so subscribers can replay-without-
-  refetch.
+  (`{ analysis_inputs_hash, indices, assignment: { state, members } }`,
+  plus `assignment_dropped: [phases…]` only when the reanalysis dropped
+  assignment members whose phase+basis identity failed to re-attach —
+  F-WIPE W1) so subscribers can replay-without-refetch. `assignment_dropped`
+  is a PER-MEMBER list — phases may repeat when multiple distinct members of
+  one phase drop (including two members merging onto a single re-attached
+  candidate); consumers aggregate. The `assignment` envelope is serialized
+  by the same `_assignment_post_state` helper the `assignment_*` frames use.
+  `analyze_run` frames carry the SAME envelope (the wipe/re-attach runs on
+  manual reanalyze too): the manual exposure-analyze route builds it via
+  `_enrich_curation_post_state`, and the non-deferred CLI / experiment-wide
+  path builds it inside `analyze_exposure!` — both with `assignment_dropped`
+  only when non-empty.
 - **`analyze_run` events suppress both the frame and the durable row**
   when both `findpeaks_skipped` and `indexpeaks_skipped` are true. Hashes
   already prove no-op-ness; a count of "nothing happened" offers no
-  load-bearing observability value.
+  load-bearing observability value. (The trace-unchanged fast path skips
+  the row entirely; the manual analyze route's slow-path no-op still writes
+  the row but mirrors the `_maybe_broadcast_event!` frame suppression.)
 - **Post-commit broadcast queue.** Events emitted inside the outer tx
   defer their SSE frame until commit. Each request handler has its own
   queue via `task_local_storage()`; `_flush_post_commit_broadcasts!()`
   fires on commit, `_clear_post_commit_broadcasts!()` discards on
   rollback or status ≥ 400.
+
+---
+
+## 3b. Series `content_hash` covers the plate only
+
+`compute_series_content_hash` (`series.jl:303-355`) deliberately **excludes**
+the recipe: only `title`, `description`, and the `series_members` rows feed
+the `sha256:`-prefixed hash; `series_samples` (the recipe), `ordering_variable`,
+and `order_rule` do not. So `forked_at_hash` comparisons are **plate-only** — a
+recipe edit after forking does not make the fork look diverged, and
+`series_recipe_updated` events never touch `content_hash`. Only plate-affecting
+edits (title, description, member rows) change the hash.
 
 ---
 
@@ -266,6 +391,16 @@ this doc:
 - **Disaster recovery.** `rebuild_views_from_log!(db, exposure_id)` will
   rebuild `peak_curations` and `index_group_members` for one exposure
   from the event log. Useful if a view table is ever corrupted.
+- **Pre-Plan-A assignments are NOT log-derivable.** A from-empty rebuild
+  (drop `assignments`/`assignment_members`, re-fold the log) is **not**
+  safe for pre-Plan-A confirmations. Those exposures carry only retired
+  `index_confirmed` events (now dispatcher no-ops, `events.jl:354-362`)
+  and no `assignment_add`, so their assignment exists solely because
+  `migrate_assignments!` backfilled it from `index_groups`
+  (`db.jl:1065-1074`). Re-folding the log silently loses every pre-Plan-A
+  confirmation unless the `assignments_v1` sentinel is cleared and
+  `migrate_assignments!` is re-run **first**. Post-Plan-A confirmations
+  ride `assignment_add` and round-trip through the log normally.
 
 ---
 
@@ -292,8 +427,6 @@ this doc:
 
 - [`docs/himalayaui-design.md`](himalayaui-design.md) §2.6, §2.9, §2.10 —
   design principles and the active-set preservation story.
-- [`docs/superpowers/specs/2026-05-01-multiplayer-instrumentation-design.md`](superpowers/specs/2026-05-01-multiplayer-instrumentation-design.md) — original design spec.
-- [`docs/superpowers/plans/2026-05-01-multiplayer-instrumentation.md`](superpowers/plans/2026-05-01-multiplayer-instrumentation.md) — implementation plan with R0–R5a phases.
 - `packages/HimalayaUI/src/{events,hash,server,pipeline}.jl` and
   `packages/HimalayaUI/frontend/src/lib/queue/{replayCoordinator,applyRemoteToCache}.ts`
   — the code.

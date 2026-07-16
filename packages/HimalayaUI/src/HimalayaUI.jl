@@ -3,9 +3,10 @@ module HimalayaUI
 include("db.jl")
 include("image.jl")
 include("datfile.jl")
+include("prp.jl")
+include("geometry.jl")
 include("config.jl")
-include("manifest.jl")
-include("validate.jl")
+include("grouping.jl")
 include("hash.jl")
 include("speculative.jl")
 include("pipeline.jl")
@@ -28,9 +29,11 @@ include("routes_export.jl")
 include("routes_series.jl")
 include("routes_picker.jl")
 include("routes_resolve.jl")
+include("routes_grouping.jl")
+include("routes_fs.jl")
 include("server.jl")
+include("ingest.jl")
 
-export main, ExperimentConfig, load_config, list_config_types, load_builtin_config, resolve_files, config_to_toml, config_from_db
-export ManifestViolation, validate_manifest, ManifestValidationError
+export main, ExperimentConfig, load_config, list_config_types, load_builtin_config, resolve_files, config_from_db
 
 end

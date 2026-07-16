@@ -42,7 +42,7 @@ export function handleRemoteEvent(
       // Apply post_state (indices + exposure hash) BEFORE resolving the
       // deferred so that by the time the mutator's onSuccess runs the
       // indices cache is already fresh. Without this, the indices stay
-      // frozen at the pre-mutation `inputs_hash` and StaleIndicesBanner
+      // frozen at the pre-mutation `inputs_hash` and the stale-indices alert
       // sticks until a hard refetch.
       applyPostStateOnly(remote, qc);
       // Resolve first, THEN abort — Promises only settle once, so the
@@ -66,7 +66,7 @@ export function handleRemoteEvent(
   // 2 would double-apply the per-kind body (e.g. duplicate peak row for
   // peak_added). But we still need to propagate `post_state.indices` —
   // mutator onSuccess paths don't write the indices cache, so without this
-  // the StaleIndicesBanner sticks.
+  // the stale-indices alert sticks.
   if (isOwnTab) {
     applyPostStateOnly(remote, qc);
     return;
@@ -135,10 +135,10 @@ export function handleRemoteEvent(
  *       mutator and the fallback stops handling them.
  *
  *   (b) Active mutators whose SSE payload already matches the cache row
- *       shape — post_message (sample + comparison). The SSE frame carries
- *       `{id, body, author_id, author, created_at, sample_id|comparison_id}`
- *       which IS the cache row shape; no shape massaging needed, so the
- *       generic `{...base, ...payload}` suffices without a per-mutator synth.
+ *       shape — post_message (sample). The SSE frame carries
+ *       `{id, body, author_id, author, created_at, sample_id}` which IS the
+ *       cache row shape; no shape massaging needed, so the generic
+ *       `{...base, ...payload}` suffices without a per-mutator synth.
  *
  * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
  * resolved with this synth (see handleRemoteEvent). That ordering keeps the
@@ -157,7 +157,7 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
     // Only curation-frame post_state carries analysis_inputs_hash; a
-    // comparison-frame post_state (a Comparison projection) has none, so the
+    // series-commit post_state (a Series projection) has none, so the
     // cast-then-optional-chain correctly yields undefined there.
     analysis_inputs_hash: (remote.post_state as CurationPostState | undefined)
       ?.analysis_inputs_hash,

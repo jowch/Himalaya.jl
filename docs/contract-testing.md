@@ -22,14 +22,15 @@ one layer in isolation.
                                    + queues SSE broadcast.
 2. SSE frame payload             packages/HimalayaUI/src/events.jl::broadcast_event!
                                    Serializes the event to the wire format —
-                                   { kind, entity_id, client_id, client_op_id,
-                                     payload, post_state? }.
+                                   { id, kind, entity_type, entity_id, actor,
+                                     client_id, client_op_id, ts, payload,
+                                     post_state? }.
 3. applyRemoteToCache merge      lib/queue/applyRemoteToCache.ts
                                    Foreign-event path: turn an SSE frame back
                                    into a cache-row mutation per kind.
 4. Cache row shape               (the resulting Peak / Index / Exposure object)
-                                   What downstream consumers (PeakRow,
-                                   PhasePanel, MentionChip) read.
+                                   What downstream consumers (TracePlate,
+                                   AssignmentRail, LoupeSidePanel) read.
 5. Mutator onMutate              lib/queue/mutators/*.ts (optimistic write)
                                    Builds the optimistic placeholder row +
                                    returns the rollback closure.

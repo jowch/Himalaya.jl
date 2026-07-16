@@ -12,7 +12,6 @@ function row(
       id,
       experiment_id: 1,
       name,
-      display_name: null,
       notes: null,
       tags: tags.map((t, i) => ({ id: i + 1, key: t.key, value: t.value, source: "manual" })),
     },
@@ -57,5 +56,64 @@ describe("proposeOrdering", () => {
     expect(result.rows).toEqual([
       { sampleId: 10, sampleName: "A", value: "", flagged: true, include: true },
     ]);
+  });
+
+  it("honours a preferredKey that is a real corpus key, reading that key's values", () => {
+    // Frequency winner is "ratio" (2 vs 1); override to "lipid".
+    const corpusTags: SampleTagPair[] = [
+      { key: "ratio", value: "1:1" },
+      { key: "ratio", value: "2:1" },
+      { key: "lipid", value: "DOPC" },
+    ];
+    const samples = [
+      row(10, "A", [{ key: "ratio", value: "1:1" }, { key: "lipid", value: "DOPC" }]),
+      row(11, "B", [{ key: "ratio", value: "2:1" }, { key: "lipid", value: "POPC" }]),
+    ];
+    const result = proposeOrdering(corpusTags, samples, "lipid");
+    expect(result.orderingKey).toBe("lipid");
+    expect(result.rows).toEqual([
+      { sampleId: 10, sampleName: "A", value: "DOPC", flagged: false, include: true },
+      { sampleId: 11, sampleName: "B", value: "POPC", flagged: false, include: true },
+    ]);
+  });
+
+  it("falls back to the frequency winner when preferredKey is not a real corpus key", () => {
+    const corpusTags: SampleTagPair[] = [
+      { key: "ratio", value: "1:1" },
+      { key: "ratio", value: "2:1" },
+      { key: "lipid", value: "DOPC" },
+    ];
+    const samples = [row(10, "A", [{ key: "ratio", value: "1:1" }])];
+    const result = proposeOrdering(corpusTags, samples, "temperature");
+    expect(result.orderingKey).toBe("ratio");
+  });
+
+  it("is identical to the two-argument call when preferredKey is undefined", () => {
+    const corpusTags: SampleTagPair[] = [
+      { key: "ratio", value: "1:1" },
+      { key: "ratio", value: "2:1" },
+      { key: "lipid", value: "DOPC" },
+    ];
+    const samples = [
+      row(10, "A", [{ key: "ratio", value: "1:1" }]),
+      row(11, "B", [{ key: "ratio", value: "2:1" }]),
+    ];
+    expect(proposeOrdering(corpusTags, samples, undefined)).toEqual(
+      proposeOrdering(corpusTags, samples),
+    );
+  });
+
+  it("ranks ordering keys by number of distinct values, ignoring the sample count field", () => {
+    // keyA has 3 distinct (key,value) pairs in the corpus (count=1 each).
+    // keyB has 1 distinct pair but a very high sample count (99).
+    // proposeOrdering ranks by distinct-value frequency, NOT by count — keyA wins.
+    const pairs = [
+      { key: "keyA", value: "1", count: 1 },
+      { key: "keyA", value: "2", count: 1 },
+      { key: "keyA", value: "3", count: 1 },
+      { key: "keyB", value: "x", count: 99 },
+    ] as SampleTagPair[];
+    const samples = [row(1, "s1", [{ key: "keyA", value: "1" }])];
+    expect(proposeOrdering(pairs, samples).orderingKey).toBe("keyA");
   });
 });

@@ -1,0 +1,202 @@
+import { render, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { WaterfallChart } from "../../src/print/waterfall/WaterfallChart";
+import type { WaterfallRow } from "../../src/print/waterfall/waterfallModel";
+
+const ROWS: WaterfallRow[] = [
+  {
+    key: "a", label: "1:0", phase: "Ia3d", state: "indexed",
+    trace: { q: [0.02, 0.05, 0.1], I: [100, 60, 12], sigma: [1, 1, 1] },
+    anchors: [{ id: 1, q: 0.05, intensity: 60, phase: "Ia3d" }],
+    bandHeight: 1, yOffset: 0,
+  },
+  {
+    key: "b", label: "1:1", phase: "Im3m", state: "indexed",
+    trace: { q: [0.02, 0.06, 0.12], I: [90, 55, 10], sigma: [1, 1, 1] },
+    anchors: [{ id: 2, q: 0.06, intensity: 55, phase: "Im3m" }],
+    bandHeight: 1, yOffset: 0,
+  },
+];
+
+describe("WaterfallChart", () => {
+  it("renders one row group per member", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} />);
+    expect(container.querySelectorAll('[data-role="wf-row"]').length).toBe(2);
+  });
+
+  it("stacks display-order-0 at the BOTTOM (largest top offset)", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} maxWidth={800} />);
+    const groups = Array.from(container.querySelectorAll('[data-role="wf-row"]'));
+    const topA = Number((groups.find((g) => g.getAttribute("data-key") === "a") as HTMLElement).style.top.replace("px", ""));
+    const topB = Number((groups.find((g) => g.getAttribute("data-key") === "b") as HTMLElement).style.top.replace("px", ""));
+    expect(topA).toBeGreaterThan(topB);
+  });
+
+  it("renders a phase-coloured trace line per row (not ink-soft)", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} />);
+    const lines = container.querySelectorAll('[data-role="trace-line"] path');
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    const strokes = Array.from(lines).map((p) => p.getAttribute("stroke"));
+    expect(strokes.some((s) => s?.includes("oklch"))).toBe(true);
+  });
+
+  it("renders a bead per anchor (the peaks layer)", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} />);
+    expect(container.querySelectorAll('[data-role="peak-glyph"]').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders exactly one shared bottom axis", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} />);
+    expect(container.querySelectorAll('[data-role="axis-bottom"]').length).toBe(1);
+  });
+
+  it("renders the sample label per row", () => {
+    const { getByText } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByText("1:0")).toBeTruthy();
+    expect(getByText("1:1")).toBeTruthy();
+  });
+
+  it("marks the hovered row hot and dims the others; fires onHoverRow", () => {
+    const spy = vi.fn();
+    const { container } = render(<WaterfallChart rows={ROWS} onHoverRow={spy} />);
+    const rowA = container.querySelector('[data-role="wf-row"][data-key="a"]')!;
+    fireEvent.mouseEnter(rowA);
+    expect(spy).toHaveBeenCalledWith("a");
+    const rowB = container.querySelector('[data-role="wf-row"][data-key="b"]')!;
+    expect(rowA.getAttribute("data-hot")).toBe("true");
+    expect(rowB.getAttribute("data-dim")).toBe("true");
+    fireEvent.mouseLeave(rowA);
+    expect(spy).toHaveBeenCalledWith(undefined);
+  });
+
+  it("respects a controlled hoveredKey", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} hoveredKey="b" />);
+    expect(container.querySelector('[data-role="wf-row"][data-key="b"]')!.getAttribute("data-hot")).toBe("true");
+    expect(container.querySelector('[data-role="wf-row"][data-key="a"]')!.getAttribute("data-dim")).toBe("true");
+  });
+
+  it("defaults the q-axis to log and exposes it via data-xtype", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("log");
+  });
+
+  it("reflects a controlled xType prop via data-xtype", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} xType="linear" />);
+    expect(getByTestId("waterfall").getAttribute("data-xtype")).toBe("linear");
+  });
+
+  it("renders no in-plot scale toggle (the control lives in the panel)", () => {
+    const { queryByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(queryByTestId("wf-scale")).toBeNull();
+  });
+
+  it("renders no q-guide when hoveredQ is unset", () => {
+    const { queryByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(queryByTestId("wf-qguide")).toBeNull();
+    expect(queryByTestId("wf-qreadout")).toBeNull();
+  });
+
+  it("renders the q-guide + readout at a controlled hoveredQ", () => {
+    const q = ROWS[0]!.anchors[0]!.q;
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} hoveredQ={q} />);
+    expect(getByTestId("wf-qguide").getAttribute("data-q")).toBe(String(q));
+    expect(getByTestId("wf-qreadout").textContent).toBe(q.toFixed(3));
+  });
+
+  it("clears the cursor (fires onHoverQ undefined) on pointer leave", () => {
+    const onHoverQ = vi.fn();
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} onHoverQ={onHoverQ} />);
+    const stack = getByTestId("wf-stack");
+    fireEvent.pointerLeave(stack);
+    expect(onHoverQ).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("defaults offsetScale to 1 and reflects it on the root", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("waterfall").getAttribute("data-offset-scale")).toBe("1");
+  });
+
+  it("reflects a custom offsetScale", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} offsetScale={1.4} />);
+    expect(getByTestId("waterfall").getAttribute("data-offset-scale")).toBe("1.4");
+  });
+
+  it("at offsetScale=1 the stack height is unchanged (TOTAL_H = 420)", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} />);
+    expect(getByTestId("wf-stack").style.height).toBe("420px");
+  });
+
+  it("a larger offsetScale grows the stack height and the inter-row separation", () => {
+    const at1 = render(<WaterfallChart rows={ROWS} offsetScale={1} maxWidth={800} />).container;
+    const at14 = render(<WaterfallChart rows={ROWS} offsetScale={1.4} maxWidth={800} />).container;
+
+    const stack1 = stackHeight(at1);
+    const stack14 = stackHeight(at14);
+    expect(stack14).toBeGreaterThan(stack1);
+
+    const topA1 = topOf(at1, "a");
+    const topA14 = topOf(at14, "a");
+    // display-order-0 ("a") sits at the bottom; a larger offsetScale pushes it lower.
+    expect(topA14).toBeGreaterThan(topA1);
+  });
+
+  it("keeps per-row render band-height (h) constant across offsetScale", () => {
+    const at1 = render(<WaterfallChart rows={ROWS} offsetScale={1} maxWidth={800} />).container;
+    const at14 = render(<WaterfallChart rows={ROWS} offsetScale={1.4} maxWidth={800} />).container;
+    const hA1 = heightOf(at1, "a");
+    const hA14 = heightOf(at14, "a");
+    expect(hA14).toBe(hA1);
+  });
+
+  // ── BU-TOGGLELIE: annotation props gate the tick + label layers ───────────
+
+  it("hides the peak beads when showPeakTicks is false (default stays on)", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} showPeakTicks={false} />);
+    expect(container.querySelectorAll('[data-role="peak-glyph"]')).toHaveLength(0);
+  });
+
+  it("renders no peak labels by default", () => {
+    const { container } = render(<WaterfallChart rows={ROWS} />);
+    expect(container.querySelectorAll('[data-role="peak-label"]')).toHaveLength(0);
+  });
+
+  it("renders ordinal peak labels (1..n ascending q, the export register) when showPeakLabels is true", () => {
+    // Two anchors on one row, DELIBERATELY out of q order in the array: the
+    // ordinal must follow ascending q (id 9 at q=0.03 reads "1"), matching the
+    // exported figure's numbering. PlotLabels renders left-to-right, so DOM
+    // order ["1","2"] pins the ascending-q assignment.
+    const rows: WaterfallRow[] = [
+      {
+        ...ROWS[0]!,
+        anchors: [
+          { id: 1, q: 0.05, intensity: 60, phase: "Ia3d" },
+          { id: 9, q: 0.03, intensity: 80, phase: "Ia3d" },
+        ],
+      },
+    ];
+    const { container } = render(<WaterfallChart rows={rows} showPeakLabels />);
+    const labels = Array.from(container.querySelectorAll('[data-role="peak-label"]'));
+    expect(labels.map((l) => l.textContent)).toEqual(["1", "2"]);
+  });
+
+  it("clamps offsetScale to a floor so 0 can't collapse the stack", () => {
+    const { getByTestId } = render(<WaterfallChart rows={ROWS} offsetScale={0} maxWidth={800} />);
+    const stack = Number(getByTestId("wf-stack").style.height.replace("px", ""));
+    expect(stack).toBeGreaterThan(0);
+  });
+});
+
+function topOf(container: HTMLElement, key: string): number {
+  const el = container.querySelector(`[data-role="wf-row"][data-key="${key}"]`) as HTMLElement;
+  return Number(el.style.top.replace("px", ""));
+}
+
+function heightOf(container: HTMLElement, key: string): number {
+  const el = container.querySelector(`[data-role="wf-row"][data-key="${key}"]`) as HTMLElement;
+  return Number(el.style.height.replace("px", ""));
+}
+
+function stackHeight(container: HTMLElement): number {
+  const el = container.querySelector('[data-testid="wf-stack"]') as HTMLElement;
+  return Number(el.style.height.replace("px", ""));
+}

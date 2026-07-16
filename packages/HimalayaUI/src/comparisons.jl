@@ -2,16 +2,6 @@ using SHA, JSON3, SQLite, DBInterface, Tables
 using Dates
 
 """
-    CONFIRMED_INDEX_R2_GATE
-
-Shared R² hard-gate for `confirmed_index` snapshots. Mirrors the threshold
-used by the frontend `PhasePanel` so an index that clears the UI hide-low-R²
-filter is the same one that lands in the comparison snapshot. Bumping this
-should be a deliberate edit in lockstep with `frontend/.../PhasePanel.tsx`.
-"""
-const CONFIRMED_INDEX_R2_GATE = 0.98
-
-"""
     canonical_json(x) -> String
 
 Deterministic JSON serialization for content-hash inputs. **Object keys
@@ -199,10 +189,20 @@ Dict(
 `source` is `"auto"` or `"manual"` (matches `GET /api/exposures/:id/peaks`);
 manual peaks carry `intensity = nothing`.
 
-`confirmed_index` is the highest-scored member of the active custom
-`index_groups` row whose `r_squared >= CONFIRMED_INDEX_R2_GATE`. Returns
-`nothing` if there's no custom group for the exposure, no member meets the
-gate, or no exposure exists.
+`confirmed_index` is the highest-scored member of the durable per-exposure
+assignment (`assignment_members`), reported only when `assignment_state` is
+`indexed`. Returns `nothing` for a form_factor / null member, an indexed
+member with no assignment members, or a missing exposure. (D-10 re-sourced this
+from the legacy active custom group.)
+
+SEMANTIC SHIFT (D-10): this is the assigned index, NOT "a human confirmed it".
+The legacy field meant "user-confirmed via the active custom group, R²≥0.98".
+The new field means "top member of the current assignment, ungated" — and since
+the assignment defaults to the auto seed (state 'indexed' for every analyzed
+exposure), an analyzed-but-never-touched exposure now reports a non-null
+`confirmed_index` (even a low-R² auto guess). Consumers must NOT read
+`confirmed_index !== nothing` as evidence of a human decision; the durable
+`assignment_state` is the source of truth for what the user did.
 
 This helper is the source of truth for the dispatcher's
 `comparison_created` fallback (when the client omits a snapshot for a new
@@ -260,44 +260,78 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
         )
     end
 
-    # confirmed_index: highest-scored member of the active custom group
-    # that clears the R² gate. Reads from index_groups + index_group_members
-    # joined against indices. `inputs_hash` tracking belongs to the staleness
-    # signal, not this snapshot — we just record what was confirmed.
+    # Durable 3-state assignment (indexed | form_factor | null). STATE IS
+    # AUTHORITATIVE for everything the Series surface decodes downstream:
+    # `confirmed_index` is null for BOTH a form_factor and a null member, so the
+    # explicit state is what tells them apart, and `confirmed_phases` lets
+    # coexistence reads/rows/strip cells self-decode without a second round-trip
+    # to /assignment. Default to "indexed" when no assignments row exists.
+    state_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT state FROM assignments WHERE exposure_id = ?", [eid]))
+    assignment_state = isempty(state_rows) ? "indexed" : String(state_rows[1].state)
+
+    # confirmed_index: the representative index for peak highlighting + Series
+    # anchors — the highest-scored member of the durable assignment. Sourced
+    # from assignment_members; the single durable assignment replaced the legacy
+    # active custom group in the plotting redesign (D-10). No R² gate: an
+    # explicit user assignment supersedes the old auto-confirm heuristic. Null
+    # for a form_factor / null member (state-gated — no index represents those).
     confirmed_index = nothing
-    confirmed_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT i.id, i.phase, i.basis, i.lattice_d, i.r_squared, i.score
-           FROM index_groups g
-           JOIN index_group_members m ON m.group_id = g.id
-           JOIN indices i ON i.id = m.index_id
-           WHERE g.exposure_id = ? AND g.kind = 'custom' AND g.active = 1
-             AND i.r_squared IS NOT NULL AND i.r_squared >= ?
-           ORDER BY i.score DESC NULLS LAST, i.id ASC
-           LIMIT 1""", [eid, CONFIRMED_INDEX_R2_GATE]))
-    if !isempty(confirmed_rows)
-        ix = confirmed_rows[1]
-        ix_id = Int(ix.id)
-        peak_id_rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT peak_id FROM index_peaks
-               WHERE index_id = ? ORDER BY ratio_position""", [ix_id]))
-        peak_ids = [Int(r.peak_id) for r in peak_id_rows]
-        phase_str = ismissing(ix.phase) ? "" : String(ix.phase)
-        lattice_d = ismissing(ix.lattice_d) ? nothing : Float64(ix.lattice_d)
-        r_squared = ismissing(ix.r_squared) ? nothing : Float64(ix.r_squared)
-        ngc = _ngc_for_phase(phase_str, lattice_d)
-        confirmed_index = Dict{Symbol, Any}(
-            :id        => ix_id,
-            :phase     => phase_str,
-            :lattice_d => lattice_d,
-            :r_squared => r_squared,
-            :ngc       => ngc,
-            :peak_ids  => peak_ids,
-        )
+    if assignment_state == "indexed"
+        confirmed_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT i.id, i.phase, i.basis, i.lattice_d, i.r_squared, i.score
+               FROM assignment_members m
+               JOIN indices i ON i.id = m.index_id
+               WHERE m.exposure_id = ?
+               ORDER BY i.score DESC NULLS LAST, i.id ASC
+               LIMIT 1""", [eid]))
+        if !isempty(confirmed_rows)
+            ix = confirmed_rows[1]
+            ix_id = Int(ix.id)
+            peak_id_rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT peak_id FROM index_peaks
+                   WHERE index_id = ? ORDER BY ratio_position""", [ix_id]))
+            peak_ids = [Int(r.peak_id) for r in peak_id_rows]
+            phase_str = ismissing(ix.phase) ? "" : String(ix.phase)
+            lattice_d = ismissing(ix.lattice_d) ? nothing : Float64(ix.lattice_d)
+            r_squared = ismissing(ix.r_squared) ? nothing : Float64(ix.r_squared)
+            ngc = _ngc_for_phase(phase_str, lattice_d)
+            confirmed_index = Dict{Symbol, Any}(
+                :id        => ix_id,
+                :phase     => phase_str,
+                :lattice_d => lattice_d,
+                :r_squared => r_squared,
+                :ngc       => ngc,
+                :peak_ids  => peak_ids,
+            )
+        end
+    end
+
+    # Per-phase {phase, lattice_d} so a coexistence member can show BOTH
+    # lattices (e.g. `a 205 · d 60 Å`). One row per distinct phase the
+    # assignment carries; lattice_d is the index's fitted lattice parameter.
+    # Same source as confirmed_index (assignment_members) so the two are
+    # inherently consistent — meaningful ONLY for an `indexed` member; a
+    # form_factor / null member carries NO lattice phases by definition.
+    confirmed_phases = Dict{Symbol, Any}[]
+    if assignment_state == "indexed"
+        phase_rows = Tables.rowtable(DBInterface.execute(db,
+            """SELECT i.phase, i.lattice_d, MAX(i.score) AS s
+               FROM assignment_members m JOIN indices i ON i.id = m.index_id
+               WHERE m.exposure_id = ? AND i.phase IS NOT NULL
+               GROUP BY i.phase
+               ORDER BY s DESC NULLS LAST, i.phase""", [eid]))
+        confirmed_phases = [Dict{Symbol, Any}(
+            :phase     => String(r.phase),
+            :lattice_d => ismissing(r.lattice_d) ? nothing : Float64(r.lattice_d),
+        ) for r in phase_rows]
     end
 
     Dict{Symbol, Any}(
         :effective_peaks      => effective_peaks,
         :confirmed_index      => confirmed_index,
+        :assignment_state     => assignment_state,
+        :confirmed_phases     => confirmed_phases,
         :analysis_inputs_hash => read_inputs_hash(db, eid),
     )
 end
@@ -382,7 +416,7 @@ function picker_samples(db::SQLite.DB, experiment_id::Integer)::Vector{Dict{Symb
     # deliberate so a future column added to `samples` doesn't auto-leak
     # into the picker payload.
     samples = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, experiment_id, name, display_name, notes
+        "SELECT id, experiment_id, name, notes
          FROM samples WHERE experiment_id = ? ORDER BY id",
         [Int(experiment_id)]))
     _picker_samples_projection(db, samples)
@@ -394,7 +428,7 @@ function picker_samples(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
     # consumer can group client-side. Same explicit column list as the
     # scoped method — the JSON shape must not diverge.
     samples = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, experiment_id, name, display_name, notes
+        "SELECT id, experiment_id, name, notes
          FROM samples ORDER BY experiment_id, id"))
     _picker_samples_projection(db, samples)
 end

@@ -270,203 +270,12 @@ end
     end
 end
 
-@testset "parse_manifest with config: positional columns" begin
-    csv = join([
-        "header row to skip",
-        "1\tD1\tUX1\tT\tt\t\t\t\tJC001-003\tnote_s\tnote_e",
-        "2\tD2\tUX2\tT\tt\t\t\t\tJC004\t\t",
-        "not_a_number\tskip\tme\tT\tt\t\t\t\tJC999\t\t",
-    ], "\n")
-    cfg = HimalayaUI.load_builtin_config("simple")
-    samples = HimalayaUI.parse_manifest(cfg, IOBuffer(csv))
-
-    @test length(samples) == 2
-    @test samples[1].name         == "D1"
-    @test samples[1].display_name == "UX1"
-    @test samples[1].filenames == ["JC001", "JC002", "JC003"]
-    @test samples[1].notes_sample   == "note_s"
-    @test samples[1].notes_exposure == "note_e"
-    @test samples[2].filenames == ["JC004"]
-    @test samples[2].notes_sample   == ""
-    @test samples[2].notes_exposure == ""
-end
-
-@testset "parse_manifest with config: named columns" begin
-    csv = join([
-        "#,Sample,Name,Type,Time,x,y,z,Filename(s),Notes (Sample),Notes (Exposure)",
-        "1,D1,UX1,,,,,,AB001-002,s_note,e_note",
-        "2,D2,UX2,,,,,,AB003,,",
-    ], "\n")
-
-    mktempdir() do dir
-        toml_path = joinpath(dir, "experiment.toml")
-        write(toml_path, """
-        [experiment]
-        name = "X"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 0.0
-        flight_path_m = 0.0
-        [manifest]
-        delimiter = ","
-        skip_rows = 0
-        header_row = 1
-        sample_id = "#"
-        name = "Sample"
-        display_name = "Name"
-        filenames = "Filename(s)"
-        notes_sample = "Notes (Sample)"
-        notes_exposure = "Notes (Exposure)"
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-        cfg = HimalayaUI.load_config(toml_path)
-
-        samples = HimalayaUI.parse_manifest(cfg, IOBuffer(csv))
-        @test length(samples) == 2
-        @test samples[1].name     == "D1"
-        @test samples[1].filenames == ["AB001", "AB002"]
-        @test samples[1].notes_sample   == "s_note"
-        @test samples[1].notes_exposure == "e_note"
-        @test samples[2].filenames == ["AB003"]
-    end
-end
-
-@testset "parse_manifest backward-compat wrapper still works" begin
-    csv = "header\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\t\t"
-    samples_old = HimalayaUI.parse_manifest(IOBuffer(csv))
-    samples_new = HimalayaUI.parse_manifest(HimalayaUI.load_builtin_config("simple"), IOBuffer(csv))
-    @test length(samples_old) == length(samples_new) == 1
-    @test samples_old[1].filenames == samples_new[1].filenames
-end
-
-@testset "config_to_toml roundtrip" begin
-    cfg_orig = HimalayaUI.load_builtin_config("simple")
-    blob = HimalayaUI.config_to_toml(cfg_orig)
-    @test blob isa String
-    @test contains(blob, "[experiment]")
-    @test contains(blob, "[manifest]")
-    @test contains(blob, "[layout]")
-    @test contains(blob, "[files]")
-
-    # Round-trip: parse the blob and confirm it loads to an equivalent config
-    mktempdir() do dir
-        path = joinpath(dir, "experiment.toml")
-        write(path, blob)
-        cfg2 = HimalayaUI.load_config(path)
-        @test cfg2.delimiter           == cfg_orig.delimiter
-        @test cfg2.col_sample_id       == cfg_orig.col_sample_id
-        @test cfg2.data_dir            == cfg_orig.data_dir
-        @test cfg2.analysis_dir        == cfg_orig.analysis_dir
-        @test cfg2.integration_pattern == cfg_orig.integration_pattern
-        @test cfg2.image_pattern       == cfg_orig.image_pattern
-        @test cfg2.exposure_type       == cfg_orig.exposure_type
-    end
-
-    # Round-trip via in-memory parse (the path config_from_db uses): no disk I/O.
-    cfg3 = HimalayaUI._build_config(TOML.parse(blob))
-    @test cfg3.delimiter           == cfg_orig.delimiter
-    @test cfg3.col_sample_id       == cfg_orig.col_sample_id
-    @test cfg3.integration_pattern == cfg_orig.integration_pattern
-    @test cfg3.exposure_type       == cfg_orig.exposure_type
-end
-
-@testset "config_to_toml omits nothing beamline params" begin
-    # Build a config with both beamline params unset.
-    mktempdir() do dir
-        toml_path = joinpath(dir, "experiment.toml")
-        # Note: no [beamline] keys → loaded as nothing.
-        write(toml_path, """
-        [experiment]
-        name = "X"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 0
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-        cfg = HimalayaUI.load_config(toml_path)
-        @test cfg.energy_kev === nothing
-        @test cfg.flight_path_m === nothing
-
-        blob = HimalayaUI.config_to_toml(cfg)
-        # Round-trip: nothing must survive as nothing, not collapse to 0.0.
-        rt_path = joinpath(dir, "rt.toml")
-        write(rt_path, blob)
-        cfg2 = HimalayaUI.load_config(rt_path)
-        @test cfg2.energy_kev === nothing
-        @test cfg2.flight_path_m === nothing
-    end
-end
-
-@testset "config_to_toml handles named string columns" begin
-    mktempdir() do dir
-        toml_path = joinpath(dir, "experiment.toml")
-        write(toml_path, """
-        [experiment]
-        name = "Test"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 12.0
-        flight_path_m = 2.5
-        [manifest]
-        delimiter = ","
-        skip_rows = 0
-        header_row = 1
-        sample_id = "#"
-        name = "Sample"
-        display_name = "Name"
-        filenames = "Filename(s)"
-        notes_sample = "Notes (Sample)"
-        notes_exposure = "Notes (Exposure)"
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-        cfg = HimalayaUI.load_config(toml_path)
-        blob = HimalayaUI.config_to_toml(cfg)
-
-        # Round-trip preserves string columns
-        roundtrip_path = joinpath(dir, "rt.toml")
-        write(roundtrip_path, blob)
-        cfg2 = HimalayaUI.load_config(roundtrip_path)
-        @test cfg2.col_sample_id   == "#"
-        @test cfg2.col_name        == "Sample"
-        @test cfg2.col_filenames   == "Filename(s)"
-    end
-end
-
 @testset "config_from_db roundtrip" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
+    # Use the builtin simple config TOML blob directly (no config_to_toml needed).
+    blob = read(joinpath(HimalayaUI.configs_dir(), "simple.toml"), String)
     cfg_orig = HimalayaUI.load_builtin_config("simple")
-    blob = HimalayaUI.config_to_toml(cfg_orig)
 
     exp_id = HimalayaUI.create_experiment!(db;
         name = "Test/Exp", path = "/tmp/test",
@@ -490,6 +299,25 @@ end
     cfg = HimalayaUI.config_from_db(db, exp_id)
     @test cfg.data_dir == "data"
     @test cfg.integration_pattern == "{name}.dat"
+end
+
+@testset "config_from_db prefers the per-experiment pattern columns" begin
+    # The HTTP ingestion path stores file patterns in the experiments COLUMNS and
+    # leaves the deprecated TOML `config` blob NULL. config_from_db must read the
+    # columns; otherwise analyze_exposure! resolves the integration .dat with the
+    # builtin `{name}.dat` and a real `_tot.dat` run indexes nothing (the P0 the
+    # live walk caught — masked by the manifest preview, which uses the pattern).
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.create_experiment!(db;
+        name = "Columns", path = "/tmp/cols",
+        data_dir = "/tmp/cols/data",
+        analysis_dir = "/tmp/cols/analysis/automatic_analysis",
+        image_pattern = "{name}_0_001.tif",
+        integration_pattern = "{name}_tot.dat")
+    cfg = HimalayaUI.config_from_db(db, exp_id)   # config blob NULL → columns win
+    @test cfg.integration_pattern == "{name}_tot.dat"
+    @test cfg.image_pattern == "{name}_0_001.tif"
 end
 
 @testset "cli_config_list prints simple" begin
@@ -663,16 +491,6 @@ end
     end
 end
 
-@testset "q_units round-trips through config_to_toml" begin
-    mktempdir() do dir
-        toml = joinpath(dir, "experiment.toml")
-        write(toml, _make_toml())
-        cfg = HimalayaUI.load_config(toml)
-        blob = HimalayaUI.config_to_toml(cfg)
-        cfg2 = HimalayaUI._build_config(TOML.parse(blob))
-        @test cfg2.q_units == cfg.q_units
-    end
-end
 
 @testset "load_config wraps malformed TOML errors" begin
     mktempdir() do dir
@@ -740,4 +558,50 @@ image       = "{name}.tiff"
         @test cfg.col_name == 2
         @test cfg.col_display_name == 3
     end
+end
+
+@testset "config round-trips beam center + pixel size" begin
+    mktempdir() do dir
+        toml = joinpath(dir, "experiment.toml")
+        write(toml, """
+        [experiment]
+        name = "T/E"
+        [beamline]
+        energy_kev    = 12.0
+        flight_path_m = 2.5
+        beam_center_x = 420.791
+        beam_center_y = 838.83
+        pixel_size_um = 172.0
+        [manifest]
+        header_row = 0
+        sample_id = 1
+        name = 2
+        display_name = 3
+        filenames = 9
+        notes_sample = 10
+        notes_exposure = 11
+        [layout]
+        data_dir = "data"
+        analysis_dir = "analysis/automatic_analysis"
+        exposure_type = "simple"
+        [files]
+        integration = "{name}.dat"
+        image = "{name}.tiff"
+        """)
+        cfg = HimalayaUI.load_config(toml)
+        @test cfg.beam_center_x == 420.791
+        @test cfg.beam_center_y == 838.83
+        @test cfg.pixel_size_um == 172.0
+
+        # Bare integer in TOML coerces to Float64.
+        write(toml, replace(read(toml, String), "beam_center_x = 420.791" => "beam_center_x = 420"))
+        @test HimalayaUI.load_config(toml).beam_center_x === 420.0
+    end
+end
+
+@testset "config beam center absent round-trips to nothing" begin
+    cfg = HimalayaUI.load_builtin_config("simple")
+    @test cfg.beam_center_x === nothing
+    @test cfg.beam_center_y === nothing
+    @test cfg.pixel_size_um === nothing
 end

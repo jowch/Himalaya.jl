@@ -58,8 +58,8 @@ describe("commitSeriesPlate conflict mapping", () => {
       const ce = err as api.ConflictError;
       expect(ce.status).toBe(409);
       expect(ce.current_hash).toBe("sha256:server");
-      // current_state is now widened to Comparison | Series | null; the
-      // commit conflict populates it with a Series.
+      // current_state is `Series | null`; the commit conflict populates it
+      // with a Series.
       expect((ce.current_state as Series).id).toBe(5);
       expect((ce.current_state as Series).state).toBe("committed");
     }

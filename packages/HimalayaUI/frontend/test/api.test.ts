@@ -77,13 +77,14 @@ describe("api", () => {
   it("addPeak posts {q} with X-Username and returns parsed peak", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({
-        id: 7, exposure_id: 42, q: 0.15, source: "manual", stale_indices: 3,
+        id: 7, exposure_id: 42, q: 0.15, source: "manual",
+        event_id: 100, view_row_id: 7, analysis_inputs_hash: "sha256:abc",
       }), { status: 201 }),
     );
     const p = await api.addPeak(42, 0.15, { username: "alice", clientId: "tab-xyz" });
     expect(p.id).toBe(7);
     expect(p.source).toBe("manual");
-    expect(p.stale_indices).toBe(3);
+    expect(p.analysis_inputs_hash).toBe("sha256:abc");
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
     expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
@@ -130,46 +131,6 @@ describe("api", () => {
     expect(indices).toHaveLength(1);
     expect(indices[0]!.predicted_q).toEqual([0.7071, 0.866, 1.0]);
     expect(indices[0]!.peaks[0]!.q_observed).toBeCloseTo(0.71);
-  });
-
-  it("listGroups fetches groups for exposure", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([
-        { id: 1, exposure_id: 42, kind: "auto",   active: false, members: [10] },
-        { id: 2, exposure_id: 42, kind: "custom", active: true,  members: [10, 11] },
-      ]), { status: 200 }),
-    );
-    const groups = await api.listGroups(42);
-    expect(groups).toHaveLength(2);
-    expect(groups[1]!.kind).toBe("custom");
-    expect(groups[1]!.active).toBe(true);
-  });
-
-  it("addIndexToGroup posts {index_id} with X-Username", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        id: 2, exposure_id: 42, kind: "custom", active: true, members: [10, 11],
-      }), { status: 200 }),
-    );
-    const g = await api.addIndexToGroup(2, 11, { username: "alice", clientId: "tab-xyz" });
-    expect(g.members).toEqual([10, 11]);
-    const [, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
-    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
-    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
-    expect(init.body).toBe(JSON.stringify({ index_id: 11 }));
-  });
-
-  it("listSampleMessages fetches messages for a sample", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([
-        { id: 1, sample_id: 3, author_id: 1, author: "alice", body: "hi", created_at: "2026-04-24 10:00:00" },
-        { id: 2, sample_id: 3, author_id: 2, author: "bob",   body: "yo", created_at: "2026-04-24 10:01:00" },
-      ]), { status: 200 }),
-    );
-    const msgs = await api.listSampleMessages(3);
-    expect(msgs).toHaveLength(2);
-    expect(msgs[0]!.author).toBe("alice");
-    expect(msgs[1]!.body).toBe("yo");
   });
 
   it("postSampleMessage posts {body} with X-Username and returns parsed message", async () => {
@@ -230,17 +191,4 @@ describe("api", () => {
     expect(headers["X-Username"]).toBeUndefined();
   });
 
-  it("removeIndexFromGroup sends DELETE with X-Username", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        id: 2, exposure_id: 42, kind: "custom", active: true, members: [10],
-      }), { status: 200 }),
-    );
-    await api.removeIndexFromGroup(2, 11, { username: "alice", clientId: "tab-xyz" });
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
-    expect(url).toBe("/api/groups/2/members/11");
-    expect(init.method).toBe("DELETE");
-    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
-    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
-  });
 });

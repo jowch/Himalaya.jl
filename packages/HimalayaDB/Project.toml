@@ -1,0 +1,32 @@
+name = "HimalayaDB"
+uuid = "2e6886ae-0ce7-4cd7-b61e-fefd8d4001fa"
+authors = ["Jonathan Chen"]
+version = "0.1.0"
+
+[deps]
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Himalaya = "c5c84187-0f9f-481b-afdc-282fe863df0d"
+
+[weakdeps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+
+[extensions]
+DataFramesExt = "DataFrames"
+
+[sources]
+Himalaya = {path = "../.."}
+
+[compat]
+SQLite = "=1.8.0"
+DBInterface = "2"
+Tables = "1"
+DataFrames = "1"
+Himalaya = "0.5"
+julia = "1.11"
+
+[extras]
+
+[targets]

@@ -46,9 +46,6 @@ function _capture_sse_during(f::Function, kind_filter::String)
     end
     try
         f()
-        # Allow the post-commit broadcast queue to flush. `apply_event!` enqueues
-        # the broadcast; it fires from the post-commit hook on the same thread.
-        sleep(0.3)
     finally
         lock(HimalayaUI.SSE_LOCK) do
             filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
@@ -72,14 +69,14 @@ end
             mkpath(analysis_dir)
             cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
                joinpath(analysis_dir, "example_tot.dat"))
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.init_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+            e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
             HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 op_id = "replay-test-peak-$(rand(UInt32))"
                 headers = ["Content-Type" => "application/json",
                            "X-Username"   => "alice",
@@ -90,11 +87,11 @@ end
                 pre_count = _count_actions(db, "peak_added")
                 r1 = nothing; r2 = nothing
                 frames = _capture_sse_during("peak_added") do
-                    r1 = HTTP.post("$base/api/exposures/$e_id/peaks";
-                        body = body_json, headers = headers)
+                    r1 = call("POST", "/api/exposures/$e_id/peaks";
+                        headers = headers, body = Vector{UInt8}(body_json))
                     # Replay — same op_id, must produce identical body and zero new rows.
-                    r2 = HTTP.post("$base/api/exposures/$e_id/peaks";
-                        body = body_json, headers = headers)
+                    r2 = call("POST", "/api/exposures/$e_id/peaks";
+                        headers = headers, body = Vector{UInt8}(body_json))
                 end
                 @test r1.status == 201
                 @test r2.status == 201
@@ -106,53 +103,42 @@ end
         end
     end
 
-    @testset "POST /api/groups/:id/members (index_confirmed)" begin
+    # D-10: the POST /api/groups/:id/members (index_confirmed) idempotency-replay
+    # invariant was retired with the route. Its assignment-native successor — the
+    # assignment_add member route — carries the same invariant, directly below.
+
+    @testset "POST /api/exposures/:id/assignment/members (assignment_add)" begin
+        # Plan D Task D-3 layer-1/2: the native assignment member route must be
+        # idempotent under retry — one durable row, one SSE frame, identical body.
         mktempdir() do tmp
-            analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
-            mkpath(analysis_dir)
-            cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
-               joinpath(analysis_dir, "example_tot.dat"))
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-            exp_id = HimalayaUI.init_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+            db = open_prepared_clone(tmp)
+            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
+                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
-            HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+            e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+            DBInterface.execute(db,
+                "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (77, ?, 'Pn3m', 0.1)", [e_id])
 
-            # Get an index id and the auto group id.
-            ix_id = Int(Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM indices WHERE exposure_id = ? LIMIT 1",
-                [e_id]))[1].id)
-            grp_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'custom'",
-                [e_id]))
-            isempty(grp_rows) && (HimalayaUI.ensure_custom_group!(db, e_id);
-                grp_rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'custom'",
-                    [e_id])))
-            grp_id = Int(grp_rows[1].id)
-
-            with_test_server(db) do port, base
-                op_id = "replay-test-grp-$(rand(UInt32))"
+            with_inproc_routes(db) do call
+                op_id = "replay-test-asg-$(rand(UInt32))"
                 headers = ["Content-Type" => "application/json",
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:index_id => ix_id))
+                body_json = JSON3.write(Dict(:index_id => 77))
 
-                pre_count = _count_actions(db, "index_confirmed")
+                pre_count = _count_actions(db, "assignment_add")
                 r1 = nothing; r2 = nothing
-                frames = _capture_sse_during("index_confirmed") do
-                    r1 = HTTP.post("$base/api/groups/$grp_id/members";
-                        body = body_json, headers = headers)
-                    r2 = HTTP.post("$base/api/groups/$grp_id/members";
-                        body = body_json, headers = headers)
+                frames = _capture_sse_during("assignment_add") do
+                    r1 = call("POST", "/api/exposures/$e_id/assignment/members";
+                        headers = headers, body = Vector{UInt8}(body_json))
+                    r2 = call("POST", "/api/exposures/$e_id/assignment/members";
+                        headers = headers, body = Vector{UInt8}(body_json))
                 end
                 @test r1.status == 200
                 @test r2.status == 200
                 @test String(r2.body) == String(r1.body)
-                post_count = _count_actions(db, "index_confirmed")
-                @test post_count - pre_count == 1
+                @test _count_actions(db, "assignment_add") - pre_count == 1
                 @test length(frames) == 1
             end
         end
@@ -160,12 +146,12 @@ end
 
     @testset "POST /api/samples/:id/messages (post_message)" begin
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 op_id = "replay-test-msg-$(rand(UInt32))"
                 headers = ["Content-Type" => "application/json",
                            "X-Username"   => "alice",
@@ -176,10 +162,10 @@ end
                 pre_count = _count_actions(db, "post_message")
                 r1 = nothing; r2 = nothing
                 frames = _capture_sse_during("post_message") do
-                    r1 = HTTP.post("$base/api/samples/$s_id/messages";
-                        body = body_json, headers = headers)
-                    r2 = HTTP.post("$base/api/samples/$s_id/messages";
-                        body = body_json, headers = headers)
+                    r1 = call("POST", "/api/samples/$s_id/messages";
+                        headers = headers, body = Vector{UInt8}(body_json))
+                    r2 = call("POST", "/api/samples/$s_id/messages";
+                        headers = headers, body = Vector{UInt8}(body_json))
                 end
                 @test r1.status == 201
                 @test r2.status == 201
@@ -193,26 +179,26 @@ end
 
     @testset "PATCH /api/samples/:id (update_sample)" begin
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+            db = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
                 data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
             s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
 
-            with_test_server(db) do port, base
+            with_inproc_routes(db) do call
                 op_id = "replay-test-upd-$(rand(UInt32))"
                 headers = ["Content-Type" => "application/json",
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:display_name => "Renamed Display"))
+                body_json = JSON3.write(Dict(:name => "Renamed Display"))
 
                 pre_count = _count_actions(db, "update_sample")
                 r1 = nothing; r2 = nothing
                 frames = _capture_sse_during("update_sample") do
-                    r1 = HTTP.patch("$base/api/samples/$s_id";
-                        body = body_json, headers = headers)
-                    r2 = HTTP.patch("$base/api/samples/$s_id";
-                        body = body_json, headers = headers)
+                    r1 = call("PATCH", "/api/samples/$s_id";
+                        headers = headers, body = Vector{UInt8}(body_json))
+                    r2 = call("PATCH", "/api/samples/$s_id";
+                        headers = headers, body = Vector{UInt8}(body_json))
                 end
                 @test r1.status == 200
                 @test r2.status == 200
@@ -229,11 +215,10 @@ end
     # 409-retry) drove the invariant through the deleted /api/comparisons*
     # routes. Those routes are retired with the Compare page; the invariant
     # itself stays covered by the surviving kinds above (peak_added,
-    # index_confirmed, post_message, update_sample). The kept comparison_*
+    # assignment_add, post_message, update_sample). The kept comparison_*
     # dispatcher branches' fold is covered by test_events.jl.
-    @testset "comparison replay invariants (retired with the Compare routes, #177)" begin
-        @test true  # placeholder; routes deleted in I3.6
-    end
+    # comparison replay invariants (retired with the Compare routes, #177);
+    # routes deleted in I3.6; invariant covered by surviving kinds above.
 end
 
 # I3.6 (#177): the "SSE frame includes view_* on comparison_submitted (A-6)"

@@ -6,20 +6,24 @@
  *   bySample  — color is a property of `sample_id`. Reordering doesn't
  *               shift colors. Same-sample multiple traces share a color
  *               (acceptable for v1; user breaks ties via `color_override`).
- *   byPhase   — color is `phaseColor(snapshot.confirmed_index.phase)`.
- *               Unindexed traces fall back to `ORPHAN_FALLBACK`.
+ *   byPhase   — color is `phaseColor(dominantPhase(member))`, resolved via
+ *               the shared lib/series/memberRead predicate the series plate
+ *               uses (confirmed_phases[0] ?? confirmed_index.phase; form-
+ *               factor / null states are phaseless). Phaseless traces fall
+ *               back to `ORPHAN_FALLBACK`.
  *   distinct  — palette walked by `display_order` (in `allMembers` array
  *               order). Cycles when N > palette.length.
  *
  * Resolution order: `member.color_override` → grouping-mode default →
  * `ORPHAN_FALLBACK`.
  *
- * The palette is a small categorical set tuned for dark backgrounds (chroma
- * 0.10–0.13, luminance 0.76–0.80). Hues are spread ≥30° apart to keep
- * adjacent palette entries visually distinct. Vendoring here rather than
- * reusing `phases.ts` because phase colors carry semantic meaning (phase A
- * is always color X) — categorical trace colors must not collide with that
- * mapping or `byPhase` and `bySample` would visually conflate.
+ * The palette is a small categorical set paper-tuned for "The Print" (L
+ * 0.52–0.56, chroma 0.12–0.14). Hues are spread ~30° apart to keep adjacent
+ * palette entries visually distinct, and offset from the canonical phase
+ * hues so `byPhase` and `bySample` never visually conflate. Vendoring here
+ * rather than reusing `phases.ts` because phase colors carry semantic
+ * meaning (phase A is always color X) — categorical trace colors must not
+ * collide with that mapping.
  *
  * If a comparison surface ever needs cross-experiment color stability, we
  * can swap the palette indexer for a `hash(sample_id) % len` scheme without
@@ -28,35 +32,57 @@
  */
 import type { SeriesMember } from "../../api";
 import { phaseColor } from "../../phases";
+import { dominantPhase } from "../series/memberRead";
 
 export type GroupingMode = "bySample" | "byPhase" | "distinct";
 
 /**
- * 12-color categorical palette (OKLCH). Hues spaced ~30° apart so two
- * adjacent palette entries are always distinguishable. Chroma + luminance
- * tuned to match the dark theme's text/background contrast band.
+ * 12-color categorical palette (OKLCH), paper-tuned for "The Print" (R8-N2,
+ * round-2 finding) so bySample/distinct traces read at WCAG AA on `--plate`.
  *
- * Hues are offset +15° from the canonical phase palette in `phases.ts`
- * so no entry matches a phase color exactly — required for `byPhase` and
- * `bySample` not to visually conflate (a sample never indexed as Pn3m
- * must not render in Pn3m's amber). A regression test in
- * `test/coloring.test.ts` pins the no-collision invariant; keep it
- * green if you re-tune hues here. Chroma + luminance unchanged from the
- * original tuning so dark-background contrast still holds.
+ * Tuning: luminance L 0.52–0.56, chroma 0.12–0.14 — the same band the R0b
+ * PHASE_PALETTE retune (#222) settled on. The retired dark-field tuning
+ * (L 0.76–0.80) washed out on the warm paper surface — round-2 caught the
+ * regression because the live builder defaults to `bySample` and most series
+ * are unindexed, making this palette the dominant visual on the destination
+ * surface.
+ *
+ * **Phase-offset invariant.** Each entry is held ≥13° from every hue in
+ * `PHASE_PALETTE` (`phases.ts`), with nine of twelve sitting at exactly 15°.
+ * At L≈0.55 C≈0.13 a 13° hue shift is ΔE2000 ≈ 2.5 — perceptually distinct,
+ * the smallest gap the geometry allows while keeping twelve entries (the
+ * eight phase hues pack the warm and purple sectors tightly enough that
+ * ≥15° everywhere AND twelve mutually-distinct entries is infeasible — see
+ * the proof in `test/coloring.test.ts`'s phase-offset block). The egregious
+ * 3° collision the round-1 review caught (entry 315 vs Fd3m 318) has been
+ * resolved by relocating that entry to 285.
+ *
+ * The offset matters because `byPhase` resolves through `PHASE_PALETTE` and
+ * `bySample`/`distinct` walk this palette: a sample never indexed as Pn3m
+ * must not render in something perceptually identical to Pn3m's amber.
+ *
+ * Tradeoff: hue 285 sits 6° from neighbour 279, so the two render as
+ * "purple" and "violet-purple" in legend order — visually paired but
+ * distinct. Acceptable; this palette is categorical, not a rainbow.
+ *
+ * Regression tests in `test/coloring.test.ts` pin the invariants: the
+ * numeric phase-offset floor (≥13°), the L-band (0.50–0.58), and the AA-
+ * on-`--plate` contrast floor mirroring `phases.test.ts`. Keep all three
+ * green if you re-tune hues here.
  */
 export const COMPARE_PALETTE: readonly string[] = [
-  "oklch(0.78 0.13  33)", // warm coral
-  "oklch(0.80 0.13  77)", // gold
-  "oklch(0.79 0.12 147)", // moss
-  "oklch(0.78 0.12 175)", // teal
-  "oklch(0.79 0.12 200)", // cyan
-  "oklch(0.78 0.12 220)", // azure
-  "oklch(0.80 0.10 263)", // lavender
-  "oklch(0.76 0.12 295)", // purple
-  "oklch(0.76 0.12 315)", // magenta-purple
-  "oklch(0.76 0.12 333)", // raspberry
-  "oklch(0.78 0.12   3)", // pink-red
-  "oklch(0.79 0.10 105)", // chartreuse
+  "oklch(0.55 0.14  33)", // warm coral
+  "oklch(0.56 0.14  73)", // gold
+  "oklch(0.52 0.13 147)", // moss
+  "oklch(0.52 0.12 177)", // teal
+  "oklch(0.52 0.12 200)", // cyan
+  "oklch(0.52 0.12 220)", // azure
+  "oklch(0.52 0.14 249)", // lavender
+  "oklch(0.52 0.13 279)", // purple
+  "oklch(0.52 0.13 285)", // violet-purple (was 315 = 3° from Fd3m 318; #251 r1)
+  "oklch(0.55 0.14 333)", // raspberry
+  "oklch(0.55 0.14   5)", // pink-red
+  "oklch(0.55 0.13 105)", // chartreuse
 ];
 
 /** Neutral cool-gray for orphans (NULL exposure, no phase, etc.). */
@@ -149,8 +175,13 @@ function hashSampleId(id: number): number {
 }
 
 function defaultByPhase(member: SeriesMember): string {
-  const phase = member.snapshot?.confirmed_index?.phase;
-  if (!phase) return ORPHAN_FALLBACK;
+  // Single shared predicate (BU-EXPORTDIVERGE): the plate's identity source
+  // is memberRead.dominantPhase (confirmed_phases[0] ?? confirmed_index.phase,
+  // phaseless under form_factor/null states). Reading confirmed_index.phase
+  // directly here made coexistence members export in the wrong phase color
+  // whenever the two chains disagreed.
+  const phase = dominantPhase(member);
+  if (phase === null) return ORPHAN_FALLBACK;
   return phaseColor(phase);
 }
 

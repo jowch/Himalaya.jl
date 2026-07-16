@@ -8,7 +8,6 @@ class ResizeObserverStub {
   disconnect(): void {}
 }
 if (typeof globalThis.ResizeObserver === "undefined") {
-  // @ts-expect-error JSDOM lacks ResizeObserver
   globalThis.ResizeObserver = ResizeObserverStub;
 }
 
@@ -36,6 +35,14 @@ class EventSourceStub {
 if (typeof globalThis.EventSource === "undefined") {
   // @ts-expect-error JSDOM lacks EventSource
   globalThis.EventSource = EventSourceStub;
+}
+
+// JSDOM does not implement object URLs. DetectorImage turns a fetched image blob
+// into one for its <img>; stub both so any component that renders a detector
+// image doesn't throw. Tests asserting the value re-stub createObjectURL locally.
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:stub";
+  URL.revokeObjectURL = () => {};
 }
 
 // JSDOM does not implement window.matchMedia. Stub it so boneyard-js dark-mode

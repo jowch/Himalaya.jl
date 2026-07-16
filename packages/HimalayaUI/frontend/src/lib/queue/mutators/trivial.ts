@@ -12,7 +12,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import * as api from "../../../api";
 import type {
-  Sample, SampleTag, Exposure, ExposureTag, SampleMessage, ComparisonMessage,
+  Sample, SampleTag, Exposure, ExposureTag, SampleMessage,
   AuthOpts, CorpusSample,
 } from "../../../api";
 import { queryKeys } from "../../../queries";
@@ -38,7 +38,7 @@ function buildAuthOpts(p: {
 // update_sample
 // ---------------------------------------------------------------------------
 
-export type UpdateSampleInput = { display_name?: string; notes?: string };
+export type UpdateSampleInput = { name?: string; notes?: string };
 type UpdateSampleScope = BaseScope & { experimentId: number; sampleId: number };
 
 export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, Sample> = {
@@ -83,7 +83,6 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     const patch: Partial<Sample> = {};
     if (response.name !== undefined) patch.name = response.name;
     if (response.notes !== undefined) patch.notes = response.notes;
-    if (response.display_name !== undefined) patch.display_name = response.display_name;
     const list = qc.getQueryData<Sample[]>(samplesKey);
     if (list) {
       qc.setQueryData<Sample[]>(samplesKey, list.map((s) =>
@@ -96,9 +95,9 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
   },
 };
 
-function patchOf(p: { display_name?: string; notes?: string }): { display_name?: string; notes?: string } {
-  const out: { display_name?: string; notes?: string } = {};
-  if (p.display_name !== undefined) out.display_name = p.display_name;
+function patchOf(p: { name?: string; notes?: string }): { name?: string; notes?: string } {
+  const out: { name?: string; notes?: string } = {};
+  if (p.name !== undefined) out.name = p.name;
   if (p.notes !== undefined) out.notes = p.notes;
   return out;
 }
@@ -389,6 +388,53 @@ export const removeCorpusSampleTagMutator: Mutator<
 };
 
 // ---------------------------------------------------------------------------
+// edit_tag (corpus sample) — Slice 2 (editable tags)
+// ---------------------------------------------------------------------------
+
+export type EditCorpusSampleTagInput = { tagId: number; key: string; value: string };
+type EditCorpusSampleTagScope = BaseScope & { sampleId: number };
+
+export const editCorpusSampleTagMutator: Mutator<
+  EditCorpusSampleTagInput, EditCorpusSampleTagScope, SampleTag
+> = {
+  kind: "edit_tag",
+  onMutate: (p, qc): RollbackContext => {
+    const key = queryKeys.corpusSamples;
+    const prev = qc.getQueryData<CorpusSample[]>(key);
+    if (prev) {
+      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
+        s.id === p.sampleId
+          ? { ...s, tags: s.tags.map((t) =>
+              t.id === p.tagId ? { ...t, key: p.key, value: p.value } : t) }
+          : s,
+      ));
+    }
+    return {
+      restore: () => {
+        if (prev !== undefined) qc.setQueryData(key, prev);
+      },
+    };
+  },
+  request: (p) => api.editSampleTag(p.sampleId, p.tagId, { key: p.key, value: p.value }, buildAuthOpts(p)),
+  // id is stable across the edit, so the optimistic row already matches the
+  // server row — no placeholder reconciliation needed (unlike add).
+  onSuccess: () => {},
+  // `source: "manual"` is a faint-marker-only inaccuracy for a scoping-edited tag —
+  // the SSE payload carries no source, and source is not surfaced in the pill UI.
+  synthesizeFromSse: (remote, base) => {
+    const p = (remote.payload as Record<string, unknown> | undefined) ?? {};
+    if (p.tag_id === undefined) return undefined;
+    return {
+      ...base,
+      id: p.tag_id as number,
+      key: p.key as string,
+      value: p.value as string,
+      source: "manual",
+    } as SampleTag;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // post_message
 // ---------------------------------------------------------------------------
 
@@ -424,54 +470,6 @@ export const postSampleMessageMutator: Mutator<PostSampleMessageInput, PostSampl
         list ?? [],
         response,
         (m) => m.body === response.body && m.sample_id === response.sample_id,
-      ),
-    );
-  },
-};
-
-// ---------------------------------------------------------------------------
-// post_message — comparison context (Phase 10)
-// ---------------------------------------------------------------------------
-// Same OpKind ("post_message") as the sample variant; the registry
-// discriminates by payload shape (`comparisonId` vs `sampleId`). Cache key
-// is `queryKeys.comparisonMessages(comparisonId)` and the wire route is
-// `POST /api/comparisons/:id/messages`. The placeholder shape mirrors the
-// `ComparisonMessage` row.
-
-export type PostComparisonMessageInput = { body: string };
-type PostComparisonMessageScope = BaseScope & { comparisonId: number };
-
-export const postComparisonMessageMutator: Mutator<
-  PostComparisonMessageInput, PostComparisonMessageScope, ComparisonMessage
-> = {
-  kind: "post_message",
-  onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.comparisonMessages(p.comparisonId);
-    const prev = qc.getQueryData<ComparisonMessage[]>(key);
-    const placeholder: ComparisonMessage = {
-      id: nextOptimisticId(),
-      comparison_id: p.comparisonId,
-      author_id: null,
-      author: p.username ?? null,
-      body: p.body,
-      created_at: new Date().toISOString(),
-    };
-    qc.setQueryData<ComparisonMessage[]>(key, [...(prev ?? []), placeholder]);
-    return {
-      restore: () => {
-        if (prev === undefined) qc.removeQueries({ queryKey: key, exact: true });
-        else qc.setQueryData(key, prev);
-      },
-    };
-  },
-  request: (p) => api.postComparisonMessage(p.comparisonId, p.body, buildAuthOpts(p)),
-  onSuccess: (p, response, qc) => {
-    const key = queryKeys.comparisonMessages(p.comparisonId);
-    qc.setQueryData<ComparisonMessage[]>(key, (list) =>
-      replacePlaceholder(
-        list ?? [],
-        response,
-        (m) => m.body === response.body && m.comparison_id === response.comparison_id,
       ),
     );
   },

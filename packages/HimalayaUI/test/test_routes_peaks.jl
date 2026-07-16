@@ -6,16 +6,16 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # GET peaks
-        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        r = call("GET", "/api/exposures/$e_id/peaks")
         @test r.status == 200
         list = JSON3.read(String(r.body))
         @test length(list) > 0
@@ -26,8 +26,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test !isempty(initial_indices)
 
         # POST manual peak
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.5)),
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 201
@@ -36,13 +36,13 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.source == "manual"
         peak_id = body.id
 
-        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        r = call("GET", "/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))
         manual = filter(p -> p.source == "manual", list)
         @test length(manual) == 1
 
         # DELETE peak
-        r = HTTP.delete("$base/api/peaks/$peak_id";
+        r = call("DELETE", "/api/peaks/$peak_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
         del_body = JSON3.read(String(r.body))
@@ -50,7 +50,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test haskey(del_body, :view_row_id)
         @test haskey(del_body, :analysis_inputs_hash)
 
-        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        r = call("GET", "/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))
         # After deleting the only manual peak, no manual peaks should remain.
         # (Note: auto peak ids and curation ids are in separate sequences and
@@ -58,8 +58,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test !any(p -> p.source == "manual", list)
 
         # 404 delete
-        r = HTTP.delete("$base/api/peaks/99999";
-            headers = ["X-Username" => "alice"], status_exception = false)
+        r = call("DELETE", "/api/peaks/99999";
+            headers = ["X-Username" => "alice"])
         @test r.status == 404
 
         # ── PATCH excluded on auto peaks ─────────────────────────────────
@@ -69,8 +69,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         auto_id = Int(all_peaks[1].id)
 
         # Toggle excluded=true
-        r = HTTP.patch("$base/api/peaks/$auto_id";
-            body = JSON3.write(Dict(:excluded => true)),
+        r = call("PATCH", "/api/peaks/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 200
@@ -79,8 +79,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.source   == "auto"
 
         # Toggle back to false
-        r = HTTP.patch("$base/api/peaks/$auto_id";
-            body = JSON3.write(Dict(:excluded => false)),
+        r = call("PATCH", "/api/peaks/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 200
@@ -88,30 +88,28 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.excluded == false
 
         # PATCHing a manual peak's excluded → 400 (manual peaks delete instead)
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.42)),
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.42))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         manual_id = JSON3.read(String(r.body)).id
-        r = HTTP.patch("$base/api/peaks/$manual_id";
-            body = JSON3.write(Dict(:excluded => true)),
+        r = call("PATCH", "/api/peaks/$manual_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"],
-            status_exception = false)
+                       "X-Username"   => "alice"])
         @test r.status == 400
 
         # PATCH unknown peak → 404
-        r = HTTP.patch("$base/api/peaks/99999";
-            body = JSON3.write(Dict(:excluded => true)),
+        r = call("PATCH", "/api/peaks/99999";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"],
-            status_exception = false)
+                       "X-Username"   => "alice"])
         @test r.status == 404
 
         # ── Reanalysis preserves excluded state ──────────────────────────
         # Re-mark the auto peak as excluded, then re-run analysis.
-        r = HTTP.patch("$base/api/peaks/$auto_id";
-            body = JSON3.write(Dict(:excluded => true)),
+        r = call("PATCH", "/api/peaks/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 200
@@ -122,7 +120,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # After reanalysis, the auto peak at the same q still exists in auto_peaks,
         # and an exclude curation row should still be present for it.
         # Use the joined view (get_peaks_for_exposure) via GET /api/exposures/:id/peaks.
-        r_after = HTTP.get("$base/api/exposures/$e_id/peaks")
+        r_after = call("GET", "/api/exposures/$e_id/peaks")
         post_list = JSON3.read(String(r_after.body))
         match = filter(p -> abs(Float64(p.q) - excluded_q) < 1e-6, post_list)
         @test !isempty(match)
@@ -142,35 +140,33 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Missing q → 400.
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:NOT_q => 0.5)),
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:NOT_q => 0.5))),
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"],
-            status_exception = false)
+                       "X-Username"   => "alice"])
         @test r.status == 400
         body = JSON3.read(String(r.body))
         @test occursin("missing field: q", String(body.error))
 
         # Non-numeric q → 400.
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => "not-a-number")),
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => "not-a-number"))),
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"],
-            status_exception = false)
+                       "X-Username"   => "alice"])
         @test r.status == 400
 
         # Valid body still 201.
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.5)),
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 201
@@ -185,21 +181,21 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.77)),
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.77))),
             headers = ["Content-Type" => "application/json", "X-Username" => "bob"])
         @test r.status == 201
         new_id = JSON3.read(String(r.body)).id
 
-        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        r = call("GET", "/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))
         manual = filter(p -> p.source == "manual", list)
         @test length(manual) == 1
@@ -215,14 +211,14 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Pick an auto peak
         auto_rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
@@ -230,8 +226,8 @@ end
         auto_q  = Float64(auto_rows[1].q)
 
         # Exclude it
-        r = HTTP.patch("$base/api/peaks/$auto_id";
-            body = JSON3.write(Dict(:excluded => true)),
+        r = call("PATCH", "/api/peaks/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r.status == 200
         @test JSON3.read(String(r.body)).excluded == true
@@ -243,8 +239,8 @@ end
         @test length(excl) == 1
 
         # Un-exclude it
-        r = HTTP.patch("$base/api/peaks/$auto_id";
-            body = JSON3.write(Dict(:excluded => false)),
+        r = call("PATCH", "/api/peaks/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r.status == 200
         @test JSON3.read(String(r.body)).excluded == false
@@ -263,14 +259,14 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         auto_rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
         auto_id = Int(auto_rows[1].id)
@@ -278,8 +274,8 @@ end
 
         # Two consecutive PATCH { excluded: true }
         for _ in 1:2
-            r = HTTP.patch("$base/api/peaks/$auto_id";
-                body = JSON3.write(Dict(:excluded => true)),
+            r = call("PATCH", "/api/peaks/$auto_id";
+                body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
             @test r.status == 200
         end
@@ -298,23 +294,23 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Add a manual peak
-        r = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.88)),
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.88))),
             headers = ["Content-Type" => "application/json", "X-Username" => "carol"])
         @test r.status == 201
         manual_id = JSON3.read(String(r.body)).id
 
         # Delete it
-        r = HTTP.delete("$base/api/peaks/$manual_id";
+        r = call("DELETE", "/api/peaks/$manual_id";
             headers = ["X-Username" => "carol"])
         @test r.status == 200
         del_body = JSON3.read(String(r.body))
@@ -324,7 +320,7 @@ end
         @test del_body.analysis_inputs_hash isa AbstractString
 
         # Should no longer appear in GET (no manual peaks)
-        r = HTTP.get("$base/api/exposures/$e_id/peaks")
+        r = call("GET", "/api/exposures/$e_id/peaks")
         list = JSON3.read(String(r.body))
         @test !any(p -> p.source == "manual", list)
 
@@ -343,23 +339,23 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Two sequential POSTs at different q values.
-        r1 = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.111)),
+        r1 = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.111))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r1.status == 201
         b1 = JSON3.read(String(r1.body))
 
-        r2 = HTTP.post("$base/api/exposures/$e_id/peaks";
-            body = JSON3.write(Dict(:q => 0.222)),
+        r2 = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.222))),
             headers = ["Content-Type" => "application/json", "X-Username" => "bob"])
         @test r2.status == 201
         b2 = JSON3.read(String(r2.body))
@@ -386,21 +382,20 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         auto_rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
         auto_id = Int(auto_rows[1].id)
 
-        r = HTTP.delete("$base/api/peaks/$auto_id";
-            headers = ["X-Username" => "alice"],
-            status_exception = false)
+        r = call("DELETE", "/api/peaks/$auto_id";
+            headers = ["X-Username" => "alice"])
         @test r.status == 400
     end
 end
@@ -412,11 +407,11 @@ function _setup_peaks_test(tmp)
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
     return db, e_id, analysis_dir
 end
@@ -460,14 +455,14 @@ end
     tmp = mktempdir()
     db, e_id, _ = _setup_peaks_test(tmp)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         pending, sub = _attach_sse_subscriber!()
         try
             # Drain any existing frames (e.g. analyze_run from setup).
             _drain_curation_frames(pending; timeout=0.05)
 
-            r = HTTP.post("$base/api/exposures/$e_id/peaks";
-                body = JSON3.write(Dict(:q => 0.55)),
+            r = call("POST", "/api/exposures/$e_id/peaks";
+                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.55))),
                 headers = ["Content-Type"  => "application/json",
                            "X-Username"    => "alice",
                            "X-Client-Op-Id" => "uuid-m22-post-1"])
@@ -501,13 +496,13 @@ end
     tmp = mktempdir()
     db, e_id, _ = _setup_peaks_test(tmp)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         pending, sub = _attach_sse_subscriber!()
         try
             _drain_curation_frames(pending; timeout=0.05)
 
-            r1 = HTTP.post("$base/api/exposures/$e_id/peaks";
-                body = JSON3.write(Dict(:q => 0.66)),
+            r1 = call("POST", "/api/exposures/$e_id/peaks";
+                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.66))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-retry"])
@@ -518,8 +513,8 @@ end
             @test length(filter(f -> _frame_kind(f) == "peak_added", frames1)) == 1
 
             # Same op_id → cached body returned, no new event row, no broadcast.
-            r2 = HTTP.post("$base/api/exposures/$e_id/peaks";
-                body = JSON3.write(Dict(:q => 0.66)),
+            r2 = call("POST", "/api/exposures/$e_id/peaks";
+                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.66))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-retry"])
@@ -545,7 +540,7 @@ end
     tmp = mktempdir()
     db, e_id, _ = _setup_peaks_test(tmp)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         pending, sub = _attach_sse_subscriber!()
         try
             auto_rows = Tables.rowtable(DBInterface.execute(db,
@@ -555,8 +550,8 @@ end
             hash_before = HimalayaUI.read_inputs_hash(db, e_id)
             _drain_curation_frames(pending; timeout=0.05)
 
-            r = HTTP.patch("$base/api/peaks/$auto_id";
-                body = JSON3.write(Dict(:excluded => true)),
+            r = call("PATCH", "/api/peaks/$auto_id";
+                body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-patch"])
@@ -577,8 +572,8 @@ end
             @test occursin("\"post_state\"", excl[1])
 
             # Retry returns cached body, no second event.
-            r2 = HTTP.patch("$base/api/peaks/$auto_id";
-                body = JSON3.write(Dict(:excluded => true)),
+            r2 = call("PATCH", "/api/peaks/$auto_id";
+                body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-patch"])
@@ -599,18 +594,18 @@ end
     tmp = mktempdir()
     db, e_id, _ = _setup_peaks_test(tmp)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         pending, sub = _attach_sse_subscriber!()
         try
             # First add a manual peak (without subscriber drained).
-            r = HTTP.post("$base/api/exposures/$e_id/peaks";
-                body = JSON3.write(Dict(:q => 0.42)),
+            r = call("POST", "/api/exposures/$e_id/peaks";
+                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.42))),
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
             @test r.status == 201
             manual_id = JSON3.read(String(r.body)).id
             _drain_curation_frames(pending; timeout=0.1)
 
-            r = HTTP.delete("$base/api/peaks/$manual_id";
+            r = call("DELETE", "/api/peaks/$manual_id";
                 headers = ["X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-del"])
             @test r.status == 200

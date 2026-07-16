@@ -17,7 +17,10 @@ Index, phase, basis, peaks, numpeaks, predictpeaks, missingpeaks,
 ==, issubset, show, indexpeaks, fit, score,
 
 # peaks
-findpeaks, persistence, knee
+findpeaks, persistence, knee,
+
+# bonnet
+bonnet_lattice, bonnet_consistent
 
 include("util.jl")
 include("phase.jl")
@@ -26,5 +29,6 @@ include("persistence.jl")
 include("sharpness.jl")
 include("peakfinding.jl")
 include("index.jl")
+include("bonnet.jl")
 
 end # module

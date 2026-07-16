@@ -41,7 +41,6 @@ describe("fromSeries", () => {
     });
     const d = fromSeries(s);
     expect(d.id).toBe(5);
-    expect(d.baseHash).toBe("sha256:base");
     expect(d.title).toBe("Titration");
     expect(d.description).toBe("desc");
     expect(d.orderingVariable).toBe("LL37 : lipid");
@@ -123,24 +122,16 @@ describe("buildSeriesSaveBody", () => {
 });
 
 describe("buildSeriesCommitBody", () => {
-  it("emits id-less positional members and carries expected_content_hash from baseHash", () => {
+  it("emits id-less positional members and NEVER carries expected_content_hash (LWW relax, Plan 6a)", () => {
     const s = series({
       members: [member({ id: 1, exposure_id: 101, display_order: 0 }),
                 member({ id: 2, exposure_id: 102, display_order: 1 })],
     });
-    const d = fromSeries(s);
-    const body = buildSeriesCommitBody(d, s.members);
-    expect(body.expected_content_hash).toBe("sha256:base");
+    const body = buildSeriesCommitBody(s.members);
+    expect(body).not.toHaveProperty("expected_content_hash");
     expect(body.members.map((m) => [m.exposure_id, m.display_order])).toEqual([
       [101, 0], [102, 1],
     ]);
     for (const m of body.members) expect("id" in m).toBe(false);
-  });
-
-  it("omits expected_content_hash when baseHash is undefined", () => {
-    const s = series({ members: [member()] });
-    const d = { ...fromSeries(s), baseHash: undefined };
-    const body = buildSeriesCommitBody(d, s.members);
-    expect("expected_content_hash" in body).toBe(false);
   });
 });

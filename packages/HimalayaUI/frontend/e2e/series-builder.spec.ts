@@ -1,5 +1,32 @@
 import { test, expect, type Page } from "@playwright/test";
 
+// Greenfield series-builder spec (SeriesBuilderPage + SeriesPlate + BuilderRail +
+// MemberList). The legacy DOM (recipe-title / recipe-add-sample / recipe-save /
+// recipe-commit / recipe-cancel + the commit-409 conflict modal) is GONE.
+//
+// The greenfield page is an EXPLICIT edit-mode surface on a single "Compose"
+// screen (BU-EDITMODE):
+//   • Opening /series/:id renders the committed series READ-ONLY: a static title
+//     heading, a static member list, and a single footer "Edit" door. The commit
+//     verbs and the editing affordances (title input, add-sample picker, reorder
+//     controls) are NOT in the read-state DOM — read mode is genuinely read-only.
+//   • Pressing "Edit" enters edit mode → a live draft starts, the title becomes
+//     editable, the add-sample picker + reorder controls appear, and the footer
+//     swaps to "Save changes" (ENABLED) + "Cancel".
+//   • "Save changes" = a Save→Commit CHAIN: PATCH /api/series/:id (save,
+//     persists the RECIPE) THEN, on its success, POST /api/series/:id/commit
+//     with the plate RESOLVED FROM THE SAVED RECIPE (recipe samples → picker
+//     indexing exposures; the PATCH does not rebuild members — BU-RECIPENOOP).
+//     After commit success the page returns to read state (no navigation).
+//   • There is NO separate Save button and NO conflict modal (409 relaxed to
+//     last-write-wins — Plan 6a).
+//   • Cancel discards the draft with no request.
+//
+// Selectors are taken verbatim from the component test
+// (test/print-pages/SeriesBuilderPage.test.tsx): series-plate, series-member-row,
+// builder-add-sample (+ add-opt-<id>), aria-label="Series title", role=button names
+// "Save changes" / "Edit" / "Cancel".
+
 const MEMBER = {
   id: 1, series_id: 5, exposure_id: 101, display_order: 0,
   band_height: 1, y_offset: 0, normalization: "max",
@@ -14,7 +41,25 @@ const SERIES = {
   forked_from_id: null, forked_at_hash: null, forked_from_title: null,
   view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
   ordering_variable: "LL37 : lipid ratio", order_rule: "ascending",
-  state: "committed", members: [MEMBER], samples: [],
+  state: "committed",
+  members: [MEMBER],
+  // The recipe (samples) backs the add-sample "addable" projection. One member
+  // already in the recipe → only the OTHER corpus sample is addable.
+  samples: [{ id: 1, series_id: 5, sample_id: 10, position: 0, pinned: false, excluded: false }],
+};
+
+// The series returned by a successful save: the RECIPE now carries BOTH
+// samples (10 and the added 20) while the cached members still hold only one
+// row — the dev-DB BU-RECIPENOOP shape. The commit body must be resolved from
+// the recipe (samples 10, 20 → exposures 101, 202), not echo these members.
+const SAVED_MEMBER = { ...MEMBER, id: 2, exposure_id: 202, display_order: 0 };
+const SAVED_SERIES = {
+  ...SERIES, content_hash: "h2", title: "LL37 titration v2",
+  members: [SAVED_MEMBER],
+  samples: [
+    { id: 1, series_id: 5, sample_id: 10, position: 0, pinned: false, excluded: false },
+    { id: 2, series_id: 5, sample_id: 20, position: 1, pinned: false, excluded: false },
+  ],
 };
 
 const TRACE = {
@@ -23,16 +68,12 @@ const TRACE = {
   sigma: Array.from({ length: 50 }, () => 5),
 };
 
-const EXPOSURE = {
-  id: 101, sample_id: 10, filename: "exp1.dat", kind: "file",
-  selected: true, status: "accepted", image_path: null, image_version: "",
-  tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null,
-};
-
-const SAMPLE = {
-  id: 10, experiment_id: 1, name: "JC042", display_name: "DOPE 80%",
-  notes: null, tags: [], q_units: "A-1",
-};
+const CORPUS = [
+  { id: 10, experiment_id: 1, name: "JC042", display_name: "DOPE 80%",
+    notes: null, tags: [], q_units: "A-1" },
+  { id: 20, experiment_id: 1, name: "JC050", display_name: "DOPE 90%",
+    notes: null, tags: [], q_units: "A-1" },
+];
 
 async function mockCore(page: Page): Promise<void> {
   await page.route("**/api/users", (r) =>
@@ -40,192 +81,200 @@ async function mockCore(page: Page): Promise<void> {
       body: JSON.stringify([{ id: 1, username: "jc" }]) }));
   await page.route("**/api/experiments", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  // Full nested series detail (GET). PATCH is overridden per-test where the
+  // save chain is exercised.
   await page.route("**/api/series/5", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SERIES) }));
-  await page.route("**/api/exposures/101/trace", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(TRACE) }));
-  await page.route("**/api/exposures/101", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPOSURE) }));
-  await page.route("**/api/samples/10", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SAMPLE) }));
-  // Corpus sample list — the recipe editor's "Add sample" dropdown source.
+  // Batch member traces (exposure_id → Trace). Both the committed (101) and the
+  // post-save (202) plate exposures resolve so neither waterfall is empty.
+  await page.route("**/api/series/5/traces", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ 101: TRACE, 202: TRACE }) }));
+  // Corpus sample list — the add-sample select's option source.
   await page.route("**/api/samples", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
-      { ...SAMPLE },
-      { id: 20, experiment_id: 1, name: "JC050", display_name: "DOPE 90%",
-        notes: null, tags: [], q_units: "A-1" },
-    ]) }));
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CORPUS) }));
+  // Corpus picker projection — the Confirm chain's sample→exposure resolution
+  // source (BU-RECIPENOOP). Without it Confirm stays gated (disabled).
+  await page.route("**/api/picker-samples", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify([
+        { sample: CORPUS[0], indexing_exposure_id: 101, all_exposures: [] },
+        { sample: CORPUS[1], indexing_exposure_id: 202, all_exposures: [] },
+      ]) }));
   // SSE endpoint — drain immediately so the multiplayer EventSource doesn't
-  // hang the page (see e2e/AGENTS.md + compare.spec.ts).
+  // hang the page (see e2e/AGENTS.md + the sibling series specs).
   await page.route("**/api/events", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
 }
 
 /** Seed a username + tutorialSeen so the first-run onboarding overlay (which
- *  intercepts pointer events) does not block clicks. Mirrors figure-export. */
+ *  intercepts pointer events) does not block clicks. Mirrors the sibling specs. */
 async function seedState(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const state = {
-      version: 3,
-      state: { username: "jc", tutorialSeen: true, theme: "dark" },
-    };
-    localStorage.setItem("himalaya-ui:state", JSON.stringify(state));
+    localStorage.setItem(
+      "himalaya-ui:state",
+      JSON.stringify({ state: { username: "jc", tutorialSeen: true, theme: "dark" }, version: 3 }),
+    );
   });
 }
 
-test.describe("series builder", () => {
-  test.use({ permissions: ["clipboard-read", "clipboard-write"] });
-
-  test("renders the builder waterfall under the corpus shell", async ({ page }) => {
-    await mockCore(page);
-    await seedState(page);
-    await page.goto("/series/5");
-    await expect(page.getByTestId("series-builder-page")).toBeVisible();
-    await expect(page.getByTestId("series-builder-plot")).toBeVisible();
-    await expect(page.getByTestId("series-builder-rail")).toBeVisible();
-    // heatmap is the deferred (#208) option — present but disabled
-    await expect(page.getByTestId("repr-heatmap")).toBeDisabled();
-  });
-
-  test("Copy puts a PNG on the clipboard (Chromium)", async ({ page, browserName }) => {
-    test.skip(browserName !== "chromium", "Clipboard read requires Chromium permissions");
+test.describe("series builder — greenfield DOM", () => {
+  test("opening /series/:id renders the committed series read-only; only the Edit door shows", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
     await page.goto("/series/5");
 
-    const copyBtn = page.getByRole("button", { name: /copy series figure to clipboard/i });
-    await expect(copyBtn).toBeEnabled();
-    await copyBtn.click();
-
-    await page.waitForTimeout(500);
-    const types = await page.evaluate(async () => {
-      const items = await navigator.clipboard.read();
-      const out: string[] = [];
-      for (const item of items) for (const t of item.types) out.push(t);
-      return out;
-    });
-    expect(types).toContain("image/png");
+    // The committed plate renders.
+    await expect(page.getByTestId("series-plate")).toBeVisible();
+    // BU-EDITMODE: the committed title is a STATIC heading in read mode (no
+    // editable input — typing can no longer silently start a draft).
+    await expect(
+      page.getByRole("heading", { level: 1, name: "LL37 titration" }),
+    ).toBeVisible();
+    await expect(page.getByLabel(/series title/i)).toHaveCount(0);
+    // BU-EDIT-BUTTON: read state is a single "Edit" door — the commit verbs
+    // (Save changes / Cancel) belong to draft mode, so neither shows here.
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
+    // No separate Save button and no conflict modal in the read-state DOM.
+    await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
+    await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
   });
 
-  test("collapses the rail to full-bleed and restores it", async ({ page }) => {
+  test("Edit unlocks edit mode (Save changes + Cancel + the add-sample picker); adding a sample appends a recipe row", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
     await page.goto("/series/5");
-    await page.getByTestId("rail-collapse-toggle").click();
-    await expect(page.getByTestId("rail-restore")).toBeVisible();
-    await page.getByTestId("rail-restore").click();
-    await expect(page.getByTestId("series-builder-rail")).toBeVisible();
+
+    // Read state: read-only — no Save changes, no add-sample picker, just Edit.
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByTestId("builder-add-sample")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
+
+    // Edit unlocks edit mode: Save changes (enabled) + Cancel + the add picker.
+    await page.getByRole("button", { name: /^edit$/i }).click();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
+
+    // Add the only addable corpus sample (id 20 — sample 10 is already in the
+    // recipe). The add affordance is a search-first picker: open it, then pick
+    // the option (builder-add-sample trigger → add-opt-<sampleId>).
+    await page.getByTestId("builder-add-sample").click();
+    await page.getByTestId("add-opt-20").click();
+    await expect(page.getByTestId("builder-recipe-row")).toHaveCount(2);
   });
 
-  test("build → edit → commit → export round-trips", async ({ page }) => {
+  test("Confirm series fires PATCH then POST /commit (in that order) and returns to read state", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
 
-    // Capture the recipe-save PATCH + the commit POST bodies.
-    let patchBody: unknown = null;
-    let commitBody: unknown = null;
+    // Record the request order. The commit (POST) mock asserts the PATCH was
+    // seen first — gating, not timing, makes the ordering assertion robust.
+    const order: string[] = [];
+    let patchSeen = false;
+
+    // Override GET/PATCH on /api/series/5. PATCH returns the saved full Series:
+    // its RECIPE holds samples 10 + 20 while its members hold only exposure 202
+    // — the commit body must be resolved from the recipe, not echo the members.
     await page.route("**/api/series/5", async (route) => {
       const req = route.request();
       if (req.method() === "PATCH") {
-        patchBody = req.postDataJSON();
+        order.push("PATCH");
+        patchSeen = true;
         await route.fulfill({ status: 200, contentType: "application/json",
-          body: JSON.stringify(SERIES) });
+          body: JSON.stringify(SAVED_SERIES) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify(SERIES) });
+    });
+
+    let commitBody: { members?: Array<{ exposure_id: number }> } | null = null;
+    await page.route("**/api/series/5/commit", async (route) => {
+      order.push("POST");
+      commitBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ ...SAVED_SERIES, content_hash: "h3" }) });
+    });
+
+    await page.goto("/series/5");
+
+    // Enter edit mode (BU-EDITMODE: Edit is the sole draft entry), then Confirm.
+    await page.getByRole("button", { name: /^edit$/i }).click();
+    const confirm = page.getByRole("button", { name: /save changes/i });
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    // The PATCH lands first.
+    await expect.poll(() => patchSeen, { timeout: 3000 }).toBe(true);
+    // Then the POST /commit lands.
+    await expect.poll(() => commitBody, { timeout: 3000 }).not.toBeNull();
+    // ORDER assertion (load-bearing): PATCH strictly precedes POST.
+    expect(order).toEqual(["PATCH", "POST"]);
+    // Provenance (BU-RECIPENOOP): the commit body is the plate RESOLVED FROM
+    // THE SAVED RECIPE — sample 10 → exposure 101 AND the added sample 20 →
+    // exposure 202 — not an echo of the save response's stale single-member
+    // plate ([202]) and not the old committed plate ([101]).
+    expect(commitBody!.members!.map((m) => m.exposure_id)).toEqual([101, 202]);
+
+    // After commit success the page returns to read state: Save changes gone,
+    // the Edit door is back, no Cancel.
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
+  });
+
+  test("Cancel after an edit discards the draft — no PATCH, no POST", async ({ page }) => {
+    await mockCore(page);
+    await seedState(page);
+
+    let patched = false;
+    let committed = false;
+    await page.route("**/api/series/5", async (route) => {
+      const req = route.request();
+      if (req.method() === "PATCH") {
+        patched = true;
+        await route.fulfill({ status: 200, contentType: "application/json",
+          body: JSON.stringify(SAVED_SERIES) });
         return;
       }
       await route.fulfill({ status: 200, contentType: "application/json",
         body: JSON.stringify(SERIES) });
     });
     await page.route("**/api/series/5/commit", async (route) => {
-      commitBody = route.request().postDataJSON();
-      await route.fulfill({ status: 200, contentType: "application/json",
-        body: JSON.stringify({ ...SERIES, content_hash: "h2" }) });
+      committed = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(SERIES) });
     });
 
     await page.goto("/series/5");
-    await expect(page.getByTestId("series-builder-page")).toBeVisible();
 
-    // Enter edit mode → the recipe editor appears.
-    await page.getByTestId("series-builder-edit").click();
-    await expect(page.getByTestId("series-recipe-editor")).toBeVisible();
+    // Enter edit mode, then cancel it.
+    await page.getByRole("button", { name: /^edit$/i }).click();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
+    await page.getByRole("button", { name: /^cancel$/i }).click();
 
-    // Add a sample → an optimistic placeholder row appears immediately.
-    // SERIES.samples is empty, so the added row is the recipe's first row.
-    await page.getByTestId("recipe-add-sample").selectOption("20");
-    await expect(page.getByTestId("recipe-row")).toHaveCount(1);
-
-    // Save the recipe (optimistic → PATCH; NO expected_content_hash).
-    await page.getByTestId("recipe-save").click();
-    await expect.poll(() => patchBody).not.toBeNull();
-    expect(JSON.stringify(patchBody)).not.toContain("expected_content_hash");
-
-    // Commit the plate (spinner → POST commit, carries expected_content_hash).
-    await page.getByTestId("recipe-commit").click();
-    await expect.poll(() => commitBody).not.toBeNull();
-    // Positively pin the commit-only-hash invariant end-to-end (round-1 nit).
-    expect(JSON.stringify(commitBody)).toContain("expected_content_hash");
-
-    // After commit success the editor tears down (back to read mode).
-    await expect(page.getByTestId("series-builder-edit")).toBeVisible();
-
-    // Export still works (figure-export round-trip) — the control is enabled.
-    await expect(
-      page.getByRole("button", { name: /copy series figure to clipboard/i }),
-    ).toBeEnabled();
+    // Back to read state, with no request fired.
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^edit$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^cancel$/i })).toHaveCount(0);
+    expect(patched).toBe(false);
+    expect(committed).toBe(false);
   });
 
-  test("a zero-member series is editable — the recipe editor mounts and the first sample can be added", async ({ page }) => {
-    await mockCore(page);
-    await seedState(page);
-    // A zero-member series — reachable from the folio (the backend listing
-    // includes zero-member series). The empty-plate placeholder must not lock
-    // out edit mode: the rail + recipe editor still mount so the first sample
-    // can be added (round-1 blocking fix).
-    const EMPTY = { ...SERIES, id: 7, members: [], samples: [] };
-    await page.route("**/api/series/7", (r) =>
-      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EMPTY) }));
-
-    await page.goto("/series/7");
-    await expect(page.getByTestId("series-builder-page")).toBeVisible();
-    await expect(page.getByTestId("series-builder-empty")).toBeVisible();
-
-    // Edit mode is reachable for the empty series.
-    await page.getByTestId("series-builder-edit").click();
-    await expect(page.getByTestId("series-recipe-editor")).toBeVisible();
-
-    // The empty placeholder persists in the plot area, but the editor lets the
-    // user add the FIRST sample — the flow the gate used to lock out.
-    await expect(page.getByTestId("series-builder-empty")).toBeVisible();
-    await page.getByTestId("recipe-add-sample").selectOption("20");
-    await expect(page.getByTestId("recipe-row")).toHaveCount(1);
-  });
-
-  test("commit 409 opens the series conflict modal", async ({ page }) => {
-    await mockCore(page);
-    await seedState(page);
-    await page.route("**/api/series/5/commit", (route) =>
-      route.fulfill({ status: 409, contentType: "application/json",
-        body: JSON.stringify({ current_hash: "h2", current_state: { ...SERIES, content_hash: "h2" } }) }));
-
-    await page.goto("/series/5");
-    await page.getByTestId("series-builder-edit").click();
-    await page.getByTestId("recipe-commit").click();
-
-    // The series-commit conflict modal opens (shared chrome, series semantics).
-    await expect(page.getByTestId("conflict-modal")).toBeVisible();
-    await expect(page.getByText(/Series changed while you were editing/)).toBeVisible();
-    // No Fork action on the series modal.
-    await expect(page.getByTestId("conflict-fork")).toHaveCount(0);
-  });
-
-  test("permalink: /series/5 is a URL-owned deep link that re-renders on reload", async ({ page }) => {
+  test("there is no separate Save button and no conflict modal anywhere in the flow", async ({ page }) => {
     await mockCore(page);
     await seedState(page);
     await page.goto("/series/5");
-    await expect(page.getByTestId("series-builder-page")).toBeVisible();
-    // Reload the same URL — the page re-fetches via useSeries (react-router
-    // owns the id; no slug round-trip, no stale flag).
-    await page.reload();
-    await expect(page.getByTestId("series-builder-page")).toBeVisible();
-    await expect(page).toHaveURL(/\/series\/5$/);
+
+    // Read state.
+    await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
+    await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
+
+    // Draft state (entered via Edit) — still no Save button, still no conflict modal.
+    await page.getByRole("button", { name: /^edit$/i }).click();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
+    await expect(page.getByTestId("conflict-modal")).toHaveCount(0);
   });
 });

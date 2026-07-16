@@ -8,9 +8,9 @@ import {
   removeExposureTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   updateSampleMutator,
   postSampleMessageMutator,
-  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
@@ -20,15 +20,9 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 
 describe("resolveMutator", () => {
   it("dispatches add_tag based on payload experimentId presence", () => {
@@ -76,6 +70,15 @@ describe("resolveMutator", () => {
     ).toBe(removeCorpusSampleTagMutator);
   });
 
+  it("dispatches a sampleId-only edit_tag op to the corpus edit mutator", () => {
+    expect(
+      resolveMutator({
+        kind: "edit_tag",
+        payload: { sampleId: 10, tagId: 7, key: "dose", value: "12" },
+      }),
+    ).toBe(editCorpusSampleTagMutator);
+  });
+
   it("dispatches a persisted scoping batch op (add_tag with `tags`) to scopeSeriesMutator", () => {
     // I3.4 (#174): a scoping op persists across reload (kind add_tag +
     // clientOpId, mirrored by persistence.ts). Its payload is the batch shape
@@ -102,12 +105,6 @@ describe("resolveMutator", () => {
     );
     expect(resolveMutator({ kind: "peak_unexcluded", payload: {} })).toBe(
       peakUnexcludeMutator,
-    );
-    expect(resolveMutator({ kind: "index_confirmed", payload: {} })).toBe(
-      addIndexToGroupMutator,
-    );
-    expect(resolveMutator({ kind: "index_unconfirmed", payload: {} })).toBe(
-      removeIndexFromGroupMutator,
     );
     expect(resolveMutator({ kind: "delete_index", payload: {} })).toBe(
       deleteIndexMutator,
@@ -169,18 +166,12 @@ describe("resolveMutatorForEvent", () => {
     expect(resolveMutatorForEvent("remove_tag", "exposure")).toBe(removeExposureTagMutator);
   });
 
+  it("routes edit_tag to the corpus edit mutator (sample-only kind)", () => {
+    expect(resolveMutatorForEvent("edit_tag", "sample")).toBe(editCorpusSampleTagMutator);
+  });
+
   it("splits post_message by entity_type (wire-string entity types)", () => {
     expect(resolveMutatorForEvent("post_message", "sample_message"))    .toBe(postSampleMessageMutator);
-    expect(resolveMutatorForEvent("post_message", "comparison_message")).toBe(postComparisonMessageMutator);
-  });
-
-  it("routes both comparison_created and comparison_submitted to saveComparison", () => {
-    expect(resolveMutatorForEvent("comparison_created",   "comparison")).toBe(saveComparisonMutator);
-    expect(resolveMutatorForEvent("comparison_submitted", "comparison")).toBe(saveComparisonMutator);
-  });
-
-  it("routes comparison_deleted to deleteComparison", () => {
-    expect(resolveMutatorForEvent("comparison_deleted", "comparison")).toBe(deleteComparisonMutator);
   });
 
   it("routes analyze_run to reanalyzeExposure", () => {
@@ -202,20 +193,14 @@ describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
     { mutator: peakRemoveMutator,       eventKind: "peak_removed",        entityType: "exposure"   },
     { mutator: peakExcludeMutator,      eventKind: "peak_excluded",       entityType: "exposure"   },
     { mutator: peakUnexcludeMutator,    eventKind: "peak_unexcluded",     entityType: "exposure"   },
-    { mutator: addIndexToGroupMutator,  eventKind: "index_confirmed",     entityType: "exposure"   },
-    { mutator: removeIndexFromGroupMutator, eventKind: "index_unconfirmed", entityType: "exposure" },
     { mutator: deleteIndexMutator,      eventKind: "speculative_deleted", entityType: "exposure"   },
     { mutator: createSpeculativeMutator, eventKind: "speculative_created", entityType: "exposure"  },
     { mutator: reanalyzeExposureMutator, eventKind: "analyze_run",        entityType: "exposure"   },
-    { mutator: saveComparisonMutator,   eventKind: "comparison_created",  entityType: "comparison" },
-    { mutator: saveComparisonMutator,   eventKind: "comparison_submitted", entityType: "comparison" },
-    { mutator: deleteComparisonMutator, eventKind: "comparison_deleted",  entityType: "comparison" },
     { mutator: addSampleTagMutator,     eventKind: "add_tag",             entityType: "sample"     },
     { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
     { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
     { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
     { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample_message"     },
-    { mutator: postComparisonMessageMutator, eventKind: "post_message",   entityType: "comparison_message" },
     { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
     { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
     { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },

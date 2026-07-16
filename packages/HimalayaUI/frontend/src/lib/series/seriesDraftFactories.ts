@@ -35,7 +35,6 @@ export function fromSeries(s: Series): SeriesDraft {
     }));
   return {
     id: s.id,
-    baseHash: s.content_hash === "" ? undefined : s.content_hash,
     title: s.title,
     description: s.description ?? "",
     orderingVariable: s.ordering_variable,

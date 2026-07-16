@@ -79,10 +79,13 @@ describe("useAppState", () => {
     expect(useAppState.getState().tutorialSeen).toBe(true);
   });
 
-  it("theme defaults to 'dark' and can toggle", () => {
-    expect(useAppState.getState().theme).toBe("dark");
-    useAppState.getState().setTheme("light");
-    expect(useAppState.getState().theme).toBe("light");
+  // R0a (#221): "The Print" is the single identity. The `theme` field,
+  // `setTheme`, and `ThemeId` were removed; the app renders Print by default
+  // with no toggle. Guard against a regression that re-adds the field.
+  it("has no `theme` field or `setTheme` action (Print is the single identity)", () => {
+    const s = useAppState.getState() as Record<string, unknown>;
+    expect("theme" in s).toBe(false);
+    expect("setTheme" in s).toBe(false);
   });
 
   it("navModal state is ephemeral — open/close + step transitions", () => {
@@ -100,7 +103,6 @@ describe("useAppState", () => {
     useAppState.getState().setActiveExperiment(4);
     useAppState.setState({ activeSampleId: 12 });
     useAppState.getState().setTutorialSeen(true);
-    useAppState.getState().setTheme("light");
     const raw = localStorage.getItem(LS_KEY);
     const parsed = JSON.parse(raw!);
     expect(parsed.state.username).toBe("alice");
@@ -109,7 +111,8 @@ describe("useAppState", () => {
     // I5.1 (#182): `activePage` is no longer in the persisted partition.
     expect(parsed.state.activePage).toBeUndefined();
     expect(parsed.state.tutorialSeen).toBe(true);
-    expect(parsed.state.theme).toBe("light");
+    // R0a (#221): `theme` is no longer persisted (field removed).
+    expect(parsed.state.theme).toBeUndefined();
   });
 
   it("does NOT persist ephemeral UI fields (navModal*, hoveredIndexId)", () => {
@@ -139,32 +142,7 @@ describe("useAppState", () => {
     expect(raw).not.toContain("hoveredPeakId");
   });
 
-  // ── compare-page review-mode UI state (Phase 9) ────────────────────────
-
-  // C-4: groupingMode was removed from Zustand; it now lives on
-  // ActiveDraft.viewGroupingMode and is resolved via effectiveGroupingMode.
-  it("setDraftViewGroupingMode creates an empty draft and sets viewGroupingMode", () => {
-    // Start with no draft.
-    useAppState.setState({ activeDraft: null });
-    useAppState.getState().setDraftViewGroupingMode("byPhase");
-    const draft = useAppState.getState().activeDraft;
-    expect(draft).not.toBeNull();
-    expect(draft?.viewGroupingMode).toBe("byPhase");
-  });
-
-  it("setDraftViewGroupingMode updates existing draft's viewGroupingMode", () => {
-    useAppState.getState().setDraftViewGroupingMode("bySample");
-    useAppState.getState().setDraftViewGroupingMode("distinct");
-    expect(useAppState.getState().activeDraft?.viewGroupingMode).toBe("distinct");
-  });
-
-  it("viewGroupingMode is NOT in the persisted partition (carried on draft, not LS_KEY state)", () => {
-    // The draft is sessionStorage-persisted, not localStorage; the main store
-    // key should not contain the raw string "viewGroupingMode".
-    useAppState.getState().setDraftViewGroupingMode("byPhase");
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("viewGroupingMode");
-  });
+  // ── compare-page review-mode annotation toggles (Phase 9) ────────────────
 
   it("showPeakTicks defaults to true and can be set", () => {
     expect(useAppState.getState().showPeakTicks).toBe(true);
@@ -186,20 +164,6 @@ describe("useAppState", () => {
     const raw = localStorage.getItem(LS_KEY) ?? "";
     expect(raw).not.toContain("showPeakTicks");
     expect(raw).not.toContain("showPeakLabels");
-  });
-
-  it("highlightedCompareMemberId starts undefined and can set/clear via single setter", () => {
-    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
-    useAppState.getState().setHighlightedCompareMemberId(42);
-    expect(useAppState.getState().highlightedCompareMemberId).toBe(42);
-    useAppState.getState().setHighlightedCompareMemberId(undefined);
-    expect(useAppState.getState().highlightedCompareMemberId).toBeUndefined();
-  });
-
-  it("highlightedCompareMemberId is NOT persisted", () => {
-    useAppState.getState().setHighlightedCompareMemberId(7);
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("highlightedCompareMemberId");
   });
 
   // I5.3 (#184): the compareXDomains field + setCompareXDomain action were

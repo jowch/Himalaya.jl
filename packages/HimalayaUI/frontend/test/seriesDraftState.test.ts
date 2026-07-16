@@ -32,7 +32,6 @@ describe("series-draft Zustand actions", () => {
     expect(d?.id).toBe(5);
     expect(d?.title).toBe("Titration");
     expect(d?.recipe).toHaveLength(1);
-    expect(d?.baseHash).toBe("sha256:base");
   });
 
   it("is idempotent for the same series id (preserves in-progress edits)", () => {

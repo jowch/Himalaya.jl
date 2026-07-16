@@ -18,10 +18,16 @@ export function slugifyForFilename(s: string): string {
 }
 
 /**
- * Append `-{YYYY-MM-DD}.{ext}` to a pre-resolved stem. Date is local time
- * (matches user expectation when exporting near midnight); locale is pinned
- * to en-CA to guarantee `YYYY-MM-DD` regardless of system locale (en-US
- * defaults produce `05/08/2026` — `/` is invalid on every OS).
+ * Slugify the stem, then append `-{YYYY-MM-DD}.{ext}`. SLUGIFYING IS LOAD-BEARING:
+ * a raw title carries spaces, colons, and dots ("1:2.5 ratio", "JC042.dat") into
+ * the filename. Spaces/dots before the extension make some browsers and OSes
+ * mis-detect (or drop) the `.svg`/`.png` extension, and the unsanitized name can
+ * defeat the anchor `download` attribute. Slugging guarantees a single, trailing
+ * `.{ext}`. Idempotent on already-clean stems ("himalaya-trace-jc23").
+ *
+ * Date is local time (matches user expectation when exporting near midnight);
+ * locale is pinned to en-CA to guarantee `YYYY-MM-DD` regardless of system
+ * locale (en-US defaults produce `05/08/2026` — `/` is invalid on every OS).
  */
 export function buildFilename(stem: string, ext: "png" | "svg"): string {
   const date = new Intl.DateTimeFormat("en-CA", {
@@ -29,5 +35,5 @@ export function buildFilename(stem: string, ext: "png" | "svg"): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  return `${stem}-${date}.${ext}`;
+  return `${slugifyForFilename(stem)}-${date}.${ext}`;
 }

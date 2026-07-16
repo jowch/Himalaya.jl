@@ -73,7 +73,7 @@ describe("queries — useReanalyzeExposure (queue-driven, M2.5)", () => {
     expect(result.current.isSuccess).toBe(true);
   });
 
-  it("does not invalidate peaks/indices/groups on success (SSE post_state owns the cache update)", async () => {
+  it("does not invalidate peaks/indices on success (SSE post_state owns the cache update)", async () => {
     const { client, wrapper } = withClient();
     const invalidate = vi.spyOn(client, "invalidateQueries");
     mockOnce(200, { id: EXPOSURE_ID, analyzed: true });

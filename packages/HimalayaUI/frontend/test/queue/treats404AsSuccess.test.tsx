@@ -1,7 +1,7 @@
 /**
  * `treats404AsSuccess` contract.
  *
- * Idempotent removes (peakRemove, removeIndexFromGroup, deleteIndex,
+ * Idempotent removes (peakRemove, deleteIndex,
  * removeSampleTag, removeExposureTag) treat HTTP 404 as a no-op success:
  * the optimistic effect already reflects "row gone", and a 404 means the
  * server has it gone too — restoring would re-insert a phantom row visible
@@ -23,22 +23,17 @@ import {
   queryKeys,
 } from "../../src/queries";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
-import {
-  removeIndexFromGroupMutator, deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import {
   removeSampleTagMutator, removeExposureTagMutator,
 } from "../../src/lib/queue/mutators/trivial";
 import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
-import type { Peak, GroupEntry, IndexEntry, Sample } from "../../src/api";
+import type { Peak, IndexEntry, Sample } from "../../src/api";
 
 describe("treats404AsSuccess flag — set on idempotent remove mutators", () => {
   it("peakRemove", () => {
     expect(peakRemoveMutator.treats404AsSuccess).toBe(true);
-  });
-  it("removeIndexFromGroup", () => {
-    expect(removeIndexFromGroupMutator.treats404AsSuccess).toBe(true);
   });
   it("deleteIndex", () => {
     expect(deleteIndexMutator.treats404AsSuccess).toBe(true);
@@ -114,7 +109,7 @@ describe("treats404AsSuccess framework branch — useRemovePeak under HTTP 404",
 // The framework branch is mutator-shape-agnostic in principle, but a regression
 // dependent on rollback-context shape, response type, or cache topology would
 // only be caught by exercising more than one mutator. Two extra cases — across
-// distinct cache shapes (indices+groups, samples-with-nested-tags) — pin this.
+// distinct cache shapes (indices, samples-with-nested-tags) — pin this.
 describe("treats404AsSuccess framework branch — coverage across mutator shapes", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -131,19 +126,15 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     );
   }
 
-  it("useDeleteIndex: optimistic removal sticks across two caches on 404", async () => {
+  it("useDeleteIndex: optimistic removal sticks in the indices cache on 404", async () => {
     const EXPOSURE_ID = 5;
     const INDEX: IndexEntry = {
       id: 10, exposure_id: EXPOSURE_ID, phase: "Pn3m", basis: 0.1, score: 0.9,
       r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate",
       kind: "auto", inputs_hash: "h1", peaks: [], predicted_q: [0.1],
     };
-    const GROUP: GroupEntry = {
-      id: 1, exposure_id: EXPOSURE_ID, kind: "custom", active: true, members: [10],
-    };
     const client = makeClient();
     client.setQueryData(queryKeys.indices(EXPOSURE_ID), [INDEX]);
-    client.setQueryData(queryKeys.groups(EXPOSURE_ID), [GROUP]);
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
@@ -152,15 +143,13 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     act(() => { result.current.mutate(10); });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     expect(client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID))).toEqual([]);
-    const groupAfter = client.getQueryData<GroupEntry[]>(queryKeys.groups(EXPOSURE_ID))?.[0];
-    expect(groupAfter?.members).toEqual([]);
   });
 
   it("useRemoveSampleTag: optimistic tag removal sticks on 404", async () => {
     const EXPERIMENT_ID = 1;
     const SAMPLE_ID = 10;
     const SAMPLE: Sample = {
-      id: SAMPLE_ID, experiment_id: EXPERIMENT_ID, display_name: null, name: "n",
+      id: SAMPLE_ID, experiment_id: EXPERIMENT_ID, name: "n",
       notes: null,
       tags: [{ id: 99, key: "buffer", value: "PBS", source: "manual" }],
     };

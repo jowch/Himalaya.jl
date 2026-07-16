@@ -3,7 +3,7 @@ using HimalayaUI
 
 @testset "apply_event! writes to user_actions and returns event_id" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice"], UInt8[])
 
@@ -26,7 +26,7 @@ end
 
 @testset "apply_event! with no payload writes NULL payload and skips dispatcher" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "bob"], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
             kind = "no_payload_event", entity_type = "exposure", entity_id = 1)
@@ -40,7 +40,7 @@ end
 
 @testset "apply_event! with no X-Username writes user_id = NULL" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", Pair{String,String}[], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
             kind = "anon_event", entity_type = "exposure", entity_id = 1,
@@ -54,7 +54,7 @@ end
 
 @testset "log_action! still works (legacy wrapper)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         # Existing call sites pass these args; should write a row with the
         # legacy column shape and a payload of {:note => "..."} when given.
@@ -71,7 +71,7 @@ end
 
 @testset "idx_events_by_exposure index exists" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_events_by_exposure'"))
         @test !isempty(rows)
@@ -80,7 +80,7 @@ end
 
 @testset "user_actions has payload and undoes_event_id columns after migration" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         cols = [String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
             "PRAGMA table_info(user_actions)"))]
         @test "payload" in cols
@@ -90,13 +90,13 @@ end
 
 @testset "rebuild_views_from_log! reproduces incremental view state" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
         # Set up an exposure with one auto peak (so peak_excluded has a target).
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db,
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
 
@@ -140,11 +140,11 @@ end
 
 @testset "apply_event! persists client_id when X-Client-Id header present" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice", "X-Client-Id" => "tab-xyz"], UInt8[])
         HimalayaUI.apply_event!(db, req;
@@ -157,11 +157,11 @@ end
 
 @testset "apply_event! writes NULL client_id when header absent" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         HimalayaUI.apply_event!(db, req;
             kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:k=>1))
@@ -173,11 +173,11 @@ end
 
 @testset "apply_event! persists client_op_id when X-Client-Op-Id header present" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x",
             ["X-Username" => "alice", "X-Client-Op-Id" => "uuid-abc"], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
@@ -190,11 +190,11 @@ end
 
 @testset "apply_event! writes NULL client_op_id when header absent" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         result = HimalayaUI.apply_event!(db, req;
             kind="noop_test", entity_type="exposure", entity_id=eid, payload=Dict(:q=>1.0))
@@ -206,11 +206,11 @@ end
 
 @testset "rebuild_views_from_log! tolerates rows with NULL/non-NULL client_op_id mix" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         DBInterface.execute(db,
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
 
@@ -243,11 +243,11 @@ end
 
 @testset "rebuild_views_from_log! tolerates rows with NULL client_id" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+        db = open_prepared_clone(tmp)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        eid    = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        eid    = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
         DBInterface.execute(db, """
             INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload, client_id)
             VALUES (NULL, 'noop_test', 'exposure', ?, '{}', NULL)
@@ -258,13 +258,13 @@ end
 
 @testset "migrate_r4_rebase_entity_type! rewrites legacy peak/index entity_type rows" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
         # Set up minimal data.
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db,
             "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.10, 1.0)", [e_id])
         ap_id = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
@@ -299,11 +299,11 @@ end
     end
     try
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             HimalayaUI.bind_db!(db)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
             req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
             result = HimalayaUI.apply_event!(db, req;
                 kind="noop_test", entity_type="exposure", entity_id=e_id,
@@ -332,11 +332,11 @@ end
     end
     try
         mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+            db = open_prepared_clone(tmp)
             HimalayaUI.bind_db!(db)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-            e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="e1")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="e1")
             req = HTTP.Request("POST", "/", Pair{String,String}[], UInt8[])
             HimalayaUI.apply_event!(db, req;
                 kind="noop_test", entity_type="exposure", entity_id=e_id,
@@ -355,7 +355,7 @@ end
 
 @testset "I2: apply_event! with same (client_op_id, action, entity) returns existing event_id" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         # Seed FK chain.
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
@@ -389,7 +389,7 @@ end
 
 @testset "I2: apply_event!(::InTransaction, ...) participates in caller's transaction" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
@@ -457,7 +457,7 @@ end
 
 @testset "comparison_created: 0 members" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         _premint_comparison!(db, 1)
@@ -479,14 +479,14 @@ end
 
 @testset "comparison_created: 3 members, content_hash populated, member fields present" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         # Seed exposures so exposure_id FKs are valid.
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         _premint_comparison!(db, 1)
         members = [
@@ -521,11 +521,11 @@ end
 
 @testset "comparison_submitted: no-op (same state) preserves rows but recomputes hash" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e_id = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 7)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -553,12 +553,12 @@ end
 
 @testset "comparison_submitted: member added (id === nothing)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 5)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -586,12 +586,12 @@ end
 
 @testset "comparison_submitted: member removed (DB id absent from payload)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 8)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -621,11 +621,11 @@ end
 
 @testset "comparison_submitted: UPDATE writes snapshot unconditionally on same exposure" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 12)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -663,12 +663,12 @@ end
 
 @testset "comparison_submitted: reorder updates display_order" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 3)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
 
@@ -703,7 +703,7 @@ end
 
 @testset "comparison_submitted: zero-row UPDATE errors (member id not for this comparison)" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         _premint_comparison!(db, 4)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
@@ -717,11 +717,11 @@ end
 
 @testset "comparison_deleted cascades to members and messages" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         _premint_comparison!(db, 11)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
         HimalayaUI.apply_event!(db, req;
@@ -746,13 +746,13 @@ end
 
 @testset "rebuild_views_from_log!(entity_type=\"comparison\") reproduces live state" begin
     mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        db = open_prepared_clone(dir)
         HimalayaUI.bind_db!(db)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id)
-        e1 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e2 = HimalayaUI.create_exposure!(db; sample_id=s_id)
-        e3 = HimalayaUI.create_exposure!(db; sample_id=s_id)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         cmp_id = 21
         _premint_comparison!(db, cmp_id)
         req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
@@ -816,7 +816,7 @@ end
 
 @testset "I2: apply_event!(::InTransaction, ...) rolls back with caller's tx on throw" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
+        db = open_prepared_clone(tmp)
         DBInterface.execute(db,
             "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
         DBInterface.execute(db,
@@ -843,5 +843,88 @@ end
             "SELECT id FROM peak_curations WHERE exposure_id = ?", [exp_id]))
         @test isempty(crows)
         SQLite.close(db)
+    end
+end
+
+@testset "assignment_add round-trips through the log" begin
+    mktempdir() do dir
+        db  = open_prepared_clone(dir)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+
+        # Live state: member present, state forced to 'indexed'.
+        @test Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id]))) == Set([10])
+        @test String(Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))[1].state) == "indexed"
+
+        # Wipe + rebuild from the log reproduces the member.
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id]))) == Set([10])
+    end
+end
+
+@testset "assignment_remove round-trips through the log" begin
+    mktempdir() do dir
+        db  = open_prepared_clone(dir)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (11, ?, 'Im3m', 0.1)", [e_id])
+
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 11))
+        HimalayaUI.apply_event!(db, req; kind="assignment_remove",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+
+        live() = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test live() == Set([11])
+
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test live() == Set([11])
+    end
+end
+
+@testset "assignment_set_state round-trips and clears members on form_factor" begin
+    mktempdir() do dir
+        db  = open_prepared_clone(dir)
+        req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+        DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+
+        HimalayaUI.apply_event!(db, req; kind="assignment_add",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
+        HimalayaUI.apply_event!(db, req; kind="assignment_set_state",
+            entity_type="exposure", entity_id=e_id, payload=Dict(:state => "form_factor"))
+
+        state() = String(Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM assignments WHERE exposure_id = ?", [e_id]))[1].state)
+        members() = Set(Int(m.index_id) for m in Tables.rowtable(DBInterface.execute(db,
+            "SELECT index_id FROM assignment_members WHERE exposure_id = ?", [e_id])))
+        @test state() == "form_factor"
+        @test isempty(members())   # form_factor cleared the lattice members
+
+        # Wipe + rebuild reproduces both the state and the empty member set.
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
+        DBInterface.execute(db, "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?", [e_id])
+        HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test state() == "form_factor"
+        @test isempty(members())
     end
 end

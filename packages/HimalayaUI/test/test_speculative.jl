@@ -3,11 +3,11 @@ using Himalaya
 
 @testset "speculative.jl unit tests" begin
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
 
     # Insert two manual peaks via peak_curations(kind='add')
     # at q=1.0 (ratio 1) and q=2.0 (ratio 2 of Lamellar)
@@ -66,11 +66,11 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     # Pick first two auto peaks for a synthetic Lamellar speculative
@@ -82,11 +82,9 @@ end
     new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    # Add to custom (active) group
-    custom_id, _ = HimalayaUI.ensure_custom_group!(db, e_id)
-    DBInterface.execute(db,
-        "INSERT OR IGNORE INTO index_group_members (group_id, index_id) VALUES (?, ?)",
-        [custom_id, new_id])
+    # D-10: speculative indices survive re-analyze by virtue of kind='speculative'
+    # (only kind='auto' indices are wiped/rebuilt), independent of any active-set
+    # membership — so no group/assignment setup is needed to exercise this.
 
     pre_rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM indices WHERE id = ?", [new_id]))
@@ -111,11 +109,9 @@ end
            LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
            WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [new_id]))
     @test length(ip_rows) == 2
-
-    # Custom group membership preserved
-    g_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT * FROM index_group_members WHERE index_id = ?", [new_id]))
-    @test length(g_rows) == 1
+    # (D-10: the speculative index is no longer auto-added to a custom group, so
+    # there's no membership to assert here. The pipeline's custom-group re-attach
+    # machinery itself is covered in test_pipeline.jl.)
 end
 
 # ── Helpers for the next two testsets ───────────────────────────────────────
@@ -123,11 +119,11 @@ end
 # verify auto-discovery behaviour without depending on real-data peak shapes.
 function _spec_synthetic_exposure(qs::Vector{Float64})
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
     pids = Int[]
     for (i, q) in enumerate(qs)
         res = DBInterface.execute(db,
@@ -294,11 +290,11 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     peaks = Tables.rowtable(DBInterface.execute(db,
@@ -306,13 +302,13 @@ end
     p1 = Int(peaks[1].id)
     p2 = Int(peaks[2].id)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         body = Dict(:phase => "Lamellar",
                     :anchor_peak_id => p1, :anchor_ratio => 1,
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
-        r = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
-            headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+        r = call("POST", "/api/exposures/$e_id/speculative";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r.status == 200
         new_ix = JSON3.read(String(r.body))
         new_id = Int(new_ix.id)
@@ -336,11 +332,11 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     peaks = Tables.rowtable(DBInterface.execute(db,
@@ -351,8 +347,8 @@ end
     new_id = HimalayaUI.insert_speculative_index!(db, e_id, Himalaya.Lamellar,
         Dict{Int,Int}(1 => p1, 2 => p2))
 
-    with_test_server(db) do port, base
-        r = HTTP.delete("$base/api/indices/$new_id";
+    with_inproc_routes(db) do call
+        r = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
 
@@ -376,11 +372,11 @@ end
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     peaks = Tables.rowtable(DBInterface.execute(db,
@@ -388,9 +384,9 @@ end
     p1 = Int(peaks[1].id)
     p2 = Int(peaks[2].id)
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         # Snap endpoint
-        r = HTTP.get("$base/api/exposures/$e_id/speculative-snap?phase=Lamellar&anchor_peak_id=$p1&anchor_ratio=1")
+        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Lamellar&anchor_peak_id=$p1&anchor_ratio=1")
         @test r.status == 200
         snaps = JSON3.read(String(r.body))
         @test length(snaps) >= 2
@@ -398,13 +394,11 @@ end
         @test snaps[1].is_anchor === true
 
         # Bad phase
-        r = HTTP.get("$base/api/exposures/$e_id/speculative-snap?phase=Bogus&anchor_peak_id=$p1";
-                     status_exception = false)
+        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Bogus&anchor_peak_id=$p1")
         @test r.status == 400
 
         # Missing anchor
-        r = HTTP.get("$base/api/exposures/$e_id/speculative-snap?phase=Lamellar";
-                     status_exception = false)
+        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Lamellar")
         @test r.status == 400
 
         # Create speculative
@@ -412,10 +406,10 @@ end
                     :anchor_peak_id => p1, :anchor_ratio => 1,
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)],
                     :active => true)
-        r = HTTP.post("$base/api/exposures/$e_id/speculative";
-            body = JSON3.write(body),
+        r = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
+                       "X-Username"   => "alice"],
+            body = Vector{UInt8}(JSON3.write(body)))
         @test r.status == 200
         new_ix = JSON3.read(String(r.body))
         @test new_ix.kind == "speculative"
@@ -423,23 +417,21 @@ end
         @test length(new_ix.peaks) == 2
         new_id = Int(new_ix.id)
 
-        # Group membership reflects active=true
-        r = HTTP.get("$base/api/exposures/$e_id/groups")
-        groups = JSON3.read(String(r.body))
-        cust_g = first(filter(g -> g.kind == "custom", groups))
-        @test new_id in cust_g.members
+        # D-10: `active:true` is accepted but no longer auto-adds to any set (the
+        # legacy custom group + GET /groups are retired); "make active" is now an
+        # explicit POST /assignment/members, covered in test_assignments.jl.
 
         # DELETE rejects auto indices
         auto_ix_id = Int(first(filter(ix -> ix.kind != "speculative",
-                                       JSON3.read(String(HTTP.get("$base/api/exposures/$e_id/indices").body)))).id)
-        r = HTTP.delete("$base/api/indices/$auto_ix_id"; status_exception = false)
+                                       JSON3.read(String(call("GET", "/api/exposures/$e_id/indices").body)))).id)
+        r = call("DELETE", "/api/indices/$auto_ix_id")
         @test r.status == 403
 
         # DELETE allows speculative + cleans up
-        r = HTTP.delete("$base/api/indices/$new_id";
+        r = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
-        r2 = HTTP.get("$base/api/indices/$new_id"; status_exception = false)
+        r2 = call("GET", "/api/indices/$new_id")
         @test r2.status == 404
         # Group membership and index_peaks gone
         rs = Tables.rowtable(DBInterface.execute(db,
@@ -453,18 +445,18 @@ end
 
 @testset "insert_speculative_index! inherits exposure analysis_inputs_hash (issue #35 Bug 6)" begin
     # Pre-fix, the INSERT into `indices` set inputs_hash = NULL on speculative
-    # rows. StaleIndicesBanner gates on (index.inputs_hash !== exposure
+    # rows. The stale-indices alert gates on (index.inputs_hash !== exposure
     # .analysis_inputs_hash), so a speculative create immediately registered as
     # stale and the banner spuriously fired after every speculative create. The
     # fix in src/speculative.jl reads the exposure's current analysis_inputs_hash
     # and writes it onto the new index — they share the effective peak set, so
     # the inherited hash is correct by construction.
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
     s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="x")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
 
     expected_hash = "deadbeef" ^ 8  # 64 hex chars, matches SHA-256 fingerprint shape
     DBInterface.execute(db,

@@ -1,0 +1,111 @@
+import { useState } from "react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { BuilderRail } from "./BuilderRail";
+import { SeriesPlate, type SeriesScale } from "./SeriesPlate";
+import { MemberRow } from "./MemberRow";
+import { useDragReorder, reorder } from "./useDragReorder";
+import { TRANSITION } from "../waterfall/waterfall.fixtures";
+
+/**
+ * Page simulation (NOT a component): assembles the figure (`SeriesPlate`) on the
+ * left and the `BuilderRail` editing rail on the right into the series-builder
+ * view. The page owns the cross-component state the components are forbidden to
+ * hold — offset and scale (the figure↔rail link is the SAME state).
+ *
+ * The Layer-4 builder page (plate shell, nav, top bar) is deferred; this story
+ * only simulates the page's state ownership. Rows reuse the shared
+ * `TRANSITION` WaterfallRow fixture — the exact construction SeriesPlate.stories
+ * uses (`toWaterfallRows(transitionSeries, realTraces)`).
+ */
+
+interface TraceDatum {
+  id: string;
+  name: string;
+  dose: string;
+  phase: string;
+  coexistWith?: string[];
+}
+
+// Mirrors the mockup SERIES: six members ordered by LL37 : lipid ratio, with the
+// two middle members in coexistence.
+const TRACES: TraceDatum[] = [
+  { id: "smp_04", name: "Pn3m", dose: "1 : 0", phase: "Pn3m" },
+  { id: "smp_08", name: "Pn3m", dose: "1 : 1", phase: "Pn3m" },
+  { id: "smp_11", name: "Pn3m", dose: "1 : 2", phase: "Pn3m", coexistWith: ["Im3m"] },
+  { id: "smp_14", name: "Im3m", dose: "1 : 3", phase: "Im3m", coexistWith: ["Pn3m"] },
+  { id: "smp_16", name: "Lamellar", dose: "1 : 3.5", phase: "Lamellar" },
+  { id: "smp_18", name: "Lamellar", dose: "1 : 4", phase: "Lamellar" },
+];
+
+function SeriesBuilderView(): JSX.Element {
+  const [offset, setOffset] = useState(1.2);
+  const [scale, setScale] = useState<SeriesScale>("log");
+  const [traceOrder, setTraceOrder] = useState<TraceDatum[]>(TRACES);
+
+  // The rail's "Traces · drag to reorder" label is honest: dragging a row
+  // rewrites the page-owned `traceOrder`.
+  const { dragItemProps, dropEdge } = useDragReorder((from, to) =>
+    setTraceOrder((o) => reorder(o, from, to)),
+  );
+
+  const traces = traceOrder.map((t, i) => {
+    const props = dragItemProps(i);
+    const edge = dropEdge(i);
+    return (
+      <div key={t.id} {...props} className={`relative cursor-grab${props["data-dragging"] ? " opacity-50" : ""}`}>
+        {edge && (
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 rounded-full bg-accent ${edge === "top" ? "-top-px" : "-bottom-px"}`}
+          />
+        )}
+        <MemberRow
+          name={t.name}
+          sub={`${t.id} · ${t.dose}`}
+          phase={t.phase}
+          {...(t.coexistWith ? { coexistWith: t.coexistWith } : {})}
+        />
+      </div>
+    );
+  });
+
+  return (
+    <div className="bg-paper min-h-screen">
+      <div className="flex">
+        <div className="flex-1 min-w-0 p-6">
+          <SeriesPlate
+            kicker="Series"
+            title="LL37 titration of lipid 1-2"
+            subtitle="6 exposures · variable: LL37 : lipid · SSRL Apr 2026"
+            rows={TRANSITION}
+            offsetScale={offset}
+            scale={scale}
+            onScaleChange={setScale}
+            legendPhases={["Pn3m", "Im3m", "Lamellar"]}
+            footHint="peaks are light anchors — hover a trace to read its indexing"
+            footNote={`offset ×${offset.toFixed(2)} · ${scale === "log" ? "log" : "linear"} q`}
+          />
+        </div>
+
+        <div className="w-[336px] shrink-0">
+          <BuilderRail
+            offset={offset}
+            onOffsetChange={setOffset}
+            traces={traces}
+            reorderable
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const meta: Meta<typeof BuilderRail> = {
+  title: "components/SeriesBuilderAssembly",
+  component: BuilderRail,
+};
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Page: Story = { render: () => <SeriesBuilderView /> };

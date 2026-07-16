@@ -34,8 +34,8 @@ using SQLite
     migrate_schema!(db)
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
                                      analysis_dir="/tmp/analysis")
-    s_id    = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id    = create_exposure!(db; sample_id=s_id, filename="example_tot.dat")
+    s_id    = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id    = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot.dat")
 
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)
@@ -59,6 +59,12 @@ using SQLite
     @test length(stored_groups) == 1
     @test stored_groups[1].kind   == "auto"
     @test stored_groups[1].active == 1
+
+    # Auto-grouping is NOT a durable concept: the auto `index_groups` row above
+    # is still written (the legacy export reads it), but persist_analysis! must
+    # NOT seed the durable assignment cart from it. A fresh, never-curated
+    # analyze reads as unindexed — zero assignment members.
+    @test HimalayaUI._assignment_body(db, e_id)[:members] == Int[]
 end
 
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
@@ -83,7 +89,6 @@ using JSON3
     @test exp.name == "TestExp"
 end
 
-using HimalayaUI: ensure_custom_group!
 using DBInterface
 using Tables
 
@@ -92,7 +97,7 @@ using Tables
     # AFTER `persist_analysis!`'s transaction committed — autocommit, outside
     # any tx. A crash between the persist commit and the UPDATEs would leave
     # `exposures.analysis_inputs_hash` and `indices.inputs_hash` divergent,
-    # making StaleIndicesBanner state permanently wrong.
+    # making the stale-indices alert state permanently wrong.
     #
     # The fix moves the UPDATEs into `_persist_analysis_inner!` so they
     # commit/rollback as part of the same tx. This test exercises the
@@ -104,8 +109,8 @@ using Tables
     migrate_schema!(db)
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp/data",
                                      analysis_dir="/tmp/analysis")
-    s_id    = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id    = create_exposure!(db; sample_id=s_id, filename="example_tot.dat")
+    s_id    = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id    = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot.dat")
 
     dat_path = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     q, I, σ  = load_dat(dat_path)
@@ -147,14 +152,24 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
 
-    # Promote the auto group to a custom group (mirrors the UI flow when a
-    # user clicks an Active-set member).
-    custom_id, _ = ensure_custom_group!(db, e_id)
+    # Promote the auto group to a custom group, inline. (D-10 retired the
+    # ensure_custom_group! helper + the /groups routes, but persist_analysis!'s
+    # custom-group re-attach machinery — exercised below — is still live and
+    # writes to the kept index_groups tables.)
+    auto_gid = Int(first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM index_groups WHERE exposure_id = ? AND kind = 'auto'", [e_id]))).id)
+    custom_id = Int(DBInterface.lastrowid(DBInterface.execute(db,
+        "INSERT INTO index_groups (exposure_id, kind, active) VALUES (?, 'custom', 1)", [e_id])))
+    DBInterface.execute(db,
+        "INSERT INTO index_group_members (group_id, index_id)
+         SELECT ?, index_id FROM index_group_members WHERE group_id = ?", [custom_id, auto_gid])
+    DBInterface.execute(db,
+        "UPDATE index_groups SET active = 0 WHERE id = ?", [auto_gid])
 
     # Snapshot the custom group's members by semantic identity before reanalysis.
     snap_before = Tables.rowtable(DBInterface.execute(db, """
@@ -205,8 +220,8 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
 
@@ -230,8 +245,8 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
 
@@ -270,8 +285,8 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
     ids_before = sort([Int(r.id) for r in get_peaks_for_exposure(db, e_id)
@@ -300,8 +315,8 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
 
@@ -443,7 +458,7 @@ end
             path = dir, data_dir = joinpath(dir, "data"), analysis_dir = analysis_dir,
             config = toml_blob, experiment_type = "simple")
         s_id = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "S")
-        e_id = HimalayaUI.create_exposure!(db; sample_id = s_id, filename = "EX001")
+        e_id = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "EX001")
 
         # Should resolve EX001 → "EX001_1d.dat" via the custom pattern
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
@@ -451,253 +466,26 @@ end
         # Confirm peaks were persisted (i.e. the pattern resolved correctly and the file was loaded)
         peaks = Tables.rowtable(DBInterface.execute(db,
             "SELECT id FROM auto_peaks WHERE exposure_id = ?", [e_id]))
-        @test length(peaks) >= 0   # Just need analyze_exposure! not to throw
-    end
-end
-
-@testset "cli_init_with_db! reads experiment.toml" begin
-    mktempdir() do dir
-        # Set up experiment directory
-        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
-        data_dir     = joinpath(dir, "data")
-        mkpath(analysis_dir)
-        mkpath(data_dir)
-
-        # Use the canonical fixture for valid integration data
-        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
-        cp(fixture, joinpath(analysis_dir, "JC002.dat"))
-
-        # Manifest
-        manifest = joinpath(dir, "manifest.csv")
-        write(manifest, join([
-            "skip-row",
-            "1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\tnote_s\tnote_e",
-        ], "\n"))
-
-        # experiment.toml
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "Run/Exp"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 12.0
-        flight_path_m = 2.5
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
-
-        # Verify experiment was created with config and beamline params
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT name, energy_kev, flight_path_m, config FROM experiments WHERE id = ?", [exp_id]))
-        @test length(rows) == 1
-        @test rows[1].name == "Run/Exp"
-        @test rows[1].energy_kev == 12.0
-        @test rows[1].flight_path_m == 2.5
-        @test contains(rows[1].config, "[experiment]")
-
-        # Verify samples and exposures
-        samples = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
-        @test length(samples) == 1
-
-        exposures = Tables.rowtable(DBInterface.execute(db,
-            "SELECT filename FROM exposures WHERE sample_id = ? ORDER BY filename", [samples[1].id]))
-        @test [e.filename for e in exposures] == ["JC001", "JC002"]
-    end
-end
-
-@testset "cli_init_with_db! errors when experiment.toml missing" begin
-    mktempdir() do dir
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        @test_throws ErrorException HimalayaUI.cli_init_with_db!(db, dir)
-    end
-end
-
-@testset "cli_init_with_db! refuses duplicate registration" begin
-    mktempdir() do dir
-        write(joinpath(dir, "experiment.toml"),
-              """
-              [experiment]
-              name = "duplicate-test"
-              [layout]
-              data_dir = "data"
-              analysis_dir = "analysis/automatic_analysis"
-              exposure_type = "simple"
-              """)
-        mkpath(joinpath(dir, "analysis", "automatic_analysis"))
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        HimalayaUI.cli_init_with_db!(db, dir)              # first call ok
-        err = try
-            HimalayaUI.cli_init_with_db!(db, dir)          # second call rejected
-            nothing
-        catch e
-            e
-        end
-        @test err isa ErrorException
-        @test occursin("already registered", err.msg)
-        @test occursin("reingest", err.msg)
-        # Confirm no second row was inserted
-        rows = Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))
-        @test length(rows) == 1
-    end
-end
-
-@testset "cli_init_with_db! does not write to experiment directory" begin
-    mktempdir() do dir
-        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
-        data_dir = joinpath(dir, "data")
-        mkpath(analysis_dir)
-        mkpath(data_dir)
-        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        cp(fixture, joinpath(analysis_dir, "JC001.dat"))
-        write(joinpath(dir, "manifest.csv"),
-              "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001\t\t")
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "T"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 0.0
-        flight_path_m = 0.0
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-
-        # Snapshot the file list before init
-        before = Set(readdir(dir))
-
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        HimalayaUI.cli_init_with_db!(db, dir)
-
-        # Snapshot after init — must be identical (no DB or other files written)
-        after = Set(readdir(dir))
-        @test before == after
-    end
-end
-
-@testset "reingest! adds new exposures and preserves curated ones" begin
-    mktempdir() do dir
-        analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
-        data_dir     = joinpath(dir, "data")
-        mkpath(analysis_dir)
-        mkpath(data_dir)
-        fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-        for name in ["JC001", "JC002", "JC003"]
-            cp(fixture, joinpath(analysis_dir, name * ".dat"))
-        end
-
-        # Initial manifest references only JC001-002
-        manifest = joinpath(dir, "manifest.csv")
-        write(manifest, "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-002\told\t")
-
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "R/E"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        energy_kev = 0.0
-        flight_path_m = 0.0
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
-
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        exp_id = HimalayaUI.cli_init_with_db!(db, dir)
-
-        # Curate JC001
-        DBInterface.execute(db,
-            "UPDATE exposures SET status = 'accepted' WHERE filename = ?", ["JC001"])
-
-        # Update manifest to extend the range to JC003
-        write(manifest, "skip-row\n1\tD1\tUX1\tT\tt\t\t\t\tJC001-003\tnew\t")
-
-        HimalayaUI.reingest!(db, exp_id, dir)
-
-        # Verify all three exposures are present
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT filename, status FROM exposures ORDER BY filename"))
-        @test [r.filename for r in rows] == ["JC001", "JC002", "JC003"]
-
-        # Curation on JC001 must be preserved
-        jc001 = first(filter(r -> r.filename == "JC001", rows))
-        @test jc001.status == "accepted"
-    end
-end
-
-@testset "reingest! errors when experiment.toml missing" begin
-    mktempdir() do dir
-        db = SQLite.DB()
-        HimalayaUI.create_schema!(db)
-        exp_id = HimalayaUI.create_experiment!(db;
-            path = dir, data_dir = dir, analysis_dir = dir)
-        @test_throws ErrorException HimalayaUI.reingest!(db, exp_id, dir)
+        @test length(peaks) >= 1   # pattern resolved + example data contains peaks
     end
 end
 
 # ── CLI path-targeting tests ──────────────────────────────────────────────────
+#
+# These exercise `cli_analyze` / `_resolve_experiment` selection logic — NOT
+# ingestion. The manifest-driven CLI ingest (`cli_init_with_db!`) was deleted by
+# the ingestion redesign (HTTP scan is now the sole entry point), so the setup
+# previously done by `cli_init_with_db!` is reproduced directly via
+# `seed_experiment!` (DB rows only) plus on-disk .dat fixtures for analyze.
 
-using HimalayaUI: cli_analyze, cli_show, cli_init_with_db!
+include("seed.jl")
+using HimalayaUI: cli_analyze, cli_show
 
 let
     # Helper scoped to this section — not visible elsewhere in the test file.
-    function setup_exp_dir(dir; name="E", stems=["ST001"])
+    # Seeds an experiment in `db` and drops one .dat fixture per stem under
+    # analysis_dir so cli_analyze can actually run peak-finding.
+    function setup_exp_dir(db, dir; name="E", stems=["ST001"])
         analysis_dir = joinpath(dir, "analysis", "automatic_analysis")
         mkpath(analysis_dir)
         mkpath(joinpath(dir, "data"))
@@ -705,34 +493,10 @@ let
         for stem in stems
             cp(fixture, joinpath(analysis_dir, stem * ".dat"); force=true)
         end
-        write(joinpath(dir, "manifest.csv"), join([
-            "skip-row",
-            "1\tD1\t$(name)\tT\tt\t\t\t\t$(join(stems, ","))\tnote_s\tnote_e",
-        ], "\n"))
-        write(joinpath(dir, "experiment.toml"), """
-        [experiment]
-        name = "$name"
-        description = ""
-        manifest = "manifest.csv"
-        [beamline]
-        [manifest]
-        delimiter = "\\t"
-        skip_rows = 1
-        header_row = 0
-        sample_id = 1
-        name = 2
-        display_name = 3
-        filenames = 9
-        notes_sample = 10
-        notes_exposure = 11
-        [layout]
-        data_dir = "data"
-        analysis_dir = "analysis/automatic_analysis"
-        exposure_type = "simple"
-        [files]
-        integration = "{name}.dat"
-        image = "{name}.tiff"
-        """)
+        seed_experiment!(db, dir;
+            name = name, analysis_dir = analysis_dir,
+            sample_name = name, stems = stems,
+            experiment_type = "simple")
     end
 
     @testset "cli_analyze --experiment selects the right experiment" begin
@@ -742,8 +506,7 @@ let
 
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
-            cli_init_with_db!(db, dir1)
+            setup_exp_dir(db, dir1; name="Exp1", stems=["ST001"])
         end
 
         # Unregistered path → error.
@@ -757,28 +520,24 @@ let
         end
     end
 
-    @testset "cli_show --experiment selects the right experiment" begin
+    @testset "cli_analyze auto-selects the first non-rejected exposure when none is selected" begin
+        # Binary-status regression guard: with every exposure status=NULL (kept)
+        # and none selected, the fallback must pick the first NON-rejected frame.
+        # The pre-binary predicate keyed on status == "accepted", which nothing
+        # writes, so it silently left all-NULL samples with no representative.
         db_file = joinpath(mktempdir(), "himalaya.db")
-        dir1    = mktempdir()
-        dir2    = mktempdir()   # never registered
-
+        dir     = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="Exp1", stems=["ST001"])
-            cli_init_with_db!(db, dir1)
-        end
-
-        withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_throws ErrorException cli_show(["-e", dir2, "--sample", "D1"])
-        end
-
-        withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_nowarn cli_show(["-e", dir1, "--sample", "D1"])
-        end
-
-        # No -e flag works for a single registered experiment.
-        withenv("HIMALAYA_DB_PATH" => db_file) do
-            @test_nowarn cli_show(["--sample", "D1"])
+            seeded = setup_exp_dir(db, dir; name="ExpSel", stems=["ST001", "ST002"])
+            # Reject the first frame so the fallback must skip it and land on the
+            # second (the first KEPT frame) — exercises the `!= "rejected"` branch.
+            DBInterface.execute(db, "UPDATE exposures SET status='rejected' WHERE id=?",
+                                [seeded.exposure_ids[1]])
+            cli_analyze(["-e", dir])
+            selected = [Int(r.id) for r in DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE selected=1")]
+            @test selected == [seeded.exposure_ids[2]]
         end
     end
 
@@ -788,10 +547,8 @@ let
         dir2    = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="ExpA", stems=["ST001"])
-            setup_exp_dir(dir2; name="ExpB", stems=["ST002"])
-            cli_init_with_db!(db, dir1)
-            cli_init_with_db!(db, dir2)
+            setup_exp_dir(db, dir1; name="ExpA", stems=["ST001"])
+            setup_exp_dir(db, dir2; name="ExpB", stems=["ST002"])
             err = try; HimalayaUI._resolve_experiment(db, nothing); nothing; catch e; e; end
             @test err isa ErrorException
             @test occursin("Multiple experiments", err.msg)
@@ -803,8 +560,8 @@ let
         dir1    = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="ExpA", stems=["ST001"])
-            id = cli_init_with_db!(db, dir1)
+            res = setup_exp_dir(db, dir1; name="ExpA", stems=["ST001"])
+            id  = res.exp_id
             row = HimalayaUI._resolve_experiment(db, string(id))
             @test Int(row.id) == id
         end
@@ -815,8 +572,7 @@ let
         dir1    = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
-            setup_exp_dir(dir1; name="UniqueName123", stems=["ST001"])
-            cli_init_with_db!(db, dir1)
+            setup_exp_dir(db, dir1; name="UniqueName123", stems=["ST001"])
             row = HimalayaUI._resolve_experiment(db, "UniqueName123")
             @test String(row.name) == "UniqueName123"
         end
@@ -834,8 +590,8 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
 
@@ -863,8 +619,8 @@ end
 
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
     row1 = first(Tables.rowtable(DBInterface.execute(db,
@@ -902,8 +658,8 @@ end
     exp_id = init_experiment!(db; path=tmp,
                                    data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id   = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id   = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     # First run populates auto_peaks + trace_hash + analysis hash.
     analyze_exposure!(db, e_id, analysis_dir)
@@ -956,8 +712,8 @@ end
 
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     analyze_exposure!(db, e_id, analysis_dir)
     h_before = first(Tables.rowtable(DBInterface.execute(db,
@@ -1006,8 +762,8 @@ end
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"),
                                    analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     # Layer 1: forward correlation after a slow-path run.
     analyze_exposure!(db, e_id, analysis_dir)
@@ -1058,8 +814,8 @@ end
 
     db = open_db(joinpath(tmp, "himalaya.db"))
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     # First run: both skip flags must be false (nothing cached yet).
     analyze_exposure!(db, e_id, analysis_dir)
@@ -1078,51 +834,6 @@ end
     @test p2[:indexpeaks_skipped] == true
 end
 
-@testset "cli_init_with_db! is atomic on validation failure" begin
-    mktempdir() do tmp
-        # Build an experiment dir whose manifest has duplicate sample names.
-        exp_dir = joinpath(tmp, "exp")
-        mkpath(joinpath(exp_dir, "data"))
-        mkpath(joinpath(exp_dir, "analysis", "automatic_analysis"))
-        # Minimal experiment.toml using new key names
-        write(joinpath(exp_dir, "experiment.toml"), """
-[experiment]
-name = "validation-fail"
-manifest = "manifest.csv"
-[manifest]
-delimiter      = "\\t"
-skip_rows      = 1
-sample_id      = 1
-name           = 2
-display_name   = 3
-filenames      = 9
-notes_sample   = 10
-notes_exposure = 11
-[layout]
-data_dir = "data"
-analysis_dir = "analysis/automatic_analysis"
-[files]
-integration = "{name}.dat"
-image       = "{name}.tiff"
-""")
-        # Two samples with the same name (duplicate_name violation).
-        write(joinpath(exp_dir, "manifest.csv"), """sample_id\tname\tdisplay_name\tcol4\tcol5\tcol6\tcol7\tcol8\tfilenames\tnotes_sample\tnotes_exposure
-1\tDUP\tfirst\t\t\t\t\t\tA001\t\t
-2\tDUP\tsecond\t\t\t\t\t\tA002\t\t
-""")
-
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        @test_throws HimalayaUI.ManifestValidationError HimalayaUI.cli_init_with_db!(db, exp_dir)
-
-        # No experiment row leaked — transaction rolled back.
-        rows = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM experiments"))
-        @test isempty(rows)
-        # No samples either.
-        srows = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM samples"))
-        @test isempty(srows)
-    end
-end
-
 @testset "analyze_exposure! defer_broadcast=true suppresses analyze_run SSE frame" begin
     # M2.2 contract: when curation routes call analyze_exposure! synchronously
     # inside their with_idempotency tx, they must pass defer_broadcast=true so
@@ -1138,8 +849,8 @@ end
     db = open_db(joinpath(tmp, "himalaya.db"))
     HimalayaUI.bind_db!(db)
     exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"), analysis_dir=analysis_dir)
-    s_id = create_sample!(db; experiment_id=exp_id, name="D1", display_name="UX1")
-    e_id = create_exposure!(db; sample_id=s_id, filename="example_tot")
+    s_id = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
     # Hook a fake SSE subscriber to count frames.
     pending = Channel{String}(64)

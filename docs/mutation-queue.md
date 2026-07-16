@@ -34,7 +34,7 @@ mints a fresh one.
 
 > **Invariant: mint `client_op_id` inside `mutationFn`, not at hook
 > construction.** `useQueueMutation` mints it via `newClientOpId()` per
-> `mutate()` call (`useQueueMutation.ts:110`). Capturing one in a closure at
+> `mutate()` call (`useQueueMutation.ts:147`). Capturing one in a closure at
 > hook mount time would make every retry of every mutation through that hook
 > share one id — the server's idempotency cache would treat the second user
 > action as a duplicate of the first.
@@ -47,14 +47,16 @@ lifecycle (per-tab, survives reload).
 ## 2. Anatomy of a queue mutator
 
 Every queue-able operation is a `Mutator<TInput, TScope, TResponse>`
-(`lib/queue/types.ts`). Five fields:
+(`lib/queue/types.ts`). Its fields:
 
 ```
 kind                  // OpKind discriminator (e.g. "peak_added")
 onMutate(payload, qc) // optimistic cache write; returns RollbackContext
 request(payload, sig) // HTTP call; honours AbortSignal
 onSuccess(payload, response, qc)  // canonical cache write
+synthesizeFromSse?(remote, base)  // SSE-wins synthetic response (see §3)
 affectsExposurePeaks?(payload, exposureId)  // hook-level scoping
+treats404AsSuccess?   // treat HTTP 404 as a no-op success (idempotent removes)
 ```
 
 `useQueueMutation(mutator, scope)` wires it into TanStack Query's
@@ -67,6 +69,27 @@ flat payload before any callback runs. Mutator code never has to cast.
 `OpKind` describes the *user gesture*; the event name describes the
 *durable mutation*. Membership predicates like
 `useExposureHasPendingPeakOps` operate on `OpKind`.
+
+### Two resolvers, two arm counts — `add_tag` is asymmetric on purpose
+
+`mutatorRegistry.ts` exposes two dispatchers, and they disagree on
+`add_tag` *by design*:
+
+- `resolveMutator` (rehydrate path, by op-payload shape) is **4-arm** for
+  `add_tag`: scopeSeries / addExposureTag / addSampleTag /
+  addCorpusSampleTag, peeled apart by the `tags` array, then `exposureId`,
+  then `experimentId`.
+- `resolveMutatorForEvent` (the `synthesizeResponseFromSse` path, by event
+  kind + entity_type) is **2-arm**: sample vs exposure only.
+
+The event resolver gets away with two arms because a corpus-originated and
+an experiment-originated sample-tag event are byte-identical on the SSE wire
+(same `entity_type="sample"`, same payload — the route always resolves
+`experiment_id` off the sample row), so a third arm would be unreachable
+dead code: it only picks a `synthesizeFromSse` for the own-op confirmation
+*response shape*, and the cache patch is the pending mutation's own
+`onSuccess`. **Don't copy the 4-arm shape into the event resolver.**
+Evidence: `lib/queue/mutatorRegistry.ts:178-195`.
 
 ---
 
@@ -107,7 +130,7 @@ empty registry).
 If we awaited HTTP directly and triggered `onSuccess` from the response, the
 indices cache wouldn't update until the next `post_state` SSE frame landed
 in the *foreign-event* path — but that path skips when `client_id` matches.
-The `StaleIndicesBanner` would then stick at the pre-mutation hash until a
+The stale-indices indicator would then stick at the pre-mutation hash until a
 polling refetch (or page navigation) replaced it. Resolving the deferred
 from SSE — and applying `post_state` *before* resolving — closes that
 window deterministically.
@@ -126,6 +149,37 @@ applied, double-applying the optimistic effect.
 > only settle once — calling `abort()` first triggers the registered
 > `onAbort` listener in `mutationFn`, which rejects the deferred, beating
 > our `resolve()`.
+
+### Why a queued op must be single-write
+
+One queued op fires *one* HTTP write. A mutator that fires two sequential
+writes under one `client_op_id` has its deferred resolved by whichever SSE
+frame lands FIRST — the first write's first event — so `mutation.data`
+becomes the first write's confirmation, not the second's, and the second
+write's frame falls into the foreign-event path and double-applies on the
+originating tab. Multi-step gestures chain *separate* ops, sequenced by
+page-level state, not by a compound mutator. This is why the abandoned
+`scopeAndCreateSeries` (one op: tag-write then create-write) was split into
+the current `scopeSeriesMutator` + `createSeriesMutator`: each single-write
+op has exactly one own-op SSE frame on its op-id, so its deferred reliably
+resolves with the right payload. Evidence:
+`lib/queue/mutators/createSeries.ts:30-51`.
+
+### The one sanctioned two-frame route: `custom-index`
+
+The single-write rule is about *queued ops*, not *event frames* — one op
+may still emit several events, as long as the own-tab deferred resolves off
+the FIRST. `POST /api/exposures/{id}/custom-index` is the only route that
+emits two `apply_event!` calls (`speculative_created` then `assignment_add`)
+in one `with_idempotency` body under one `client_op_id`. The own-tab
+deferred resolves on the FIRST frame — `speculative_created`, which carries
+the new `IndexEntry` into the indices cache — not on the HTTP response and
+not on the second frame; `assignment_add` then patches the cart. The emit
+order is load-bearing: reversing it, or resolving off the second frame,
+would patch the cart before the index row exists. (`custom_index_commit`
+has no own event kind — `resolveMutatorForEvent` resolves both emitted
+kinds to their normal mutators, so nothing special is needed there.)
+Evidence: `src/routes_analysis.jl:423-501`.
 
 ---
 
@@ -223,6 +277,21 @@ The compromise: `applyPostStateOnly(remote, qc)` and return early. The
 indices cache and `analysis_inputs_hash` are propagated; the per-kind body
 is skipped because it already ran in `onSuccess`.
 
+### Why `applyPostStateOnly` must guard against id collision
+
+`applyPostStateOnly` runs unconditionally for ALL SSE kinds on both own-tab
+paths (SSE-wins deferred-match + self-echo), so a `series_plate_committed`
+frame reaches it too — and that frame's `remote.post_state` is a full
+Series projection, not a `CurationPostState`. Series ids and exposure ids
+share the SQLite integer namespace, so without the `Array.isArray(ps.indices)`
+bail-out the `as CurationPostState` cast would read `indices` /
+`analysis_inputs_hash` as `undefined` off a Series and clobber
+`queryKeys.exposure(entity_id)` for any cached exposure whose id collides
+with the committed series — wiping that exposure's `analysis_inputs_hash`
+(spurious stale-indices alert, or a broken expected-hash check on its next
+peak op). The guard returns early unless `post_state.indices` is an array.
+Evidence: `lib/queue/applyRemoteToCache.ts:56-72`.
+
 ---
 
 ## 6. The backend half: `with_idempotency`
@@ -280,7 +349,7 @@ best-effort, durable rows in `user_actions` are not.
 ### Single-process scope
 
 `OP_LOCKS` is in-process only. The deployment model is one-experiment-per-
-process (see [CLAUDE.md](../CLAUDE.md) "Central DB"); a multi-process or
+process (see [CLAUDE.md](../CLAUDE.md) "Running the app"); a multi-process or
 sharded deployment would need a different primitive. Two paths:
 
 1. Change the cache `INSERT` to `INSERT OR IGNORE` and on `changes()=0`
@@ -304,6 +373,20 @@ op.
 `server.jl::start_gc_timer!` wires this into a background timer in
 `serve(db)`.
 
+### Lock-ordering invariant: `OP_LOCKS_MU` never wraps `_DB_WRITE_LOCK`
+
+`OP_LOCKS_MU` (the mutex guarding the `OP_LOCKS` Dict) must never be held
+across a `_DB_WRITE_LOCK` acquisition. `with_idempotency` honours this by
+ordering OP_LOCKS_MU → release → `_DB_WRITE_LOCK` (`_op_lock` takes the
+mutex only long enough to `get!` the per-op-id lock out of the Dict, then
+releases before the lock body runs the tx). `gc_idempotent_responses!`
+takes the *reverse* order — `_DB_WRITE_LOCK` → release → OP_LOCKS_MU (the
+DELETE commits before the lock prune runs). Because each holder releases
+the first mutex before taking the second, the two paths can't deadlock.
+Any future code added under `OP_LOCKS_MU` that calls into something which
+may acquire `_DB_WRITE_LOCK` would converge the orderings and deadlock
+under concurrent load. Evidence: `server.jl:21-28`.
+
 ---
 
 ## 7. Synchronous reanalyze in curation routes
@@ -315,9 +398,18 @@ changed since the trace hash was recorded) but still recomputes
 in the response body, and the queue mutator's `onSuccess` writes it into
 the exposure cache directly.
 
-The result: no refetch round-trip, no `StaleIndicesBanner` flicker. New
-curation routes should follow this pattern; otherwise the banner spuriously
-fires until a polling refetch lands.
+**Caveat — `kind='add'` curations defeat the no-file-I/O fast path.** The
+`findpeaks` skip is only fully file-free when every curation is
+`kind='exclude'`. When `any_add_curations(db, exposure_id)` is true,
+`analyze_exposure!` falls back to loading the `.dat` trace because
+add-curation sharpness must be sampled from it via `Himalaya.sharpness(I)`
+(see `docs/event-log.md` §2 for why sharpness isn't persisted). So a
+peak-*add* route still recomputes hashes/indices cheaply but is not the
+microsecond, zero-I/O path that pure exclude/remove routes get.
+
+The result: no refetch round-trip, no stale-indices flicker. New
+curation routes should follow this pattern; otherwise the stale-indices
+indicator spuriously fires until a polling refetch lands.
 
 The `analyze_run` no-op fast path also suppresses both the SSE frame and
 the durable `user_actions` row when both `findpeaks_skipped` and
@@ -335,7 +427,7 @@ response, and the SSE echo land out of order.
 
 Canonical consumers:
 
-- `StaleIndicesBanner` — don't show "stale" while a re-analyze is mid-flight.
+- the stale-indices indicator on the Focus/sample surface — don't show "stale" while a re-analyze is mid-flight.
 - `useSpeculativeSnap` — don't snap to a peak that may roll back.
 
 Reuse the hook for any new card or query that reads `peaks(exposureId)`
@@ -353,9 +445,30 @@ set and resumes (HTTP retries pick up where they left off; SSE frames
 that landed during the reload window have their `client_op_id` matched
 against the rehydrated registry).
 
-`schema_version` mismatch between the persisted shape and the current
+`schemaVersion` mismatch between the persisted shape and the current
 build drops the queue with a toast — the alternative (silent type drift)
 would corrupt the cache.
+
+### Deploying across a schema change (cross-version SSE hazard)
+
+When a deploy changes a payload shape, two reconciliation surfaces can see a
+frame written by the *other* version mid-rollout:
+
+- **Persisted op queue (handled automatically).** Bumping `SCHEMA_VERSION`
+  (`lib/queue/persistence.ts`) drops any stale persisted ops with the "N edits
+  couldn't be restored" toast (§9 above). A pre-deploy op carrying an old field
+  name is dropped, not replayed; the user redoes that edit.
+- **Live SSE frames (operational, NOT code).** `applyRemoteToCache`'s
+  `update_sample` branch does a blind untyped spread `{ ...old, ...payload }`
+  and flips no key, so a frame emitted by the *previous* backend version — e.g.
+  one still carrying the retired `display_name` field after the rename to
+  `name` — would splice a stale field onto a record keyed off the new field.
+  **The ratified mitigation is deploy sequencing, not a key flip in the
+  reconciler** (a key flip would have to know every historical field name).
+  Practically: roll the backend first, let in-flight SSE connections drain
+  (clients reconnect to the new version), then roll the frontend — so no client
+  consumes a frame whose shape predates its own build. See the canonical spec
+  §11.5.
 
 ---
 
@@ -367,7 +480,7 @@ would corrupt the cache.
 | Class | Examples | Retry? | UX |
 |---|---|---|---|
 | Validation | 4xx, schema rejection, duplicate ↔ existing row | No | Toast with kind-specific message |
-| Infrastructure | 5xx, network error, timeout | Yes (up to 5x, exponential backoff capped at 30s) | Banner mounted at App.tsx via `useMutationState` |
+| Infrastructure | 5xx, network error, timeout | Yes (up to 5x, exponential backoff capped at 30s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
 
 A validation error rolls back the optimistic effect via `context.restore`
 and the user sees a toast. The mutation's `state` ends in `error`.
@@ -377,7 +490,7 @@ in the background — the banner indicates "trying"; the user can keep
 working. After 5 failures, the mutation lands in `error` and the
 optimistic effect rolls back.
 
-`InfrastructureBanner` (`components/InfrastructureBanner.tsx`) is a global
+`InfrastructureBanner` (`print/shell/InfrastructureBanner.tsx`) is a global
 status strip that reads from `useMutationState` directly. It hides until
 any mutation has been pending > 500ms (avoids flicker on fast successes)
 and upgrades to a "stuck" state with a Refresh button after > 30s.
@@ -422,10 +535,10 @@ discipline and the canonical paired test files.
 | `lib/queue/mutatorRegistry.ts` | Discovery / lookup of mutators by kind |
 | `lib/queue/optimisticId.ts` | Negative-id minting helper |
 | `lib/queue/peakQTol.ts` | Tolerance for matching peak rows by q value |
-| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / trivial / reanalyze) |
+| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / series / assignment / trivial / reanalyze) |
 | `lib/clientId.ts` | Per-tab UUID (sessionStorage) |
 | `lib/clientOpId.ts` | Per-mutation UUID (`crypto.randomUUID` per call) |
-| `components/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |
+| `print/shell/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |
 
 **Backend** (`packages/HimalayaUI/src/`):
 
@@ -469,5 +582,4 @@ Backend (`packages/HimalayaUI/test/`):
 
 - [event-log.md](event-log.md) — the dispatcher contract, hash invariants, and SSE multiplayer semantics. The queue composes with these unchanged.
 - [contract-testing.md](contract-testing.md) — the six-layer testing rule.
-- [superpowers/specs/2026-05-02-mutation-queue-design.md](superpowers/specs/2026-05-02-mutation-queue-design.md) — original design spec; 14 architectural decisions, fallback triggers.
-- [superpowers/plans/2026-05-02-mutation-queue.md](superpowers/plans/2026-05-02-mutation-queue.md) — implementation plan; useful for archaeology, not as live reference.
+- `.claude/skills/pre-merge-smoke/SKILL.md` — the manual queue smoke checklist + the three fallback triggers (when to back out the optimistic-merge approach).

@@ -1,6 +1,6 @@
 ---
 name: new-event-kind
-description: Scaffold a new event kind in HimalayaUI's apply_event! pipeline — dispatcher branch (if view-producing), route call site, rebuild_views_from_log! round-trip test (if view-producing), and frontend sseSubscriber wiring (if view-producing). Reads docs/event-log.md and existing call sites as live reference. Usage: /new-event-kind <kind> [--no-view]
+description: Scaffold a new event kind in HimalayaUI's apply_event! pipeline — dispatcher branch (if view-producing), route call site, rebuild_views_from_log! round-trip test (if view-producing), and frontend replayCoordinator wiring (if view-producing). Reads docs/event-log.md and existing call sites as live reference. Usage: /new-event-kind <kind> [--no-view]
 ---
 
 # new-event-kind
@@ -28,8 +28,8 @@ packages/HimalayaUI/src/routes_peaks.jl            ← canonical apply_event! ca
                                                    #   peak_unexcluded (DELETE branch, undoes_event_id)
                                                    #   peak_removed (--no-view example)
 packages/HimalayaUI/test/test_events.jl            ← rebuild_views_from_log! property test
-packages/HimalayaUI/frontend/src/lib/sseSubscriber.ts  ← handleCurationEvent + invalidation
-packages/HimalayaUI/frontend/test/sse.test.tsx     ← subscriber test pattern
+packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts  ← handleRemoteEvent + invalidation
+packages/HimalayaUI/frontend/test/queue/replayCoordinator.test.ts     ← subscriber test pattern
 CLAUDE.md                                          ← Plan 7 / event-log gotchas
 ```
 
@@ -128,11 +128,11 @@ In `packages/HimalayaUI/test/test_routes_<resource>.jl`:
 - Verify a `user_actions` row was created with `kind`, `entity_type='exposure'`, `entity_id=...`, `payload` JSON-decodable to the expected shape
 - For INSERT branches: verify the response id matches the actual `view_row_id` (not re-queryable by content)
 
-### 8. Frontend: extend `handleCurationEvent` (skip if `--no-view`)
+### 8. Frontend: extend `handleRemoteEvent` (skip if `--no-view`)
 
-In `packages/HimalayaUI/frontend/src/lib/sseSubscriber.ts`, the existing handler invalidates `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)` on every `entity_type === "exposure"` event. If the new kind affects a query key not in this list (e.g. a brand-new `tags(id)` resource), add it to the invalidation set.
+In `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts`, the existing handler invalidates `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)` on every `entity_type === "exposure"` event. If the new kind affects a query key not in this list (e.g. a brand-new `tags(id)` resource), add it to the invalidation set.
 
-If the new kind is on a different entity type (`"sample"`, `"experiment"`), `handleCurationEvent` currently early-returns — extend it with a parallel branch and add to `test/sse.test.tsx`.
+If the new kind is on a different entity type (`"sample"`, `"experiment"`), `handleRemoteEvent` currently early-returns — extend it with a parallel branch and add to `test/queue/replayCoordinator.test.ts`.
 
 ### 9. Verify
 
@@ -143,7 +143,7 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 julia --sysimage build/himalaya.so --project=packages/HimalayaUI -e 'using Test, HimalayaUI; include("packages/HimalayaUI/test/test_events.jl"); include("packages/HimalayaUI/test/test_routes_<resource>.jl")'
 
 # Frontend
-(cd packages/HimalayaUI/frontend && npm test -- sse.test.tsx)
+(cd packages/HimalayaUI/frontend && npm test -- replayCoordinator.test.ts)
 ```
 
 The PostToolUse hooks in `.claude/settings.json` will auto-fire matching tests on each edit if a sysimage is present.

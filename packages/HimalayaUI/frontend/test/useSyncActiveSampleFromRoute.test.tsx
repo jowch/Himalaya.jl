@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useSyncActiveSampleFromRoute } from "../src/hooks/useSyncActiveSampleFromRoute";
+import {
+  useSyncActiveSampleFromRoute,
+  resolveRouteSampleStatus,
+} from "../src/hooks/useSyncActiveSampleFromRoute";
 import { useAppState } from "../src/state";
+import type { CorpusSample } from "../src/api";
 
 // Corpus samples fixture served by the fetch interceptor for GET /api/samples.
 const CORPUS = [
@@ -19,7 +23,6 @@ beforeEach(() => {
     activeSampleId: undefined,
     activeExposureId: undefined,
     username: "tester",
-    theme: "dark",
   });
   vi.stubGlobal(
     "fetch",
@@ -38,10 +41,11 @@ beforeEach(() => {
   );
 });
 
-// A throwaway host component that just runs the hook.
+// A throwaway host component that runs the hook and surfaces the returned
+// route-resolution status as text so tests can assert it.
 function Host(): JSX.Element {
-  useSyncActiveSampleFromRoute();
-  return <div data-testid="host" />;
+  const status = useSyncActiveSampleFromRoute();
+  return <div data-testid="host">{status}</div>;
 }
 
 function renderAt(path: string) {
@@ -89,5 +93,67 @@ describe("useSyncActiveSampleFromRoute", () => {
     expect(spy).not.toHaveBeenCalled();
     // exposure preserved because setActiveSample (which clears it) never fired
     expect(useAppState.getState().activeExposureId).toBe(7);
+  });
+});
+
+describe("useSyncActiveSampleFromRoute: route-resolution status (F-STALEURL)", () => {
+  it("returns 'pending' while the corpus cache is unresolved", () => {
+    // A never-resolving fetch keeps the cache undefined: the hook cannot judge
+    // the param yet, so it must not claim found or unknown.
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    renderAt("/sample/11");
+    expect(screen.getByTestId("host")).toHaveTextContent("pending");
+  });
+
+  it("returns 'found' once the cache resolves and the param names a known sample", async () => {
+    renderAt("/sample/22");
+    await waitFor(() =>
+      expect(screen.getByTestId("host")).toHaveTextContent("found"),
+    );
+  });
+
+  it("returns 'unknown' for a numeric param matching no sample", async () => {
+    renderAt("/sample/999999");
+    await waitFor(() =>
+      expect(screen.getByTestId("host")).toHaveTextContent("unknown"),
+    );
+  });
+
+  it("returns 'unknown' for a non-numeric param once the cache is ready", async () => {
+    renderAt("/sample/not-a-number");
+    await waitFor(() =>
+      expect(screen.getByTestId("host")).toHaveTextContent("unknown"),
+    );
+  });
+
+  it("'unknown' leaves the previous activeSampleId untouched (mid-session bogus URL)", async () => {
+    useAppState.setState({ activeSampleId: 22 });
+    renderAt("/sample/999999");
+    await waitFor(() =>
+      expect(screen.getByTestId("host")).toHaveTextContent("unknown"),
+    );
+    expect(useAppState.getState().activeSampleId).toBe(22);
+  });
+});
+
+describe("resolveRouteSampleStatus (shared pure predicate)", () => {
+  const samples = CORPUS as CorpusSample[];
+
+  it("returns 'pending' while the samples cache is undefined", () => {
+    expect(resolveRouteSampleStatus("22", undefined)).toBe("pending");
+    expect(resolveRouteSampleStatus("not-a-number", undefined)).toBe("pending");
+  });
+
+  it("returns 'found' for a param naming a known sample", () => {
+    expect(resolveRouteSampleStatus("22", samples)).toBe("found");
+  });
+
+  it("returns 'unknown' for a numeric param matching no sample", () => {
+    expect(resolveRouteSampleStatus("999999", samples)).toBe("unknown");
+  });
+
+  it("returns 'unknown' for a non-numeric or missing param once the cache is ready", () => {
+    expect(resolveRouteSampleStatus("not-a-number", samples)).toBe("unknown");
+    expect(resolveRouteSampleStatus(undefined, samples)).toBe("unknown");
   });
 });

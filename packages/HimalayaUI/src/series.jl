@@ -31,6 +31,7 @@ function series_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
                   s.created_by, s.created_at, s.updated_at,
                   s.forked_from_id, s.forked_at_hash,
                   s.view_grouping_mode, s.view_show_peak_ticks, s.view_show_peak_labels,
+                  s.ordering_variable,
                   datetime(COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                                      WHERE ua.entity_type = 'series'
                                        AND ua.entity_id = s.id), s.updated_at))
@@ -51,7 +52,19 @@ function series_listing(db::SQLite.DB)::Vector{Dict{Symbol, Any}}
                       AND sm.exposure_id IS NOT NULL
                       AND json_extract(sm.snapshot, '\$.analysis_inputs_hash')
                           IS NOT e.analysis_inputs_hash
-                  ) AS has_stale_members
+                  ) AS has_stale_members,
+                  (SELECT COUNT(DISTINCT sa.experiment_id) > 1
+                   FROM series_members sm
+                   JOIN exposures ex ON ex.id = sm.exposure_id
+                   JOIN samples sa   ON sa.id = ex.sample_id
+                   WHERE sm.series_id = s.id) AS spans_experiments,
+                  (SELECT CASE WHEN COUNT(DISTINCT sa.experiment_id) = 1
+                               THEN MIN(x.name) END
+                   FROM series_members sm
+                   JOIN exposures ex   ON ex.id = sm.exposure_id
+                   JOIN samples sa     ON sa.id = ex.sample_id
+                   JOIN experiments x  ON x.id = sa.experiment_id
+                   WHERE sm.series_id = s.id) AS experiment_name
            FROM series s
            LEFT JOIN users u ON u.id = s.created_by
            ORDER BY last_event_at DESC, s.id DESC"""))
@@ -85,6 +98,16 @@ function _series_listing_rows(rows)::Vector{Dict{Symbol, Any}}
             :member_phases         => member_phases,
             :member_phase_count    => _count_distinct_phases(phases_str),
             :has_stale_members     => Bool(r.has_stale_members),
+            :ordering_variable     => ismissing(r.ordering_variable) ? nothing : String(r.ordering_variable),
+            # Cross-experiment = members resolve to >1 distinct samples.experiment_id.
+            # Valid because q is in absolute Å⁻¹ — traces from different experiments
+            # share one x-axis and compare directly (docs/himalayaui-design.md §2.4).
+            :spans_experiments     => !ismissing(r.spans_experiments) && Bool(r.spans_experiments),
+            # Beamtime provenance: the members' single experiment's name when
+            # NOT spanning; NULL when spanning, memberless, or the single experiment itself has a NULL name (the CASE guard
+            # in the projection — MIN is well-defined because COUNT(DISTINCT)=1
+            # means every joined row carries the same name).
+            :experiment_name       => ismissing(r.experiment_name) ? nothing : String(r.experiment_name),
         )
     end
     out
@@ -102,6 +125,7 @@ function forks_of_series(db::SQLite.DB, series_id::Integer)::Vector{Dict{Symbol,
                   s.created_by, s.created_at, s.updated_at,
                   s.forked_from_id, s.forked_at_hash,
                   s.view_grouping_mode, s.view_show_peak_ticks, s.view_show_peak_labels,
+                  s.ordering_variable,
                   datetime(COALESCE((SELECT MAX(ua.timestamp) FROM user_actions ua
                                      WHERE ua.entity_type = 'series'
                                        AND ua.entity_id = s.id), s.updated_at))
@@ -122,7 +146,19 @@ function forks_of_series(db::SQLite.DB, series_id::Integer)::Vector{Dict{Symbol,
                       AND sm.exposure_id IS NOT NULL
                       AND json_extract(sm.snapshot, '\$.analysis_inputs_hash')
                           IS NOT e.analysis_inputs_hash
-                  ) AS has_stale_members
+                  ) AS has_stale_members,
+                  (SELECT COUNT(DISTINCT sa.experiment_id) > 1
+                   FROM series_members sm
+                   JOIN exposures ex ON ex.id = sm.exposure_id
+                   JOIN samples sa   ON sa.id = ex.sample_id
+                   WHERE sm.series_id = s.id) AS spans_experiments,
+                  (SELECT CASE WHEN COUNT(DISTINCT sa.experiment_id) = 1
+                               THEN MIN(x.name) END
+                   FROM series_members sm
+                   JOIN exposures ex   ON ex.id = sm.exposure_id
+                   JOIN samples sa     ON sa.id = ex.sample_id
+                   JOIN experiments x  ON x.id = sa.experiment_id
+                   WHERE sm.series_id = s.id) AS experiment_name
            FROM series s
            LEFT JOIN users u ON u.id = s.created_by
            WHERE s.forked_from_id = ?
@@ -253,8 +289,9 @@ end
     current_series_content_hash(db, series_id) -> Union{String, Nothing}
 
 The stored `content_hash`. Returns `nothing` for a missing series AND for an
-uncommitted draft (drafts have NULL `content_hash`). Used only for the `commit`
-409 optimistic-concurrency check — never as the existence probe (that is
+uncommitted draft (drafts have NULL `content_hash`). Retained for future
+fork/stale checks (the `commit` 409 optimistic-concurrency gate it once served
+was relaxed to last-write-wins) — never the existence probe (that is
 `series_exists`).
 """
 function current_series_content_hash(db::SQLite.DB, series_id::Integer)::Union{String, Nothing}
@@ -340,6 +377,54 @@ function _series_sample_payload(m_in, default_position::Integer)
         :pinned    => haskey(m_in, :pinned)   ? Bool(m_in[:pinned])   : false,
         :excluded  => haskey(m_in, :excluded) ? Bool(m_in[:excluded]) : false,
     )
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Batch trace loader (Phase-4, 4a) — unblocks the Series-folio CardFigure.
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+    series_member_traces(db, series_id) -> Dict{Int,Any}
+
+Resolve and load every member trace of `series_id`, keyed by exposure_id, in
+display order. Members with no exposure, a derived (non-"file") exposure, no
+filename, or a missing `.dat` on disk are SKIPPED (omitted from the map) — the
+batch route degrades gracefully; the folio's `toWaterfallRows` renders an empty
+row for any absent exposure. `config_from_db` is memoized per experiment.
+
+Note the deliberate skip-vs-throw asymmetry: a member whose `.dat` is *absent*
+is skipped, but a member whose `.dat` is *present-but-corrupt* (unparseable /
+<3 columns) intentionally surfaces as a 500 via `load_dat` — corruption is NOT
+swallowed (it should fail loudly, not silently vanish from the map).
+"""
+function series_member_traces(db::SQLite.DB, series_id::Integer)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        """SELECT e.id AS exposure_id, e.filename, e.kind,
+                  x.id AS experiment_id, x.analysis_dir
+           FROM series_members sm
+           JOIN exposures e   ON e.id = sm.exposure_id
+           JOIN samples s     ON s.id = e.sample_id
+           JOIN experiments x ON x.id = s.experiment_id
+           WHERE sm.series_id = ? AND sm.exposure_id IS NOT NULL
+           ORDER BY sm.display_order ASC, sm.id ASC""", [series_id]))
+
+    out = Dict{Int,Any}()
+    cfg_cache = Dict{Int,Any}()
+    for row in rows
+        row.kind === missing && continue
+        String(row.kind) == "file" || continue
+        row.filename === missing && continue
+        eid = Int(row.experiment_id)
+        cfg = get!(cfg_cache, eid) do
+            config_from_db(db, eid)
+        end
+        # Shared resolver: exact per-frame name, else the per-acquisition `_tot.dat`.
+        path = resolve_trace_path(String(row.analysis_dir), cfg.integration_pattern, String(row.filename))
+        path === nothing && continue
+        q, I, σ = load_dat(path)
+        out[Int(row.exposure_id)] = Dict(:q => q, :I => I, :sigma => σ)
+    end
+    return out
 end
 
 """

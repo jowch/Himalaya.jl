@@ -3,7 +3,7 @@ using DelimitedFiles
 # Unit tests for the noise-gating kwargs added to findpeaks:
 #   q_trim_high       — high-q trim before kneedle
 #   prom_ratio_floor  — relative-prominence backstop
-# See docs/superpowers/specs/2026-04-30-peakfinding-noise-gating-design.md.
+# See docs/peak-finding.md.
 
 function _load(name)
     A = readdlm(joinpath(@__DIR__, "data", name))

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppRoutes } from "../src/components/AppRoutes";
+import { AppRoutes } from "../src/print/shell/AppRoutes";
 import { useAppState } from "../src/state";
 
 const SERIES = {
@@ -19,7 +19,7 @@ beforeEach(() => {
   useAppState.setState({
     activeSampleId: undefined, activeExposureId: undefined,
     activeExperimentId: undefined,
-    username: "tester", theme: "dark",
+    username: "tester",
   });
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const u = String(url);
@@ -40,9 +40,13 @@ function renderAt(path: string) {
 }
 
 describe("/series/:id routing", () => {
-  it("mounts SeriesBuilderPage under the corpus shell", async () => {
+  it("mounts SeriesBuilderPage under the unified app shell (T3.2)", async () => {
     renderAt("/series/5");
-    expect(await screen.findByTestId("series-builder-page")).toBeInTheDocument();
-    expect(screen.getByTestId("corpus-topbar")).toBeInTheDocument();
+    // Greenfield SeriesBuilderPage (src/print/pages) renders the SeriesPlate
+    // once the series loads — its signature element (the legacy page's
+    // `series-builder-page` wrapper testid is gone post-cutover).
+    expect(await screen.findByTestId("series-plate")).toBeInTheDocument();
+    // T3.2: TopNav (app-shell) replaces corpus-topbar.
+    expect(screen.getByTestId("topnav")).toBeInTheDocument();
   });
 });

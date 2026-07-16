@@ -1,0 +1,82 @@
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
+import { RepresentativeBox } from "./RepresentativeBox";
+
+const meta = {
+  title: "components/RepresentativeBox",
+  component: RepresentativeBox,
+  args: {
+    isRepresentative: false,
+  },
+} satisfies Meta<typeof RepresentativeBox>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const NotRepresentative: Story = {
+  args: { isRepresentative: false, onSetRepresentative: () => {} },
+  render: (args) => (
+    <div className="bg-paper p-4 w-80">
+      <RepresentativeBox {...args} />
+    </div>
+  ),
+};
+
+export const IsRepresentative: Story = {
+  args: { isRepresentative: true, onSetRepresentative: () => {} },
+  render: (args) => (
+    <div className="bg-paper p-4 w-80">
+      <RepresentativeBox {...args} />
+    </div>
+  ),
+};
+
+// LO-REPDROP: the sample's representative frame is dropped (whichever frame
+// is active) — the box warns that it still carries to the Index stage.
+export const RepresentativeDropped: Story = {
+  args: {
+    isRepresentative: false,
+    representativeDropped: true,
+    onSetRepresentative: () => {},
+  },
+  render: (args) => (
+    <div className="bg-paper p-4 w-80">
+      <RepresentativeBox {...args} />
+    </div>
+  ),
+};
+
+// The strongest state: the ACTIVE frame is the dropped representative —
+// accent header + warning together, and NO set button (controls-don't-lie;
+// the remedy is pressing Drop again to un-cull, which the warning copy names).
+export const DroppedRepresentativeActive: Story = {
+  args: {
+    isRepresentative: true,
+    representativeDropped: true,
+    onSetRepresentative: () => {},
+  },
+  render: (args) => (
+    <div className="bg-paper p-4 w-80">
+      <RepresentativeBox {...args} />
+    </div>
+  ),
+};
+
+// Stateful set-ONCE demo, mirroring production: once isRep flips true the
+// button is omitted (controls-don't-lie), so there is no toggling back here —
+// in the app you un-set a representative by setting a DIFFERENT frame.
+function RepresentativeBoxToggle(): JSX.Element {
+  const [isRep, setIsRep] = useState(false);
+  return (
+    <div className="bg-paper p-4 w-80">
+      <RepresentativeBox
+        isRepresentative={isRep}
+        onSetRepresentative={() => setIsRep(true)}
+      />
+    </div>
+  );
+}
+
+export const Interactive: Story = {
+  render: () => <RepresentativeBoxToggle />,
+};

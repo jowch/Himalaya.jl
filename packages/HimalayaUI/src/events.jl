@@ -341,19 +341,69 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # it as a known kind rather than silently falling through.
     kind == "peak_removed" && return nothing
 
-    if kind == "index_confirmed"
+    # index_confirmed / index_unconfirmed: RETIRED legacy group-membership kinds
+    # (plotting redesign D-10). The /groups routes that emitted them are gone and
+    # confirmed_index now sources from the durable assignment, not index_groups.
+    # These remain as explicit no-op GUARDS — never delete them: historical events
+    # still live in user_actions, and this keeps them recognized KNOWN kinds (the
+    # branch is for exhaustiveness/intent, matching the other retired-kind guards;
+    # the dispatcher's default is itself a silent no-op, so this isn't strictly
+    # throw-prevention). No-op is replay-consistent: live apply and replay both
+    # write nothing, so the per-event round-trip property holds.
+    #
+    # RECOVERY CAVEAT (see migrate_assignments!): the *state* a pre-Plan-A
+    # confirmation produced is NOT reproducible from the log alone — those
+    # exposures have only index_confirmed events (now no-ops) and no paired
+    # assignment_add, so their durable assignment exists solely because the
+    # sentinel-gated migrate_assignments! backfilled it from index_groups. A
+    # from-empty rebuild_views_from_log! (drop assignment tables + re-fold) will
+    # NOT reconstruct them; it must be preceded by clearing the assignments_v1
+    # sentinel and re-running migrate_assignments!. Post-Plan-A confirmations
+    # ride assignment_add and DO round-trip through the log.
+    (kind == "index_confirmed" || kind == "index_unconfirmed") && return nothing
+
+    # Plotting redesign Plan A: durable per-exposure assignment kinds. Sole
+    # writer to assignments/assignment_members. entity_id is the exposure id.
+    # Replay-idempotent (UPSERT / INSERT OR IGNORE / DELETE) so the fold from
+    # an empty view reproduces live state.
+    if kind == "assignment_add"
         DBInterface.execute(db,
-            """INSERT OR IGNORE INTO index_group_members (group_id, index_id)
+            """INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')
+               ON CONFLICT(exposure_id) DO UPDATE SET state = 'indexed'""",
+            [Int(entity_id)])
+        DBInterface.execute(db,
+            """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
                VALUES (?, ?)""",
-            [Int(payload.group_id), Int(payload.index_id)])
+            [Int(entity_id), Int(payload.index_id)])
         return nothing
     end
 
-    if kind == "index_unconfirmed"
+    if kind == "assignment_remove"
         DBInterface.execute(db,
-            """DELETE FROM index_group_members
-               WHERE group_id = ? AND index_id = ?""",
-            [Int(payload.group_id), Int(payload.index_id)])
+            "DELETE FROM assignment_members WHERE exposure_id = ? AND index_id = ?",
+            [Int(entity_id), Int(payload.index_id)])
+        return nothing
+    end
+
+    if kind == "assignment_set_state"
+        state = String(payload.state)
+        DBInterface.execute(db,
+            """INSERT INTO assignments (exposure_id, state) VALUES (?, ?)
+               ON CONFLICT(exposure_id) DO UPDATE SET state = excluded.state""",
+            [Int(entity_id), state])
+        if state != "indexed"
+            DBInterface.execute(db,
+                "DELETE FROM assignment_members WHERE exposure_id = ?", [Int(entity_id)])
+        end
+        return nothing
+    end
+
+    if kind == "exposure_moved"
+        # payload.sample_id: the destination sample. UPDATE is naturally idempotent —
+        # replaying sets the same value, so rebuild_views_from_log! is safe.
+        DBInterface.execute(db,
+            "UPDATE exposures SET sample_id = ? WHERE id = ?",
+            [Int(payload.sample_id), Int(entity_id)])
         return nothing
     end
 
@@ -364,9 +414,19 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "update_sample" && return nothing
     kind == "add_tag" && return nothing
     kind == "remove_tag" && return nothing
+    kind == "edit_tag" && return nothing
     kind == "post_message" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
+
+    # Structural grouping edits (routes_grouping.jl): the route handlers write the
+    # samples / flag rows directly (like exposure_moved above), so the dispatcher is
+    # a no-op. Explicit guards for exhaustiveness so rebuild_views_from_log! treats
+    # them as known kinds rather than silently falling through to the default.
+    kind == "sample_renamed" && return nothing
+    kind == "sample_created" && return nothing
+    kind == "sample_split" && return nothing
+    kind == "grouping_flag_dismissed" && return nothing
 
     # Speculative index lifecycle: route handlers insert/delete the indices
     # row directly (the speculative create/delete paths in routes_analysis.jl
@@ -382,7 +442,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "analyze_run" && return nothing
 
     # Compare page (Plan §Phase 1, Task 1.2): three view-producing kinds.
-    # See docs/superpowers/specs/2026-05-02-compare-page-design.md §Event kinds.
+    # (compare retired; see git history)
     if kind == "comparison_created"
         return _update_view_for_comparison_created!(db, entity_id, payload, event_id)
     end
@@ -752,7 +812,10 @@ AUTOINCREMENT id; a plain INSERT would collide on the live path — so this
 SELECTs and UPDATEs an existing row, else INSERTs with an explicit id for the
 replay-from-empty path). Sets `state='draft'`; `content_hash` stays NULL (a
 draft has no committed plate — master plan §5.1). Then pure-replaces
-`series_samples` from the full payload snapshot. Touches no `series_members`.
+`series_samples` from the full payload snapshot and resolves the plate
+(`series_members`) from that recipe via `_resolve_series_plate!` (decision
+2026-06: a created draft lands renderable — `content_hash` stays NULL since the
+plate is not yet committed).
 """
 function _update_view_for_series_created!(db, entity_id, payload, event_id)
     sid     = Int(entity_id)
@@ -818,6 +881,12 @@ function _update_view_for_series_created!(db, entity_id, payload, event_id)
     for s in samples
         _insert_series_sample!(db, sid, s)
     end
+
+    # Resolve the plate (series_members) from the just-written recipe so the
+    # created draft renders its waterfall immediately (decision 2026-06: a
+    # created series lands in the builder already showing its traces). The plate
+    # is a draft convenience here — content_hash stays NULL until commit.
+    _resolve_series_plate!(db, sid, user_id, now_str)
     return sid
 end
 
@@ -890,6 +959,69 @@ function _insert_series_member!(db, series_id, m, user_id, now_str)
          snap,
          user_id, now_str])
     nothing
+end
+
+"""
+    _resolve_series_plate!(db, series_id, user_id, now_str) -> Int
+
+Resolve the **plate** (`series_members`) from the **recipe** (`series_samples`)
+for a draft series. Pure-replace: `DELETE`s every existing `series_members` row,
+then for each non-excluded recipe sample (in `position` order) resolves its
+representative exposure and `INSERT`s one plate member with a freshly-computed
+snapshot. Returns the number of members written.
+
+Representative-exposure rule (the `_corpus_with_exposures` precedent,
+`comparisons.jl`): highest-id `selected=1` exposure wins; else highest-id
+exposure overall; else the sample resolves to NO exposure and is SKIPPED (a
+recipe sample with no exposure has nothing renderable to plate). `display_order`
+is sequential over the resolved members, so skipped rows leave no gap.
+
+Used by the `series_created` dispatcher so a just-created draft lands with its
+plate already resolved (the builder renders the waterfall immediately). Does
+NOT touch `content_hash` or `state` — resolution is a draft convenience; the
+plate is only frozen + hashed by `series_plate_committed` (the commit path).
+"""
+function _resolve_series_plate!(db, series_id, user_id, now_str)
+    sid = Int(series_id)
+    DBInterface.execute(db, "DELETE FROM series_members WHERE series_id = ?", [sid])
+
+    recipe = Tables.rowtable(DBInterface.execute(db,
+        """SELECT sample_id FROM series_samples
+           WHERE series_id = ? AND excluded = 0
+           ORDER BY position ASC, id ASC""", [sid]))
+
+    display_order = 0
+    for r in recipe
+        sample_id = Int(r.sample_id)
+        # Representative exposure: highest-id selected wins; else highest-id
+        # overall; else nothing (skip — no renderable trace for this sample).
+        exps = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, selected FROM exposures WHERE sample_id = ? ORDER BY id ASC",
+            [sample_id]))
+        eid = nothing
+        for e in Iterators.reverse(exps)
+            if e.selected != 0
+                eid = Int(e.id); break
+            end
+        end
+        if eid === nothing && !isempty(exps)
+            eid = Int(last(exps).id)
+        end
+        eid === nothing && continue
+
+        # `_insert_series_member!` reads members via `getproperty` (the commit
+        # path feeds it JSON3.Objects); round-trip the constructed dict through
+        # JSON3 so property access resolves. Defaults (band_height, y_offset,
+        # normalization, …) are supplied by `_member_field`'s `default=`.
+        member = JSON3.read(JSON3.write(Dict{Symbol, Any}(
+            :exposure_id   => eid,
+            :display_order => display_order,
+            :snapshot      => compute_member_snapshot(db, eid),
+        )))
+        _insert_series_member!(db, sid, member, user_id, now_str)
+        display_order += 1
+    end
+    return display_order
 end
 
 """
@@ -1003,6 +1135,72 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
     )
     post_state === nothing || (fields[:post_state] = post_state)
     msg = JSON3.write(fields)
+    frame = "event: curation\ndata: $msg\n\n"
+    lock(SSE_LOCK) do
+        to_drop = []
+        for sub in SSE_SUBSCRIBERS[]
+            _try_put!(sub.pending, frame) || push!(to_drop, sub)
+        end
+        for sub in to_drop
+            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
+        end
+    end
+    nothing
+end
+
+"""
+    broadcast_progress!(experiment_id; kind, processed, total, kwargs...)
+
+Emit a transient ingest-progress SSE frame WITHOUT writing a `user_actions` row.
+Calls `_try_put!` directly (per spec §9.3): no `event_id`, no FK contract.
+
+Rides the `"curation"` SSE event name so the existing frontend subscriber
+(`App.tsx` `addEventListener("curation", …)`) receives the frame without a new
+event type. The frame is PAYLOAD-WRAPPED, mirroring `broadcast_event!`
+(events.jl:1107-1120): `kind` is top-level and the experiment/count fields live
+under a `payload` sub-object, so the frame parses through the same `curation`
+path as every structural event. The `applyRemoteToCache` four `ingest_*` arms
+discriminate on the top-level `kind`; the companion `App.tsx` listener updates
+`ingestInFlight` from the same frames.
+
+`kind` must be one of: `ingest_started`, `ingest_progress`, `ingest_complete`,
+`ingest_failed`. The `experiment_id` is always a non-zero positive integer (the
+real experiments.id); the frontend reads `payload.experiment_id`, never
+`remote.entity_id`.
+
+Progress frames are best-effort: the SSE channel cap is 64 (server.jl:92); a
+680-exposure scan may drop intermediate `ingest_progress` frames. Treat
+`ingest_complete` / `ingest_failed` as the authoritative terminal state and
+always broadcast those, tolerating drops of intermediate progress ticks.
+"""
+function broadcast_progress!(experiment_id::Integer;
+                              kind::String,
+                              processed::Integer = 0,
+                              total::Integer     = 0,
+                              kwargs...)
+    # Build the wire dict ONCE. The events.jl Dates import is selective
+    # (`using Dates: now, UTC, format, @dateformat_str`) — bare `Dates` is NOT
+    # bound, so use the same unqualified `format(now(UTC), dateformat"…")`
+    # expression broadcast_event! uses (events.jl ~line 1115).
+    #
+    # Frame shape MIRRORS broadcast_event! (events.jl:1107-1120): `:kind` is
+    # TOP-LEVEL (the frontend discriminates on it) and the experiment/count
+    # fields live under a `:payload` sub-object, so the frame parses exactly like
+    # every other `"curation"` frame and the frontend reads `payload.experiment_id`
+    # (never a flat top-level field). `:ts` rides top-level, same as broadcast_event!.
+    ts      = format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ")
+    payload = Dict{Symbol, Any}(
+        :experiment_id => Int(experiment_id),
+        :processed     => Int(processed),
+        :total         => Int(total),
+    )
+    merge!(payload, Dict{Symbol, Any}(kwargs))
+    fields = Dict{Symbol, Any}(
+        :kind    => kind,
+        :ts      => ts,
+        :payload => payload,
+    )
+    msg   = JSON3.write(fields)
     frame = "event: curation\ndata: $msg\n\n"
     lock(SSE_LOCK) do
         to_drop = []

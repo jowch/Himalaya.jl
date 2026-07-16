@@ -2,44 +2,110 @@
 @import "@fontsource/plus-jakarta-sans/400.css";
 @import "@fontsource/plus-jakarta-sans/500.css";
 @import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+@import "@fontsource/newsreader/400.css";
+@import "@fontsource/newsreader/500.css";
+@import "@fontsource/newsreader/600.css";
 
 @theme {
-  --color-bg: oklch(0.095 0.004 250);
-  --color-bg-elevated: oklch(0.145 0.006 250);
-  --color-bg-hover: oklch(0.185 0.007 250);
-  --color-bg-subtle: oklch(0.168 0.007 250);
-  --color-fg: oklch(0.95 0.005 250);
-  --color-fg-muted: oklch(0.64 0.009 250);
-  --color-fg-dim: oklch(0.46 0.009 250);
-  --color-border: oklch(0.27 0.008 250);
-  --color-border-soft: oklch(0.21 0.007 250);
-  --color-accent: oklch(0.82 0.08 220);
-  --color-success: oklch(0.72 0.08 155);
-  --color-warning: oklch(0.76 0.11 75);
-  --color-error: oklch(0.70 0.14 28);
-  /* Manual (user-added) peak marker. Bright/neon — peaks are the active
-     workflow edit. Hue 340 (magenta) keeps it well clear of the auto-peak
-     ice blue (--color-accent, ~220) and every earthy index hue in phases.ts. */
-  --color-peak-manual: oklch(0.78 0.22 340);
-
-  /* "The Print" palette — the corpus-redesign light aesthetic (redesign
-     master plan §4.1). Consumed by the new CorpusShell topbar. The redesign
-     is light-first, so these are single-valued (no theme-light override).
-     Values from docs/redesign-mockups/sample-table.html.
-     `--color-print-accent` is deliberately prefixed — it is a distinct hue
-     from the app-wide `--color-accent` above and must not collide with it. */
+  /*
+   * "The Print" is the single identity (R0a, #221). The dark "Darkroom"
+   * `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`,
+   * and the fractal-grain overlay are retired. The legacy neutral-ramp shim
+   * (`--color-bg*`/`--color-fg*`/`--color-border*`) is gone too (R3-F, #259):
+   * every consumer was swept onto the canonical Print tokens defined below
+   * (`--color-paper`/`--color-ink`/`--color-hair`/…), so re-introducing an old
+   * name is now self-revealing — Tailwind won't generate the utility and
+   * its old `--color-*` custom property no longer resolves.
+   */
+  --color-accent: oklch(0.555 0.150 38);      /* terracotta */
+  /* Accent wash -- a very light tint of the accent hue used for provenance
+     chips (GeometryLedger "edited" chip) and similar accent-toned badges that
+     must not carry full accent saturation. Named token so bg-accent-wash is a
+     sanctioned utility (not an arbitrary bracket escape). */
+  --color-accent-wash: oklch(0.940 0.030 38); /* ~12% accent tint on paper */
+  /* Roving-cursor row band (corpus sheet). The pages2 app-shell mockup mixes the
+     accent 10% into paper-sunk, so the warm paper hue (≈84) dominates and the
+     band reads YELLOWISH (≈ oklch 0.911 0.022 79), not the pinker accent-wash.
+     Named token so bg-row-cursor is a sanctioned utility. */
+  --color-row-cursor: color-mix(in oklch, var(--color-accent) 10%, var(--color-paper-sunk));
+  /* Softened verb-border tints — the pages2 dock draws the cull verb (Drop) on
+     a 40%-accent/60%-white border over a transparent bar, not a full-saturation
+     accent line. Named tokens so border-accent-soft / border-success-soft are
+     sanctioned utilities. */
+  --color-accent-soft:  color-mix(in oklch, var(--color-accent) 40%, white);
+  --color-success-soft: color-mix(in oklch, var(--color-success) 40%, white);
+  /* Status tokens, paper-tuned for AA on plate (DESIGN.md `colors:` /
+     §Status). R0c (#223) corrected `success` from the drifted mint
+     (oklch(0.72 0.08 155)) to the canonical sage — the same value the loupe
+     "kept" verdict dot reads through `bg-success` (T-4). */
+  --color-success: oklch(0.520 0.120 162);    /* sage */
+  --color-warning: oklch(0.620 0.130 70);     /* amber */
+  --color-error:   oklch(0.520 0.170 28);     /* red */
+  /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
+     Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
+     `border-hair`/`text-print-accent` utilities. `--color-accent` above is now
+     remapped to the SAME terracotta hue 38 — the dark↔Print seam is closed, so
+     the two no longer diverge. Kept as a named token for the explicit Print
+     utilities the redesign surfaces already use. */
   --color-paper:        oklch(0.978 0.006 85);
   --color-paper-sunk:   oklch(0.951 0.008 84);
   --color-plate:        oklch(0.992 0.004 90);
   --color-ink:          oklch(0.265 0.013 68);
+  /* De-emphasis tones — pick by WCAG context, NOT by "how faint do I want it".
+     `ink-soft` (6.50:1 on paper) is the tone for SMALL / NORMAL-weight
+     informational TEXT — legends, labels, captions, hints, placeholders, value
+     text, inactive tabs, helper/empty/loading copy (AA-normal needs 4.5:1).
+     `ink-faint` (3.16:1 on paper) is the tone for LARGE / DECORATIVE / non-text
+     contexts only — bold tracked uppercase kickers (AA-large 3.0:1), aria-hidden
+     glyphs/separators, icon-only controls and swatch/cell fills (non-text 3:1).
+     Do NOT borrow `ink-faint` for small body text — it fails AA-normal. */
   --color-ink-soft:     oklch(0.467 0.012 70);
   --color-ink-faint:    oklch(0.640 0.010 74);
   --color-hair:         oklch(0.882 0.008 80);
   --color-hair-strong:  oklch(0.806 0.010 78);
-  --color-print-accent: oklch(0.555 0.150 38);
+  --color-print-accent: var(--color-accent); /* single source — was a duplicated terracotta literal */
+  --color-scrim: oklch(0.05 0 0 / 0.65); /* modal backdrops → bg-scrim (was hand-inlined literals) */
+  /* Warm near-black backing for detector images — the dark window set into
+     the paper (DESIGN.md §3.1 frame-edge). */
+  --color-frame-edge:   oklch(0.150 0.010 55);
+  /* Light caption tint for mono labels set OVER the dark frame-edge (the
+     loupe frame-tag). R0c (#223, T-8): the prior `text-ink-faint` caption was
+     dark-on-dark on the detector frame; this is the mockup's `.frame-tag`. */
+  --color-frame-tag:    oklch(0.82 0.01 80);
+  /* Bright signal endpoint for the detector-image LUT (U-1, #255). The
+     in-browser LUT in DetectorImage.tsx maps grayscale intensity t=0..1 onto
+     frame-edge (window backing) -> frame-signal (bright signal). A warm
+     off-white (hue ~80, same family as paper) so bright Bragg rings read as
+     "ink on dark paper" inside the warm dark window, bridging to the
+     surrounding frame-edge border rather than sitting cold as the prior
+     paper->ink ramp did. NON-inverting: max intensity -> this lighter endpoint. */
+  --color-frame-signal: oklch(0.92 0.02 80);
 
-  --radius: 6px;
+  /* Radius scale — make the radius tokens REAL. Tailwind v4 generates the
+     namespaced rounded-sm/md/lg from the --radius-* NAMESPACE, AND the bare
+     `rounded` utility from the singular --radius. Keep --radius defined (= 5px)
+     so bare `rounded` lands on the same 5px control corner as rounded-sm —
+     without it Tailwind falls back to its STOCK 0.25rem (4px) and every bare
+     `rounded` across the consumer surface silently regresses. Normalize the
+     primary surfaces to the mockups' 5px corner (spec §3/§8). sm and md
+     deliberately both = 5px so the utility-name semantics (controls rounded-sm,
+     cards rounded-md) survive a future re-differentiation by editing one token. */
+  --radius:      5px;     /* bare `rounded` — Tailwind keys it off singular --radius */
+  --radius-sm:   5px;     /* buttons, inputs, chips, segmented controls */
+  --radius-md:   5px;     /* cards, plates, sheets, modals */
+  --radius-full: 9999px;  /* pills, dots */
+
+  /* Elevation — the single genuine shadow (DESIGN.md §4 "Plate Lift"): soft,
+     warm, shallow. The ONE token every lifted plate-like surface (figure
+     plate, folio cards, scoping worksheet, loupe frame surround) draws from,
+     via the `.card` rule / Card `elevated`. Warm rgba(40,30,20) per DESIGN.md —
+     the cool dark-era rgba(20,24,40) cast is retired (FOL P2-1). */
+  --shadow-plate-lift:
+    0 1px 0 rgba(255, 255, 255, .6) inset,
+    0 6px 24px -8px rgba(40, 30, 20, .14);
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader", Georgia, ui-serif, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /*
@@ -59,59 +125,45 @@
   --text-base:  13px;
   --text-lg:    15px;
   --text-xl:    19px;
+  /* Serif display step (R0a, #221). Newsreader hero/figure/sample title — the
+     plate's name (DESIGN.md typography `display`). Set via the `.text-display`
+     role below, not by inlining `text-display`. Restored to the mockup's 31px
+     hero size (TY-DISPLAY): the greenfield shell set this conservatively at 27px,
+     a step quieter than series-folio.html:113 (31px) / sample-table.html:128
+     (30px). Deliberate, render-verified bump per DESIGN.md §3 Fixed-Scale Rule. */
+  --text-display: 31px;
+  /* Loupe-plate headline step (R2-T9). Newsreader serif at the sample-table
+     mockup's `.loupe-head h2` size (26px). Set via the `.text-headline-lg`
+     role below — DESIGN.md §3 Fixed-Scale Rule forbids inline 26px size literals. */
+  --text-headline-lg: 26px;
 
   --text-xs--line-height:   1.4;
   --text-sm--line-height:   1.4;
   --text-base--line-height: 1.5;
   --text-lg--line-height:   1.3;
   --text-xl--line-height:   1.2;
-}
-
-:root.theme-light {
-  --color-bg: oklch(0.985 0.003 250);
-  --color-bg-elevated: oklch(0.995 0.002 250);
-  --color-bg-hover: oklch(0.955 0.005 250);
-  --color-bg-subtle: oklch(0.965 0.004 250);
-  --color-fg: oklch(0.22 0.010 250);
-  --color-fg-muted: oklch(0.46 0.010 250);
-  --color-fg-dim: oklch(0.62 0.010 250);
-  --color-border: oklch(0.85 0.007 250);
-  --color-border-soft: oklch(0.91 0.006 250);
-  --color-accent: oklch(0.55 0.09 220);
+  --text-display--line-height: 1.15;
+  --text-headline-lg--line-height: 1.15;
 }
 
 @layer base {
   html, body, #app { height: 100%; }
   /*
-   * Hint to the UA that our default surface is dark — this re-themes native
-   * form controls (number-input spinner buttons, scrollbars, focus rings)
-   * to the dark variant without us hand-styling each pseudo-element.
-   * The light theme overrides this on the matching `:root.theme-light`
-   * selector below.
+   * "The Print" is a single light identity (R0a, #221). `color-scheme: light`
+   * re-themes native form controls (number-input spinners, scrollbars, focus
+   * rings) to the light variant. The dark default + the `:root.theme-light`
+   * override are gone.
    */
-  :root          { color-scheme: dark;  }
-  :root.theme-light { color-scheme: light; }
+  :root { color-scheme: light; }
   body {
-    background: var(--color-bg);
-    color: var(--color-fg);
+    background: var(--color-paper);
+    color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     position: relative;
-  }
-  /* Subtle grain overlay — fractal noise @ low opacity, blended. */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background-image:
-      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.55 0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.12'/></svg>");
-    mix-blend-mode: overlay;
-    opacity: 0.3;
-    pointer-events: none;
-    z-index: 0;
   }
   *, *::before, *::after {
     transition-property: color, background-color, border-color, opacity;
@@ -126,26 +178,54 @@
   .card-header {
     height: 56px;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-hair-strong);
     padding-left: 1rem;
     padding-right: 1rem;
     display: flex;
     align-items: center;
   }
-  /* Card surface — shared across all three floating cards. */
+  /*
+   * R3-N1 (#209): the slotted variant for the focus-workspace plate header.
+   *
+   * The base 56px clamp + bottom hairline crushed the focus header's
+   * 3-row stack (11px kicker + 27px Newsreader display title + 12px mono
+   * subline ≈ 53px of content), pinning the subline flush against the
+   * bottom edge and adding a bottom hairline the mockup .plate-head does
+   * NOT have (the trace plate's head breathes into the figure below).
+   *
+   * Used by PlotCard's TitleStrip when `headerSlot` is supplied — i.e. the
+   * focus variant. Drops the height clamp + bottom border in favor of
+   * mockup-parity breathing-room padding (22px top, 18px bottom; px-6 keeps
+   * horizontal padding consistent with the body). Other consumers of
+   * `card-header` (which apply the base class only) are unaffected.
+   */
+  .card-header--slotted {
+    height: auto;
+    border-bottom: none;
+    padding-top: 1.375rem;
+    padding-bottom: 0.75rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+    align-items: flex-start;
+  }
+  /* Card surface — shared across all three floating cards. The "Plate Lift":
+     on warm paper, a card is the one elevated object, so a soft shadow lifts it
+     off the page (DESIGN.md §Elevation). The dark-era shadow + the
+     `:root.theme-light .card` override are folded into this single light
+     treatment (R0a, #221). */
   .card {
-    background: var(--color-bg-elevated);
-    border: 0.5px solid var(--color-border-soft);
-    border-radius: 12px;
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, .03) inset,
-      0 12px 36px -10px rgba(0, 0, 0, .7);
+    background: var(--color-plate);
+    border: 0.5px solid var(--color-hair);
+    border-radius: var(--radius-md); /* 5px — folds onto the radius scale (spec §3/§8 sign-off) */
+    box-shadow: var(--shadow-plate-lift);
     position: relative;
   }
-  :root.theme-light .card {
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, .6) inset,
-      0 6px 24px -8px rgba(20, 24, 40, .15);
+
+  /* Series-builder rail recipe-editor: plate-fill text inputs only — never
+     the range-slider thumbs (or checkboxes) that injected editControls may
+     also nest. Replaces the old `[&_input]:bg-plate` wildcard (R3-Y09, #258). */
+  .rail-edit-inputs input:not([type="range"]):not([type="checkbox"]) {
+    background: var(--color-plate);
   }
 
   /*
@@ -180,6 +260,69 @@
   .anim-overlay svg [data-role="tick-root"] line {
     animation: overlay-fade-in 140ms ease both;
   }
+
+  /*
+   * AN-MOTION (expressive entrances) — the app's transient surfaces enter with
+   * a livelier, more "designed" motion instead of snapping. The back-ease
+   * `cubic-bezier(.34,1.26,.64,1)` carries a SINGLE small overshoot (≈3%) that
+   * reads as a gentle spring — NOT an elastic multi-oscillation (design law:
+   * no bounce/elastic). Drawer/scrim use a pure strong ease-out (a sliding
+   * panel overshooting looks like a glitch). All are one-shot mount entrances;
+   * the `prefers-reduced-motion: reduce` block below near-zeros them. The
+   * smaller `.anim-pal-scale` stays the snappy popover/dropdown entry — these
+   * are for the bigger, more consequential surfaces (modals, toasts).
+   */
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.94); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(18px) scale(0.96); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes drawer-in {
+    from { opacity: 0.4; transform: translateX(28px); }
+    to   { opacity: 1;   transform: none; }
+  }
+  .anim-modal-in  { animation: modal-in  240ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+  .anim-toast-in  { animation: toast-in  240ms cubic-bezier(0.34, 1.26, 0.64, 1) both; }
+  .anim-drawer-in { animation: drawer-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  /* State taxonomy — focus-visible (DESIGN.md): every bespoke button/link gets
+     the keyboard-only accent ring by default. Primitives that refine it (ghost
+     1px, etc.) win via the utilities layer — but layer override is PER-PROPERTY:
+     `outline-1` alone would still inherit this rule's 2px offset, so the 1px
+     refiners redeclare `focus-visible:outline-offset-0` explicitly (the shipped
+     ghost look is 1px at offset 0). Deliberate suppressions win via
+     @layer components ([data-observed-hit], .print-range) or focus:outline-none
+     utilities (Popover container, Input inner). Mouse clicks never show a ring. */
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* UI-RINGCLIP: the default ring sits 2px OUTSIDE the box (4px reach), which an
+     overflow scrollport clips at its edges — the NavModal result list (overflow-y
+     clips x → left/right) and the ThumbnailGallery filmstrip (overflow-x clips y →
+     top/bottom). Elements that live full-bleed inside such a scroller opt into an
+     INSET ring (drawn 2px inside the box, on top of content) so the accent ring is
+     whole in any scrollport, with no layout change and no loss of the full-bleed
+     row/thumb. Same 2px accent stroke — only the offset flips. */
+  [data-focus-ring="inset"]:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* tabindex=-1 elements are programmatic focus ANCHORS, never Tab destinations:
+     interaction-scope containers (the cursored row / dock count are the real
+     indicators), overflow scrollers (sheet-scroll, thumbnail-gallery, opted out
+     of the scroller tab-order), and menu/popover/onboarding shells (their items
+     show focus). None of them want the UA focus box — suppress it app-wide so
+     programmatic/click focus never paints a stray blue outline. Roving rows
+     (tabindex=0 when cursored) keep their own treatment. */
+  [tabindex="-1"]:focus {
+    outline: none;
+  }
 }
 
 /*
@@ -187,14 +330,18 @@
  * three-card redesign uses `.card` as the primary surface container.
  */
 @utility panel-main {
-  background: var(--color-bg);
+  background: var(--color-paper);
 }
 
 /*
  * Semantic typography roles. Components consume these instead of mixing
- * size/weight/color triples. Six roles cover the surface area of the app:
+ * size/weight/color triples. The roles below cover the surface area of the app:
  *
+ *   text-display      Newsreader serif hero — figure/sample/series title (R0a)
+ *   text-headline     Newsreader serif section title — folio/scoping (R0a)
+ *   text-headline-lg  Newsreader serif plate headline — loupe sample title (R2-T9, 26px)
  *   text-caption      microcopy: timestamps, hints, "no items" placeholders
+ *   text-kicker       eyebrow / section label — uppercase, 700, tracked, tone-colored (accent|faint|soft)
  *   text-label        form / section labels — uppercase, tracked, dim
  *   text-meta         inline labels (non-uppercase): author names, tag keys
  *   text-body         default readable text — chat body, paragraph
@@ -202,25 +349,109 @@
  *   text-data         numerical / monospace values — q, score, lattice
  *   text-data-strong  monospace badge — phase chip, indexing chip
  *
+ * The Serif-Means-Title Rule (DESIGN.md): Newsreader (text-display/text-headline)
+ * is for titles on a plate only — never prose or chrome.
+ *
  * Adding `font-mono` etc. on top of a role is fine if context demands it,
  * but try to express the semantic first.
  */
 @layer components {
+  .text-display     { font-family: var(--font-serif); font-size: var(--text-display);
+                      line-height: 1.15; font-weight: 500; color: var(--color-ink); }
+  .text-headline    { font-family: var(--font-serif); font-size: var(--text-xl);
+                      line-height: 1.2;  font-weight: 500; color: var(--color-ink); }
+  .text-headline-lg { font-family: var(--font-serif); font-size: var(--text-headline-lg);
+                      line-height: 1.15; font-weight: 500; color: var(--color-ink); }
   .text-caption     { font-size: var(--text-xs);  line-height: 1.4;
-                      color: var(--color-fg-muted); }
+                      color: var(--color-ink-soft); }
+  .text-kicker        { font-size: var(--text-sm);  line-height: 1.4;
+                        font-weight: 700; text-transform: uppercase; }
+  .text-kicker-accent { color: var(--color-print-accent); letter-spacing: 0.10em; }
+  /* Kicker tone contrast (WCAG 1.4.3): ink-faint measures 3.16:1 on paper —
+     clearing only the 3:1 non-text/large-text line — and 2.92:1 on paper-sunk,
+     which fails every line. (Note 700-weight uppercase at this size is NOT
+     WCAG "large text": large-bold starts at 18.66px, so the 3:1 line never
+     actually applies to kickers; faint survives on plain paper only as a
+     decorative tone.) So `tone="faint"` is reserved for decorative/redundant
+     labels resting on plain paper; informational labels and ANY kicker on a
+     sunk surface use `tone="soft"` (ink-soft, 6.50:1 on paper — AA at all
+     sizes). See the --color-ink-faint definition note above. */
+  .text-kicker-faint  { color: var(--color-ink-faint);    letter-spacing: 0.10em; }
+  .text-kicker-soft   { color: var(--color-ink-soft);     letter-spacing: 0.10em; }
   .text-label       { font-size: var(--text-sm);  line-height: 1.4;
                       font-weight: 500; text-transform: uppercase;
-                      letter-spacing: 0.04em; color: var(--color-fg-muted); }
+                      letter-spacing: 0.06em; color: var(--color-ink-soft); }
   .text-meta        { font-size: var(--text-sm);  line-height: 1.4;
-                      font-weight: 500; color: var(--color-fg); }
+                      font-weight: 500; color: var(--color-ink); }
   .text-body        { font-size: var(--text-base); line-height: 1.5;
-                      color: var(--color-fg); }
+                      color: var(--color-ink); }
   .text-title       { font-size: var(--text-lg); line-height: 1.3;
-                      font-weight: 600; color: var(--color-fg); }
+                      font-weight: 600; color: var(--color-ink); }
   .text-data        { font-family: var(--font-mono); font-size: var(--text-sm);
-                      line-height: 1.4; color: var(--color-fg); }
+                      line-height: 1.4; color: var(--color-ink); }
   .text-data-strong { font-family: var(--font-mono); font-size: var(--text-sm);
                       line-height: 1.4; font-weight: 600; }
+
+  /* Icon-only buttons keep a compact visible box but expand the pointer/touch
+     target via a centered overlay, so dense chip rows do not balloon. The
+     overlay is transparent and pointer-events:auto so it forwards clicks to the
+     button.
+
+     Width is capped at 24px (the WCAG 2.5.8 AA target-size floor) rather than
+     44px (the 2.5.5 AAA touch goal): in a dense horizontal cluster the buttons
+     sit ~27px center-to-center, so a 44px overlay reaches ~22px past its centre,
+     well past the ~13.5px midpoint, and the later sibling's overlay paints over
+     the earlier button's half (a real pointer mis-map -- clicking one button
+     fired its neighbour). At 24px the overlay reaches only 12px from centre, so
+     it never crosses the midpoint and each button wins its closer half. We keep
+     the height generous (44px) because vertical clusters are spaced wide enough
+     that the same overlap does not occur. Net: AA-2.5.8 met by size, AAA-2.5.5
+     traded away horizontally to stop the cannibalisation. */
+  .icon-button::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 24px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Slider — custom range track + thumb. WebKit/Moz pseudo-elements cannot be
+     expressed as Tailwind utilities, so the appearance is authored here (the
+     legitimate styles.css home for pseudo-element styling). Colors via tokens. */
+  .print-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+    background: var(--color-hair-strong); border-radius: 9999px; outline: none; }
+  /* The thumb box-shadow is a 0-blur hairline RING (not a Plate-Lift drop shadow):
+     border = 2.5px plate gap, box-shadow = the 1px hair-strong outer ring. Flat (H). */
+  .print-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%; background: var(--color-accent);
+    cursor: pointer; border: 2.5px solid var(--color-plate);
+    box-shadow: 0 0 0 1px var(--color-hair-strong); }
+  .print-range::-moz-range-thumb { width: 16px; height: 16px; border: 2.5px solid var(--color-plate);
+    border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 1px var(--color-hair-strong); }
+  .print-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .print-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+  /* Custom-index preview click-to-snap targets: kill the UA focus box (it
+     rendered as a stray blue square over the peak) and show an on-brand accent
+     ring ONLY on keyboard focus — mouse clicks never show a ring. Mirrors the
+     .print-range focus treatment; SVG :focus-visible stroke can't be expressed
+     in Tailwind, so it lives here. */
+  [data-observed-hit] { outline: none; cursor: pointer; }
+  [data-observed-hit]:focus-visible { stroke: var(--color-accent); stroke-width: 2; }
+
+  /* Armed peak marks in the trace plot: while editing is armed each per-peak
+     SVG <g> becomes a role=button tab stop (PlotPeaks), but the base keyboard
+     ring above targets button:/a: only — an SVG g is neither. Mirror the 2px
+     accent ring on the g's bounding box (outline works on SVG elements in the
+     supported engines); a stroke override would be swallowed here because the
+     glyph shapes set their own stroke. Keyboard-only, like every other ring. */
+  [data-role="plot-peaks"] g[role="button"] { outline: none; cursor: pointer; }
+  [data-role="plot-peaks"] g[role="button"]:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */
@@ -232,3 +463,27 @@
    children of <Skeleton> behave as if they were direct children of its outer
    wrapper. The outer wrapper still positions the bones overlay via position:relative. */
 [data-boneyard-content] { display: contents; }
+
+/* SegmentedControl — fold in the 44px touch target only on coarse pointers
+   (DESIGN.md sign-off §8) so dense desktop toolbars keep compact density. */
+@media (pointer: coarse) {
+  .seg-segment {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
+   so it overrides the layered global transition rule AND the keyframe animations
+   (.anim-*, .bone skeleton pulse, overlay-fade-in). We near-zero rather than fully
+   remove durations so any transitionend/animationend listeners still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

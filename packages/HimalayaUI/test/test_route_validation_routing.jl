@@ -24,11 +24,11 @@ function _setup_full_fixture(tmp::String)
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "h.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
     # Ensure there's at least one auto-peak so PATCH /peaks/:id has a
@@ -48,7 +48,7 @@ end
 @testset "Validation routing: every mutating route returns 4xx on malformed body" begin
     mktempdir() do tmp
         ctx = _setup_full_fixture(tmp)
-        with_test_server(ctx.db) do port, base
+        with_inproc_routes(ctx.db) do call
             base_headers = ["Content-Type" => "application/json",
                             "X-Username"   => "alice"]
 
@@ -92,29 +92,16 @@ end
 
             for (method, path, body, label) in cases
                 @testset "$label" begin
-                    r = HTTP.request(method, "$base$path";
-                        body = JSON3.write(body),
+                    r = call(method, path;
                         headers = base_headers,
-                        status_exception = false)
+                        body = Vector{UInt8}(JSON3.write(body)))
                     @test 400 <= r.status < 500
                 end
             end
 
-            # Group POST: needs a real group_id to target. The auto group
-            # should exist after the analyze.
-            gid_rows = Tables.rowtable(DBInterface.execute(ctx.db,
-                "SELECT id FROM index_groups WHERE exposure_id = ? LIMIT 1",
-                [ctx.exposure_id]))
-            if !isempty(gid_rows)
-                gid = gid_rows[1].id
-                @testset "POST /groups/:id/members — missing index_id" begin
-                    r = HTTP.post("$base/api/groups/$gid/members";
-                        body = JSON3.write(Dict(:NOT_index_id => 1)),
-                        headers = base_headers,
-                        status_exception = false)
-                    @test 400 <= r.status < 500
-                end
-            end
+            # D-10: POST /groups/:id/members (and its missing-index_id validation)
+            # was retired. The assignment-native POST /assignment/members carries
+            # the equivalent validation, exercised in test_assignments.jl.
         end
     end
 end

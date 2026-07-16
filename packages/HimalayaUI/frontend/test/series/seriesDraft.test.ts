@@ -9,7 +9,7 @@ import {
 
 function draft(over: Partial<SeriesDraft> = {}): SeriesDraft {
   return {
-    ...emptySeriesDraft(5, "sha256:base"),
+    ...emptySeriesDraft(5),
     ...over,
   };
 }
@@ -17,10 +17,9 @@ function draft(over: Partial<SeriesDraft> = {}): SeriesDraft {
 describe("seriesDraft", () => {
   beforeEach(() => sessionStorage.clear());
 
-  it("emptySeriesDraft seeds id + baseHash, empty recipe, default order_rule", () => {
-    const d = emptySeriesDraft(7, "sha256:x");
+  it("emptySeriesDraft seeds id, empty recipe, default order_rule", () => {
+    const d = emptySeriesDraft(7);
     expect(d.id).toBe(7);
-    expect(d.baseHash).toBe("sha256:x");
     expect(d.recipe).toEqual([]);
     expect(d.orderRule).toBe("manual");
     expect(d.orderingVariable).toBeNull();

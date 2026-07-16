@@ -54,7 +54,6 @@ function build_export(db::SQLite.DB, experiment_id::Int)
 
         push!(out, Dict(
             :name         => sm.name,
-            :display_name => sm.display_name isa Missing ? nothing : sm.display_name,
             :notes        => sm.notes isa Missing ? nothing : sm.notes,
             :tags         => rows_to_json(tags),
             :exposures    => ex_out,
@@ -64,13 +63,13 @@ function build_export(db::SQLite.DB, experiment_id::Int)
 end
 
 function _export_csv(summary)
-    header = ["sample_name","sample_display_name","exposure_filename",
+    header = ["sample_name","exposure_filename",
               "phases","lattice_ds","r_squareds","scores","tags"]
     rows = Vector{Vector{Any}}()
     for sm in summary
         tag_str = join(["$(t[:key])=$(t[:value])" for t in sm[:tags]], ";")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], sm[:display_name], "", "", "", "", "", tag_str])
+            push!(rows, [sm[:name], "", "", "", "", "", tag_str])
             continue
         end
         for ex in sm[:exposures]
@@ -78,7 +77,7 @@ function _export_csv(summary)
             lds    = join([string(ix[:lattice_d]) for ix in ex[:indices]], ";")
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
-            push!(rows, [sm[:name], sm[:display_name], ex[:filename],
+            push!(rows, [sm[:name], ex[:filename],
                          phases, lds, r2s, scs, tag_str])
         end
     end

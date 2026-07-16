@@ -6,14 +6,14 @@ using Test, HTTP, JSON3
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "example_tot.dat"))
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="example_tot")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
 
-    with_test_server(db) do port, base
-        r = HTTP.get("$base/api/exposures/$e_id/trace")
+    with_inproc_routes(db) do call
+        r = call("GET", "/api/exposures/$e_id/trace")
         @test r.status == 200
         body = JSON3.read(String(r.body))
         @test haskey(body, :q) && haskey(body, :I) && haskey(body, :sigma)
@@ -22,7 +22,7 @@ using Test, HTTP, JSON3
         @test all(q -> q > 0, body.q)
 
         # 404 for unknown exposure
-        r = HTTP.get("$base/api/exposures/99999/trace"; status_exception = false)
+        r = call("GET", "/api/exposures/99999/trace")
         @test r.status == 404
     end
 end
@@ -50,15 +50,52 @@ end
     image = "{name}_0_001.tiff"
     """
 
-    db     = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir,
         config=config_blob)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="JC_D01_1_S2449")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="JC_D01_1_S2449")
 
-    with_test_server(db) do port, base
-        r = HTTP.get("$base/api/exposures/$e_id/trace")
+    with_inproc_routes(db) do call
+        r = call("GET", "/api/exposures/$e_id/trace")
+        @test r.status == 200
+        body = JSON3.read(String(r.body))
+        @test length(body.q) > 100
+    end
+end
+
+@testset "trace route resolves migrated full-stem filename to per-acquisition _tot.dat" begin
+    # Migration scenario: filename is the full PER-FRAME stem (rewritten for rescan
+    # dedup), but the trace total is named by the ACQUISITION stem (frame suffix
+    # dropped). The route must fall back via the shared resolver.
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "JC_D01_1_S2449_tot.dat"))   # acquisition-stem name
+
+    config_blob = """
+    [experiment]
+    name = "MigratedTrace"
+    [layout]
+    data_dir = "data"
+    analysis_dir = "analysis/automatic_analysis"
+    exposure_type = "simple"
+    [files]
+    integration = "{name}_tot.dat"
+    image = "{name}_0_001.tiff"
+    """
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir, config=config_blob)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    # Full per-frame stem (what regroup_experiment! rewrites filename to).
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id,
+        filename="JC_D01_1_S2449_0_001")
+
+    with_inproc_routes(db) do call
+        r = call("GET", "/api/exposures/$e_id/trace")
         @test r.status == 200
         body = JSON3.read(String(r.body))
         @test length(body.q) > 100

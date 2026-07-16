@@ -4,13 +4,23 @@
 
 export type ToastKind = "info" | "success" | "warning" | "error";
 
-let activeImpl: (msg: string, kind: ToastKind) => void = (msg, kind) => {
+/** Optional inline action (e.g. Undo) rendered inside a toast. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+let activeImpl: (msg: string, kind: ToastKind, action?: ToastAction) => void = (msg, kind) => {
   // eslint-disable-next-line no-console
   console.warn(`[toast:${kind}] ${msg}`);
 };
 
-export function showToast(msg: string, kind: ToastKind = "info"): void {
-  activeImpl(msg, kind);
+export function showToast(msg: string, kind: ToastKind = "info", action?: ToastAction): void {
+  // Only forward `action` when present so the impl is still called with the
+  // 2-arg (msg, kind) shape for the common no-action case — keeps existing
+  // toast-impl spies (toHaveBeenCalledWith(msg, kind)) exact, no trailing undefined.
+  if (action !== undefined) activeImpl(msg, kind, action);
+  else activeImpl(msg, kind);
 }
 
 /**
@@ -18,7 +28,7 @@ export function showToast(msg: string, kind: ToastKind = "info"): void {
  * Subsequent calls override; passing `null` restores the console.warn fallback.
  */
 export function setToastImpl(
-  impl: ((msg: string, kind: ToastKind) => void) | null,
+  impl: ((msg: string, kind: ToastKind, action?: ToastAction) => void) | null,
 ): void {
   if (impl === null) {
     activeImpl = (msg, kind) => {

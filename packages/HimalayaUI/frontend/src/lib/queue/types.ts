@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Comparison, Series } from "../../api";
+import type { Assignment, Series } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -9,7 +9,7 @@ import type { Comparison, Series } from "../../api";
 // inserting an indices row) use NEGATIVE placeholder ids in optimistic cache
 // writes. Real DB ids are always positive (INTEGER PRIMARY KEY AUTOINCREMENT
 // in SQLite never returns ≤ 0 for fresh inserts). Consumers that read these
-// caches (PeakRow, MentionChip, etc.) must tolerate negative ids: do not
+// caches (PeakRow, etc.) must tolerate negative ids: do not
 // `id > 0` filter, do not strict-parse, do not dereference into URLs without
 // a sign check. The placeholder is replaced with the real id when the
 // mutator's onSuccess runs against the server response.
@@ -36,25 +36,36 @@ import type { Comparison, Series } from "../../api";
  */
 export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
-  | "index_confirmed" | "index_unconfirmed"
   | "speculative_created" | "speculative_deleted"
   | "set_exposure_status" | "select_exposure"
-  | "add_tag" | "remove_tag"
+  | "add_tag" | "remove_tag" | "edit_tag"
   | "post_message" | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
-  // Compare page (Plan §Phase 3). One queue mutator handles both create
-  // (`POST /api/comparisons`) and submit (`POST /api/comparisons/:id/submit`)
-  // — `payload.id` discriminates. The wire-side event names
-  // (`comparison_created`, `comparison_submitted`) diverge from the OpKind
-  // because a single user gesture (Save) can map to either event.
-  // `comparison_delete` maps 1:1 with `comparison_deleted`.
-  | "comparison_save" | "comparison_delete"
   // Series (#166/#167/#168). `series_save` covers create (POST /api/series)
-  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates,
-  // mirroring `comparison_save`. `series_commit` → `series_plate_committed`.
+  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates.
+  // `series_commit` → `series_plate_committed`.
   // `series_delete` → `series_deleted`.
-  | "series_save" | "series_commit" | "series_delete";
+  | "series_save" | "series_commit" | "series_delete"
+  // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
+  // native assignment event kinds. `affectsExposurePeaks: () => false` for all
+  // three — they touch only the assignment cache, never the peak set.
+  | "assignment_add" | "assignment_remove" | "assignment_set_state"
+  // Custom-index commit (Plan D-9). The OpKind names the user gesture; the
+  // backend route emits two events (speculative_created + assignment_add), so
+  // there is no `custom_index_commit` event kind on the wire — it lives only in
+  // resolveMutator (outbound).
+  | "custom_index_commit"
+  // Ingestion grouping-review structural edits (Phase E2). `move_exposure`,
+  // `rename_sample`, and `dismiss_grouping_flag` are single-entity (surgical
+  // cache splice); `merge_samples` and `split_sample` are route-level
+  // orchestrations (optimistic tree edit, invalidate-only confirm). The OpKind
+  // names the user GESTURE; the wire event kinds are exposure_moved /
+  // sample_renamed / sample_created+sample_split / grouping_flag_dismissed —
+  // and a merge emits NO sample_merged kind (it fans out as exposure_moved).
+  | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag"
+  // Symmetric undo of dismiss: re-shows the flag so the sample re-enters review.
+  | "undo_dismiss_grouping_flag";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style
@@ -94,10 +105,41 @@ export interface PendingDeferred<T> {
  * Curation-frame `post_state`: the recomputed indices snapshot threaded onto
  * `peak_*` / `analyze_run` SSE frames so the cache can replay without a
  * refetch.
+ *
+ * F-WIPE W1 additively extended ALL reanalyzing frame producers — peak_added
+ * / peak_removed / peak_excluded / peak_unexcluded AND analyze_run (the
+ * manual-reanalyze route was the last producer to gain the envelope):
+ *
+ * - `assignment` — the same `{state, members}` envelope the assignment_*
+ *   frames carry (shared `_assignment_post_state` serializer in
+ *   routes_analysis.jl), reflecting the semantically re-attached membership
+ *   after reanalysis.
+ * - `assignment_dropped` — PER-MEMBER list of phase names whose assignment
+ *   member did not survive reanalysis (its index no longer exists in the new
+ *   candidate set, or merged into a sibling). May repeat a phase; consumers
+ *   aggregate. Present ONLY when non-empty on the wire.
+ *
+ * Both optional: a pre-W1 backend omits them, and consumers must then leave
+ * the assignment cache untouched (no invalidate — today's behavior).
  */
 export interface CurationPostState {
   analysis_inputs_hash: string;
   indices: unknown[];
+  assignment?: Pick<Assignment, "state" | "members">;
+  assignment_dropped?: string[];
+}
+
+/**
+ * Assignment-frame `post_state`: the {state, members} snapshot threaded onto
+ * `assignment_*` SSE frames so `applyRemoteToCache` can patch the assignment
+ * cache directly without a refetch. CRUCIALLY this has NO top-level `indices`
+ * key — that absence is what lets `applyPostStateOnly`'s
+ * `Array.isArray(ps.indices)` guard skip an assignment frame (so it never
+ * clobbers the exposure's analysis_inputs_hash with undefined). Mirrors the
+ * Julia route's `post_state = Dict(:assignment => Dict(:state, :members))`.
+ */
+export interface AssignmentPostState {
+  assignment: Pick<Assignment, "state" | "members">;
 }
 
 /**
@@ -106,10 +148,10 @@ export interface CurationPostState {
  *
  * Optional `post_state` carries an enriched snapshot for replay-without-
  * refetch. Its shape depends on `kind`: curation events (peak_*, analyze_run)
- * carry a `CurationPostState`; comparison events (comparison_created /
- * comparison_submitted) carry the full `Comparison` projection — the same
- * shape `fetch_comparison_with_members` / `GET /api/comparisons/:id` returns
- * (per Compare UX A-5 Step 5b). Consumers narrow by `kind` and cast.
+ * carry a `CurationPostState`; the series-commit event
+ * (`series_plate_committed`) carries the full `Series` projection — the same
+ * shape `fetch_series_with_plate` / `GET /api/series/:id` returns. Consumers
+ * narrow by `kind` and cast.
  */
 export interface SseEvent {
   id: number;
@@ -121,7 +163,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | Comparison | Series;
+  post_state?: CurationPostState | AssignmentPostState | Series;
 }
 
 /**

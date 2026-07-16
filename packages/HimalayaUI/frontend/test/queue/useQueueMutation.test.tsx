@@ -188,6 +188,51 @@ describe("useQueueMutation", () => {
     await waitFor(() => expect(result.current.error).toBeNull());
   });
 
+  it("per-call onSuccess fires on confirmation with the response (consumer toast hook)", async () => {
+    const mutator = makeMutator<{ q: number }, { id: number }>();
+    (mutator.request as any).mockResolvedValue({ id: 7 });
+    const { result } = renderHook(
+      () => useQueueMutation(mutator, {}),
+      { wrapper: withQueryClient(qc) },
+    );
+
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    act(() => result.current.mutate({ q: 1.0 }, { onSuccess, onError }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith({ id: 7 }));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("per-call onError fires on terminal failure (after the global rollback path)", async () => {
+    const restore = vi.fn();
+    const mutator = makeMutator();
+    (mutator.onMutate as any).mockReturnValue({ restore });
+    const failure = Object.assign(new Error("400 bad"), { status: 400 });
+    (mutator.request as any).mockRejectedValue(failure);
+    const { result } = renderHook(
+      () => useQueueMutation(mutator, {}),
+      { wrapper: withQueryClient(qc) },
+    );
+
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    act(() => result.current.mutate({ q: 1.0 } as any, { onSuccess, onError }));
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
+    expect(onSuccess).not.toHaveBeenCalled();
+    // Global rollback still ran — per-call callbacks are additive, not a replacement.
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it("mutate without callbacks keeps working (the second arg is optional)", async () => {
+    const mutator = makeMutator();
+    const { result } = renderHook(
+      () => useQueueMutation(mutator, {}),
+      { wrapper: withQueryClient(qc) },
+    );
+    act(() => result.current.mutate({ q: 1.0 } as any));
+    await waitFor(() => expect((mutator.onSuccess as any).mock.calls.length).toBe(1));
+  });
+
   it("AbortSignal threads to mutator.request", async () => {
     let receivedSignal: AbortSignal | undefined;
     const mutator = makeMutator();

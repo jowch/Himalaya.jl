@@ -19,15 +19,14 @@
  * If you change a route's apply_event! payload, update the corresponding
  * test here — and double-check applyRemoteToCache.ts reads the same fields.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
+import { applyRemoteToCache, applyPostStateOnly } from "../../src/lib/queue/applyRemoteToCache";
 import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
 import { remoteForeignEvent } from "./helpers";
 import type {
-  Peak, Exposure, Sample, GroupEntry, SampleMessage,
-  ComparisonMessage, ComparisonSummary,
+  Peak, Exposure, Sample, SampleMessage, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 
@@ -199,84 +198,163 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   // -------------------------------------------------------------------------
-  // Group/index events
+  // F-WIPE W1/W2 — peak_* frames now carry the assignment envelope INSIDE the
+  // curation post_state: { analysis_inputs_hash, indices, assignment: {state,
+  // members}, assignment_dropped?: string[] }. Serialized by the same Julia
+  // `_assignment_post_state` helper the assignment_* frames use
+  // (routes_peaks.jl::_enrich_curation_post_state). Backend pair:
+  // test/test_assignment_reattach.jl (frame shape) +
+  // test_route_response_shapes.jl (route emit).
   // -------------------------------------------------------------------------
 
-  it("index_confirmed appends index_id to the matching group's members", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [10] },
+  it("peak_excluded with the W1 envelope writes indices + hash + assignment cache (no invalidate)", () => {
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: false },
     ]);
-    // Mirrors routes_analysis.jl POST /groups/:id/members: payload is
-    // {group_id, index_id}.
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
     const evt: SseEvent = {
-      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 1, index_id: 42 },
+      id: 99, kind: "peak_excluded", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.5, auto_peak_id: 7 },
+      post_state: {
+        analysis_inputs_hash: "h-new",
+        indices: [{ id: 1, exposure_id: 5, phase: "Im3m", basis: 0.1 }],
+        assignment: { state: "indexed", members: [10] },
+      },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<GroupEntry[]>(queryKeys.groups(5))![0]!.members)
-      .toEqual([10, 42]);
+    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash)
+      .toBe("h-new");
+    expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toHaveLength(1);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      { queryKey: queryKeys.assignment(5) });
   });
 
-  it("index_unconfirmed removes index_id from the matching group's members", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "custom", active: true, members: [10, 42] },
-    ]);
+  it("peak_added W1 envelope reaches the assignment cache through the same shared writer", () => {
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), []);
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "null", members: [] });
     const evt: SseEvent = {
-      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 1, index_id: 42 },
+      id: 99, kind: "peak_added", entity_type: "exposure", entity_id: 5,
+      payload: { q: 0.42, peak_curation_id: 100 },
+      post_state: {
+        analysis_inputs_hash: "h-new", indices: [],
+        assignment: { state: "indexed", members: [11] },
+      },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<GroupEntry[]>(queryKeys.groups(5))![0]!.members)
-      .toEqual([10]);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [11] });
   });
 
-  it("index_confirmed for an unknown group_id invalidates the groups list (issue #37 Bug 1c)", () => {
-    // Foreign tab confirmed an index for the FIRST time on this exposure,
-    // creating a fresh custom group on the backend. Other tabs only have the
-    // auto group cached; the surgical update would silently miss the new
-    // custom group, leaving the foreign confirmation invisible until refetch.
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return orig(filters);
-    };
+  it("peak frame WITHOUT the assignment envelope (old backend) leaves the assignment cache untouched", () => {
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
     const evt: SseEvent = {
-      id: 99, kind: "index_confirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 5, index_id: 42 },  // group_id=5 NOT in cache
+      id: 99, kind: "peak_removed", entity_type: "exposure", entity_id: 5,
+      payload: { peak_curation_id: 7, q: 0.5 },
+      post_state: { analysis_inputs_hash: "h-new", indices: [] },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toBe(true);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      { queryKey: queryKeys.assignment(5) });
   });
 
-  it("index_unconfirmed for an unknown group_id invalidates the groups list", () => {
-    qc.setQueryData<GroupEntry[]>(queryKeys.groups(5), [
-      { id: 1, exposure_id: 5, kind: "auto", active: true, members: [] },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = (filters: any) => {
-      const k = filters?.queryKey ?? [];
-      if (Array.isArray(k) && k[0] === "exposure" && k[1] === 5 && k[2] === "groups") {
-        invalidated = true;
-      }
-      return orig(filters);
-    };
+  // -------------------------------------------------------------------------
+  // Assignment events (Plan D-3) — DISTINCT {assignment:{state,members}}
+  // post_state (NO top-level `indices` key).
+  // -------------------------------------------------------------------------
+
+  it("assignment_add patches the assignment cache from the distinct post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
     const evt: SseEvent = {
-      id: 99, kind: "index_unconfirmed", entity_type: "exposure", entity_id: 5,
-      payload: { group_id: 5, index_id: 42 },
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [10, 42] } },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toBe(true);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
   });
 
-  it("speculative_created invalidates indices+groups (no inline cache write)", () => {
+  it("assignment_remove patches the assignment cache from post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10, 42] });
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_remove", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [10] } },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))!.members).toEqual([10]);
+  });
+
+  it("assignment_set_state patches state + clears members from post_state", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_set_state", entity_type: "exposure", entity_id: 5,
+      payload: { state: "form_factor" },
+      post_state: { assignment: { state: "form_factor", members: [] } },
+    };
+    applyRemoteToCache(evt, qc);
+    const a = qc.getQueryData<Assignment>(queryKeys.assignment(5))!;
+    expect(a.state).toBe("form_factor");
+    expect(a.members).toEqual([]);
+  });
+
+  it("assignment frame carries NO top-level `indices` key (distinct post_state)", () => {
+    // Finding #5: the wire contract is {assignment:{state,members}} — assert the
+    // absence of `indices` so a future shape drift toward CurationPostState is
+    // caught. Mirrors the Julia route-emit test in test_assignments.jl.
+    const post_state = { assignment: { state: "indexed" as const, members: [10] } };
+    expect("indices" in post_state).toBe(false);
+    expect("assignment" in post_state).toBe(true);
+  });
+
+  it("applyPostStateOnly is a NO-OP on an assignment frame (finding #5a)", () => {
+    // The single highest-value test: an assignment frame reaching the own-tab
+    // applyPostStateOnly path must NOT clobber the exposure hash (the {assignment}
+    // post_state has no `indices` array, so the guard bails).
+    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    qc.setQueryData(queryKeys.indices(5), [{ id: 1 }]);
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+      post_state: { assignment: { state: "indexed", members: [42] } },
+    };
+    applyPostStateOnly(evt, qc);
+    // Exposure hash untouched; indices cache untouched.
+    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash).toBe("h0");
+    expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toEqual([{ id: 1 }]);
+  });
+
+  it("assignment_add with no post_state invalidates the assignment cache (fallback)", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5),
+      { exposure_id: 5, state: "indexed", members: [10] });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const evt: SseEvent = {
+      id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 42 },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
+  });
+
+
+  it("speculative_created invalidates indices (no inline cache write)", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
     qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
@@ -285,10 +363,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(2);  // indices + groups
+    expect(called).toBe(1);  // indices
   });
 
-  it("speculative_deleted invalidates indices+groups", () => {
+  it("speculative_deleted invalidates indices", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
     qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
@@ -297,7 +375,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(2);
+    expect(called).toBe(1);
   });
 
   // -------------------------------------------------------------------------
@@ -315,10 +393,10 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.status).toBe("rejected");
   });
 
-  it("select_exposure invalidates the parent sample's exposure list", () => {
-    let invalidated: unknown = null;
+  it("select_exposure invalidates the exposure list AND the picker projection", () => {
+    const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
+      invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     // Mirrors routes_exposures.jl PATCH /select: payload is {sample_id}.
     const evt: SseEvent = {
@@ -326,7 +404,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { sample_id: 1 },
     };
     applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.exposures(1));
+    expect(invalidated).toContainEqual(queryKeys.exposures(1));
+    // indexing_exposure_id derives from selection; the builder's Confirm
+    // resolves its plate through the picker projection (BU-RECIPENOOP), so a
+    // foreign re-selection must refresh it or Confirm commits the PREVIOUS
+    // representative exposure.
+    expect(invalidated).toContainEqual(queryKeys.corpusPickerSamples);
   });
 
   // -------------------------------------------------------------------------
@@ -335,17 +418,17 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
 
   it("update_sample spreads payload onto the sample entity", () => {
     const sample: Sample = {
-      id: 10, experiment_id: 1, display_name: "D1", name: "old", notes: "n", tags: [],
+      id: 10, experiment_id: 1, name: "old", notes: "n", tags: [],
     };
     qc.setQueryData(queryKeys.sample(10), sample);
     // Mirrors routes_samples.jl PATCH: payload is the patched fields directly.
     const evt: SseEvent = {
       id: 99, kind: "update_sample", entity_type: "sample", entity_id: 10,
-      payload: { display_name: "new" },
+      payload: { name: "new" },
     };
     applyRemoteToCache(evt, qc);
     const after = qc.getQueryData<Sample>(queryKeys.sample(10))!;
-    expect(after.display_name).toBe("new");
+    expect(after.name).toBe("new");
     expect(after.notes).toBe("n");  // unpatched fields preserved
     expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
   });
@@ -422,7 +505,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     ]);
   });
 
-  it("delete_index falls through to default (invalidates peaks+indices+groups)", () => {
+  it("delete_index falls through to default (invalidates peaks+indices)", () => {
     // `delete_index` is the OpKind for the user gesture that hits the
     // DELETE /api/indices/:id route — the backend emits `speculative_deleted`
     // on the wire, which has its own dedicated case. But if a future
@@ -439,120 +522,11 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    // Default branch invalidates peaks, indices, groups for the entity.
+    // Default branch invalidates peaks, indices for the entity.
     expect(invalidatedKeys).toEqual([
       queryKeys.peaks(5),
       queryKeys.indices(5),
-      queryKeys.groups(5),
     ]);
-  });
-
-  // -------------------------------------------------------------------------
-  // Compare page events (Phase 3). Three kinds:
-  // - comparison_created  → invalidate comparison + members + listings
-  // - comparison_submitted → invalidate same set (rebuilds full state)
-  // - comparison_deleted  → REMOVE (not invalidate) entity + filter listings
-  // - post_message (entity_type=comparison_message) → comparison thread cache
-  // -------------------------------------------------------------------------
-
-  it("comparison_created invalidates comparison(id), comparisonMembers(id), and listings", () => {
-    const invalidatedKeys: unknown[] = [];
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey); return orig(arg);
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "comparison_created", entity_type: "comparison", entity_id: 42,
-      payload: { title: "X", members: [] },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidatedKeys).toEqual([
-      queryKeys.comparison(42),
-      queryKeys.comparisonMembers(42),
-      ["comparisons"],  // prefix invalidation hits all listing scopes
-    ]);
-  });
-
-  it("comparison_submitted invalidates comparison(id), comparisonMembers(id), and listings", () => {
-    const invalidatedKeys: unknown[] = [];
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey); return orig(arg);
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "comparison_submitted", entity_type: "comparison", entity_id: 42,
-      payload: { title: "X edited", members: [] },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidatedKeys).toEqual([
-      queryKeys.comparison(42),
-      queryKeys.comparisonMembers(42),
-      ["comparisons"],
-    ]);
-  });
-
-  it("comparison_deleted removes entity caches (NOT invalidates) and filters listings", () => {
-    qc.setQueryData(queryKeys.comparison(42), { id: 42 });
-    qc.setQueryData(queryKeys.comparisonMembers(42), []);
-    qc.setQueryData(queryKeys.comparisonMessages(42), []);
-    qc.setQueryData(queryKeys.comparisonForks(42), []);
-    qc.setQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"), [
-      { id: 42, title: "doomed", description: null, content_hash: "h",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null,
-        view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
-        last_event_at: null, author_username: null, member_count: 0,
-        member_phases: [], member_phase_count: 0, has_stale_members: false },
-      { id: 99, title: "kept", description: null, content_hash: "h",
-        created_by: 1, created_at: null, updated_at: null,
-        forked_from_id: null, forked_at_hash: null,
-        view_grouping_mode: null, view_show_peak_ticks: null, view_show_peak_labels: null,
-        last_event_at: null, author_username: null, member_count: 0,
-        member_phases: [], member_phase_count: 0, has_stale_members: false },
-    ]);
-    let invalidated = false;
-    const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = true; return orig(arg);
-    }) as typeof qc.invalidateQueries;
-
-    const evt: SseEvent = {
-      id: 99, kind: "comparison_deleted", entity_type: "comparison", entity_id: 42,
-      payload: { id: 42 },
-    };
-    applyRemoteToCache(evt, qc);
-
-    // Entity caches REMOVED, not invalidated
-    expect(invalidated).toBe(false);
-    expect(qc.getQueryState(queryKeys.comparison(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonMembers(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonMessages(42))).toBeUndefined();
-    expect(qc.getQueryState(queryKeys.comparisonForks(42))).toBeUndefined();
-    // Listing filtered (id pruned, others retained)
-    const listing = qc.getQueryData<ComparisonSummary[]>(queryKeys.comparisons("all"))!;
-    expect(listing.map((c) => c.id)).toEqual([99]);
-  });
-
-  it("post_message with entity_type=comparison_message routes to comparisonMessages cache", () => {
-    qc.setQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42), []);
-    const evt: SseEvent = {
-      id: 99, kind: "post_message", entity_type: "comparison_message", entity_id: 200,
-      payload: {
-        id: 200, comparison_id: 42, author_id: 3, author: "alice",
-        body: "hi cmp", created_at: "2026-05-06T12:00:00Z",
-      },
-    };
-    applyRemoteToCache(evt, qc);
-    const msgs = qc.getQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42))!;
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0]!.id).toBe(200);
-    expect(msgs[0]!.body).toBe("hi cmp");
-    // Idempotency: replay must not double-insert
-    applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<ComparisonMessage[]>(queryKeys.comparisonMessages(42))!)
-      .toHaveLength(1);
-    // And the sample messages cache is untouched (no cross-thread pollution)
-    expect(qc.getQueryData(queryKeys.messages(42))).toBeUndefined();
   });
 
   it("post_message with entity_type=sample_message still routes to sample messages cache", () => {
@@ -599,9 +573,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     { kind: "peak_added",           entity_type: "exposure",   entity_id: 5,  payload: { peak_curation_id: 99, q: 0.123 } },
     { kind: "add_tag",              entity_type: "sample",     entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
     { kind: "add_tag",              entity_type: "exposure",   entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
-    { kind: "comparison_created",   entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
-    { kind: "comparison_submitted", entity_type: "comparison", entity_id: 11, payload: { title: "T" } },
-    { kind: "comparison_deleted",   entity_type: "comparison", entity_id: 11, payload: {} },
     { kind: "peak_excluded",        entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
     { kind: "peak_unexcluded",      entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
   ];
@@ -613,6 +584,27 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
       { event_id: 1, client_op_id: "x", analysis_inputs_hash: undefined },
     );
     expect(synth).toBeDefined();
+  });
+
+  // Assignment mutators synthesize from the DISTINCT {assignment} post_state,
+  // not from payload — so they need a post_state-bearing frame (the generic
+  // `cases` factory above only carries payload). All three share synthAssignment.
+  it.each([
+    "assignment_add", "assignment_remove", "assignment_set_state",
+  ])("%s synthesizes an Assignment from {assignment} post_state", (kind) => {
+    const mutator = resolveMutatorForEvent(kind, "exposure");
+    expect(mutator).toBeDefined();
+    const synth = mutator!.synthesizeFromSse?.(
+      remoteForeignEvent({
+        id: 7, kind, entity_type: "exposure", entity_id: 5, payload: {},
+        post_state: { assignment: { state: "indexed", members: [10, 11] } },
+      }),
+      { event_id: 7, client_op_id: "x", analysis_inputs_hash: undefined },
+    ) as { exposure_id: number; state: string; members: number[] } | undefined;
+    expect(synth).toBeDefined();
+    expect(synth!.exposure_id).toBe(5);
+    expect(synth!.state).toBe("indexed");
+    expect(synth!.members).toEqual([10, 11]);
   });
 
   // Every event kind in resolveMutatorForEvent's switch falls into one of
@@ -630,7 +622,7 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   //          synthesizeFromSse to the owning mutator.
   //   (b.ii) Active mutators whose SSE payload IS the cache row shape, so
   //          the generic fallback already produces the correct shape
-  //          (post_message ×2 — payload IS SampleMessage / ComparisonMessage).
+  //          (post_message — payload IS SampleMessage).
   //   (b.iii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
@@ -646,12 +638,9 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     { kind: "remove_tag",          entity_type: "exposure"           },
     // (b.ii) payload IS cache-row shape
     { kind: "post_message",        entity_type: "sample_message"     },
-    { kind: "post_message",        entity_type: "comparison_message" },
     // (b.iii) looksFull-handled or hash-only effects
     { kind: "analyze_run",         entity_type: "exposure"           },
     { kind: "peak_removed",        entity_type: "exposure"           },
-    { kind: "index_confirmed",     entity_type: "exposure"           },
-    { kind: "index_unconfirmed",   entity_type: "exposure"           },
     { kind: "speculative_created", entity_type: "exposure"           },
     { kind: "speculative_deleted", entity_type: "exposure"           },
   ];

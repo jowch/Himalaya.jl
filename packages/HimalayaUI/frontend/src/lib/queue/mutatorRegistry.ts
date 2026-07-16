@@ -7,8 +7,8 @@ import {
   removeExposureTagMutator,
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
+  editCorpusSampleTagMutator,
   postSampleMessageMutator,
-  postComparisonMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./mutators/trivial";
@@ -18,19 +18,20 @@ import {
   peakExcludeMutator,
   peakUnexcludeMutator,
 } from "./mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator,
-  removeIndexFromGroupMutator,
-  deleteIndexMutator,
-} from "./mutators/indexGroup";
+import { deleteIndexMutator } from "./mutators/indexGroup";
 import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "./mutators/saveComparison";
-import { deleteComparisonMutator } from "./mutators/deleteComparison";
 import { saveSeriesMutator } from "./mutators/saveSeries";
 import { deleteSeriesMutator } from "./mutators/deleteSeries";
 import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
 import { scopeSeriesMutator } from "./mutators/scopeSeries";
+import {
+  addAssignmentPhaseMutator,
+  removeAssignmentPhaseMutator,
+  setAssignmentStateMutator,
+} from "./mutators/assignment";
+import { customIndexMutator } from "./mutators/customIndex";
+import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator } from "./mutators/grouping";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -61,7 +62,7 @@ export function resolveMutator(
   const p = op.payload as
     | {
         experimentId?: number; sampleId?: number;
-        exposureId?: number; comparisonId?: number;
+        exposureId?: number;
         tags?: unknown;
       }
     | undefined;
@@ -88,10 +89,12 @@ export function resolveMutator(
       return p?.experimentId !== undefined
         ? removeSampleTagMutator
         : removeCorpusSampleTagMutator;
+    case "edit_tag":
+      // edit_tag is corpus-only (no experiment-scoped or exposure-scoped path).
+      // sampleId-only scope routes here, mirroring the corpus add_tag/remove_tag fallthrough.
+      return editCorpusSampleTagMutator;
     case "post_message":
-      return p?.comparisonId !== undefined
-        ? postComparisonMessageMutator
-        : postSampleMessageMutator;
+      return postSampleMessageMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
     case "select_exposure":
@@ -104,10 +107,6 @@ export function resolveMutator(
       return peakExcludeMutator;
     case "peak_unexcluded":
       return peakUnexcludeMutator;
-    case "index_confirmed":
-      return addIndexToGroupMutator;
-    case "index_unconfirmed":
-      return removeIndexFromGroupMutator;
     case "delete_index":
       return deleteIndexMutator;
     case "speculative_created":
@@ -116,16 +115,26 @@ export function resolveMutator(
       return undefined; // server-driven; no outbound op of this kind
     case "reanalyze_exposure":
       return reanalyzeExposureMutator;
-    case "comparison_save":
-      return saveComparisonMutator;
-    case "comparison_delete":
-      return deleteComparisonMutator;
     case "series_save":
       return saveSeriesMutator;
     case "series_delete":
       return deleteSeriesMutator;
     case "series_commit":
       return commitSeriesPlateMutator;
+    case "assignment_add":
+      return addAssignmentPhaseMutator;
+    case "assignment_remove":
+      return removeAssignmentPhaseMutator;
+    case "assignment_set_state":
+      return setAssignmentStateMutator;
+    case "custom_index_commit":
+      return customIndexMutator;
+    case "move_exposure": return moveExposureMutator;
+    case "rename_sample": return renameSampleMutator;
+    case "merge_samples":          return mergeSamplesMutator;
+    case "split_sample":           return splitSampleMutator;
+    case "dismiss_grouping_flag":  return dismissGroupingFlagMutator;
+    case "undo_dismiss_grouping_flag": return undoDismissGroupingFlagMutator;
     default:
       return undefined;
   }
@@ -151,16 +160,10 @@ export function resolveMutatorForEvent(
     case "peak_removed":        return peakRemoveMutator;
     case "peak_excluded":       return peakExcludeMutator;
     case "peak_unexcluded":     return peakUnexcludeMutator;
-    case "index_confirmed":     return addIndexToGroupMutator;
-    case "index_unconfirmed":   return removeIndexFromGroupMutator;
     case "speculative_created": return createSpeculativeMutator;
     // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
     case "speculative_deleted": return deleteIndexMutator;
     case "analyze_run":         return reanalyzeExposureMutator;
-    case "comparison_created":
-    case "comparison_submitted":
-      return saveComparisonMutator;
-    case "comparison_deleted":  return deleteComparisonMutator;
     case "series_created":
     case "series_recipe_updated":
       return saveSeriesMutator;
@@ -168,6 +171,11 @@ export function resolveMutatorForEvent(
       return deleteSeriesMutator;
     case "series_plate_committed":
       return commitSeriesPlateMutator;
+    case "assignment_add":         return addAssignmentPhaseMutator;
+    case "assignment_remove":      return removeAssignmentPhaseMutator;
+    case "assignment_set_state":   return setAssignmentStateMutator;
+    // custom_index_commit has no own event kind — its route emits
+    // speculative_created + assignment_add, both resolved above. Nothing to add.
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;
@@ -184,21 +192,33 @@ export function resolveMutatorForEvent(
     // arm would be unreachable dead code. This is a conscious, plan-aware
     // deviation from the literal "convert both to tri-scope" wording of #159
     // / master plan §11. See
-    // docs/superpowers/specs/2026-05-18-corpus-sample-tag-mutations-design.md.
+    // docs/mutation-queue.md.
     case "add_tag":
       return entityType === "sample" ? addSampleTagMutator : addExposureTagMutator;
     case "remove_tag":
       return entityType === "sample" ? removeSampleTagMutator : removeExposureTagMutator;
+    case "edit_tag":
+      // edit_tag is sample-scoped only. The corpus mutator owns synthesizeFromSse.
+      return editCorpusSampleTagMutator;
     case "post_message":
-      // entity_type is the wire string ("sample_message" / "comparison_message"),
-      // matching applyRemoteToCache.ts's discriminator. Default the
-      // unknown branch to sample (mirroring applyRemoteToCache's default).
-      return entityType === "comparison_message"
-        ? postComparisonMessageMutator
-        : postSampleMessageMutator;
-    // Event kinds with no queue mutator fall through here. This includes
-    // invalidate-only foreign events like comparison_pinned / comparison_unpinned
-    // (handled entirely by applyRemoteToCache — no optimistic outbound op exists).
+      // Only the sample-message thread remains; the comparison-message variant
+      // was retired with the Compare page. `entityType` ("sample_message") is
+      // not discriminated on, but the param is kept for arm-shape parity.
+      return postSampleMessageMutator;
+    // Ingestion grouping-review structural edits (Phase E2). A merge fans out as
+    // exposure_moved frames — so exposure_moved is the only SSE kind move AND merge
+    // share on the wire. See brief §Step 4 note.
+    case "exposure_moved":  return moveExposureMutator;
+    case "sample_renamed":  return renameSampleMutator;
+    // split emits sample_created (new sample) + sample_split (source update).
+    // The own-tab deferred resolves on sample_created (the first-emitted frame).
+    // sample_split has no own-op mutator — it routes through applyRemoteToCache.
+    case "sample_split":             return splitSampleMutator;
+    case "grouping_flag_dismissed":  return dismissGroupingFlagMutator;
+    // merge_samples fans out as exposure_moved frames (no sample_merged kind exists);
+    // own-op confirmation uses the exposure_moved arm above.
+    // Event kinds with no queue mutator fall through here (handled entirely by
+    // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".
     default:
       return undefined;

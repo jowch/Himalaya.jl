@@ -38,7 +38,7 @@ $EDITOR /data/ssrl-2025-oct/lipid-a/experiment.toml
 himalaya init /data/ssrl-2025-oct/lipid-a
 
 # 4. Later, after editing the manifest or fixing the config:
-himalaya reingest /data/ssrl-2025-oct/lipid-a
+himalaya reingest -e /data/ssrl-2025-oct/lipid-a
 ```
 
 The experiment directory is expected to contain at least:
@@ -102,12 +102,23 @@ image       = "{name}.tiff"           # how to find the raw image
 
 | Field | Purpose |
 |-------|---------|
-| `energy_kev` | Beam energy in keV. Used for q-calibration (future). |
-| `flight_path_m` | Sample-to-detector distance in metres. Used for q-calibration (future). |
+| `energy_kev` | Beam energy in keV. Used for q-ring radii (q-calibration). |
+| `flight_path_m` | Sample-to-detector distance in metres. Used for q-ring radii. |
+| `beam_center_x` | Beam center column, in **detector pixels, origin bottom-left** (y-up). |
+| `beam_center_y` | Beam center row, in **detector pixels, origin bottom-left** (y-up). |
+| `pixel_size_um` | Detector pixel pitch in microns (e.g. Pilatus 172, Eiger 75). |
 
-These are stored as first-class columns in the DB so future queries
-(e.g. "show me all experiments at 12 keV") don't need to parse the
-TOML blob.
+The Focus page draws physically-correct, beam-centered q-rings only when **all
+five** beamline values are present (`energy_kev`, `flight_path_m`,
+`beam_center_x`, `beam_center_y`, `pixel_size_um`). Omit any and the rings fall
+back to a centered, decorative overlay — no error. Beam center and pixel size
+are render-only: they live in the config blob, are surfaced on the experiment
+API, and (unlike `energy_kev`/`flight_path_m`) are not mirrored to queryable DB
+columns.
+
+`energy_kev` and `flight_path_m` are stored as first-class columns in the DB so
+future queries (e.g. "show me all experiments at 12 keV") don't need to parse
+the TOML blob.
 
 ### `[manifest]`
 
@@ -125,8 +136,9 @@ The `[manifest].name` column is the **stable scientific identifier** (e.g. `JC00
 rename happens through the manifest CSV + reingest.
 
 The `[manifest].display_name` column is the **friendly user-facing label** (e.g. `DOPC + cholesterol`).
-It is initialised from the manifest at first ingest and editable via the UI thereafter; reingest never
-clobbers it.
+It is initialised from the manifest at first ingest and editable via the UI; note that **reingest
+refreshes it from the manifest** (alongside `notes`), so a UI edit to `display_name` is overwritten on
+the next reingest unless the manifest carries the same value (`cli.jl` `_reingest_inner!`).
 
 Migrating an existing `experiment.toml` from the legacy `label/name` shape to the new
 `name/display_name` shape: run `himalaya migrate-toml <experiment-dir>`. Section-aware
@@ -247,13 +259,12 @@ This invariant is enforced by code review and by a regression test:
 ## Re-ingestion
 
 If the manifest is corrected, the config edited, or new exposures
-arrive on disk, run `himalaya reingest <experiment_dir>` to update the
+arrive on disk, run `himalaya reingest -e <experiment_dir>` to update the
 DB. Reingestion is **safe to run repeatedly** and preserves curation
 work:
 
 - Existing samples are matched by `(experiment_id, name)` and updated
-  in place — `display_name` is **not** clobbered on reingest (user edits are preserved);
-  notes get refreshed.
+  in place — both `display_name` and `notes` are **refreshed from the manifest** on reingest.
 - Exposures are matched by `(sample_id, filename)`. **Existing exposures
   are never deleted or modified by reingest** — their `accepted` /
   `rejected` status, manual peaks, and analysis results are preserved.
@@ -328,7 +339,7 @@ himalaya init <experiment_dir>
     the experiment in the DB. Discovers exposures by filesystem prefix
     scan against the configured integration pattern.
 
-himalaya reingest <experiment_dir>
+himalaya reingest -e <experiment_dir>
     Re-read experiment.toml + manifest.csv and update the DB.
     Idempotent on stable input. Preserves curated exposures.
 
@@ -336,7 +347,7 @@ himalaya migrate-toml <experiment_dir>
     Upgrade experiment.toml from the legacy label/name column shape to the new
     name/display_name shape. Section-aware, regex-anchored; idempotent (safe to
     re-run on an already-migrated file). Required once per experiment dir when
-    deploying the issue #88 schema change.
+    deploying the label/name → name/display_name schema change.
 ```
 
 ## Storage
@@ -358,7 +369,5 @@ optimisation for queries that don't want to parse TOML.
 
 ## Further reading
 
-- [docs/superpowers/specs/2026-04-28-experiment-config-design.md](superpowers/specs/2026-04-28-experiment-config-design.md) — design spec
-- [docs/superpowers/plans/2026-04-28-experiment-config.md](superpowers/plans/2026-04-28-experiment-config.md) — implementation plan
 - [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl) — the implementation
 - [packages/HimalayaUI/configs/simple.toml](../packages/HimalayaUI/configs/simple.toml) — the default template

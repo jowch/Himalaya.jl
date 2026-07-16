@@ -35,25 +35,70 @@ function register_exposures_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "no image for this exposure")))
 
+        # The DB stores image_path at ingest, but the source TIFF may have been
+        # moved or deleted since. Guard before load_and_lognormalize, which
+        # would otherwise throw an unhandled ArgumentError → HTTP 500. Fail
+        # gracefully with a 404 like the trace route does for a missing .dat
+        # (issue #233, finding BE-1).
+        path = String(ip)
+        isfile(path) || return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "image source file not found: $path")))
+
         params   = HTTP.queryparams(req)
         is_thumb = get(params, "thumb", "0") == "1"
 
-        img = load_and_lognormalize(String(ip))
-        if is_thumb
-            img = resize_to_fit(img, 128)
+        # Compute the cache/version token ONCE here, while the source is
+        # guaranteed present (the isfile guard above), and thread it into both
+        # the thumb cache key and the X-Image-Version response header. Computing
+        # it once avoids a second mtime syscall and keeps the disk-cache key
+        # identical to the header the client already cached against.
+        vtoken = image_version_token(ip)
+
+        raw_w = 0; raw_h = 0
+        bytes = if is_thumb
+            # Thumb path: downscale-before-lognormalize (issue #261, H.1) behind a
+            # disk cache keyed on `image_version_token`. `ensure_thumb_cached`
+            # reads the cached PNG when present, else renders + persists it; on a
+            # `:memory:` DB (no on-disk dir) it renders fresh every call. NOTE: the
+            # full-resolution `load_and_lognormalize` is deliberately NOT called on
+            # this branch — the thumb variant runs the percentile math on the
+            # already-downscaled raster (~250x fewer pixels).
+            ensure_thumb_cached(db, id, path; token = vtoken)
+        else
+            # Full path: run the percentile-clip math at full resolution (the
+            # science-quality view), capture the RAW dims (the beam center's
+            # coordinate space) BEFORE the 1536 display cap, THEN cap the
+            # rendered raster at 1536px max-side (issue #260, G) so the
+            # loupe/focus big frame ships a sub-MB PNG instead of a multi-MB
+            # native-resolution one. `resize_to_fit` no-ops when the detector is
+            # already <= 1536px.
+            img = load_and_lognormalize(path)
+            raw_h, raw_w = size(img)          # Julia size = (rows, cols) = (h, w)
+            img = resize_to_fit(img, 1536)
+            encode_png(img)
         end
-        bytes = encode_png(img)
 
         # The frontend appends `?v=<image_version_token>` to the URL, so the
         # URL itself is the cache key. We can mark responses immutable and
         # cache them aggressively — when the underlying TIFF or our
         # processing code changes, the token (and therefore the URL) changes.
-        vtoken = image_version_token(ip)
-        HTTP.Response(200,
-            ["Content-Type"    => "image/png",
-             "Cache-Control"   => "private, max-age=31536000, immutable",
-             "X-Image-Version" => vtoken],
-            bytes)
+        hdrs = ["Content-Type"    => "image/png",
+                "Cache-Control"   => "private, max-age=31536000, immutable",
+                "X-Image-Version" => vtoken]
+        if !is_thumb
+            # Raw detector pixel dims for the q-ring overlay calibration. Full
+            # branch only — the thumb never carries rings. Frontend tolerates
+            # their absence (→ centered fallback).
+            # NOTE: custom response headers the frontend reads via `headers.get()`
+            # (DetectorImage.tsx). Fine same-origin (prod serves the SPA; the Vite
+            # dev proxy preserves them). If the API is ever served cross-origin, add
+            # `Access-Control-Expose-Headers: X-Image-Width, X-Image-Height` — without
+            # it the browser silently strips them and the rings fall back to centered.
+            push!(hdrs, "X-Image-Width"  => string(raw_w))
+            push!(hdrs, "X-Image-Height" => string(raw_h))
+        end
+        HTTP.Response(200, hdrs, bytes)
     end
 
     @patch "/api/exposures/{id}/status" function(req::HTTP.Request, id::Int)
@@ -202,7 +247,10 @@ function register_exposures_routes!()
             # below — unambiguous, vs. the prior MAX(id)-sentinel approach
             # which could alias if a concurrent analyze interleaved between
             # the snapshot and the SELECT (review issue #15).
-            analyze_exposure!(db, id, analysis_dir; defer_broadcast = true, req = req)
+            # F-WIPE W1: the wipe/re-attach runs on this manual path too, so
+            # capture the dropped-members report for the SSE post_state below.
+            ares = analyze_exposure!(db, id, analysis_dir;
+                                     defer_broadcast = true, req = req)
 
             new_hash = read_inputs_hash(db, id)
             client_op_id = get_client_op_id(req)
@@ -228,20 +276,37 @@ function register_exposures_routes!()
             end
             if !isempty(evt)
                 row = evt[1]
-                post_state = Dict{Symbol, Any}(
-                    :analysis_inputs_hash => new_hash,
-                    :indices              => _serialized_indices_for_broadcast(db, id),
-                )
-                # The system-emitted row carries NULL client_id/op_id; pass
-                # the request's headers in the SSE frame so foreign tabs can
-                # still self-echo-filter (own client_id matches).
-                _enqueue_post_commit_broadcast!(
-                    Int(row.id), "analyze_run", "exposure", id,
-                    ismissing(row.user_id) ? nothing : Int(row.user_id),
-                    get_client_id(req),
-                    get_client_op_id(req),
-                    ismissing(row.payload) ? nothing : String(row.payload);
-                    post_state = post_state)
+                payload_obj = ismissing(row.payload) ? nothing :
+                              JSON3.read(String(row.payload))
+                # M0.4 mirror (see `_maybe_broadcast_event!`): a no-op reanalyze
+                # (both skip flags true) must emit NO frame from this manual
+                # route either — foreign tabs have nothing to converge on. This
+                # hand-enqueued path previously bypassed the suppression that
+                # the non-deferred `analyze_exposure!` path applies.
+                noop = payload_obj !== nothing &&
+                       get(payload_obj, :findpeaks_skipped, false) === true &&
+                       get(payload_obj, :indexpeaks_skipped, false) === true
+                if !noop
+                    # F-WIPE W1: same post_state contract as the curation frames
+                    # (shared builder, see `_enrich_curation_post_state`) — the
+                    # assignment envelope carries the re-attached member ids, and
+                    # `assignment_dropped` rides along only when the reanalyze
+                    # dropped members. Without it, the frontend's envelope-absent-
+                    # means-do-not-touch rule strands cached members on the
+                    # cascaded (dead) index ids until a hard refetch.
+                    post_state = _enrich_curation_post_state(db, id;
+                        dropped_assignment_phases = ares.dropped_assignment_phases)
+                    # The system-emitted row carries NULL client_id/op_id; pass
+                    # the request's headers in the SSE frame so foreign tabs can
+                    # still self-echo-filter (own client_id matches).
+                    _enqueue_post_commit_broadcast!(
+                        Int(row.id), "analyze_run", "exposure", id,
+                        ismissing(row.user_id) ? nothing : Int(row.user_id),
+                        get_client_id(req),
+                        get_client_op_id(req),
+                        ismissing(row.payload) ? nothing : String(row.payload);
+                        post_state = post_state)
+                end
             end
 
             HTTP.Response(200, ["Content-Type" => "application/json"],

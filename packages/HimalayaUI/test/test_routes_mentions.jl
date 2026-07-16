@@ -2,11 +2,11 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
 @testset "mention lookup routes" begin
     tmp = mktempdir()
-    db  = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+    db  = open_prepared_clone(tmp)
     exp_id = HimalayaUI.create_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="A", display_name="sampleA")
-    e_id = HimalayaUI.create_exposure!(db; sample_id=s_id, filename="run001")
+    s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="A")
+    e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="run001")
 
     # Insert a peak manually (use auto_peaks — the new schema table)
     res = DBInterface.execute(db,
@@ -29,9 +29,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         "INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual) VALUES (?, ?, 'auto', 1, 0.0)",
         [ix_id, pk_id])
 
-    with_test_server(db) do port, base
+    with_inproc_routes(db) do call
         @testset "GET /api/peaks/:id" begin
-            r = HTTP.get("$base/api/peaks/$pk_id")
+            r = call("GET", "/api/peaks/$pk_id")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test body.id == pk_id
@@ -39,34 +39,34 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             @test body.source == "auto"
             @test body.excluded === false
 
-            r404 = HTTP.get("$base/api/peaks/999999"; status_exception=false)
+            r404 = call("GET", "/api/peaks/999999")
             @test r404.status == 404
         end
 
         @testset "GET /api/exposures/:id" begin
-            r = HTTP.get("$base/api/exposures/$e_id")
+            r = call("GET", "/api/exposures/$e_id")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test body.id == e_id
             @test body.filename == "run001"
 
-            r404 = HTTP.get("$base/api/exposures/999999"; status_exception=false)
+            r404 = call("GET", "/api/exposures/999999")
             @test r404.status == 404
         end
 
         @testset "GET /api/samples/:id" begin
-            r = HTTP.get("$base/api/samples/$s_id")
+            r = call("GET", "/api/samples/$s_id")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test body.id == s_id
             @test body.name == "A"
 
-            r404 = HTTP.get("$base/api/samples/999999"; status_exception=false)
+            r404 = call("GET", "/api/samples/999999")
             @test r404.status == 404
         end
 
         @testset "GET /api/indices/:id" begin
-            r = HTTP.get("$base/api/indices/$ix_id")
+            r = call("GET", "/api/indices/$ix_id")
             @test r.status == 200
             body = JSON3.read(String(r.body))
             @test body.id == ix_id
@@ -84,7 +84,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             @test length(body.predicted_q) > 0
             @test body.predicted_q[1] ≈ 1.223
 
-            r404 = HTTP.get("$base/api/indices/999999"; status_exception=false)
+            r404 = call("GET", "/api/indices/999999")
             @test r404.status == 404
         end
     end

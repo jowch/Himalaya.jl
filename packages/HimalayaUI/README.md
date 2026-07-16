@@ -344,7 +344,7 @@ On first visit you'll see a username prompt — enter a new name or pick from ex
 
 ## Data model
 
-Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved, defaults to `~/.himalaya/himalaya.db`). Schema overview in [the design spec](../../docs/superpowers/specs/2026-04-22-himalaya-web-app-design.md#3-data-model-sqlite). Highlights:
+Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved, defaults to `~/.himalaya/himalaya.db`). The schema is defined in [`packages/HimalayaUI/src/db.jl`](src/db.jl). Highlights:
 
 - `experiments.config` — full `experiment.toml` content as a TEXT blob, so the DB is self-contained for re-analysis even if the experiment directory is unmounted. Mirror columns (`experiment_type`, `energy_kev`, `flight_path_m`) keep beamline params first-class for queries.
 - `peaks` — auto-picked and manually-added peaks. Auto peaks are replaced on re-analysis; manual peaks persist.
@@ -376,4 +376,4 @@ Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved,
 
 ## Developing
 
-For contributing to HimalayaUI itself — test commands, architecture notes, non-obvious gotchas — see [../../CLAUDE.md](../../CLAUDE.md), [../../docs/experiment-config.md](../../docs/experiment-config.md), and the implementation plans under [../../docs/superpowers/plans/](../../docs/superpowers/plans/).
+For contributing to HimalayaUI itself — test commands, architecture notes, non-obvious gotchas — see [../../CLAUDE.md](../../CLAUDE.md), [../../docs/experiment-config.md](../../docs/experiment-config.md), and the per-area `AGENTS.md` files (closest to the code you're touching).

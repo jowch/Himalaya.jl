@@ -24,13 +24,13 @@ import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "../../src/lib/queue/mutators/peakSetExcluded";
-import {
-  addIndexToGroupMutator, removeIndexFromGroupMutator, deleteIndexMutator,
-} from "../../src/lib/queue/mutators/indexGroup";
+import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
+import {
+  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
+} from "../../src/lib/queue/mutators/assignment";
+import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
-import { saveComparisonMutator } from "../../src/lib/queue/mutators/saveComparison";
-import { deleteComparisonMutator } from "../../src/lib/queue/mutators/deleteComparison";
 import {
   updateSampleMutator,
   addSampleTagMutator, removeSampleTagMutator,
@@ -116,26 +116,38 @@ const SPECS: Spec[] = [
       new AbortController().signal),
   },
   {
-    name: "addIndexToGroup",
-    run: (qc) => addIndexToGroupMutator.request(
-      { ...FLAT_BASE, kind: "index_confirmed",
-        payload: { groupId: 1, indexId: 10 },
-        exposureId: 5, groupId: 1, indexId: 10 } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "removeIndexFromGroup",
-    run: (qc) => removeIndexFromGroupMutator.request(
-      { ...FLAT_BASE, kind: "index_unconfirmed",
-        payload: { groupId: 1, indexId: 10 },
-        exposureId: 5, groupId: 1, indexId: 10 } as any,
-      new AbortController().signal),
-  },
-  {
     name: "deleteIndex",
     run: (qc) => deleteIndexMutator.request(
       { ...FLAT_BASE, kind: "delete_index",
         payload: { indexId: 10 }, exposureId: 5, indexId: 10 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "addAssignmentPhase",
+    run: (qc) => addAssignmentPhaseMutator.request(
+      { ...FLAT_BASE, kind: "assignment_add", payload: { indexId: 10 },
+        exposureId: 5, indexId: 10 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "removeAssignmentPhase",
+    run: (qc) => removeAssignmentPhaseMutator.request(
+      { ...FLAT_BASE, kind: "assignment_remove", payload: { indexId: 10 },
+        exposureId: 5, indexId: 10 } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "setAssignmentState",
+    run: (qc) => setAssignmentStateMutator.request(
+      { ...FLAT_BASE, kind: "assignment_set_state", payload: { state: "form_factor" },
+        exposureId: 5, state: "form_factor" } as any,
+      new AbortController().signal),
+  },
+  {
+    name: "customIndex",
+    run: (qc) => customIndexMutator.request(
+      { ...FLAT_BASE, kind: "custom_index_commit", payload: { phase: "Pn3m", basis: 0.15 },
+        exposureId: 5, phase: "Pn3m", basis: 0.15 } as any,
       new AbortController().signal),
   },
   {
@@ -231,22 +243,6 @@ const SPECS: Spec[] = [
       { ...FLAT_BASE, kind: "select_exposure",
         payload: { exposureId: 6 },
         sampleId: 1, exposureId: 6 } as any,
-      new AbortController().signal),
-  },
-  // Compare page mutators (Phase 3). Both must carry the same audit +
-  // idempotency headers as every other mutator.
-  {
-    name: "saveComparison",
-    run: (qc) => saveComparisonMutator.request(
-      { ...FLAT_BASE, kind: "comparison_save", payload: {},
-        title: "X", description: null, members: [] } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "deleteComparison",
-    run: (qc) => deleteComparisonMutator.request(
-      { ...FLAT_BASE, kind: "comparison_delete", payload: { id: 42 },
-        id: 42 } as any,
       new AbortController().signal),
   },
 ];

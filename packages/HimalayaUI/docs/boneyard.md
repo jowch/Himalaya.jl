@@ -12,14 +12,19 @@ hits in this codebase.
 
 ## Where it's used
 
-| Component | Skeleton name |
+| Call site | Skeleton name |
 |---|---|
-| `PlotCard` | trace plot |
-| `PhasePanel` | indices list |
-| `ChatCard` | message history |
-| `DetectorImageCard` | detector image |
-| `SampleMetadataCard` | metadata fields |
-| `NavModal` | nav modal contents |
+| `LoupePage` | `loupe` |
+| `SeriesFolioPage` | `folio` |
+| `SeriesScopingPage` | `scoping` |
+| `FocusPage` | `focus` |
+| `SamplesPage` | `contact-sheet` |
+| `SeriesBuilderPage` | `series-builder` |
+| `NavModal` | `nav-experiments` / `nav-samples` |
+
+Skeletons are now gated at the page level (`src/print/pages/`); the
+earlier card-level wrappers (`PlotCard`, `PhasePanel`, `ChatCard`,
+detector/metadata cards) were retired in the greenfield cutover.
 
 `<Skeleton>` is the only consumer-facing primitive. Each call site supplies
 a `name` (matches a captured `*.bones.json`), a `loading` boolean, a
@@ -31,8 +36,8 @@ when no bones exist for `name`), and a layout `className`.
 ## Rule 1: gate on `query.isLoading`, not `query.isPending`
 
 ```tsx
-<Skeleton name="trace" loading={traceQuery.isLoading} fixture={…} fallback={…}>
-  <TraceViewer trace={traceQuery.data} … />
+<Skeleton name="focus" loading={isLoading} fixture={FOCUS_FIXTURE} fallback={…}>
+  {/* page content */}
 </Skeleton>
 ```
 
@@ -63,8 +68,8 @@ skeleton on disabled queries.
 
 ```tsx
 <Skeleton
-  name="trace"
-  fixture={<TraceViewer trace={MOCK_TRACE} peaks={MOCK_PEAKS} onSelect={() => {}} />}
+  name="focus"
+  fixture={FOCUS_FIXTURE}
   …
 />
 ```
@@ -74,7 +79,9 @@ The `fixture` prop is JSX rendered by boneyard's headless capture CLI to
 geometry per element, and emits `*.bones.json`. The skeleton drawn at
 runtime mirrors that geometry.
 
-Pass real components with mock props and no-op handlers. Don't pass raw
+Pass a real page composite with mock props and no-op handlers — live
+fixtures are module-level consts (e.g. `FOCUS_FIXTURE`, `LOUPE_FIXTURE`
+in `src/print/pages/`). Don't pass raw
 data shapes (mock objects, arrays) — there's no rendering pipeline at
 capture time that would turn those into a DOM tree.
 
@@ -83,30 +90,32 @@ capture time that would turn those into a DOM tree.
 ## Rule 3: always set `fallback`
 
 ```tsx
-<Skeleton name="trace" fallback={<HintText italic>Loading trace…</HintText>} …>
+<Skeleton name="loupe" fallback={<div className="p-8 text-sm italic text-ink-soft">Loading sample…</div>} …>
 ```
 
 Without bones for `name` (e.g. on first dev-server boot, or in prod before
 the first capture has been committed), the runtime renders `fallback`
 during loading. With no `fallback`, the area is blank.
 
-Mirror the original component's loading-state hint text. Italic
-`HintText` is the project convention.
+Mirror the original component's loading-state hint text. The convention
+at the live call sites is a plain muted italic div (`text-ink-soft
+italic`) with "Loading …" text.
 
 ---
 
 ## Rule 4: `className` on `<Skeleton>` is load-bearing
 
 ```tsx
-<Skeleton name="chat" className="flex-1 min-h-0 flex flex-col" …>
-  <MessageList … />
+<Skeleton name="folio" className="flex-1 min-h-0 flex flex-col" …>
+  {/* vertically-stretching page content */}
 </Skeleton>
 ```
 
 Boneyard wraps children in two extra `<div>`s. Without an explicit
 `className`, the outer wrapper has no flex semantics — and any parent that
-relied on the child being a flex item silently breaks. ChatCard's message
-list collapsing to ~60px in the original PR was this exact failure.
+relied on the child being a flex item silently breaks. A scrolling list
+inside a card collapsing to ~60px in the original PR (the now-retired
+ChatCard) was this exact failure.
 
 Pass the layout role the original child *would have had*:
 `flex-1 min-h-0 flex flex-col` for vertically-stretching content,
@@ -125,7 +134,7 @@ outer wrapper unchanged.
 
 ---
 
-## Rule 5: `configureBoneyard()` lives in `main.tsx`
+## Rule 5: `configureBoneyard()` lives in `src/print/main.tsx`
 
 Not in `bones/registry.ts`. The Vite HMR plugin regenerates `registry.ts`
 on every capture and would wipe any config call placed there.
@@ -135,7 +144,7 @@ reads but the runtime does not). When the card background colour or
 animation parameters change, **update both files together**:
 
 - `boneyard.config.json` — read by the capture CLI to colour the bones
-- `main.tsx::configureBoneyard()` — read by the runtime to animate them
+- `src/print/main.tsx::configureBoneyard()` — read by the runtime to animate them
 
 If they drift, captured bones won't match the runtime palette and the
 skeleton looks wrong against the live theme.
@@ -193,7 +202,7 @@ outer wrapper inherits the framing.
 
 ## Files
 
-- `frontend/src/main.tsx` — `configureBoneyard()` call
+- `frontend/src/print/main.tsx` — `configureBoneyard()` call
 - `frontend/src/bones/` — committed `*.bones.json` + auto-generated `registry.ts`
 - `frontend/boneyard.config.json` — capture-CLI config (mirror of `configureBoneyard()`)
 - `frontend/src/styles.css` — `[data-boneyard-content] { display: contents }`

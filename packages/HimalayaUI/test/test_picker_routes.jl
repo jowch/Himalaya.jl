@@ -18,8 +18,8 @@ using HimalayaUI
         mktempdir() do tmp
             ctx   = _setup_analyzed_exposure(tmp)
             alice = HimalayaUI.get_or_create_user!(ctx.db, "alice")
-            e2    = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id, filename="e2")
-            e3    = HimalayaUI.create_exposure!(ctx.db; sample_id=ctx.sample_id, filename="e3")
+            e2    = HimalayaUI.create_exposure!(ctx.db; experiment_id=ctx.experiment_id, sample_id=ctx.sample_id, filename="e2")
+            e3    = HimalayaUI.create_exposure!(ctx.db; experiment_id=ctx.experiment_id, sample_id=ctx.sample_id, filename="e3")
             _premint_cmp!(ctx.db, 200)
             req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
             HimalayaUI.apply_event!(ctx.db, req;
@@ -31,15 +31,15 @@ using HimalayaUI
                                 _member_payload(exposure_id=e2, display_order=1),
                                 _member_payload(exposure_id=e3, display_order=2),
                              ]))
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/users/$alice/recently-picked-exposures")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/users/$alice/recently-picked-exposures")
                 @test r.status == 200
                 ids = JSON3.read(String(r.body))
                 # All three exposures should be present.
                 @test sort(collect(ids)) == sort([ctx.exposure_id, e2, e3])
 
                 # Limit honored.
-                r = HTTP.get("$base/api/users/$alice/recently-picked-exposures?limit=2")
+                r = call("GET", "/api/users/$alice/recently-picked-exposures?limit=2")
                 @test r.status == 200
                 ids2 = JSON3.read(String(r.body))
                 @test length(ids2) == 2
@@ -51,8 +51,8 @@ using HimalayaUI
         mktempdir() do tmp
             ctx   = _setup_analyzed_exposure(tmp)
             alice = HimalayaUI.get_or_create_user!(ctx.db, "alice")
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/users/$alice/recently-picked-exposures")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/users/$alice/recently-picked-exposures")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
             end
@@ -62,9 +62,8 @@ using HimalayaUI
     @testset "GET /api/users/:id/recently-picked-exposures: 404 for unknown user id" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/users/9999/recently-picked-exposures";
-                             status_exception = false)
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/users/9999/recently-picked-exposures")
                 @test r.status == 404
             end
         end
@@ -92,8 +91,8 @@ using HimalayaUI
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s3, "control", "DOPC"])
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 pairs = Set([(String(t.key), String(t.value)) for t in tags])
@@ -125,8 +124,8 @@ using HimalayaUI
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [ctx.sample_id, "lipid", "DOPC"])
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 keys_seen = Set(String(t.key) for t in tags)
@@ -139,8 +138,8 @@ using HimalayaUI
     @testset "GET /api/experiments/:eid/sample-tags: empty list when no tags" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/experiments/$(ctx.experiment_id)/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
             end
@@ -164,10 +163,14 @@ using HimalayaUI
                 [s_other, "buffer", "PBS"])
             # Same VALUE "DOPC" as the lipid tag above but a different KEY.
             # DISTINCT collapses on the (key, value) PAIR, not on value alone,
-            # so this must surface as its own corpus entry.
+            # so this must surface as its own corpus entry. It lives on its own
+            # sample: one sample carries at most one tag per key
+            # (sample_tags_unique_key), so the second "buffer" pair can't share
+            # s_other with the (buffer, PBS) row above.
+            s_other2 = HimalayaUI.create_sample!(ctx.db; experiment_id=e2_id, name="OTHER2")
             DBInterface.execute(ctx.db,
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
-                [s_other, "buffer", "DOPC"])
+                [s_other2, "buffer", "DOPC"])
             # A duplicate (key, value) on a third sample in experiment 1 —
             # DISTINCT must collapse it to a single corpus entry.
             s3 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D3")
@@ -175,8 +178,8 @@ using HimalayaUI
                 "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
                 [s3, "lipid", "DOPC"])
 
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/sample-tags")
                 @test r.status == 200
                 tags = JSON3.read(String(r.body))
                 pairs = Set([(String(t.key), String(t.value)) for t in tags])
@@ -195,10 +198,56 @@ using HimalayaUI
     @testset "GET /api/sample-tags: empty list when no tags" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
-            with_test_server(ctx.db) do port, base
-                r = HTTP.get("$base/api/sample-tags")
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/sample-tags")
                 @test r.status == 200
                 @test JSON3.read(String(r.body)) == []
+            end
+        end
+    end
+
+    @testset "GET /api/sample-tags returns per-(key,value) sample count" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # Seed a second sample in the same experiment so (lipid, DOPC) spans
+            # two samples. The count field must reflect the distinct-sample count.
+            s2 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D2")
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [ctx.sample_id, "dose", "10"])
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s2, "dose", "10"])
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/sample-tags")
+                @test r.status == 200
+                tags = JSON3.read(String(r.body))
+                row = first(filter(p -> p.key == "dose" && p.value == "10", tags))
+                @test haskey(row, :count)
+                @test row.count >= 1
+                # Two distinct samples share (dose=10); count must reflect that.
+                @test row.count == 2
+            end
+        end
+    end
+
+    @testset "GET /api/experiments/:eid/sample-tags returns per-(key,value) sample count" begin
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            s2 = HimalayaUI.create_sample!(ctx.db; experiment_id=ctx.experiment_id, name="D2")
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [ctx.sample_id, "lipid", "DOPC"])
+            DBInterface.execute(ctx.db,
+                "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, ?, ?, 'manual')",
+                [s2, "lipid", "DOPC"])
+            with_inproc_routes(ctx.db) do call
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/sample-tags")
+                @test r.status == 200
+                tags = JSON3.read(String(r.body))
+                row = first(filter(p -> p.key == "lipid" && p.value == "DOPC", tags))
+                @test haskey(row, :count)
+                @test row.count == 2
             end
         end
     end

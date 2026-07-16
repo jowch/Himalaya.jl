@@ -11,7 +11,7 @@ beamline parameters.
 
 Supported TOML sections:
 - `[experiment]`: name, description, manifest (relative path to manifest CSV)
-- `[beamline]`: energy_kev, flight_path_m
+- `[beamline]`: energy_kev, flight_path_m, q_units, beam_center_x, beam_center_y, pixel_size_um
 - `[manifest]`: delimiter, skip_rows, header_row, sample_id, name, display_name,
   filenames, notes_sample, notes_exposure (each column = Int index or String header name).
   `header_row = 0` is the sentinel for "no header row; columns are positional".
@@ -27,6 +27,9 @@ struct ExperimentConfig
     energy_kev         ::Union{Float64,Nothing}
     flight_path_m      ::Union{Float64,Nothing}
     q_units            ::String
+    beam_center_x      ::Union{Float64,Nothing}
+    beam_center_y      ::Union{Float64,Nothing}
+    pixel_size_um      ::Union{Float64,Nothing}
     # [manifest]
     delimiter          ::String
     skip_rows          ::Int
@@ -107,6 +110,9 @@ function _build_config(d::AbstractDict)::ExperimentConfig
         get(bl,  "energy_kev",    nothing),
         get(bl,  "flight_path_m", nothing),
         get(bl,  "q_units",       "A-1"),
+        get(bl,  "beam_center_x", nothing),
+        get(bl,  "beam_center_y", nothing),
+        get(bl,  "pixel_size_um", nothing),
         get(mf,  "delimiter",      "\t"),
         get(mf,  "skip_rows",      1),
         get(mf,  "header_row",     0),
@@ -253,56 +259,6 @@ function resolve_file_path(
 end
 
 """
-    config_to_toml(cfg::ExperimentConfig) -> String
-
-Serialize an `ExperimentConfig` to a TOML-formatted string suitable for
-storage in the `experiments.config` column or writing to disk. Uses the
-stdlib `TOML.print` to handle quoting and escaping correctly.
-"""
-function config_to_toml(cfg::ExperimentConfig)::String
-    function col_value(v)
-        v isa Integer ? Int(v) : String(v)
-    end
-    # Omit nullable beamline fields when unset so a round-trip preserves
-    # `nothing` instead of silently collapsing to 0.0.
-    beamline = Dict{String,Any}()
-    cfg.energy_kev    !== nothing && (beamline["energy_kev"]    = cfg.energy_kev)
-    cfg.flight_path_m !== nothing && (beamline["flight_path_m"] = cfg.flight_path_m)
-    beamline["q_units"] = cfg.q_units
-    d = Dict(
-        "experiment" => Dict(
-            "name"        => cfg.name,
-            "description" => cfg.description,
-            "manifest"    => cfg.manifest_file,
-        ),
-        "beamline" => beamline,
-        "manifest" => Dict(
-            "delimiter"      => cfg.delimiter,
-            "skip_rows"      => cfg.skip_rows,
-            "header_row"     => cfg.header_row,
-            "sample_id"      => col_value(cfg.col_sample_id),
-            "name"           => col_value(cfg.col_name),
-            "display_name"   => col_value(cfg.col_display_name),
-            "filenames"      => col_value(cfg.col_filenames),
-            "notes_sample"   => col_value(cfg.col_notes_sample),
-            "notes_exposure" => col_value(cfg.col_notes_exposure),
-        ),
-        "layout" => Dict(
-            "data_dir"      => cfg.data_dir,
-            "analysis_dir"  => cfg.analysis_dir,
-            "exposure_type" => cfg.exposure_type,
-        ),
-        "files" => Dict(
-            "integration" => cfg.integration_pattern,
-            "image"       => cfg.image_pattern,
-        ),
-    )
-    io = IOBuffer()
-    TOML.print(io, d)
-    String(take!(io))
-end
-
-"""
     migrate_manifest_toml_text(text) -> (new_text, changed)
 
 Pure-text rewrite of a TOML blob from the legacy `[manifest].label`/`name`
@@ -385,11 +341,38 @@ to the built-in `simple` template, preserving backward compatibility.
 """
 function config_from_db(db::SQLite.DB, experiment_id::Int)::ExperimentConfig
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT config FROM experiments WHERE id = ?", [experiment_id]))
+        "SELECT config, image_pattern, integration_pattern FROM experiments WHERE id = ?",
+        [experiment_id]))
     isempty(rows) && error("Experiment $experiment_id not found")
-    blob = rows[1].config
-    if blob === nothing || blob === missing
-        return load_builtin_config("simple")
-    end
-    _build_config(TOML.parse(String(blob)))
+    r = rows[1]
+    base = (r.config === nothing || r.config === missing) ?
+        load_builtin_config("simple") : _build_config(TOML.parse(String(r.config)))
+    # The per-experiment pattern COLUMNS are the source of truth for HTTP-ingested
+    # experiments: that path stores patterns in the columns and leaves the TOML
+    # `config` blob NULL (the blob is deprecated). Without this override,
+    # config_from_db returns the builtin `{name}.dat` and analyze_exposure! can
+    # never resolve a real `_tot.dat` integration trace, so nothing indexes.
+    _apply_db_patterns(base, r.image_pattern, r.integration_pattern)
+end
+
+"""
+    _apply_db_patterns(cfg, image_col, integration_col) -> ExperimentConfig
+
+Override a base config's `image_pattern` / `integration_pattern` with the
+experiment's column values when they are present and well-formed (contain
+`{name}`). The columns win over the deprecated TOML blob. Returns `cfg` unchanged
+when both columns are absent. Robust to field reordering (rebuilds positionally
+from `fieldnames`).
+"""
+function _apply_db_patterns(cfg::ExperimentConfig, image_col, integration_col)::ExperimentConfig
+    pick(col, cur) = (col !== nothing && col !== missing &&
+                      occursin("{name}", String(col))) ? String(col) : cur
+    img   = pick(image_col, cfg.image_pattern)
+    integ = pick(integration_col, cfg.integration_pattern)
+    (img == cfg.image_pattern && integ == cfg.integration_pattern) && return cfg
+    fn   = fieldnames(ExperimentConfig)
+    vals = Any[getfield(cfg, f) for f in fn]
+    vals[findfirst(==(:image_pattern), fn)]       = img
+    vals[findfirst(==(:integration_pattern), fn)] = integ
+    ExperimentConfig(vals...)
 end

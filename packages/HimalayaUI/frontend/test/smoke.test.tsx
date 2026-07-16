@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { App } from "../src/App";
+import { PrintApp as App } from "../src/print/App";
 import { useAppState } from "../src/state";
 import { renderWithProviders } from "./test-utils";
 
@@ -40,7 +40,6 @@ describe("App smoke", () => {
       activeSampleId: 10,
       activeExposureId: undefined,
       tutorialSeen: true,
-      theme: "dark",
       hoveredIndexId: undefined,
       navModalOpen: false,
     });
@@ -78,19 +77,17 @@ describe("App smoke", () => {
     });
   });
 
-  it("redirects '/' to the corpus contact sheet under the single shell (#181/#182)", async () => {
-    // I4.4 (#181): the three-card Index at "/" is gone — a cold "/" lands on
-    // the corpus contact sheet (/samples) per §4.1. I5.1 (#182): there is now a
-    // single shell — assert the CorpusShell is mounted (the retired AppShell's
-    // workspace-grid / tab-rocker were deleted, so null-checks on them would be
-    // vacuous; assert the surviving shell instead).
+  it("redirects '/' to the Experiments home (ingestion-redesign IA / T3.2)", async () => {
+    // T3.2: "/" redirects to "/experiments". TopNav (unified app-shell)
+    // wraps every route. The "New experiment" CTA is the stable landing assertion.
     renderApp();
     await waitFor(() =>
-      expect(screen.getByTestId("samples-page")).toBeInTheDocument(),
+      expect(screen.getByTestId("new-experiment-cta")).toBeInTheDocument(),
       { timeout: 3000 },
     );
-    expect(screen.getByTestId("corpus-shell")).toBeInTheDocument();
-    expect(screen.queryByTestId("app-shell")).toBeNull();
+    // T3.2: TopNav (app-shell) IS present; the old CorpusShell is gone.
+    expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("corpus-shell")).toBeNull();
   });
 
   it("shows the onboarding overlay when no user is set", () => {
@@ -101,7 +98,7 @@ describe("App smoke", () => {
 
   it("a /compare* URL redirects to the series folio (Compare retired, #177)", async () => {
     renderAppAt("/experiments/1/compare");
-    await waitFor(() => expect(screen.getByTestId("series-folio-page")).toBeInTheDocument(),
+    await waitFor(() => expect(screen.getByTestId("folio-header")).toBeInTheDocument(),
       { timeout: 3000 });
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
