@@ -181,14 +181,10 @@ end
         # Add an exclude curation directly (event-driven path would emit
         # peak_excluded; we go straight to peak_curations to keep the test
         # focused on the analyze fast-skip predicate).
-        # Exclude the highest-q peak, NOT the basis (lowest-q) peak. Dropping the
-        # basis collapses indexpeaks to zero indices, which the fast-skip guard
-        # (`indices_count > 0`, pipeline.jl:846) legitimately refuses to skip — so
-        # excluding the basis tests the wrong thing. Mirroring the "hash mismatch"
-        # sibling test keeps the effective set indexable, so this testset actually
-        # exercises the exclude-only fast-skip path. (This testset went red when
-        # #200 lowered example_tot.dat recall 7->6; the guard-semantics question
-        # is tracked in #268.)
+        # Exclude the highest-q peak so the effective set stays indexable —
+        # this testset covers the exclude-only fast skip with indices present.
+        # The zero-index variant (excluding the basis peak) is the testset
+        # below (#297/#268).
         auto_q = Tables.rowtable(DBInterface.execute(ctx.db,
             "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q DESC LIMIT 1",
             [ctx.exposure_id]))[1].q
@@ -210,6 +206,44 @@ end
             "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
             [ctx.exposure_id]))).c
         @test n_after == n_before  # Fast-path no-op writes no event.
+    end
+end
+
+@testset "fast-skip: skipped when exclude collapses indexing to zero indices (#297)" begin
+    mktempdir() do tmp
+        ctx = setup_clean_analyzed_exposure(tmp)
+
+        # Exclude the basis (lowest-q) peak — indexpeaks then finds no phase
+        # candidates and the re-analysis persists ZERO indices. The stored
+        # inputs hash (written even on a zero-index persist) must still prove
+        # no-op-ness on later re-analyzes; requiring indices to exist would
+        # write a durable analyze_run row on every no-op call (#297/#268).
+        auto_q = Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q ASC LIMIT 1",
+            [ctx.exposure_id]))[1].q
+        DBInterface.execute(ctx.db,
+            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+            [ctx.exposure_id, Float64(auto_q)])
+
+        # Slow-path re-analysis: inputs hash drifts, indexing runs, finds zero.
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)
+        n_indices = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
+            [ctx.exposure_id]))).c
+        # Precondition: this fixture really indexes to zero without its basis.
+        # If core recall changes and this fails, the testset no longer covers
+        # the zero-index case — pick a different peak to exclude.
+        @test n_indices == 0
+
+        n_before = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
+                          trace_known_unchanged=true)
+        n_after = first(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+            [ctx.exposure_id]))).c
+        @test n_after == n_before  # analyzed-but-empty fast-skips; no event spam
     end
 end
 
