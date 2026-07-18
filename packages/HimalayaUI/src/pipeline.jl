@@ -926,7 +926,10 @@ Curation routes thread it into the SSE `post_state` (`assignment_dropped`);
 CLI/pipeline callers may ignore the return.
 
 Hash-guarded: findpeaks is skipped when `trace_hash` matches the persisted
-value AND auto_peaks already exist. indexpeaks is skipped when
+value — a match proves auto_peaks (possibly zero rows; featureless traces
+legitimately yield no peaks, #300) reflects this exact trace, because the
+hash's only writer sits in the same transaction as diff_update. indexpeaks
+is skipped when
 `analysis_inputs_hash` matches the persisted value — a match proves the
 stored index set (possibly empty; some peak sets legitimately index to zero
 candidates, #297) is exactly what re-indexing would produce. Never-analyzed
@@ -962,13 +965,16 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # DB-only reads first so the fast path can short-circuit before any file I/O.
     stored_trace_hash  = read_trace_hash(db, exposure_id)
     stored_inputs_hash = read_inputs_hash(db, exposure_id)
-    autopeaks_count    = count_auto_peaks(db, exposure_id)
 
     new_trace_hash = nothing
     findpeaks_skipped = false
     if trace_known_unchanged
         new_trace_hash = stored_trace_hash
-        findpeaks_skipped = autopeaks_count > 0
+        # #300: no fresh hash exists on this path (the caller asserts the file
+        # is unchanged), so hash PRESENCE is the "has been analyzed" signal:
+        # trace_hash's only writer commits with diff_update, so non-nothing
+        # proves auto_peaks — zero rows included — reflect this trace.
+        findpeaks_skipped = stored_trace_hash !== nothing
     end
 
     # Fast path: no file I/O at all when caller guarantees trace unchanged AND
@@ -993,7 +999,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     if new_trace_hash === nothing
         new_trace_hash = hash_trace_file(dat_path)
-        findpeaks_skipped = (stored_trace_hash == new_trace_hash) && (autopeaks_count > 0)
+        # #300: hash match alone (mirrors the #297 indexpeaks predicate) —
+        # never-analyzed exposures can't match (stored is nothing).
+        findpeaks_skipped = stored_trace_hash == new_trace_hash
     end
 
     q, I, σ = load_dat(dat_path)
