@@ -823,12 +823,6 @@ function count_auto_peaks(db::SQLite.DB, exposure_id::Int)::Int
     Int(rows[1].c)
 end
 
-function count_indices(db::SQLite.DB, exposure_id::Int)::Int
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?", [exposure_id]))
-    Int(rows[1].c)
-end
-
 function any_add_curations(db::SQLite.DB, exposure_id::Int)::Bool
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT 1 AS x FROM peak_curations WHERE exposure_id = ? AND kind = 'add' LIMIT 1",
@@ -933,14 +927,18 @@ CLI/pipeline callers may ignore the return.
 
 Hash-guarded: findpeaks is skipped when `trace_hash` matches the persisted
 value AND auto_peaks already exist. indexpeaks is skipped when
-`analysis_inputs_hash` matches the persisted value AND indices already exist.
+`analysis_inputs_hash` matches the persisted value — a match proves the
+stored index set (possibly empty; some peak sets legitimately index to zero
+candidates, #297) is exactly what re-indexing would produce. Never-analyzed
+exposures are still protected: the stored hash is NULL until the first
+`persist_analysis!`, which writes index rows and hash in one transaction.
 
 When `trace_known_unchanged=true`, the caller asserts that the .dat file has
 not changed since the last `trace_hash` was computed (e.g. inside a curation
 route handler that does not touch the trace). In that case, if no `add`
 curations exist for the exposure, the function performs ZERO file I/O —
 inputs hash is computed from the DB alone and matched against the stored
-value; if they match and indices already exist, the call is effectively free.
+value; if they match, the call is effectively free.
 
 The .dat filename is constructed from `exposures.filename` and the integration
 pattern stored in the experiment's config (defaults to `{name}.dat` for
@@ -965,7 +963,6 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     stored_trace_hash  = read_trace_hash(db, exposure_id)
     stored_inputs_hash = read_inputs_hash(db, exposure_id)
     autopeaks_count    = count_auto_peaks(db, exposure_id)
-    indices_count      = count_indices(db, exposure_id)
 
     new_trace_hash = nothing
     findpeaks_skipped = false
@@ -978,7 +975,10 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # no add curations (which require sharpness from the trace).
     if findpeaks_skipped && !any_add_curations(db, exposure_id)
         new_inputs_hash = hash_peak_set_from_db(db, exposure_id)
-        indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
+        # #297/#268: hash match alone proves no-op-ness — even for exposures
+        # whose peak set legitimately indexes to zero candidates. Never-analyzed
+        # exposures can't match (stored hash is nothing until the first persist).
+        indexpeaks_skipped = stored_inputs_hash == new_inputs_hash
         if indexpeaks_skipped
             # Fast-path no-op: skip the durable analyze_run row (M0.4 already drops the SSE frame). The hashes prove no-op-ness; durable counting offers no load-bearing value here.
             return (dropped_assignment_phases = String[],)
@@ -1054,7 +1054,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         eff = effective_peaks(db, exposure_id, q, I;
                               sharps_full = sharps_full_for_eff)
         new_inputs_hash    = hash_peak_set(eff)
-        indexpeaks_skipped = (stored_inputs_hash == new_inputs_hash) && (indices_count > 0)
+        # Same predicate as the fast path above (#297/#268): hash match alone.
+        indexpeaks_skipped = stored_inputs_hash == new_inputs_hash
 
         if !indexpeaks_skipped
             peaks_result_for_persist = fresh_peaks_result === nothing ?
