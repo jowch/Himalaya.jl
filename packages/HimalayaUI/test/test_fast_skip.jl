@@ -276,7 +276,8 @@ function setup_flat_analyzed_exposure(tmp::String; name="FlatExp", stem="FLAT01"
 end
 
 analyze_run_count(db, exposure_id) = first(Tables.rowtable(DBInterface.execute(db,
-    "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+    """SELECT COUNT(*) AS c FROM user_actions
+       WHERE entity_type = 'exposure' AND entity_id = ? AND action = 'analyze_run'""",
     [exposure_id]))).c
 
 @testset "fast-skip: zero-peak trace fast-skips with zero file I/O (#300)" begin
