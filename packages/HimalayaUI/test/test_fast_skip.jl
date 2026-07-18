@@ -247,6 +247,109 @@ end
     end
 end
 
+# ──────────────────────────────────────────────────────────────────────────────
+# #300: a trace that legitimately yields ZERO auto peaks must fast-skip like
+# any other unchanged exposure. Fixture: a flat (featureless) trace — verified
+# to produce zero findpeaks results with no error.
+# ──────────────────────────────────────────────────────────────────────────────
+function setup_flat_analyzed_exposure(tmp::String; name="FlatExp", stem="FLAT01")
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    mkpath(joinpath(tmp, "data"))
+    dat_path = joinpath(analysis_dir, stem * ".dat")
+    open(dat_path, "w") do io
+        for qv in range(0.05, 0.6, length=800)
+            println(io, "$(qv) 100.0 1.0")   # q  I(constant)  σ
+        end
+    end
+
+    db = open_db(joinpath(tmp, "himalaya.db"))
+    seeded = seed_experiment!(db, tmp;
+        name = name, analysis_dir = analysis_dir,
+        stems = [stem], experiment_type = "simple")
+    exposure_id = seeded.exposure_ids[1]
+
+    # First analyze: findpeaks finds zero peaks; trace_hash + inputs_hash stamp.
+    analyze_exposure!(db, exposure_id, analysis_dir)
+    return (db=db, exposure_id=exposure_id, analysis_dir=analysis_dir,
+            dat_path=dat_path)
+end
+
+analyze_run_count(db, exposure_id) = first(Tables.rowtable(DBInterface.execute(db,
+    "SELECT COUNT(*) AS c FROM user_actions WHERE entity_id = ? AND action = 'analyze_run'",
+    [exposure_id]))).c
+
+@testset "fast-skip: zero-peak trace fast-skips with zero file I/O (#300)" begin
+    mktempdir() do tmp
+        ctx = setup_flat_analyzed_exposure(tmp)
+
+        # Preconditions (loud tripwires, like #298's n_indices == 0): the flat
+        # fixture really yields zero peaks, and the first analyze stamped both
+        # hashes. If core peak-finding changes make this non-zero, this testset
+        # no longer covers #300 — adjust the fixture, don't delete the asserts.
+        @test HimalayaUI.count_auto_peaks(ctx.db, ctx.exposure_id) == 0
+        @test HimalayaUI.read_trace_hash(ctx.db, ctx.exposure_id) !== nothing
+        @test HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id) !== nothing
+
+        n_before = analyze_run_count(ctx.db, ctx.exposure_id)
+
+        # Hard proof of zero file I/O: delete the .dat. If the fast path fails
+        # to engage, analyze_exposure! falls to the slow path and errors
+        # ("dat file not found") — a red signal, not a silent pass.
+        rm(ctx.dat_path)
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
+                          trace_known_unchanged=true)
+        @test analyze_run_count(ctx.db, ctx.exposure_id) == n_before
+    end
+end
+
+@testset "fast-skip: zero-peak trace skips findpeaks on the slow path (#300)" begin
+    mktempdir() do tmp
+        ctx = setup_flat_analyzed_exposure(tmp)
+
+        # Plain (trace_known_unchanged=false) re-analyze: the file is re-hashed
+        # (unavoidable), but findpeaks must NOT re-run — the stored trace_hash
+        # matches and auto_peaks (zero rows) already reflect this trace.
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)
+        run = latest_analyze_run(ctx.db, ctx.exposure_id)
+        @test run.payload[:findpeaks_skipped]  === true
+        @test run.payload[:indexpeaks_skipped] === true
+    end
+end
+
+@testset "fast-skip: empty persist after last add curation removed (#300)" begin
+    mktempdir() do tmp
+        ctx = setup_flat_analyzed_exposure(tmp)
+        empty_inputs_hash = HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id)
+
+        # Add curation → slow path by design (sharpness sampled from trace).
+        DBInterface.execute(ctx.db,
+            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
+            [ctx.exposure_id, 0.2])
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)
+        @test HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id) != empty_inputs_hash
+
+        # Remove it. The re-analyze must skip findpeaks (trace unchanged, hash
+        # stamped) and persist the EMPTY effective set via
+        # synthesize_peaks_result — the path #300 makes newly common.
+        DBInterface.execute(ctx.db,
+            "DELETE FROM peak_curations WHERE exposure_id = ? AND kind = 'add'",
+            [ctx.exposure_id])
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
+                          trace_known_unchanged=true)
+        run = latest_analyze_run(ctx.db, ctx.exposure_id)
+        @test run.payload[:findpeaks_skipped] === true
+        # Round-trip: back to the exact empty-set hash from the first analyze.
+        @test HimalayaUI.read_inputs_hash(ctx.db, ctx.exposure_id) == empty_inputs_hash
+
+        # And the settled state is a full no-op again.
+        n_before = analyze_run_count(ctx.db, ctx.exposure_id)
+        analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
+                          trace_known_unchanged=true)
+        @test analyze_run_count(ctx.db, ctx.exposure_id) == n_before
+    end
+end
+
 @testset "fast-skip: load_dat REQUIRED when add curation present" begin
     mktempdir() do tmp
         ctx = setup_clean_analyzed_exposure(tmp)
