@@ -541,6 +541,24 @@ let
         end
     end
 
+    @testset "cli_analyze --all analyzes every registered experiment" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir1    = mktempdir()
+        dir2    = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(db, dir1; name="ExpAll1", stems=["ST001"])
+            setup_exp_dir(db, dir2; name="ExpAll2", stems=["ST002"])
+            cli_analyze(["--all"])
+            # One exposure per experiment; --all must have visited both, so each
+            # sample ends up with its (sole, kept) exposure selected.
+            n = [Int(r.n) for r in DBInterface.execute(db,
+                "SELECT COUNT(*) AS n FROM exposures WHERE selected=1")]
+            @test n == [2]
+            @test_throws ErrorException cli_analyze(["--all", "-e", dir1])
+        end
+    end
+
     @testset "_resolve_experiment errors when multiple experiments and no key" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()
