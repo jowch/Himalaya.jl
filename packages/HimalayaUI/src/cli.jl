@@ -67,6 +67,8 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
     exp     = get_experiment(db, exp_id)
     samples = get_samples(db, exp_id)
     sample_filter !== nothing && filter!(sm -> sm.name == sample_filter, samples)
+    sample_filter !== nothing && isempty(samples) &&
+        println("  (no sample named '$(sample_filter)')")
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
@@ -132,7 +134,14 @@ function cli_analyze(args)
         isempty(rows) && error("No experiments registered.")
         for r in rows
             println("Experiment $(r.name):")
-            _analyze_experiment!(db, Int(r.id); sample_filter = p[:sample])
+            # Same catch-print-continue philosophy as the per-exposure loop:
+            # one bad experiment must not abort the rest of the batch.
+            try
+                _analyze_experiment!(db, Int(r.id); sample_filter = p[:sample])
+            catch e
+                msg = isa(e, ErrorException) ? e.msg : sprint(showerror, e)
+                println("  SKIP experiment ($msg)")
+            end
         end
     else
         exp_row = _resolve_experiment(db, p[:experiment])
