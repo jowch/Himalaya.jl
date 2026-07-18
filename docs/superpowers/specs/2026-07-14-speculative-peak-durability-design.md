@@ -55,6 +55,11 @@ whenever `stored_inputs_hash == new_inputs_hash && indices_count > 0`
 destructive wipe, so plain reanalysis is a no-op: no heal, no `analyze_run` frame.
 Any fix must reopen this gate deliberately (§D).
 
+> **Predicate since simplified (#297/#298):** the `indices_count > 0` leg was
+> dropped — a hash match alone now gates the skip. This doesn't change the
+> analysis above: the heal's hash-NULL (§D) still reopens the gate, since a
+> NULL stored hash can never match.
+
 ### 2. Basis-scale corruption for cubic phases (latent, confirmed in source)
 
 Auto indices store the **normalized** basis (q of the first ratio position; core

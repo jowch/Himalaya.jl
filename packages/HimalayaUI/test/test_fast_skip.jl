@@ -87,8 +87,8 @@ end
         p99 = ts[99]
         @info "fast-skip P99 latency" p99
         # The spec's load-bearing claim is "microseconds, not milliseconds" — preventing
-        # file I/O on the no-change path. Steady-state is ~150µs (5 SQLite SELECTs at
-        # ~30µs each, hardware-floored). The ceiling is widened to 2 ms on CI to
+        # file I/O on the no-change path. Steady-state is ~150µs (a handful of SQLite
+        # SELECTs at ~30µs each, hardware-floored). The ceiling is widened to 2 ms on CI to
         # absorb shared-runner GC noise (PR review suggestion #6); on a developer
         # box the @info logs make a real regression easy to spot well below 2 ms.
         # Under the parallel bucket runner (`make test-parallel`) the box runs 5 test
