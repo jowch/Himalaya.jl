@@ -112,17 +112,32 @@ function cli_analyze(args)
     s = ArgParseSettings(prog = "himalaya analyze")
     @add_arg_table! s begin
         "--experiment", "-e"
-            help     = "experiment id, name, or path (required)"
-            required = true
+            help    = "experiment id, name, or path"
+            default = nothing
         "--sample", "-s"
             help    = "sample name (stable identifier) (e.g. D1)"
             default = nothing
+        "--all"
+            help   = "analyze every registered experiment"
+            action = :store_true
     end
     p = parse_args(args, s; as_symbols = true)
 
-    db      = open_db()
-    exp_row = _resolve_experiment(db, p[:experiment])
-    _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
+    db = open_db()
+    if p[:all]
+        p[:experiment] === nothing ||
+            error("--all and --experiment are mutually exclusive.")
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, name FROM experiments ORDER BY id"))
+        isempty(rows) && error("No experiments registered.")
+        for r in rows
+            println("Experiment $(r.name):")
+            _analyze_experiment!(db, Int(r.id); sample_filter = p[:sample])
+        end
+    else
+        exp_row = _resolve_experiment(db, p[:experiment])
+        _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
+    end
 end
 
 function cli_show(args)
@@ -453,7 +468,7 @@ Usage: himalaya <command> [options]
 Commands:
   config new --type <name> --dir <path>     Create experiment.toml from a template
   config list                               List built-in config templates
-  analyze   -e <experiment> [-s <label>]    Run peak-finding + indexing
+  analyze   [-e <experiment> | --all] [-s <label>]  Run peak-finding + indexing
   show     [-e <experiment>] -s <label>     Print stored analysis for one sample
   serve    [--port N] [--host H]            Start the web server
   upgrade-grouping [--apply] [-e <exp>]     Retrofit loads/samples/exposures
@@ -461,9 +476,9 @@ Commands:
                                               (dry-run by default)
 
 Ingestion is performed via the HTTP scan API (`POST /api/experiments/{id}/scan`),
-not the CLI. `-e <experiment>` accepts an id, name, or path. Required for
-`analyze`; optional for the read-only `show` (defaults to the sole registered
-experiment). Run `himalaya <command> --help` for full options.
+not the CLI. `-e <experiment>` accepts an id, name, or path; when omitted it
+defaults to the sole registered experiment. `analyze --all` runs every
+registered experiment. Run `himalaya <command> --help` for full options.
 Environment variables (HIMALAYA_DB_PATH, HIMALAYA_HOST, HIMALAYA_PORT, …) are
 documented in packages/HimalayaUI/.env.example.
 """
