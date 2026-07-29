@@ -238,7 +238,8 @@ end
             with_inproc_routes(ctx.db) do call
                 r = call("POST", "/api/exposures/$(ctx.exposure_id)/custom-index";
                     body = Vector{UInt8}(JSON3.write(
-                        Dict(:phase => "Pn3m", :basis => q1, :orders => 6))),
+                        Dict(:phase => "Pn3m", :basis => q1,
+                             :ratios => Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6]))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200

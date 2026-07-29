@@ -470,7 +470,24 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # Auto-discovery pass: pull in any current peak that fits an unfilled
             # ratio position within snap tolerance and isn't already claimed
             # by another ratio of this index.
-            if basis_for_snap !== nothing && basis_for_snap > 0
+            #
+            # SKIPPED ENTIRELY for a basis_locked (custom-index) row. Two
+            # reasons, both load-bearing:
+            #  1. The commit bounded its claim to the reflections the modal
+            #     DREW (indices.drawn_ratios). Discovery scans `1:n` — the whole
+            #     core series — so a locked Pn3m committed over 6 orders would
+            #     silently pick up positions 7..16 on the next analyze, and the
+            #     rail's "explains N peaks" would again exceed the modal's
+            #     "N of M land". A bound that dies on reanalysis is not a bound.
+            #  2. `basis_for_snap` refits from the resolved peaks whenever >=2
+            #     land, so discovery would search against a comb the locked row
+            #     explicitly refuses to store — admitting peaks at SNAP_TOL of
+            #     the REFIT comb while the residual written below is measured
+            #     against the LOCKED one.
+            # A locked index's claim set is frozen at commit; intents are its
+            # durable record and re-resolution (above) is how it heals.
+            locked_row = !ismissing(ix_row.basis_locked) && Int(ix_row.basis_locked) == 1
+            if !locked_row && basis_for_snap !== nothing && basis_for_snap > 0
                 claimed_pids = Set{Int}(p[1] for p in values(ratio_to_peak))
                 for rpos in 1:n
                     haskey(ratio_to_peak, rpos) && continue
@@ -523,25 +540,29 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # lattice explains the current peaks rather than silently sliding
             # the comb onto them. Without this, scan-derived intents at
             # CUSTOM_SNAP_TOL (2.2%) could drag the lattice on every analyze.
-            locked = !ismissing(ix_row.basis_locked) && Int(ix_row.basis_locked) == 1
             observed_ratios_used = ratios_normed[rpos_sorted]
-            new_basis = locked ? Float64(ix_row.basis) : (observed_ratios_used \ qvals)
+            new_basis = locked_row ? Float64(ix_row.basis) : (observed_ratios_used \ qvals)
 
             peaks_sv     = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, qvals)
             sharpness_sv = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, sharpvals)
             new_idx = Himalaya.Index{P}(new_basis, peaks_sv, sharpness_sv)
             fit_result = Himalaya.fit(new_idx)
+            # score reads peaks + sharpness only, never basis — same either way.
             new_score = Himalaya.score(new_idx)
-            # Himalaya.fit refits d from the peaks, so a locked index must keep
-            # its own lattice_d too — otherwise the lock would hold `basis`
-            # while `lattice_d` (what the rail actually displays) drifted.
-            new_d = locked ? lattice_d_for(P, new_basis) : fit_result.d
+            # Himalaya.fit REFITS from the peaks (d = ratios \ peaks) and never
+            # reads Index.basis, so BOTH of its outputs describe the
+            # least-squares line — the one a locked row refuses to store. Take
+            # d and R² from the locked comb instead, or the rail would render
+            # "fit R² = 1.000" for a comb the user can see missing the peaks.
+            new_d  = locked_row ? lattice_d_for(P, new_basis) : fit_result.d
+            new_r2 = locked_row ?
+                Himalaya.R²(new_basis .* observed_ratios_used, qvals) : fit_result.R²
 
             DBInterface.execute(db,
                 """UPDATE indices SET basis = ?, score = ?, r_squared = ?, lattice_d = ?,
                                        status = 'candidate'
                    WHERE id = ?""",
-                [new_basis, new_score, fit_result.R², new_d, ix_id])
+                [new_basis, new_score, new_r2, new_d, ix_id])
 
             for (rpos, (pid, qv, _)) in ratio_to_peak
                 # Determine peak_kind from eff_by_id

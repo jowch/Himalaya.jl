@@ -592,14 +592,16 @@ export type CustomIndexResponse = IndexEntry & {
   event_id: number;
   view_row_id: number | null;
 };
-// `orders` = how many reflections the modal DREW (SYMS[phase].Ms.length). The
-// backend bounds its snap to those positions; without it it would scan the full
-// core ratio series and claim reflections the user was never shown (the series
-// is longer than SYMS.Ms for 5 of 8 phases).
+// `ratios` = the NORMALIZED ratios the modal DREW (each reflection's q over the
+// first's). The backend bounds its snap to these; without them it scans the full
+// core ratio series and claims reflections the user never saw (that series is
+// longer than SYMS.Ms for 5 of 8 phases). Sent as ratios rather than a count
+// because the two series are not positionally aligned for Hexagonal: the core
+// one contains a √11 that is not a permitted 2D hexagonal reflection at all.
 export const createCustomIndex = (
-  exposure_id: number, phase: string, basis: number, orders: number, opts?: AuthOpts,
+  exposure_id: number, phase: string, basis: number, ratios: number[], opts?: AuthOpts,
 ) => request<CustomIndexResponse>(
-  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis, orders }, opts);
+  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis, ratios }, opts);
 
 // Assignment (Plan D) — the durable per-exposure 3-state phase assignment cart.
 // `state` is explicit, never inferred from members.length: an `indexed`

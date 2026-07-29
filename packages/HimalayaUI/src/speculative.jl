@@ -1,6 +1,7 @@
 using Himalaya
 using SparseArrays
 using SQLite, DBInterface, Tables
+using JSON3
 
 """
 Tolerance (relative to predicted q) used when snapping observed peaks to
@@ -20,6 +21,15 @@ claim fewer peaks than the modal just showed the user — a second tolerance
 regime disagreeing with the surface they fitted on. MUST equal that `relTol`.
 """
 const CUSTOM_SNAP_TOL = 0.022
+
+"""
+Relative tolerance for matching a caller-supplied normalized ratio against a
+position of `phaseratios(P; normalize = true)`. Not a physics tolerance — it
+absorbs float rounding between the frontend's `customRefls` and Julia's
+`phaseratios`, both of which compute from the same integer reflection indices.
+Orders of magnitude tighter than the closest adjacent pair (Fd3m √35/√36, 1.4%).
+"""
+const RATIO_MATCH_RTOL = 1e-9
 
 """
     resolve_phase(name) -> Union{Type{<:Himalaya.Phase}, Nothing}
@@ -46,9 +56,21 @@ and the closest non-anchor peak whose relative deviation is within `tol`.
 `peak_rows` is any iterable of NamedTuples with `id::Int` and `q::Real`
 fields (e.g. the result of `Tables.rowtable` over a `peaks` query).
 
-`max_order` caps how many ratio positions are scanned (default: all). Callers
-that must not claim beyond a shorter series the user was actually shown pass
-their own length — see `insert_custom_index!`.
+`allowed_ratios` restricts the scan to the ratio positions whose NORMALIZED
+ratio appears in the supplied set (default: every position). Callers that must
+not claim beyond a shorter series the user was actually shown pass the ratios
+they drew — see `insert_custom_index!`.
+
+Deliberately a ratio SET, not a count: a count assumes the caller's series is a
+positional prefix of `phaseratios(P)`, which is false for Hexagonal. The core
+series is [1, √3, √4, √7, √9, **√11**, √12, …] but √11 is not a permitted 2D
+hexagonal reflection at all — N = h²+hk+k² has no solution for 11 (a Loeschian
+/ Eisenstein-norm condition: 11 ≡ 2 mod 3 to an odd power) — so the frontend's
+[1, √3, √4, √7, √9, √12] is the physically correct list and the two disagree at
+position 6. Bounding by count there would claim an impossible √11 AND drop the
+√12 the user was shown. Matching on ratio VALUES is correct today and stays
+correct when the spurious √11 is eventually removed from the core series (which
+renumbers positions — a migration-class change, tracked separately).
 
 Returns one row per scanned ratio position (1-indexed) with fields:
 - `ratio_position::Int`
@@ -68,14 +90,23 @@ persist the result must key on the (id, kind) PAIR. Rows without the field
 """
 function compute_snap(peak_rows, phase::Type{P}, anchor_q::Real, anchor_ratio::Int;
                      tol::Real = SNAP_TOL,
-                     max_order::Union{Int, Nothing} = nothing) where {P<:Himalaya.Phase}
+                     allowed_ratios::Union{AbstractVector{<:Real}, Nothing} = nothing,
+                     ) where {P<:Himalaya.Phase}
     ratios = Himalaya.phaseratios(P; normalize = true)
     1 <= anchor_ratio <= length(ratios) || error("anchor_ratio $anchor_ratio out of range for $P (1..$(length(ratios)))")
     basis = Float64(anchor_q) / ratios[anchor_ratio]
-    last_order = max_order === nothing ? length(ratios) : min(max_order, length(ratios))
+    # Both sides derive these from the same integer reflection indices via sqrt,
+    # so an exact-value comparison would be at the mercy of cross-language
+    # rounding; RATIO_MATCH_RTOL is far tighter than the gap between any two
+    # adjacent allowed reflections (Fd3m √35/√36, the closest pair, are 1.4%
+    # apart) so it can never merge two distinct orders.
+    scan = allowed_ratios === nothing ? collect(1:length(ratios)) :
+        [rpos for rpos in 1:length(ratios)
+         if any(a -> isapprox(Float64(a), ratios[rpos]; rtol = RATIO_MATCH_RTOL),
+                allowed_ratios)]
 
     out = NamedTuple[]
-    for rpos in 1:last_order
+    for rpos in scan
         ratio = ratios[rpos]
         predicted_q = basis * ratio
         best_id      = nothing
@@ -345,13 +376,20 @@ claims that peak, in `index_peaks` (the per-analysis resolved view) AND
 wipe). Without these rows the Focus comb, detector rings and assignment cart all
 render a fully-fitted custom index as claiming nothing.
 
-`orders` bounds the scan to the number of reflections the MODAL DREW. The
-frontend's `SYMS[sym].Ms` (`lib/customIndex.ts`) is shorter than the core ratio
-series for five of eight phases (Pn3m 6 vs 16, Im3m 6 vs 10, Ia3d 6 vs 8,
-Lamellar 5 vs 11, Hexagonal 6 vs 14); scanning the full series would claim
+`drawn_ratios` bounds the scan to the reflections the MODAL DREW, as NORMALIZED
+ratios. The frontend's `SYMS[sym].Ms` (`lib/customIndex.ts`) is shorter than the
+core ratio series for five of eight phases (Pn3m 6 vs 16, Im3m 6 vs 10, Ia3d 6
+vs 8, Lamellar 5 vs 11, Hexagonal 6 vs 14); scanning the full series would claim
 reflections the user was never shown and let the rail's "explains N peaks"
-exceed the modal's "N of M land" for the same fit. `nothing` scans the whole
-series — correct only for a caller with no truncated display of its own.
+exceed the modal's "N of M land" for the same fit. A ratio set rather than a
+count because Hexagonal's two series are not positionally aligned — see
+`compute_snap`. `nothing` scans the whole series: correct only for a caller with
+no truncated display of its own.
+
+The set is PERSISTED (`indices.drawn_ratios`, JSON) so the bound survives
+reanalysis: `_persist_analysis_inner!` skips its auto-discovery pass entirely
+for a locked index, which would otherwise re-claim positions the modal never
+drew on the next `analyze`.
 
 `score`/`r_squared` stay NULL at commit. They are populated on the first
 reanalysis that resolves any intent (pipeline.jl), computed against the LOCKED
@@ -359,9 +397,11 @@ basis. Returns the new index id.
 """
 function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
                               phase::Type{P}, basis::Float64;
-                              orders::Union{Int, Nothing} = nothing) where {P<:Himalaya.Phase}
+                              drawn_ratios::Union{AbstractVector{<:Real}, Nothing} = nothing,
+                              ) where {P<:Himalaya.Phase}
     basis > 0 || error("basis must be positive")
-    orders === nothing || orders > 0 || error("orders must be positive")
+    drawn_ratios === nothing || !isempty(drawn_ratios) ||
+        error("drawn_ratios must be non-empty when supplied")
 
     # Shared with the pipeline's basis-locked branch so a reanalysis refreshes
     # lattice_d to exactly the value committed here.
@@ -371,19 +411,21 @@ function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
     res = DBInterface.execute(db,
         """INSERT INTO indices
              (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind,
-              inputs_hash, basis_locked)
-           VALUES (?, ?, ?, NULL, NULL, ?, 'candidate', 'speculative', ?, 1)""",
-        [exposure_id, string(nameof(P)), basis, lattice_d, current_hash])
+              inputs_hash, basis_locked, drawn_ratios)
+           VALUES (?, ?, ?, NULL, NULL, ?, 'candidate', 'speculative', ?, 1, ?)""",
+        [exposure_id, string(nameof(P)), basis, lattice_d, current_hash,
+         drawn_ratios === nothing ? missing : JSON3.write(collect(Float64, drawn_ratios))])
     new_id = Int(DBInterface.lastrowid(res))
 
     # Claim the peaks the modal showed landing. anchor_ratio = 1 with
     # anchor_q = basis reproduces the stored comb exactly (normalized ratios[1]
     # is 1.0), so compute_snap matches against predicted q's, not a refit.
-    # `max_order` bounds the scan to the orders the modal actually DREW (see
-    # the `orders` note above) — without it the backend would claim reflections
-    # the user was never shown for every phase whose SYMS.Ms is truncated.
+    # `allowed_ratios` bounds the scan to the orders the modal actually DREW
+    # (see the `drawn_ratios` note above) — without it the backend would claim
+    # reflections the user was never shown for every phase whose SYMS.Ms is
+    # truncated, and for Hexagonal one that cannot physically exist.
     snaps = compute_snap(_effective_peak_rows(db, exposure_id), P, basis, 1;
-                         tol = CUSTOM_SNAP_TOL, max_order = orders)
+                         tol = CUSTOM_SNAP_TOL, allowed_ratios = drawn_ratios)
 
     # Best fit wins a contested peak. One peak may sit inside CUSTOM_SNAP_TOL of
     # two orders less than 2·tol apart (Pn3m √16/√17 are 3.1% apart, √19/√20

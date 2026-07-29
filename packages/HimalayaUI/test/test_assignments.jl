@@ -477,6 +477,11 @@ end
     end
 end
 
+# The normalized ratios the modal draws for Pn3m (SYMS.Ms = [2,3,4,6,8,9], and
+# Pn3m IS a clean positional prefix of the core series — Hexagonal is the one
+# that isn't, pinned separately below).
+_pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6]
+
 @testset "insert_custom_index! claims the peaks the modal showed landing" begin
     # The modal counts a reflection as landing at CUSTOM_SNAP_TOL (customIndex.ts
     # `landsOn` relTol). Commit must claim exactly those, so the Focus comb /
@@ -528,6 +533,60 @@ end
     end
 end
 
+@testset "every reflection the modal draws maps to a backend ratio position" begin
+    # The alignment half of the modal↔backend contract (the tolerance half is
+    # pinned from the TS side in deleteIndexAssignment.test.ts). `drawn_ratios`
+    # only bounds the claim correctly if every ratio the modal draws matches
+    # exactly one position of phaseratios(P) — a drawn reflection with no
+    # counterpart would be silently un-claimable.
+    #
+    # Reads SYMS out of the real customIndex.ts rather than restating it here,
+    # so the pin cannot rot into a comment.
+    ts_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "customIndex.ts")
+    @test isfile(ts_path)
+    ts = read(ts_path, String)
+
+    # SYMS entries look like:  Pn3m: { kind: "cubic", Ms: [2, 3, 4, 6, 8, 9], …
+    entries = Dict{String, Tuple{String, Vector{Int}}}()
+    for m in eachmatch(r"(\w+):\s*\{\s*kind:\s*\"(\w+)\",\s*Ms:\s*\[([^\]]*)\]", ts)
+        name, kind, ms_s = m.captures[1], m.captures[2], m.captures[3]
+        ms = [parse(Int, strip(x)) for x in split(ms_s, ",") if !isempty(strip(x))]
+        entries[name] = (kind, ms)
+    end
+    # All eight canonical phases, or the regex drifted from the source.
+    @test length(entries) == 8
+
+    for (name, (kind, ms)) in sort(collect(entries))
+        P = HimalayaUI.resolve_phase(name)
+        @test P !== nothing
+        backend = Himalaya.phaseratios(P; normalize = true)
+        # Mirror customRefls' q-law, then normalize: lamellar q ∝ n, everything
+        # else q ∝ √N. (hex/square/cubic all reduce to √N once normalized.)
+        drawn_q = kind == "lamellar" ? Float64.(ms) : sqrt.(Float64.(ms))
+        drawn   = drawn_q ./ drawn_q[1]
+
+        for r in drawn
+            hits = count(b -> isapprox(b, r; rtol = HimalayaUI.RATIO_MATCH_RTOL), backend)
+            # Exactly one: zero means the claim silently vanishes, two would
+            # mean RATIO_MATCH_RTOL is merging distinct orders.
+            @test hits == 1
+        end
+    end
+
+    # Hexagonal is deliberately NOT positionally aligned: the core series
+    # carries a √11, which is not a permitted 2D hexagonal reflection
+    # (N = h²+hk+k² has no integer solution for 11). Pinning this stops anyone
+    # "simplifying" drawn_ratios back to a count bound — which would claim the
+    # impossible √11 and drop the √12 the modal drew.
+    hex_backend = Himalaya.phaseratios(Himalaya.Hexagonal; normalize = true)
+    hex_ms      = entries["Hexagonal"][2]
+    @test hex_ms == [1, 3, 4, 7, 9, 12]
+    @test round(Int, hex_backend[6]^2) == 11          # the spurious entry
+    @test !(11 in [h^2 + h*k + k^2 for h in -12:12, k in -12:12])
+    # …so a prefix of length(Ms) is NOT the drawn set.
+    @test round.(Int, hex_backend[1:length(hex_ms)] .^ 2) != hex_ms
+end
+
 @testset "basis_locked survives reanalysis (a custom lattice never drifts)" begin
     # The load-bearing half of writing scan-derived intents at all: they must
     # decide WHICH peaks are claimed, never WHERE the comb sits. Pre-lock, a
@@ -553,7 +612,8 @@ end
                 [e_id, q])
         end
 
-        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis; orders = 6)
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis;
+                                             drawn_ratios = ratios[1:6])
         @test Int(Tables.rowtable(DBInterface.execute(db,
             "SELECT basis_locked FROM indices WHERE id = ?", [nid]))[1].basis_locked) == 1
         @test Tables.rowtable(DBInterface.execute(db,
@@ -581,10 +641,19 @@ end
             "SELECT COUNT(*) AS c FROM index_peaks WHERE index_id = ?", [nid]))[1].c == 2
 
         row = Tables.rowtable(DBInterface.execute(db,
-            "SELECT basis, lattice_d FROM indices WHERE id = ?", [nid]))[1]
+            "SELECT basis, lattice_d, r_squared FROM indices WHERE id = ?", [nid]))[1]
         # Verbatim, to the bit — not "close enough".
         @test Float64(row.basis) == basis
         @test Float64(row.lattice_d) ≈ a atol = 1e-6
+
+        # R² must describe the LOCKED comb, not the least-squares line the
+        # branch just refused to store. Himalaya.fit refits internally, so its
+        # R² would read ≈1.000 here even though order 2 sits 1.5% off the comb
+        # the rail draws — the inverse of this PR's honesty thesis.
+        rn = Himalaya.phaseratios(P; normalize = true)
+        expected_r2 = Himalaya.R²(basis .* rn[[1, 2]], qs)
+        @test Float64(row.r_squared) ≈ expected_r2
+        @test Float64(row.r_squared) < 0.9999   # visibly imperfect, as drawn
 
         # The refit it was spared: an unlocked index over the same peaks lands
         # somewhere else, which is what makes the assertion above meaningful.
@@ -624,7 +693,8 @@ end
             r = call("POST", "/api/exposures/$e_id/custom-index";
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
                 body = Vector{UInt8}(JSON3.write(
-                    Dict(:phase => "Pn3m", :basis => basis, :orders => 6))))
+                    Dict(:phase => "Pn3m", :basis => basis,
+                         :ratios => _pn3m_drawn_ratios()))))
             @test r.status == 200
             nid = Int(JSON3.read(String(r.body)).id)
 

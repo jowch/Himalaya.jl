@@ -421,12 +421,13 @@ function register_analysis_routes!()
     end
 
     # ── Plan D Task D-9 (B4): client-fitted custom-index commit ─────────────
-    # Accepts {phase, basis, orders?} where `basis` is the q₁ slope the modal
-    # computed from a symmetry + lattice via real physics, and `orders` is how
-    # many reflections the modal DREW (its SYMS.Ms length). Persists a
-    # basis-locked speculative index, claims the peaks that land within
-    # CUSTOM_SNAP_TOL of the first `orders` predicted positions, and adds it to
-    # the assignment in one transaction. Two SSE frames: speculative_created (indices
+    # Accepts {phase, basis, ratios?} where `basis` is the q₁ slope the modal
+    # computed from a symmetry + lattice via real physics, and `ratios` are the
+    # NORMALIZED ratios it DREW. Persists a basis-locked speculative index,
+    # claims the peaks landing within CUSTOM_SNAP_TOL of those reflections, and
+    # adds it to the assignment in one transaction. A ratio set rather than a
+    # count because the modal's series is not a positional prefix of the core
+    # one for Hexagonal (see compute_snap). Two SSE frames: speculative_created (indices
     # cache) THEN assignment_add (assignment cache). ORDERING IS LOAD-BEARING —
     # the own-tab deferred resolves off the FIRST frame (speculative_created)
     # which carries the new IndexEntry, then assignment_add patches the cart.
@@ -441,22 +442,23 @@ function register_analysis_routes!()
         end
         local phase_name::String
         local basis::Float64
-        local orders::Union{Int, Nothing}
+        local ratios::Union{Vector{Float64}, Nothing}
         try
             phase_name = String(body.phase)
             basis      = Float64(body.basis)
             # Optional for back-compat: absent means "scan the whole ratio
             # series", which is only correct for a caller with no truncated
             # display of its own. The modal always sends it.
-            orders     = haskey(body, :orders) && body.orders !== nothing ?
-                         Int(body.orders) : nothing
+            ratios     = haskey(body, :ratios) && body.ratios !== nothing ?
+                         Float64[Float64(r) for r in body.ratios] : nothing
         catch
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "phase must be string; basis and orders must be numbers")))
+                JSON3.write(Dict(:error => "phase must be string; basis a number; ratios an array of numbers")))
         end
-        orders === nothing || orders > 0 || return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "orders must be positive")))
+        if ratios !== nothing && (isempty(ratios) || any(r -> !(r > 0), ratios))
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "ratios must be a non-empty array of positive numbers")))
+        end
         P = resolve_phase(phase_name)
         P === nothing && return HTTP.Response(400, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "unknown phase: $phase_name")))
@@ -471,7 +473,7 @@ function register_analysis_routes!()
             # mid-loop throw would commit an orphan `indices` row with no
             # event. Let it propagate so the transaction unwinds; the
             # validation above already rejects the reachable bad inputs.
-            nid = insert_custom_index!(db, id, P, basis; orders = orders)
+            nid = insert_custom_index!(db, id, P, basis; drawn_ratios = ratios)
 
             # Frame 1: speculative_created — carries the new index to the indices
             # cache (post-commit broadcast; subscribers converge via invalidate).

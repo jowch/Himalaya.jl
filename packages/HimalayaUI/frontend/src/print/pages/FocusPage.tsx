@@ -60,7 +60,7 @@ import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { sanitizeDashes } from "../../lib/copy";
-import { SYMS, basisFor, latticeBounds, latticeForFirstOrderOnPeak } from "../../lib/customIndex";
+import { customRefls, basisFor, latticeBounds, latticeForFirstOrderOnPeak } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
@@ -664,13 +664,16 @@ export function FocusPage(): JSX.Element {
   // ── custom-index helper ──────────────────────────────────────────────────────
   function commitCustom(): void {
     if (!customParamValid) return; // defense in depth; the Add button is disabled too
-    // SYMS[customSym].Ms.length = the orders the comb the user just fitted
-    // actually DREW. The backend bounds its peak claim to those positions so
-    // the rail can never report more reflections than the modal showed.
+    // The NORMALIZED ratios the comb the user just fitted actually DREW. The
+    // backend bounds its peak claim to these, so the rail can never report more
+    // reflections than the modal showed. Ratios, not a count: SYMS.Ms is not a
+    // positional prefix of the backend series for Hexagonal.
+    const refls = customRefls(customSym, Number(customParam));
+    const q1 = refls[0]?.q ?? 0;
     commitCustomIndex.mutate(
       customSym,
       basisFor(customSym, Number(customParam)),
-      SYMS[customSym]?.Ms.length ?? 0,
+      q1 > 0 ? refls.map((r) => r.q / q1) : [],
     );
     setCustomOpen(false);
     // Consequential: a custom hypothesis was added to the call → visible toast.

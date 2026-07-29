@@ -83,21 +83,23 @@ describe("api — assignment fetchers (Plan D-1)", () => {
     expect((init as RequestInit).method).toBe("DELETE");
   });
 
-  it("createCustomIndex POSTs {phase, basis, orders} to /custom-index", async () => {
+  it("createCustomIndex POSTs {phase, basis, ratios} to /custom-index", async () => {
     const spy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ id: 77, exposure_id: 7, phase: "Pn3m", basis: 0.15,
         score: null, r_squared: null, lattice_d: 197, ngc: null, status: "candidate",
         kind: "speculative", inputs_hash: "h", peaks: [], predicted_q: [0.15],
         event_id: 1, view_row_id: 1 }),
         { status: 200, headers: { "Content-Type": "application/json" } }));
-    await api.createCustomIndex(7, "Pn3m", 0.15, 6, { username: "alice" });
+    await api.createCustomIndex(7, "Pn3m", 0.15, [1, 1.2247448714], { username: "alice" });
     const [path, init] = spy.mock.calls[0]!;
     expect(path).toBe("/api/exposures/7/custom-index");
     expect((init as RequestInit).method).toBe("POST");
-    // `orders` is load-bearing, not decoration: without it the backend scans
+    // `ratios` is load-bearing, not decoration: without it the backend scans
     // the full core ratio series and claims reflections the modal never drew.
+    // Ratios rather than a count because the modal's series is not a positional
+    // prefix of the backend's for Hexagonal.
     expect(JSON.parse((init as RequestInit).body as string))
-      .toEqual({ phase: "Pn3m", basis: 0.15, orders: 6 });
+      .toEqual({ phase: "Pn3m", basis: 0.15, ratios: [1, 1.2247448714] });
   });
 
   it("setAssignmentState POSTs state to /assignment/state", async () => {

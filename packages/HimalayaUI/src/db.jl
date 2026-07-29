@@ -162,7 +162,14 @@ CREATE TABLE IF NOT EXISTS indices (
     -- refit, so no reanalysis can move the lattice out from under the user.
     -- This is what makes insert_custom_index!'s scan-derived intents safe:
     -- they resolve WHICH peaks are claimed, never WHERE the comb sits.
-    basis_locked INTEGER NOT NULL DEFAULT 0
+    basis_locked INTEGER NOT NULL DEFAULT 0,
+    -- JSON array of the NORMALIZED ratios the custom-index modal drew, for
+    -- basis_locked rows. Persisted so the commit-time claim bound survives
+    -- reanalysis: without it the pipeline's auto-discovery pass re-claims
+    -- positions the user was never shown. A ratio set rather than a count
+    -- because Hexagonal's SYMS.Ms is not a positional prefix of
+    -- phaseratios(Hexagonal) — see compute_snap.
+    drawn_ratios TEXT
 );
 
 -- index_peaks: peak_id references auto_peaks OR peak_curations (peak_kind disambiguates).
@@ -347,6 +354,9 @@ function migrate_schema!(db::SQLite.DB)
         # predates the column was either auto or anchor-snap speculative, both
         # of which are meant to refit. Custom commits set it explicitly.
         "ALTER TABLE indices ADD COLUMN basis_locked INTEGER NOT NULL DEFAULT 0",
+        # NULL on legacy rows = "no recorded bound", which the pipeline reads as
+        # unbounded — matching how those rows already behaved.
+        "ALTER TABLE indices ADD COLUMN drawn_ratios TEXT",
         "ALTER TABLE user_actions ADD COLUMN payload TEXT",
         "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
         "ALTER TABLE user_actions ADD COLUMN client_id TEXT",
