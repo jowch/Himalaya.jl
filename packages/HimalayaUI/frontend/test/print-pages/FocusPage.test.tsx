@@ -11,6 +11,7 @@ const removePeakMutate = vi.fn();
 const setPeakExclMutate = vi.fn();
 const addAssignMutate = vi.fn();
 const removeAssignMutate = vi.fn();
+const deleteIndexMutate = vi.fn();
 const setAssignStateMutate = vi.fn();
 const commitCustomMutate = vi.fn();
 
@@ -57,6 +58,7 @@ vi.mock("../../src/queries", () => ({
   useSetPeakExcluded: () => ({ mutate: setPeakExclMutate }),
   useAddAssignmentPhase: () => ({ mutate: addAssignMutate }),
   useRemoveAssignmentPhase: () => ({ mutate: removeAssignMutate }),
+  useDeleteIndex: () => ({ mutate: deleteIndexMutate }),
   useSetAssignmentState: () => ({ mutate: setAssignStateMutate }),
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
 }));
@@ -368,6 +370,29 @@ describe("FocusPage", () => {
     const candidate = screen.getByRole("button", { name: /Lamellar/ });
     fireEvent.click(candidate);
     expect(addAssignMutate).toHaveBeenCalledWith(2);
+  });
+
+  it("offers Discard only on speculative candidates, never on auto ones", () => {
+    // The route 403s on kind != 'speculative', so an auto index must not even
+    // show the affordance. Pn3m (id 1) is auto; Lamellar (id 2) is made
+    // speculative here to stand in for a committed custom index.
+    state.indices = [ix({ id: 1, phase: "Pn3m" }),
+                     ix({ id: 2, phase: "Lamellar", kind: "speculative", score: null })];
+    renderAt(42);
+    expect(screen.queryByRole("button", { name: /Discard the Pn3m index/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Discard the Lamellar index/ })).toBeTruthy();
+  });
+
+  it("Discard fires useDeleteIndex().mutate(indexId) without toggling the assignment", () => {
+    // The discard control is a SIBLING of CandidateRow, not a child — clicking
+    // it must not also fire the row's add/remove toggle.
+    state.indices = [ix({ id: 1, phase: "Pn3m" }),
+                     ix({ id: 2, phase: "Lamellar", kind: "speculative", score: null })];
+    renderAt(42);
+    fireEvent.click(screen.getByRole("button", { name: /Discard the Lamellar index/ }));
+    expect(deleteIndexMutate).toHaveBeenCalledWith(2);
+    expect(addAssignMutate).not.toHaveBeenCalled();
+    expect(removeAssignMutate).not.toHaveBeenCalled();
   });
 
   it("clicking an in-call candidate removes it from the assignment", () => {

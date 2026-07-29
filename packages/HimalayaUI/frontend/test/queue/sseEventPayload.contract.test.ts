@@ -366,16 +366,41 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(called).toBe(1);  // indices
   });
 
-  it("speculative_deleted invalidates indices", () => {
-    let called = 0;
+  it("speculative_deleted invalidates indices AND the assignment", () => {
+    // assignment_members.index_id is ON DELETE CASCADE, so deleting a
+    // speculative that was in the call silently drops its membership row
+    // server-side. Invalidating only `indices` leaves a foreign tab's cart
+    // holding a phantom member id that no longer resolves to an index.
+    const keys: unknown[] = [];
     const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: any) => { called++; return orig(arg); }) as typeof qc.invalidateQueries;
+    qc.invalidateQueries = ((arg: any) => {
+      keys.push(arg.queryKey); return orig(arg);
+    }) as typeof qc.invalidateQueries;
     const evt: SseEvent = {
       id: 99, kind: "speculative_deleted", entity_type: "exposure", entity_id: 5,
       payload: { index_id: 7 },
     };
     applyRemoteToCache(evt, qc);
-    expect(called).toBe(1);
+    expect(keys).toEqual(
+      expect.arrayContaining([queryKeys.indices(5), queryKeys.assignment(5)]),
+    );
+  });
+
+  it("speculative_created invalidates ONLY indices (its own assignment_add frame follows)", () => {
+    // Guards the split: `created` must not inherit the delete's assignment
+    // invalidation. The custom-index route emits a separate assignment_add
+    // frame carrying the canonical {state, members} post_state.
+    const keys: unknown[] = [];
+    const orig = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((arg: any) => {
+      keys.push(arg.queryKey); return orig(arg);
+    }) as typeof qc.invalidateQueries;
+    const evt: SseEvent = {
+      id: 99, kind: "speculative_created", entity_type: "exposure", entity_id: 5,
+      payload: { index_id: 7 },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(keys).toEqual([queryKeys.indices(5)]);
   });
 
   // -------------------------------------------------------------------------

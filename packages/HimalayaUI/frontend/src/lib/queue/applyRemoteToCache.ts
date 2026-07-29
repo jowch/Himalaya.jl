@@ -233,9 +233,18 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       }
       break;
     }
-    case "speculative_created":
-    case "speculative_deleted": {
+    case "speculative_created": {
       qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
+      break;
+    }
+    case "speculative_deleted": {
+      // Also the assignment: `assignment_members.index_id` is ON DELETE
+      // CASCADE (db.jl:223), so the route's DELETE silently removes the index
+      // from the durable call. `speculative_deleted` carries no post_state, so
+      // a foreign tab that only invalidated `indices` would keep a member id
+      // pointing at an index that no longer exists — a phantom cart block.
+      qc.invalidateQueries({ queryKey: queryKeys.indices(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.assignment(id) });
       break;
     }
     case "set_exposure_status": {

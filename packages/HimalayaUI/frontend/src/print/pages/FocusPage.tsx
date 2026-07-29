@@ -13,7 +13,7 @@ import { PhaseBlock } from "../components/PhaseBlock";
 import { CandidateRow, CandidateList } from "../components/CandidateRow";
 import { FormFactorRow } from "../components/FormFactorRow";
 import { CustomIndexModal } from "../components/CustomIndexModal";
-import { HintText, EmptyState, Button } from "../ui";
+import { HintText, EmptyState, Button, IconButton } from "../ui";
 import { ExportButton } from "../components/ExportButton";
 import { useFigureExport } from "../components/useFigureExport";
 import { buildCleanFigureSvg, type FigureTraceKey } from "../export/cleanFigureSvg";
@@ -45,6 +45,7 @@ import {
   useSetPeakExcluded,
   useAddAssignmentPhase,
   useRemoveAssignmentPhase,
+  useDeleteIndex,
   useSetAssignmentState,
   useCommitCustomIndex,
 } from "../../queries";
@@ -219,6 +220,7 @@ export function FocusPage(): JSX.Element {
   const setPeakExcluded = useSetPeakExcluded(activeExposureId ?? 0);
   const addAssignmentPhase = useAddAssignmentPhase(activeExposureId ?? 0);
   const removeAssignmentPhase = useRemoveAssignmentPhase(activeExposureId ?? 0);
+  const deleteIndex = useDeleteIndex(activeExposureId ?? 0);
   const setAssignmentState = useSetAssignmentState(activeExposureId ?? 0);
   const commitCustomIndex = useCommitCustomIndex(activeExposureId ?? 0);
 
@@ -732,11 +734,13 @@ export function FocusPage(): JSX.Element {
       // NOT call e.stopPropagation() — doing so would silently break cursor-setting.
       <div
         key={ix.id}
+        className="flex items-center gap-1"
         onMouseEnter={() => setHoverPreviewId(ix.id)}
         onMouseLeave={() => setHoverPreviewId(undefined)}
         onClick={() => { candidateCursor.setCursor(ix.id); setPreviewWasExplicit(true); }}
       >
         <CandidateRow
+          className="flex-1 min-w-0"
           phase={ix.phase}
           score={ix.score}
           why={`explains ${ix.peaks.length} peaks${selected ? " · in the call" : ""}`}
@@ -753,6 +757,23 @@ export function FocusPage(): JSX.Element {
             }
           }}
         />
+        {/* Discard, speculatives only. Auto indices belong to the indexer and
+            the route 403s on them, so there is nothing to offer. Rendered as a
+            SIBLING of CandidateRow, never inside it: CandidateRow's root is
+            `<Card as="button">`, and a button nested in a button is invalid
+            DOM. Being a separate hit area is also what keeps a mis-click off
+            the assignment toggle. */}
+        {ix.kind === "speculative" && (
+          <IconButton
+            label={`Discard the ${ix.phase} index`}
+            tone="danger"
+            dismiss
+            onClick={() => {
+              deleteIndex.mutate(ix.id);
+              announce(`${ix.phase} index discarded`);
+            }}
+          />
+        )}
       </div>
     );
   }
