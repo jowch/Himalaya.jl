@@ -533,6 +533,96 @@ _pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6
     end
 end
 
+@testset "Hexagonal commit claims √12 and never the forbidden √11" begin
+    # Behavioural teeth for the alignment contract. The cross-language test
+    # below pins the DATA (SYMS vs phaseratios); this drives the actual claim
+    # path, so reverting compute_snap to a count bound fails HERE.
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+
+        P      = Himalaya.Hexagonal
+        rn     = Himalaya.phaseratios(P; normalize = true)   # [1, √3, 2, √7, 3, √11, √12, …]
+        basis  = 0.10
+        # Modal draws Ms = [1, 3, 4, 7, 9, 12] → backend positions {1,2,3,4,5,7}.
+        drawn  = sqrt.([1.0, 3, 4, 7, 9, 12]) ./ 1.0
+
+        # One peak exactly on √11 (backend position 6 — never drawn, and
+        # physically impossible) and one exactly on √12 (drawn, position 7).
+        q11 = basis * rn[6]
+        q12 = basis * rn[7]
+        for q in (basis, q11, q12)
+            DBInterface.execute(db,
+                "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)",
+                [e_id, q])
+        end
+
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis; drawn_ratios = drawn)
+        claimed = sort([Int(r.ratio_position) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT ratio_position FROM index_peaks WHERE index_id = ?", [nid]))])
+
+        @test 7 in claimed          # the √12 the modal drew
+        @test !(6 in claimed)       # the √11 it did not (and that cannot exist)
+        @test claimed == [1, 7]
+        # A count bound (max_order = 6) would produce exactly the inverse.
+    end
+end
+
+@testset "a one-peak locked index stores NULL r_squared, not -Inf" begin
+    # R² = 1 - RSS/TSS is undefined at one observation (TSS == 0). On the
+    # locked branch RSS > 0 by construction — the claim is made at
+    # CUSTOM_SNAP_TOL — so the result is -Inf, deterministically. Unlike NaN
+    # (which SQLite binds to NULL), -Inf round-trips as a live Float64 and
+    # then throws in JSON3.write INSIDE the analyze transaction, making the
+    # exposure permanently un-analyzable: every retry recomputes it.
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+
+        P     = Himalaya.Pn3m
+        rn    = Himalaya.phaseratios(P; normalize = true)
+        basis = 2π * sqrt(2) / 150.0
+        # EXACTLY ONE peak, and off the comb by 1.5% so RSS > 0.
+        q1 = basis * rn[1] * 1.015
+        DBInterface.execute(db,
+            "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)", [e_id, q1])
+
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis;
+                                              drawn_ratios = _pn3m_drawn_ratios())
+        @test Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM index_peaks WHERE index_id = ?", [nid]))[1].c == 1
+
+        prows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e_id]))
+        eff = (q         = [Float64(r.q) for r in prows],
+               sharpness = fill(1.0, length(prows)),
+               peak_id   = [Int(r.id) for r in prows],
+               peak_kind = fill(:auto, length(prows)))
+        empty_pr = (q = Float64[], indices = Int[],
+                    prominence = Float64[], sharpness = Float64[])
+        HimalayaUI.persist_analysis!(db, e_id, Float64[], Float64[],
+            empty_pr, Himalaya.Index[], Himalaya.Index[], eff)
+
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT r_squared, score FROM indices WHERE id = ?", [nid]))[1]
+        # NOT vacuous: r_squared is NULL at commit too, so first prove the
+        # reanalysis UPDATE actually ran. `score` is written unconditionally on
+        # that path and is NULL until it does.
+        @test !ismissing(row.score)
+        @test ismissing(row.r_squared)   # NULL, not -Inf
+
+        # The reachable consequence: this must serialize. Pre-guard it threw
+        # ErrorException("-Inf not allowed to be written in JSON spec"),
+        # unwinding the whole analyze transaction on every retry.
+        payload = HimalayaUI._serialized_indices_for_broadcast(db, e_id)
+        @test JSON3.write(payload) isa String
+    end
+end
+
 @testset "every reflection the modal draws maps to a backend ratio position" begin
     # The alignment half of the modal↔backend contract (the tolerance half is
     # pinned from the TS side in deleteIndexAssignment.test.ts). `drawn_ratios`
@@ -690,6 +780,20 @@ end
             "SELECT COUNT(*) AS c FROM $tbl WHERE index_id = ?", [nid]))[1].c
 
         with_inproc_routes(db) do call
+            # `ratios` validation sits ABOVE with_idempotency, so a reject can
+            # never commit a partial write. Every bad shape must 400.
+            for bad in (Any[], Any[0.0, 1.0], Any[-1.0], "six")
+                rb = call("POST", "/api/exposures/$e_id/custom-index";
+                    headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    body = Vector{UInt8}(JSON3.write(
+                        Dict(:phase => "Pn3m", :basis => basis, :ratios => bad))))
+                @test rb.status == 400
+            end
+            # …and none of them persisted anything.
+            @test Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
+                [e_id]))[1].c == 0
+
             r = call("POST", "/api/exposures/$e_id/custom-index";
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
                 body = Vector{UInt8}(JSON3.write(

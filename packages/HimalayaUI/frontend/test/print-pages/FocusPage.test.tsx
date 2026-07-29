@@ -697,6 +697,36 @@ describe("FocusPage", () => {
     }
   });
 
+  it("commits the NORMALIZED ratios the modal drew, not raw q's (Hexagonal)", () => {
+    // FocusPage is the sole producer of the `ratios` wire value. If this
+    // regressed to `refls.map(r => r.q)` the values are still positive and
+    // non-empty, so route validation passes, compute_snap then matches zero
+    // positions, and the commit returns 200 with an index claiming NO peaks —
+    // exactly the bug this PR exists to fix, silently and with no 4xx.
+    //
+    // Hexagonal on purpose: its drawn set [1,3,4,7,9,12] skips the backend
+    // series' spurious √11, so this also gives the alignment contract
+    // behavioural teeth at the producing layer.
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("custom-index-trigger"));
+    const modal = screen.getByTestId("custom-index-modal");
+    // SegmentedControl defaults to role="group", so segments are buttons.
+    fireEvent.click(within(modal).getByRole("button", { name: "Hexagonal" }));
+    fireEvent.click(within(modal).getByRole("button", { name: /^Add/ }));
+
+    expect(commitCustomMutate).toHaveBeenCalledTimes(1);
+    const [phase, , ratios] = commitCustomMutate.mock.calls[0]!;
+    expect(phase).toBe("Hexagonal");
+    // q ∝ √M for hex, normalized against the first reflection (M = 1).
+    const expected = [1, 3, 4, 7, 9, 12].map((m) => Math.sqrt(m));
+    expect(ratios).toHaveLength(expected.length);
+    ratios.forEach((r: number, i: number) =>
+      expect(r).toBeCloseTo(expected[i]!, 12));
+    // First entry is exactly 1 by construction — a raw-q regression would put
+    // the basis here instead, which is O(0.1).
+    expect(ratios[0]).toBe(1);
+  });
+
   it("Escape sequence: an open custom-index modal closes first; only the NEXT Escape disarms '+ Peak' (F7)", () => {
     renderAt(42);
     const addPeakBtn = screen.getAllByText("+ Peak")[0];

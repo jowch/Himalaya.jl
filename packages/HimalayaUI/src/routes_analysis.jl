@@ -449,8 +449,17 @@ function register_analysis_routes!()
             # Optional for back-compat: absent means "scan the whole ratio
             # series", which is only correct for a caller with no truncated
             # display of its own. The modal always sends it.
-            ratios     = haskey(body, :ratios) && body.ratios !== nothing ?
-                         Float64[Float64(r) for r in body.ratios] : nothing
+            # `isa AbstractVector` is load-bearing, not defensive: a JSON
+            # STRING iterates as Chars and Float64('s') == 115.0, so "six"
+            # would convert to three positive "ratios", clear every check
+            # below, match zero positions in compute_snap, and commit an index
+            # claiming NO peaks — a silent 200 reintroducing the exact bug this
+            # route exists to fix.
+            raw = haskey(body, :ratios) ? body.ratios : nothing
+            raw === nothing || raw isa AbstractVector ||
+                error("ratios must be an array")
+            ratios     = raw === nothing ? nothing :
+                         Float64[Float64(r) for r in raw]
         catch
             return HTTP.Response(400, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "phase must be string; basis a number; ratios an array of numbers")))

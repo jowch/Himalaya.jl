@@ -1,7 +1,6 @@
 using Himalaya
 using SparseArrays
 using SQLite, DBInterface, Tables
-using JSON3
 
 """
 Tolerance (relative to predicted q) used when snapping observed peaks to
@@ -386,10 +385,11 @@ count because Hexagonal's two series are not positionally aligned — see
 `compute_snap`. `nothing` scans the whole series: correct only for a caller with
 no truncated display of its own.
 
-The set is PERSISTED (`indices.drawn_ratios`, JSON) so the bound survives
-reanalysis: `_persist_analysis_inner!` skips its auto-discovery pass entirely
-for a locked index, which would otherwise re-claim positions the modal never
-drew on the next `analyze`.
+The bound survives reanalysis without being persisted: the claims it produces
+are frozen into `speculative_peak_intents`, and `_persist_analysis_inner!` skips
+its auto-discovery pass entirely for a locked index. Re-resolution can therefore
+only ever reproduce a SUBSET of what was drawn — nothing re-widens it. (An
+earlier revision stored the set on the row; nothing read it, so the column went.)
 
 `score`/`r_squared` stay NULL at commit. They are populated on the first
 reanalysis that resolves any intent (pipeline.jl), computed against the LOCKED
@@ -411,10 +411,9 @@ function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
     res = DBInterface.execute(db,
         """INSERT INTO indices
              (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind,
-              inputs_hash, basis_locked, drawn_ratios)
-           VALUES (?, ?, ?, NULL, NULL, ?, 'candidate', 'speculative', ?, 1, ?)""",
-        [exposure_id, string(nameof(P)), basis, lattice_d, current_hash,
-         drawn_ratios === nothing ? missing : JSON3.write(collect(Float64, drawn_ratios))])
+              inputs_hash, basis_locked)
+           VALUES (?, ?, ?, NULL, NULL, ?, 'candidate', 'speculative', ?, 1)""",
+        [exposure_id, string(nameof(P)), basis, lattice_d, current_hash])
     new_id = Int(DBInterface.lastrowid(res))
 
     # Claim the peaks the modal showed landing. anchor_ratio = 1 with

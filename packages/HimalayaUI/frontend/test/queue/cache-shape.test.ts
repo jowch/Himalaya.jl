@@ -342,8 +342,8 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     await runMutator(qc, customIndexMutator, {
       kind: "custom_index_commit", clientOpId: "op-ci-1",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      phase: "Pn3m", basis: 0.15, orders: 6,
-      payload: { phase: "Pn3m", basis: 0.15, orders: 6 },
+      phase: "Pn3m", basis: 0.15, ratios: [1, 1.2247448714],
+      payload: { phase: "Pn3m", basis: 0.15, ratios: [1, 1.2247448714] },
     });
     type Claim = { peak_id: number; ratio_position: number; q_observed: number };
     const indices = qc.getQueryData<{ id: number; peaks: Claim[] }[]>(queryKeys.indices(5));
