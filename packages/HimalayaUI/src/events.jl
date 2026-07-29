@@ -1081,14 +1081,59 @@ n_avail check and the put!, in theory filling the last slot and causing put!
 to block. In practice the heartbeat fires at most once per 15 s; with cap=64
 an idle subscriber would need 16+ minutes of heartbeats to fill. The race
 window is negligible; Option A (document + ship) is the right tradeoff here.
+
+A SECOND race is genuinely reachable now that `_fanout_frame!` closes evicted
+subscribers: the heartbeat Timer can pass the `isopen` check and then `put!` on
+a channel closed a moment later by an evicting broadcast, which throws
+`InvalidStateException`. Catch it and report the subscriber as dead — that is
+exactly what it is. Without the catch the Timer task dies by exception instead
+of returning `false`, which is merely noisy (the subscriber is already being
+torn down) but makes the failure look like a bug.
 """
 function _try_put!(ch::Channel{String}, value::String)::Bool
     isopen(ch) || return false
     # Channel is full → subscriber is too slow. Skip the put rather than block;
     # the SSE design is best-effort with reconnect-driven reconciliation.
     Base.n_avail(ch) >= ch.sz_max && return false
-    put!(ch, value)
+    try
+        put!(ch, value)
+    catch e
+        e isa InvalidStateException || rethrow()
+        return false   # closed between the check and the put
+    end
     return true
+end
+
+"""
+    _fanout_frame!(frame) -> Nothing
+
+Push one preformatted SSE frame to every subscriber, evicting any whose channel
+is closed or saturated. Shared by `broadcast_event!` and `broadcast_progress!`.
+
+CRITICAL: an evicted subscriber's channel MUST be closed. Dropping the sub from
+`SSE_SUBSCRIBERS` alone leaves the `/api/events` handler parked on
+`for frame in pending` (server.jl) forever — the HTTP stream is never finished,
+so the browser's EventSource sees a perfectly healthy connection, never fires
+`onerror`, and never auto-reconnects. The client then goes permanently deaf to
+EVERY curation event (not just the ingest frames that saturated it) until a
+manual reload. Closing the channel ends the handler loop, runs its `finally`,
+finishes the response, and lets EventSource reconnect on its own — which is what
+the "best-effort + reconnect-driven reconciliation" contract in `_try_put!`
+always assumed was happening.
+"""
+function _fanout_frame!(frame::String)
+    lock(SSE_LOCK) do
+        to_drop = []
+        for sub in SSE_SUBSCRIBERS[]
+            _try_put!(sub.pending, frame) || push!(to_drop, sub)
+        end
+        for sub in to_drop
+            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
+            # Wake the parked handler so it can tear the stream down.
+            close(sub.pending)
+        end
+    end
+    nothing
 end
 
 """
@@ -1135,16 +1180,7 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
     )
     post_state === nothing || (fields[:post_state] = post_state)
     msg = JSON3.write(fields)
-    frame = "event: curation\ndata: $msg\n\n"
-    lock(SSE_LOCK) do
-        to_drop = []
-        for sub in SSE_SUBSCRIBERS[]
-            _try_put!(sub.pending, frame) || push!(to_drop, sub)
-        end
-        for sub in to_drop
-            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
-        end
-    end
+    _fanout_frame!("event: curation\ndata: $msg\n\n")
     nothing
 end
 
@@ -1200,17 +1236,8 @@ function broadcast_progress!(experiment_id::Integer;
         :ts      => ts,
         :payload => payload,
     )
-    msg   = JSON3.write(fields)
-    frame = "event: curation\ndata: $msg\n\n"
-    lock(SSE_LOCK) do
-        to_drop = []
-        for sub in SSE_SUBSCRIBERS[]
-            _try_put!(sub.pending, frame) || push!(to_drop, sub)
-        end
-        for sub in to_drop
-            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
-        end
-    end
+    msg = JSON3.write(fields)
+    _fanout_frame!("event: curation\ndata: $msg\n\n")
     nothing
 end
 

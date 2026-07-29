@@ -860,4 +860,43 @@ end
         @test issorted(first.(ticks))         # monotonic processed count
         @test all(t -> t[2] == 3, ticks)      # total stable
     end
+
+    @testset "scan_and_group! on_progress publishes the denominator before analyze" begin
+        db = fresh_db()
+        data_dir = mktempdir()
+        for stem in ("e1", "e2", "e3")
+            touch(joinpath(data_dir, "$stem.tif"))
+            write_prp(joinpath(data_dir, "$stem.prp"))
+        end
+        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir, data_dir=data_dir, analysis_dir=data_dir)
+        ticks = Tuple{Int,Int}[]
+        # analyze=false skips the per-exposure loop entirely — the ONLY tick left
+        # is the discovery one. Regression: the total used to be published for the
+        # first time inside the analyze loop, so the UI had no scale at all during
+        # the (slow) discovery + geometry + persist phases and sat on "0 / ~0".
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=false, on_progress=(p, t) -> push!(ticks, (p, t)))
+        @test !isempty(ticks)
+        @test first(ticks) == (0, 3)          # real denominator, before any analysis
+    end
+
+    @testset "scan_and_group! on_progress lands on a full bar for a clean rescan" begin
+        db = fresh_db()
+        data_dir = mktempdir()
+        for stem in ("e1", "e2", "e3")
+            touch(joinpath(data_dir, "$stem.tif"))
+            write_prp(joinpath(data_dir, "$stem.prp"))
+        end
+        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir, data_dir=data_dir, analysis_dir=data_dir)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=true)   # first scan ingests everything
+
+        # Second scan: insert-only dedup means ZERO new exposures, so the analyze
+        # loop body never runs. It used to report `i / length(new_exposure_ids)`,
+        # i.e. nothing at all — the bar showed "0 / ~0" start to finish and then
+        # vanished when ingest_complete cleared it. Report against the found-count
+        # instead so an unchanged rescan reads as fully done.
+        ticks = Tuple{Int,Int}[]
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=true, on_progress=(p, t) -> push!(ticks, (p, t)))
+        @test last(ticks) == (3, 3)
+        @test all(t -> t[2] == 3, ticks)      # never a zero denominator
+    end
 end
