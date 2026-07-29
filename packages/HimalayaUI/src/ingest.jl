@@ -256,9 +256,8 @@ function scan_and_group!(
         # first contact-sheet visit is fast (cold lazy generation staggers badly over
         # SMB — the exact case prewarm exists for, issue #261). The scan→ingest rewrite
         # dropped the old init/reingest call sites; this restores it on the live path.
-        # overwrite=true defeats whole-second mtime granularity on a re-scan. Prewarm
-        # is a non-essential cache warm — an unreadable TIFF must never fail the ingest
-        # (the thumb then just generates lazily on first view).
+        # Prewarm is a non-essential cache warm — an unreadable TIFF must never fail
+        # the ingest (the thumb then just generates lazily on first view).
         try
             # Scoped to THIS experiment — the unscoped call walked every exposure
             # in every experiment on every scan. Scoping by experiment (rather

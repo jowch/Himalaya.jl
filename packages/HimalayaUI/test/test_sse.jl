@@ -554,8 +554,15 @@ end
             # A closed channel ends the handler's `for frame in pending` loop, so
             # the stream tears down and EventSource reconnects. Buffered frames
             # stay readable until drained.
+            #
+            # Drain by count, NOT `for _ in pending`: iterating an OPEN channel
+            # blocks forever once it empties, so a regression that stopped closing
+            # would hang this testset (and the whole suite) instead of failing the
+            # assertion above. Same hazard the `_try_put!` blocking test guards
+            # against a few testsets down.
             drained = 0
-            for _ in pending
+            while Base.n_avail(pending) > 0
+                take!(pending)
                 drained += 1
             end
             @test drained == 64
@@ -606,9 +613,14 @@ end
 #    a clean chunked-EOF — verified empirically against this server. Either way
 #    the browser's EventSource fires `onerror` and auto-reconnects, which is the
 #    property the fix exists to restore. So the assertion is "the client stops
-#    waiting promptly", not "the body ends cleanly": `readtimeout` is set far
-#    above the poll window, so a hang (the pre-fix behavior) fails the test while
-#    either flavor of termination passes.
+#    waiting promptly", not "the body ends cleanly".
+#  * THIS TEST IS NOT ITSELF A REGRESSION TEST. It closes the channel directly
+#    rather than routing through `_fanout_frame!`, and `server.jl`'s handler loop
+#    is untouched by that fix — so a manual close unblocks the handler identically
+#    with or without it, and this passes on both sides. It documents the second
+#    half of the causal chain (close → response ends → client unblocks); the
+#    regression protection for the fix itself is the saturation unit test above,
+#    which asserts `!isopen(pending)` after 70 evicting broadcasts.
 # ---------------------------------------------------------------------------
 
 @testset "SSE: closing an evicted subscriber unblocks the client" begin
@@ -653,12 +665,12 @@ end
             else
                 @test !ended[]   # still streaming before the eviction
 
-                # Exactly what _fanout_frame! does to an evicted subscriber.
+                # The close half of what _fanout_frame! does to an evicted
+                # subscriber.
                 close(sub.pending)
 
-                # 5s window against a 30s readtimeout: pre-fix the handler stayed
-                # parked on `for frame in pending`, the response never finished,
-                # and this stayed false until the timeout fired.
+                # 5s window against a 30s readtimeout, so a handler that stayed
+                # parked would fail rather than pass slowly.
                 @test timedwait(() -> ended[], 5.0) === :ok
             end
 

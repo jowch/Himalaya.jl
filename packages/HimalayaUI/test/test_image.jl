@@ -185,8 +185,11 @@ end
         end
     end
 
-    @testset "prewarm_thumbnails! experiment_id scopes the warm to one experiment" begin
-        db = fresh_db()
+end
+
+@testset "prewarm_thumbnails! experiment_id scopes the warm to one experiment" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
         mine  = _make_detector_tiff(256)
         other = _make_detector_tiff(256)
         try
@@ -218,9 +221,11 @@ end
             rm(other; force=true)
         end
     end
+end
 
-    @testset "prewarm_thumbnails! skips an undecodable TIFF without aborting the batch" begin
-        db = fresh_db()
+@testset "prewarm_thumbnails! skips an undecodable TIFF without aborting the batch" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
         good = _make_detector_tiff(256)
         # Present on disk, but not a decodable TIFF — the !isfile guard does not
         # catch this, and an uncaught throw inside the @threads loop used to take
@@ -230,6 +235,8 @@ end
         try
             exp = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
             samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
+            # `bad` is inserted BEFORE `good` on purpose: pre-guard the throw took
+            # every later exposure in the batch down with it.
             HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=bad)
             e_good = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=good)
 
