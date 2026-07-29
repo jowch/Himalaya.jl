@@ -477,6 +477,57 @@ end
     end
 end
 
+@testset "insert_custom_index! claims the peaks the modal showed landing" begin
+    # The modal counts a reflection as landing at CUSTOM_SNAP_TOL (customIndex.ts
+    # `landsOn` relTol). Commit must claim exactly those, so the Focus comb /
+    # detector / cart agree with what the user fitted instead of showing zero.
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+
+        a = 150.0
+        P = Himalaya.Pn3m
+        ratios = Himalaya.phaseratios(P; normalize = true)   # √2 √3 √4 √6 …
+        basis  = 2π * sqrt(2) / a                            # q of the √2 reflection
+
+        # Peak 1: dead on √2. Peak 2: 1% off √3 — inside CUSTOM_SNAP_TOL (2.2%),
+        # OUTSIDE SNAP_TOL (0.25%), so it pins the tolerance choice. Peak 3: 10%
+        # off √4, well outside both. Nothing near the higher orders.
+        q1 = basis
+        q2 = basis * ratios[2] * 1.01
+        q3 = basis * ratios[3] * 1.10
+        for q in (q1, q2, q3)
+            DBInterface.execute(db,
+                "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)",
+                [e_id, q])
+        end
+
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis)
+
+        # basis and lattice_d stay verbatim — the user's lattice, not a refit.
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT basis, lattice_d FROM indices WHERE id = ?", [nid]))[1]
+        @test Float64(row.basis) ≈ basis
+        @test Float64(row.lattice_d) ≈ a atol = 1e-6
+
+        ips = Tables.rowtable(DBInterface.execute(db,
+            "SELECT ratio_position, residual FROM index_peaks WHERE index_id = ? ORDER BY ratio_position",
+            [nid]))
+        @test [Int(r.ratio_position) for r in ips] == [1, 2]
+        # Residual is |q_obs − basis·ratio| against the STORED basis.
+        @test Float64(ips[2].residual) ≈ abs(q2 - basis * ratios[2]) rtol = 1e-9
+
+        # Durable intents mirror the claims so a reanalysis wipe can heal them.
+        ints = Tables.rowtable(DBInterface.execute(db,
+            "SELECT ratio_position, q FROM speculative_peak_intents WHERE index_id = ? ORDER BY ratio_position",
+            [nid]))
+        @test [Int(r.ratio_position) for r in ints] == [1, 2]
+        @test [Float64(r.q) for r in ints] ≈ [q1, q2]
+    end
+end
+
 if isdefined(@__MODULE__, :with_test_server)
     @testset "POST /custom-index persists + adds to the assignment" begin
         mktempdir() do dir

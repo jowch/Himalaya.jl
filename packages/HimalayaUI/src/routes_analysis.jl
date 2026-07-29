@@ -490,9 +490,19 @@ function register_analysis_routes!()
                       status, kind, inputs_hash
                FROM indices WHERE id = ?""", [nid]))
             ix = rows[1]
+            # insert_custom_index! claims the peaks the modal showed landing —
+            # read them back rather than asserting []; a hardcoded empty list
+            # left the Focus comb/detector/cart showing zero matches.
+            peak_rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                          COALESCE(ap.q, pc.q) AS q_observed
+                   FROM index_peaks ip
+                   LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+                   LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+                   WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [nid]))
             predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
             d = row_to_json(ix)
-            d[:peaks]       = Dict[]
+            d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
             d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
             d[:event_id]    = sc.event_id

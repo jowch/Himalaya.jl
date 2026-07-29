@@ -11,6 +11,17 @@ phase-search engine on what counts as "close enough".
 const SNAP_TOL = 0.0025
 
 """
+Tolerance used when a CLIENT-FITTED custom index claims its peaks at commit.
+
+Deliberately looser than `SNAP_TOL`: the custom-index modal draws its comb by
+eye and reports "N of M reflections land" using `landsOn`'s `relTol` in
+`frontend/src/lib/customIndex.ts`. Committing at `SNAP_TOL` (9× tighter) would
+claim fewer peaks than the modal just showed the user — a second tolerance
+regime disagreeing with the surface they fitted on. MUST equal that `relTol`.
+"""
+const CUSTOM_SNAP_TOL = 0.022
+
+"""
     resolve_phase(name) -> Union{Type{<:Himalaya.Phase}, Nothing}
 
 Resolve a phase name string (e.g. `"Pn3m"`, `"Himalaya.Pn3m"`) to the phase
@@ -169,19 +180,14 @@ function _kind_for(db::SQLite.DB, exposure_id::Int, peak_id::Int)
 end
 
 """
-    insert_speculative_index!(db, exposure_id, phase, ratio_to_peak_id)
-        -> Int (new index id)
+    _effective_peak_rows(db, exposure_id) -> Vector{NamedTuple}
 
-Builds the speculative index from supplied peak assignments and inserts
-it into `indices` with `kind='speculative'`, plus the per-peak rows in
-`index_peaks`. Returns the new id. Does **not** add the index to any
-group — the caller is responsible for active-group membership.
+The exposure's effective peak set as `(id, q, sharpness)` rows: non-excluded
+auto peaks + curation adds. Mirrors the pipeline's `effective_peaks` view, in
+the shape `compute_snap` / `build_speculative_index` expect.
 """
-function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
-                                    phase::Type{P},
-                                    ratio_to_peak_id::Dict{Int,Int}) where {P<:Himalaya.Phase}
-    # Build effective peak rows: non-excluded auto peaks + curation adds.
-    peak_rows = Tables.rowtable(DBInterface.execute(db, """
+_effective_peak_rows(db::SQLite.DB, exposure_id::Int) =
+    Tables.rowtable(DBInterface.execute(db, """
         SELECT a.id, a.q, a.sharpness
         FROM auto_peaks a
         WHERE a.exposure_id = ?
@@ -195,6 +201,20 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
         FROM peak_curations
         WHERE exposure_id = ? AND kind = 'add'
     """, [exposure_id, exposure_id]))
+
+"""
+    insert_speculative_index!(db, exposure_id, phase, ratio_to_peak_id)
+        -> Int (new index id)
+
+Builds the speculative index from supplied peak assignments and inserts
+it into `indices` with `kind='speculative'`, plus the per-peak rows in
+`index_peaks`. Returns the new id. Does **not** add the index to any
+group — the caller is responsible for active-group membership.
+"""
+function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
+                                    phase::Type{P},
+                                    ratio_to_peak_id::Dict{Int,Int}) where {P<:Himalaya.Phase}
+    peak_rows = _effective_peak_rows(db, exposure_id)
 
     built = build_speculative_index(peak_rows, P, ratio_to_peak_id)
 
@@ -259,8 +279,24 @@ entry is 1.0) reproduces the physical first reflection. It is NOT `a` and NOT
 `2π/a`. The √6 first reflection of Ia3d maximizes the convention-mismatch
 signal, so the round-trip contract test pins it specifically.
 
-No `index_peaks` rows are written: a custom index is a pure lattice hypothesis,
-not a peak assignment. Returns the new index id.
+AT COMMIT the stored `basis`/`lattice_d` are the user's lattice VERBATIM — not
+refit through the observed peaks (unlike `insert_speculative_index!`, which
+solves for basis). What IS written is the peak assignment the modal already
+showed the user: every ratio position whose predicted q has an observed peak
+within `CUSTOM_SNAP_TOL` claims that peak, in `index_peaks` (the per-analysis
+resolved view) AND `speculative_peak_intents` (the durable record that survives
+the reanalysis wipe). Without these rows the Focus comb, detector rings and
+assignment cart all render a fully-fitted custom index as claiming nothing.
+
+The verbatim guarantee is COMMIT-TIME ONLY. `_persist_analysis_inner!` treats
+every kind='speculative' row alike: once ≥2 intents resolve it least-squares
+refits `basis` through them (pipeline.jl "nominal path"), so a reanalysis can
+move a custom index's lattice by up to `CUSTOM_SNAP_TOL`. Sparing custom
+commits from that refit needs a discriminator the schema doesn't have yet
+(nothing distinguishes an anchor-snap speculative from a custom-committed one).
+
+`score`/`r_squared` stay NULL — both would require refitting through the peaks,
+which is exactly what this function must not do. Returns the new index id.
 """
 function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
                               phase::Type{P}, basis::Float64) where {P<:Himalaya.Phase}
@@ -287,5 +323,33 @@ function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
              (exposure_id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash)
            VALUES (?, ?, ?, NULL, NULL, ?, 'candidate', 'speculative', ?)""",
         [exposure_id, string(nameof(P)), basis, lattice_d, current_hash])
-    Int(DBInterface.lastrowid(res))
+    new_id = Int(DBInterface.lastrowid(res))
+
+    # Claim the peaks the modal showed landing. anchor_ratio = 1 with
+    # anchor_q = basis reproduces the stored comb exactly (normalized ratios[1]
+    # is 1.0), so compute_snap matches against predicted q's, not a refit.
+    claimed = Set{Int}()
+    for s in compute_snap(_effective_peak_rows(db, exposure_id), P, basis, 1;
+                          tol = CUSTOM_SNAP_TOL)
+        s.suggested_peak_id === nothing && continue
+        # One peak per index: phases with near-degenerate orders (Fd3m √35/√36
+        # are 1.4% apart, inside CUSTOM_SNAP_TOL) can otherwise snap the same
+        # peak to two positions — index_peaks' PK would silently drop the
+        # second while intents kept both, disagreeing on every reanalysis.
+        pid = s.suggested_peak_id
+        pid in claimed && continue
+        push!(claimed, pid)
+        DBInterface.execute(db,
+            """INSERT INTO index_peaks
+                 (index_id, peak_id, peak_kind, ratio_position, residual)
+               VALUES (?, ?, ?, ?, ?)""",
+            [new_id, pid, _kind_for(db, exposure_id, pid),
+             s.ratio_position, s.suggested_residual])
+        DBInterface.execute(db,
+            """INSERT INTO speculative_peak_intents (index_id, ratio_position, q)
+               VALUES (?, ?, ?)""",
+            [new_id, s.ratio_position, s.suggested_q])
+    end
+
+    new_id
 end

@@ -22,9 +22,9 @@ import {
 } from "../../lib/customIndex";
 
 // The legacy span-relative q tolerance (floored at 1e-6). Only used where no
-// backend ratio_position join exists: a claimless index (peaks: [] — a
-// committed custom index) matching its predicted_q against observed peaks in
-// toDetectorRings. Claimed reflections join by ratio_position, never by tol.
+// backend ratio_position join exists: a claimless index (peaks: []) matching
+// its predicted_q against observed peaks in toDetectorRings. Claimed
+// reflections join by ratio_position, never by tol.
 function spanTol(qs: number[]): number {
   const lo = qs.length ? Math.min(...qs) : 0;
   const hi = qs.length ? Math.max(...qs) : 1;
@@ -117,10 +117,14 @@ export function peakClickAction(
  * disagree with the claim (a peak accepted at residual > tol would paint BOTH
  * an observed ring at q_observed AND a ghost at its predicted q for the same
  * reflection — the FO-RESCORE2-P2 F2 lie). The one place the q-tolerance scan
- * survives is a claimless index (peaks: [] — a committed custom index, which
- * insert_custom_index! stores with no index_peaks rows): there is no join to
- * read, so its absent orders are the predicted_q with no observed peak within
- * tol — a fully-landed custom index therefore still emits zero rings.
+ * survives is a claimless index (peaks: []): there is no join to read, so its
+ * absent orders are the predicted_q with no observed peak within tol — a
+ * fully-landed claimless index therefore still emits zero rings. Custom indices
+ * committed BEFORE insert_custom_index! learned to claim its landed peaks are
+ * the remaining population here. They heal only PARTIALLY, on the exposure's
+ * next analyze: the pipeline's auto-discovery pass runs at SNAP_TOL (0.0025),
+ * so it recovers fewer orders than a fresh commit's CUSTOM_SNAP_TOL (0.022).
+ * Re-committing the index from the modal is the full fix.
  *
  * `phases` is the ring-identity caption source (FO-RING): the distinct phases
  * that actually put a ring on the frame, appended in walk (= rail) order the

@@ -508,10 +508,10 @@ describe("FocusPage", () => {
   });
 
   it("does not chip a fully-landed custom index that colours zero rings (FO-RING no-lie)", () => {
-    // A committed custom index arrives with peaks: [] (insert_custom_index!
-    // writes no index_peaks rows). With every predicted_q within tol of an
-    // observed peak it emits NO coloured or ghost ring, so the caption must
-    // not name it — only the ring-emitting sibling.
+    // A claimless index (peaks: [] — e.g. a custom index committed before
+    // insert_custom_index! claimed its landed peaks). With every predicted_q
+    // within tol of an observed peak it emits NO coloured or ghost ring, so the
+    // caption must not name it — only the ring-emitting sibling.
     state.indices = [
       ix({ id: 1, phase: "Pn3m" }),
       ix({
