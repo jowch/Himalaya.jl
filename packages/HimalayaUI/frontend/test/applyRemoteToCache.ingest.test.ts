@@ -1,7 +1,7 @@
 // test/applyRemoteToCache.ingest.test.ts
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { applyRemoteToCache } from "../src/lib/queue/applyRemoteToCache";
+import { applyRemoteToCache, invalidateIngestFrameCache } from "../src/lib/queue/applyRemoteToCache";
 import { queryKeys } from "../src/queries";
 import type { SseEvent } from "../src/lib/queue/types";
 
@@ -90,13 +90,27 @@ describe("ingest_progress stage gating", () => {
     expect(keys).toContain(JSON.stringify(queryKeys.samples(7)));
   });
 
-  it("ingest_complete always refetches, even though its stage may be thumbnails", () => {
+  it("ingest_complete always refetches, even carrying the skipped stage", () => {
+    // Called on the HELPER, not through applyRemoteToCache: that dispatcher's
+    // ingest_complete arm passes no stage at all, so routing through it could not
+    // exercise the isComplete-vs-stage precedence this asserts. App.tsx DOES
+    // forward stage for all four ingest kinds, so the conflicting combination is
+    // reachable in production.
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
-    applyRemoteToCache(ingestFrame("ingest_complete", 7, { stage: "thumbnails" }), qc);
+    invalidateIngestFrameCache(qc, 7, true, "discovery");
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.samples(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.experiment(7)));
+  });
+
+  it("the discovery skip applies only to NON-terminal frames", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    invalidateIngestFrameCache(qc, 7, false, "discovery");
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).not.toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).not.toContain(JSON.stringify(queryKeys.samples(7)));
   });
 });

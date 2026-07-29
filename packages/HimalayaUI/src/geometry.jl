@@ -144,7 +144,12 @@ function derive_geometry(
     setup_files::AbstractVector{<:AbstractString},
 )
     # Parse all PRPs (small files, sequential read is fine), then delegate.
-    derive_geometry([parse_prp(p) for p in prp_paths], setup_files)
+    # The NamedTuple[...] element type is REQUIRED, not decoration: parse_prp's
+    # inferred return is a non-concrete NamedTuple{names,<:Tuple{...}}, so an
+    # EMPTY prp_paths collects to Vector{Any} and matches neither method ->
+    # MethodError, where this used to return an all-"default" geometry. Reachable
+    # from routes_fs.jl (a directory with TIFs and no PRPs) and regroup_experiment!.
+    derive_geometry(NamedTuple[parse_prp(p) for p in prp_paths], setup_files)
 end
 
 """

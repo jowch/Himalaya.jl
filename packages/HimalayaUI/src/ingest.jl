@@ -106,8 +106,6 @@ function scan_and_group!(
 
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
 
-    n_found = length(metas)
-
     # -----------------------------------------------------------------------
     # 2. Geometry: derive + write to experiments row (never-clobber human fields)
     # -----------------------------------------------------------------------
@@ -116,7 +114,12 @@ function scan_and_group!(
     # Reuse the PRPs scan_directory already parsed. The path-based
     # derive_geometry re-reads and re-parses every one of them — a second full
     # pass over every PRP in the experiment, per ingest.
-    parsed_prps = [m.prp for m in metas if m.prp !== nothing]
+    # NamedTuple[...] required: ExposureMeta.prp is Union{NamedTuple,Nothing}, so
+    # when NO exposure has a PRP (tif-without-prp layouts, or a misconfigured
+    # prp_pattern) the filtered comprehension collects to Vector{Any} and
+    # derive_geometry MethodErrors -- turning "geometry falls back to defaults"
+    # into "the ingest crashes". Same trap as geometry.jl's delegation.
+    parsed_prps = NamedTuple[m.prp for m in metas if m.prp !== nothing]
 
     geo, _disc = derive_geometry(parsed_prps, setup_files)
 
@@ -226,7 +229,7 @@ function scan_and_group!(
         n_new = length(new_exposure_ids)
         # The "analyzing" segment reports against n_new, its OWN denominator — the
         # segmented bar gives each stage its own track, so stages no longer have to
-        # share one scale (which is what forced the old n_found bookkeeping here).
+        # share one scale (which is what forced the old cross-stage bookkeeping here).
         #
         # Cap the frame count at ~100 per stage. One frame per exposure meant a
         # 600-exposure scan fired 600 frames into a 64-slot channel, and each
@@ -368,9 +371,13 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         exposures_inserted = 0, exposures_no_file = 0, reshoots = 0,
         geometry = nothing, discrepancies = String[])
 
-    prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
+    # Reuse the PRPs scan_directory already parsed, same as scan_and_group! — the
+    # path-based derive_geometry would re-read and re-parse every one. NamedTuple[]
+    # element type is required (ExposureMeta.prp is Union{NamedTuple,Nothing}, so
+    # an all-nothing filter would collect to Vector{Any} and match no method).
+    parsed_prps = NamedTuple[m.prp for m in metas if m.prp !== nothing]
     setup_files = layout.setup_file === nothing ? String[] : String[layout.setup_file]
-    geo, disc = derive_geometry(prp_paths, setup_files)
+    geo, disc = derive_geometry(parsed_prps, setup_files)
 
     result = group_into_samples(metas)
 

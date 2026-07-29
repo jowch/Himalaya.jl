@@ -534,13 +534,18 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
         </div>
       )}
 
-      {/* Still-landing loads: a faint placeholder while the scan parses more. */}
-      {scanning && (inFlight?.processed ?? 0) < (inFlight?.total ?? 0) && (
+      {/* Placeholder for the not-yet-committed grouping. Gated on `scanning`
+          ALONE, not on processed < total: those counts are per-stage now, so a
+          count-based gate blinked off and on at every stage boundary. It also
+          can't mean "more loads are landing" — the persist txn is atomic, so
+          nothing lands incrementally; it means "the scan hasn't committed yet",
+          which is true for exactly as long as the scan is running. */}
+      {scanning && (
         <div
           data-testid="grouping-unfolding"
           className="mt-3 rounded-md border border-dashed border-hair px-5 py-4 text-meta text-ink-faint"
         >
-          unfolding…
+          groups appear when the scan commits…
         </div>
       )}
 

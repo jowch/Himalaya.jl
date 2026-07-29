@@ -7,6 +7,10 @@ import type {
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
 import { announceAssignmentDropped } from "./assignmentDropped";
+import { INGEST_STAGES } from "../ingestStages";
+
+/** The one stage that predates the persist txn — see invalidateIngestFrameCache. */
+const INGEST_DISCOVERY_STAGE = INGEST_STAGES[0];
 
 /**
  * Write the `{state, members}` assignment envelope into the assignment cache.
@@ -101,9 +105,10 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
  *
  * `stage` skips the loads/samples refetch during `"discovery"`. Nothing is
  * committed then — `scan_and_group!` inserts every load/sample/exposure in ONE
- * transaction that has not opened yet — so those queries can only return the same
- * empty result they already hold, once per progress frame, against the slowest
- * payload on the page. From `"analyzing"` onward the txn HAS committed and
+ * transaction that has not opened yet — so the refetch cannot observe anything
+ * new, once per progress frame, against the slowest payload on the page. (On a
+ * RESCAN the rows do already exist, so this is "returns what it already had",
+ * not "returns empty" — either way the refetch is wasted until the txn commits.) From `"analyzing"` onward the txn HAS committed and
  * `analyze_exposure!` mutates per-exposure data, so the refetch is real work.
  *
  * An ABSENT stage keeps the original always-invalidate behavior — an
@@ -116,7 +121,11 @@ export function invalidateIngestFrameCache(
   isComplete: boolean,
   stage?: string,
 ): void {
-  if (stage !== "discovery") {
+  // isComplete wins over stage: a terminal frame must always refresh, whatever
+  // stage it happens to carry. Without this the two callers disagreed --
+  // App.tsx forwards `stage` for all four ingest kinds, this file's own
+  // ingest_complete arm passes none.
+  if (isComplete || stage !== INGEST_DISCOVERY_STAGE) {
     qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
   }

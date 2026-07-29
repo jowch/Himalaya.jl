@@ -35,12 +35,18 @@ export function SegmentedProgressBar({
     <div
       data-testid="segmented-progressbar"
       role="progressbar"
-      aria-valuenow={active?.processed ?? 0}
+      // ARIA rides the FRACTION, not the raw counts: a zero-total stage renders
+      // full (nothing to do) but would report valuemin == valuemax == 0, which is
+      // invalid ARIA with undefined AT behavior -- and would contradict the bar.
+      // Percent keeps min/max fixed and always distinct.
+      aria-valuenow={active ? Math.round(active.fraction * 100) : 0}
       aria-valuemin={0}
-      aria-valuemax={active?.total ?? 0}
+      aria-valuemax={100}
       aria-valuetext={
         active
-          ? `${active.label}, ${active.processed ?? 0} of ${active.total ?? 0}`
+          ? (active.total && active.total > 0
+              ? `${active.label}, ${active.processed ?? 0} of ${active.total}`
+              : `${active.label}, complete`)
           : undefined
       }
       aria-label={activeLabel}

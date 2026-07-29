@@ -204,7 +204,8 @@ function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
 end
 
 """
-    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing) -> NamedTuple
+    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing,
+                        on_progress = nothing) -> NamedTuple
 
 Populate the on-disk thumbnail cache for every exposure with a non-NULL
 `image_path`. Run from `init` and `reingest` (issue #261) so the very first
@@ -297,6 +298,13 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
             work(row)
         end
     end
+
+    # Close the segment explicitly, mirroring the analyze loop's terminal tick.
+    # Two reasons the in-loop ticks cannot be trusted to land it full: a zero-row
+    # prewarm never ticks at all (segment stuck at 0), and under `threads` the
+    # per-worker ticks can be broadcast out of order, so the LAST frame observed is
+    # not necessarily the highest. This fires after @threads has joined.
+    on_progress === nothing || on_progress(n_total, n_total)
 
     @info "thumb prewarm complete" warmed=n_warmed[] skipped=n_skipped[]
     (warmed = n_warmed[], skipped = n_skipped[])
