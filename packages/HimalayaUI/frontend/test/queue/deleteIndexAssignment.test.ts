@@ -73,3 +73,35 @@ describe("deleteIndexMutator optimistic assignment drop", () => {
     expect(readAssignment(qc)!.members).toEqual([10, 11]);
   });
 });
+
+/**
+ * Cross-language constant pin.
+ *
+ * `CUSTOM_SNAP_TOL` (speculative.jl) and `landsOn`'s default `relTol`
+ * (lib/customIndex.ts) MUST be equal: the modal counts "N of M land" with one
+ * and the backend claims peaks with the other, so a drift between them means
+ * the commit claims a different set than the user was shown — the exact bug
+ * this PR fixes. Both docstrings say MUST; nothing enforced it.
+ */
+describe("CUSTOM_SNAP_TOL ↔ landsOn relTol", () => {
+  it("the Julia constant equals the TS default", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const here = path.dirname(new URL(import.meta.url).pathname);
+    const root = path.resolve(here, "../../../../..");
+
+    const jl = fs.readFileSync(
+      path.join(root, "packages/HimalayaUI/src/speculative.jl"), "utf8");
+    const ts = fs.readFileSync(
+      path.join(root, "packages/HimalayaUI/frontend/src/lib/customIndex.ts"), "utf8");
+
+    const jlTol = jl.match(/^const CUSTOM_SNAP_TOL = ([0-9.]+)/m)?.[1];
+    const tsTol = ts.match(/export function landsOn\([^)]*relTol = ([0-9.]+)/s)?.[1];
+
+    // A null here means the constant was renamed or reformatted — fix the
+    // regex AND re-check the pairing, don't delete the test.
+    expect(jlTol, "CUSTOM_SNAP_TOL not found in speculative.jl").not.toBeUndefined();
+    expect(tsTol, "landsOn relTol default not found in customIndex.ts").not.toBeUndefined();
+    expect(Number(jlTol)).toBe(Number(tsTol));
+  });
+});

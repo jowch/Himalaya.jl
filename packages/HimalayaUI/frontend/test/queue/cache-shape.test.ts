@@ -328,19 +328,32 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
     const inval = vi.spyOn(qc, "invalidateQueries");
     // Mock derived from routes_analysis.jl POST /custom-index response.
+    // `peaks` is NON-EMPTY on purpose: insert_custom_index! claims the orders
+    // that land, and the route reads them back. A fixture hardcoding `peaks: []`
+    // would pin the pre-fix contract at this layer while layers 3/5 assert the
+    // new one.
     mockFetchOnce({
       id: 77, exposure_id: 5, phase: "Pn3m", basis: 0.15, score: null, r_squared: null,
       lattice_d: 197, ngc: -1.5, status: "candidate", kind: "speculative", inputs_hash: "h",
-      peaks: [], predicted_q: [0.15],
+      peaks: [{ peak_id: 3, ratio_position: 1, residual: 0.0, q_observed: 0.15 }],
+      predicted_q: [0.15, 0.1837], bonnet: null,
       event_id: 30, view_row_id: 12,
     }, 200);
     await runMutator(qc, customIndexMutator, {
       kind: "custom_index_commit", clientOpId: "op-ci-1",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      phase: "Pn3m", basis: 0.15, payload: { phase: "Pn3m", basis: 0.15 },
+      phase: "Pn3m", basis: 0.15, orders: 6,
+      payload: { phase: "Pn3m", basis: 0.15, orders: 6 },
     });
-    const indices = qc.getQueryData<{ id: number }[]>(queryKeys.indices(5));
-    expect(indices!.some((i) => i.id === 77)).toBe(true);
+    type Claim = { peak_id: number; ratio_position: number; q_observed: number };
+    const indices = qc.getQueryData<{ id: number; peaks: Claim[] }[]>(queryKeys.indices(5));
+    const row = indices!.find((i) => i.id === 77)!;
+    expect(row).toBeTruthy();
+    // The field this PR exists to change must survive into the cache — an
+    // IndexEntry whose `peaks` were dropped renders as claiming nothing.
+    expect(row.peaks).toHaveLength(1);
+    expect(row.peaks[0]!.ratio_position).toBe(1);
+    expect(row.peaks[0]!.q_observed).toBe(0.15);
     expect(inval).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 

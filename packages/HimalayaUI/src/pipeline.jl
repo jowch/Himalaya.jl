@@ -309,7 +309,8 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         WHERE i.exposure_id = ? AND i.kind = 'speculative'
         """, [exposure_id]))
     speculative_index_ids = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, phase, basis FROM indices WHERE exposure_id = ? AND kind = 'speculative'",
+        """SELECT id, phase, basis, basis_locked FROM indices
+           WHERE exposure_id = ? AND kind = 'speculative'""",
         [exposure_id]))
 
     # Remove prior auto peaks, auto indices, and auto groups for this exposure.
@@ -514,20 +515,33 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # Recompute basis/r²/d/score using new peak values. Normalized
             # ratios — indices.basis means "q of the first ratio position"
             # for every kind (same convention as insert + auto indices).
+            #
+            # basis_locked (custom-index commits): the lattice is the USER's
+            # choice, not a fit, so the refit is skipped and the stored basis
+            # stands. Peaks are still re-resolved and score/R² still recomputed
+            # — against the LOCKED basis, so they describe how well the user's
+            # lattice explains the current peaks rather than silently sliding
+            # the comb onto them. Without this, scan-derived intents at
+            # CUSTOM_SNAP_TOL (2.2%) could drag the lattice on every analyze.
+            locked = !ismissing(ix_row.basis_locked) && Int(ix_row.basis_locked) == 1
             observed_ratios_used = ratios_normed[rpos_sorted]
-            new_basis = observed_ratios_used \ qvals
+            new_basis = locked ? Float64(ix_row.basis) : (observed_ratios_used \ qvals)
 
             peaks_sv     = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, qvals)
             sharpness_sv = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, sharpvals)
             new_idx = Himalaya.Index{P}(new_basis, peaks_sv, sharpness_sv)
             fit_result = Himalaya.fit(new_idx)
             new_score = Himalaya.score(new_idx)
+            # Himalaya.fit refits d from the peaks, so a locked index must keep
+            # its own lattice_d too — otherwise the lock would hold `basis`
+            # while `lattice_d` (what the rail actually displays) drifted.
+            new_d = locked ? lattice_d_for(P, new_basis) : fit_result.d
 
             DBInterface.execute(db,
                 """UPDATE indices SET basis = ?, score = ?, r_squared = ?, lattice_d = ?,
                                        status = 'candidate'
                    WHERE id = ?""",
-                [new_basis, new_score, fit_result.R², fit_result.d, ix_id])
+                [new_basis, new_score, fit_result.R², new_d, ix_id])
 
             for (rpos, (pid, qv, _)) in ratio_to_peak
                 # Determine peak_kind from eff_by_id

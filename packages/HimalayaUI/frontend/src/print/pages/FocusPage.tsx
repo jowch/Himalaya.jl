@@ -60,7 +60,7 @@ import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { deriveActiveIndices } from "../../lib/assignment";
 import { sanitizeDashes } from "../../lib/copy";
-import { basisFor, latticeBounds, latticeForFirstOrderOnPeak } from "../../lib/customIndex";
+import { SYMS, basisFor, latticeBounds, latticeForFirstOrderOnPeak } from "../../lib/customIndex";
 import { seriesRatio, ratioTerm } from "../../lib/seriesRatio";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
@@ -664,7 +664,14 @@ export function FocusPage(): JSX.Element {
   // ── custom-index helper ──────────────────────────────────────────────────────
   function commitCustom(): void {
     if (!customParamValid) return; // defense in depth; the Add button is disabled too
-    commitCustomIndex.mutate(customSym, basisFor(customSym, Number(customParam)));
+    // SYMS[customSym].Ms.length = the orders the comb the user just fitted
+    // actually DREW. The backend bounds its peak claim to those positions so
+    // the rail can never report more reflections than the modal showed.
+    commitCustomIndex.mutate(
+      customSym,
+      basisFor(customSym, Number(customParam)),
+      SYMS[customSym]?.Ms.length ?? 0,
+    );
     setCustomOpen(false);
     // Consequential: a custom hypothesis was added to the call → visible toast.
     showToast(`${customSym} index added`, "success");
@@ -768,7 +775,17 @@ export function FocusPage(): JSX.Element {
             label={`Discard the ${ix.phase} index`}
             tone="danger"
             dismiss
-            onClick={() => {
+            onClick={(e) => {
+              // Do NOT let this reach the wrapper's onClick: that would set the
+              // candidate cursor and previewWasExplicit for a row about to
+              // unmount, arming the Esc ladder and "Apply" against an index the
+              // user never selected. Distinct from the "CandidateRow must NOT
+              // stopPropagation" invariant above — that one protects
+              // cursor-follows-pointer for the TOGGLE, where bubbling is wanted.
+              e.stopPropagation();
+              // No mouseleave fires on unmount, so clear the hover preview by
+              // hand or it stays pinned to the deleted id.
+              setHoverPreviewId(undefined);
               deleteIndex.mutate(ix.id);
               announce(`${ix.phase} index discarded`);
             }}

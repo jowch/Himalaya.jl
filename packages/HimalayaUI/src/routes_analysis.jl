@@ -421,10 +421,12 @@ function register_analysis_routes!()
     end
 
     # ── Plan D Task D-9 (B4): client-fitted custom-index commit ─────────────
-    # Accepts {phase, basis} where `basis` is the q₁ slope the modal computed
-    # from a symmetry + lattice via real physics. Persists a speculative index
-    # (no peak assignment — a pure lattice hypothesis) and adds it to the
-    # assignment in one transaction. Two SSE frames: speculative_created (indices
+    # Accepts {phase, basis, orders?} where `basis` is the q₁ slope the modal
+    # computed from a symmetry + lattice via real physics, and `orders` is how
+    # many reflections the modal DREW (its SYMS.Ms length). Persists a
+    # basis-locked speculative index, claims the peaks that land within
+    # CUSTOM_SNAP_TOL of the first `orders` predicted positions, and adds it to
+    # the assignment in one transaction. Two SSE frames: speculative_created (indices
     # cache) THEN assignment_add (assignment cache). ORDERING IS LOAD-BEARING —
     # the own-tab deferred resolves off the FIRST frame (speculative_created)
     # which carries the new IndexEntry, then assignment_add patches the cart.
@@ -439,13 +441,22 @@ function register_analysis_routes!()
         end
         local phase_name::String
         local basis::Float64
+        local orders::Union{Int, Nothing}
         try
             phase_name = String(body.phase)
             basis      = Float64(body.basis)
+            # Optional for back-compat: absent means "scan the whole ratio
+            # series", which is only correct for a caller with no truncated
+            # display of its own. The modal always sends it.
+            orders     = haskey(body, :orders) && body.orders !== nothing ?
+                         Int(body.orders) : nothing
         catch
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "phase must be string; basis must be a number")))
+                JSON3.write(Dict(:error => "phase must be string; basis and orders must be numbers")))
         end
+        orders === nothing || orders > 0 || return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "orders must be positive")))
         P = resolve_phase(phase_name)
         P === nothing && return HTTP.Response(400, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "unknown phase: $phase_name")))
@@ -453,13 +464,14 @@ function register_analysis_routes!()
             JSON3.write(Dict(:error => "basis must be positive")))
 
         return with_idempotency(db, req) do
-            local nid::Int
-            try
-                nid = insert_custom_index!(db, id, P, basis)
-            catch e
-                return HTTP.Response(400, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => sprint(showerror, e))))
-            end
+            # No catch → 400 here: this body runs INSIDE with_idempotency's
+            # transaction, and a normal return COMMITS (idempotency.jl only
+            # skips the cache row on >=400, it does not roll back). Now that
+            # insert_custom_index! issues 1+2N statements, swallowing a
+            # mid-loop throw would commit an orphan `indices` row with no
+            # event. Let it propagate so the transaction unwinds; the
+            # validation above already rejects the reachable bad inputs.
+            nid = insert_custom_index!(db, id, P, basis; orders = orders)
 
             # Frame 1: speculative_created — carries the new index to the indices
             # cache (post-commit broadcast; subscribers converge via invalidate).
@@ -505,6 +517,12 @@ function register_analysis_routes!()
             d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
             d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
+            # Match GET /api/exposures/:id/indices, which sets `bonnet` (:157).
+            # CandidateRow reads `ix.bonnet?.consistent`, so omitting it here
+            # left a freshly committed custom index without its Gauss–Bonnet
+            # flag until the next refetch — the same hazard this file already
+            # documents for `ngc` on the sibling speculative route.
+            d[:bonnet]      = _bonnet_for_index(db, id, String(ix.phase), ix.lattice_d, nid)
             d[:event_id]    = sc.event_id
             d[:view_row_id] = sc.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
@@ -526,6 +544,12 @@ function register_analysis_routes!()
 
             # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
             exposure_id = Int(rows[1].exposure_id)
+            # Likewise capture membership before the cascade wipes it: the
+            # assignment_remove frame below is only honest if the index really
+            # was in the call.
+            was_member = !isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM assignment_members WHERE exposure_id = ? AND index_id = ?",
+                [exposure_id, id])))
 
             DBInterface.execute(db,
                 "DELETE FROM index_group_members WHERE index_id = ?", [id])
@@ -546,6 +570,28 @@ function register_analysis_routes!()
                 Int(exposure_id),
                 result.user_id, result.client_id, result.client_op_id,
                 result.payload_json)
+
+            # assignment_members.index_id is ON DELETE CASCADE, so the DELETE
+            # above silently dropped the membership row. events.jl declares the
+            # assignment_* kinds the SOLE writer to that table and
+            # speculative_deleted is a dispatcher no-op, so without this frame
+            # rebuild_views_from_log! would re-fold a member row whose `indices`
+            # row no longer exists (INSERT OR IGNORE does not suppress an FK
+            # violation). Emitted AFTER speculative_deleted so the own-tab
+            # deferred still resolves off the first frame, matching the
+            # custom-index route's ordering contract, and it carries the
+            # canonical {state, members} post_state so subscribers patch rather
+            # than invalidate.
+            if was_member
+                ar = apply_event!(InTransaction(), db, req;
+                    kind        = "assignment_remove",
+                    entity_type = "exposure",
+                    entity_id   = exposure_id,
+                    payload     = Dict(:index_id => id))
+                ab = _assignment_body(db, exposure_id)
+                _enqueue_broadcast_from_result!(ar, "assignment_remove", "exposure", exposure_id;
+                    post_state = Dict(:assignment => _assignment_post_state(ab)))
+            end
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:deleted => id)))

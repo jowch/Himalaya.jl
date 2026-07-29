@@ -592,10 +592,14 @@ export type CustomIndexResponse = IndexEntry & {
   event_id: number;
   view_row_id: number | null;
 };
+// `orders` = how many reflections the modal DREW (SYMS[phase].Ms.length). The
+// backend bounds its snap to those positions; without it it would scan the full
+// core ratio series and claim reflections the user was never shown (the series
+// is longer than SYMS.Ms for 5 of 8 phases).
 export const createCustomIndex = (
-  exposure_id: number, phase: string, basis: number, opts?: AuthOpts,
+  exposure_id: number, phase: string, basis: number, orders: number, opts?: AuthOpts,
 ) => request<CustomIndexResponse>(
-  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis }, opts);
+  "POST", `/api/exposures/${exposure_id}/custom-index`, { phase, basis, orders }, opts);
 
 // Assignment (Plan D) — the durable per-exposure 3-state phase assignment cart.
 // `state` is explicit, never inferred from members.length: an `indexed`

@@ -528,12 +528,77 @@ end
     end
 end
 
-@testset "deleting a custom index leaves no orphan peaks, intents or members" begin
-    # DELETE /api/indices/:id removes index_group_members + index_peaks
-    # EXPLICITLY, but relies on ON DELETE CASCADE for speculative_peak_intents
-    # and assignment_members — which only fires while PRAGMA foreign_keys is
-    # on. Orphan intents would otherwise accumulate forever now that
-    # insert_custom_index! writes them.
+@testset "basis_locked survives reanalysis (a custom lattice never drifts)" begin
+    # The load-bearing half of writing scan-derived intents at all: they must
+    # decide WHICH peaks are claimed, never WHERE the comb sits. Pre-lock, a
+    # reanalysis least-squares-refit basis through the resolved intents, so
+    # peaks matched at up to CUSTOM_SNAP_TOL (2.2%) dragged the user's lattice.
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+
+        a = 150.0
+        P = Himalaya.Pn3m
+        ratios = Himalaya.phaseratios(P; normalize = true)
+        basis  = 2π * sqrt(2) / a
+        # Order 2 deliberately OFF by +1.5%: inside CUSTOM_SNAP_TOL, so it is
+        # claimed — and far enough off that a refit through it would visibly
+        # move the lattice. This peak is the whole point of the test.
+        qs = [basis, basis * ratios[2] * 1.015]
+        for q in qs
+            DBInterface.execute(db,
+                "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)",
+                [e_id, q])
+        end
+
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis; orders = 6)
+        @test Int(Tables.rowtable(DBInterface.execute(db,
+            "SELECT basis_locked FROM indices WHERE id = ?", [nid]))[1].basis_locked) == 1
+        @test Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM speculative_peak_intents WHERE index_id = ?",
+            [nid]))[1].c == 2
+
+        # Reanalysis over the SAME effective peak set. Built from the DB rather
+        # than passed empty: an empty set resolves zero intents, hits
+        # `isempty(ratio_to_peak) && continue`, and never reaches the refit —
+        # the assertions below would then pass vacuously.
+        prows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e_id]))
+        eff = (q         = [Float64(r.q) for r in prows],
+               sharpness = fill(1.0, length(prows)),
+               peak_id   = [Int(r.id) for r in prows],
+               peak_kind = fill(:auto, length(prows)))
+        empty_pr = (q = Float64[], indices = Int[],
+                    prominence = Float64[], sharpness = Float64[])
+        HimalayaUI.persist_analysis!(db, e_id, Float64[], Float64[],
+            empty_pr, Himalaya.Index[], Himalaya.Index[], eff)
+
+        # The claims must actually have been re-resolved — otherwise "basis
+        # unchanged" proves nothing.
+        @test Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM index_peaks WHERE index_id = ?", [nid]))[1].c == 2
+
+        row = Tables.rowtable(DBInterface.execute(db,
+            "SELECT basis, lattice_d FROM indices WHERE id = ?", [nid]))[1]
+        # Verbatim, to the bit — not "close enough".
+        @test Float64(row.basis) == basis
+        @test Float64(row.lattice_d) ≈ a atol = 1e-6
+
+        # The refit it was spared: an unlocked index over the same peaks lands
+        # somewhere else, which is what makes the assertion above meaningful.
+        drifted = ratios[[1, 2]] \ qs
+        @test !isapprox(drifted, basis; rtol = 1e-6)
+    end
+end
+
+@testset "DELETE /api/indices/:id leaves no orphan peaks, intents or members" begin
+    # Drives the REAL route (with_inproc_routes) rather than re-issuing its SQL
+    # by hand: a hand-rolled copy cannot notice the route diverging, which is
+    # exactly what it was meant to guard. Covers the FK cascade
+    # (speculative_peak_intents + assignment_members are CASCADE, not explicit
+    # deletes) and the paired assignment_remove event.
     mktempdir() do dir
         db = open_prepared_clone(dir)
         @test Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_keys"))[1].foreign_keys == 1
@@ -552,26 +617,40 @@ end
                 [e_id, q])
         end
 
-        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis)
-        DBInterface.execute(db,
-            "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
-        DBInterface.execute(db,
-            "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [e_id, nid])
-
-        n(tbl) = Tables.rowtable(DBInterface.execute(db,
+        n(tbl, nid) = Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM $tbl WHERE index_id = ?", [nid]))[1].c
-        @test n("index_peaks") == 2
-        @test n("speculative_peak_intents") == 2
-        @test n("assignment_members") == 1
 
-        # Exactly the statements the DELETE route issues.
-        DBInterface.execute(db, "DELETE FROM index_group_members WHERE index_id = ?", [nid])
-        DBInterface.execute(db, "DELETE FROM index_peaks WHERE index_id = ?", [nid])
-        DBInterface.execute(db, "DELETE FROM indices WHERE id = ?", [nid])
+        with_inproc_routes(db) do call
+            r = call("POST", "/api/exposures/$e_id/custom-index";
+                headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                body = Vector{UInt8}(JSON3.write(
+                    Dict(:phase => "Pn3m", :basis => basis, :orders => 6))))
+            @test r.status == 200
+            nid = Int(JSON3.read(String(r.body)).id)
 
-        @test n("index_peaks") == 0
-        @test n("speculative_peak_intents") == 0   # cascade
-        @test n("assignment_members") == 0         # cascade
+            @test n("index_peaks", nid) == 2
+            @test n("speculative_peak_intents", nid) == 2
+            @test n("assignment_members", nid) == 1   # the route adds it to the call
+
+            d = call("DELETE", "/api/indices/$nid";
+                headers = ["X-Username" => "alice"])
+            @test d.status == 200
+
+            @test n("index_peaks", nid) == 0
+            @test n("speculative_peak_intents", nid) == 0   # cascade
+            @test n("assignment_members", nid) == 0         # cascade
+            @test isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM indices WHERE id = ?", [nid])))
+
+            # The cascade must be mirrored by a durable assignment_remove, or
+            # rebuild_views_from_log! re-folds a member row whose index is gone.
+            kinds = [String(x.action) for x in Tables.rowtable(DBInterface.execute(db,
+                "SELECT action FROM user_actions ORDER BY id"))]
+            @test "speculative_deleted" in kinds
+            @test "assignment_remove" in kinds
+            @test findfirst(==("speculative_deleted"), kinds) <
+                  findlast(==("assignment_remove"), kinds)
+        end
     end
 end
 
@@ -602,6 +681,12 @@ if isdefined(@__MODULE__, :with_test_server)
                 @test got.phase == "Pn3m"
                 @test got.kind == "speculative"
                 @test got.basis ≈ basis
+                # The response must carry the claims insert_custom_index! wrote;
+                # asserting only phase/kind/basis let the pre-fix `peaks: []`
+                # contract survive at this layer.
+                @test haskey(got, :peaks)
+                @test length(got.peaks) == length(Tables.rowtable(DBInterface.execute(db,
+                    "SELECT 1 FROM index_peaks WHERE index_id = ?", [Int(got.id)])))
                 nid = got.id
 
                 # the new custom index is now an assignment member.
