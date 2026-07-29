@@ -584,3 +584,87 @@ end
         end
     end
 end
+
+# ---------------------------------------------------------------------------
+# Wire-level companion to the eviction unit test above (docs/contract-testing.md
+# governs SSE fixes; test/AGENTS.md designates this file a wire keeper).
+#
+# The unit test proves eviction CLOSES the channel. This proves the behavior
+# that actually mattered to the bug: once closed, the /api/events response
+# FINISHES, so the client sees EOF and EventSource auto-reconnects. Before the
+# fix the handler stayed parked on `for frame in pending`, the response never
+# completed, and the browser held a healthy-looking socket that would never
+# deliver another event.
+#
+# NOTE two deliberate limits on what this asserts:
+#
+#  * Saturation is not driven over the wire. The handler drains `pending`
+#    straight into the socket and 64 small frames fit inside the kernel buffer,
+#    so a real client cannot reliably be made to fall 64 frames behind. The unit
+#    test above covers saturate→evict→close; this covers close→client-unblocks.
+#  * The client's read terminates by CONNECTION DROP (an HTTP.RequestError), not
+#    a clean chunked-EOF — verified empirically against this server. Either way
+#    the browser's EventSource fires `onerror` and auto-reconnects, which is the
+#    property the fix exists to restore. So the assertion is "the client stops
+#    waiting promptly", not "the body ends cleanly": `readtimeout` is set far
+#    above the poll window, so a hang (the pre-fix behavior) fails the test while
+#    either flavor of termination passes.
+# ---------------------------------------------------------------------------
+
+@testset "SSE: closing an evicted subscriber unblocks the client" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        port = HimalayaUI.find_free_port()
+        HimalayaUI.start_test_server!(db, port)
+        try
+            # Set by the reader task however its read ends — clean EOF or throw.
+            ended = Threads.Atomic{Bool}(false)
+            t = @async begin
+                try
+                    HTTP.open("GET", "http://127.0.0.1:$port/api/events";
+                              retry = false, status_exception = false,
+                              readtimeout = 30) do io
+                        HTTP.startread(io)
+                        while !eof(io)
+                            readavailable(io)
+                        end
+                    end
+                catch
+                end
+                ended[] = true
+            end
+
+            # Wait for the handler to register its subscriber.
+            sub = nothing
+            for _ in 1:60
+                s = lock(HimalayaUI.SSE_LOCK) do
+                    isempty(HimalayaUI.SSE_SUBSCRIBERS[]) ? nothing :
+                        first(HimalayaUI.SSE_SUBSCRIBERS[])
+                end
+                if s !== nothing
+                    sub = s
+                    break
+                end
+                sleep(0.05)
+            end
+
+            if sub === nothing
+                @test_skip "subscriber did not register within 3s (network timing)"
+            else
+                @test !ended[]   # still streaming before the eviction
+
+                # Exactly what _fanout_frame! does to an evicted subscriber.
+                close(sub.pending)
+
+                # 5s window against a 30s readtimeout: pre-fix the handler stayed
+                # parked on `for frame in pending`, the response never finished,
+                # and this stayed false until the timeout fired.
+                @test timedwait(() -> ended[], 5.0) === :ok
+            end
+
+            try; schedule(t, InterruptException(); error = true); catch; end
+        finally
+            HimalayaUI.stop_test_server!()
+        end
+    end
+end

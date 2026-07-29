@@ -1081,13 +1081,26 @@ n_avail check and the put!, in theory filling the last slot and causing put!
 to block. In practice the heartbeat fires at most once per 15 s; with cap=64
 an idle subscriber would need 16+ minutes of heartbeats to fill. The race
 window is negligible; Option A (document + ship) is the right tradeoff here.
+
+A SECOND race is genuinely reachable now that `_fanout_frame!` closes evicted
+subscribers: the heartbeat Timer can pass the `isopen` check and then `put!` on
+a channel closed a moment later by an evicting broadcast, which throws
+`InvalidStateException`. Catch it and report the subscriber as dead — that is
+exactly what it is. Without the catch the Timer task dies by exception instead
+of returning `false`, which is merely noisy (the subscriber is already being
+torn down) but makes the failure look like a bug.
 """
 function _try_put!(ch::Channel{String}, value::String)::Bool
     isopen(ch) || return false
     # Channel is full → subscriber is too slow. Skip the put rather than block;
     # the SSE design is best-effort with reconnect-driven reconciliation.
     Base.n_avail(ch) >= ch.sz_max && return false
-    put!(ch, value)
+    try
+        put!(ch, value)
+    catch e
+        e isa InvalidStateException || rethrow()
+        return false   # closed between the check and the put
+    end
     return true
 end
 

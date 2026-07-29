@@ -228,11 +228,14 @@ function scan_and_group!(
         # below never runs, and reporting `i / n_new` meant the bar showed
         # "0 / ~0" from start to finish and then simply vanished.
         base = max(0, n_found - n_new)
-        # Coalesce to ~1% steps. One frame per exposure meant a 600-exposure
-        # scan fired 600 frames into a 64-slot channel, and each frame costs the
-        # client two invalidateQueries → a refetch of the growing loads payload.
-        # The client falls behind, the channel saturates, and the subscriber is
-        # evicted mid-scan (see _fanout_frame! in events.jl).
+        # Cap the frame count at ~100 per scan. One frame per exposure meant a
+        # 600-exposure scan fired 600 frames into a 64-slot channel, and each
+        # frame costs the client two invalidateQueries → a refetch of the growing
+        # loads payload. NOTE this only thins large scans: below n_new = 100 the
+        # step is 1, i.e. still one frame per exposure, and 65..100 exposures
+        # still exceeds the 64-slot channel. Saturation is therefore reduced, not
+        # eliminated — correctness under saturation rests on _fanout_frame!
+        # (events.jl) closing an evicted subscriber so it reconnects.
         step = max(1, n_new ÷ 100)
         for (i, eid) in enumerate(new_exposure_ids)
             try
@@ -257,9 +260,15 @@ function scan_and_group!(
         # is a non-essential cache warm — an unreadable TIFF must never fail the ingest
         # (the thumb then just generates lazily on first view).
         try
-            # Scoped to the exposures this scan just inserted — the unscoped call
-            # re-rendered every thumbnail in every experiment on every scan.
-            prewarm_thumbnails!(db; overwrite = true, exposure_ids = new_exposure_ids)
+            # Scoped to THIS experiment — the unscoped call walked every exposure
+            # in every experiment on every scan. Scoping by experiment (rather
+            # than by the ids just inserted) keeps the repair path: a thumbnail
+            # that failed to warm on an earlier scan gets another attempt on the
+            # next one, which a new-ids-only warm would never revisit.
+            # overwrite=false so an already-cached thumb short-circuits instead of
+            # re-rendering; see the prewarm_thumbnails! docstring for the
+            # same-second-mtime hole this trades away.
+            prewarm_thumbnails!(db; overwrite = false, experiment_id = experiment_id)
         catch e
             @warn "scan_and_group!: thumbnail prewarm failed (non-fatal)" exception=e
         end

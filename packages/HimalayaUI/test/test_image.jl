@@ -184,4 +184,63 @@ end
             rm(present; force=true)
         end
     end
+
+    @testset "prewarm_thumbnails! experiment_id scopes the warm to one experiment" begin
+        db = fresh_db()
+        mine  = _make_detector_tiff(256)
+        other = _make_detector_tiff(256)
+        try
+            exp_a = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+            exp_b = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+            samp_a = HimalayaUI.create_sample!(db; experiment_id=exp_a, name="A")
+            samp_b = HimalayaUI.create_sample!(db; experiment_id=exp_b, name="B")
+            e_a = HimalayaUI.create_exposure!(db; experiment_id=exp_a, sample_id=samp_a, image_path=mine)
+            e_b = HimalayaUI.create_exposure!(db; experiment_id=exp_b, sample_id=samp_b, image_path=other)
+
+            # Scoped warm touches ONLY exp_a. The unscoped default warmed every
+            # exposure in every experiment on every scan — O(corpus) per ingest.
+            res = HimalayaUI.prewarm_thumbnails!(db; threads=false, experiment_id=exp_a)
+            @test res.warmed == 1
+            @test isfile(HimalayaUI.thumb_cache_path(db, e_a, HimalayaUI.image_version_token(mine)))
+            @test !isfile(HimalayaUI.thumb_cache_path(db, e_b, HimalayaUI.image_version_token(other)))
+
+            # An experiment with no exposures warms nothing and does not throw.
+            exp_c = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+            @test HimalayaUI.prewarm_thumbnails!(db; threads=false, experiment_id=exp_c).warmed == 0
+
+            # The scoped pass is the REPAIR path: re-running it warms whatever is
+            # still missing. A new-exposures-only warm would never revisit exp_b.
+            res_b = HimalayaUI.prewarm_thumbnails!(db; threads=false, experiment_id=exp_b)
+            @test res_b.warmed == 1
+            @test isfile(HimalayaUI.thumb_cache_path(db, e_b, HimalayaUI.image_version_token(other)))
+        finally
+            rm(mine;  force=true)
+            rm(other; force=true)
+        end
+    end
+
+    @testset "prewarm_thumbnails! skips an undecodable TIFF without aborting the batch" begin
+        db = fresh_db()
+        good = _make_detector_tiff(256)
+        # Present on disk, but not a decodable TIFF — the !isfile guard does not
+        # catch this, and an uncaught throw inside the @threads loop used to take
+        # every later exposure in the batch down with it.
+        bad = tempname() * ".tiff"
+        write(bad, "this is not a tiff")
+        try
+            exp = HimalayaUI.create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
+            samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
+            HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=bad)
+            e_good = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=good)
+
+            res = HimalayaUI.prewarm_thumbnails!(db; threads=false, experiment_id=exp)
+            @test res.skipped == 1
+            @test res.warmed == 1
+            # The good one after the bad one still got warmed.
+            @test isfile(HimalayaUI.thumb_cache_path(db, e_good, HimalayaUI.image_version_token(good)))
+        finally
+            rm(good; force=true)
+            rm(bad;  force=true)
+        end
+    end
 end

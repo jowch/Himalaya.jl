@@ -204,7 +204,7 @@ function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
 end
 
 """
-    prewarm_thumbnails!(db; threads = true, overwrite = false) -> NamedTuple
+    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing) -> NamedTuple
 
 Populate the on-disk thumbnail cache for every exposure with a non-NULL
 `image_path`. Run from `init` and `reingest` (issue #261) so the very first
@@ -215,36 +215,38 @@ loop so the threaded workers touch only the filesystem — never the shared DB
 connection (the residual #122 reader-vs-writer `stmt_wrappers` race). Workers are
 FS-only by construction.
 
-Missing source TIFFs are skipped-with-`@info` (matching the route's graceful
-404), so a partially-present corpus still warms what it can. Returns
+Unreadable source TIFFs are skipped-with-`@info` (matching the route's graceful
+404), so a partially-present corpus still warms what it can — both a file missing
+from disk AND one that is present but fails to decode. The decode guard matters
+because `work` runs under `@threads`: an uncaught throw there aborts the rest of
+the batch, silently leaving every later exposure unwarmed. Returns
 `(warmed, skipped)` counts.
 
-`overwrite = true` re-renders unconditionally — the reingest path passes it to
-defeat whole-second mtime token granularity (a same-second re-ingest would
-otherwise reuse a now-stale cached PNG). On a `:memory:` DB this is a no-op pass
-(rendering with nowhere to write).
+`experiment_id` restricts the warm to one experiment. `scan_and_group!` passes
+its own id: the whole-DB default walks EVERY exposure in EVERY experiment on
+every scan, which is O(corpus) per ingest and a long silent tail after the last
+progress tick — the bar sits at 100% while an unrelated experiment's thumbnails
+regenerate.
 
-`exposure_ids` restricts the warm to a specific set. `scan_and_group!` passes the
-exposures it just inserted: without it the whole-DB default re-renders EVERY
-exposure in EVERY experiment (with `overwrite = true`, so no mtime short-circuit
-saves it) on each scan, which is both O(corpus) work per ingest and a long silent
-tail after the last progress tick — the bar sits at 100% while an unrelated
-experiment's thumbnails regenerate. An empty vector warms nothing.
+`overwrite = true` re-renders unconditionally, defeating whole-second mtime token
+granularity (a TIFF rewritten in the same second as its render keeps the same
+token, so the cache would serve a stale PNG). NOTE the ingest path deliberately
+passes `overwrite = false`: closing that same-second hole costs a full re-render
+of every exposure on every scan, which is what made the unscoped call so
+expensive. With `false`, an exposure whose TIFF is rewritten in a *different*
+second gets a fresh token → fresh cache path → re-renders normally; only the
+same-second rewrite is missed. On a `:memory:` DB this is a no-op pass (rendering
+with nowhere to write).
 """
 function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
                              overwrite::Bool = false,
-                             exposure_ids::Union{AbstractVector{Int}, Nothing} = nothing)
-    rows = if exposure_ids === nothing
+                             experiment_id::Union{Integer, Nothing} = nothing)
+    rows = experiment_id === nothing ?
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL"))
-    elseif isempty(exposure_ids)
-        return (warmed = 0, skipped = 0)
-    else
-        # Inline the ids (they are Ints we just minted, never user input).
+            "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL")) :
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL AND id IN (" *
-            join(string.(exposure_ids), ",") * ")"))
-    end
+            "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL AND experiment_id = ?",
+            [Int(experiment_id)]))
 
     n_warmed  = Atomic{Int}(0)
     n_skipped = Atomic{Int}(0)
@@ -256,7 +258,15 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
             @info "thumb prewarm skip" exposure_id=row.id reason="TIFF not on disk" path
             return
         end
-        ensure_thumb_cached(db, Int(row.id), path; overwrite = overwrite)
+        # A present-but-undecodable TIFF must not abort the @threads batch and
+        # take every later exposure down with it — skip it like a missing file.
+        try
+            ensure_thumb_cached(db, Int(row.id), path; overwrite = overwrite)
+        catch e
+            atomic_add!(n_skipped, 1)
+            @info "thumb prewarm skip" exposure_id=row.id reason="render failed" path exception=e
+            return
+        end
         atomic_add!(n_warmed, 1)
     end
 
