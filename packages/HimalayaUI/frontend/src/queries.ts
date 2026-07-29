@@ -434,7 +434,8 @@ export function useCommitCustomIndex(exposureId: number) {
   );
   return {
     ...inner,
-    mutate: (phase: string, basis: number) => inner.mutate({ phase, basis }),
+    mutate: (phase: string, basis: number, ratios: number[]) =>
+      inner.mutate({ phase, basis, ratios }),
   };
 }
 

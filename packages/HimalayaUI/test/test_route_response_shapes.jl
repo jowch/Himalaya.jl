@@ -223,6 +223,47 @@ end
         end
     end
 
+    @testset "POST /api/exposures/:id/custom-index → IndexEntry full shape (incl. peaks)" begin
+        # Layer 1 of the six-layer contract for the field this PR changed:
+        # `peaks` is the whole point of insert_custom_index! claiming its
+        # landed orders, and nothing asserted it at the response layer.
+        mktempdir() do tmp
+            ctx = _setup_analyzed_exposure(tmp)
+            # Anchor the comb's first order on a real peak so the commit has
+            # something to claim — an empty `peaks` here would pass a
+            # shape-only check while proving nothing.
+            q1 = Float64(Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1",
+                [ctx.exposure_id]))[1].q)
+            with_inproc_routes(ctx.db) do call
+                r = call("POST", "/api/exposures/$(ctx.exposure_id)/custom-index";
+                    body = Vector{UInt8}(JSON3.write(
+                        Dict(:phase => "Pn3m", :basis => q1,
+                             :ratios => Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6]))),
+                    headers = ["Content-Type" => "application/json",
+                               "X-Username"   => "alice"])
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                expected = [
+                    :id, :exposure_id, :phase, :basis, :score, :r_squared,
+                    :lattice_d, :ngc, :bonnet, :status, :kind, :inputs_hash,
+                    :peaks, :predicted_q, :event_id, :view_row_id,
+                ]
+                assert_keys(body, expected)
+                @test body.kind == "speculative"
+                # The first order was anchored on a real peak, so the response
+                # must carry that claim — not the pre-fix empty list.
+                @test length(body.peaks) >= 1
+                @test any(p -> p.ratio_position == 1, body.peaks)
+                claim = first(filter(p -> p.ratio_position == 1, body.peaks))
+                @test claim.q_observed ≈ q1
+                for k in (:peak_id, :ratio_position, :residual, :q_observed)
+                    @test haskey(claim, k)
+                end
+            end
+        end
+    end
+
     @testset "PATCH /api/samples/:id → bare samples row (NO tags field — known)" begin
         # Pinning the fact that this route does NOT include tags. The
         # frontend `updateSampleMutator` knows this and merges only the

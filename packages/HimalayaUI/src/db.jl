@@ -155,7 +155,14 @@ CREATE TABLE IF NOT EXISTS indices (
     lattice_d   REAL,
     status      TEXT DEFAULT 'candidate',
     kind        TEXT NOT NULL DEFAULT 'auto',
-    inputs_hash TEXT
+    inputs_hash TEXT,
+    -- 1 = `basis`/`lattice_d` are a lattice the USER chose (the custom-index
+    -- modal), not a fit. `_persist_analysis_inner!` re-resolves a locked
+    -- index's peaks like any other speculative but skips the least-squares
+    -- refit, so no reanalysis can move the lattice out from under the user.
+    -- This is what makes insert_custom_index!'s scan-derived intents safe:
+    -- they resolve WHICH peaks are claimed, never WHERE the comb sits.
+    basis_locked INTEGER NOT NULL DEFAULT 0
 );
 
 -- index_peaks: peak_id references auto_peaks OR peak_curations (peak_kind disambiguates).
@@ -336,6 +343,10 @@ function migrate_schema!(db::SQLite.DB)
         "ALTER TABLE exposures ADD COLUMN trace_hash TEXT",
         "ALTER TABLE exposures ADD COLUMN analysis_inputs_hash TEXT",
         "ALTER TABLE indices ADD COLUMN inputs_hash TEXT",
+        # Legacy rows default to 0 (unlocked) — correct: every index that
+        # predates the column was either auto or anchor-snap speculative, both
+        # of which are meant to refit. Custom commits set it explicitly.
+        "ALTER TABLE indices ADD COLUMN basis_locked INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE user_actions ADD COLUMN payload TEXT",
         "ALTER TABLE user_actions ADD COLUMN undoes_event_id INTEGER REFERENCES user_actions(id)",
         "ALTER TABLE user_actions ADD COLUMN client_id TEXT",

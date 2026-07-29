@@ -26,7 +26,7 @@ type CustomIndexScope = {
   clientId: string;
 };
 
-export type CustomIndexInput = { phase: string; basis: number };
+export type CustomIndexInput = { phase: string; basis: number; ratios: number[] };
 
 function buildAuth(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
@@ -39,7 +39,7 @@ export const customIndexMutator: Mutator<CustomIndexInput, CustomIndexScope, api
     // negative placeholder into the assignment would desync on confirm.
     return { restore: () => {} };
   },
-  request: (p) => api.createCustomIndex(p.exposureId, p.phase, p.basis, buildAuth(p)),
+  request: (p) => api.createCustomIndex(p.exposureId, p.phase, p.basis, p.ratios, buildAuth(p)),
   onSuccess: (p, response, qc) => {
     const { payload: row } = stripQueueMetadata(response);
     // On the SSE-wins own-tab race the deferred resolves off the FIRST frame

@@ -187,9 +187,13 @@ const SPECS: Spec[] = [
   },
   {
     name: "deleteIndex",
-    keys: [queryKeys.indices(5)],
+    // The delete drops the index from BOTH caches (a deleted index cascades
+    // out of assignment_members server-side), so rollback must restore both.
+    keys: [queryKeys.indices(5), queryKeys.assignment(5)],
     seed: (qc) => {
       qc.setQueryData(queryKeys.indices(5), [INDEX]);
+      qc.setQueryData(queryKeys.assignment(5),
+        { exposure_id: 5, state: "indexed", members: [10] });
     },
     run: (qc) => {
       const ctx = deleteIndexMutator.onMutate({

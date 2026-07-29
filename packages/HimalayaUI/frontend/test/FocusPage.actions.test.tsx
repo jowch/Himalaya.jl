@@ -47,6 +47,7 @@ vi.mock("../src/queries", () => ({
   useSetPeakExcluded: () => ({ mutate: vi.fn() }),
   useAddAssignmentPhase: () => ({ mutate: addAssignmentMutate }),
   useRemoveAssignmentPhase: () => ({ mutate: removeAssignmentMutate }),
+  useDeleteIndex: () => ({ mutate: vi.fn() }),
   useSetAssignmentState: () => ({ mutate: vi.fn() }),
   useCommitCustomIndex: () => ({ mutate: vi.fn() }),
 }));

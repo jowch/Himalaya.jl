@@ -421,10 +421,13 @@ function register_analysis_routes!()
     end
 
     # ── Plan D Task D-9 (B4): client-fitted custom-index commit ─────────────
-    # Accepts {phase, basis} where `basis` is the q₁ slope the modal computed
-    # from a symmetry + lattice via real physics. Persists a speculative index
-    # (no peak assignment — a pure lattice hypothesis) and adds it to the
-    # assignment in one transaction. Two SSE frames: speculative_created (indices
+    # Accepts {phase, basis, ratios?} where `basis` is the q₁ slope the modal
+    # computed from a symmetry + lattice via real physics, and `ratios` are the
+    # NORMALIZED ratios it DREW. Persists a basis-locked speculative index,
+    # claims the peaks landing within CUSTOM_SNAP_TOL of those reflections, and
+    # adds it to the assignment in one transaction. A ratio set rather than a
+    # count because the modal's series is not a positional prefix of the core
+    # one for Hexagonal (see compute_snap). Two SSE frames: speculative_created (indices
     # cache) THEN assignment_add (assignment cache). ORDERING IS LOAD-BEARING —
     # the own-tab deferred resolves off the FIRST frame (speculative_created)
     # which carries the new IndexEntry, then assignment_add patches the cart.
@@ -439,12 +442,31 @@ function register_analysis_routes!()
         end
         local phase_name::String
         local basis::Float64
+        local ratios::Union{Vector{Float64}, Nothing}
         try
             phase_name = String(body.phase)
             basis      = Float64(body.basis)
+            # Optional for back-compat: absent means "scan the whole ratio
+            # series", which is only correct for a caller with no truncated
+            # display of its own. The modal always sends it.
+            # `isa AbstractVector` is load-bearing, not defensive: a JSON
+            # STRING iterates as Chars and Float64('s') == 115.0, so "six"
+            # would convert to three positive "ratios", clear every check
+            # below, match zero positions in compute_snap, and commit an index
+            # claiming NO peaks — a silent 200 reintroducing the exact bug this
+            # route exists to fix.
+            raw = haskey(body, :ratios) ? body.ratios : nothing
+            raw === nothing || raw isa AbstractVector ||
+                error("ratios must be an array")
+            ratios     = raw === nothing ? nothing :
+                         Float64[Float64(r) for r in raw]
         catch
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "phase must be string; basis must be a number")))
+                JSON3.write(Dict(:error => "phase must be string; basis a number; ratios an array of numbers")))
+        end
+        if ratios !== nothing && (isempty(ratios) || any(r -> !(r > 0), ratios))
+            return HTTP.Response(400, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "ratios must be a non-empty array of positive numbers")))
         end
         P = resolve_phase(phase_name)
         P === nothing && return HTTP.Response(400, ["Content-Type" => "application/json"],
@@ -453,13 +475,14 @@ function register_analysis_routes!()
             JSON3.write(Dict(:error => "basis must be positive")))
 
         return with_idempotency(db, req) do
-            local nid::Int
-            try
-                nid = insert_custom_index!(db, id, P, basis)
-            catch e
-                return HTTP.Response(400, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => sprint(showerror, e))))
-            end
+            # No catch → 400 here: this body runs INSIDE with_idempotency's
+            # transaction, and a normal return COMMITS (idempotency.jl only
+            # skips the cache row on >=400, it does not roll back). Now that
+            # insert_custom_index! issues 1+2N statements, swallowing a
+            # mid-loop throw would commit an orphan `indices` row with no
+            # event. Let it propagate so the transaction unwinds; the
+            # validation above already rejects the reachable bad inputs.
+            nid = insert_custom_index!(db, id, P, basis; drawn_ratios = ratios)
 
             # Frame 1: speculative_created — carries the new index to the indices
             # cache (post-commit broadcast; subscribers converge via invalidate).
@@ -490,11 +513,27 @@ function register_analysis_routes!()
                       status, kind, inputs_hash
                FROM indices WHERE id = ?""", [nid]))
             ix = rows[1]
+            # insert_custom_index! claims the peaks the modal showed landing —
+            # read them back rather than asserting []; a hardcoded empty list
+            # left the Focus comb/detector/cart showing zero matches.
+            peak_rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT ip.peak_id, ip.ratio_position, ip.residual,
+                          COALESCE(ap.q, pc.q) AS q_observed
+                   FROM index_peaks ip
+                   LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
+                   LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
+                   WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [nid]))
             predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
             d = row_to_json(ix)
-            d[:peaks]       = Dict[]
+            d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
             d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
+            # Match GET /api/exposures/:id/indices, which sets `bonnet` (:157).
+            # CandidateRow reads `ix.bonnet?.consistent`, so omitting it here
+            # left a freshly committed custom index without its Gauss–Bonnet
+            # flag until the next refetch — the same hazard this file already
+            # documents for `ngc` on the sibling speculative route.
+            d[:bonnet]      = _bonnet_for_index(db, id, String(ix.phase), ix.lattice_d, nid)
             d[:event_id]    = sc.event_id
             d[:view_row_id] = sc.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
@@ -516,6 +555,12 @@ function register_analysis_routes!()
 
             # Capture exposure_id BEFORE the DELETE — after deletion the row is gone.
             exposure_id = Int(rows[1].exposure_id)
+            # Likewise capture membership before the cascade wipes it: the
+            # assignment_remove frame below is only honest if the index really
+            # was in the call.
+            was_member = !isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM assignment_members WHERE exposure_id = ? AND index_id = ?",
+                [exposure_id, id])))
 
             DBInterface.execute(db,
                 "DELETE FROM index_group_members WHERE index_id = ?", [id])
@@ -536,6 +581,28 @@ function register_analysis_routes!()
                 Int(exposure_id),
                 result.user_id, result.client_id, result.client_op_id,
                 result.payload_json)
+
+            # assignment_members.index_id is ON DELETE CASCADE, so the DELETE
+            # above silently dropped the membership row. events.jl declares the
+            # assignment_* kinds the SOLE writer to that table and
+            # speculative_deleted is a dispatcher no-op, so without this frame
+            # rebuild_views_from_log! would re-fold a member row whose `indices`
+            # row no longer exists (INSERT OR IGNORE does not suppress an FK
+            # violation). Emitted AFTER speculative_deleted so the own-tab
+            # deferred still resolves off the first frame, matching the
+            # custom-index route's ordering contract, and it carries the
+            # canonical {state, members} post_state so subscribers patch rather
+            # than invalidate.
+            if was_member
+                ar = apply_event!(InTransaction(), db, req;
+                    kind        = "assignment_remove",
+                    entity_type = "exposure",
+                    entity_id   = exposure_id,
+                    payload     = Dict(:index_id => id))
+                ab = _assignment_body(db, exposure_id)
+                _enqueue_broadcast_from_result!(ar, "assignment_remove", "exposure", exposure_id;
+                    post_state = Dict(:assignment => _assignment_post_state(ab)))
+            end
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:deleted => id)))

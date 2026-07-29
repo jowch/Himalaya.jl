@@ -11,6 +11,7 @@ const removePeakMutate = vi.fn();
 const setPeakExclMutate = vi.fn();
 const addAssignMutate = vi.fn();
 const removeAssignMutate = vi.fn();
+const deleteIndexMutate = vi.fn();
 const setAssignStateMutate = vi.fn();
 const commitCustomMutate = vi.fn();
 
@@ -57,6 +58,7 @@ vi.mock("../../src/queries", () => ({
   useSetPeakExcluded: () => ({ mutate: setPeakExclMutate }),
   useAddAssignmentPhase: () => ({ mutate: addAssignMutate }),
   useRemoveAssignmentPhase: () => ({ mutate: removeAssignMutate }),
+  useDeleteIndex: () => ({ mutate: deleteIndexMutate }),
   useSetAssignmentState: () => ({ mutate: setAssignStateMutate }),
   useCommitCustomIndex: () => ({ mutate: commitCustomMutate }),
 }));
@@ -370,6 +372,29 @@ describe("FocusPage", () => {
     expect(addAssignMutate).toHaveBeenCalledWith(2);
   });
 
+  it("offers Discard only on speculative candidates, never on auto ones", () => {
+    // The route 403s on kind != 'speculative', so an auto index must not even
+    // show the affordance. Pn3m (id 1) is auto; Lamellar (id 2) is made
+    // speculative here to stand in for a committed custom index.
+    state.indices = [ix({ id: 1, phase: "Pn3m" }),
+                     ix({ id: 2, phase: "Lamellar", kind: "speculative", score: null })];
+    renderAt(42);
+    expect(screen.queryByRole("button", { name: /Discard the Pn3m index/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Discard the Lamellar index/ })).toBeTruthy();
+  });
+
+  it("Discard fires useDeleteIndex().mutate(indexId) without toggling the assignment", () => {
+    // The discard control is a SIBLING of CandidateRow, not a child — clicking
+    // it must not also fire the row's add/remove toggle.
+    state.indices = [ix({ id: 1, phase: "Pn3m" }),
+                     ix({ id: 2, phase: "Lamellar", kind: "speculative", score: null })];
+    renderAt(42);
+    fireEvent.click(screen.getByRole("button", { name: /Discard the Lamellar index/ }));
+    expect(deleteIndexMutate).toHaveBeenCalledWith(2);
+    expect(addAssignMutate).not.toHaveBeenCalled();
+    expect(removeAssignMutate).not.toHaveBeenCalled();
+  });
+
   it("clicking an in-call candidate removes it from the assignment", () => {
     renderAt(42);
     const pn3m = screen.getByRole("button", { name: /Pn3m, in assignment/ });
@@ -508,10 +533,10 @@ describe("FocusPage", () => {
   });
 
   it("does not chip a fully-landed custom index that colours zero rings (FO-RING no-lie)", () => {
-    // A committed custom index arrives with peaks: [] (insert_custom_index!
-    // writes no index_peaks rows). With every predicted_q within tol of an
-    // observed peak it emits NO coloured or ghost ring, so the caption must
-    // not name it — only the ring-emitting sibling.
+    // A claimless index (peaks: [] — e.g. a custom index committed before
+    // insert_custom_index! claimed its landed peaks). With every predicted_q
+    // within tol of an observed peak it emits NO coloured or ghost ring, so the
+    // caption must not name it — only the ring-emitting sibling.
     state.indices = [
       ix({ id: 1, phase: "Pn3m" }),
       ix({
@@ -670,6 +695,36 @@ describe("FocusPage", () => {
     } finally {
       setToastImpl(null);
     }
+  });
+
+  it("commits the NORMALIZED ratios the modal drew, not raw q's (Hexagonal)", () => {
+    // FocusPage is the sole producer of the `ratios` wire value. If this
+    // regressed to `refls.map(r => r.q)` the values are still positive and
+    // non-empty, so route validation passes, compute_snap then matches zero
+    // positions, and the commit returns 200 with an index claiming NO peaks —
+    // exactly the bug this PR exists to fix, silently and with no 4xx.
+    //
+    // Hexagonal on purpose: its drawn set [1,3,4,7,9,12] skips the backend
+    // series' spurious √11, so this also gives the alignment contract
+    // behavioural teeth at the producing layer.
+    renderAt(42);
+    fireEvent.click(screen.getByTestId("custom-index-trigger"));
+    const modal = screen.getByTestId("custom-index-modal");
+    // SegmentedControl defaults to role="group", so segments are buttons.
+    fireEvent.click(within(modal).getByRole("button", { name: "Hexagonal" }));
+    fireEvent.click(within(modal).getByRole("button", { name: /^Add/ }));
+
+    expect(commitCustomMutate).toHaveBeenCalledTimes(1);
+    const [phase, , ratios] = commitCustomMutate.mock.calls[0]!;
+    expect(phase).toBe("Hexagonal");
+    // q ∝ √M for hex, normalized against the first reflection (M = 1).
+    const expected = [1, 3, 4, 7, 9, 12].map((m) => Math.sqrt(m));
+    expect(ratios).toHaveLength(expected.length);
+    ratios.forEach((r: number, i: number) =>
+      expect(r).toBeCloseTo(expected[i]!, 12));
+    // First entry is exactly 1 by construction — a raw-q regression would put
+    // the basis here instead, which is O(0.1).
+    expect(ratios[0]).toBe(1);
   });
 
   it("Escape sequence: an open custom-index modal closes first; only the NEXT Escape disarms '+ Peak' (F7)", () => {

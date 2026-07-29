@@ -309,7 +309,8 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         WHERE i.exposure_id = ? AND i.kind = 'speculative'
         """, [exposure_id]))
     speculative_index_ids = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, phase, basis FROM indices WHERE exposure_id = ? AND kind = 'speculative'",
+        """SELECT id, phase, basis, basis_locked FROM indices
+           WHERE exposure_id = ? AND kind = 'speculative'""",
         [exposure_id]))
 
     # Remove prior auto peaks, auto indices, and auto groups for this exposure.
@@ -469,7 +470,24 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # Auto-discovery pass: pull in any current peak that fits an unfilled
             # ratio position within snap tolerance and isn't already claimed
             # by another ratio of this index.
-            if basis_for_snap !== nothing && basis_for_snap > 0
+            #
+            # SKIPPED ENTIRELY for a basis_locked (custom-index) row. Two
+            # reasons, both load-bearing:
+            #  1. The commit bounded its claim to the reflections the modal
+            #     DREW. Discovery scans `1:n` — the whole
+            #     core series — so a locked Pn3m committed over 6 orders would
+            #     silently pick up positions 7..16 on the next analyze, and the
+            #     rail's "explains N peaks" would again exceed the modal's
+            #     "N of M land". A bound that dies on reanalysis is not a bound.
+            #  2. `basis_for_snap` refits from the resolved peaks whenever >=2
+            #     land, so discovery would search against a comb the locked row
+            #     explicitly refuses to store — admitting peaks at SNAP_TOL of
+            #     the REFIT comb while the residual written below is measured
+            #     against the LOCKED one.
+            # A locked index's claim set is frozen at commit; intents are its
+            # durable record and re-resolution (above) is how it heals.
+            locked_row = !ismissing(ix_row.basis_locked) && Int(ix_row.basis_locked) == 1
+            if !locked_row && basis_for_snap !== nothing && basis_for_snap > 0
                 claimed_pids = Set{Int}(p[1] for p in values(ratio_to_peak))
                 for rpos in 1:n
                     haskey(ratio_to_peak, rpos) && continue
@@ -514,20 +532,49 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # Recompute basis/r²/d/score using new peak values. Normalized
             # ratios — indices.basis means "q of the first ratio position"
             # for every kind (same convention as insert + auto indices).
+            #
+            # basis_locked (custom-index commits): the lattice is the USER's
+            # choice, not a fit, so the refit is skipped and the stored basis
+            # stands. Peaks are still re-resolved and score/R² still recomputed
+            # — against the LOCKED basis, so they describe how well the user's
+            # lattice explains the current peaks rather than silently sliding
+            # the comb onto them. Without this, scan-derived intents at
+            # CUSTOM_SNAP_TOL (2.2%) could drag the lattice on every analyze.
             observed_ratios_used = ratios_normed[rpos_sorted]
-            new_basis = observed_ratios_used \ qvals
+            new_basis = locked_row ? Float64(ix_row.basis) : (observed_ratios_used \ qvals)
 
             peaks_sv     = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, qvals)
             sharpness_sv = SparseArrays.SparseVector{Float64, Int}(n, rpos_sorted, sharpvals)
             new_idx = Himalaya.Index{P}(new_basis, peaks_sv, sharpness_sv)
             fit_result = Himalaya.fit(new_idx)
+            # score reads peaks + sharpness only, never basis — same either way.
             new_score = Himalaya.score(new_idx)
+            # Himalaya.fit REFITS from the peaks (d = ratios \ peaks) and never
+            # reads Index.basis, so BOTH of its outputs describe the
+            # least-squares line — the one a locked row refuses to store. Take
+            # d and R² from the locked comb instead, or the rail would render
+            # "fit R² = 1.000" for a comb the user can see missing the peaks.
+            new_d  = locked_row ? lattice_d_for(P, new_basis) : fit_result.d
+            new_r2 = locked_row ?
+                Himalaya.R²(new_basis .* observed_ratios_used, qvals) : fit_result.R²
+            # R² is undefined for a single claimed peak: R² = 1 - RSS/TSS and
+            # TSS == 0 with one observation. The unlocked path yields NaN there
+            # (fit refits THROUGH the point, so RSS == 0 too) and SQLite binds
+            # NaN to NULL, which is why the ismissing guards downstream sufficed.
+            # The locked path yields -Inf deterministically — RSS > 0 by
+            # construction, since the claim was made at CUSTOM_SNAP_TOL — and
+            # -Inf round-trips as a live Float64, walks past every ismissing
+            # guard, and then throws in JSON3.write inside the analyze
+            # transaction. That makes the exposure permanently un-analyzable:
+            # the value recomputes identically on every retry. Normalize both
+            # arities and both branches to NULL.
+            new_r2 = (length(qvals) < 2 || !isfinite(new_r2)) ? missing : new_r2
 
             DBInterface.execute(db,
                 """UPDATE indices SET basis = ?, score = ?, r_squared = ?, lattice_d = ?,
                                        status = 'candidate'
                    WHERE id = ?""",
-                [new_basis, new_score, fit_result.R², fit_result.d, ix_id])
+                [new_basis, new_score, new_r2, new_d, ix_id])
 
             for (rpos, (pid, qv, _)) in ratio_to_peak
                 # Determine peak_kind from eff_by_id
