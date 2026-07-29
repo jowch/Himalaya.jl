@@ -21,9 +21,9 @@
     @test R² == 1
 
     # score: coverage × consistency
-    # Hexagonal has 14 ratios; peaks at ranks [1,2,3], uniform sharpness → consistency=1
-    # coverage = (1/1 + 1/2 + 1/3) / sum(1/r for r in 1:14) ≈ 1.8333 / 3.2515 ≈ 0.564
-    @test isapprox(score(index), 0.564; atol = 0.01)
+    # Hexagonal has 13 ratios; peaks at ranks [1,2,3], uniform sharpness → consistency=1
+    # coverage = (1/1 + 1/2 + 1/3) / sum(1/r for r in 1:13) ≈ 1.8333 / 3.1801 ≈ 0.5765
+    @test isapprox(score(index), 0.5765; atol = 0.01)
     @test 0.0 ≤ score(index) ≤ 1.0
 
     # sharpness consistency: heterogeneous peaks score lower

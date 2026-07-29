@@ -7,6 +7,9 @@ const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
 # Sentinel marker name for the speculative peak durability migration (2026-07-14).
 const MIGRATION_SPECULATIVE_PEAK_DURABILITY = "speculative_peak_durability"
 
+# Sentinel marker name for the Hexagonal √11 removal (#304).
+const MIGRATION_HEX_SQRT11 = "hex_sqrt11_removal_v1"
+
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
@@ -530,6 +533,11 @@ function migrate_schema!(db::SQLite.DB)
     # for the three ordering constraints (after the PK/AUTOINCREMENT rebuild +
     # FK-heal, after migrate_r2_split_peaks!, after migrate_series!).
     migrate_speculative_peak_durability!(db)
+
+    # #304: √11 removed from phaseratios(Hexagonal). Renumbers the durable
+    # ratio_position store and reopens the indexpeaks memoization gate. Must run
+    # after migrate_speculative_peak_durability! (needs speculative_peak_intents).
+    migrate_hex_sqrt11!(db)
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────
@@ -1525,6 +1533,87 @@ function migrate_speculative_peak_durability!(db::SQLite.DB)
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_SPECULATIVE_PEAK_DURABILITY, comparison_now_iso()])
+    end
+    nothing
+end
+
+"""
+    migrate_hex_sqrt11!(db)
+
+#304: `√11` was removed from `phaseratios(Hexagonal)` — it is not a permitted 2D
+hexagonal reflection (`N = h²+hk+k²` has no integer solution for 11). The series
+went 14 → 13 entries and every position past 5 renumbered, so persisted
+`ratio_position`s for Hexagonal indices now point at the wrong reflection.
+
+Three steps, sentinel-gated, in one transaction:
+
+1. DELETE Hexagonal `index_peaks`. That table is DERIVED — `persist_analysis!`
+   wipes it for every kind and rebuilds (auto from `indexpeaks`, speculative from
+   `speculative_peak_intents`), so renumbering it would be pointless work. It is
+   also not safely renumberable in SQL: auto rows store `ratio_position` as a
+   serialized `UInt8` BLOB (`findnz` on the `SparseVector{_,UInt8}` in
+   `src/index.jl`), so `ratio_position > 6` is a BLOB-vs-INTEGER affinity
+   comparison that matches every blob row. Until the next analyze the index reads
+   as claiming nothing — an already-supported state, and honest.
+2. Renumber `speculative_peak_intents`, the only DURABLE `ratio_position` store
+   (analyze reads it and never rewrites it). `p == 6` claimed the √11 that never
+   existed → drop; `p > 6` shifts down one so each intent keeps its radicand.
+3. NULL `analysis_inputs_hash` to reopen the `indexpeaks_skipped` memoization
+   gate, so the next analyze re-indexes and re-scores.
+
+Must run AFTER `migrate_speculative_peak_durability!` (needs the intents table).
+"""
+function migrate_hex_sqrt11!(db::SQLite.DB)
+    _migrated(db, MIGRATION_HEX_SQRT11) && return nothing
+
+    SQLite.transaction(db) do
+        DBInterface.execute(db, """
+            DELETE FROM index_peaks
+             WHERE index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+
+        DBInterface.execute(db, """
+            DELETE FROM speculative_peak_intents
+             WHERE ratio_position = 6
+               AND index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+
+        # Two-pass via a +1000 offset. PRIMARY KEY (index_id, ratio_position) is
+        # enforced per row and SQLite gives no ORDER BY on UPDATE, so a single
+        # decrement can hit 8→7 while 7 still exists. A PK abort here would roll
+        # back the sentinel and throw on every subsequent open_db.
+        DBInterface.execute(db, """
+            UPDATE speculative_peak_intents SET ratio_position = ratio_position + 1000
+             WHERE ratio_position > 6
+               AND index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+        DBInterface.execute(db, """
+            UPDATE speculative_peak_intents SET ratio_position = ratio_position - 1001
+             WHERE ratio_position > 1000
+               AND index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+
+        # NOT scoped to exposures with a Hexagonal index: `remove_subsets` is
+        # phase-agnostic (`issubset` keys on basis + peak set, not phase), so a
+        # Hexagonal candidate whose score moved can now survive against a
+        # same-basis candidate of another phase on an exposure that has no
+        # Hexagonal row today — and eliminated candidates aren't persisted, so
+        # that set can't be enumerated here.
+        #
+        # Zero-index exposures ARE provably safe to skip: elimination requires a
+        # surviving eliminator, so zero persisted rows means nothing met
+        # `minpeaks` at all, and dropping a ratio can only shrink a candidate's
+        # peak count (every remaining ratio keeps its value, so no peak gains a
+        # match it lacked). What failed `minpeaks` before still fails after.
+        DBInterface.execute(db, """
+            UPDATE exposures SET analysis_inputs_hash = NULL
+             WHERE analysis_inputs_hash IS NOT NULL
+               AND EXISTS (SELECT 1 FROM indices i WHERE i.exposure_id = exposures.id)""")
+
+        # Plain INSERT (never OR IGNORE): the intent renumber is NOT idempotent
+        # under double application (a second pass shifts everything down again),
+        # and the sentinel gate is read outside this transaction. The PK conflict
+        # on `schema_migrations.name` is the backstop that makes a concurrent-open
+        # race roll back the losing racer's whole tx.
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_HEX_SQRT11, comparison_now_iso()])
     end
     nothing
 end

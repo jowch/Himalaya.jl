@@ -533,10 +533,16 @@ _pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6
     end
 end
 
-@testset "Hexagonal commit claims √12 and never the forbidden √11" begin
-    # Behavioural teeth for the alignment contract. The cross-language test
-    # below pins the DATA (SYMS vs phaseratios); this drives the actual claim
-    # path, so reverting compute_snap to a count bound fails HERE.
+@testset "Hexagonal commit claims only the reflections the modal drew" begin
+    # Behavioural teeth for the bound. The cross-language test below pins the
+    # DATA (SYMS vs phaseratios); this drives the actual claim path, so dropping
+    # the bound in compute_snap and scanning the whole series fails HERE.
+    #
+    # Pre-#304 this testset keyed on the core series' spurious √11 sitting at
+    # position 6, which made `Ms` non-prefix and gave the value bound teeth a
+    # count bound lacked. The √11 is gone, so the two coincide on today's data —
+    # the case that still separates "bounded" from "unbounded" is a backend
+    # reflection BEYOND the drawn set, which is what this now uses.
     mktempdir() do dir
         db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
@@ -544,16 +550,17 @@ end
         e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
 
         P      = Himalaya.Hexagonal
-        rn     = Himalaya.phaseratios(P; normalize = true)   # [1, √3, 2, √7, 3, √11, √12, …]
+        rn     = Himalaya.phaseratios(P; normalize = true)   # [1, √3, 2, √7, 3, √12, √13, …]
         basis  = 0.10
-        # Modal draws Ms = [1, 3, 4, 7, 9, 12] → backend positions {1,2,3,4,5,7}.
+        # Modal draws Ms = [1, 3, 4, 7, 9, 12] → backend positions {1,2,3,4,5,6}.
         drawn  = sqrt.([1.0, 3, 4, 7, 9, 12]) ./ 1.0
+        @test length(rn) >= 7   # guard: the test needs an undrawn order to exist
 
-        # One peak exactly on √11 (backend position 6 — never drawn, and
-        # physically impossible) and one exactly on √12 (drawn, position 7).
-        q11 = basis * rn[6]
-        q12 = basis * rn[7]
-        for q in (basis, q11, q12)
+        # One peak exactly on √12 (drawn, position 6) and one exactly on √13
+        # (position 7 — a real reflection the modal never showed the user).
+        q12 = basis * rn[6]
+        q13 = basis * rn[7]
+        for q in (basis, q12, q13)
             DBInterface.execute(db,
                 "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)",
                 [e_id, q])
@@ -563,10 +570,11 @@ end
         claimed = sort([Int(r.ratio_position) for r in Tables.rowtable(DBInterface.execute(db,
             "SELECT ratio_position FROM index_peaks WHERE index_id = ?", [nid]))])
 
-        @test 7 in claimed          # the √12 the modal drew
-        @test !(6 in claimed)       # the √11 it did not (and that cannot exist)
-        @test claimed == [1, 7]
-        # A count bound (max_order = 6) would produce exactly the inverse.
+        @test 6 in claimed          # the √12 the modal drew
+        @test !(7 in claimed)       # the √13 it did not
+        @test claimed == [1, 6]
+        # An unbounded scan would claim position 7 too, and the rail's
+        # "explains N peaks" would exceed the modal's "N of M land".
     end
 end
 
@@ -663,18 +671,20 @@ end
         end
     end
 
-    # Hexagonal is deliberately NOT positionally aligned: the core series
-    # carries a √11, which is not a permitted 2D hexagonal reflection
-    # (N = h²+hk+k² has no integer solution for 11). Pinning this stops anyone
-    # "simplifying" drawn_ratios back to a count bound — which would claim the
-    # impossible √11 and drop the √12 the modal drew.
+    # Positional alignment is INCIDENTAL, not guaranteed — do not "simplify"
+    # `drawn_ratios` into a count bound on the strength of it. Until #304 the
+    # core Hexagonal series carried a √11 (not a permitted 2D reflection:
+    # N = h²+hk+k² has no integer solution for 11), so `Ms` was NOT a positional
+    # prefix and a count bound claimed an impossible order while dropping the √12
+    # the modal drew. That entry is gone and every phase now happens to line up;
+    # the value match above is what keeps the commit correct if one ever drifts
+    # again. The loop is the contract — these are the Hexagonal-specific teeth.
     hex_backend = Himalaya.phaseratios(Himalaya.Hexagonal; normalize = true)
     hex_ms      = entries["Hexagonal"][2]
     @test hex_ms == [1, 3, 4, 7, 9, 12]
-    @test round(Int, hex_backend[6]^2) == 11          # the spurious entry
-    @test !(11 in [h^2 + h*k + k^2 for h in -12:12, k in -12:12])
-    # …so a prefix of length(Ms) is NOT the drawn set.
-    @test round.(Int, hex_backend[1:length(hex_ms)] .^ 2) != hex_ms
+    @test !(11 in round.(Int, hex_backend .^ 2))      # #304: the √11 is gone…
+    @test !(11 in [h^2 + h*k + k^2 for h in -12:12, k in -12:12])  # …because it cannot exist
+    @test round.(Int, hex_backend[1:length(hex_ms)] .^ 2) == hex_ms
 end
 
 @testset "basis_locked survives reanalysis (a custom lattice never drifts)" begin

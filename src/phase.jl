@@ -60,7 +60,10 @@ function phaseratios(::Type{P}; normalize = false) where {P<:Phase}
 end
 
 phaseratios(::Type{Lamellar}) = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-phaseratios(::Type{Hexagonal}) = [1, √3, √4, √7, √9, √11, √12, √13, √16, √19,
+# N = h² + hk + k² (Loeschian numbers). N is representable iff every prime
+# ≡ 2 (mod 3) occurs to an even power — 11 is not, so √11 is NOT a permitted 2D
+# hexagonal reflection and is absent here (#304). Position 6 is √12.
+phaseratios(::Type{Hexagonal}) = [1, √3, √4, √7, √9, √12, √13, √16, √19,
                                   √21, √25, √27, √28]
 phaseratios(::Type{Square}) = [1, √2, √4, √5, √8, √9, √10, √13, √16, √17, √18, √20]
 
