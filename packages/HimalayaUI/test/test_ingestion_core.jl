@@ -197,6 +197,23 @@ end
         @test geo3.flight_path_m ≈ 1.700
         @test geo3.flight_path_m_source == "prp"
 
+        # EMPTY prp_paths must still dispatch and return an all-"default" geometry.
+        # The path-based method delegates via a comprehension, and `parse_prp`'s
+        # inferred return is a non-concrete NamedTuple, so a bare `[...]` collects
+        # to Vector{Any} and matches NEITHER method -> MethodError. That is an
+        # invisible break: the element-type annotation guarding it is the kind of
+        # thing a later "simplification" removes with no other CI signal, and the
+        # MethodError aborts the whole ingest. Reachable from routes_fs.jl (a
+        # directory with TIFs and no PRPs) and from regroup_experiment!.
+        geo_empty, disc_empty = HimalayaUI.derive_geometry(String[], String[])
+        @test geo_empty.energy_kev === missing
+        @test geo_empty.energy_kev_source == "default"
+        @test geo_empty.pixel_size_um_source == "default"
+        @test isempty(disc_empty)
+        # The pre-parsed method must accept an empty vector too.
+        geo_empty2, _ = HimalayaUI.derive_geometry(NamedTuple[], String[])
+        @test geo_empty2.energy_kev_source == "default"
+
         # Unknown detector → pixel_size_um missing, discrepancy flagged
         write_prp(joinpath(data_dir, "HA_004.prp");
             beam_energy_ev = 9000.0, pipe_length_mm = 1700,
@@ -864,6 +881,30 @@ end
         exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir,
                                               data_dir=data_dir, analysis_dir=data_dir)
         (db, exp_id)
+    end
+
+    @testset "scan_and_group! ingests a TIF-only directory (no PRPs at all)" begin
+        # Regression for the parsed_prps element type. ExposureMeta.prp is
+        # Union{NamedTuple,Nothing}, so with NO PRPs anywhere the filtered
+        # comprehension collects to Vector{Any} and derive_geometry MethodErrors --
+        # turning "geometry falls back to defaults" into "the ingest crashes". This
+        # is the standard shape of a MISCONFIGURED prp_pattern, i.e. the exact
+        # situation where a crash is least helpful.
+        db = fresh_db()
+        data_dir = mktempdir()
+        for stem in ("e1", "e2")
+            touch(joinpath(data_dir, "$stem.tif"))      # deliberately NO .prp
+        end
+        exp_id = HimalayaUI.create_experiment!(db; name="tifonly", path=data_dir,
+                                              data_dir=data_dir, analysis_dir=data_dir)
+        res = HimalayaUI.scan_and_group!(db, exp_id; analyze=false)
+        @test res.status == :ok
+        @test res.added_exposures == 2
+        # Geometry stayed at defaults rather than throwing.
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT energy_kev_source, pixel_size_um_source FROM experiments WHERE id = ?", [exp_id])))
+        @test row.energy_kev_source == "default"
+        @test row.pixel_size_um_source == "default"
     end
 
     @testset "scan_and_group! on_progress reports each stage on its own denominator" begin

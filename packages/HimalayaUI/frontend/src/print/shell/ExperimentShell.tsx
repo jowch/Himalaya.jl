@@ -86,9 +86,19 @@ export function ExperimentShell(): JSX.Element {
           // Caption names the STAGE so a per-stage count is not read as
           // whole-scan progress ("Processed 1100 / ~1100" then "0 / ~604").
           caption: isIngestStage(inFlight?.stage) ? stageLabel(inFlight.stage) : "Processed",
-          value: inFlight
-            ? (inFlight.total > 0 ? `${inFlight.processed} / ${inFlight.total}` : "done")
-            : "\u2014" },
+          // Gate on stage-presence BEFORE total, exactly as the two sibling
+          // consumers do (ExperimentCorpusPage, GroupingReviewPage). Checking
+          // `total > 0` first conflates "this stage has nothing to do" with "no
+          // stage has reported yet": `ingest_started` carries processed=0,
+          // total=0 and NO stage, so the header read "done" while the bar below
+          // it sat at 0% for the whole of readdir plus the first 1% of discovery.
+          value: !inFlight
+            ? "\u2014"
+            : !isIngestStage(inFlight.stage)
+              ? `${inFlight.processed} / ~${inFlight.total}`
+              : inFlight.total > 0
+                ? `${inFlight.processed} / ${inFlight.total}`
+                : "done" },
         { key: "span", caption: "Span", value: "pending", pending: true },
       ]
     : [

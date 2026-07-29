@@ -193,6 +193,36 @@ describe("ExperimentShell (Phase E1)", () => {
     useAppState.setState({ ingestInFlight: null });
   });
 
+  it("a stage-less ingest_started does NOT read as done", async () => {
+    // _rescan_tick! opens with ingest_started: processed=0, total=0, NO stage.
+    // Gating on `total > 0` before stage-presence made the header read
+    // "Processed: done" while the bar below it sat at 0% -- for the whole of
+    // readdir plus the first 1% of the discovery walk.
+    vi.spyOn(api, "getExperiment").mockResolvedValue({ ...EXP, ingest_status: "analyzing" });
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "analyzing", processed: 0, total: 0 } },
+    });
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    const shell = screen.getByTestId("experiment-shell");
+    expect(shell.textContent).not.toMatch(/done/i);
+    useAppState.setState({ ingestInFlight: null });
+  });
+
+  it("a zero-total STAGE does read as done (nothing to do)", async () => {
+    // Distinct from the case above: here a stage HAS reported and genuinely has
+    // no work (clean rescan, no new exposures to analyze).
+    vi.spyOn(api, "getExperiment").mockResolvedValue({ ...EXP, ingest_status: "analyzing" });
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "analyzing", processed: 0, total: 0, stage: "analyzing" } },
+    });
+    renderAt("/experiments/7/corpus");
+    await screen.findByTestId("experiment-header-name");
+    const shell = screen.getByTestId("experiment-shell");
+    expect(shell.textContent).toMatch(/done/i);
+    useAppState.setState({ ingestInFlight: null });
+  });
+
   it("falls back to the plain bar when no stage is present", async () => {
     vi.spyOn(api, "getExperiment").mockResolvedValue({ ...EXP, ingest_status: "analyzing" });
     useAppState.setState({
