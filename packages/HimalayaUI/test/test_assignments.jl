@@ -528,6 +528,53 @@ end
     end
 end
 
+@testset "deleting a custom index leaves no orphan peaks, intents or members" begin
+    # DELETE /api/indices/:id removes index_group_members + index_peaks
+    # EXPLICITLY, but relies on ON DELETE CASCADE for speculative_peak_intents
+    # and assignment_members — which only fires while PRAGMA foreign_keys is
+    # on. Orphan intents would otherwise accumulate forever now that
+    # insert_custom_index! writes them.
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        @test Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_keys"))[1].foreign_keys == 1
+
+        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
+
+        a = 150.0
+        P = Himalaya.Pn3m
+        ratios = Himalaya.phaseratios(P; normalize = true)
+        basis  = 2π * sqrt(2) / a
+        for q in (basis, basis * ratios[2] * 1.01)
+            DBInterface.execute(db,
+                "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)",
+                [e_id, q])
+        end
+
+        nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis)
+        DBInterface.execute(db,
+            "INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')", [e_id])
+        DBInterface.execute(db,
+            "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [e_id, nid])
+
+        n(tbl) = Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM $tbl WHERE index_id = ?", [nid]))[1].c
+        @test n("index_peaks") == 2
+        @test n("speculative_peak_intents") == 2
+        @test n("assignment_members") == 1
+
+        # Exactly the statements the DELETE route issues.
+        DBInterface.execute(db, "DELETE FROM index_group_members WHERE index_id = ?", [nid])
+        DBInterface.execute(db, "DELETE FROM index_peaks WHERE index_id = ?", [nid])
+        DBInterface.execute(db, "DELETE FROM indices WHERE id = ?", [nid])
+
+        @test n("index_peaks") == 0
+        @test n("speculative_peak_intents") == 0   # cascade
+        @test n("assignment_members") == 0         # cascade
+    end
+end
+
 if isdefined(@__MODULE__, :with_test_server)
     @testset "POST /custom-index persists + adds to the assignment" begin
         mktempdir() do dir
