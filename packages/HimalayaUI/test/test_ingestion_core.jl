@@ -846,57 +846,83 @@ end
         @test all(Int(l.session_id) == 1 for l in loads)
     end
 
-    @testset "scan_and_group! on_progress reports per-exposure" begin
+    # -----------------------------------------------------------------------
+    # on_progress is (processed, total, stage). Each stage is a SEGMENT of the
+    # UI's progress bar and reports against its OWN denominator, so the bar
+    # advances left-to-right through segments instead of resetting one shared
+    # scale. Helper: collect the ticks for one stage.
+    # -----------------------------------------------------------------------
+    _stage(ticks, s) = [(p, t) for (p, t, st) in ticks if st == s]
+
+    function _progress_fixture(stems)
         db = fresh_db()
         data_dir = mktempdir()
-        for stem in ("e1", "e2", "e3")
+        for stem in stems
             touch(joinpath(data_dir, "$stem.tif"))
             write_prp(joinpath(data_dir, "$stem.prp"))      # default kwargs OK; see :20
         end
-        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir, data_dir=data_dir, analysis_dir=data_dir)
-        ticks = Tuple{Int,Int}[]
-        HimalayaUI.scan_and_group!(db, exp_id; analyze=true, on_progress=(p, t) -> push!(ticks, (p, t)))
-        @test last(ticks) == (3, 3)           # final tick = all done
-        @test issorted(first.(ticks))         # monotonic processed count
-        @test all(t -> t[2] == 3, ticks)      # total stable
+        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir,
+                                              data_dir=data_dir, analysis_dir=data_dir)
+        (db, exp_id)
     end
 
-    @testset "scan_and_group! on_progress publishes the denominator before analyze" begin
-        db = fresh_db()
-        data_dir = mktempdir()
-        for stem in ("e1", "e2", "e3")
-            touch(joinpath(data_dir, "$stem.tif"))
-            write_prp(joinpath(data_dir, "$stem.prp"))
-        end
-        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir, data_dir=data_dir, analysis_dir=data_dir)
-        ticks = Tuple{Int,Int}[]
-        # analyze=false skips the per-exposure loop entirely — the ONLY tick left
-        # is the discovery one. Regression: the total used to be published for the
-        # first time inside the analyze loop, so the UI had no scale at all during
-        # the (slow) discovery + geometry + persist phases and sat on "0 / ~0".
-        HimalayaUI.scan_and_group!(db, exp_id; analyze=false, on_progress=(p, t) -> push!(ticks, (p, t)))
+    @testset "scan_and_group! on_progress reports each stage on its own denominator" begin
+        db, exp_id = _progress_fixture(("e1", "e2", "e3"))
+        ticks = Tuple{Int,Int,String}[]
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=true,
+                                   on_progress=(p, t, s) -> push!(ticks, (p, t, s)))
+
+        # Every tick must name a stage — the frontend keys its segment off this.
+        @test all(t -> !isempty(t[3]), ticks)
+
+        disc = _stage(ticks, "discovery")
+        anal = _stage(ticks, "analyzing")
+        @test !isempty(disc)
+        @test !isempty(anal)
+        # Each segment fills 0→full against its own total, monotonically.
+        @test last(disc) == (3, 3)
+        @test last(anal) == (3, 3)
+        @test issorted(first.(disc))
+        @test issorted(first.(anal))
+        # Discovery reports BEFORE analysis begins: the whole point is that the
+        # slow silent half now has a moving bar.
+        @test findfirst(t -> t[3] == "discovery", ticks) <
+              findfirst(t -> t[3] == "analyzing",  ticks)
+    end
+
+    @testset "scan_and_group! on_progress reports discovery even with analyze=false" begin
+        db, exp_id = _progress_fixture(("e1", "e2", "e3"))
+        ticks = Tuple{Int,Int,String}[]
+        # analyze=false skips the analyze + thumbnail stages entirely, leaving only
+        # discovery. Regression: discovery used to emit NOTHING — the total was
+        # first published inside the analyze loop, so the UI had no scale at all
+        # during the slow scan_directory + geometry + persist half and sat on
+        # "0 / ~0" throughout.
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=false,
+                                   on_progress=(p, t, s) -> push!(ticks, (p, t, s)))
         @test !isempty(ticks)
-        @test first(ticks) == (0, 3)          # real denominator, before any analysis
+        @test all(t -> t[3] == "discovery", ticks)
+        @test last(ticks) == (3, 3, "discovery")
+        # Progress arrives DURING the walk, not just as a closing summary.
+        @test first(ticks) == (1, 3, "discovery")
     end
 
-    @testset "scan_and_group! on_progress lands on a full bar for a clean rescan" begin
-        db = fresh_db()
-        data_dir = mktempdir()
-        for stem in ("e1", "e2", "e3")
-            touch(joinpath(data_dir, "$stem.tif"))
-            write_prp(joinpath(data_dir, "$stem.prp"))
-        end
-        exp_id = HimalayaUI.create_experiment!(db; name="t", path=data_dir, data_dir=data_dir, analysis_dir=data_dir)
+    @testset "scan_and_group! on_progress closes the analyzing segment on a clean rescan" begin
+        db, exp_id = _progress_fixture(("e1", "e2", "e3"))
         HimalayaUI.scan_and_group!(db, exp_id; analyze=true)   # first scan ingests everything
 
         # Second scan: insert-only dedup means ZERO new exposures, so the analyze
-        # loop body never runs. It used to report `i / length(new_exposure_ids)`,
-        # i.e. nothing at all — the bar showed "0 / ~0" start to finish and then
-        # vanished when ingest_complete cleared it. Report against the found-count
-        # instead so an unchanged rescan reads as fully done.
-        ticks = Tuple{Int,Int}[]
-        HimalayaUI.scan_and_group!(db, exp_id; analyze=true, on_progress=(p, t) -> push!(ticks, (p, t)))
-        @test last(ticks) == (3, 3)
-        @test all(t -> t[2] == 3, ticks)      # never a zero denominator
+        # loop body never runs. It used to report `i / length(new_exposure_ids)` and
+        # therefore emitted nothing at all, leaving the bar stalled until
+        # ingest_complete wiped it. Now the segment is explicitly closed as 0-of-0,
+        # which the frontend renders as a complete segment rather than an empty one.
+        ticks = Tuple{Int,Int,String}[]
+        HimalayaUI.scan_and_group!(db, exp_id; analyze=true,
+                                   on_progress=(p, t, s) -> push!(ticks, (p, t, s)))
+        anal = _stage(ticks, "analyzing")
+        @test !isempty(anal)
+        @test last(anal) == (0, 0)             # nothing to do, segment closed
+        # Discovery still walked all three files (they exist on disk regardless).
+        @test last(_stage(ticks, "discovery")) == (3, 3)
     end
 end

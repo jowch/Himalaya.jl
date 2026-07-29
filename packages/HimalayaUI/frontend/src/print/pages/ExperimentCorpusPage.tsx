@@ -14,6 +14,7 @@ import {
 import * as api from "../../api";
 import { Button } from "../ui/Button";
 import { ProgressBar } from "../ui/ProgressBar";
+import { SegmentedProgressBar } from "../ui/SegmentedProgressBar";
 import { ScanFailedPage } from "./ScanFailedPage";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
@@ -23,6 +24,7 @@ import { useListCursor } from "../interaction/useListCursor";
 import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
+import { deriveSegments, isIngestStage, stageLabel } from "../../lib/ingestStages";
 
 /**
  * ExperimentCorpusPage — the experiment's Corpus home (the index route under
@@ -31,7 +33,7 @@ import { effectiveIngestStatus } from "../../lib/ingestStatus";
  * to one experiment.
  *
  * §6.2 state machine (takeover states early-return before the sheet/dock):
- *   - scanning   (inFlight.status==="scanning")      → GroupingReviewPage (live-unfold)
+ *   - scanning   (inFlight.status==="scanning")      → GroupingReviewPage (staged progress)
  *   - rescanning (inFlight.status==="analyzing")     → inline ProgressBar
  *   - failed     (!processing && status==="failed")  → ScanFailedPage  [T4.2]
  *   - otherwise  → grouping-review banner (when flags) + real SheetTable + Dock
@@ -60,6 +62,15 @@ export function ExperimentCorpusPage(): JSX.Element {
   // a reload mid-rescan (overlay lost, persisted "scanning") on the inline path
   // instead of wrongly re-entering the full grouping takeover.
   const eff = effectiveIngestStatus(inFlight?.status, exp.data?.ingest_status);
+  // Stage segments for the inline rescan bar — same derivation as the grouping
+  // takeover, so both surfaces read the same strip. Null stage -> plain bar.
+  const segments = deriveSegments(
+    inFlight?.stage, inFlight?.processed ?? 0, inFlight?.total ?? 0);
+  const rescanCaption = isIngestStage(inFlight?.stage)
+    ? ((inFlight.total ?? 0) === 0
+        ? `${stageLabel(inFlight.stage)}\u2026 nothing to do`
+        : `${stageLabel(inFlight.stage)}\u2026 ${inFlight.processed} / ${inFlight.total}`)
+    : "Analyzing exposures\u2026";
   const processing = eff === "scanning" || eff === "analyzing";
   // The overlay phase is authoritative when present: "analyzing" ⇒ a rescan
   // (inline ProgressBar), "scanning" ⇒ an initial scan (grouping takeover). Only
@@ -270,12 +281,16 @@ export function ExperimentCorpusPage(): JSX.Element {
           data-testid="live-ingest-slot"
           className="flex flex-col gap-2 rounded-sm border border-hair bg-paper-sunk px-4 py-3"
         >
-          <p className="text-sm text-ink-soft">Analyzing exposures…</p>
-          <ProgressBar
-            value={inFlight ? inFlight.processed : 0}
-            total={inFlight ? Math.max(inFlight.total, 1) : 1}
-            label="Analysis progress"
-          />
+          <p className="text-sm text-ink-soft" data-testid="rescan-caption">{rescanCaption}</p>
+          {segments ? (
+            <SegmentedProgressBar segments={segments} label="Scan progress" />
+          ) : (
+            <ProgressBar
+              value={inFlight ? inFlight.processed : 0}
+              total={inFlight ? Math.max(inFlight.total, 1) : 1}
+              label="Analysis progress"
+            />
+          )}
         </div>
       )}
 

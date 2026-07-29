@@ -143,10 +143,29 @@ function derive_geometry(
     prp_paths::AbstractVector{<:AbstractString},
     setup_files::AbstractVector{<:AbstractString},
 )
-    discrepancies = GeometryDiscrepancy[]
+    # Parse all PRPs (small files, sequential read is fine), then delegate.
+    derive_geometry([parse_prp(p) for p in prp_paths], setup_files)
+end
 
-    # Parse all PRPs (small files, sequential read is fine)
-    parsed = [parse_prp(p) for p in prp_paths]
+"""
+    derive_geometry(parsed_prps, setup_files) -> (geometry, discrepancies)
+
+Pre-parsed variant: takes `parse_prp` NamedTuples instead of paths, so a caller
+that has already read the PRPs does not read them a second time.
+
+`scan_directory` parses every PRP into `ExposureMeta.prp`, and the path-based
+method above then re-read and re-parsed all of them — two full passes over every
+PRP in the experiment per ingest. Over SMB each parse is a network round trip, so
+on an ~1100-exposure experiment that was ~1100 avoidable file reads. The ingest
+paths (`scan_and_group!`, `regroup_experiment!`) pass `m.prp` straight through;
+the funnel preview (`routes_fs.jl`) has only paths and still uses the method
+above.
+"""
+function derive_geometry(
+    parsed::AbstractVector{<:NamedTuple},
+    setup_files::AbstractVector{<:AbstractString},
+)
+    discrepancies = GeometryDiscrepancy[]
 
     # --- Energy (from PRP, should be constant) ---
     energy_vals = filter(!ismissing, [p.energy_kev for p in parsed])

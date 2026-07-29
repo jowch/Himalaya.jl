@@ -13,11 +13,13 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { EmptyState } from "../ui/EmptyState";
 import { Kicker } from "../ui/Kicker";
 import { ProgressBar } from "../ui/ProgressBar";
+import { SegmentedProgressBar } from "../ui/SegmentedProgressBar";
 import { ModalShell } from "../ui/ModalShell";
 import { Button } from "../ui/Button";
 import { Menu } from "../ui/Menu";
 import { matchSample } from "../../lib/matchSample";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
+import { deriveSegments, isIngestStage, stageLabel } from "../../lib/ingestStages";
 import { showToast } from "../../lib/toast";
 import { useUndoStack } from "../../hooks/useUndoStack";
 import { useListCursor } from "../interaction/useListCursor";
@@ -69,7 +71,9 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
   const exp = useExperiment(experimentId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   // Scanning = an initial-scan frame is in flight (the combined scan + review
-  // surface, p1-grouping). Loads unfold live as the SSE invalidates the query.
+  // surface, p1-grouping). Loads do NOT unfold live: the persist txn in
+  // scan_and_group! is atomic, so the table is empty until it commits and then
+  // fills in one step. The staged progress bar is what moves during the scan.
   // Reconcile the live SSE overlay with the persisted resting truth: a terminal
   // persisted state (complete/failed) overrides a stale "scanning" overlay left
   // behind by a dropped `ingest_complete` frame (8c). With useExperiment's
@@ -116,6 +120,25 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     [loads],
   );
   const totalSamples = useMemo(() => loads.reduce((a, l) => a + l.samples.length, 0), [loads]);
+
+  // Segments for the scan bar, derived from the single stage the backend reports.
+  // Null when the stage is absent (an `ingest_started` frame, or a backend
+  // predating stage reporting) -> fall back to the plain single-track bar.
+  const segments = useMemo(
+    () => deriveSegments(inFlight?.stage, inFlight?.processed ?? 0, inFlight?.total ?? 0),
+    [inFlight?.stage, inFlight?.processed, inFlight?.total],
+  );
+  // Caption names the stage so a bar that is mid-strip is legible: "Reading
+  // files... 780 / 1100". Without a stage, keep the generic wording.
+  const scanCaption = useMemo(() => {
+    const done = inFlight?.processed ?? 0;
+    const all = inFlight?.total ?? 0;
+    if (!isIngestStage(inFlight?.stage)) return `Scanning\u2026 ${done} / ~${all}`;
+    // A zero total means nothing to do in this stage (e.g. a clean rescan has no
+    // new exposures to analyze) -- report it as done, not as 0 of 0.
+    if (all === 0) return `${stageLabel(inFlight.stage)}\u2026 nothing to do`;
+    return `${stageLabel(inFlight.stage)}\u2026 ${done} / ${all}`;
+  }, [inFlight?.stage, inFlight?.processed, inFlight?.total]);
 
   // Visible (load, samples) pairs. A searched query overrides the attn filter
   // (search across all loads); a selected sample stays visible even when it
@@ -381,23 +404,33 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
           dock as the "‹ Samples" up-link now. */}
 
       {scanning ? (
-        // Combined scan + grouping-review header (p1-grouping): live progress as
-        // loads land. processed/total ride the SSE ingestInFlight; loads/samples
-        // come from the live-invalidated query.
+        // Scan header. The bar is SEGMENTED — one equal-width track per ingest
+        // stage, each filling on its own denominator (lib/ingestStages.ts), so it
+        // advances through stages instead of resetting a shared scale.
+        //
+        // Groups do NOT appear incrementally: every load/sample/exposure is
+        // inserted in ONE transaction (scan_and_group!), so the table stays empty
+        // until it commits. The copy says "scanning" rather than promising rows
+        // that land live, and the loads/samples counts only appear once they are
+        // actually non-zero.
         <div data-testid="grouping-scanning-header">
-          <Kicker tone="accent">Scanning · review groups as they land</Kicker>
+          <Kicker tone="accent">Scanning</Kicker>
           <h1 className="text-display text-ink">{exp.data?.name ?? `Experiment ${experimentId}`}</h1>
           <div className="mt-3 flex items-center gap-4">
-            <span className="text-meta text-ink-soft whitespace-nowrap">
-              Parsing exposures… {inFlight?.processed ?? 0} / ~{inFlight?.total ?? 0}
-              {" · "}{loads.length} loads · {totalSamples} samples
+            <span className="text-meta text-ink-soft whitespace-nowrap" data-testid="grouping-scan-caption">
+              {scanCaption}
+              {loads.length > 0 && <>{" · "}{loads.length} loads · {totalSamples} samples</>}
             </span>
             <div className="flex-1 min-w-[8rem]">
-              <ProgressBar
-                value={inFlight?.processed ?? 0}
-                total={Math.max(inFlight?.total ?? 1, 1)}
-                label="Scan progress"
-              />
+              {segments ? (
+                <SegmentedProgressBar segments={segments} label="Scan progress" />
+              ) : (
+                <ProgressBar
+                  value={inFlight?.processed ?? 0}
+                  total={Math.max(inFlight?.total ?? 1, 1)}
+                  label="Scan progress"
+                />
+              )}
             </div>
             {flaggedTotal > 0 && (
               <span className="text-meta font-semibold text-print-accent whitespace-nowrap" data-testid="grouping-flag-count">

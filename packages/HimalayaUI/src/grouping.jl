@@ -44,6 +44,7 @@ function scan_directory(
     tif_pattern::String = "{name}.tif",
     prp_pattern::String = "{name}.prp",
     dat_pattern::String = "{name}.dat",
+    on_progress::Union{Function, Nothing} = nothing,
 )::Vector{ExposureMeta}
     # Resolve a sidecar by substituting the known stem into the pattern: the file
     # is exactly `joinpath(base, pattern-with-{name}→stem)` if it exists.
@@ -70,15 +71,27 @@ function scan_directory(
     sort!(tif_files)
 
     # Strip the TIF suffix to get stems, then pair each stem with its sidecars.
+    #
+    # This loop is the expensive half of an ingest, not `readdir`: per exposure it
+    # does two `isfile` stats plus a full `parse_prp` read. Over SMB that is three
+    # round trips × N exposures, and it used to run entirely silent — the UI had no
+    # denominator until it finished. `on_progress(done, total, "discovery")` is
+    # called with `total` known up front (from `tif_files`), coalesced to ~1% steps
+    # so a 1100-file scan emits ~100 frames rather than 1100.
     suffix_len = length(tif_suffix)
     metas = ExposureMeta[]
-    for fname in tif_files
+    n_total = length(tif_files)
+    step    = max(1, n_total ÷ 100)
+    for (i, fname) in enumerate(tif_files)
         stem = fname[1:end - suffix_len]
         tif_path  = joinpath(tif_scan_dir, fname)
         prp_path  = sidecar(data_dir, stem, prp_pattern)
         dat_path  = sidecar(analysis_dir, stem, dat_pattern)
         prp_parsed = prp_path !== nothing ? parse_prp(prp_path) : nothing
         push!(metas, ExposureMeta(stem, tif_path, prp_path, dat_path, prp_parsed))
+        if on_progress !== nothing && (i % step == 0 || i == n_total)
+            on_progress(i, n_total, "discovery")
+        end
     end
     return metas
 end

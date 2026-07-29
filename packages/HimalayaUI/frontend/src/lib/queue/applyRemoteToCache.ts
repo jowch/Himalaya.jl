@@ -98,14 +98,28 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
  * them inline (the listener still owns the Zustand store write; this helper is
  * pure cache-only). `isComplete=true` also refetches the experiment detail row
  * (so `ingest_status` transitions from "analyzing" → "complete").
+ *
+ * `stage` skips the loads/samples refetch during `"discovery"`. Nothing is
+ * committed then — `scan_and_group!` inserts every load/sample/exposure in ONE
+ * transaction that has not opened yet — so those queries can only return the same
+ * empty result they already hold, once per progress frame, against the slowest
+ * payload on the page. From `"analyzing"` onward the txn HAS committed and
+ * `analyze_exposure!` mutates per-exposure data, so the refetch is real work.
+ *
+ * An ABSENT stage keeps the original always-invalidate behavior — an
+ * `ingest_started` frame, or a backend predating stage reporting, must not
+ * silently lose its refresh.
  */
 export function invalidateIngestFrameCache(
   qc: QueryClient,
   expId: number,
   isComplete: boolean,
+  stage?: string,
 ): void {
-  qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
-  qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  if (stage !== "discovery") {
+    qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+    qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  }
   if (isComplete) qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
 }
 
@@ -348,7 +362,9 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       // is invalidation-only (the ingestInFlight store write lives in the
       // separate App.tsx listener — applyRemoteToCache stays pure).
       const expId = payload?.experiment_id as number | undefined;
-      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, false);
+      if (expId !== undefined) {
+        invalidateIngestFrameCache(qc, expId, false, payload?.stage as string | undefined);
+      }
       break;
     }
     case "ingest_complete": {

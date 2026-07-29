@@ -50,7 +50,7 @@ export function PrintApp(): JSX.Element {
           parsed.kind === "ingest_started" || parsed.kind === "ingest_progress" ||
           parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed"
         ) {
-          const p = (parsed as { payload?: { experiment_id?: number; processed?: number; total?: number; phase?: string } }).payload;
+          const p = (parsed as { payload?: { experiment_id?: number; processed?: number; total?: number; phase?: string; stage?: string } }).payload;
           const expId = p?.experiment_id;
           if (expId !== undefined) {
             if (parsed.kind === "ingest_started" || parsed.kind === "ingest_progress") {
@@ -62,6 +62,9 @@ export function PrintApp(): JSX.Element {
                 processed: p?.processed ?? 0,
                 total: p?.total ?? 0,
                 status: p?.phase === "rescan" ? "analyzing" : "scanning",
+                // `stage` names the bar SEGMENT; `phase` above selects the
+                // surface. Distinct fields on purpose (lib/ingestStages.ts).
+                stage: p?.stage,
               });
             } else {
               // Terminal (complete/failed): drop the in-flight entry; the
@@ -71,7 +74,7 @@ export function PrintApp(): JSX.Element {
             // Delegate cache invalidation to the shared helper (defined in
             // applyRemoteToCache.ts) — the single source of truth for which
             // query keys the ingest frames affect.
-            invalidateIngestFrameCache(qc, expId, parsed.kind === "ingest_complete");
+            invalidateIngestFrameCache(qc, expId, parsed.kind === "ingest_complete", p?.stage);
           }
           return; // do NOT run the queue reconciler for a broadcast-only frame
         }
