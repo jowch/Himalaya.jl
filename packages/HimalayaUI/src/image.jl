@@ -223,11 +223,28 @@ Missing source TIFFs are skipped-with-`@info` (matching the route's graceful
 defeat whole-second mtime token granularity (a same-second re-ingest would
 otherwise reuse a now-stale cached PNG). On a `:memory:` DB this is a no-op pass
 (rendering with nowhere to write).
+
+`exposure_ids` restricts the warm to a specific set. `scan_and_group!` passes the
+exposures it just inserted: without it the whole-DB default re-renders EVERY
+exposure in EVERY experiment (with `overwrite = true`, so no mtime short-circuit
+saves it) on each scan, which is both O(corpus) work per ingest and a long silent
+tail after the last progress tick — the bar sits at 100% while an unrelated
+experiment's thumbnails regenerate. An empty vector warms nothing.
 """
 function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
-                             overwrite::Bool = false)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL"))
+                             overwrite::Bool = false,
+                             exposure_ids::Union{AbstractVector{Int}, Nothing} = nothing)
+    rows = if exposure_ids === nothing
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL"))
+    elseif isempty(exposure_ids)
+        return (warmed = 0, skipped = 0)
+    else
+        # Inline the ids (they are Ints we just minted, never user input).
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL AND id IN (" *
+            join(string.(exposure_ids), ",") * ")"))
+    end
 
     n_warmed  = Atomic{Int}(0)
     n_skipped = Atomic{Int}(0)

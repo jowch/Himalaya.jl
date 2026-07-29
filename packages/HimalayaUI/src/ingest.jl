@@ -100,6 +100,15 @@ function scan_and_group!(
 
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
 
+    # Publish the DENOMINATOR as soon as discovery knows it. Everything below
+    # (geometry derive, grouping, the persist txn) is silent, and the analyze
+    # loop used to be the first and only thing that ever reported a total — so
+    # the UI sat on "0 / ~0" through the entire slow half of the scan and only
+    # then grew a scale. One tick here means the bar has an honest denominator
+    # from the moment the file list is known.
+    n_found = length(metas)
+    on_progress === nothing || on_progress(0, n_found)
+
     # -----------------------------------------------------------------------
     # 2. Geometry: derive + write to experiments row (never-clobber human fields)
     # -----------------------------------------------------------------------
@@ -211,7 +220,20 @@ function scan_and_group!(
     #    as cli_init_with_db!: a crash mid-analyze must not roll back ingest).
     # -----------------------------------------------------------------------
     if analyze
-        total = length(new_exposure_ids)
+        n_new = length(new_exposure_ids)
+        # Report against n_found (the discovery denominator), NOT n_new. Files
+        # that already had rows are done the instant the persist txn commits, so
+        # they count as processed. This keeps ONE scale for the whole scan and
+        # fixes the clean-rescan case: with nothing new, n_new == 0, the loop
+        # below never runs, and reporting `i / n_new` meant the bar showed
+        # "0 / ~0" from start to finish and then simply vanished.
+        base = max(0, n_found - n_new)
+        # Coalesce to ~1% steps. One frame per exposure meant a 600-exposure
+        # scan fired 600 frames into a 64-slot channel, and each frame costs the
+        # client two invalidateQueries → a refetch of the growing loads payload.
+        # The client falls behind, the channel saturates, and the subscriber is
+        # evicted mid-scan (see _fanout_frame! in events.jl).
+        step = max(1, n_new ÷ 100)
         for (i, eid) in enumerate(new_exposure_ids)
             try
                 analyze_exposure!(db, eid)
@@ -219,9 +241,13 @@ function scan_and_group!(
                 @warn "scan_and_group!: analyze_exposure! failed" exposure_id=eid exception=e
             end
             # Progress fires OUTSIDE the structural txn (already committed above).
-            # ponytail: tick every exposure; the SSE 64-cap drops surplus, terminal frame is authoritative.
-            on_progress === nothing || on_progress(i, total)
+            if on_progress !== nothing && (i % step == 0 || i == n_new)
+                on_progress(base + i, n_found)
+            end
         end
+        # Always land on a full bar, including the zero-new rescan that skips the
+        # loop entirely.
+        on_progress === nothing || on_progress(n_found, n_found)
 
         # Prewarm the thumbnail disk cache for the freshly-ingested exposures so the
         # first contact-sheet visit is fast (cold lazy generation staggers badly over
@@ -231,7 +257,9 @@ function scan_and_group!(
         # is a non-essential cache warm — an unreadable TIFF must never fail the ingest
         # (the thumb then just generates lazily on first view).
         try
-            prewarm_thumbnails!(db; overwrite = true)
+            # Scoped to the exposures this scan just inserted — the unscoped call
+            # re-rendered every thumbnail in every experiment on every scan.
+            prewarm_thumbnails!(db; overwrite = true, exposure_ids = new_exposure_ids)
         catch e
             @warn "scan_and_group!: thumbnail prewarm failed (non-fatal)" exception=e
         end

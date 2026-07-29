@@ -518,3 +518,69 @@ end
     close(ch)
     @test HimalayaUI._try_put!(ch, "x") === false
 end
+
+# ---------------------------------------------------------------------------
+# Regression: a saturated subscriber must be CLOSED when it is evicted.
+#
+# Dropping it from SSE_SUBSCRIBERS alone left the /api/events handler parked on
+# `for frame in pending` forever. The HTTP stream was never finished, so the
+# browser's EventSource saw a healthy connection, never fired `onerror`, and
+# never auto-reconnected — the client went permanently deaf to every curation
+# event. An ingest scan reliably triggers this: it out-runs the 64-slot channel.
+# ---------------------------------------------------------------------------
+
+@testset "SSE: saturated subscriber is closed (not just dropped) on eviction" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        HimalayaUI.bind_db!(db)
+
+        pending = Channel{String}(64)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            empty!(HimalayaUI.SSE_SUBSCRIBERS[])
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+
+        try
+            # Never drain: overrun the 64-slot channel the way a scan does.
+            for i in 1:70
+                HimalayaUI.broadcast_progress!(1; kind = "ingest_progress",
+                                               processed = i, total = 700)
+            end
+
+            @test isempty(HimalayaUI.SSE_SUBSCRIBERS[])          # evicted
+            @test !isopen(pending)                                # AND closed
+
+            # A closed channel ends the handler's `for frame in pending` loop, so
+            # the stream tears down and EventSource reconnects. Buffered frames
+            # stay readable until drained.
+            drained = 0
+            for _ in pending
+                drained += 1
+            end
+            @test drained == 64
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                empty!(HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+        end
+    end
+end
+
+@testset "SSE: _fanout_frame! closes an already-closed subscriber's slot cleanly" begin
+    pending = Channel{String}(4)
+    close(pending)
+    sub = (pending = pending,)
+    lock(HimalayaUI.SSE_LOCK) do
+        empty!(HimalayaUI.SSE_SUBSCRIBERS[])
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        HimalayaUI._fanout_frame!("event: curation\ndata: {}\n\n")
+        @test isempty(HimalayaUI.SSE_SUBSCRIBERS[])
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            empty!(HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+    end
+end

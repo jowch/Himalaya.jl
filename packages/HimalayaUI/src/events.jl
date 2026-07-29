@@ -1092,6 +1092,38 @@ function _try_put!(ch::Channel{String}, value::String)::Bool
 end
 
 """
+    _fanout_frame!(frame) -> Nothing
+
+Push one preformatted SSE frame to every subscriber, evicting any whose channel
+is closed or saturated. Shared by `broadcast_event!` and `broadcast_progress!`.
+
+CRITICAL: an evicted subscriber's channel MUST be closed. Dropping the sub from
+`SSE_SUBSCRIBERS` alone leaves the `/api/events` handler parked on
+`for frame in pending` (server.jl) forever — the HTTP stream is never finished,
+so the browser's EventSource sees a perfectly healthy connection, never fires
+`onerror`, and never auto-reconnects. The client then goes permanently deaf to
+EVERY curation event (not just the ingest frames that saturated it) until a
+manual reload. Closing the channel ends the handler loop, runs its `finally`,
+finishes the response, and lets EventSource reconnect on its own — which is what
+the "best-effort + reconnect-driven reconciliation" contract in `_try_put!`
+always assumed was happening.
+"""
+function _fanout_frame!(frame::String)
+    lock(SSE_LOCK) do
+        to_drop = []
+        for sub in SSE_SUBSCRIBERS[]
+            _try_put!(sub.pending, frame) || push!(to_drop, sub)
+        end
+        for sub in to_drop
+            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
+            # Wake the parked handler so it can tear the stream down.
+            close(sub.pending)
+        end
+    end
+    nothing
+end
+
+"""
     broadcast_event!(event_id, kind, entity_type, entity_id, user_id, client_id, client_op_id, payload_json)
 
 Format a single SSE frame and enqueue it onto every subscriber's pending
@@ -1135,16 +1167,7 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
     )
     post_state === nothing || (fields[:post_state] = post_state)
     msg = JSON3.write(fields)
-    frame = "event: curation\ndata: $msg\n\n"
-    lock(SSE_LOCK) do
-        to_drop = []
-        for sub in SSE_SUBSCRIBERS[]
-            _try_put!(sub.pending, frame) || push!(to_drop, sub)
-        end
-        for sub in to_drop
-            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
-        end
-    end
+    _fanout_frame!("event: curation\ndata: $msg\n\n")
     nothing
 end
 
@@ -1200,17 +1223,8 @@ function broadcast_progress!(experiment_id::Integer;
         :ts      => ts,
         :payload => payload,
     )
-    msg   = JSON3.write(fields)
-    frame = "event: curation\ndata: $msg\n\n"
-    lock(SSE_LOCK) do
-        to_drop = []
-        for sub in SSE_SUBSCRIBERS[]
-            _try_put!(sub.pending, frame) || push!(to_drop, sub)
-        end
-        for sub in to_drop
-            filter!(x -> x !== sub, SSE_SUBSCRIBERS[])
-        end
-    end
+    msg = JSON3.write(fields)
+    _fanout_frame!("event: curation\ndata: $msg\n\n")
     nothing
 end
 
