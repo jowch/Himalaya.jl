@@ -209,9 +209,11 @@ export function buildDetectorCalibration(
 // with the custom-index physics, so we recover N from the DIFFRACTION Q-LAW —
 // NOT by matching against customRefls' truncated `SYMS.Ms` list. That list stops
 // at a handful of orders, so nearest-matching clamps/mislabels every higher
-// order (Pn3m √10..√16 → "√9", Im3m √14..√20 → "√12", Lamellar 6..11 → "√5"),
-// and position-aligning fails too where SYMS skips an order the backend keeps
-// (Hexagonal SYMS.Ms omits √11).
+// order (Pn3m √10..√16 → "√9", Im3m √14..√20 → "√12", Lamellar 6..11 → "√5").
+// Position-aligning is no safer: it held only because SYMS happens to prefix
+// the backend series, which was false for Hexagonal until #304 removed the
+// spurious √11 and could become false again — the two lists are hand-maintained
+// in different languages.
 //
 // q ∝ √N for cubic AND hexagonal (both q ∝ √(quadratic form)); q ∝ N for
 // lamellar. We anchor on `predicted_q[0]` (== basis, the q₁ slope; see

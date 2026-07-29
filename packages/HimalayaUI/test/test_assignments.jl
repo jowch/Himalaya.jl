@@ -631,6 +631,33 @@ end
     end
 end
 
+@testset "seriesRatio RADICANDS mirrors phaseratios exactly" begin
+    # `RADICANDS` is position-indexed by `ratio_position`, so it must match
+    # phaseratios(P) in BOTH value and length — a wrong value mislabels a peak,
+    # a short list renders a claimed order with a blank label. Both had drifted
+    # by hand: Hexagonal carried the √11 removed in #304, and Pn3m stopped at 11
+    # of 16 entries. Parsed from the real file so this can't rot into a comment.
+    ts_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "seriesRatio.ts")
+    @test isfile(ts_path)
+    ts = read(ts_path, String)
+
+    body = match(r"export const RADICANDS[^=]*=\s*\{(.*?)\n\};"s, ts)
+    @test body !== nothing
+    entries = Dict{String, Vector{Int}}()
+    for m in eachmatch(r"(\w+):\s*\[([^\]]*)\]", body.captures[1])
+        entries[m.captures[1]] =
+            [parse(Int, strip(x)) for x in split(m.captures[2], ",") if !isempty(strip(x))]
+    end
+    @test length(entries) == 8   # all eight phases, or the regex drifted
+
+    for (name, radicands) in sort(collect(entries))
+        P = HimalayaUI.resolve_phase(name)
+        @test P !== nothing
+        # phaseratios stores √N (and Lamellar stores n, whose radicand is n²).
+        @test radicands == round.(Int, Himalaya.phaseratios(P) .^ 2)
+    end
+end
+
 @testset "every reflection the modal draws maps to a backend ratio position" begin
     # The alignment half of the modal↔backend contract (the tolerance half is
     # pinned from the TS side in deleteIndexAssignment.test.ts). `drawn_ratios`

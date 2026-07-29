@@ -55,6 +55,12 @@ function reconstruct_index(db::SQLite.DB, index_id::Integer)
     sharp = spzeros(Float64, n)
     for r in prows
         pos = Int(r.ratio_position)
+        # Persisted positions can outlive a phase's ratio series — src/phase.jl
+        # trims and extends series tails (#304 removed Hexagonal's √11, taking
+        # it 14 → 13). Skip out-of-range rows rather than BoundsError-ing this
+        # read-only API on a DB whose migration hasn't run yet. Same guard as
+        # the intent re-resolve loop in HimalayaUI's pipeline.jl.
+        1 <= pos <= n || continue
         peaks[pos] = Float64(r.q_observed)
         sharp[pos] = r.sharpness === missing ? 0.0 : Float64(r.sharpness)
     end
