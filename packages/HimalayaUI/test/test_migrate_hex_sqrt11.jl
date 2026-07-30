@@ -17,7 +17,14 @@ end
 
 # open_db already ran the one-shot migration on the fresh DB; drop the sentinel
 # so it can be driven again against hand-seeded rows.
-_rearm!(db) = DBInterface.execute(db,
+#
+# `_hex!`-suffixed on purpose: test files are `include`d into one `Main`, and
+# test_migrate_speculative_durability.jl defines a same-arity `_rearm!` that
+# deletes a DIFFERENT sentinel. An unsuffixed name here silently overwrites it,
+# leaving that file's correctness dependent on include order — it would re-arm
+# the wrong migration and stop testing what it claims. Keep migration-scoped
+# helpers migration-scoped.
+_rearm_hex!(db) = DBInterface.execute(db,
     "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_HEX_SQRT11])
 
 function _mkindex!(db, exposure_id, phase)
@@ -49,7 +56,7 @@ end
     # make every subsequent open_db throw.
     _seed_intents!(fx.db, hex, [1, 5, 6, 7, 8, 9])
 
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
 
     # 6 dropped (it claimed a √11 that cannot exist); 7/8/9 → 6/7/8 carrying
@@ -64,7 +71,7 @@ end
     _seed_intents!(fx.db, hex, [6, 7])
     _seed_intents!(fx.db, sq,  [6, 7])
 
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
 
     @test _intents(fx.db, hex) == [(6, 0.07)]
@@ -79,7 +86,7 @@ end
     hex = _mkindex!(fx.db, fx.exposure_id, "Himalaya.Hexagonal")
     _seed_intents!(fx.db, hex, [6, 7])
 
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
 
     @test _intents(fx.db, hex) == [(6, 0.07)]
@@ -98,7 +105,7 @@ end
             VALUES (?, ?, 'auto', 1, 0.0)""", [ix, pid])
     end
 
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
 
     n(ix) = first(Tables.rowtable(DBInterface.execute(fx.db,
@@ -123,7 +130,7 @@ end
     DBInterface.execute(fx.db,
         "UPDATE exposures SET analysis_inputs_hash = 'def' WHERE id = ?", [bare])
 
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
 
     h(id) = first(Tables.rowtable(DBInterface.execute(fx.db,
@@ -137,7 +144,7 @@ end
     hex = _mkindex!(fx.db, fx.exposure_id, "Hexagonal")
     _seed_intents!(fx.db, hex, [7, 8])
 
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
     once = _intents(fx.db, hex)
     @test once == [(6, 0.07), (7, 0.08)]
@@ -163,7 +170,7 @@ const _STALE_HEX_SERIES = [1, √3, √4, √7, √9, √11, √12, √13, √16
     fx  = _hex_fixture()
     hex = _mkindex!(fx.db, fx.exposure_id, "Hexagonal")
     _seed_intents!(fx.db, hex, [7])
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
 
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
     @test _intents(fx.db, hex) == [(6, 0.07)]
@@ -187,7 +194,7 @@ end
         VALUES (?, ?, 'auto', 1, 0.0)""", [hex, pid])
     DBInterface.execute(fx.db,
         "UPDATE exposures SET analysis_inputs_hash = 'keepme' WHERE id = ?", [fx.exposure_id])
-    _rearm!(fx.db)
+    _rearm_hex!(fx.db)
 
     @test_logs (:warn,) match_mode=:any HimalayaUI.migrate_hex_sqrt11!(fx.db;
                                                                        series = _STALE_HEX_SERIES)
