@@ -204,7 +204,8 @@ function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
 end
 
 """
-    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing) -> NamedTuple
+    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing,
+                        on_progress = nothing) -> NamedTuple
 
 Populate the on-disk thumbnail cache for every exposure with a non-NULL
 `image_path`. Run from `init` and `reingest` (issue #261) so the very first
@@ -240,7 +241,8 @@ with nowhere to write).
 """
 function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
                              overwrite::Bool = false,
-                             experiment_id::Union{Integer, Nothing} = nothing)
+                             experiment_id::Union{Integer, Nothing} = nothing,
+                             on_progress::Union{Function, Nothing} = nothing)
     rows = experiment_id === nothing ?
         Tables.rowtable(DBInterface.execute(db,
             "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL")) :
@@ -250,12 +252,27 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
 
     n_warmed  = Atomic{Int}(0)
     n_skipped = Atomic{Int}(0)
+    # Progress counts rows RETIRED (warmed or skipped), so the segment fills even
+    # on a corpus that is mostly cache hits or mostly missing files. Atomic
+    # because `work` runs under `@threads` — and the tick is emitted from the
+    # worker, so `on_progress` must tolerate being called off the main task
+    # (broadcast_progress! is lock-guarded, so it does).
+    n_done   = Atomic{Int}(0)
+    n_total  = length(rows)
+    step     = max(1, n_total ÷ 100)
+    tick = function ()
+        d = atomic_add!(n_done, 1) + 1     # atomic_add! returns the OLD value
+        if on_progress !== nothing && (d % step == 0 || d == n_total)
+            on_progress(d, n_total)
+        end
+    end
 
     work = function (row)
         path = String(row.image_path)
         if !isfile(path)
             atomic_add!(n_skipped, 1)
             @info "thumb prewarm skip" exposure_id=row.id reason="TIFF not on disk" path
+            tick()
             return
         end
         # A present-but-undecodable TIFF must not abort the @threads batch and
@@ -265,9 +282,11 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
         catch e
             atomic_add!(n_skipped, 1)
             @info "thumb prewarm skip" exposure_id=row.id reason="render failed" path exception=e
+            tick()
             return
         end
         atomic_add!(n_warmed, 1)
+        tick()
     end
 
     if threads
@@ -279,6 +298,13 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
             work(row)
         end
     end
+
+    # Close the segment explicitly, mirroring the analyze loop's terminal tick.
+    # Two reasons the in-loop ticks cannot be trusted to land it full: a zero-row
+    # prewarm never ticks at all (segment stuck at 0), and under `threads` the
+    # per-worker ticks can be broadcast out of order, so the LAST frame observed is
+    # not necessarily the highest. This fires after @threads has joined.
+    on_progress === nothing || on_progress(n_total, n_total)
 
     @info "thumb prewarm complete" warmed=n_warmed[] skipped=n_skipped[]
     (warmed = n_warmed[], skipped = n_skipped[])

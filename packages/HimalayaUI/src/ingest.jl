@@ -93,29 +93,35 @@ function scan_and_group!(
     # -----------------------------------------------------------------------
     # 1. Scan: enumerate TIF+PRP+DAT triplets
     # -----------------------------------------------------------------------
+    # `on_progress(processed, total, stage)` — stage names the segment the UI
+    # should be filling ("discovery" / "analyzing" / "thumbnails"). Discovery is
+    # the expensive silent half (two stats + a PRP parse per exposure over SMB),
+    # so it reports from inside scan_directory rather than only announcing its
+    # total afterwards.
     metas = scan_directory(data_dir, analysis_dir;
         tif_pattern = tif_pattern,
         prp_pattern = prp_pattern,
-        dat_pattern = dat_pattern)
+        dat_pattern = dat_pattern,
+        on_progress = on_progress)
 
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
-
-    # Publish the DENOMINATOR as soon as discovery knows it. Everything below
-    # (geometry derive, grouping, the persist txn) is silent, and the analyze
-    # loop used to be the first and only thing that ever reported a total — so
-    # the UI sat on "0 / ~0" through the entire slow half of the scan and only
-    # then grew a scale. One tick here means the bar has an honest denominator
-    # from the moment the file list is known.
-    n_found = length(metas)
-    on_progress === nothing || on_progress(0, n_found)
 
     # -----------------------------------------------------------------------
     # 2. Geometry: derive + write to experiments row (never-clobber human fields)
     # -----------------------------------------------------------------------
-    prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
     setup_files = _find_setup_files(analysis_dir)
 
-    geo, _disc = derive_geometry(prp_paths, setup_files)
+    # Reuse the PRPs scan_directory already parsed. The path-based
+    # derive_geometry re-reads and re-parses every one of them — a second full
+    # pass over every PRP in the experiment, per ingest.
+    # NamedTuple[...] required: ExposureMeta.prp is Union{NamedTuple,Nothing}, so
+    # when NO exposure has a PRP (tif-without-prp layouts, or a misconfigured
+    # prp_pattern) the filtered comprehension collects to Vector{Any} and
+    # derive_geometry MethodErrors -- turning "geometry falls back to defaults"
+    # into "the ingest crashes". Same trap as geometry.jl's delegation.
+    parsed_prps = NamedTuple[m.prp for m in metas if m.prp !== nothing]
+
+    geo, _disc = derive_geometry(parsed_prps, setup_files)
 
     # FILL-ONLY: write only geometry fields still unset ('default' source). Fields
     # already established at create (committed from the funnel preview, which
@@ -221,21 +227,17 @@ function scan_and_group!(
     # -----------------------------------------------------------------------
     if analyze
         n_new = length(new_exposure_ids)
-        # Report against n_found (the discovery denominator), NOT n_new. Files
-        # that already had rows are done the instant the persist txn commits, so
-        # they count as processed. This keeps ONE scale for the whole scan and
-        # fixes the clean-rescan case: with nothing new, n_new == 0, the loop
-        # below never runs, and reporting `i / n_new` meant the bar showed
-        # "0 / ~0" from start to finish and then simply vanished.
-        base = max(0, n_found - n_new)
-        # Cap the frame count at ~100 per scan. One frame per exposure meant a
+        # The "analyzing" segment reports against n_new, its OWN denominator — the
+        # segmented bar gives each stage its own track, so stages no longer have to
+        # share one scale (which is what forced the old cross-stage bookkeeping here).
+        #
+        # Cap the frame count at ~100 per stage. One frame per exposure meant a
         # 600-exposure scan fired 600 frames into a 64-slot channel, and each
-        # frame costs the client two invalidateQueries → a refetch of the growing
-        # loads payload. NOTE this only thins large scans: below n_new = 100 the
-        # step is 1, i.e. still one frame per exposure, and 65..100 exposures
-        # still exceeds the 64-slot channel. Saturation is therefore reduced, not
-        # eliminated — correctness under saturation rests on _fanout_frame!
-        # (events.jl) closing an evicted subscriber so it reconnects.
+        # frame costs the client a cache invalidation. NOTE this only thins large
+        # scans: below n_new = 100 the step is 1, i.e. still one frame per
+        # exposure, and 65..100 exposures still exceeds the 64-slot channel.
+        # Saturation is reduced, not eliminated — correctness under saturation
+        # rests on _fanout_frame! (events.jl) closing an evicted subscriber.
         step = max(1, n_new ÷ 100)
         for (i, eid) in enumerate(new_exposure_ids)
             try
@@ -245,12 +247,13 @@ function scan_and_group!(
             end
             # Progress fires OUTSIDE the structural txn (already committed above).
             if on_progress !== nothing && (i % step == 0 || i == n_new)
-                on_progress(base + i, n_found)
+                on_progress(i, n_new, "analyzing")
             end
         end
-        # Always land on a full bar, including the zero-new rescan that skips the
-        # loop entirely.
-        on_progress === nothing || on_progress(n_found, n_found)
+        # Always land the segment full, including the clean rescan where n_new == 0
+        # and the loop above never runs (a 0/0 segment reads as complete, not as a
+        # stalled bar).
+        on_progress === nothing || on_progress(n_new, n_new, "analyzing")
 
         # Prewarm the thumbnail disk cache for the freshly-ingested exposures so the
         # first contact-sheet visit is fast (cold lazy generation staggers badly over
@@ -267,7 +270,9 @@ function scan_and_group!(
             # overwrite=false so an already-cached thumb short-circuits instead of
             # re-rendering; see the prewarm_thumbnails! docstring for the
             # same-second-mtime hole this trades away.
-            prewarm_thumbnails!(db; overwrite = false, experiment_id = experiment_id)
+            prewarm_thumbnails!(db; overwrite = false, experiment_id = experiment_id,
+                                on_progress = on_progress === nothing ? nothing :
+                                    (p, t) -> on_progress(p, t, "thumbnails"))
         catch e
             @warn "scan_and_group!: thumbnail prewarm failed (non-fatal)" exception=e
         end
@@ -366,9 +371,13 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
         exposures_inserted = 0, exposures_no_file = 0, reshoots = 0,
         geometry = nothing, discrepancies = String[])
 
-    prp_paths   = String[m.prp_path for m in metas if m.prp_path !== nothing]
+    # Reuse the PRPs scan_directory already parsed, same as scan_and_group! — the
+    # path-based derive_geometry would re-read and re-parse every one. NamedTuple[]
+    # element type is required (ExposureMeta.prp is Union{NamedTuple,Nothing}, so
+    # an all-nothing filter would collect to Vector{Any} and match no method).
+    parsed_prps = NamedTuple[m.prp for m in metas if m.prp !== nothing]
     setup_files = layout.setup_file === nothing ? String[] : String[layout.setup_file]
-    geo, disc = derive_geometry(prp_paths, setup_files)
+    geo, disc = derive_geometry(parsed_prps, setup_files)
 
     result = group_into_samples(metas)
 

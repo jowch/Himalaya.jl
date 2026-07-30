@@ -63,8 +63,10 @@ describe("GroupingReviewPage scanning surface (p1-grouping)", () => {
   it("scanning: shows the live header, counts, flag count, unfolding tail, disabled Confirm", () => {
     wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} />);
     expect(screen.getByTestId("grouping-scanning-header")).toBeInTheDocument();
-    expect(screen.getByText(/Parsing exposures/i)).toBeInTheDocument();
-    expect(screen.getByText(/418 \/ ~682/)).toBeInTheDocument();
+    // No `stage` in this fixture -> generic caption + the plain single-track bar.
+    expect(screen.getByText(/Scanning\u2026 418 \/ ~682/)).toBeInTheDocument();
+    expect(screen.getByTestId("progressbar")).toBeInTheDocument();
+    expect(screen.queryByTestId("segmented-progressbar")).toBeNull();
     // One flagged sample across the two loads.
     expect(screen.getByTestId("grouping-flag-count")).toHaveTextContent("1 flag to review");
     // processed (418) < total (682) → the "unfolding…" tail shows.
@@ -76,6 +78,46 @@ describe("GroupingReviewPage scanning surface (p1-grouping)", () => {
     // filter would hide it. The flagged load's sample is expanded.
     expect(screen.getByText(/grouped cleanly/i)).toBeInTheDocument();
     expect(screen.getByText("2-2 + LL37 1:1")).toBeInTheDocument();
+  });
+
+  it("scanning with a stage: segmented bar, stage-named caption, earlier stages full", () => {
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "scanning", processed: 92, total: 604, stage: "analyzing" } },
+    });
+    wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} />);
+    // Caption names the stage, so a bar sitting mid-strip is legible.
+    expect(screen.getByTestId("grouping-scan-caption")).toHaveTextContent("Analyzing");
+    expect(screen.getByTestId("grouping-scan-caption")).toHaveTextContent("92 / 604");
+    // Segmented bar replaces the single track; discovery already ran to full.
+    expect(screen.getByTestId("segmented-progressbar")).toBeInTheDocument();
+    expect(screen.queryByTestId("progressbar")).toBeNull();
+    expect(screen.getByTestId("segment-discovery")).toHaveAttribute("data-fraction", "1");
+    expect(screen.getByTestId("segment-analyzing")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("segment-thumbnails")).toHaveAttribute("data-fraction", "0");
+  });
+
+  it("scanning during discovery: reports files, not exposures, and no loads yet", () => {
+    // Nothing is committed during discovery (one atomic persist txn), so the
+    // loads/samples counts must NOT be rendered as a misleading "0 loads".
+    LOADS = [];
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "scanning", processed: 300, total: 1100, stage: "discovery" } },
+    });
+    wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} />);
+    const caption = screen.getByTestId("grouping-scan-caption");
+    expect(caption).toHaveTextContent("Reading files");
+    expect(caption).toHaveTextContent("300 / 1100");
+    expect(caption).not.toHaveTextContent("loads");
+  });
+
+  it("a zero-total stage reads as complete, not stalled", () => {
+    // Clean rescan: no new exposures, so analyzing closes as 0-of-0.
+    useAppState.setState({
+      ingestInFlight: { 7: { status: "scanning", processed: 0, total: 0, stage: "analyzing" } },
+    });
+    wrap(<GroupingReviewPage experimentId={7} onBack={() => {}} />);
+    expect(screen.getByTestId("grouping-scan-caption")).toHaveTextContent("nothing to do");
+    expect(screen.getByTestId("segment-analyzing")).toHaveAttribute("data-fraction", "1");
   });
 
   it("complete: no scanning header, Confirm enabled, fires onConfirm", () => {

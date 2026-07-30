@@ -7,6 +7,10 @@ import type {
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
 import { announceAssignmentDropped } from "./assignmentDropped";
+import { INGEST_STAGES } from "../ingestStages";
+
+/** The one stage that predates the persist txn — see invalidateIngestFrameCache. */
+const INGEST_DISCOVERY_STAGE = INGEST_STAGES[0];
 
 /**
  * Write the `{state, members}` assignment envelope into the assignment cache.
@@ -98,14 +102,33 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
  * them inline (the listener still owns the Zustand store write; this helper is
  * pure cache-only). `isComplete=true` also refetches the experiment detail row
  * (so `ingest_status` transitions from "analyzing" → "complete").
+ *
+ * `stage` skips the loads/samples refetch during `"discovery"`. Nothing is
+ * committed then — `scan_and_group!` inserts every load/sample/exposure in ONE
+ * transaction that has not opened yet — so the refetch cannot observe anything
+ * new, once per progress frame, against the slowest payload on the page. (On a
+ * RESCAN the rows do already exist, so this is "returns what it already had",
+ * not "returns empty" — either way the refetch is wasted until the txn commits.) From `"analyzing"` onward the txn HAS committed and
+ * `analyze_exposure!` mutates per-exposure data, so the refetch is real work.
+ *
+ * An ABSENT stage keeps the original always-invalidate behavior — an
+ * `ingest_started` frame, or a backend predating stage reporting, must not
+ * silently lose its refresh.
  */
 export function invalidateIngestFrameCache(
   qc: QueryClient,
   expId: number,
   isComplete: boolean,
+  stage?: string,
 ): void {
-  qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
-  qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  // isComplete wins over stage: a terminal frame must always refresh, whatever
+  // stage it happens to carry. Without this the two callers disagreed --
+  // App.tsx forwards `stage` for all four ingest kinds, this file's own
+  // ingest_complete arm passes none.
+  if (isComplete || stage !== INGEST_DISCOVERY_STAGE) {
+    qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+    qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+  }
   if (isComplete) qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
 }
 
@@ -357,7 +380,9 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       // is invalidation-only (the ingestInFlight store write lives in the
       // separate App.tsx listener — applyRemoteToCache stays pure).
       const expId = payload?.experiment_id as number | undefined;
-      if (expId !== undefined) invalidateIngestFrameCache(qc, expId, false);
+      if (expId !== undefined) {
+        invalidateIngestFrameCache(qc, expId, false, payload?.stage as string | undefined);
+      }
       break;
     }
     case "ingest_complete": {

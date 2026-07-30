@@ -615,3 +615,75 @@ end
         SQLite.close(db)
     end
 end
+
+@testset "ingest_progress carries `stage` on the wire, distinct from `phase`" begin
+    # broadcast_progress! merges kwargs... into the payload UNTYPED (events.jl), so a
+    # renamed or typo'd kwarg would ship silently — nothing else asserts that `stage`
+    # actually reaches the frame. docs/contract-testing.md wants a row at every
+    # layer; this is the wire one.
+    pending = Channel{String}(64)
+    sub = (pending = pending,)
+    lock(HimalayaUI.SSE_LOCK) do
+        empty!(HimalayaUI.SSE_SUBSCRIBERS[])
+        push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+    end
+    try
+        HimalayaUI.broadcast_progress!(9; kind = "ingest_progress",
+            processed = 780, total = 1100, phase = "rescan", stage = "discovery")
+        @test isready(pending)
+        frame = take!(pending)
+        data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
+        obj = JSON3.read(replace(data_line, r"^data: " => ""))
+        # BOTH discriminators ride the payload independently: `phase` selects the
+        # frontend surface, `stage` selects the progress-bar segment.
+        @test obj.payload.stage == "discovery"
+        @test obj.payload.phase == "rescan"
+        @test obj.payload.processed == 780
+        @test obj.payload.total == 1100
+
+        # A frame with no stage must OMIT the key (the frontend falls back to the
+        # plain single-track bar), not send null or an empty string.
+        HimalayaUI.broadcast_progress!(9; kind = "ingest_started", processed = 0, total = 0)
+        frame2 = take!(pending)
+        line2 = first(filter(l -> startswith(l, "data: "), split(frame2, '\n')))
+        obj2 = JSON3.read(replace(line2, r"^data: " => ""))
+        @test !haskey(obj2.payload, :stage)
+    finally
+        lock(HimalayaUI.SSE_LOCK) do
+            empty!(HimalayaUI.SSE_SUBSCRIBERS[])
+        end
+    end
+end
+
+@testset "_rescan_tick! ingests a NON-empty directory (3-arg on_progress)" begin
+    # Regression for the auto-rescan scheduler: server.jl's on_progress lambda was
+    # left at 2 args when scan_and_group! moved to (processed, total, stage), so
+    # every scheduled rescan MethodError'd on the FIRST discovered file — swallowed
+    # into a @warn + ingest_failed frame, then re-armed to fail again.
+    #
+    # The existing _rescan_tick! tests all run against an EMPTY mktempdir, where the
+    # discovery loop never executes and the callback is never invoked, so they stayed
+    # green. One TIF+PRP pair is the whole difference.
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        data_dir = mktempdir()
+        touch(joinpath(data_dir, "e1.tif"))
+        write(joinpath(data_dir, "e1.prp"), "Detector: Pilatus 1M\n")
+
+        id = HimalayaUI.create_experiment!(db; name = "rescan-nonempty", path = data_dir,
+                                          data_dir = data_dir, analysis_dir = data_dir,
+                                          ingest_status = "complete")
+        HimalayaUI._rescan_tick!(db, id;
+            cheap_check_fn = (_, _) -> true,
+            fast_interval = 3600.0, ticks_before_daily = 5, ticks_before_stop = 2)
+
+        # The exposure actually landed — pre-fix this was 0 with a silent @warn.
+        n = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) c FROM exposures WHERE experiment_id = ?", [id]))).c
+        @test n == 1
+        row = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT ingest_status FROM experiments WHERE id = ?", [id])))
+        @test row.ingest_status != "failed"
+        SQLite.close(db)
+    end
+end

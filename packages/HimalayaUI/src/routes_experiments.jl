@@ -265,8 +265,9 @@ function register_experiments_routes!()
                 # scan_and_group! (Phase B, ingest.jl) resolves data_dir from the row
                 # and is idempotent (dedup INSERT keys), so first-scan == rescan.
                 scan_and_group!(db, exp_id;
-                    on_progress = (p, t) -> broadcast_progress!(exp_id;
-                        kind = "ingest_progress", processed = p, total = t))
+                    on_progress = (p, t, stage) -> broadcast_progress!(exp_id;
+                        kind = "ingest_progress", processed = p, total = t,
+                        stage = stage))
                 lock(_DB_WRITE_LOCK) do
                     SQLite.transaction(db) do
                         DBInterface.execute(db,
@@ -507,8 +508,9 @@ function register_experiments_routes!()
                 changed = force_scan || cheap_change_check(db, id)
                 if changed
                     scan_and_group!(db, id;
-                        on_progress = (p, t) -> broadcast_progress!(id;
-                            kind = "ingest_progress", processed = p, total = t, phase = "rescan"))
+                        on_progress = (p, t, stage) -> broadcast_progress!(id;
+                            kind = "ingest_progress", processed = p, total = t,
+                            phase = "rescan", stage = stage))
                     start_rescan_scheduler!(db, id)   # re-arm the fast-tier scheduler
                 end
 

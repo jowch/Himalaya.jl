@@ -373,9 +373,15 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
         # would stick — the frontend clears ingestInFlight only on a terminal frame.
         broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, phase = "rescan")
         try
+            # 3-arg on_progress: `stage` names the bar segment, `phase` selects the
+            # surface. THIRD call site of this lambda shape (the two in
+            # routes_experiments.jl are the others) -- keep them in step, an arity
+            # mismatch here MethodErrors on the first discovered file and the catch
+            # below buries it in a @warn + ingest_failed.
             scan_and_group!(db, experiment_id;
-                on_progress = (p, t) -> broadcast_progress!(experiment_id;
-                    kind = "ingest_progress", processed = p, total = t, phase = "rescan"))
+                on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
+                    kind = "ingest_progress", processed = p, total = t,
+                    phase = "rescan", stage = stage))
             broadcast_progress!(experiment_id; kind = "ingest_complete", processed = 0, total = 0)
         catch err
             @warn "scan failed during rescan tick" experiment_id = experiment_id exception = err

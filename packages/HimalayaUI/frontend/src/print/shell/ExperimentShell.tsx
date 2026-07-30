@@ -10,6 +10,8 @@ import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { StatBar } from "../ui/StatBar";
 import type { StatBarStat } from "../ui/StatBar";
+import { SegmentedProgressBar } from "../ui/SegmentedProgressBar";
+import { deriveSegments, isIngestStage, stageLabel } from "../../lib/ingestStages";
 import { ProgressBar } from "../ui/ProgressBar";
 import { PageFrame } from "../components/PageFrame";
 import { effectiveIngestStatus } from "../../lib/ingestStatus";
@@ -33,6 +35,13 @@ export function ExperimentShell(): JSX.Element {
   const exp = useExperiment(expId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const username = useAppState((s) => s.username);
+  // THIRD consumer of this ingestInFlight entry (GroupingReviewPage and
+  // ExperimentCorpusPage are the others). processed/total are PER-STAGE now, so a
+  // plain bar here would reset at every stage boundary -- and because
+  // ExperimentCorpusPage mounts as a nested route INSIDE this shell, a rescan
+  // would show the segmented bar with a resetting single-track bar right above it.
+  const segments = deriveSegments(
+    inFlight?.stage, inFlight?.processed ?? 0, inFlight?.total ?? 0);
 
   // Controlled draft for the edit-in-place name field. Initialized from the
   // loaded experiment; resets when the server data changes (e.g. after a
@@ -73,8 +82,23 @@ export function ExperimentShell(): JSX.Element {
   const expStats = exp.data?.stats;
   const stats: StatBarStat[] = isProcessing
     ? [
-        { key: "processed", caption: "Processed",
-          value: inFlight ? `${inFlight.processed} / ~${inFlight.total}` : "—" },
+        { key: "processed",
+          // Caption names the STAGE so a per-stage count is not read as
+          // whole-scan progress ("Processed 1100 / ~1100" then "0 / ~604").
+          caption: isIngestStage(inFlight?.stage) ? stageLabel(inFlight.stage) : "Processed",
+          // Gate on stage-presence BEFORE total, exactly as the two sibling
+          // consumers do (ExperimentCorpusPage, GroupingReviewPage). Checking
+          // `total > 0` first conflates "this stage has nothing to do" with "no
+          // stage has reported yet": `ingest_started` carries processed=0,
+          // total=0 and NO stage, so the header read "done" while the bar below
+          // it sat at 0% for the whole of readdir plus the first 1% of discovery.
+          value: !inFlight
+            ? "\u2014"
+            : !isIngestStage(inFlight.stage)
+              ? `${inFlight.processed} / ~${inFlight.total}`
+              : inFlight.total > 0
+                ? `${inFlight.processed} / ${inFlight.total}`
+                : "done" },
         { key: "span", caption: "Span", value: "pending", pending: true },
       ]
     : [
@@ -196,11 +220,15 @@ export function ExperimentShell(): JSX.Element {
 
         {isProcessing && (
           <div className="mt-3">
-            <ProgressBar
-              value={inFlight ? inFlight.processed : 0}
-              total={inFlight ? Math.max(inFlight.total, 1) : 1}
-              label="Ingest progress"
-            />
+            {segments ? (
+              <SegmentedProgressBar segments={segments} label="Ingest progress" />
+            ) : (
+              <ProgressBar
+                value={inFlight ? inFlight.processed : 0}
+                total={inFlight ? Math.max(inFlight.total, 1) : 1}
+                label="Ingest progress"
+              />
+            )}
           </div>
         )}
 
