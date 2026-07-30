@@ -1,8 +1,9 @@
 # Changelog
 
-Covers both the core `Himalaya` package (versioned in the root `Project.toml`)
-and the `HimalayaUI` application. Core releases are headed `Himalaya <version>`;
-entries under `Unreleased` are application-level unless stated otherwise.
+Covers the core `Himalaya` package (versioned in the root `Project.toml`) and
+the packages built on it — `HimalayaUI` (the application) and `HimalayaDB` (the
+read-only query API). Core releases are headed `Himalaya <version>`; entries
+under `Unreleased` are application-level unless stated otherwise.
 
 ## Unreleased
 
@@ -53,6 +54,21 @@ the exact mismatch this release guards against.
   `CLAUDE.md`). This is deliberate: a load failure is preferable to silently
   wrong reflections.
 
+  **Inside this repository only, until `0.6.0` is published.** `Pkg.develop`
+  resolves the bound because the local core *is* 0.6.0. A consumer outside the
+  monorepo has no such path: until `Himalaya 0.6.0` is registered, the bound is
+  unsatisfiable and there is no workaround short of pinning to a git revision.
+- **`HimalayaDB.connect` now warns when the database predates this migration.**
+  Reading a pre-migration database — an old backup, or a deploy that has not been
+  restarted — makes `reconstruct_index` return Hexagonal peaks one reflection too
+  high for every position 6 and above, which `Himalaya.fit` turns into a **wrong
+  lattice constant with no error**. The package opens `query_only` and cannot
+  migrate the database itself, so a warning at connect time is the only available
+  signal; it fires only when the sentinel is absent *and* Hexagonal indices exist.
+  It warns rather than throws, because reading an old backup is legitimate and
+  every other phase is unaffected. Treat Hexagonal results from a warned
+  connection as invalid.
+
 ### Migrations
 
 - **`hex_sqrt11_removal_v1`** runs automatically on the next `open_db`. It
@@ -66,13 +82,28 @@ the exact mismatch this release guards against.
   still lists `√11`, so a stale environment cannot renumber durable data against
   a series it isn't using.
 
-### Action required after upgrading
+### Upgrade procedure
 
-- **Run `bin/himalaya analyze --all`.** The migration only deletes rows and
-  reopens the memoization gate; until a re-analysis runs, Hexagonal indices
-  display as claiming no peaks and carry stale scores. Trace `.dat` files must
-  be reachable. Take a database backup first.
-- **A curated phase call may be withdrawn.** A Hexagonal assignment whose
-  evidence included the `√11` can fall below `minpeaks` and stop being
-  reproducible; the re-analysis then drops that assignment. `analyze` now
-  reports these per-exposure and as a closing summary.
+Steps 1 and 2 are ordered deliberately — the migration runs on the **first**
+`open_db` after the new version is in place, which is whatever command you run
+first, not a separate step you opt into.
+
+1. **Back up the database before starting the upgraded build.** By the time you
+   can run anything else, `hex_sqrt11_removal_v1` has already deleted Hexagonal
+   `index_peaks` rows and renumbered `speculative_peak_intents` — and that
+   renumber is **not idempotent**, so it cannot be replayed or reversed in place.
+   Restoring the backup is the only way back.
+2. **Run `bin/himalaya analyze --all`.** The migration only deletes rows and
+   reopens the memoization gate; until a re-analysis runs, Hexagonal indices
+   display as claiming no peaks and carry stale scores. Trace files must be
+   reachable at the paths each experiment's config resolves.
+   - **Rejected exposures are skipped** by `analyze` and therefore never
+     rebuilt. A rejected exposure holding a Hexagonal index keeps that index
+     with no claimed peaks until someone un-rejects it and re-analyses. Nothing
+     unique is lost — auto rows are derived and speculative intents survive —
+     but the claimless state persists rather than healing on its own.
+3. **Expect a curated phase call to be withdrawn.** A Hexagonal assignment whose
+   evidence included the `√11` can fall below `minpeaks` and stop being
+   reproducible; the re-analysis then drops that assignment. `analyze` reports
+   these per-exposure and as a closing summary — read that summary, because it
+   is a human decision disappearing.
