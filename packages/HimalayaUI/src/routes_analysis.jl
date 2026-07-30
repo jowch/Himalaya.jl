@@ -426,8 +426,8 @@ function register_analysis_routes!()
     # NORMALIZED ratios it DREW. Persists a basis-locked speculative index,
     # claims the peaks landing within CUSTOM_SNAP_TOL of those reflections, and
     # adds it to the assignment in one transaction. A ratio set rather than a
-    # count because the modal's series is not a positional prefix of the core
-    # one for Hexagonal (see compute_snap). Two SSE frames: speculative_created (indices
+    # count: the two series live in different languages and have drifted before
+    # (see compute_snap). Two SSE frames: speculative_created (indices
     # cache) THEN assignment_add (assignment cache). ORDERING IS LOAD-BEARING —
     # the own-tab deferred resolves off the FIRST frame (speculative_created)
     # which carries the new IndexEntry, then assignment_add patches the cart.

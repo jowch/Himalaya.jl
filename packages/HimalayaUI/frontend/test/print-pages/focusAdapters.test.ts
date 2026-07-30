@@ -436,10 +436,15 @@ describe("toCombSeries", () => {
     expect(labels.slice(-3)).toEqual(["√12", "√14", "√16"]);
   });
 
-  it("labels the Hexagonal √11 order correctly (SYMS.Ms omits 11; no √12 mislabel)", () => {
+  it("labels Hexagonal orders beyond SYMS.Ms (no clamp to the last drawn order)", () => {
     // hex: q ∝ √M, anchored on M=1 (n1=1). q_M = q0·√M.
     const q0 = 0.05; // M=1
-    const Ms = [1, 3, 4, 7, 9, 11, 12];
+    // The backend series past SYMS.Hexagonal.Ms = [1,3,4,7,9,12]. Labels are
+    // derived by inverting the q-law, not by indexing Ms, so the tail orders
+    // must come out exact rather than clamping to √12.
+    // (Pre-#304 this case used √11, which the core series wrongly carried at
+    // position 6; it is not a permitted 2D hexagonal reflection.)
+    const Ms = [1, 3, 4, 7, 9, 12, 13, 16];
     const predicted_q = Ms.map((M) => q0 * Math.sqrt(M));
     const active = [
       ix({ id: 1, phase: "Hexagonal", basis: q0, lattice_d: null, r_squared: null,
@@ -447,9 +452,8 @@ describe("toCombSeries", () => {
     ];
     const { assigned } = toCombSeries(active, []);
     const labels = assigned[0]!.teeth.map((t) => t.label);
-    expect(labels).toEqual(["√1", "√3", "√4", "√7", "√9", "√11", "√12"]);
-    // √11 is NOT in SYMS.Hexagonal.Ms — nearest/position matching would mislabel it.
-    expect(labels[5]).toBe("√11");
+    expect(labels).toEqual(["√1", "√3", "√4", "√7", "√9", "√12", "√13", "√16"]);
+    expect(labels.slice(-2)).toEqual(["√13", "√16"]);
   });
 
   it("labels a Lamellar index by the linear q-law (q ∝ N) beyond SYMS.Ms", () => {

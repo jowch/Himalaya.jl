@@ -55,6 +55,16 @@ function reconstruct_index(db::SQLite.DB, index_id::Integer)
     sharp = spzeros(Float64, n)
     for r in prows
         pos = Int(r.ratio_position)
+        # Prevents a BoundsError when a persisted position outlives a trimmed
+        # ratio series (#304 took Hexagonal 14 → 13). It does NOT make this
+        # function correct on an unmigrated DB: with n = 13, old positions 6–13
+        # are all in range and silently land one radicand high (old position 7,
+        # √12, reconstructs as new position 7, √13), which `Himalaya.fit` turns
+        # into a wrong lattice constant with no diagnostic. Only old position 14
+        # is caught here. `connect` carries the actual detection — it warns when
+        # the migration sentinel is absent — because this package opens
+        # `query_only` and can never migrate the DB itself.
+        1 <= pos <= n || continue
         peaks[pos] = Float64(r.q_observed)
         sharp[pos] = r.sharpness === missing ? 0.0 : Float64(r.sharpness)
     end

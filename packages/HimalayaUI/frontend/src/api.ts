@@ -595,9 +595,11 @@ export type CustomIndexResponse = IndexEntry & {
 // `ratios` = the NORMALIZED ratios the modal DREW (each reflection's q over the
 // first's). The backend bounds its snap to these; without them it scans the full
 // core ratio series and claims reflections the user never saw (that series is
-// longer than SYMS.Ms for 5 of 8 phases). Sent as ratios rather than a count
-// because the two series are not positionally aligned for Hexagonal: the core
-// one contains a √11 that is not a permitted 2D hexagonal reflection at all.
+// longer than SYMS.Ms for 5 of 8 phases). Sent as ratios rather than a count:
+// the two series are hand-maintained in different languages and have drifted
+// twice (the core carried a √11 at Hexagonal position 6 until #304, and
+// RADICANDS.Pn3m sat 5 entries short). They line up today, but only
+// incidentally — a count is correct only until the next divergence.
 export const createCustomIndex = (
   exposure_id: number, phase: string, basis: number, ratios: number[], opts?: AuthOpts,
 ) => request<CustomIndexResponse>(

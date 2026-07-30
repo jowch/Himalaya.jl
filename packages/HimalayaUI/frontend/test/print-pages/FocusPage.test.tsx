@@ -704,9 +704,11 @@ describe("FocusPage", () => {
     // positions, and the commit returns 200 with an index claiming NO peaks —
     // exactly the bug this PR exists to fix, silently and with no 4xx.
     //
-    // Hexagonal on purpose: its drawn set [1,3,4,7,9,12] skips the backend
-    // series' spurious √11, so this also gives the alignment contract
-    // behavioural teeth at the producing layer.
+    // Hexagonal on purpose: its drawn set [1,3,4,7,9,12] is 6 of the backend
+    // series' 13 entries, so this gives the "send ratios, not a count" contract
+    // behavioural teeth at the producing layer. (Pre-#304 the two series also
+    // disagreed in VALUE at position 6, where the core carried a √11 that is
+    // not a permitted 2D hexagonal reflection; that entry is gone.)
     renderAt(42);
     fireEvent.click(screen.getByTestId("custom-index-trigger"));
     const modal = screen.getByTestId("custom-index-modal");

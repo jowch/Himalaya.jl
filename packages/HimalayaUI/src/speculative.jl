@@ -61,15 +61,19 @@ not claim beyond a shorter series the user was actually shown pass the ratios
 they drew — see `insert_custom_index!`.
 
 Deliberately a ratio SET, not a count: a count assumes the caller's series is a
-positional prefix of `phaseratios(P)`, which is false for Hexagonal. The core
-series is [1, √3, √4, √7, √9, **√11**, √12, …] but √11 is not a permitted 2D
+positional prefix of `phaseratios(P)`. Every phase happens to satisfy that today
+— but only since #304, and only incidentally. Until then the core Hexagonal
+series was [1, √3, √4, √7, √9, **√11**, √12, …], and √11 is not a permitted 2D
 hexagonal reflection at all — N = h²+hk+k² has no solution for 11 (a Loeschian
 / Eisenstein-norm condition: 11 ≡ 2 mod 3 to an odd power) — so the frontend's
-[1, √3, √4, √7, √9, √12] is the physically correct list and the two disagree at
-position 6. Bounding by count there would claim an impossible √11 AND drop the
-√12 the user was shown. Matching on ratio VALUES is correct today and stays
-correct when the spurious √11 is eventually removed from the core series (which
-renumbers positions — a migration-class change, tracked separately).
+[1, √3, √4, √7, √9, √12] disagreed with it at position 6, and bounding by count
+claimed an impossible √11 while dropping the √12 the user was shown.
+
+Do not "simplify" this back to a count on the strength of the current
+alignment: the two series are maintained in different languages and have
+drifted twice already (that √11, plus `RADICANDS.Pn3m` sitting 5 entries short
+in seriesRatio.ts). Matching on ratio VALUES is correct under any future
+divergence; a count is correct only until the next one.
 
 Returns one row per scanned ratio position (1-indexed) with fields:
 - `ratio_position::Int`
@@ -378,12 +382,12 @@ render a fully-fitted custom index as claiming nothing.
 `drawn_ratios` bounds the scan to the reflections the MODAL DREW, as NORMALIZED
 ratios. The frontend's `SYMS[sym].Ms` (`lib/customIndex.ts`) is shorter than the
 core ratio series for five of eight phases (Pn3m 6 vs 16, Im3m 6 vs 10, Ia3d 6
-vs 8, Lamellar 5 vs 11, Hexagonal 6 vs 14); scanning the full series would claim
+vs 8, Lamellar 5 vs 11, Hexagonal 6 vs 13); scanning the full series would claim
 reflections the user was never shown and let the rail's "explains N peaks"
 exceed the modal's "N of M land" for the same fit. A ratio set rather than a
-count because Hexagonal's two series are not positionally aligned — see
-`compute_snap`. `nothing` scans the whole series: correct only for a caller with
-no truncated display of its own.
+count — the two series are maintained in different languages and have drifted
+before; see `compute_snap`. `nothing` scans the whole series: correct only for a
+caller with no truncated display of its own.
 
 The bound survives reanalysis without being persisted: the claims it produces
 are frozen into `speculative_peak_intents`, and `_persist_analysis_inner!` skips
