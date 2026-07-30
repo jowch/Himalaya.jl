@@ -1579,16 +1579,21 @@ Rejected exposures are skipped by `analyze --all` (`cli.jl`), so their Hexagonal
 someone un-rejects them. Nothing unique is lost — auto rows are derived and
 intents survive — but the rows do not come back on their own.
 """
-function migrate_hex_sqrt11!(db::SQLite.DB)
+function migrate_hex_sqrt11!(db::SQLite.DB;
+                             series::AbstractVector = Himalaya.phaseratios(Himalaya.Hexagonal))
     _migrated(db, MIGRATION_HEX_SQRT11) && return nothing
 
-    if 11 in round.(Int, Himalaya.phaseratios(Himalaya.Hexagonal) .^ 2)
+    # `series` is injectable for one reason: this branch is the last thing
+    # standing between a stale manifest and irreversible corruption of durable
+    # intents, and it cannot be reached from a test otherwise (the test process
+    # loads exactly one Himalaya). Production never passes it.
+    if 11 in round.(Int, series .^ 2)
         @warn """
               migrate_hex_sqrt11! deferred: the loaded Himalaya still lists √11 in \
               phaseratios(Hexagonal), so renumbering now would point durable intents \
               at the wrong reflection. Resolve Himalaya >= 0.6 (dev the local core, \
               or update the manifest) and reopen the database.
-              """ himalaya_series_length = length(Himalaya.phaseratios(Himalaya.Hexagonal))
+              """ himalaya_series_length = length(series)
         return nothing
     end
 

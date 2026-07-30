@@ -148,26 +148,60 @@ end
     @test _intents(fx.db, hex) == once
 end
 
-@testset "hex √11 migration: defers (no sentinel) against a core that still has √11" begin
-    # The guard that stops a stale manifest from renumbering intents into a
-    # scheme the loaded core doesn't use. Can't load an old Himalaya here, so
-    # drive the predicate the guard reads.
+_has_sentinel(db) = !isempty(Tables.rowtable(DBInterface.execute(db,
+    "SELECT 1 FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_HEX_SQRT11])))
+
+# The pre-#304 series, for driving the deferral guard. The test process loads
+# exactly one Himalaya, so the only way to reach that branch is to hand the
+# migration the series a stale manifest would have supplied.
+const _STALE_HEX_SERIES = [1, √3, √4, √7, √9, √11, √12, √13, √16, √19, √21, √25, √27, √28]
+
+@testset "hex √11 migration: the real core is not mistaken for a stale one" begin
     @test !(11 in round.(Int, Himalaya.phaseratios(Himalaya.Hexagonal) .^ 2))
+    @test 11 in round.(Int, _STALE_HEX_SERIES .^ 2)   # the fixture is what it claims
 
     fx  = _hex_fixture()
     hex = _mkindex!(fx.db, fx.exposure_id, "Hexagonal")
     _seed_intents!(fx.db, hex, [7])
     _rearm!(fx.db)
 
-    # With the real (fixed) core the migration proceeds and records the sentinel.
     HimalayaUI.migrate_hex_sqrt11!(fx.db)
     @test _intents(fx.db, hex) == [(6, 0.07)]
-    @test !isempty(Tables.rowtable(DBInterface.execute(fx.db,
-        "SELECT 1 FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_HEX_SQRT11])))
+    @test _has_sentinel(fx.db)
+end
 
-    # The deferral contract that matters: bailing must NOT write the sentinel,
-    # so a corrected environment still applies the migration later.
+@testset "hex √11 migration: a stale core defers — no renumber, no sentinel" begin
+    # The backstop for a manifest that resolved a pre-0.6 core despite the
+    # [compat] bound. It must leave the DB untouched AND leave the sentinel
+    # unwritten, so a corrected environment still applies the migration later.
+    # Burning the sentinel here would renumber intents into a scheme the loaded
+    # core does not use, irreversibly and with no error.
+    fx  = _hex_fixture()
+    hex = _mkindex!(fx.db, fx.exposure_id, "Hexagonal")
+    _seed_intents!(fx.db, hex, [1, 6, 7, 8])
+    pid = Int(DBInterface.lastrowid(DBInterface.execute(fx.db,
+        "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.1, 1.0)",
+        [fx.exposure_id])))
+    DBInterface.execute(fx.db, """
+        INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)
+        VALUES (?, ?, 'auto', 1, 0.0)""", [hex, pid])
+    DBInterface.execute(fx.db,
+        "UPDATE exposures SET analysis_inputs_hash = 'keepme' WHERE id = ?", [fx.exposure_id])
     _rearm!(fx.db)
-    @test isempty(Tables.rowtable(DBInterface.execute(fx.db,
-        "SELECT 1 FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_HEX_SQRT11])))
+
+    @test_logs (:warn,) match_mode=:any HimalayaUI.migrate_hex_sqrt11!(fx.db;
+                                                                       series = _STALE_HEX_SERIES)
+
+    # Nothing moved, and the gate stayed shut.
+    @test _intents(fx.db, hex) == [(1, 0.01), (6, 0.06), (7, 0.07), (8, 0.08)]
+    @test !isempty(Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT 1 FROM index_peaks WHERE index_id = ?", [hex])))
+    @test first(Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT analysis_inputs_hash AS x FROM exposures WHERE id = ?", [fx.exposure_id]))).x == "keepme"
+    @test !_has_sentinel(fx.db)
+
+    # …and the deferral is not terminal: a corrected core still migrates.
+    HimalayaUI.migrate_hex_sqrt11!(fx.db)
+    @test _intents(fx.db, hex) == [(1, 0.01), (6, 0.07), (7, 0.08)]
+    @test _has_sentinel(fx.db)
 end
