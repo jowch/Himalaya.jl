@@ -66,9 +66,13 @@ scratch/                            # gitignored — exploratory scripts and tra
 
 ```bash
 # First-time setup (also run after `git worktree add`):
+# HimalayaUI must `develop` the local core BEFORE instantiating — Manifest.toml is
+# gitignored and there is no [sources], so a bare instantiate resolves Himalaya from
+# the REGISTRY (different physics from this checkout). `[compat] Himalaya = "0.6"`
+# makes that fail loudly instead of silently; `develop` is the fix, not a workaround.
 (cd packages/HimalayaUI/frontend && npm install)
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'
+julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'

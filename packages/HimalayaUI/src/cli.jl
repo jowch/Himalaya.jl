@@ -60,12 +60,17 @@ selects the first kept (non-rejected) exposure when none is currently selected.
 Errors per-exposure are caught and printed as `SKIP (...)` so one bad
 .dat file doesn't abort the batch.
 
+Reports any assignment members the rebuild failed to re-attach (F-WIPE W1),
+per-exposure and again as a closing summary — a withdrawn phase call is a human
+decision disappearing, and this is the only surface that shows it on the CLI.
+
 Invoked by `cli_analyze` (explicit user invocation). Ingestion is handled by
 the HTTP scan path (`POST /api/experiments/{id}/scan`), not the CLI.
 """
 function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
     exp     = get_experiment(db, exp_id)
     samples = get_samples(db, exp_id)
+    dropped_assignments = Tuple{String, String, String}[]
     sample_filter !== nothing && filter!(sm -> sm.name == sample_filter, samples)
     sample_filter !== nothing && isempty(samples) &&
         println("  (no sample named '$(sample_filter)')")
@@ -100,12 +105,32 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             end
             print("  Analyzing $(sample.name) / $(exp_row.filename) ... ")
             try
-                analyze_exposure!(db, e_id)
-                println("done")
+                res = analyze_exposure!(db, e_id)
+                # A rebuild can fail to re-attach an assignment member (F-WIPE
+                # W1) — the human's phase call is withdrawn. The routes thread
+                # this into the SSE post_state; on the CLI it is the only signal
+                # a curated call disappeared, so it must not be silent. Reached
+                # in practice by the #304 migration: a Hexagonal call resting on
+                # the removed √11 can drop below minpeaks and stop existing.
+                if isempty(res.dropped_assignment_phases)
+                    println("done")
+                else
+                    dropped = join(sort(res.dropped_assignment_phases), ", ")
+                    println("done — DROPPED ASSIGNMENT: $dropped")
+                    push!(dropped_assignments, (sample.name, exp_row.filename, dropped))
+                end
             catch e
                 msg = isa(e, ErrorException) ? e.msg : sprint(showerror, e)
                 println("SKIP ($msg)")
             end
+        end
+    end
+
+    if !isempty(dropped_assignments)
+        println()
+        println("$(length(dropped_assignments)) assignment(s) dropped — a curated phase call no longer reproduces:")
+        for (sname, fname, phases) in dropped_assignments
+            println("  $sname / $fname — $phases")
         end
     end
 end

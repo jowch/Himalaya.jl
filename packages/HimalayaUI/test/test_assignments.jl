@@ -641,7 +641,7 @@ end
     @test isfile(ts_path)
     ts = read(ts_path, String)
 
-    body = match(r"export const RADICANDS[^=]*=\s*\{(.*?)\n\};"s, ts)
+    body = match(r"(?:export )?const RADICANDS[^=]*=\s*\{(.*?)\n\};"s, ts)
     @test body !== nothing
     entries = Dict{String, Vector{Int}}()
     for m in eachmatch(r"(\w+):\s*\[([^\]]*)\]", body.captures[1])

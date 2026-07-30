@@ -1562,32 +1562,76 @@ Three steps, sentinel-gated, in one transaction:
    gate, so the next analyze re-indexes and re-scores.
 
 Must run AFTER `migrate_speculative_peak_durability!` (needs the intents table).
+
+**Refuses to run against a core that still has the √11.** `HimalayaUI`'s
+`Project.toml` has no `[sources]` (it declares `julia = "1.9"`, and `[sources]`
+is 1.11+), so the loaded `Himalaya` is whatever the gitignored manifest resolved
+— which for a bare `Pkg.instantiate()` is the registry copy. Renumbering durable
+intents into the 13-entry scheme and then resolving them against a 14-entry core
+maps an intent for √12 at old position 7 onto position 6, which that core reads
+as √11: silent wrong physics, and the burnt sentinel means it never self-corrects.
+The `[compat] Himalaya = "0.6"` bound is the primary defence; this guard is the
+backstop for a stale manifest that predates it. It returns WITHOUT writing the
+sentinel, so a corrected environment still applies the migration later.
+
+Rejected exposures are skipped by `analyze --all` (`cli.jl`), so their Hexagonal
+`index_peaks` rows are deleted here with no rebuild path and stay claimless until
+someone un-rejects them. Nothing unique is lost — auto rows are derived and
+intents survive — but the rows do not come back on their own.
 """
 function migrate_hex_sqrt11!(db::SQLite.DB)
     _migrated(db, MIGRATION_HEX_SQRT11) && return nothing
 
+    if 11 in round.(Int, Himalaya.phaseratios(Himalaya.Hexagonal) .^ 2)
+        @warn """
+              migrate_hex_sqrt11! deferred: the loaded Himalaya still lists √11 in \
+              phaseratios(Hexagonal), so renumbering now would point durable intents \
+              at the wrong reflection. Resolve Himalaya >= 0.6 (dev the local core, \
+              or update the manifest) and reopen the database.
+              """ himalaya_series_length = length(Himalaya.phaseratios(Himalaya.Hexagonal))
+        return nothing
+    end
+
     SQLite.transaction(db) do
+        # `IN (...)` rather than `= 'Hexagonal'`: nothing in the schema constrains
+        # this column, and `resolve_phase` strips a `Himalaya.` prefix precisely
+        # because the qualified spelling is a known hazard. Every current writer
+        # uses `string(nameof(P))` (bare), and prod is clean — but a qualified row
+        # would be silently skipped while the sentinel burnt, which is exactly the
+        # unrecoverable shape this migration must not have.
         DBInterface.execute(db, """
             DELETE FROM index_peaks
-             WHERE index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+             WHERE index_id IN (SELECT id FROM indices
+                                 WHERE phase IN ('Hexagonal', 'Himalaya.Hexagonal'))""")
 
         DBInterface.execute(db, """
             DELETE FROM speculative_peak_intents
              WHERE ratio_position = 6
-               AND index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+               AND index_id IN (SELECT id FROM indices
+                                 WHERE phase IN ('Hexagonal', 'Himalaya.Hexagonal'))""")
 
         # Two-pass via a +1000 offset. PRIMARY KEY (index_id, ratio_position) is
         # enforced per row and SQLite gives no ORDER BY on UPDATE, so a single
         # decrement can hit 8→7 while 7 still exists. A PK abort here would roll
         # back the sentinel and throw on every subsequent open_db.
+        #
+        # `typeof(...) = 'integer'` guards the same wedge from the other side.
+        # Every intent is written as a plain Int today, but `index_peaks` proves
+        # this column family can receive serialized UInt8 BLOBs (#308) — and under
+        # BLOB affinity `> 6` matches every blob row while `+ 1000` collapses them
+        # all to one value, so the PK aborts and open_db throws forever after.
         DBInterface.execute(db, """
             UPDATE speculative_peak_intents SET ratio_position = ratio_position + 1000
-             WHERE ratio_position > 6
-               AND index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+             WHERE typeof(ratio_position) = 'integer'
+               AND ratio_position > 6
+               AND index_id IN (SELECT id FROM indices
+                                 WHERE phase IN ('Hexagonal', 'Himalaya.Hexagonal'))""")
         DBInterface.execute(db, """
             UPDATE speculative_peak_intents SET ratio_position = ratio_position - 1001
-             WHERE ratio_position > 1000
-               AND index_id IN (SELECT id FROM indices WHERE phase = 'Hexagonal')""")
+             WHERE typeof(ratio_position) = 'integer'
+               AND ratio_position > 1000
+               AND index_id IN (SELECT id FROM indices
+                                 WHERE phase IN ('Hexagonal', 'Himalaya.Hexagonal'))""")
 
         # NOT scoped to exposures with a Hexagonal index: `remove_subsets` is
         # phase-agnostic (`issubset` keys on basis + peak set, not phase), so a

@@ -22,8 +22,12 @@
 
     # score: coverage × consistency
     # Hexagonal has 13 ratios; peaks at ranks [1,2,3], uniform sharpness → consistency=1
-    # coverage = (1/1 + 1/2 + 1/3) / sum(1/r for r in 1:13) ≈ 1.8333 / 3.1801 ≈ 0.5765
-    @test isapprox(score(index), 0.5765; atol = 0.01)
+    # Assert the closed form rather than a literal: the tolerance that would
+    # distinguish a ±1 change in the series tail is the same order as the shift
+    # itself (dropping √11 moved this by 0.0127), so a hand-tuned atol pins the
+    # number without pinning the relationship it comes from.
+    @test score(index) ≈ (1 + 1/2 + 1/3) / sum(1/r for r in 1:length(phaseratios(Hexagonal)))
+    @test isapprox(score(index), 0.5765; atol = 0.001)
     @test 0.0 ≤ score(index) ≤ 1.0
 
     # sharpness consistency: heterogeneous peaks score lower

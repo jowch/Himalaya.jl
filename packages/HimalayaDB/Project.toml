@@ -20,11 +20,15 @@ DataFramesExt = "DataFrames"
 Himalaya = {path = "../.."}
 
 [compat]
+# See the HimalayaUI note: reconstruct_index indexes straight into
+# phaseratios(P), so an older core mis-reads every persisted Hexagonal position
+# past 5. [sources] pins the path, but the bound is what makes a stale resolve
+# fail loudly instead of silently.
+Himalaya = "0.6"
 SQLite = "=1.8.0"
 DBInterface = "2"
 Tables = "1"
 DataFrames = "1"
-Himalaya = "0.5"
 julia = "1.11"
 
 [extras]
