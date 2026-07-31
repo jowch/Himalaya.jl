@@ -1,29 +1,7 @@
 # Changelog
 
-Covers the core `Himalaya` package (versioned in the root `Project.toml`) and
-the packages built on it — `HimalayaUI` (the application) and `HimalayaDB` (the
-read-only query API). Core releases are headed `Himalaya <version>`; entries
-under `Unreleased` are application-level unless stated otherwise.
-
-## Unreleased
-
-### Breaking changes
-
-- **`samples.label` removed; replaced by `name` (stable identifier, was column 3) and
-  `display_name` (editable label, was column 2). Manifest column meanings swapped.**
-  Existing experiments need `himalaya migrate-toml <experiment-dir>` to upgrade
-  their `experiment.toml`. Existing DBs auto-migrate on first `open_db` after
-  deploy. Issue #88.
-- **`/api/export` CSV header changed: `sample_label` → `sample_display_name`.**
-  Downstream pipelines parsing this CSV need to update their column names.
-- **`PATCH /api/samples/:id` no longer accepts `name`; use `display_name`.**
-  `samples.name` is now the stable identifier and is set only at ingest time.
-- **`PATCH /api/experiments/:id` no longer accepts any field.** The route is
-  retained as defensive surface for future fields. Experiment renames must go
-  through `experiment.toml` + reingest.
-- **First boot after migration purges `idempotent_responses`.** In-flight
-  `client_op_id` retries from before the deploy will get fresh executions
-  rather than cached pre-rename response bodies.
+Covers core `Himalaya` and the `HimalayaUI` / `HimalayaDB` packages built on it.
+Core releases are headed `Himalaya <version>`.
 
 ## Himalaya 0.6.0 — 2026-07-30
 
@@ -48,16 +26,13 @@ the exact mismatch this release guards against.
   flip: an index that previously lost a subset comparison may now survive.
 - **Consumers must resolve `Himalaya >= 0.6`.** `HimalayaUI` and `HimalayaDB`
   now declare `[compat] Himalaya = "0.6"`. `Manifest.toml` is gitignored and
-  `HimalayaUI` has no `[sources]`, so a bare `Pkg.instantiate()` previously
-  resolved a registry core with different physics under the same version string.
-  It now fails to resolve instead — `Pkg.develop` the local core first (see
-  `CLAUDE.md`). This is deliberate: a load failure is preferable to silently
-  wrong reflections.
-
-  **Inside this repository only, until `0.6.0` is published.** `Pkg.develop`
-  resolves the bound because the local core *is* 0.6.0. A consumer outside the
-  monorepo has no such path: until `Himalaya 0.6.0` is registered, the bound is
-  unsatisfiable and there is no workaround short of pinning to a git revision.
+  `HimalayaUI` has no `[sources]`, so without the bound a resolve could supply a
+  core whose `phaseratios` differs from the one the calling code was written
+  against — wrong reflections under the same version string, with no error. The
+  bound makes that a resolution failure instead. When working on core itself,
+  `Pkg.develop` the local checkout (see `CLAUDE.md`): the bound separates
+  *versions*, so an unbumped edit to `phaseratios` still diverges from whatever
+  is published.
 - **`HimalayaDB.connect` now warns when the database predates this migration.**
   Reading a pre-migration database — an old backup, or a deploy that has not been
   restarted — makes `reconstruct_index` return Hexagonal peaks one reflection too
