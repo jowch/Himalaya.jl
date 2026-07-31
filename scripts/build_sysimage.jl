@@ -18,6 +18,13 @@ create_sysimage(
 
 write(joinpath(out_dir, "julia_version"), string(VERSION))
 
+# The sysimage embeds absolute artifact paths resolved from THIS depot, so it
+# only runs where the same depot is in play. Record it so `make check-sysimage`
+# can catch a mismatch up front instead of leaving it to surface as an
+# unhandled `Artifact "…" was not found` at startup. Empty means the caller had
+# no JULIA_DEPOT_PATH set and got Julia's default.
+write(joinpath(out_dir, "depot_path"), get(ENV, "JULIA_DEPOT_PATH", ""))
+
 @info """
 Sysimage built: $out_path
 
