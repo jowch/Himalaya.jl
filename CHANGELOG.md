@@ -1,12 +1,7 @@
 # Changelog
 
-Covers the core `Himalaya` package (versioned in the root `Project.toml`) and
-the packages built on it — `HimalayaUI` (the application) and `HimalayaDB` (the
-read-only query API). Core releases are headed `Himalaya <version>`.
-
-`HimalayaUI` is not versioned or published — it ships by deployment — so it has
-no release headings here. Record an application change only where it needs an
-operator to do something; git history is the record of everything else.
+Covers core `Himalaya` and the `HimalayaUI` / `HimalayaDB` packages built on it.
+Core releases are headed `Himalaya <version>`.
 
 ## Himalaya 0.6.0 — 2026-07-30
 
