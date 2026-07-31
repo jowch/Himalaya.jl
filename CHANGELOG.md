@@ -48,16 +48,13 @@ the exact mismatch this release guards against.
   flip: an index that previously lost a subset comparison may now survive.
 - **Consumers must resolve `Himalaya >= 0.6`.** `HimalayaUI` and `HimalayaDB`
   now declare `[compat] Himalaya = "0.6"`. `Manifest.toml` is gitignored and
-  `HimalayaUI` has no `[sources]`, so a bare `Pkg.instantiate()` previously
-  resolved a registry core with different physics under the same version string.
-  It now fails to resolve instead — `Pkg.develop` the local core first (see
-  `CLAUDE.md`). This is deliberate: a load failure is preferable to silently
-  wrong reflections.
-
-  **Inside this repository only, until `0.6.0` is published.** `Pkg.develop`
-  resolves the bound because the local core *is* 0.6.0. A consumer outside the
-  monorepo has no such path: until `Himalaya 0.6.0` is registered, the bound is
-  unsatisfiable and there is no workaround short of pinning to a git revision.
+  `HimalayaUI` has no `[sources]`, so without the bound a resolve could supply a
+  core whose `phaseratios` differs from the one the calling code was written
+  against — wrong reflections under the same version string, with no error. The
+  bound makes that a resolution failure instead. When working on core itself,
+  `Pkg.develop` the local checkout (see `CLAUDE.md`): the bound separates
+  *versions*, so an unbumped edit to `phaseratios` still diverges from whatever
+  is published.
 - **`HimalayaDB.connect` now warns when the database predates this migration.**
   Reading a pre-migration database — an old backup, or a deploy that has not been
   restarted — makes `reconstruct_index` return Hexagonal peaks one reflection too

@@ -32,9 +32,9 @@ julia --project="$root/packages/HimalayaUI" -e 'using HimalayaUI; println("Himal
 
 This used to be optional. It isn't any more.
 
-`Manifest.toml` is gitignored and `HimalayaUI` has no `[sources]` (that needs Julia 1.11; the package declares `julia = "1.9"`), so a bare `Pkg.instantiate()` resolves `Himalaya` **from the registry** — a different copy of the physics from the one in this checkout. Before `[compat] Himalaya = "0.6"` existed, that resolved silently under the same version string, which is how a registry core still carrying the forbidden `√11` could back a working-tree that had removed it (#304). Ratio positions renumber when the series changes, so the mismatch is wrong physics, not a load error.
+`Manifest.toml` is gitignored and `HimalayaUI` has no `[sources]` (that needs Julia 1.11; the package declares `julia = "1.9"`), so a bare `Pkg.instantiate()` resolves `Himalaya` **from the registry** — the published copy of the physics, not the one in this checkout. Ratio positions renumber when the series changes, so a mismatch is wrong physics, not a load error: that is how a registry core still carrying the forbidden `√11` could back a working tree that had removed it (#304).
 
-The compat bound now turns that into a resolution failure. Fix it by pointing at the local core:
+`[compat] Himalaya = "0.6"` catches that only **across versions**. Edit `phaseratios` in your worktree without bumping the core version and the registry copy resolves cleanly while disagreeing with your code — exactly the original failure, back again. Point at the local core instead:
 
 ```bash
 julia --project="$root/packages/HimalayaUI" -e 'using Pkg; Pkg.develop(path="../..")'
