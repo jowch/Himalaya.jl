@@ -65,7 +65,8 @@ scratch/                            # gitignored — exploratory scripts and tra
 ## Running tests
 
 ```bash
-# First-time setup (also run after `git worktree add`):
+# First-time setup (also run after `git worktree add`). `make setup` runs the same
+# steps (with `npm ci`) and undoes Pkg.develop's rewrite of HimalayaUI/Project.toml:
 # HimalayaUI must `develop` the local core BEFORE instantiating — Manifest.toml is
 # gitignored and there is no [sources], so a bare instantiate resolves Himalaya from
 # the REGISTRY (different physics from this checkout). `[compat] Himalaya = "0.6"`

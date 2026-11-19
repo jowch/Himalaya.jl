@@ -13,8 +13,20 @@
 using HTTP, JSON3
 
 function main(args = ARGS)
-    root = abspath(get(args, 1, "scratch/demo-experiment"))
-    port = (i = findfirst(==("--port"), args)) === nothing ? 8080 : parse(Int, args[i+1])
+    root = "scratch/demo-experiment"; port = 8080
+    i = 1
+    while i <= length(args)
+        if args[i] == "--port"
+            i < length(args) || error("--port needs a value")
+            port = parse(Int, args[i+1]); i += 1
+        elseif startswith(args[i], "-")
+            error("unknown option $(args[i]) (usage: demo_ingest.jl [root] [--port N])")
+        else
+            root = args[i]
+        end
+        i += 1
+    end
+    root = abspath(root)
     base = "http://127.0.0.1:$port/api"
     getj(path, q) = JSON3.read(HTTP.get(base * path; query = q).body)
 

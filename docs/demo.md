@@ -34,22 +34,38 @@ funnel's layout auto-detect (`resolve_experiment_layout`, routes_fs.jl) recognis
 
 ```
 scratch/demo-experiment/
-  data/<label>_S<scan>_0_<NNN>.tif   Pilatus 1M frame, signed Int32 counts, -1 in module gaps
-  data/<label>_S<scan>_0_<NNN>.prp   PRP sidecar (energy, pipe length, horizontal position…)
+  data/<label>_S<scan>_0_001.tif     Pilatus 1M frame, signed Int32 counts, -1 in module gaps
+  data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time…)
   analysis/setup_info_*.txt          beam center + AgBe distance (geometry source)
   analysis/automatic_analysis/tot_files/<label>_S<scan>_tot.dat   q  I  sigma
-  TRUTH.csv                          generated phase, lattice and peak q for each sample
+  TRUTH.csv                          per sample: scans, generated phases + lattice, expected
+                                     auto call (`auto`), phase-tagged reflection q values
 ```
 
 - **Not real data, never committed.** It lives under gitignored `scratch/` (or
   wherever `DEMO_DIR` points). Only the generator is in git.
 - **Peak positions come from `Himalaya.phaseratios`**, so the demo tracks any
   change to the core ratio tables (e.g. the √11 removal in #304).
-- 12 samples, one per capillary slot (3.95 mm pitch, so the slot clustering in
-  grouping.jl splits them): clean Pn3m ×2, Pn3m+Im3m, Im3m, Ia3d, HII, Lα,
+- 12 samples in two capillary holders (two loads, 75 min apart), one sample per
+  slot (3.95 mm pitch, so the slot clustering in grouping.jl splits them), 1–3
+  scans each (26 exposures): clean Pn3m ×2, Pn3m+Im3m, Im3m, Ia3d, HII, Lα,
   Lα+HII, weak Pn3m, Pn3m+HII, a buffer blank, and a ULV form-factor-only trace.
-- Seeded (`--seed`, default 7) and deterministic within a Julia release; ~118 MB,
-  ~10 s. `--no-images` writes empty `.tif` placeholders (~1 MB) when only traces matter.
+  Each scan is one frame (`_0_001`, the frame the funnel's layout detection keys on).
+- **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
+  column is what Himalaya's own pipeline calls. Two samples differ:
+  - `MO_PEG5`: Pn3m √6 overlaps Im3m √10, so `auto_group` keeps Im3m. Pn3m stays
+    a candidate, as the second hypothesis to promote by hand.
+  - `MO_AMP_weak`: too weak to index automatically.
+
+  `test/test_demo_data.jl` holds a regression floor on these calls over three
+  seeds. If a change to peak finding, scoring or `phaseratios` moves them, fix
+  the change or retune the sample deliberately.
+- Seeded (`--seed`, default 7) and deterministic within a Julia release; ~100 MB,
+  ~10 s. Traces and detector frames draw from separate random streams, so
+  `--no-images` (empty `.tif` placeholders, ~1 MB) writes the same `.dat` files.
+  `make demo` refuses such a tree; regenerate with `make demo-data`.
+- Safety: the generator refuses to write into a non-empty directory that has no
+  `TRUTH.csv`, and `make demo-clean` only deletes `DEMO_DIR` when it has one.
 - TIFFs are written as `Gray{Q0f31}`, which TiffImages stores as a signed 32-bit
   integer TIFF, the same on-disk format as the Pilatus. Checked both ways: a
   plain int32 TIFF from Python `tifffile` loads in Julia as `Gray{Q0f31}` with
@@ -62,7 +78,7 @@ and waits for the first scan. The first browser visit still shows the
 
 ## Cloud sessions (claude.ai/code)
 
-The app needs Julia ≥ 1.10, Node ≥ 20 and npm. A cloud environment that runs it needs:
+The app needs Julia (compat says ≥ 1.9; tested on 1.13), Node ≥ 20 and npm. A cloud environment that runs it needs:
 
 1. **Network:** unrestricted, or at least `julialang.org`, `*.julialang.org`
    (installer, package server, registry), `github.com` and the npm registry.
@@ -94,6 +110,9 @@ await page.addInitScript(() => localStorage.setItem('himalaya-ui:state',
 ```
 
 ### Known noise
+
+- `npm run e2e` (mocked Playwright) also binds :5173; stop the demo first, or it
+  fails fast on the port (`--strictPort`).
 
 - Vite logs `[boneyard] capture failed: … Executable doesn't exist at /opt/pw-browsers/…`
   in cloud sessions: the boneyard skeleton-capture plugin uses the frontend's own

@@ -64,10 +64,9 @@ UI_PROJECT := packages/HimalayaUI/Project.toml
 setup:
 	cd $(FRONTEND_DIR) && npm ci
 	julia --project=. -e 'using Pkg; Pkg.instantiate()'
-	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak
-	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()' \
-		|| { mv $(UI_PROJECT).setup-bak $(UI_PROJECT); exit 1; }
-	mv $(UI_PROJECT).setup-bak $(UI_PROJECT)
+	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak; \
+	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
+	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 
 # Synthetic SSRL-style experiment, generated on demand and NEVER committed
 # (scratch/ is gitignored). Override the target dir with DEMO_DIR=/tmp/...
@@ -85,5 +84,9 @@ demo:
 demo-empty:
 	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
 
+# Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), so a mistyped
+# DEMO_DIR pointing at real data is left alone.
 demo-clean:
-	rm -rf $(DEMO_DIR) $(DEMO_DB_DIR) $(DEMO_DB_DIR)-empty
+	@if [ -f "$(DEMO_DIR)/TRUTH.csv" ]; then rm -rf "$(DEMO_DIR)"; \
+	elif [ -e "$(DEMO_DIR)" ]; then echo "$(DEMO_DIR) has no TRUTH.csv; not a demo tree, leaving it" >&2; fi
+	rm -rf "$(DEMO_DB_DIR)" "$(DEMO_DB_DIR)-empty"

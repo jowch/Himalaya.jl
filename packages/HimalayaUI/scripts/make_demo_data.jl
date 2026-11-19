@@ -11,12 +11,15 @@
 #   julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl \
 #       [out_dir] [--seed 7] [--no-images]
 #
-# Layout written (what routes_fs.jl `resolve_experiment_layout` auto-detects):
-#   <out>/data/<base>_0_<NNN>.tif      Pilatus 1M frame, Int32 counts (-1 in module gaps)
-#   <out>/data/<base>_0_<NNN>.prp      SSRL PRP sidecar (energy, pipe length, detector)
+# Layout written (what routes_fs.jl `resolve_experiment_layout` auto-detects);
+# <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample:
+#   <out>/data/<base>_0_001.tif        Pilatus 1M frame, Int32 counts (-1 in module gaps)
+#   <out>/data/<base>_0_001.prp        SSRL PRP sidecar (energy, pipe length, position, time)
 #   <out>/analysis/setup_info_<ts>.txt beam center + AgBe-calibrated distance
 #   <out>/analysis/automatic_analysis/tot_files/<base>_tot.dat   q  I  sigma
-#   <out>/TRUTH.csv                    what each sample was generated as
+#   <out>/TRUTH.csv                    per sample: generated phases, expected auto call,
+#                                      phase-tagged reflection q values
+# test/test_demo_data.jl holds the regression floor on the expected auto calls.
 #
 # Output is deterministic for a given seed and Julia version (Xoshiro streams are
 # stable within a Julia release, not guaranteed across releases).
@@ -24,7 +27,7 @@
 using Himalaya: Phase, Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, phaseratios
 using FileIO, TiffImages, ColorTypes
 using ImageCore.FixedPointNumbers: Q0f31
-using Printf, Random
+using Dates, Printf, Random
 
 # ---- instrument (matches the SSRL 2026-04 defaults used in the test fixtures) ----
 const ENERGY_EV        = 9000.027604502573
@@ -60,22 +63,33 @@ first_peak_q(::Type{P}, a) where {P<:Phase} = 2π * first(phaseratios(P)) / a  #
 # (phase, lattice parameter Å, peak height relative to background at q1, peak sigma)
 const Component = Tuple{DataType,Float64,Float64,Float64}
 
-# A plausible lipid screen with known answers.
+# A plausible lipid screen with known answers, mounted in two capillary holders
+# (two loads, >1 h apart). Each sample is measured `nscans` times at its slot;
+# every scan is one exposure (frame `_0_001`, which is the frame the ingest
+# funnel's layout detection keys on).
+#
+# `auto` is what HimalayaUI's own pipeline (findpeaks -> indexpeaks -> auto_group)
+# is expected to call, which is NOT always the generated truth: peak heights and
+# lattices were tuned so each call holds across seeds (see
+# test/test_demo_data.jl). Where it differs from `phases`, the note says why;
+# those samples are the "promote the second hypothesis by hand" cases.
 const SAMPLES = [
-    # label            scan  frames components                                                  note
-    ("MO_H2O",         2401, 3, Component[(Pn3m, 102.0, 40.0, 7e-4)],                          "monoolein in excess water, clean Pn3m"),
-    ("MO_H2O_37C",     2402, 3, Component[(Pn3m, 95.0, 35.0, 7e-4)],                           "Pn3m, lattice shrinks on heating"),
-    ("MO_PEG5",        2403, 2, Component[(Pn3m, 108.0, 18.0, 8e-4), (Im3m, 138.0, 14.0, 8e-4)], "Pn3m + Im3m coexistence (Bonnet ratio ~1.28)"),
-    ("MO_F127",        2404, 3, Component[(Im3m, 145.0, 30.0, 8e-4)],                          "polymer-stabilised Im3m"),
-    ("MO_lowH2O",      2405, 2, Component[(Ia3d, 160.0, 25.0, 7e-4)],                          "low hydration Ia3d"),
-    ("DOPE_H2O",       2406, 3, Component[(Hexagonal, 74.0, 45.0, 9e-4)],                      "DOPE inverse hexagonal"),
-    ("DOPC_H2O",       2407, 3, Component[(Lamellar, 63.0, 60.0, 1.0e-3)],                     "DOPC multilamellar"),
-    ("DOPC_DOPE_1to1", 2408, 2, Component[(Lamellar, 60.0, 20.0, 1.1e-3), (Hexagonal, 72.0, 12.0, 1.0e-3)], "La + HII coexistence"),
-    ("MO_AMP_weak",    2409, 2, Component[(Pn3m, 99.0, 4.0, 9e-4)],                            "weak Pn3m near the noise floor"),
-    ("MO_AMP_10",      2410, 3, Component[(Pn3m, 100.0, 10.0, 9e-4), (Hexagonal, 58.0, 8.0, 1.0e-3)], "Pn3m drifting to HII under peptide"),
-    ("buffer_blank",   2411, 2, Component[],                                                   "buffer only, no Bragg peaks"),
-    ("vesicles_ULV",   2412, 2, Component[],                                                   "unilamellar vesicles, form factor only"),
+    # label            nscans components                                                  auto            note
+    ("MO_H2O",         3, Component[(Pn3m, 102.0, 40.0, 7e-4)],                          "Pn3m",           "monoolein in excess water, clean Pn3m"),
+    ("MO_H2O_37C",     2, Component[(Pn3m, 95.0, 35.0, 7e-4)],                           "Pn3m",           "Pn3m, lattice shrinks on heating"),
+    ("MO_PEG5",        2, Component[(Pn3m, 108.0, 30.0, 8e-4), (Im3m, 138.0, 14.0, 8e-4)], "Im3m",          "Pn3m + Im3m coexistence (Bonnet ratio ~1.28). Pn3m √6 overlaps Im3m √10, so auto_group keeps Im3m; Pn3m is the second hypothesis to promote by hand"),
+    ("MO_F127",        2, Component[(Im3m, 145.0, 30.0, 8e-4)],                          "Im3m",           "polymer-stabilised Im3m"),
+    ("MO_lowH2O",      2, Component[(Ia3d, 150.0, 35.0, 7e-4)],                          "Ia3d",           "low hydration Ia3d"),
+    ("DOPE_H2O",       3, Component[(Hexagonal, 74.0, 45.0, 9e-4)],                      "Hexagonal",      "DOPE inverse hexagonal"),
+    ("DOPC_H2O",       2, Component[(Lamellar, 63.0, 60.0, 1.0e-3)],                     "Lamellar",       "DOPC multilamellar"),
+    ("DOPC_DOPE_1to1", 2, Component[(Lamellar, 60.0, 20.0, 1.1e-3), (Hexagonal, 72.0, 22.0, 1.0e-3)], "Hexagonal+Lamellar", "La + HII coexistence"),
+    ("MO_AMP_weak",    2, Component[(Pn3m, 99.0, 4.0, 9e-4)],                            "none",           "weak Pn3m near the noise floor; too weak to index automatically"),
+    ("MO_AMP_10",      3, Component[(Pn3m, 96.0, 25.0, 9e-4), (Hexagonal, 53.0, 35.0, 1.0e-3)], "Hexagonal+Pn3m", "Pn3m drifting to HII under peptide"),
+    ("buffer_blank",   1, Component[],                                                   "none",           "buffer only, no Bragg peaks"),
+    ("vesicles_ULV",   2, Component[],                                                   "none",           "unilamellar vesicles, form factor only"),
 ]
+const LOAD_SPLIT = 6        # samples 1..6 in holder 1, the rest in holder 2
+const FIRST_SCAN = 2401
 
 phase_name(::Type{P}) where {P<:Phase} = string(nameof(P))
 
@@ -98,7 +112,8 @@ function background(rng, formfactor::Bool)
     @. amp * (0.06 * Q^-3.2 + 1.2 * Q^-1.2 + 30)
 end
 
-function make_trace(rng, label, comps)
+"Noise-free model trace for one sample, plus the generated (phase, q) reflections."
+function model_trace(rng, label, comps)
     bg = background(rng, startswith(label, "vesicles"))
     I = copy(bg)
     peaks = Tuple{String,Float64}[]
@@ -116,10 +131,14 @@ function make_trace(rng, label, comps)
             push!(peaks, (phase_name(P), round(qk; digits = 5)))
         end
     end
+    I, peaks
+end
+
+"One noisy measurement of a model trace; σ is the noise actually applied."
+function measure(rng, I)
     # counting noise: relative error grows where intensity is low
-    sigI = @. sqrt(I * 8.0) + 0.02 * I
-    Inoisy = @. max(I + randn(rng) * sigI * 0.35, 1e-3)
-    Inoisy, sigI, peaks
+    sig = @. 0.35 * (sqrt(I * 8.0) + 0.02 * I)
+    @. max(I + randn(rng) * sig, 1e-3), sig
 end
 
 # ---- detector frame ----------------------------------------------------------
@@ -226,11 +245,12 @@ function parse_args(args)
     while i <= length(args)
         a = args[i]
         if a == "--seed"
+            i < length(args) || error("--seed needs a value")
             seed = parse(Int, args[i+1]); i += 1
         elseif a == "--no-images"
             images = false
         elseif startswith(a, "-")
-            error("unknown option $a")
+            error("unknown option $a (usage: make_demo_data.jl [out_dir] [--seed N] [--no-images])")
         else
             out = a
         end
@@ -239,50 +259,72 @@ function parse_args(args)
     abspath(out), seed, images
 end
 
+"""
+Refuse to write into a directory that already holds something other than a demo
+tree, so a mistyped DEMO_DIR can't scatter synthetic files into real data.
+"""
+function check_target(out)
+    isdir(out) || return
+    entries = filter(!startswith("."), readdir(out))
+    isempty(entries) || isfile(joinpath(out, "TRUTH.csv")) ||
+        error("$out is not empty and has no TRUTH.csv, so it is not a demo tree; refusing to write into it")
+end
+
 function main(args = ARGS)
     out, seed, images = parse_args(args)
+    check_target(out)
+    # Separate streams: traces/positions must not depend on whether frames are
+    # drawn, so `--no-images` yields the same .dat files `make demo` serves.
     rng = Xoshiro(seed)
+    rng_img = Xoshiro(seed + 1)
     data = joinpath(out, "data")
     analysis = joinpath(out, "analysis")
     tot = joinpath(analysis, "automatic_analysis", "tot_files")
+    # Remove files from an earlier generation so a re-run can't leave strays.
+    for d in (data, tot)
+        isdir(d) && foreach(f -> rm(joinpath(d, f)), readdir(d))
+    end
     mkpath(data); mkpath(tot)
     write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"))
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)
     gaps = gap_mask()
-    truth = String["base,frames,phases,lattice_A,expected_peaks_q,note"]
-    minute = 0
-    for (slot, (label, scan, nframes, comps, note)) in enumerate(SAMPLES)
-        base = "$(label)_S$(scan)"
-        I, sig, peaks = make_trace(rng, label, comps)
-        open(joinpath(tot, "$(base)_tot.dat"), "w") do io
-            for k in eachindex(Q)
-                @printf(io, "%.6e %.6e %.6e\n", Q[k], I[k], sig[k])
+    truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,note"]
+    scan = FIRST_SCAN
+    t = DateTime(2026, 4, 26, 18, 0, 0)
+    for (k, (label, nscans, comps, auto, note)) in enumerate(SAMPLES)
+        # Holder 2 goes in after a >1 h break, so load segmentation finds 2 loads.
+        k == LOAD_SPLIT + 1 && (t += Minute(75))
+        slot = k <= LOAD_SPLIT ? k : k - LOAD_SPLIT
+        model, peaks = model_trace(rng, label, comps)
+        bases = String[]
+        for _ in 1:nscans
+            base = "$(label)_S$(scan)"; scan += 1
+            push!(bases, base)
+            I, sig = measure(rng, model)
+            open(joinpath(tot, "$(base)_tot.dat"), "w") do io
+                for j in eachindex(Q)
+                    @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
+                end
             end
-        end
-        for f in 1:nframes
-            stem = @sprintf("%s_0_%03d", base, f)
-            minute += 1
-            ts = @sprintf("26 Apr 2026 %02d:%02d:%02d", 18 + minute ÷ 60, minute % 60, (17f) % 60)
+            stem = base * "_0_001"
+            t += Second(rand(rng, 100:160))
             # Each sample sits in its own capillary slot: HimalayaUI groups exposures
-            # into samples by horizontal-position jumps (grouping.jl _cluster_slots),
-            # so a shared position would collapse the whole screen into one sample.
-            horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.1 * randn(rng); digits = 3)
-            write_prp(joinpath(data, stem * ".prp"), ts; horiz)
+            # into samples by horizontal-position jumps (grouping.jl _cluster_slots).
+            horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.05 * randn(rng); digits = 3)
+            write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS"); horiz)
             tif = joinpath(data, stem * ".tif")
-            if images
-                write_tif(tif, make_frame(rng, I, qm, dx, dy, gaps, 1 / nframes))
-            else
-                touch(tif)
-            end
+            images ? write_tif(tif, make_frame(rng_img, I, qm, dx, dy, gaps, 1.0)) : touch(tif)
         end
         phases = isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+")
         lattice = join((@sprintf("%g", c[2]) for c in comps), "+")
-        qs = join((string(q) for (_, q) in peaks), " ")
-        push!(truth, join([base, string(nframes), phases, lattice, qs, csvq(note)], ","))
+        qs = join(("$p:$q" for (p, q) in peaks), " ")
+        push!(truth, join([label, join(bases, " "), phases, lattice, auto, qs,
+                           string(images), csvq(note)], ","))
     end
     write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
-    println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed)")
+    println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",
+            images ? "" : ", no images", ")")
     out
 end
 

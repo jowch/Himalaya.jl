@@ -25,11 +25,18 @@ JL="julia --project=packages/HimalayaUI"
 up() { curl -s -o /dev/null --connect-timeout 1 --max-time 3 "http://127.0.0.1:$API_PORT/api/experiments"; }
 
 empty=0
-[[ "${1:-}" == "--empty" ]] && empty=1
+case "${1:-}" in
+  "") ;;
+  --empty) empty=1 ;;
+  *) echo "usage: demo.sh [--empty]" >&2; exit 2 ;;
+esac
 
 if [[ ! -f "$DEMO_DIR/TRUTH.csv" ]]; then
   echo "No demo data at $DEMO_DIR; generating it (make demo-data)."
   $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR"
+elif grep -q ',false,' "$DEMO_DIR/TRUTH.csv"; then
+  echo "$DEMO_DIR was generated with --no-images (empty TIFFs); run make demo-data to regenerate it." >&2
+  exit 1
 fi
 
 if (( empty )); then
