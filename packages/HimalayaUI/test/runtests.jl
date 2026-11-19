@@ -44,6 +44,9 @@ const GROUPS = [
     ("migration", ["test_http.jl","test_migration_upgrade.jl"]),
 ]
 
+GROUP == "All" || GROUP in first.(GROUPS) ||
+    error("runtests: unknown GROUP=$(GROUP); expected All or one of $(join(first.(GROUPS), ", "))")
+
 # Single source of truth for the serial bisect order — the exact historical
 # runtests include order. The buckets above must partition this same set.
 const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
