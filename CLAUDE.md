@@ -124,6 +124,8 @@ Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [
 
 **No lab data handy (or in a cloud session)?** `make setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
 
+**Verifying a change in the real app:** use the `verify-himalaya` skill. `bin/verify doctor`, `bin/verify seed`, then drive the browser (`open`, `snapshot`, `click`, `press`, `screenshot`) and run `bin/verify check-truth` against the demo's `TRUTH.csv`. Its Feature Map (`.claude/skills/verify-himalaya/references/features/README.md`) says how to reach and drive each feature. CLI tests: `npm run test:verify` in `packages/HimalayaUI/frontend`.
+
 ## Conventions
 
 - **TDD by default.** Failing test → minimal implementation → verify pass → commit. Each step is its own commit.

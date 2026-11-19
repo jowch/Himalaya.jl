@@ -1,0 +1,71 @@
+---
+name: verify-himalaya
+description: Prove a HimalayaUI change works in the real app. Bring up the synthetic demo, drive the browser with bin/verify (snapshot, click, press, screenshot), check results against the demo TRUTH.csv, and attach the evidence to the PR. Use after any change a user could see, and before asking for review.
+---
+
+# verify-himalaya
+
+Unit tests show that a function returns what it returns. This skill shows that the app does what it should: it runs the real backend and frontend on the synthetic demo experiment, drives them the way a user would, and checks the outcome against known answers.
+
+Everything goes through one CLI, `bin/verify`. Every command prints one JSON object and exits 0 on success or 1 on failure. A failure carries `error` and a `hint` that says what to do next. Run `bin/verify help` or `bin/verify <command> --help` for the full option list.
+
+## The loop
+
+```bash
+bin/verify doctor                 # what is up, what is missing, and the fix for each failing check
+bin/verify seed                   # demo up in the background (generate, backend :8080, ingest, Vite :5173); no-op when already up
+bin/verify open /experiments/1/corpus
+bin/verify snapshot --raw         # accessibility tree: the roles and names you can click
+bin/verify click --role button --name "MO_PEG5_S2406 (S01P03)"
+bin/verify press Enter            # keyboard shortcuts are first-class here; see the Feature Map
+bin/verify screenshot scratch/verify/shots/focus-peg5.png
+bin/verify check-truth            # phase calls and frame counts against TRUTH.csv
+bin/verify stop                   # stop the servers seed started (bin/verify close stops the browser)
+```
+
+Read [references/features/README.md](references/features/README.md) first. It is the Feature Map: every feature, how a user reaches it, the commands that drive it, and its gotchas.
+
+## Commands
+
+| Command | Use it to |
+|---|---|
+| `doctor` | Check node, julia, frontend deps, Chromium, demo data, backend, DB, ingest, Vite and Vite's `/api` proxy. |
+| `seed [--empty] [--reset]` | Start the demo detached and wait until it is ready. `--empty` starts on a fresh DB to walk the ingest funnel. `--reset` deletes the demo DBs and data first (`--dry-run` lists what it would delete). |
+| `open <route>` | Load a route in the shared headless browser, starting it if needed. A user is seeded so onboarding is skipped (`--onboarding` to see it). |
+| `snapshot [--selector css] [--raw]` | Read the page as an aria tree. Use it before every click to get exact names. |
+| `click` / `fill` / `press` | Act on exactly one element, chosen by `--role` + `--name`, `--label`, `--text`, `--testid` or `--selector`, narrowed by `--within <css>`, `--exact` or `--nth <i>`. Each waits for the page to settle afterwards. |
+| `wait-settle` | Wait until requests (SSE excluded), skeletons and `aria-busy` loaders are done. |
+| `screenshot [file] [--full] [--selector css]` | Save evidence. Default path `scratch/verify/shots/`. |
+| `api <METHOD> </api/path> [--data json] [--dry-run]` | Read or change backend state directly. Writes are real; use `--dry-run` to check the request first. |
+| `check-truth [--strict]` | Compare per-frame auto calls and frame counts with the demo's `TRUTH.csv`. |
+
+## check-truth
+
+`TRUTH.csv` (written by `make demo-data`) records two answers per sample: `phases`, the phases the generator put in, and `auto`, what Himalaya's own pipeline is expected to call. They differ on purpose for samples a human must finish by hand (see `docs/demo.md`).
+
+- Default gate: every frame's auto call must equal `auto`, and every generated frame must be present in the right sample. A failure here is a regression in peak finding, indexing, grouping or ingest.
+- `known_gaps` lists samples where `auto` misses `phases`. Today that is `MO_PEG5` (Pn3m + Im3m coexistence, auto keeps only Im3m) and `MO_AMP_weak` (too weak to index). `--strict` fails on these too. Use it when working on the physics.
+- `assigned` is the human call (the assignment) on the sample's representative frame, using the rule Jonathan decided on 2026-11-19: the selected frame if kept, else the newest kept frame. `assigned_off_representative` lists samples whose assignment sits on another frame. Today Focus opens frame 1, so an assignment made there lands off the representative frame. That is the representative-frame bug, not a check-truth bug.
+
+## Evidence in a PR
+
+Attach to every PR that touches something a user can see:
+
+1. `bin/verify doctor` and `bin/verify check-truth` output (the `summary` block is enough when both pass).
+2. Screenshots of each flow you touched, taken with `bin/verify screenshot` after driving it with the CLI.
+3. One line per Feature Map entry you used, saying whether it was still accurate.
+
+## Gotchas
+
+- The demo DB in `scratch/demo/` persists between runs, so anything you click or `api`-write stays. Undo what you changed, or `bin/verify seed --reset` (slow: it regenerates the data). Never commit `scratch/`.
+- The browser is one shared headless Chromium (CDP port 9333, profile in `scratch/verify/profile`). Each command reconnects to the same tab, so commands compose across calls. `bin/verify close` ends it.
+- `wait-settle` is a heuristic: 500 ms with no request in flight, no visible boneyard overlay and no `aria-busy="true"`. If a snapshot still shows `status "Loading detector image"`, run `wait-settle` again.
+- On a name collision the CLI refuses rather than guessing. Use `--exact` (for example `--name Im3m --exact` against "Im3m, in assignment"), `--within aside` or `--nth`.
+- Ports: `DEMO_API_PORT`, `DEMO_UI_PORT` and `VERIFY_CDP_PORT` move everything, including `seed`. Mocked Playwright (`npm run e2e`) also wants :5173, so `bin/verify stop` before running it.
+- In cloud sessions the frontend's Playwright has no matching browser, so the CLI falls back to the preinstalled `/opt/pw-browsers/chromium-*`. Set `VERIFY_CHROMIUM` to force a binary.
+
+## Keeping it true
+
+The CLI has its own tests: `npm run test:verify` in `packages/HimalayaUI/frontend` (unit tests plus a real-browser test against a stub page). Change the CLI only with a test.
+
+The Feature Map is maintained, not frozen. When a PR changes how a feature is reached or driven, update its entry in the same PR, re-running the recipe to confirm it. When a recipe fails because the UI changed, fix the entry rather than working around it.

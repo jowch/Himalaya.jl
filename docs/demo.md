@@ -109,6 +109,14 @@ await page.addInitScript(() => localStorage.setItem('himalaya-ui:state',
   JSON.stringify({ state: { username: 'demo', tutorialSeen: true }, version: 5 })));
 ```
 
+### Driving it from an agent
+
+`bin/verify` wraps all of this for agents: `bin/verify seed` brings the demo up in
+the background, `open`/`snapshot`/`click`/`press`/`screenshot` drive a shared
+headless browser (with onboarding already skipped), and `bin/verify check-truth`
+compares the app's phase calls and frame counts with `TRUTH.csv`. See the
+`verify-himalaya` skill (`.claude/skills/verify-himalaya/`) and its Feature Map.
+
 ### Known noise
 
 - `npm run e2e` (mocked Playwright) also binds :5173; stop the demo first, or it
