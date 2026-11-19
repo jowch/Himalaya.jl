@@ -14,6 +14,8 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <button onclick="busy()">Load</button>
   <button>Twin</button><button>Twin</button>
   <button onclick="setTimeout(() => history.pushState({}, '', '/done'), 800)">Later</button>
+  <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
+  <button onclick="fetch('/hang')">Hang</button>
   <label>Path <input id="p"></label>
   <section id="out" aria-busy="false"></section>
 </main>
@@ -37,8 +39,14 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
 let server;
 let cfg;
 let out;
-const chromium = findChromium();
-const skip = chromium.path ? false : "no Chromium available";
+function chromiumOrNull() {
+  try {
+    return findChromium().path;
+  } catch {
+    return null;
+  }
+}
+const skip = chromiumOrNull() ? false : "no Chromium available";
 
 function sink() {
   const chunks = [];
@@ -57,6 +65,11 @@ before(async () => {
       setTimeout(() => res.end("Loaded"), 700);
       return;
     }
+    if (req.url === "/silent") {
+      setTimeout(() => res.end("Loaded silently"), 1500);
+      return;
+    }
+    if (req.url === "/hang") return;
     res.setHeader("Content-Type", "text/html");
     res.end(PAGE);
   });
@@ -68,6 +81,7 @@ before(async () => {
 
 after(async () => {
   if (cfg) await closeBrowser(cfg);
+  server?.closeAllConnections();
   server?.close();
 });
 
@@ -76,6 +90,14 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.equal(code, 0, JSON.stringify(r));
   assert.equal(r.title, "Stub");
   assert.equal(r.browserStarted, true);
+  assert.equal(r.user, "seeded");
+
+  ({ r } = await run("open", "/", "--onboarding"));
+  assert.equal(r.user, "cleared");
+  ({ r } = await run("open", "/"));
+  assert.equal(r.user, "seeded");
+  ({ r } = await run("open", "/"));
+  assert.equal(r.user, "kept");
 
   ({ r } = await run("snapshot", "--raw"));
   assert.match(r, /heading "Start" \[level=1\]/);
@@ -87,6 +109,17 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.ok(r.settle.ms >= 600, `settled after ${r.settle.ms} ms, before the slow request finished`);
   ({ r } = await run("snapshot", "--selector", "h1"));
   assert.match(r.snapshot, /Loaded/);
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "Silent"));
+  assert.equal(code, 0, JSON.stringify(r));
+  assert.ok(r.settle.ms >= 1400, `settled after ${r.settle.ms} ms with a 1500 ms request and no busy marker`);
+  ({ r } = await run("snapshot", "--selector", "h1"));
+  assert.match(r.snapshot, /Loaded silently/);
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "Hang", "--timeout", "1000"));
+  assert.equal(code, 1, "an action that never settles must fail");
+  assert.equal(r.settle.settled, false);
+  assert.match(r.settle.inflight[0], /\/hang$/);
 
   ({ code, r } = await run("click", "--role", "button", "--name", "Twin"));
   assert.equal(code, 1);
@@ -127,6 +160,7 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.ok(fs.statSync(shot).size > 1000);
 
   ({ code, r } = await run("close"));
+  assert.equal(code, 0, JSON.stringify(r));
   assert.equal(r.closed, true);
   ({ code, r } = await run("snapshot"));
   assert.equal(code, 1);

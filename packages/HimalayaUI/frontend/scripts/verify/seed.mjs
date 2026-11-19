@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { commandOf, alive, sleep, waitGone } from "./proc.mjs";
 import { REPO } from "./config.mjs";
-import { UsageError } from "./args.mjs";
+import { UsageError, intFlag } from "./args.mjs";
 import { doctor } from "./doctor.mjs";
+import { reachable } from "./http.mjs";
 
 const DEMO_SCRIPT = "packages/HimalayaUI/scripts/demo.sh";
 
@@ -21,25 +23,31 @@ function pidPath(cfg) {
   return path.join(cfg.stateDir, "demo.pid");
 }
 
-function readPid(cfg) {
+
+export function readDemoPid(cfg) {
   const file = pidPath(cfg);
   if (!fs.existsSync(file)) return null;
-  const pid = Number(fs.readFileSync(file, "utf8"));
-  return alive(pid) ? pid : null;
+  let record;
+  try {
+    record = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return { stale: true };
+  }
+  const cmd = Number.isInteger(record.pid) ? commandOf(record.pid) : null;
+  if (!cmd || !cmd.includes("demo.sh")) return { stale: true, pid: record.pid };
+  return { stale: false, pid: record.pid };
 }
 
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const NEEDED = ["backend", "database", "frontend", "proxy"];
 
 function ready(report, empty) {
-  const need = empty ? ["backend", "database", "frontend", "proxy"] : ["backend", "database", "demo-ingested", "frontend", "proxy"];
+  const need = empty ? NEEDED : [...NEEDED, "demo-ingested"];
   return need.every((n) => report.checks.find((c) => c.name === n)?.ok);
+}
+
+async function experimentCount(cfg) {
+  const r = await reachable(cfg.apiBase, "/api/experiments");
+  return r?.ok && Array.isArray(r.body) ? r.body.length : null;
 }
 
 export function seedPlan(cfg, flags) {
@@ -50,26 +58,40 @@ export function seedPlan(cfg, flags) {
     steps.push(`delete ${cfg.demoDir} if it holds a TRUTH.csv (make demo-clean)`);
   }
   steps.push(`run ${DEMO_SCRIPT}${flags.empty ? " --empty" : ""} detached (log ${path.join(cfg.stateDir, "demo.log")})`);
-  steps.push("wait until doctor reports backend, database, frontend, proxy" + (flags.empty ? "" : " and demo-ingested"));
+  steps.push(
+    flags.empty
+      ? "wait until doctor reports backend, database, frontend and proxy, on a DB with no experiments"
+      : "wait until doctor reports backend, database, frontend, proxy and demo-ingested",
+  );
   return steps;
 }
 
 export async function seed(cfg, flags) {
   const empty = Boolean(flags.empty);
+  const timeoutMs = intFlag(flags, "timeout", 600000);
   if (flags["dry-run"]) return { dryRun: true, steps: seedPlan(cfg, flags) };
   if (flags.reset) {
-    await stop(cfg);
+    const stopped = await stop(cfg);
+    if (stopped.ok === false) return stopped;
     spawnSync("make", ["demo-clean", `DEMO_DIR=${cfg.demoDir}`, `DEMO_DB_DIR=${cfg.demoDbDir}`], { cwd: REPO, stdio: "ignore" });
   }
   const before = await doctor(cfg);
-  if (!flags.reset && ready(before, empty)) {
+  if (ready(before, empty)) {
+    if (empty) {
+      const n = await experimentCount(cfg);
+      if (n !== 0) {
+        throw new UsageError(
+          `seed --empty needs an empty DB, but the app on :${cfg.apiPort} has ${n} experiment(s)`,
+          "run the empty instance on other ports: DEMO_API_PORT=8081 DEMO_UI_PORT=5174 VERIFY_CDP_PORT=9334 VERIFY_STATE_DIR=scratch/verify-empty bin/verify seed --empty",
+        );
+      }
+    }
     return { started: false, alreadyUp: true, doctor: summary(before) };
   }
-  const backend = before.checks.find((c) => c.name === "backend");
-  if (backend?.ok) {
+  if (before.checks.find((c) => c.name === "backend")?.ok) {
     throw new UsageError(
-      `a backend already answers on :${cfg.apiPort} but the demo is not ready`,
-      readPid(cfg) ? "run `bin/verify stop`, then seed again" : `stop it (lsof -ti:${cfg.apiPort} | xargs -r kill) or use DEMO_API_PORT / DEMO_UI_PORT`,
+      `a backend already answers on :${cfg.apiPort} but the demo is not ready (failing: ${failing(before)})`,
+      readDemoPid(cfg)?.stale === false ? "run `bin/verify stop`, then seed again" : `stop it (lsof -ti:${cfg.apiPort} | xargs -r kill) or use DEMO_API_PORT / DEMO_UI_PORT`,
     );
   }
   fs.mkdirSync(cfg.stateDir, { recursive: true });
@@ -82,8 +104,7 @@ export async function seed(cfg, flags) {
     stdio: ["ignore", log, log],
   });
   child.unref();
-  fs.writeFileSync(pidPath(cfg), String(child.pid));
-  const timeoutMs = Number(flags.timeout ?? 600000);
+  fs.writeFileSync(pidPath(cfg), JSON.stringify({ pid: child.pid, script: DEMO_SCRIPT }));
   const started = Date.now();
   for (;;) {
     if (!alive(child.pid)) {
@@ -96,21 +117,42 @@ export async function seed(cfg, flags) {
     if (Date.now() - started > timeoutMs) {
       throw new UsageError(`the demo was not ready after ${timeoutMs} ms`, `see ${logPath}; failing checks: ${failing(report)}`);
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    await sleep(2000);
+  }
+}
+
+function signalGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    try {
+      process.kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
 export async function stop(cfg) {
-  const pid = readPid(cfg);
-  if (fs.existsSync(pidPath(cfg))) fs.rmSync(pidPath(cfg));
-  if (!pid) return { stopped: false, reason: "no demo started by bin/verify is running" };
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    process.kill(pid, "SIGTERM");
+  const record = readDemoPid(cfg);
+  if (!record) return { stopped: false, reason: "no demo started by bin/verify is recorded" };
+  if (record.stale) {
+    fs.rmSync(pidPath(cfg), { force: true });
+    return { stopped: false, reason: `the recorded pid ${record.pid ?? "?"} is not a demo.sh process any more; removed the stale pid file` };
   }
-  for (let i = 0; i < 50 && alive(pid); i++) await new Promise((r) => setTimeout(r, 100));
-  return { stopped: true, pid };
+  signalGroup(record.pid, "SIGTERM");
+  let gone = await waitGone(record.pid, 5000);
+  if (!gone) {
+    signalGroup(record.pid, "SIGKILL");
+    gone = await waitGone(record.pid, 2000);
+  }
+  if (!gone) {
+    return { ok: false, stopped: false, pid: record.pid, error: `demo.sh (pid ${record.pid}) is still running after SIGKILL`, hint: `kill it by hand: kill -9 -${record.pid}` };
+  }
+  fs.rmSync(pidPath(cfg), { force: true });
+  return { stopped: true, pid: record.pid };
 }
 
 function summary(report) {

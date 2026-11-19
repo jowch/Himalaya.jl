@@ -54,12 +54,12 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   ```
 - **Check:** `bin/verify api GET "/api/samples?experiment_id=1"` (`assignment_state`, `phase`).
 - **Gotchas:**
-  - Returning from Loupe with Esc resets the cursor to the first sample (seen 2026-11-19: ↓↓, `l` opens sample 3's Loupe, Esc, then Enter opens sample 1). Click the sample name instead of relying on the cursor after a round trip.
+  - Returning from Loupe with Esc resets the cursor to the first sample (seen 2026-11-19: ↓↓, `l` opens sample 3's Loupe, Esc, then Enter opens sample 1). After a round trip, `open /sample/<id>` directly instead of relying on the cursor.
   - The bottom dock ("Drop X", "Set representative R", "Loupe L", "Focus ↵") acts on the cursor sample, not the checkbox selection.
 
 ## Loupe (frame review)
 
-- **Route:** `/sample/<sampleId>/loupe`. Reached with `l` from the corpus or Focus, or the "Loupe L" dock button.
+- **Route:** `/sample/<sampleId>/loupe`. Reached by clicking a sample name on the corpus, with `l` from the corpus or Focus, or the "Loupe L" dock button.
 - **Shows:** the detector image, "frame i of n · kept|dropped", frame buttons, "Drop" and "Set as representative", sample tags.
 - **Drive:**
   ```bash
@@ -75,7 +75,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 ## Focus (indexing workspace)
 
-- **Route:** `/sample/<sampleId>`. Reached with Enter from the corpus, a click on the sample name, or "Focus ↵" in Loupe.
+- **Route:** `/sample/<sampleId>`. Reached with Enter from the corpus or "Focus ↵" in Loupe. (Clicking a sample name on the corpus opens its Loupe, `/sample/<id>/loupe?experiment=<eid>`, not Focus.)
 - **Shows:** the trace plot (`img "Integration trace: intensity vs q"`) with a toolbar (log/linear q, Auto-fit, + Peak, Copy, Download formats), detector frames, the reflection comb, and the assignment rail (`complementary`) with candidate buttons such as `button "Im3m"` ("explains 5 peaks 0.35"), "Form factor, no Bragg peaks" and "+ custom index…".
 - **Drive:**
   ```bash
@@ -89,7 +89,8 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   ```
 - **Check:** `bin/verify check-truth` (`assigned`, `assigned_matches_truth`, `assigned_frames`), or `bin/verify api GET /api/exposures/<id>/assignment`.
 - **Gotchas:**
-  - Focus opens frame 1, but the agreed representative rule picks the newest kept frame. An assignment made here therefore shows up in `check-truth` under `assigned_off_representative`. This is the known representative-frame inconsistency (audit PR 2), not a CLI bug.
+  - Focus opens frame 1, but the agreed representative rule picks the newest kept frame. An assignment made here therefore shows up in `check-truth` under `assigned_off_representative`. This is the app's known representative-frame inconsistency, not a CLI bug.
+  - Adding or excluding a peak re-analyses the frame and can change its auto call, which `check-truth` then reports as a regression. Undo the edit, or `bin/verify seed --reset`.
   - `MO_PEG5` is the coexistence test case: the auto call is Im3m only, and a human must add Pn3m.
 
 ## Grouping review
@@ -105,24 +106,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 ## Series
 
-- **Folio route:** `/series` (top nav "Series"). Lists saved series with search, filters (All, Has transition, Cross-experiment) and sort. Empty on a fresh demo ("No series yet").
-- **New series:** select two or more samples on the corpus, then "+ New series", which opens `/series/new` (scoping: name the ordering variable and give each sample a value).
-  ```bash
-  bin/verify open /experiments/1/corpus
-  bin/verify click --role checkbox --name "Select sample" --nth 0
-  bin/verify click --role checkbox --name "Select sample" --nth 1
-  bin/verify click --role button --name "+ New series"
-  bin/verify fill --role textbox --name "Ordering variable name" --value "temperature"
-  bin/verify fill --role textbox --name "Value for MO_H2O_S2401 (S01P01)" --value "25"
-  bin/verify fill --role textbox --name "Value for MO_H2O_37C_S2404 (S01P02)" --value "37"
-  bin/verify click --role button --name "Confirm & build →"      # opens /series/<id>, the builder
-  bin/verify screenshot scratch/verify/shots/series-builder.png
-  ```
-- **Builder** (`/series/<id>`): the overlay plot with a log/linear q toolbar, Copy and Download formats, "Peak ticks" / "Peak labels" toggles, a "Trace offset" slider, a Traces list, and "Add sample A" in the dock.
-- **Check:** `bin/verify api GET /api/series`, `bin/verify api GET /api/series/<id>/traces`.
-- **Gotchas:**
-  - "Confirm & build" saves a series and records the variable as a `scoping` tag on every sample. `bin/verify api DELETE /api/series/<id>` removes the series but not the tags; `seed --reset` removes both. "Discard" leaves nothing behind.
-  - Each trace is the sample's newest frame ("exp 3" for `MO_H2O`), and a sample with no assignment is listed as "Form factor" (seen 2026-11-19).
+Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for now and its routes and nav are hidden in the first redesign PR). Not mapped; check-truth does not depend on it.
 
 ## Not mapped yet
 

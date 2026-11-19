@@ -1,6 +1,6 @@
 import { getJson } from "./http.mjs";
 import { findDemoExperiment, readTruth } from "./demo.mjs";
-import { UsageError } from "./args.mjs";
+import { UsageError, intFlag } from "./args.mjs";
 
 export function normalizeCall(phases) {
   const list = (Array.isArray(phases) ? phases : String(phases ?? "").split("+"))
@@ -137,7 +137,7 @@ export async function collectApp(cfg, experimentId) {
 export async function checkTruth(cfg, flags) {
   const truth = readTruth(cfg, flags.truth);
   if (!truth) throw new UsageError(`no TRUTH.csv at ${flags.truth ?? cfg.demoDir}`, "run `make demo-data` or pass --truth <file>");
-  let experimentId = flags.experiment ? Number(flags.experiment) : null;
+  let experimentId = intFlag(flags, "experiment", null);
   if (experimentId === null) {
     const exp = await findDemoExperiment(cfg).catch(() => {
       throw new UsageError(`backend not answering at ${cfg.apiBase}`, "run `bin/verify seed`");

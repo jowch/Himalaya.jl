@@ -16,8 +16,8 @@ bin/verify doctor                 # what is up, what is missing, and the fix for
 bin/verify seed                   # demo up in the background (generate, backend :8080, ingest, Vite :5173); no-op when already up
 bin/verify open /experiments/1/corpus
 bin/verify snapshot --raw         # accessibility tree: the roles and names you can click
-bin/verify click --role button --name "MO_PEG5_S2406 (S01P03)"
-bin/verify press Enter            # keyboard shortcuts are first-class here; see the Feature Map
+bin/verify click --role button --name "MO_PEG5_S2406 (S01P03)"   # opens its Loupe
+bin/verify press Enter            # Focus; keyboard shortcuts are first-class, see the Feature Map
 bin/verify screenshot scratch/verify/shots/focus-peg5.png
 bin/verify check-truth            # phase calls and frame counts against TRUTH.csv
 bin/verify stop                   # stop the servers seed started (bin/verify close stops the browser)
@@ -31,10 +31,10 @@ Read [references/features/README.md](references/features/README.md) first. It is
 |---|---|
 | `doctor` | Check node, julia, frontend deps, Chromium, demo data, backend, DB, ingest, Vite and Vite's `/api` proxy. |
 | `seed [--empty] [--reset]` | Start the demo detached and wait until it is ready. `--empty` starts on a fresh DB to walk the ingest funnel. `--reset` deletes the demo DBs and data first (`--dry-run` lists what it would delete). |
-| `open <route>` | Load a route in the shared headless browser, starting it if needed. A user is seeded so onboarding is skipped (`--onboarding` to see it). |
+| `open <route>` | Load a route in the shared headless browser, starting it if needed, and wait for it to settle. A user is seeded so onboarding is skipped; `--onboarding` clears the user so it shows. |
 | `snapshot [--selector css] [--raw]` | Read the page as an aria tree. Use it before every click to get exact names. |
-| `click` / `fill` / `press` | Act on exactly one element, chosen by `--role` + `--name`, `--label`, `--text`, `--testid` or `--selector`, narrowed by `--within <css>`, `--exact` or `--nth <i>`. Each waits for the page to settle afterwards. |
-| `wait-settle` | Wait until requests (SSE excluded), skeletons and `aria-busy` loaders are done. |
+| `click` / `fill` / `press` | Act on exactly one element, chosen by `--role` + `--name`, `--label`, `--text`, `--testid` or `--selector`, narrowed by `--within <css>`, `--exact` or `--nth <i>`. Each then waits for the page to settle, including requests the action started, and fails if it does not settle within `--timeout`. |
+| `wait-settle [--url re]` | Wait for a server-triggered navigation (with `--url`), then for the page to settle. |
 | `screenshot [file] [--full] [--selector css]` | Save evidence. Default path `scratch/verify/shots/`. |
 | `api <METHOD> </api/path> [--data json] [--dry-run]` | Read or change backend state directly. Writes are real; use `--dry-run` to check the request first. |
 | `check-truth [--strict]` | Compare per-frame auto calls and frame counts with the demo's `TRUTH.csv`. |
@@ -45,7 +45,8 @@ Read [references/features/README.md](references/features/README.md) first. It is
 
 - Default gate: every frame's auto call must equal `auto`, and every generated frame must be present in the right sample. A failure here is a regression in peak finding, indexing, grouping or ingest.
 - `known_gaps` lists samples where `auto` misses `phases`. Today that is `MO_PEG5` (Pn3m + Im3m coexistence, auto keeps only Im3m) and `MO_AMP_weak` (too weak to index). `--strict` fails on these too. Use it when working on the physics.
-- `assigned` is the human call (the assignment) on the sample's representative frame, using the rule Jonathan decided on 2026-11-19: the selected frame if kept, else the newest kept frame. `assigned_off_representative` lists samples whose assignment sits on another frame. Today Focus opens frame 1, so an assignment made there lands off the representative frame. That is the representative-frame bug, not a check-truth bug.
+- `assigned` is the human call (the assignment) on the sample's representative frame: the selected frame if it is kept, else the newest kept frame, else none. `assigned_off_representative` lists samples whose assignment sits on another frame. Today Focus opens frame 1, so an assignment made there lands off the representative frame. That is the app's representative-frame inconsistency, not a check-truth bug.
+- The gate reads the auto call of every frame, and editing peaks in Focus (+ Peak, exclude) re-analyses the frame and can change its auto call. A failure right after such an edit may be your own edit, not a regression: re-check on a fresh `bin/verify seed --reset`.
 
 ## Evidence in a PR
 
@@ -58,8 +59,8 @@ Attach to every PR that touches something a user can see:
 ## Gotchas
 
 - The demo DB in `scratch/demo/` persists between runs, so anything you click or `api`-write stays. Undo what you changed, or `bin/verify seed --reset` (slow: it regenerates the data). Never commit `scratch/`.
-- The browser is one shared headless Chromium (CDP port 9333, profile in `scratch/verify/profile`). Each command reconnects to the same tab, so commands compose across calls. `bin/verify close` ends it.
-- `wait-settle` is a heuristic: 500 ms with no request in flight, no visible boneyard overlay and no `aria-busy="true"`. If a snapshot still shows `status "Loading detector image"`, run `wait-settle` again.
+- The browser is one shared headless Chromium (CDP port 9333, profile in `scratch/verify/profile`). Each command reconnects to the same tab, so commands compose across calls. `bin/verify close` ends it. If something else already listens on the CDP port, the CLI refuses to attach; set `VERIFY_CDP_PORT`.
+- Settling means 500 ms with no request in flight (SSE excluded), no visible boneyard overlay, no `aria-busy="true"` and no `role="progressbar"`. Actions track the requests they start. A standalone `wait-settle` only sees requests that start after it connects, so prefer letting the action settle. A failed settle lists the requests still in flight.
 - On a name collision the CLI refuses rather than guessing. Use `--exact` (for example `--name Im3m --exact` against "Im3m, in assignment"), `--within aside` or `--nth`.
 - Ports: `DEMO_API_PORT`, `DEMO_UI_PORT` and `VERIFY_CDP_PORT` move everything, including `seed`. Mocked Playwright (`npm run e2e`) also wants :5173, so `bin/verify stop` before running it.
 - In cloud sessions the frontend's Playwright has no matching browser, so the CLI falls back to the preinstalled `/opt/pw-browsers/chromium-*`. Set `VERIFY_CHROMIUM` to force a binary.

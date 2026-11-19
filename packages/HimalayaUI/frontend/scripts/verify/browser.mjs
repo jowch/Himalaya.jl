@@ -4,6 +4,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { FRONTEND } from "./config.mjs";
 import { UsageError } from "./args.mjs";
+import { commandOf, sleep, waitGone } from "./proc.mjs";
 
 const require = createRequire(path.join(FRONTEND, "package.json"));
 
@@ -57,13 +58,35 @@ function pidFile(cfg) {
   return path.join(cfg.stateDir, "browser.pid");
 }
 
+function profileDir(cfg) {
+  return path.join(cfg.stateDir, "profile");
+}
+
+function ownPid(cfg) {
+  const file = pidFile(cfg);
+  if (!fs.existsSync(file)) return null;
+  const pid = Number(fs.readFileSync(file, "utf8"));
+  const cmd = Number.isInteger(pid) ? commandOf(pid) : null;
+  return cmd && cmd.includes(`--user-data-dir=${profileDir(cfg)}`) ? pid : null;
+}
+
 export async function browserStatus(cfg) {
   const version = await cdpVersion(cfg);
-  return { running: version !== null, cdp: cfg.cdpBase, browser: version?.Browser ?? null };
+  return { running: version !== null, ours: version !== null && ownPid(cfg) !== null, cdp: cfg.cdpBase, browser: version?.Browser ?? null };
+}
+
+function foreign(cfg) {
+  return new UsageError(
+    `something not started by bin/verify answers on ${cfg.cdpBase}`,
+    "set VERIFY_CDP_PORT to a free port, or stop whatever is listening there",
+  );
 }
 
 export async function ensureBrowser(cfg, { width = 1440, height = 900 } = {}) {
-  if (await cdpVersion(cfg)) return { started: false };
+  if (await cdpVersion(cfg)) {
+    if (ownPid(cfg) === null) throw foreign(cfg);
+    return { started: false };
+  }
   const exe = findChromium();
   if (!exe.path) {
     throw new UsageError(
@@ -72,7 +95,6 @@ export async function ensureBrowser(cfg, { width = 1440, height = 900 } = {}) {
     );
   }
   fs.mkdirSync(cfg.stateDir, { recursive: true });
-  const profile = path.join(cfg.stateDir, "profile");
   const log = fs.openSync(path.join(cfg.stateDir, "browser.log"), "a");
   const child = spawn(
     exe.path,
@@ -83,7 +105,7 @@ export async function ensureBrowser(cfg, { width = 1440, height = 900 } = {}) {
       "--no-first-run",
       "--no-default-browser-check",
       `--remote-debugging-port=${cfg.cdpPort}`,
-      `--user-data-dir=${profile}`,
+      `--user-data-dir=${profileDir(cfg)}`,
       `--window-size=${width},${height}`,
       "about:blank",
     ],
@@ -93,7 +115,7 @@ export async function ensureBrowser(cfg, { width = 1440, height = 900 } = {}) {
   fs.writeFileSync(pidFile(cfg), String(child.pid));
   for (let i = 0; i < 100; i++) {
     if (await cdpVersion(cfg)) return { started: true, pid: child.pid, chromium: exe };
-    await new Promise((r) => setTimeout(r, 100));
+    await sleep(100);
   }
   throw new UsageError("Chromium did not open its debugging port", `see ${path.join(cfg.stateDir, "browser.log")}`);
 }
@@ -102,6 +124,7 @@ export async function connect(cfg) {
   if (!(await cdpVersion(cfg))) {
     throw new UsageError("no browser session is open", "run `bin/verify open <route>` first");
   }
+  if (ownPid(cfg) === null) throw foreign(cfg);
   const { chromium } = loadPlaywright();
   const browser = await chromium.connectOverCDP(cfg.cdpBase);
   const context = browser.contexts()[0] ?? (await browser.newContext());
@@ -110,30 +133,33 @@ export async function connect(cfg) {
   return { browser, context, page };
 }
 
+async function politeClose(cfg) {
+  const { chromium } = loadPlaywright();
+  const browser = await chromium.connectOverCDP(cfg.cdpBase, { timeout: 3000 });
+  const session = await browser.newBrowserCDPSession();
+  await session.send("Browser.close").catch(() => undefined);
+}
+
 export async function closeBrowser(cfg) {
-  const file = pidFile(cfg);
-  let pid = null;
-  if (fs.existsSync(file)) {
-    pid = Number(fs.readFileSync(file, "utf8"));
-    fs.rmSync(file);
+  const answering = (await cdpVersion(cfg)) !== null;
+  const pid = ownPid(cfg);
+  if (answering && pid === null) throw foreign(cfg);
+  if (pid === null) {
+    fs.rmSync(pidFile(cfg), { force: true });
+    return { closed: false };
   }
-  const wasRunning = (await cdpVersion(cfg)) !== null;
-  if (wasRunning) {
-    const { chromium } = loadPlaywright();
-    const browser = await chromium.connectOverCDP(cfg.cdpBase);
-    try {
-      const session = await browser.newBrowserCDPSession();
-      await session.send("Browser.close");
-    } catch {
-      if (pid) killQuietly(pid);
-    }
+  await Promise.race([politeClose(cfg).catch(() => undefined), sleep(3000)]);
+  if (!(await waitGone(pid, 3000))) killQuietly(pid);
+  if (!(await waitGone(pid, 2000))) {
+    return { ok: false, closed: false, error: `Chromium (pid ${pid}) is still running`, hint: `kill it by hand: kill -9 ${pid}` };
   }
-  return { closed: wasRunning };
+  fs.rmSync(pidFile(cfg), { force: true });
+  return { closed: true };
 }
 
 function killQuietly(pid) {
   try {
-    process.kill(pid);
+    process.kill(pid, "SIGKILL");
     return true;
   } catch {
     return false;

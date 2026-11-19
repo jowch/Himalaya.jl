@@ -7,7 +7,7 @@ import { closeBrowser } from "./browser.mjs";
 import { api } from "./api.mjs";
 import { checkTruth } from "./truth.mjs";
 
-const TARGET = ["role", "name", "label", "text", "testid", "selector", "within", "nth"];
+const TARGET = ["role", "name", "label", "text", "testid", "selector", "within", "nth", "timeout"];
 
 export const COMMANDS = {
   doctor: {
@@ -29,9 +29,9 @@ export const COMMANDS = {
     run: (cfg) => stop(cfg),
   },
   open: {
-    usage: "open <route> [--viewport 1440x900] [--user <name>] [--onboarding] [--no-settle]",
-    summary: "Open a route in the shared headless browser (started on demand). Seeds a user so onboarding is skipped unless --onboarding.",
-    spec: { booleans: ["onboarding", "no-settle"], strings: ["viewport", "user"] },
+    usage: "open <route> [--viewport 1440x900] [--user <name>] [--onboarding] [--no-settle] [--timeout <ms>]",
+    summary: "Open a route in the shared headless browser (started on demand), then wait for it to settle. Seeds a user so onboarding is skipped; --onboarding clears the user so it shows. Fails if the page does not settle.",
+    spec: { booleans: ["onboarding", "no-settle"], strings: ["viewport", "user", "timeout"] },
     args: 1,
     run: (cfg, f, [route]) => open(cfg, route, f),
   },
@@ -50,8 +50,8 @@ export const COMMANDS = {
     run: (cfg, f, [file]) => screenshot(cfg, file, f),
   },
   click: {
-    usage: "click (--role <role> [--name <name>] | --label <l> | --text <t> | --testid <id> | --selector <css>) [--exact] [--within <css>] [--nth <i>] [--no-settle]",
-    summary: "Click exactly one element, then wait for the page to settle. Fails with a hint when zero or several match.",
+    usage: "click (--role <role> [--name <name>] | --label <l> | --text <t> | --testid <id> | --selector <css>) [--exact] [--within <css>] [--nth <i>] [--no-settle] [--timeout <ms>]",
+    summary: "Click exactly one element, then wait for the page to settle (requests started by the click included). Fails with a hint when zero or several match, or when the page does not settle within --timeout (default 15000 ms).",
     spec: { booleans: ["exact", "no-settle"], strings: TARGET },
     run: (cfg, f) => click(cfg, f),
   },
@@ -70,7 +70,7 @@ export const COMMANDS = {
   },
   "wait-settle": {
     usage: "wait-settle [--url <regex>] [--timeout <ms>]",
-    summary: "Wait until no request is in flight (SSE excluded) and no skeleton, aria-busy loader or progressbar is visible, for 500 ms. With --url, first wait for a navigation the server triggers later (e.g. after an ingest scan). Fails when it times out.",
+    summary: "Wait until no request is in flight (SSE excluded) and no skeleton, aria-busy loader or progressbar is visible, for 500 ms. It only sees requests that start after it connects; actions settle on their own. With --url, first wait for a navigation the server triggers later (e.g. after an ingest scan). Fails when it times out.",
     spec: { strings: ["timeout", "url"] },
     run: (cfg, f) => settle(cfg, f),
   },

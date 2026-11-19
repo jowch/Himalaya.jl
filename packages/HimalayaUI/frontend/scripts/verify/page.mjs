@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { UsageError } from "./args.mjs";
+import { UsageError, intFlag } from "./args.mjs";
 import { ensureBrowser, connect } from "./browser.mjs";
-import { waitSettle } from "./settle.mjs";
+import { armSettle } from "./settle.mjs";
 import { reachable } from "./http.mjs";
 
 export const STATE_KEY = "himalaya-ui:state";
@@ -13,19 +13,24 @@ export function routeUrl(cfg, route) {
   return new URL(route.startsWith("/") ? route : `/${route}`, cfg.uiBase).toString();
 }
 
-async function seedUser(page, cfg, username) {
+async function prepareUser(page, cfg, { username, onboarding }) {
   if (!page.url().startsWith(cfg.uiBase)) await page.goto(cfg.uiBase, { waitUntil: "domcontentloaded" });
   return page.evaluate(
-    ({ key, version, username }) => {
+    ({ key, version, username, onboarding }) => {
       const raw = localStorage.getItem(key);
       const parsed = raw ? JSON.parse(raw) : { state: {}, version };
-      if (parsed.state?.username && parsed.state?.tutorialSeen) return false;
-      parsed.state = { ...parsed.state, username: parsed.state?.username || username, tutorialSeen: true };
+      const state = parsed.state ?? {};
+      if (onboarding) {
+        parsed.state = { ...state, username: undefined, tutorialSeen: false };
+      } else {
+        if (state.username && state.tutorialSeen) return "kept";
+        parsed.state = { ...state, username: state.username || username, tutorialSeen: true };
+      }
       parsed.version = parsed.version ?? version;
       localStorage.setItem(key, JSON.stringify(parsed));
-      return true;
+      return onboarding ? "cleared" : "seeded";
     },
-    { key: STATE_KEY, version: STATE_VERSION, username },
+    { key: STATE_KEY, version: STATE_VERSION, username, onboarding },
   );
 }
 
@@ -54,15 +59,23 @@ export async function open(cfg, route, flags) {
   const launched = await ensureBrowser(cfg, viewport ?? undefined);
   return withPage(cfg, async (page) => {
     if (viewport) await page.setViewportSize(viewport);
-    const seeded = flags.onboarding ? false : await seedUser(page, cfg, flags.user ?? "verify");
-    const response = await page.goto(url, { waitUntil: "domcontentloaded" });
-    const settle = flags["no-settle"] ? null : await waitSettle(page);
+    const user = await prepareUser(page, cfg, { username: flags.user ?? "verify", onboarding: Boolean(flags.onboarding) });
+    const tracker = armSettle(page);
+    let response;
+    try {
+      response = await page.goto(url, { waitUntil: "domcontentloaded" });
+    } catch (e) {
+      tracker.disarm();
+      throw e;
+    }
+    const settle = await finish(tracker, flags);
     return {
+      ok: settle ? settle.settled : true,
       url: page.url(),
       title: await page.title(),
       status: response?.status() ?? null,
       browserStarted: launched.started,
-      seededUser: seeded,
+      user,
       settle,
     };
   });
@@ -104,8 +117,8 @@ async function resolveOne(page, flags) {
     throw new UsageError(`nothing matches ${what}`, "run `bin/verify snapshot` to see the roles and names on the page");
   }
   if (flags.nth !== undefined) {
-    const nth = Number(flags.nth);
-    if (!Number.isInteger(nth) || nth < 0 || nth >= count) {
+    const nth = intFlag(flags, "nth");
+    if (nth >= count) {
       throw new UsageError(`--nth ${flags.nth} is out of range: ${count} element(s) match ${what}`);
     }
     return { loc: loc.nth(nth), what: `${what} nth=${nth}`, count };
@@ -116,16 +129,30 @@ async function resolveOne(page, flags) {
   return { loc, what, count };
 }
 
-async function afterAction(page, flags) {
-  return flags["no-settle"] ? null : waitSettle(page);
+async function finish(tracker, flags) {
+  if (flags["no-settle"]) {
+    tracker.disarm();
+    return null;
+  }
+  return tracker.wait({ timeoutMs: intFlag(flags, "timeout", 15000) });
+}
+
+async function act(page, flags, action) {
+  const tracker = armSettle(page);
+  try {
+    await action();
+  } catch (e) {
+    tracker.disarm();
+    throw e;
+  }
+  const settle = await finish(tracker, flags);
+  return { ok: settle ? settle.settled : true, url: page.url(), settle };
 }
 
 export async function click(cfg, flags) {
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
-    await target.loc.click({ timeout: 5000 });
-    const settle = await afterAction(page, flags);
-    return { clicked: target.what, url: page.url(), settle };
+    return { clicked: target.what, ...(await act(page, flags, () => target.loc.click({ timeout: 5000 }))) };
   });
 }
 
@@ -133,23 +160,17 @@ export async function fill(cfg, flags) {
   if (flags.value === undefined) throw new UsageError("fill needs --value <text>");
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
-    await target.loc.fill(flags.value, { timeout: 5000 });
-    const settle = await afterAction(page, flags);
-    return { filled: target.what, url: page.url(), settle };
+    return { filled: target.what, ...(await act(page, flags, () => target.loc.fill(flags.value, { timeout: 5000 }))) };
   });
 }
 
 export async function press(cfg, key, flags) {
   if (!key) throw new UsageError("press needs a key", "e.g. `bin/verify press Escape` or `bin/verify press Control+K`");
   return withPage(cfg, async (page) => {
-    if (flags.role || flags.label || flags.text || flags.testid || flags.selector) {
-      const target = await resolveOne(page, flags);
-      await target.loc.press(key, { timeout: 5000 });
-    } else {
-      await page.keyboard.press(key);
-    }
-    const settle = await afterAction(page, flags);
-    return { pressed: key, url: page.url(), settle };
+    const targeted = flags.role || flags.label || flags.text || flags.testid || flags.selector;
+    const target = targeted ? await resolveOne(page, flags) : null;
+    const action = target ? () => target.loc.press(key, { timeout: 5000 }) : () => page.keyboard.press(key);
+    return { pressed: key, ...(await act(page, flags, action)) };
   });
 }
 
@@ -172,8 +193,7 @@ export async function screenshot(cfg, file, flags) {
 }
 
 export async function settle(cfg, flags) {
-  const timeoutMs = flags.timeout ? Number(flags.timeout) : 15000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new UsageError(`--timeout must be a positive number of ms, got ${flags.timeout}`);
+  const timeoutMs = intFlag(flags, "timeout", 15000);
   let pattern = null;
   if (flags.url) {
     try {
@@ -183,14 +203,16 @@ export async function settle(cfg, flags) {
     }
   }
   return withPage(cfg, async (page) => {
+    const tracker = armSettle(page);
     if (pattern) {
       try {
         await page.waitForURL(pattern, { timeout: timeoutMs, waitUntil: "domcontentloaded" });
       } catch {
+        tracker.disarm();
         throw new UsageError(`the page did not reach a URL matching ${flags.url} within ${timeoutMs} ms (now ${page.url()})`, "raise --timeout, or snapshot to see where it is stuck");
       }
     }
-    const result = await waitSettle(page, { timeoutMs });
-    return { url: page.url(), ...result, ok: result.settled };
+    const result = await tracker.wait({ timeoutMs });
+    return { ok: result.settled, url: page.url(), ...result };
   });
 }
