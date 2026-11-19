@@ -69,6 +69,13 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 The Print's recurring patterns live as **closed-look** primitives in `print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
 
+**Ratchets (2026-11-19).** `npm run lint:ratchet` (`scripts/check-ratchets.mjs`, also in `npm run build`) counts two things per file against `scripts/ratchet-baseline.json` and fails if any count grows:
+
+- **Appearance tokens in consumer `className`s** (named tokens too: `text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border-*`, `rounded*`, …) outside `print/{ui,plot,detector,comb,export}/`. `lint:design` only catches bracket values and raw colours; this closes the rest of the placement-only rule.
+- **Comment lines** in HimalayaUI frontend `src/` and backend `src/*.jl`. HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Allowed: lines tagged `// physics:` / `# physics:`, and tool directives (`eslint-disable … -- reason`, `@ts-expect-error`). The core `Himalaya` package is exempt.
+
+When a count falls, run `npm run lint:ratchet -- --update` and commit the baseline. `npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on `src/` (stories excluded).
+
 This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `print/ui/**`:
 
 - arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)
