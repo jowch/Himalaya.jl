@@ -25,7 +25,7 @@ jobs:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ env.JULIA_VERSION }}
@@ -39,7 +39,7 @@ jobs:
     outputs:
       groups: ${{ steps.groups.outputs.groups }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ env.JULIA_VERSION }}
@@ -64,7 +64,7 @@ jobs:
       matrix:
         group: ${{ fromJSON(needs.ui-groups.outputs.groups) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ env.JULIA_VERSION }}
@@ -86,8 +86,8 @@ jobs:
       run:
         working-directory: packages/HimalayaUI/frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
