@@ -121,6 +121,8 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md).
 
+**No lab data handy (or in a cloud session)?** `make setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
+
 ## Conventions
 
 - **TDD by default.** Failing test → minimal implementation → verify pass → commit. Each step is its own commit.
@@ -168,6 +170,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - [scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
 - [experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference.
 - [frontend-dev-loop.md](docs/frontend-dev-loop.md) — running a dev session against a live backend.
+- [demo.md](docs/demo.md) — synthetic demo experiment, `make demo`, and running the app in a cloud session.
 - [event-log.md](docs/event-log.md) — `apply_event!` dispatcher contract, hash memoization invariants, SSE multiplayer semantics.
 - [mutation-queue.md](docs/mutation-queue.md) — server-reconciliation queue architecture, `client_op_id` lifecycle, replay-as-rerun, `with_idempotency`.
 - [contract-testing.md](docs/contract-testing.md) — six-layer rule and canonical paired test files.

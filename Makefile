@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean
 
 all: frontend sysimage
 
@@ -50,3 +50,35 @@ test-parallel:
 		echo "== $$g =="; grep -E "Test Summary" build/test-$$g.log | tail -1 || true; \
 	done; \
 	exit $$rc
+
+# ---------------------------------------------------------------------------
+# Local / cloud dev setup and the synthetic demo (docs/demo.md)
+# ---------------------------------------------------------------------------
+
+# First-time setup, per CLAUDE.md. `npm ci` (not `npm install`) so the lockfile
+# isn't rewritten. On Julia >= 1.11 `Pkg.develop` also writes a [sources] entry
+# into HimalayaUI's Project.toml and drops its comments; the (gitignored)
+# Manifest already records the path dep, so restore the tracked file afterwards.
+setup:
+	cd $(FRONTEND_DIR) && npm ci
+	julia --project=. -e 'using Pkg; Pkg.instantiate()'
+	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+	git checkout -- packages/HimalayaUI/Project.toml
+
+# Synthetic SSRL-style experiment, generated on demand and NEVER committed
+# (scratch/ is gitignored). Override the target dir with DEMO_DIR=/tmp/...
+DEMO_DIR ?= scratch/demo-experiment
+demo-data:
+	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
+
+# Backend + Vite with the demo experiment ingested (through the same API calls
+# the New-experiment funnel makes). Generates the data first if it is missing.
+demo:
+	DEMO_DIR=$(DEMO_DIR) packages/HimalayaUI/scripts/demo.sh
+
+# Backend + Vite on a fresh empty DB, to walk the ingest funnel by hand.
+demo-empty:
+	DEMO_DIR=$(DEMO_DIR) packages/HimalayaUI/scripts/demo.sh --empty
+
+demo-clean:
+	rm -rf $(DEMO_DIR) scratch/demo scratch/demo-empty
