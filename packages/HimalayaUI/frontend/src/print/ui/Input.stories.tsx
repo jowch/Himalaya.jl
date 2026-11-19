@@ -6,7 +6,7 @@ const meta = {
   title: "ui/Input",
   component: Input,
   args: { value: "", onValueChange: () => {}, placeholder: "Lipid name" },
-  render: (args) => {
+  render: function Render(args) {
     const [v, setV] = useState(args.value);
     return <Input {...args} value={v} onValueChange={setV} />;
   },

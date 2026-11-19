@@ -498,7 +498,7 @@ function ConfigurationFirstRun(): JSX.Element {
       setMetadataPattern(patterns.metadata ?? DEFAULT_PATTERNS.metadata);
       setIntegrationPattern(patterns.integration ?? DEFAULT_PATTERNS.integration);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed the editable fields once, when the resolver returns
   }, [resolved]);
 
   const commitPattern = (key: "image" | "metadata" | "integration", value: string): void => {

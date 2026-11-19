@@ -71,8 +71,10 @@ The Print's recurring patterns live as **closed-look** primitives in `print/ui/`
 
 **Ratchets (2026-11-19).** `npm run lint:ratchet` (`scripts/check-ratchets.mjs`, also in `npm run build`) counts two things per file against `scripts/ratchet-baseline.json` and fails if any count grows:
 
-- **Appearance tokens in consumer `className`s** (named tokens too: `text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border-*`, `rounded*`, …) outside `print/{ui,plot,detector,comb,export}/`. `lint:design` only catches bracket values and raw colours; this closes the rest of the placement-only rule.
-- **Comment lines** in HimalayaUI frontend `src/` and backend `src/*.jl`. HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Allowed: lines tagged `// physics:` / `# physics:`, and tool directives (`eslint-disable … -- reason`, `@ts-expect-error`). The core `Himalaya` package is exempt.
+- **Appearance tokens** (counted per token, not per `className`) in every string or template literal inside a consumer `className=` expression, including `cx(...)` and ternaries. Named tokens count too (`text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border*`, `rounded*`, …); text alignment and wrapping are placement. Exempt: `print/{ui,plot,detector,comb,export}/` and stories. `lint:design` catches bracket values and raw colours; the ratchet stops the named-token count from growing. It does not see styling built outside a `className=` expression.
+- **Comment lines** in HimalayaUI frontend `src/` (TypeScript AST, so trailing and JSX comments count and strings do not) and backend `src/*.jl` (`#`, `#= =#` and docstrings; SQL `"""` strings do not count). HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Exempt: comments that *start* with `physics:`, `eslint-disable… -- <reason>` and `@ts-expect-error`. A reason-less directive and `@ts-ignore` count. The core `Himalaya` package is exempt.
+
+A count that falls must be locked in with `npm run lint:ratchet -- --update` (commit the baseline). `--update` also accepts a rename or split as long as each total does not grow.
 
 When a count falls, run `npm run lint:ratchet -- --update` and commit the baseline. `npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on `src/` (stories excluded).
 

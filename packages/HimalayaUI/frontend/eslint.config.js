@@ -2,7 +2,7 @@ import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
-  { ignores: ["src/**/*.stories.tsx", "dist/**", "storybook-static/**", "node_modules/**"] },
+  { ignores: ["dist/**", "storybook-static/**", "node_modules/**"] },
   {
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: { parser: tseslint.parser },
@@ -13,5 +13,9 @@ export default tseslint.config(
       "react-hooks/exhaustive-deps": "error",
       "no-console": ["error", { allow: ["warn", "error"] }],
     },
+  },
+  {
+    files: ["src/**/*.stories.tsx"],
+    rules: { "no-console": "off" },
   },
 );

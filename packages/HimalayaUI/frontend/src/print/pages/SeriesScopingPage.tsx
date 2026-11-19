@@ -323,7 +323,7 @@ export function SeriesScopingPage(): JSX.Element {
     setLoose(split.looseMatches);
     setOrder(seededOrder);
     undoStack.clear();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reseed only when the split changes; undoStack.clear is stable
   }, [split.members, split.looseMatches, seededOrder]);
 
   // ── Cold path (no variable proposable FROM THE SEED, user arrived with one) ──
@@ -519,7 +519,7 @@ export function SeriesScopingPage(): JSX.Element {
       // reorder: restore the whole prior display order.
       setOrder(e.prevOrder);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- undoStack.pop is a stable callback
   }, [undoStack.pop]);
 
   // Redo replays the FORWARD state of the most-recently-undone gesture (mirror
@@ -541,7 +541,7 @@ export function SeriesScopingPage(): JSX.Element {
       // reorder: re-apply the post-reorder display order.
       setOrder(e.nextOrder);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- undoStack.popRedo is a stable callback
   }, [undoStack.popRedo]);
 
   // ── Scope focus (cold-load arrow nav, mirrors FocusPage §scope) ─────────────

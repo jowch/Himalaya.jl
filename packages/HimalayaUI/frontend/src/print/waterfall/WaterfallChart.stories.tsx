@@ -52,8 +52,7 @@ export const MixedStates: Story = {
 
 // Controlled hover: a parent drives the hot row (e.g. from a member list).
 export const ControlledHover: Story = {
-  render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+  render: function Render() {
     const [hot, setHot] = useState<string | undefined>(TRANSITION[0]?.key);
     const hoverProps = { ...(hot !== undefined ? { hoveredKey: hot } : {}), onHoverRow: setHot };
     return (
@@ -67,8 +66,7 @@ export const ControlledHover: Story = {
 // ScaleToggle: demonstrates the panel-owned toggle pattern — a parent useState drives
 // both the SegmentedControl and the chart's xType prop.
 export const ScaleToggle: Story = {
-  render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+  render: function Render() {
     const [xType, setXType] = useState<"log" | "linear">("log");
     return (
       <div className={frame} style={{ width: 920 }}>

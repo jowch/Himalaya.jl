@@ -23,7 +23,7 @@ export const WithPreviewRow: Story = {
 };
 
 export const LinkedWithResidual: Story = {
-  render: () => {
+  render: function Render() {
     const [hoveredQ, setHoveredQ] = useState<number | undefined>(undefined);
     const linkProps = { ...(hoveredQ !== undefined ? { hoveredQ } : {}), onHoverQ: setHoveredQ };
     return (
