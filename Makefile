@@ -58,27 +58,32 @@ test-parallel:
 # First-time setup, per CLAUDE.md. `npm ci` (not `npm install`) so the lockfile
 # isn't rewritten. On Julia >= 1.11 `Pkg.develop` also writes a [sources] entry
 # into HimalayaUI's Project.toml and drops its comments; the (gitignored)
-# Manifest already records the path dep, so restore the tracked file afterwards.
+# Manifest already records the path dep, so put back the file as it was before
+# (a copy, not `git checkout`, so uncommitted edits to it survive).
+UI_PROJECT := packages/HimalayaUI/Project.toml
 setup:
 	cd $(FRONTEND_DIR) && npm ci
 	julia --project=. -e 'using Pkg; Pkg.instantiate()'
-	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-	git checkout -- packages/HimalayaUI/Project.toml
+	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak
+	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()' \
+		|| { mv $(UI_PROJECT).setup-bak $(UI_PROJECT); exit 1; }
+	mv $(UI_PROJECT).setup-bak $(UI_PROJECT)
 
 # Synthetic SSRL-style experiment, generated on demand and NEVER committed
 # (scratch/ is gitignored). Override the target dir with DEMO_DIR=/tmp/...
-DEMO_DIR ?= scratch/demo-experiment
+DEMO_DIR    ?= scratch/demo-experiment
+DEMO_DB_DIR ?= scratch/demo
 demo-data:
 	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
 
 # Backend + Vite with the demo experiment ingested (through the same API calls
 # the New-experiment funnel makes). Generates the data first if it is missing.
 demo:
-	DEMO_DIR=$(DEMO_DIR) packages/HimalayaUI/scripts/demo.sh
+	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh
 
 # Backend + Vite on a fresh empty DB, to walk the ingest funnel by hand.
 demo-empty:
-	DEMO_DIR=$(DEMO_DIR) packages/HimalayaUI/scripts/demo.sh --empty
+	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
 
 demo-clean:
-	rm -rf $(DEMO_DIR) scratch/demo scratch/demo-empty
+	rm -rf $(DEMO_DIR) $(DEMO_DB_DIR) $(DEMO_DB_DIR)-empty

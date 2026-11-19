@@ -18,13 +18,24 @@ function main(args = ARGS)
     base = "http://127.0.0.1:$port/api"
     getj(path, q) = JSON3.read(HTTP.get(base * path; query = q).body)
 
-    existing = JSON3.read(HTTP.get("$base/experiments").body)
     rs = getj("/fs/resolve", ["path" => root])
-    for e in existing
-        if get(e, :data_dir, nothing) == rs.data_dir
+    if any(isnothing, (rs.analysis_dir, rs.image_pattern, rs.metadata_pattern, rs.integration_pattern))
+        error("$root doesn't look like an SSRL-style demo tree (no analysis/.../tot_files " *
+              "*_tot.dat found). Regenerate it with `make demo-clean demo-data`.")
+    end
+
+    # Already there? Done if its scan finished; otherwise (a previous run was
+    # interrupted mid-scan, or the scan failed) force a rescan and wait for it.
+    for e in JSON3.read(HTTP.get("$base/experiments").body)
+        get(e, :data_dir, nothing) == rs.data_dir || continue
+        if get(e, :ingest_status, "") == "complete"
             println("Demo experiment already ingested (id $(e.id)); nothing to do.")
             return
         end
+        println("Demo experiment $(e.id) is '$(get(e, :ingest_status, ""))'; rescanning.")
+        HTTP.post("$base/experiments/$(e.id)/scan", ["Content-Type" => "application/json"],
+                  JSON3.write(Dict(:force => true)))
+        return wait_for_scan(base, e.id)
     end
 
     mf = getj("/fs/manifest", [
@@ -43,19 +54,24 @@ function main(args = ARGS)
     )
     created = JSON3.read(HTTP.post("$base/experiments", ["Content-Type" => "application/json"],
                                    JSON3.write(body)).body)
-    print("Created experiment $(created.id); scanning")
+    println("Created experiment $(created.id).")
+    wait_for_scan(base, created.id)
+end
+
+function wait_for_scan(base, id)
+    print("Scanning")
     for _ in 1:600
-        st = JSON3.read(HTTP.get("$base/experiments/$(created.id)").body)
+        st = JSON3.read(HTTP.get("$base/experiments/$id").body)
         status = get(st, :ingest_status, "")
         if status == "complete"
             println(" done. ", get(st, :stats, ""))
             return
         elseif status == "failed"
-            println(); error("first scan failed; see the backend log")
+            println(); error("scan failed; see the backend log")
         end
         print("."); sleep(1)
     end
-    println(); error("timed out waiting for the first scan")
+    println(); error("timed out waiting for the scan")
 end
 
 main()

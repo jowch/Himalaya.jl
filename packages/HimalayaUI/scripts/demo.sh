@@ -22,6 +22,7 @@ DEMO_DB_DIR="${DEMO_DB_DIR:-scratch/demo}"
 API_PORT="${DEMO_API_PORT:-8080}"
 UI_PORT="${DEMO_UI_PORT:-5173}"
 JL="julia --project=packages/HimalayaUI"
+up() { curl -s -o /dev/null --connect-timeout 1 --max-time 3 "http://127.0.0.1:$API_PORT/api/experiments"; }
 
 empty=0
 [[ "${1:-}" == "--empty" ]] && empty=1
@@ -38,7 +39,7 @@ fi
 mkdir -p "$DEMO_DB_DIR"
 DB="$(cd "$DEMO_DB_DIR" && pwd)/himalaya.db"
 
-if curl -s -o /dev/null "http://127.0.0.1:$API_PORT/api/experiments"; then
+if up; then
   echo "Port $API_PORT is already serving; stop it first (lsof -ti:$API_PORT | xargs -r kill)." >&2
   exit 1
 fi
@@ -49,11 +50,13 @@ HIMALAYA_DB_PATH="$DB" $JL -e 'using HimalayaUI; main(ARGS)' -- \
 backend=$!
 trap 'kill $backend 2>/dev/null || true' EXIT INT TERM
 
-for _ in $(seq 1 180); do
-  curl -s -o /dev/null "http://127.0.0.1:$API_PORT/api/experiments" && break
+# Cold start without a sysimage compiles Oxygen + HimalayaUI; allow 5 minutes.
+for _ in $(seq 1 300); do
+  up && break
   kill -0 $backend 2>/dev/null || { echo "Backend exited; see $DEMO_DB_DIR/backend.log" >&2; exit 1; }
   sleep 1
 done
+up || { echo "Backend did not answer on :$API_PORT within 5 min; see $DEMO_DB_DIR/backend.log" >&2; exit 1; }
 
 if (( empty )); then
   echo "Empty DB: use '+ New experiment' and point it at $(cd "$DEMO_DIR" && pwd)"

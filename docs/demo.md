@@ -18,12 +18,13 @@ make demo-data    # (re)generate the synthetic experiment only
 make demo-clean   # delete the generated data and demo DBs
 ```
 
-Overrides: `DEMO_DIR=/tmp/demo make demo` (data location), `DEMO_API_PORT` /
+Overrides: `DEMO_DIR=/tmp/demo make demo` (data location), `DEMO_DB_DIR` (demo DB + logs, default `scratch/demo`), `DEMO_API_PORT` /
 `DEMO_UI_PORT` (ports, for running beside another backend; see
 [frontend-dev-loop.md](frontend-dev-loop.md)).
 
 `make demo` keeps its DB in `scratch/demo/` between runs (edits persist; ingest is
-skipped when the experiment is already there). `make demo-empty` wipes
+skipped when the experiment is already there, and a scan that was interrupted or
+failed is re-run). `make demo-empty` wipes
 `scratch/demo-empty/` on every start. Backend logs go next to each DB.
 
 ## The synthetic data
