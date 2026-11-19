@@ -21,6 +21,9 @@ jobs:
     name: Julia core
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
@@ -29,20 +32,45 @@ jobs:
       - uses: julia-actions/cache@v2
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
+  ui-groups:
+    name: HimalayaUI test groups
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      groups: ${{ steps.groups.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ env.JULIA_VERSION }}
+      - id: groups
+        run: |
+          julia -e '
+            ex = Meta.parseall(read("packages/HimalayaUI/test/runtests.jl", String))
+            d = only(a.args[1] for a in ex.args if a isa Expr && a.head == :const && a.args[1].args[1] == :GROUPS)
+            println("groups=[", join(repr.(first.(Core.eval(Main, d.args[2]))), ","), "]")
+          ' | tee -a "$GITHUB_OUTPUT"
+
   ui-backend:
     name: HimalayaUI ${{ matrix.group }}
+    needs: ui-groups
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:
-        group: [db, pipeline, routes, events, wire, migration]
+        group: ${{ fromJSON(needs.ui-groups.outputs.groups) }}
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ env.JULIA_VERSION }}
       - uses: julia-actions/cache@v2
+        with:
+          include-matrix: false
       - name: Install
         run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
       - name: Test
@@ -68,3 +96,14 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: npm run --if-present test:verify
+
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [core, ui-groups, ui-backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
+      - run: echo ok
