@@ -317,6 +317,7 @@ export function SeriesScopingPage(): JSX.Element {
   const [loose, setLoose] = useState<OrderingRow[]>([]);
   const [order, setOrder] = useState<number[]>([]);
   const undoStack = useUndoStack<HistoryEntry>();
+  const pushUndo = undoStack.push;
   useEffect(() => {
     setRows(split.members);
     setLoose(split.looseMatches);
@@ -364,10 +365,10 @@ export function SeriesScopingPage(): JSX.Element {
       const changed =
         next.length !== order.length || next.some((id, i) => id !== order[i]);
       if (!changed) return;
-      undoStack.push({ type: "reorder", prevOrder: order, nextOrder: next, label: "reorder" });
+      pushUndo({ type: "reorder", prevOrder: order, nextOrder: next, label: "reorder" });
       setOrder(next);
     },
-    [order],
+    [order, pushUndo],
   );
   const { dragItemProps, dropEdge } = useDragReorder(applyReorder);
 

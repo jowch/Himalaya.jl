@@ -282,8 +282,8 @@ export function FocusPage(): JSX.Element {
   );
 
   // ── derived ──────────────────────────────────────────────────────────────────
-  const peaks = peaksQ.data ?? [];
-  const indices = indicesQ.data ?? [];
+  const peaks = useMemo(() => peaksQ.data ?? [], [peaksQ.data]);
+  const indices = useMemo(() => indicesQ.data ?? [], [indicesQ.data]);
   const assignment = assignmentQ.data;
   const exposures = useMemo(() => exposuresQ.data ?? [], [exposuresQ.data]);
   const activeExposure = exposures.find((e) => e.id === activeExposureId);

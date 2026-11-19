@@ -190,7 +190,7 @@ export function LoupePage(): JSX.Element {
 
   // Corpus-wide tag pairs for key/value suggestions
   const corpusTagsQ = useCorpusSampleTags();
-  const corpusTags: SampleTagPair[] = corpusTagsQ.data ?? [];
+  const corpusTags: SampleTagPair[] = useMemo(() => corpusTagsQ.data ?? [], [corpusTagsQ.data]);
 
   // Derive keyOptions: distinct keys ranked by descending total count
   const keyOptions = useMemo(() => {

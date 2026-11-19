@@ -277,7 +277,6 @@ function useStableQueryMap<T>(
     return `o${n}`;
   };
   const signature = ids.map((id, i) => `${id}:${nonceOf(queries[i]?.data)}`).join("|");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => {
     const m = new Map<number, T>();
     for (let i = 0; i < ids.length; i++) {
@@ -285,6 +284,7 @@ function useStableQueryMap<T>(
       if (d !== undefined) m.set(ids[i]!, d as T);
     }
     return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on content signature so the Map is stable while data is unchanged
   }, [signature]);
 }
 
