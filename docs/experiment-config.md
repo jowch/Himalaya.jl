@@ -1,373 +1,304 @@
-# Experiment Configuration
+# Experiment configuration and ingest
 
-Every experiment that Himalaya analyses is described by an
-`experiment.toml` file living in the experiment directory. This file is
-the **source of truth** — it tells Himalaya how to read the lab
-notebook, where the data files live, what their naming convention is,
-and which beamline parameters were used. The DB is a derived artifact;
-the experiment directory is canonical.
+An experiment is a row in the central SQLite DB that points at a beamtime
+directory on disk. Its configuration (where the files live, how they are named,
+and the beamline geometry) lives on that row. There is no per-experiment
+config file and no lab-notebook manifest: an experiment is created through the
+New-experiment funnel in the UI, which infers the layout from the directory
+tree, lets the user correct it, and then scans the directory.
 
-## Why a config file
+Experiment directories are read-only data sources. Every write goes to the DB.
 
-SAXS data lands on disk with conventions that vary by beamline, by
-experiment type, and by lab notebook habit. Forcing every scientist to
-restructure their lab notebook to match Himalaya's expectations would be
-hostile and error-prone. Instead, Himalaya adapts to the lab notebook by
-reading a small TOML file that describes its column layout, file
-patterns, and beamline parameters. To support a new beamline or
-experiment type you write a new TOML — no Julia code changes required.
+## The New-experiment funnel
 
-The config file also captures things the lab notebook doesn't, like the
-beamline energy and sample-to-detector flight path, which are needed
-for q-calibration and d-spacing calculations downstream.
+The funnel is a sequence of read-only filesystem probes followed by one create
+call. The probes live in `routes_fs.jl` and never write to the DB; the create
+and scan live in `routes_experiments.jl` and `ingest.jl`.
 
-## Quick start
+| Step | Route | What it does |
+|------|-------|--------------|
+| Pick a directory | `GET /api/fs/suggest?prefix=` | Directory autocomplete (at most 20 subdirectories). |
+| Gate the pick | `GET /api/fs/validate?path=` | `ok: false` if the path is not a directory or another experiment already uses it as `data_dir`. |
+| Resolve | `GET /api/fs/resolve?path=` | Structural auto-discovery of the layout (see [Resolve](#resolve)). |
+| Review | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Previews what a scan would find with the current settings, and derives the geometry (see [File manifest](#file-manifest)). |
+| Approve | `POST /api/experiments` | Creates the row, returns `202`, and starts the first scan in the background. |
 
-The canonical workflow:
+The frontend holds the in-progress values in a draft store
+(`lib/draftExperiment.ts`). `NewExperimentPage` covers the pick, and
+`ConfigurationPage` in first-run mode (`/experiments/new/config`) covers resolve,
+review and approve. After Approve the user lands on the grouping review page
+(`/experiments/:id/grouping`) while the first scan streams progress over SSE.
 
-```bash
-# 1. Create a config from the built-in 'simple' template
-himalaya config new --type simple --dir /data/ssrl-2025-oct/lipid-a
+"Manifest" here means the funnel's file manifest: a preview of which images,
+metadata files and integration files match the patterns. It is not a lab
+notebook.
 
-# 2. Edit experiment.toml to set the experiment name, beamline params,
-#    and any column mappings that don't match the simple defaults.
-$EDITOR /data/ssrl-2025-oct/lipid-a/experiment.toml
+### Resolve
 
-# 3. Initialise — this reads experiment.toml + manifest.csv and
-#    creates samples and exposures in the DB.
-himalaya init /data/ssrl-2025-oct/lipid-a
+`resolve_experiment_layout(root)` returns defaults for the user to correct. It
+stays cheap because it runs interactively over SMB: a handful of shallow
+`readdir` and `isfile` calls, never a deep walk of the raw-image directory.
 
-# 4. Later, after editing the manifest or fixing the config:
-himalaya reingest -e /data/ssrl-2025-oct/lipid-a
-```
-
-The experiment directory is expected to contain at least:
-
-```
-/data/ssrl-2025-oct/lipid-a/
-  experiment.toml       ← this file
-  manifest.csv          ← lab notebook
-  data/                 ← raw images
-  analysis/
-    automatic_analysis/ ← 1D-integrated .dat files
-```
-
-## The TOML format
-
-A complete `experiment.toml` has five sections:
-
-```toml
-[experiment]
-name        = "SSRL-2025-Oct/LipidA"
-description = "Lipid A cubic phase screen, October 2025"
-manifest    = "manifest.csv"          # relative to this file
-
-[beamline]
-energy_kev    = 12.0                  # X-ray beam energy
-flight_path_m = 2.5                   # sample-to-detector distance
-
-[manifest]
-delimiter      = "\t"                 # "\t" for tab, "," for CSV
-skip_rows      = 1                    # rows before the data
-header_row     = 0                    # 1-based row of named headers; 0 = positional only
-
-# Each column value is either an integer (1-based position) or a string
-# (header name). Named lookup is tried first when header_row > 0.
-sample_id      = 1
-name           = 2     # stable scientific identifier (e.g. "JC001")
-display_name   = 3     # user-facing label (e.g. "DOPC + cholesterol")
-filenames      = 9
-notes_sample   = 10
-notes_exposure = 11
-
-[layout]
-data_dir      = "data"
-analysis_dir  = "analysis/automatic_analysis"
-exposure_type = "simple"
-
-[files]
-integration = "{name}.dat"            # how to find a 1D trace from a stem
-image       = "{name}.tiff"           # how to find the raw image
-```
-
-### `[experiment]`
-
-| Field | Purpose |
+| Field | Default |
 |-------|---------|
-| `name` | Display name. The convention is `Run/Experiment` (e.g. `"SSRL-2025-Oct/LipidA"`) — Himalaya treats this as an opaque label. If empty, defaults to the directory basename. |
-| `description` | Free text, shown in the UI. |
-| `manifest` | Path to the lab notebook CSV, relative to `experiment.toml`. May be omitted; Himalaya will register the experiment without samples. |
+| `name` | `basename(root)` |
+| `data_dir` | `root/data` if it exists, else `root` |
+| `analysis_dir` | The directory that holds the integration `.dat` files, found by probing one image stem against `root/analysis`, its subdirectories, and the subdirectories of `root/analysis/automatic_analysis`. Falls back to `root/analysis`, else `nothing`. |
+| `image_pattern`, `metadata_pattern`, `integration_pattern` | Set together with `analysis_dir` by the same probe (see [File patterns](#file-patterns)). `nothing` when the probe finds no integration file. |
+| `setup_file` | The latest `setup_info_*.txt` at the top of `root` or `root/analysis`. |
+| `setup_ambiguous` | `true` when no setup file was found, or when setup files exist in both places. |
 
-### `[beamline]`
+### File manifest
 
-| Field | Purpose |
-|-------|---------|
-| `energy_kev` | Beam energy in keV. Used for q-ring radii (q-calibration). |
-| `flight_path_m` | Sample-to-detector distance in metres. Used for q-ring radii. |
-| `beam_center_x` | Beam center column, in **detector pixels, origin bottom-left** (y-up). |
-| `beam_center_y` | Beam center row, in **detector pixels, origin bottom-left** (y-up). |
-| `pixel_size_um` | Detector pixel pitch in microns (e.g. Pilatus 172, Eiger 75). |
+`GET /api/fs/manifest` answers "what would a scan of these settings find?"
+without writing anything. It returns:
 
-The Focus page draws physically-correct, beam-centered q-rings only when **all
-five** beamline values are present (`energy_kev`, `flight_path_m`,
-`beam_center_x`, `beam_center_y`, `pixel_size_um`). Omit any and the rings fall
-back to a centered, decorative overlay — no error. Beam center and pixel size
-are render-only: they live in the config blob, are surfaced on the experiment
-API, and (unlike `energy_kev`/`flight_path_m`) are not mirrored to queryable DB
-columns.
+- `matched`: how many stems match the image, metadata and integration
+  patterns. Images and metadata files are matched in `data_dir`, and
+  integration files in `analysis_dir` when it is given.
+- `unmatched`: every image stem that is missing its metadata or integration
+  file, with a `near` filename when an almost-matching file exists (wrong case
+  or one extra character in the extension, such as `.PRP` or `.prpx`). Image
+  files with a near-miss extension (`.tiff` or `.TIF` against a `.tif` pattern)
+  are listed too. These are the usual cause of a scan that finds half the data.
+- `geometry` and `discrepancies`: geometry derived from up to 50 metadata files
+  plus the `setup_file` (see [Geometry](#geometry)).
+- `matched_files`: up to 12 matched image filenames, for display.
 
-`energy_kev` and `flight_path_m` are stored as first-class columns in the DB so
-future queries (e.g. "show me all experiments at 12 keV") don't need to parse
-the TOML blob.
+### Approve
 
-### `[manifest]`
+`POST /api/experiments` takes:
 
-| Field | Purpose |
-|-------|---------|
-| `delimiter` | Field separator. `"\t"` (tab) or `","` (comma). |
-| `skip_rows` | Number of rows to skip at the top of the file (for preamble like institution headers). |
-| `header_row` | 1-based row number containing column headers. `0` means no headers — all column references must be integers. |
-| `sample_id`, `name`, `display_name`, `filenames`, `notes_sample`, `notes_exposure` | Column references — see [Column resolution](#column-resolution). |
-
-#### `name` vs `display_name`
-
-The `[manifest].name` column is the **stable scientific identifier** (e.g. `JC001`). It must match
-`[A-Za-z0-9._-]+`, be non-empty, and be unique within the experiment. It cannot be edited via the UI;
-rename happens through the manifest CSV + reingest.
-
-The `[manifest].display_name` column is the **friendly user-facing label** (e.g. `DOPC + cholesterol`).
-It is initialised from the manifest at first ingest and editable via the UI; note that **reingest
-refreshes it from the manifest** (alongside `notes`), so a UI edit to `display_name` is overwritten on
-the next reingest unless the manifest carries the same value (`cli.jl` `_reingest_inner!`).
-
-Migrating an existing `experiment.toml` from the legacy `label/name` shape to the new
-`name/display_name` shape: run `himalaya migrate-toml <experiment-dir>`. Section-aware
-regex-anchored substitution; idempotent.
-
-### `[layout]`
-
-| Field | Purpose |
-|-------|---------|
-| `data_dir` | Where raw images live, relative to the experiment directory. |
-| `analysis_dir` | Where 1D-integrated `.dat` files live. |
-| `exposure_type` | `"simple"` is the only value currently accepted. Validated at load time against `VALID_EXPOSURE_TYPES` in `config.jl` — unknown values are rejected with a clear error. Reserved for future types like `"raw"`, `"aggregated"`, `"background_subtracted"`. |
-
-### `[files]`
-
-| Field | Purpose |
-|-------|---------|
-| `integration` | Pattern for the 1D trace file. `{name}` is replaced by the filename stem from the manifest. Resolved relative to `analysis_dir`. |
-| `image` | Pattern for the raw image. Resolved relative to `data_dir`. |
-
-Patterns may include subdirectory components — e.g.
-`"integrated/{name}.dat"` resolves to `<analysis_dir>/integrated/<stem>.dat`.
-Patterns must contain `{name}` and must not be absolute paths or contain
-`..` segments — these are rejected at load time with a clear error.
-
-## Column resolution
-
-For each column field in `[manifest]`, the value can be:
-
-- **An integer** — interpreted as a 1-based column index in the row.
-- **A string** — interpreted as a header name to look up in the row at
-  `header_row`. Falls back to a warning + empty value if the name isn't
-  found.
-
-This dual mode lets a lab notebook evolve. A typical positional config:
-
-```toml
-[manifest]
-header_row     = 0
-sample_id      = 1
-name           = 2
-display_name   = 3
-filenames      = 9
+```json
+{
+  "data_dir": "/data/2026-04/HA",
+  "analysis_dir": "/data/2026-04/HA/analysis/automatic_analysis/tot_files",
+  "name": "HA",
+  "patterns": {
+    "image": "{name}_0_001.tif",
+    "metadata": "{name}_0_001.prp",
+    "integration": "{name}_tot.dat"
+  },
+  "geometry": {
+    "energy_kev": 11.0, "energy_kev_source": "prp",
+    "flight_path_m": 1.13, "flight_path_m_source": "setup",
+    "beam_center_x": 420.8, "beam_center_x_source": "setup",
+    "beam_center_y": 838.8, "beam_center_y_source": "setup",
+    "pixel_size_um": 172.0, "pixel_size_um_source": "prp"
+  }
+}
 ```
 
-If the lab adopts named headers later, switch to:
+- `data_dir` is required (`path` is still accepted from older callers). It must
+  be an existing directory: `400` otherwise, and `409` if another experiment
+  already uses it.
+- `name` defaults to `basename(data_dir)`. `analysis_dir` defaults to
+  `data_dir/analysis` if that exists, else `data_dir`.
+- A geometry value with no source is stored with source `user`. Non-numeric
+  values and non-string sources are ignored.
 
-```toml
-[manifest]
-header_row     = 1
-sample_id      = "#"
-name           = "ID"
-display_name   = "Sample"
-filenames      = "Filename(s)"
-```
+The row is created with `ingest_status = 'scanning'` and the route answers
+`202 {id, status: "scanning", name, data_dir}`. The first scan then runs on a
+spawned task. It ends with `ingest_status` set to `complete` (and the rescan
+scheduler armed) or `failed`. Progress goes out over SSE as
+`ingest_started`, `ingest_progress` (with a `stage` of `discovery`,
+`analyzing` or `thumbnails`), and then `ingest_complete` or `ingest_failed`.
 
-You can mix and match — keep some fields positional and some named —
-during a transition.
+## Configuration fields
 
-### Row filtering
+All of these are columns on the `experiments` row.
 
-Rows whose `sample_id` column doesn't parse as an integer are silently
-skipped. This lets scientists add section headers, blank rows, and
-free-text annotations to their lab notebook without breaking ingestion.
+| Column | Set by | Editable later |
+|--------|--------|----------------|
+| `name`, `description` | Create, or `PATCH` | Yes, a plain write |
+| `data_dir`, `analysis_dir`, `path` | Create | No: `PATCH` returns `400` |
+| `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Yes (see [Rescans](#rescans)) |
+| `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um`, `q_units` | Create, or the scan's fill-only step | Yes: the field's `*_source` becomes `user` |
 
-## Filename-to-exposure association
+`path` mirrors `data_dir` for new experiments. `manifest_path`, `config` and
+`experiment_type` are legacy columns that the funnel leaves `NULL` (see
+[Legacy](#legacy-experimenttoml-and-the-config-blob)).
 
-The manifest's `filenames` column declares which files belong to which
-sample. Three forms are supported, all treated as **prefixes against
-the filesystem**:
+The Configuration page in later-edit mode (`/experiments/:id/config`) edits
+these through `PATCH /api/experiments/:id`. A body with no patchable field is a
+`400`.
 
-### Range — `JC001-004`
+## File patterns
 
-Expanded to `JC001`, `JC002`, `JC003`, `JC004`. For each prefix, the
-filesystem is scanned for files matching the integration pattern (e.g.
-`JC001*.dat`). All matching files are associated with the sample.
+Each pattern contains `{name}`, which stands for an exposure's stem.
 
-If a file in the range is missing from disk, Himalaya emits a warning
-but doesn't fail — scientists sometimes note planned exposures that
-didn't complete.
+| Pattern | Default when the column is `NULL` | Matched in |
+|---------|-----------------------------------|------------|
+| `image_pattern` | `{name}.tif` | `data_dir` |
+| `metadata_pattern` | `{name}.prp` | `data_dir` |
+| `integration_pattern` | `{name}.dat` | `analysis_dir` |
 
-### Single name — `JC001`
+The scan enumerates the images, takes each stem, and builds the metadata and
+integration paths by putting the stem into those patterns. An exposure exists
+for every image, whether or not its metadata or integration file is present.
 
-The filesystem is scanned for `JC001*.dat`. A single exposure is the
-common case, but if the autosampler produced replicates like
-`JC001_rep1.dat`, `JC001_rep2.dat`, all of them get associated.
+The resolver recognises two layouts by probing one image stem:
 
-### Bare prefix — `JC`
+1. **SSRL total integration.** If `{base}_tot.dat` exists, where `{base}` is the
+   stem with its `_0_NNN` frame suffix removed, the patterns become
+   `{name}_0_NNN.tif`, `{name}_0_NNN.prp` and `{name}_tot.dat`, using the
+   frame suffix of the probed file.
+2. **Per-frame integration.** If `{stem}.dat` exists, the patterns are the
+   defaults.
 
-The filesystem is scanned for `JC*.dat`. All matches are associated
-with the sample. This is the "I ran the whole tray and don't want to
-list 96 files" case.
+Every reader of integration files (analysis, the trace route, series traces)
+resolves the path through `resolve_trace_path` (`pipeline.jl`). It tries the
+exact name first, then the name with a trailing `_<rep>_<frame>` removed,
+because older experiments migrated by `upgrade-grouping` store the full
+per-frame stem while the total integration is named by the acquisition stem.
 
-In all three cases the **filesystem is the ground truth**. The manifest
-declares intent; the disk decides what actually exists.
+## Geometry
 
-If the configured `analysis_dir` (or any subdirectory in the integration
-pattern) doesn't exist on disk, `resolve_files` emits a `@warn` and
-returns no matches — ingestion still succeeds with zero exposures, but
-the warning lands in the CLI/server log so the operator can spot a
-misconfigured path quickly.
+Geometry is derived once, during the funnel review, and stored at create with a
+source for each field:
+
+| Field | Source | Notes |
+|-------|--------|-------|
+| `energy_kev` | `prp` | Beam energy from the metadata files. A discrepancy is reported when it varies. |
+| `pixel_size_um` | `prp` | Looked up from the detector model in the metadata files. A discrepancy is reported when the model is unknown or there is more than one. |
+| `beam_center_x`, `beam_center_y` | `setup` | From the latest `setup_info_*.txt` (AgBe calibration). Detector pixels, origin bottom-left. |
+| `flight_path_m` | `setup`, else `prp` | The calibrated mean distance from the setup file, else the nominal pipe length from the metadata files. |
+| `q_units` | none | Never derived. Reported as `A-1` with source `default` when unset. |
+
+A field that could not be derived has source `default` and a `NULL` value.
+
+The scan's geometry step is fill-only (`_fill_unset_geometry!`, `ingest.jl`): it
+writes a field only while its source is still `default`. A rescan never
+re-derives geometry that create committed or that the user edited.
+
+The Focus page draws beam-centred q-rings only when `energy_kev`,
+`flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` are all
+set. Otherwise it falls back to a centred, decorative overlay.
+
+## Scan and grouping
+
+`scan_and_group!(db, experiment_id)` is the only ingest path. It reads
+`data_dir`, `analysis_dir` and the patterns from the row, then:
+
+1. **Discovers** exposures with `scan_directory` (`grouping.jl`): one per image
+   in `data_dir`, with its metadata file parsed (`parse_prp`, `prp.jl`) and its
+   integration file located. An empty directory returns `status = :empty` and
+   writes nothing.
+2. **Fills geometry** that is still unset (see above).
+3. **Groups** exposures with `group_into_samples`: it splits them into loads at
+   large time gaps, and clusters each load into slots by horizontal position.
+   Each slot becomes a sample named `<label> (SNNPMM)`, where the label comes
+   from the filename before the `_S<scan>_` token, `S` is the load index and `P`
+   is the slot index.
+4. **Persists** loads, samples and exposures in one write transaction. Writes
+   are insert-only: loads are deduplicated on `(experiment_id, load_index)`,
+   samples on `(experiment_id, load_id, slot_index)`, and exposures on
+   `(experiment_id, filename)`. A rescan of an unchanged directory is a no-op,
+   and new files only add rows. Existing samples and exposures are never
+   rewritten, so renames, rejections, peak curation and phase calls survive.
+5. **Analyzes** each new exposure with `analyze_exposure!`, outside the write
+   transaction, so an analysis failure cannot roll back the ingest. A failure
+   is logged and the scan moves on.
+6. **Prewarms** thumbnails for the experiment. A failure here never fails the
+   scan.
+
+The grouping is a suggestion. The grouping review page and the routes in
+`routes_grouping.jl` let the user rename, merge and split samples, and move
+exposures between them. Possible mistakes are flagged when the samples are
+read: a cross-load merge suggestion when a filename label appears in more than
+one load, and a split suggestion when positions inside one sample jump.
+
+## Rescans
+
+There are three ways a scan runs again after create:
+
+- **`POST /api/experiments/:id/scan`** returns `202` and scans in the
+  background. With `{"force": true}` it always scans. Otherwise it first runs
+  `cheap_change_check`, which compares the number of files in `data_dir` ending
+  in the image pattern's suffix with the number of exposure rows, and scans only
+  if there are more files.
+- **The rescan scheduler** (`server.jl`) runs the same check on a timer: hourly,
+  then daily after 6 quiet hourly checks, then stopped after 3 quiet daily
+  checks. A detected change puts it back on hourly. It is armed after each
+  successful scan, and on server start for every experiment whose ingest is
+  `complete`.
+- **A pattern edit.** `PATCH` with a pattern field stores it, and the
+  Configuration page then calls the scan route with `force: true` so the new
+  pattern applies straight away. The `PATCH` also clears `scan_signature`, but
+  nothing reads that column today.
+
+Rescans are additive. A pattern change that stops matching some existing files
+does not remove their exposures.
 
 ## The read-only contract
 
-Experiment directories are read-only at runtime. Himalaya does not
-create, modify, or delete any file inside the experiment directory
-during `init`, `analyze`, `reingest`, or `serve`. All write operations
-go to the central DB.
+Himalaya never creates, modifies or deletes a file inside an experiment
+directory while resolving, previewing, scanning, analyzing or serving. The
+funnel probes only read, and thumbnails are cached next to the DB
+(`<db_dir>/cache/thumb-128/`), not next to the images. The legacy commands
+`himalaya config new` and `himalaya migrate-toml` are the only code that writes
+into an experiment directory.
 
-The **sole exception** is `himalaya config new --dir <path>`, which
-writes `experiment.toml` as a one-time setup step before data
-collection. It refuses to overwrite an existing file.
+This rule is kept by code review. No test checks it for the scan path.
 
-This invariant is enforced by code review and by a regression test:
-`test_pipeline.jl` snapshots the directory contents before and after
-`cli_init_with_db!` and asserts they're identical.
+## Legacy: experiment.toml and the config blob
 
-## Re-ingestion
+Before the funnel, each experiment directory carried an `experiment.toml` and a
+lab-notebook CSV, and the CLI ingested them. That path, including
+`himalaya init`, `himalaya reingest`, `POST /api/experiments/:id/reingest` and
+`cli_init_with_db!`, has been deleted. What remains:
 
-If the manifest is corrected, the config edited, or new exposures
-arrive on disk, run `himalaya reingest -e <experiment_dir>` to update the
-DB. Reingestion is **safe to run repeatedly** and preserves curation
-work:
-
-- Existing samples are matched by `(experiment_id, name)` and updated
-  in place — both `display_name` and `notes` are **refreshed from the manifest** on reingest.
-- Exposures are matched by `(sample_id, filename)`. **Existing exposures
-  are never deleted or modified by reingest** — their `accepted` /
-  `rejected` status, manual peaks, and analysis results are preserved.
-- New exposures discovered on disk are inserted.
-- The full TOML blob in `experiments.config` is updated, along with
-  `experiment_type`, `energy_kev`, and `flight_path_m`.
-
-The whole operation is wrapped in a SQLite transaction — if anything
-goes wrong mid-way, the DB rolls back to its pre-reingest state.
-
-A REST endpoint `POST /api/experiments/:id/reingest` triggers the same
-logic from the UI. The response body distinguishes the two reingest
-outcomes:
-
-```json
-// success — manifest found and ingested
-{ "status": "ok", "added_samples": 1, "added_exposures": 12,
-  "manifest_path": "/data/.../manifest.csv" }
-
-// success — config updated but no manifest on disk
-{ "status": "no_manifest", "added_samples": 0, "added_exposures": 0,
-  "manifest_path": "/data/.../manifest.csv" }
-```
-
-HTTP status is `200` in both cases — the config-update half of reingest
-succeeded, and `status` is the discriminator for callers.
-
-## Built-in templates
-
-Templates live under `packages/HimalayaUI/configs/`. Each `.toml` file
-is a starting point that `himalaya config new --type <name>` will copy
-into a new experiment directory. The template's content becomes the
-scientist's `experiment.toml`, which they then edit.
-
-Currently shipped:
-
-- **`simple.toml`** — encodes the legacy hardcoded behaviour: tab-separated
-  Google Sheets export, columns 1/2/3/9/10/11, data in `data/`, .dat
-  files in `analysis/automatic_analysis/`, integration files named
-  `<stem>.dat`, images named `<stem>.tiff`.
-
-To add a new template, drop a new `.toml` file in `configs/`. It
-appears in `himalaya config list` automatically — no code changes
-required. Common candidates: `autosampler`, `time_resolved`, beamline-
-specific layouts (`bm29`, `id02`, …).
-
-## Backward compatibility
-
-Experiments created before the config system existed have `NULL` in
-`experiments.config`. At analysis time, `config_from_db` falls back to
-the built-in `simple` template, which exactly matches the old hardcoded
-defaults. Existing experiments continue to work without re-initialisation.
-
-If you want to migrate a legacy experiment to a custom config, run
-`himalaya config new --dir <exp>` to drop a template, edit it as
-needed, and run `himalaya reingest <exp>`. The DB row's `config` blob
-gets populated; subsequent `analyze` calls use the new config.
+- **`experiments.config`** holds the TOML text for experiments created that
+  way. The funnel leaves it `NULL`.
+- **`config_from_db`** (`config.jl`) parses that blob into an
+  `ExperimentConfig`, or loads the built-in `configs/simple.toml` when it is
+  `NULL`. It then replaces the image and integration patterns with the row's
+  columns when those are set. Analysis, the trace route and series traces call
+  it, and only use the integration pattern from the result.
+- **`_beamline_from_config`** (`routes_experiments.jl`) reads beam centre,
+  pixel size and `q_units` from the blob, but only for legacy rows with no
+  typed geometry columns set.
+- **`himalaya upgrade-grouping`** retrofits a legacy experiment's samples and
+  exposures to the current grouping while keeping its curation. It is a
+  dry run unless `--apply` is passed.
+- **`himalaya config list`, `himalaya config new` and `himalaya migrate-toml`**
+  still work on `experiment.toml` files, but nothing in ingest or analysis reads
+  those files.
 
 ## CLI reference
 
+The CLI does not create experiments. It works on experiments already in the
+central DB (`HIMALAYA_DB_PATH`, else `~/.himalaya/himalaya.db`).
+
 ```
+himalaya analyze [-e <experiment> | --all] [-s <sample>]
+    Run peak-finding and indexing for every exposure that is not rejected.
+
+himalaya show [-e <experiment>] -s <sample>
+    Print the stored peaks, indices and active group for one sample.
+
+himalaya serve [--port N] [--host H]
+    Start the web server. Creates an empty DB if none exists, so a new user
+    can create the first experiment through the funnel.
+
+himalaya upgrade-grouping [--apply] [-e <experiment>]
+    Retrofit legacy experiments to the current auto-grouping. Dry run by
+    default.
+
 himalaya config list
-    List available built-in templates.
-
-himalaya config new [--type TYPE] --dir DIR
-    Copy the named template to <DIR>/experiment.toml.
-    Defaults to "simple" if --type is omitted.
-    Refuses to overwrite an existing experiment.toml.
-
-himalaya init <experiment_dir>
-    Read experiment.toml + manifest.csv from the directory and register
-    the experiment in the DB. Discovers exposures by filesystem prefix
-    scan against the configured integration pattern.
-
-himalaya reingest -e <experiment_dir>
-    Re-read experiment.toml + manifest.csv and update the DB.
-    Idempotent on stable input. Preserves curated exposures.
-
-himalaya migrate-toml <experiment_dir>
-    Upgrade experiment.toml from the legacy label/name column shape to the new
-    name/display_name shape. Section-aware, regex-anchored; idempotent (safe to
-    re-run on an already-migrated file). Required once per experiment dir when
-    deploying the label/name → name/display_name schema change.
+himalaya config new [--type <name>] --dir <path>
+himalaya migrate-toml <experiment-dir>
+    Legacy experiment.toml tooling (see above).
 ```
 
-## Storage
-
-The full TOML content is stored in `experiments.config` as a TEXT blob,
-so the DB is self-contained — `analyze` can resolve file paths even if
-the experiment directory is temporarily unmounted. Three additional
-columns mirror the most queryable beamline parameters:
-
-| Column | Source |
-|--------|--------|
-| `experiments.config` | Full `experiment.toml` content |
-| `experiments.experiment_type` | `[layout].exposure_type` |
-| `experiments.energy_kev` | `[beamline].energy_kev` |
-| `experiments.flight_path_m` | `[beamline].flight_path_m` |
-
-The TOML blob is the canonical record; the mirror columns are an
-optimisation for queries that don't want to parse TOML.
+`-e` takes an id, a name or a path. When it is left out, the command uses the
+only registered experiment, and fails with a list if there are several.
 
 ## Further reading
 
-- [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl) — the implementation
-- [packages/HimalayaUI/configs/simple.toml](../packages/HimalayaUI/configs/simple.toml) — the default template
+- [packages/HimalayaUI/src/routes_fs.jl](../packages/HimalayaUI/src/routes_fs.jl): the funnel probes
+- [packages/HimalayaUI/src/routes_experiments.jl](../packages/HimalayaUI/src/routes_experiments.jl): create, `PATCH`, scan
+- [packages/HimalayaUI/src/ingest.jl](../packages/HimalayaUI/src/ingest.jl): `scan_and_group!`, `cheap_change_check`, `regroup_experiment!`
+- [packages/HimalayaUI/src/grouping.jl](../packages/HimalayaUI/src/grouping.jl): discovery, loads, slots, sample names, flags
+- [packages/HimalayaUI/src/geometry.jl](../packages/HimalayaUI/src/geometry.jl): geometry derivation
+- [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl): the legacy `ExperimentConfig`
