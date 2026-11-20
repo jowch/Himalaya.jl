@@ -43,6 +43,18 @@ step 6-reindex log env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
     stale == 0 || error("$stale kept exposures were not re-indexed")'
 step 7-after-reindex json bin/verify check-truth --ui --expect triaged
 step 8-reindex-changed-nothing json node "$HELP" unchanged "$OUT/5-confirmed.json" "$OUT/7-after-reindex.json"
+step 9-description-clear log bash -c '
+  set -e
+  edit() {
+    bin/verify open /experiments/1/config
+    bin/verify click --role button --name "Edit experiment description"
+    bin/verify fill --role textbox --name "Experiment description" --value "$1"
+    bin/verify press Control+Enter
+  }
+  edit "verify-truth description"
+  bin/verify api GET /api/experiments/1 | grep -q "\"description\": \"verify-truth description\""
+  edit ""
+  bin/verify api GET /api/experiments/1 | grep -q "\"description\": null"'
 
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"

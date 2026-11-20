@@ -11,6 +11,7 @@ export function parseArgs(argv, spec = {}) {
   const positional = [];
   const booleans = new Set(spec.booleans ?? []);
   const strings = new Set(spec.strings ?? []);
+  const lists = new Set(spec.lists ?? []);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--") {
@@ -32,8 +33,14 @@ export function parseArgs(argv, spec = {}) {
       else if (i + 1 < argv.length) value = argv[++i];
       else throw new UsageError(`--${name} needs a value`);
       flags[name] = value;
+    } else if (lists.has(name)) {
+      let value;
+      if (eq !== -1) value = arg.slice(eq + 1);
+      else if (i + 1 < argv.length) value = argv[++i];
+      else throw new UsageError(`--${name} needs a value`);
+      (flags[name] ??= []).push(value);
     } else {
-      const known = [...booleans, ...strings].map((f) => `--${f}`).join(", ") || "none";
+      const known = [...booleans, ...strings, ...lists].map((f) => `--${f}`).join(", ") || "none";
       throw new UsageError(`unknown option --${name}`, `options for this command: ${known}`);
     }
   }

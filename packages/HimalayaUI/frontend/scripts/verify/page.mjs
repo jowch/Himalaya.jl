@@ -129,15 +129,43 @@ async function resolveOne(page, flags) {
   return { loc, what, count };
 }
 
-function verdict(settle, flags) {
-  if (!settle) return { ok: true };
-  if (!settle.settled) return { ok: false };
-  if (settle.httpErrors.length === 0 || flags["allow-http-errors"]) return { ok: true };
-  const first = settle.httpErrors[0];
+export function parseExpectHttp(values = []) {
+  return values.map((raw) => {
+    const m = /^([1-5][0-9x]{2}):(.+)$/.exec(raw);
+    if (!m) throw new UsageError(`--expect-http must look like 400:/api/fs/resolve, got ${raw}`, "status digits may use x as a wildcard (4xx); the path is a regular expression");
+    let path;
+    try {
+      path = new RegExp(m[2]);
+    } catch (e) {
+      throw new UsageError(`--expect-http path is not a valid regular expression: ${e.message}`);
+    }
+    const status = new RegExp(`^${m[1].replace(/x/g, "\\d")}$`);
+    return { raw, matches: (e) => status.test(String(e.status)) && path.test(new URL(e.url).pathname) };
+  });
+}
+
+const describe = (e) => `${e.method} ${new URL(e.url).pathname} returned ${e.status}`;
+
+export function verdict(settle, flags) {
+  const expected = parseExpectHttp(flags["expect-http"]);
+  if (!settle) {
+    if (expected.length) throw new UsageError("--expect-http needs the action to settle", "drop --no-settle");
+    return { ok: true, httpChecked: false };
+  }
+  for (const e of settle.httpErrors) e.expected = expected.some((x) => x.matches(e));
+  const unexpected = settle.httpErrors.filter((e) => !e.expected);
+  const unmet = expected.filter((x) => !settle.httpErrors.some((e) => x.matches(e)));
+  const problems = [];
+  if (!settle.settled) problems.push(`the page did not settle within ${settle.ms} ms`);
+  if (unexpected.length) problems.push(`${unexpected.length} request(s) failed, first ${describe(unexpected[0])}`);
+  if (settle.settled && unmet.length) problems.push(`no response matched --expect-http ${unmet.map((x) => x.raw).join(", ")}`);
+  if (!problems.length) return { ok: true };
   return {
     ok: false,
-    error: `${settle.httpErrors.length} request(s) failed, first ${first.method} ${new URL(first.url).pathname} returned ${first.status}`,
-    hint: "the page may look fine while the server rejected the change; pass --allow-http-errors when the failure is the point",
+    error: problems.join("; "),
+    hint: unexpected.length
+      ? "the page may look fine while the server rejected the change; if this status is the app's normal answer, pass --expect-http <status>:<path regex>"
+      : unmet.length && settle.settled ? "the error path you expected did not happen; check the request the action sends" : "raise --timeout, or snapshot to see what is still loading",
   };
 }
 

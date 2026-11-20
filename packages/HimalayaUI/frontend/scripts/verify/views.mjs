@@ -18,11 +18,18 @@ export function statusFromText(text) {
   return "phase";
 }
 
+function failedRequests(settle, where) {
+  if (!settle.httpErrors.length) return;
+  const list = settle.httpErrors.map((e) => `${e.method} ${new URL(e.url).pathname} ${e.status}`).join(", ");
+  throw new Error(`${where} loaded with failed requests (${list}); the view it shows can't be trusted`);
+}
+
 async function corpusStatuses(page, cfg, experimentId) {
   const tracker = armSettle(page);
   await page.goto(routeUrl(cfg, `/experiments/${experimentId}/corpus`), { waitUntil: "domcontentloaded" });
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`the corpus did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+  failedRequests(settle, "the corpus");
   return page.locator("[role='row']").evaluateAll((rows) =>
     rows
       .map((row) => ({
@@ -55,6 +62,7 @@ async function openedFrame(page, cfg, route, frameOrder) {
   }
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`${route} did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+  failedRequests(settle, route);
   const pressed = page.getByRole("button", { name: /^Frame \d+/, pressed: true });
   const labels = await pressed.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
   return frameFromLabels(labels, frameOrder);

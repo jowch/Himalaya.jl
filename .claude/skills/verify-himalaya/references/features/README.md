@@ -36,6 +36,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 - **Check:** the config page reads "Indexed 28 exposures found", and `check-truth` passes on the new experiment.
 - **Gotchas:**
   - The three checks under the path field (`status: ✓ directory exists`, and so on) are the funnel's validation. Snapshot them before clicking "Review →".
+  - The page probes `GET /api/fs/resolve` after each path change, and the server answers 400 for anything that is not a directory (a partial path, a file, a missing path). To drive that validation, pass `--expect-http 400:/api/fs/resolve` to the `fill`; without it the command fails on the 400, and with it the command fails if the 400 never comes.
   - The config step keeps its state in memory. Reloading `/experiments/new/config` (or a Vite full reload, which can follow an edit under `frontend/`) shows "No experiment selected"; start again from `/experiments/new`.
   - The scan after Approve runs on the server and reports over SSE, so a plain `wait-settle` returns before it ends. Use `--url` as above, or poll `bin/verify api GET /api/experiments/<id>` for `ingest_status: complete`.
 
@@ -127,7 +128,7 @@ Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for 
   ```
 - **Check:** `bin/verify api GET /api/experiments/1` shows `"description": null` after the clear.
 - **Gotchas:**
-  - Clearing sends `{"description": null}`, not an empty string. Exercise the clear, not only an edit: the server once answered it with 400 and the page showed no error. `press` now fails when a request it triggered returns 4xx/5xx, so that case reads `"ok": false` with the failing request under `settle.httpErrors`.
+  - Clearing sends `{"description": null}`, not an empty string. Exercise the clear, not only an edit: the server once answered it with 400 and the page showed no error. `press` now fails when a request it triggered returns 4xx/5xx, so that case reads `"ok": false` with the failing request under `settle.httpErrors`. `make verify-truth` runs this edit-then-clear in CI (step 9).
   - "Rescan now" changes the rescan schedule (it goes back to hourly checks when new files are found), which no page shows. Check the schedule in the backend tests, not here.
 
 ## Not mapped yet

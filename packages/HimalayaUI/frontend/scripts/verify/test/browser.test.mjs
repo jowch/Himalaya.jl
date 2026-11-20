@@ -17,6 +17,9 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
   <button onclick="fetch('/hang')">Hang</button>
   <button onclick="fetch('/api/reject', { method: 'PATCH' })">Rejected</button>
+  <button onclick="fetch('/api/reject', { method: 'PATCH' }); fetch('/hang')">StuckReject</button>
+  <button onclick="setTimeout(() => { fetch('/api/reject', { method: 'PATCH' }); history.pushState({}, '', '/rejected'); }, 800)">DelayedReject</button>
+  <label>Probe <input id="q" oninput="fetch('/api/reject?q=' + encodeURIComponent(this.value))"></label>
   <label>Path <input id="p"></label>
   <section id="out" aria-busy="false"></section>
 </main>
@@ -31,6 +34,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   }
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") document.getElementById("h").textContent = "Escaped";
+    if (e.key === "Delete") fetch("/api/reject", { method: "DELETE" });
   });
   document.getElementById("p").addEventListener("input", (e) => {
     document.getElementById("h").textContent = "Typed " + e.target.value;
@@ -71,7 +75,17 @@ before(async () => {
       return;
     }
     if (req.url === "/hang") return;
-    if (req.url === "/api/reject") {
+    if (req.url === "/broken") {
+      res.setHeader("Content-Type", "text/html");
+      res.end('<!doctype html><title>Broken</title><img src="/api/missing.png" alt="">');
+      return;
+    }
+    if (req.url === "/api/missing.png") {
+      res.statusCode = 404;
+      res.end();
+      return;
+    }
+    if (req.url.startsWith("/api/reject")) {
       res.statusCode = 400;
       res.end('{"error":"no patchable fields"}');
       return;
@@ -127,16 +141,61 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.equal(r.settle.settled, false);
   assert.match(r.settle.inflight[0], /\/hang$/);
 
-  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected"));
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact"));
   assert.equal(code, 1, "an action whose request the server rejected must fail");
   assert.equal(r.settle.settled, true);
   assert.deepEqual(r.settle.httpErrors.map((e) => [e.method, new URL(e.url).pathname, e.status]), [["PATCH", "/api/reject", 400]]);
   assert.match(r.error, /PATCH \/api\/reject returned 400/);
-  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--allow-http-errors"));
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact", "--expect-http", "400:^/api/reject$"));
   assert.equal(code, 0, JSON.stringify(r));
+  assert.deepEqual(r.settle.httpErrors.map((e) => [e.status, e.expected]), [[400, true]]);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact", "--expect-http", "4xx:/api/other"));
+  assert.equal(code, 1, "an allowance for another path must not hide this 400");
+  assert.match(r.error, /PATCH \/api\/reject returned 400/);
+  assert.match(r.error, /no response matched --expect-http 4xx:\/api\/other/);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Load", "--expect-http", "400:/api/reject"));
+  assert.equal(code, 1, "an expected error that never arrives must fail");
+  assert.match(r.error, /no response matched --expect-http 400:\/api\/reject/);
   ({ code, r } = await run("click", "--role", "button", "--name", "Load"));
   assert.equal(code, 0, JSON.stringify(r));
   assert.deepEqual(r.settle.httpErrors, []);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact", "--expect-http", "nope"));
+  assert.equal(code, 1);
+  assert.match(r.error, /--expect-http must look like/);
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "StuckReject", "--timeout", "1000"));
+  assert.equal(code, 1);
+  assert.equal(r.settle.settled, false);
+  assert.match(r.error, /did not settle/);
+  assert.match(r.error, /PATCH \/api\/reject returned 400/);
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact", "--no-settle"));
+  assert.equal(code, 0);
+  assert.equal(r.httpChecked, false, "--no-settle must say it did not check responses");
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "DelayedReject", "--no-settle"));
+  assert.equal(code, 0);
+  ({ code, r } = await run("wait-settle", "--url", "/rejected$", "--timeout", "5000"));
+  assert.equal(code, 1, "wait-settle must fail on a 4xx it saw");
+  assert.deepEqual(r.httpErrors.map((e) => e.status), [400]);
+  ({ code } = await run("open", "/"));
+  assert.equal(code, 0);
+
+  ({ code, r } = await run("fill", "--label", "Probe", "--value", "x"));
+  assert.equal(code, 1, "fill must fail on a 4xx it triggered");
+  assert.match(r.error, /GET \/api\/reject returned 400/);
+  ({ code } = await run("fill", "--label", "Probe", "--value", "y", "--expect-http", "400:/api/reject"));
+  assert.equal(code, 0);
+
+  ({ code, r } = await run("press", "Delete"));
+  assert.equal(code, 1, "press must fail on a 4xx it triggered");
+  assert.match(r.error, /DELETE \/api\/reject returned 400/);
+
+  ({ code, r } = await run("open", "/broken"));
+  assert.equal(code, 1, "open must fail when the page loads a missing resource");
+  assert.match(r.error, /GET \/api\/missing\.png returned 404/);
+  ({ code } = await run("open", "/"));
+  assert.equal(code, 0);
 
   ({ code, r } = await run("click", "--role", "button", "--name", "Twin"));
   assert.equal(code, 1);
