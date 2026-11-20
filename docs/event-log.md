@@ -234,7 +234,7 @@ GET /api/events
 
 Architecture: Oxygen.jl 1.10.x `@stream` macro receives an `HTTP.Stream`
 directly. Each subscriber gets a per-task `Channel{String}` for pending
-frames plus a per-subscriber `Timer` that pushes `:heartbeat\n\n` every
+frames plus a per-subscriber `Timer` that pushes an `event: heartbeat` frame every
 15 s. The handler loop is just `for frame in pending` — race-free, no
 busy-poll.
 
@@ -252,9 +252,20 @@ commits. Implications:
 
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
-  event is durable in `user_actions`. Clients reconcile on EventSource
-  reconnect via TanStack Query refetch — `src/print/App.tsx` (`PrintApp`)
-  invalidates the exposure's query keys on the first reconnect.
+  event is durable in `user_actions`. Clients reconcile on reconnect by
+  refetching: `PrintApp` opens the stream through `lib/liveStream.ts`, and
+  every `open` after the first runs `lib/queue/reconnectRefresh.ts`. That
+  invalidates every query except raw exposure traces, and it waits until no
+  mutation is pending, so a refetch can't overwrite an optimistic edit that
+  is still retrying.
+- The backend writes `retry: 3000` as soon as a stream opens (so `open`
+  fires immediately) and an `event: heartbeat` every 15 s. A dev or preview
+  proxy can keep the stream open after the backend dies. `liveStream`
+  replaces a stream that has been silent for 40 s. When the browser gives up
+  on a non-200 answer (the proxy's 500 while the backend is down),
+  `liveStream` opens a new stream with 1–5 s backoff. `vite.config.ts` also
+  ends the proxied response when the upstream closes.
+- `e2e/reconnect.spec.ts` covers a clean end of stream and a 500.
 - Slow subscribers (channel full) and disconnected subscribers (channel
   closed) are pruned via `_try_put!` rather than blocking the broadcast
   loop. A pruned subscriber reconnects on the EventSource side and gets
