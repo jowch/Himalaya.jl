@@ -123,6 +123,7 @@ export interface CorpusSample extends Sample {
    *  everything else reads "Not indexed". Absent on older payloads → treated as
    *  unindexed. */
   assignment_state?: AssignmentState;
+  representative_exposure_id?: number | null;
 }
 
 export class ApiError extends Error {
