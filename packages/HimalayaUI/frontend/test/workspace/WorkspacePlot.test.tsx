@@ -35,6 +35,25 @@ describe("WorkspacePlot", () => {
     expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
   });
 
+  it("fits the q²I and linear y axes to the visible q window, but not the log axes", () => {
+    const rising = { q: [0.05, 0.1, 0.15, 0.2, 0.4], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
+    const yTop = (): number =>
+      Math.max(
+        ...Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] text'))
+          .map((t) => Number(t.textContent))
+          .filter(Number.isFinite),
+      );
+    const { rerender } = render(<WorkspacePlot trace={rising} peaks={[]} phase={null} combs={[]} view="kratky" />);
+    expect(yTop()).toBeGreaterThan(0.1);
+    rerender(<WorkspacePlot trace={rising} peaks={[]} phase={null} combs={[]} view="kratky" xDomain={[0.05, 0.15]} />);
+    expect(yTop()).toBeLessThan(0.03);
+    const steep = { ...rising, I: [100, 50, 2, 1, 1] };
+    rerender(<WorkspacePlot trace={steep} peaks={[]} phase={null} combs={[]} view="linear" xDomain={[0.15, 0.4]} />);
+    expect(yTop()).toBeLessThan(5);
+    rerender(<WorkspacePlot trace={steep} peaks={[]} phase={null} combs={[]} view="log" xDomain={[0.15, 0.4]} />);
+    expect(yTop()).toBeGreaterThanOrEqual(100);
+  });
+
   it("puts q on a log axis in the log-log view", () => {
     const xTicks = (): string =>
       Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-bottom"] text'))

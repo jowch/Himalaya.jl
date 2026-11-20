@@ -60,6 +60,7 @@ export interface TracePlotProps {
   /** Multiply the y-domain top by (1 + yHeadroom) so peaks keep headroom below
    *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
   yHeadroom?: number;
+  fitYToX?: boolean;
   /** Paint the trace LINE in the neutral (gray) colour regardless of phase.
    *  The peak markers/labels keep their phase colour — only the curve degrades
    *  to neutral. Keeps an arbitrary coexistence-phase hue off the trace. */
@@ -87,6 +88,13 @@ export interface TracePlotProps {
 // like a stuck hover-dim next to the phase-colored traces. De-emphasis is
 // reserved for an explicit hover/focus (the waterfall row's opacity gate), and
 // clears completely on mouse-out.
+function visibleValues(q: readonly number[], I: readonly number[], domain: [number, number]): number[] {
+  const lo = Math.min(domain[0], domain[1]);
+  const hi = Math.max(domain[0], domain[1]);
+  const out = I.filter((_, i) => q[i]! >= lo && q[i]! <= hi);
+  return out.length >= 2 ? out : [...I];
+}
+
 const UNINDEXED_COLOR = "var(--color-ink-soft)";
 
 interface PlotState {
@@ -118,6 +126,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     show,
     highlightPeakIds,
     yHeadroom = 0,
+    fitYToX = false,
     neutralLine = false,
     onHoverQ,
     hoveredQ,
@@ -129,9 +138,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
 
   const xExtent = positiveExtent(trace.trace.q);
-  const rawYExtent = positiveExtent(trace.trace.I);
-  const yExtent: [number, number] = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)];
   const curXDomain = xDomain ?? xExtent;
+  const rawYExtent = positiveExtent(fitYToX ? visibleValues(trace.trace.q, trace.trace.I, curXDomain) : trace.trace.I);
+  const yExtent: [number, number] = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)];
 
   const margins: Margins = axes
     ? { top: 20, right: 24, bottom: 48, left: 60 }
