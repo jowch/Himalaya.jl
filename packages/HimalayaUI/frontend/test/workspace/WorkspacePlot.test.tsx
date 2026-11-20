@@ -74,7 +74,7 @@ describe("WorkspacePlot", () => {
       screen.getByTestId("workspace-trace").querySelector('[data-role="trace-line"] path:last-of-type')!.getAttribute("d")!
         .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
     const markerY = (id: number): number => {
-      const glyph = screen.getByTestId("workspace-trace").querySelector(`[data-role="peak-glyph"] [data-peak-id="${id}"]`)!;
+      const glyph = screen.getByTestId("workspace-trace").querySelector(`[data-role="peak-glyph"] [data-peak-key="auto:${id}"]`)!;
       return Math.max(...glyph.getAttribute("points")!.split(" ").map((pt) => Number(pt.split(",")[1])));
     };
     const { rerender } = render(<WorkspacePlot trace={steep} peaks={peaks} phase={null} combs={[]} view="linear" />);
