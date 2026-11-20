@@ -22,7 +22,7 @@ test("corpus status text maps onto the StatusCell states", () => {
   assert.equal(statusFromText(null), null);
 });
 
-test("settle ignores SSE, fonts and in-page blob or data URLs", () => {
+test("settle ignores SSE, fonts, the favicon and in-page blob or data URLs", () => {
   const req = (type, url) => ({ resourceType: () => type, url: () => url });
   assert.equal(tracked(req("fetch", "http://h/api/samples")), true);
   assert.equal(tracked(req("image", "http://h/api/exposures/1/image")), true);
@@ -30,6 +30,8 @@ test("settle ignores SSE, fonts and in-page blob or data URLs", () => {
   assert.equal(tracked(req("font", "http://h/x.woff2")), false);
   assert.equal(tracked(req("image", "blob:http://h/1234")), false);
   assert.equal(tracked(req("image", "data:image/png;base64,AA")), false);
+  assert.equal(tracked(req("other", "http://h/favicon.svg")), false);
+  assert.equal(tracked(req("image", "http://h/favicon.ico?v=2")), false);
 });
 
 test("the workspace is read in place when the shared tab is already on it", () => {

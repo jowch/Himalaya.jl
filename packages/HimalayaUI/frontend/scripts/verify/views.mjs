@@ -28,6 +28,12 @@ async function corpusStatuses(page, cfg, experimentId) {
       .map((row) => ({
         names: [...row.querySelectorAll("button")].map((b) => (b.textContent ?? "").trim()),
         status: row.querySelector("[data-testid='status-cell']")?.textContent?.trim() ?? null,
+        kept: (() => {
+          const cell = row.querySelector("[data-testid='kept-cell']");
+          const count = cell?.querySelector("[data-role='kept-count']")?.textContent?.trim();
+          const total = cell?.querySelector("[data-role='kept-total']")?.textContent?.replace(/[^0-9]/g, "");
+          return count && total ? `${count}/${total}` : null;
+        })(),
       }))
       .filter((r) => r.status !== null),
   );
@@ -130,7 +136,7 @@ export async function readViews(cfg, experimentId, samples) {
     const rows = await corpusStatuses(session.page, cfg, experimentId);
     for (const s of samples) {
       const row = rows.filter((r) => r.names.includes(s.name));
-      const views = { corpus_text: row.length === 1 ? row[0].status : null };
+      const views = { corpus_text: row.length === 1 ? row[0].status : null, corpus_kept: row.length === 1 ? row[0].kept : null };
       for (const [view, route] of Object.entries(VIEW_ROUTES)) {
         views[view] = await openedFrame(session.page, cfg, route(s.id), s.frameOrder);
       }

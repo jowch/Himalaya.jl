@@ -52,7 +52,7 @@ function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
 end
 
 """
-    _analyze_experiment!(db, exp_id; sample_filter=nothing) -> nothing
+    _analyze_experiment!(db, exp_id; sample_filter=nothing) -> Int
 
 Run peak-finding + indexing for every exposure of `exp_id`, optionally
 restricted to a single sample label. Skips rejected exposures and leaves
@@ -71,6 +71,7 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
     exp     = get_experiment(db, exp_id)
     samples = get_samples(db, exp_id)
     dropped_assignments = Tuple{String, String, String}[]
+    skipped = 0
     sample_filter !== nothing && filter!(sm -> sm.name == sample_filter, samples)
     sample_filter !== nothing && isempty(samples) &&
         println("  (no sample named '$(sample_filter)')")
@@ -104,6 +105,7 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             catch e
                 msg = isa(e, ErrorException) ? e.msg : sprint(showerror, e)
                 println("SKIP ($msg)")
+                skipped += 1
             end
         end
     end
@@ -115,6 +117,7 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             println("  $sname / $fname — $phases")
         end
     end
+    return skipped
 end
 
 function cli_analyze(args)
@@ -139,21 +142,24 @@ function cli_analyze(args)
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT id, name FROM experiments ORDER BY id"))
         isempty(rows) && error("No experiments registered.")
+        skipped = 0
         for r in rows
             println("Experiment $(r.name):")
             # Same catch-print-continue philosophy as the per-exposure loop:
             # one bad experiment must not abort the rest of the batch.
             try
-                _analyze_experiment!(db, Int(r.id); sample_filter = p[:sample])
+                skipped += _analyze_experiment!(db, Int(r.id); sample_filter = p[:sample])
             catch e
                 msg = isa(e, ErrorException) ? e.msg : sprint(showerror, e)
                 println("  SKIP experiment ($msg)")
+                skipped += 1
             end
         end
     else
         exp_row = _resolve_experiment(db, p[:experiment])
-        _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
+        skipped = _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
     end
+    skipped > 0 && error("$skipped exposure(s) or experiment(s) skipped; see the SKIP lines above")
 end
 
 function cli_show(args)

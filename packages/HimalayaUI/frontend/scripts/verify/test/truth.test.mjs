@@ -83,6 +83,40 @@ test("a frame in TRUTH's drop column must call none, and whether it is dropped i
   assert.match(indexed.samples[0].problems[0], /MO_H2O_S2=Pn3m \(expected none\)/);
 });
 
+test("a flared frame is to be dropped, and its auto call may lose phases but not add one", () => {
+  const truth = [{ ...TRUTH[0], drop: "MO_H2O_S2", flare: "MO_H2O_S2" }, TRUTH[1]];
+  for (const call of [["Pn3m"], []]) {
+    const r = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", call)] }));
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.samples[0].frames.bad_still_kept, ["MO_H2O_S2"]);
+    assert.equal(r.samples[0].auto_calls[1].expected, "within Pn3m");
+  }
+  const invented = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Ia3d", "Pn3m"])] }));
+  assert.equal(invented.ok, false);
+  assert.match(invented.samples[0].problems[0], /MO_H2O_S2=Ia3d\+Pn3m \(expected within Pn3m\)/);
+  const unflared = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", []), frame("MO_H2O_S2", ["Pn3m"])] }));
+  assert.equal(unflared.ok, false);
+});
+
+test("--expect fresh fails on a frame already dropped; --expect triaged fails on a bad frame still kept", () => {
+  const truth = [{ ...TRUTH[0], drop: "MO_H2O_S2" }, TRUTH[1]];
+  const untouched = app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", [])] });
+  const triaged = app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", [], dropped)], h2oShown: { representative_id: 1 } });
+
+  assert.equal(compareTruth(truth, untouched, { expect: "fresh" }).ok, true);
+  const notTriaged = compareTruth(truth, untouched, { expect: "triaged" });
+  assert.equal(notTriaged.ok, false);
+  assert.deepEqual(notTriaged.samples[0].problems, ["TRUTH's bad frames are still kept: MO_H2O_S2"]);
+
+  assert.equal(compareTruth(truth, triaged, { expect: "triaged" }).ok, true);
+  const early = compareTruth(truth, triaged, { expect: "fresh" });
+  assert.equal(early.ok, false);
+  assert.deepEqual(early.samples[0].problems, ["frames dropped before triage: MO_H2O_S2"]);
+
+  assert.equal(compareTruth(truth, untouched).ok, true);
+  assert.equal(compareTruth(truth, triaged).ok, true);
+});
+
 test("the shown status is what GET /api/samples gives the corpus, on the frame it names", () => {
   assert.deepEqual(shownStatus({ phase: "Pn3m", state: "indexed" }), { status: "phase", call: "Pn3m" });
   assert.deepEqual(shownStatus({ phase: null, state: "form_factor" }), { status: "form_factor", call: "none" });
@@ -156,12 +190,33 @@ test("representative_kept: the corpus status describes a dropped frame while a k
   assert.equal(onKept.invariants.representative_kept.ok, true);
 });
 
-function withViews(samples, views, corpusText = "Not indexed", workspaceText = "Unreviewed") {
+function withViews(samples, views, corpusText = "Not indexed", workspaceText = "Unreviewed", corpusKept = {}) {
   return samples.map((s) => {
     const last = s.frames.at(-1).filename;
-    return { ...s, views: views[s.id] ?? { loupe: last, focus: last, workspace: last }, corpusText, workspaceText };
+    return {
+      ...s,
+      views: views[s.id] ?? { loupe: last, focus: last, workspace: last },
+      corpusText,
+      workspaceText,
+      corpusKept: s.id in corpusKept ? corpusKept[s.id] : `${s.frames.filter((f) => f.status !== "rejected").length}/${s.frames.length}`,
+    };
   });
 }
+
+test("with --ui, the corpus Kept column must show the app's kept / total", () => {
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped)];
+  const same = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { loupe: "MO_H2O_S1", focus: "MO_H2O_S1", workspace: "MO_H2O_S1" } }));
+  assert.equal(same.ok, true);
+  assert.equal(same.samples[0].shown.corpus_kept, "1/2");
+
+  const stale = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { loupe: "MO_H2O_S1", focus: "MO_H2O_S1", workspace: "MO_H2O_S1" } }, "Not indexed", "Unreviewed", { 1: "2/2" }));
+  assert.equal(stale.ok, false);
+  assert.deepEqual(stale.samples[0].problems, ['the corpus Kept column reads "2/2" but the app has 1/2 frames kept']);
+
+  const unread = compareTruth(TRUTH, withViews(app(), {}, "Not indexed", "Unreviewed", { 2: null }));
+  assert.equal(unread.ok, false);
+  assert.match(unread.samples[1].problems[0], /Kept column reads "nothing"/);
+});
 
 test("views_agree compares the corpus frame with the frames Loupe and Focus open on", () => {
   const agree = compareTruth(TRUTH, withViews(app(), {}));

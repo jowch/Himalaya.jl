@@ -56,7 +56,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 - **Gotchas:**
   - Returning from Loupe with Esc resets the cursor to the first sample (seen 2026-11-19: ↓↓, `l` opens sample 3's Loupe, Esc, then Enter opens sample 1). After a round trip, `open /sample/<id>` directly instead of relying on the cursor.
   - The bottom dock ("Drop X", "Set representative R", "Loupe L", "Focus ↵") acts on the cursor sample, not the checkbox selection.
-  - Bad frames to drop (TRUTH's `drop` column): `MO_H2O` frame 3 (beam-off), `DOPE_H2O` frame 1 (missed capillary), and both frames of `leaked_capillary`. `bin/verify triage` drops them; `bin/verify triage --undo` keeps them again. A dropped thumbnail reads "Frame 3, dropped" and the Kept cell "2 / 3". In Loupe the beam-off frame is black with sparse speckle, and a missed capillary is dark apart from a glow around the beamstop.
+  - Bad frames to drop (TRUTH's `drop` column): flares in `MO_H2O_37C` frame 2, `MO_F127` frame 1, `DOPC_H2O` frame 2 and `MO_AMP_10` frame 3; `MO_H2O` frame 3 (beam-off); `DOPE_H2O` frame 1 (missed capillary); and both frames of `leaked_capillary`. `bin/verify triage` drops them; `bin/verify triage --undo` keeps them again. A dropped thumbnail reads "Frame 3, dropped" and the Kept cell "2 / 3". In Loupe a flare shows the sample's rings crossed by a bright horizontal streak through the beamstop, the beam-off frame is black with sparse speckle, and a missed capillary is dark apart from a glow around the beamstop.
 
 ## Workspace (three-pane triage)
 

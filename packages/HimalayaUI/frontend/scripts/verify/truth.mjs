@@ -103,7 +103,18 @@ function rollupInvariants(perSample, ui) {
   return out;
 }
 
-export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
+export const EXPECTATIONS = {
+  fresh: "Before triage: every frame is kept, including TRUTH's bad frames.",
+  triaged: "After triage: every frame in TRUTH's drop column is dropped.",
+};
+
+function withinCall(call, allowed) {
+  if (call === "none") return true;
+  const parts = new Set(allowed.split("+"));
+  return call.split("+").every((p) => parts.has(p));
+}
+
+export function compareTruth(truthRows, appSamples, { strict = false, expect = null } = {}) {
   const ownerOf = new Map();
   for (const row of truthRows) for (const base of words(row.bases)) ownerOf.set(base, row.sample);
   const appByTruth = new Map();
@@ -124,6 +135,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
     const expectedAuto = normalizeCall(row.auto);
     const expectedFrames = words(row.bases);
     const bad = new Set(words(row.drop));
+    const flared = new Set(words(row.flare));
+    const empty = new Set([...bad].filter((b) => !flared.has(b)));
     const matches = appByTruth.get(row.sample) ?? [];
     const problems = [];
     if (matches.length === 0) problems.push("sample missing from the app");
@@ -133,13 +146,19 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
     const missing = expectedFrames.filter((b) => !seen.includes(b));
     const kept = frames.filter(isKept);
     if (matches.length && missing.length) problems.push(`missing frames: ${missing.join(" ")}`);
-    const autoCalls = frames.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases), expected: bad.has(f.filename) ? "none" : expectedAuto }));
-    const wrongAuto = autoCalls.filter((c) => c.call !== c.expected);
+    const autoCalls = frames.map((f) => (flared.has(f.filename)
+      ? { frame: f.filename, call: normalizeCall(f.autoPhases), expected: `within ${expectedAuto}` }
+      : { frame: f.filename, call: normalizeCall(f.autoPhases), expected: empty.has(f.filename) ? "none" : expectedAuto }));
+    const wrongAuto = autoCalls.filter((c) => (c.expected.startsWith("within ") ? !withinCall(c.call, expectedAuto) : c.call !== c.expected));
     if (wrongAuto.length) {
       problems.push(`auto call ${wrongAuto.map((c) => `${c.frame}=${c.call} (expected ${c.expected})`).join(" ")}`);
     }
     const knownGap = expectedAuto !== truth;
     if (strict && knownGap) problems.push(`auto call ${expectedAuto} misses the generated truth ${truth}`);
+    const badKept = kept.filter((f) => bad.has(f.filename)).map((f) => f.filename);
+    if (expect === "triaged" && badKept.length) problems.push(`TRUTH's bad frames are still kept: ${badKept.join(" ")}`);
+    const droppedEarly = frames.filter((f) => !isKept(f)).map((f) => f.filename);
+    if (expect === "fresh" && droppedEarly.length) problems.push(`frames dropped before triage: ${droppedEarly.join(" ")}`);
     const one = matches.length === 1 ? matches[0] : null;
     const shown = one ? { ...shownStatus(one.shown), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
     const unread = one ? unreadViews(one) : [];
@@ -149,6 +168,9 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
       const expected = one.frames.length ? shown.status : "no_exposures";
       if (read !== expected) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${expected}; check-truth is misreading the app`);
       shown.workspace_text = one.workspaceText ?? null;
+      shown.corpus_kept = one.corpusKept ?? null;
+      const keptCount = `${one.frames.filter(isKept).length}/${one.frames.length}`;
+      if (one.corpusKept !== keptCount) problems.push(`the corpus Kept column reads "${one.corpusKept ?? "nothing"}" but the app has ${keptCount} frames kept`);
       for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Frame N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
@@ -168,7 +190,7 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
         kept: kept.length,
         missing,
         to_drop: [...bad],
-        bad_still_kept: kept.filter((f) => bad.has(f.filename)).map((f) => f.filename),
+        bad_still_kept: badKept,
         good_dropped: frames.filter((f) => !isKept(f) && !bad.has(f.filename)).map((f) => f.filename),
       },
       auto_calls: autoCalls,
@@ -187,6 +209,7 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
   return {
     ok: failed.length === 0 && strays.length === 0 && brokenInvariants.length === 0,
     gate: strict ? "truth" : "auto",
+    expect: expect ? { [expect]: EXPECTATIONS[expect] } : null,
     summary: {
       samples: samples.length,
       passed: samples.length - failed.length,
@@ -260,6 +283,8 @@ function loadTruth(cfg, flags) {
 export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const truth = loadTruth(cfg, flags);
   const experimentId = await resolveExperiment(cfg, flags);
+  const expect = flags.expect ?? null;
+  if (expect !== null && !(expect in EXPECTATIONS)) throw new UsageError(`unknown --expect ${expect}`, `use one of ${Object.keys(EXPECTATIONS).join(", ")}`);
   const app = await collectApp(cfg, experimentId);
   let workspaceRead = null;
   if (flags.ui) {
@@ -267,14 +292,15 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
-      const { corpus_text: corpusText = null, workspace_text: workspaceText = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
+      const { corpus_text: corpusText = null, corpus_kept: corpusKept = null, workspace_text: workspaceText = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
       s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null, workspace: frames.workspace ?? null };
       s.corpusText = corpusText;
+      s.corpusKept = corpusKept;
       s.workspaceText = workspaceText;
     }
   }
   for (const s of app) delete s.frameOrder;
-  const result = { experiment_id: experimentId, ...compareTruth(truth, app, { strict: Boolean(flags.strict) }) };
+  const result = { experiment_id: experimentId, ...compareTruth(truth, app, { strict: Boolean(flags.strict), expect }) };
   if (flags.ui) result.workspace_read = workspaceRead;
   return result;
 }

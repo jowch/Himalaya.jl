@@ -3,7 +3,8 @@ export const BUSY_SELECTOR = "[data-boneyard-overlay], [aria-busy='true'], [role
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function tracked(request) {
-  return !["eventsource", "font"].includes(request.resourceType()) && !/^(blob|data):/.test(request.url());
+  const url = request.url();
+  return !["eventsource", "font"].includes(request.resourceType()) && !/^(blob|data):/.test(url) && !/\/favicon\.[a-z]+(\?|$)/.test(url);
 }
 
 export function armSettle(page) {
