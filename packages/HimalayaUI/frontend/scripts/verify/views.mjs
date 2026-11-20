@@ -18,11 +18,18 @@ export function statusFromText(text) {
   return "phase";
 }
 
+function failedRequests(settle, where) {
+  if (!settle.httpErrors.length) return;
+  const list = settle.httpErrors.map((e) => `${e.method} ${new URL(e.url).pathname} ${e.status}`).join(", ");
+  throw new Error(`${where} loaded with failed requests (${list}); the view it shows can't be trusted`);
+}
+
 async function corpusStatuses(page, cfg, experimentId) {
   const tracker = armSettle(page);
   await page.goto(routeUrl(cfg, `/experiments/${experimentId}/corpus`), { waitUntil: "domcontentloaded" });
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`the corpus did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+  failedRequests(settle, "the corpus");
   return page.locator("[role='row']").evaluateAll((rows) =>
     rows
       .map((row) => ({
@@ -64,6 +71,7 @@ async function settledGoto(page, cfg, route) {
   }
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`${route} did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+  failedRequests(settle, route);
 }
 
 export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId) {
@@ -116,6 +124,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
       await row.click();
       const settle = await tracker.wait({ timeoutMs: 20000 });
       if (!settle.settled) throw new Error(`the workspace did not settle on sample ${s.id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+      failedRequests(settle, `the workspace on sample ${s.id}`);
       frame = await currentWorkspaceFrame(page, s.frameOrder);
     }
     out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_reused: start.reuse });
