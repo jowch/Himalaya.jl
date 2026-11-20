@@ -348,6 +348,37 @@ end
         end
     end
 
+    @testset "a restart resumes each experiment at its persisted rescan tier" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "quiet", path = dir, data_dir = dir, analysis_dir = dir)
+            DBInterface.execute(db,
+                "UPDATE experiments SET ingest_status = 'complete' WHERE id = ?", [exp_id])
+            quiet_tick() = HimalayaUI._rescan_tick!(db, exp_id;
+                cheap_check_fn = (_, _) -> false, ticks_before_daily = 2, ticks_before_stop = 2)
+            restart!() = (HimalayaUI.stop_all_rescan_timers!(); HimalayaUI.rearm_rescan_schedulers!(db))
+            try
+                restart!()
+                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["fast"]
+
+                quiet_tick(); quiet_tick()
+                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["daily"]
+                restart!()
+                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["daily"]
+
+                quiet_tick(); quiet_tick()
+                @test HimalayaUI.rescan_interval(exp_id) === nothing
+                restart!()
+                @test HimalayaUI.rescan_interval(exp_id) === nothing
+                @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
+            finally
+                HimalayaUI.stop_all_rescan_timers!()
+                SQLite.close(db)
+            end
+        end
+    end
+
     @testset "DELETE /api/experiments/{id} removes experiment + cascade" begin
         db, dir, exp_id = scan_test_db()
         lid = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 2)
@@ -539,6 +570,32 @@ end
             @test r2.status in (200, 202)
         end
         SQLite.close(db)
+    end
+
+    @testset "a manual rescan that finds new files resets the backoff to the fast tier" begin
+        db, dir, exp_id = scan_test_db()
+        DBInterface.execute(db, """
+            UPDATE experiments SET ingest_status = 'complete', last_scan_tier = 'stopped',
+                                   consecutive_empty_ticks = 2 WHERE id = ?""", [exp_id])
+        status() = Tables.rowtable(DBInterface.execute(db,
+            "SELECT ingest_status, last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id = ?",
+            [exp_id]))[1]
+        try
+            with_test_server(db) do port, base
+                r = HTTP.post("$base/api/experiments/$exp_id/scan";
+                    body    = JSON3.write(Dict(:force => true)),
+                    headers = ["Content-Type" => "application/json"],
+                    status_exception = false)
+                @test r.status == 202
+                @test timedwait(() -> status().ingest_status == "complete", 30.0) === :ok
+                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["fast"]
+            end
+            @test status().last_scan_tier == "fast"
+            @test status().consecutive_empty_ticks == 0
+        finally
+            HimalayaUI.stop_all_rescan_timers!()
+            SQLite.close(db)
+        end
     end
 
     @testset "POST /api/experiments creates experiment + starts async scan" begin
