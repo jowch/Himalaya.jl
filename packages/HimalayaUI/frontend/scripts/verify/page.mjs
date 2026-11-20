@@ -70,7 +70,7 @@ export async function open(cfg, route, flags) {
     }
     const settle = await finish(tracker, flags);
     return {
-      ok: settle ? settle.settled : true,
+      ...verdict(settle, flags),
       url: page.url(),
       title: await page.title(),
       status: response?.status() ?? null,
@@ -129,6 +129,18 @@ async function resolveOne(page, flags) {
   return { loc, what, count };
 }
 
+function verdict(settle, flags) {
+  if (!settle) return { ok: true };
+  if (!settle.settled) return { ok: false };
+  if (settle.httpErrors.length === 0 || flags["allow-http-errors"]) return { ok: true };
+  const first = settle.httpErrors[0];
+  return {
+    ok: false,
+    error: `${settle.httpErrors.length} request(s) failed, first ${first.method} ${new URL(first.url).pathname} returned ${first.status}`,
+    hint: "the page may look fine while the server rejected the change; pass --allow-http-errors when the failure is the point",
+  };
+}
+
 async function finish(tracker, flags) {
   if (flags["no-settle"]) {
     tracker.disarm();
@@ -146,7 +158,7 @@ async function act(page, flags, action) {
     throw e;
   }
   const settle = await finish(tracker, flags);
-  return { ok: settle ? settle.settled : true, url: page.url(), settle };
+  return { ...verdict(settle, flags), url: page.url(), settle };
 }
 
 export async function click(cfg, flags) {
@@ -213,6 +225,6 @@ export async function settle(cfg, flags) {
       }
     }
     const result = await tracker.wait({ timeoutMs });
-    return { ok: result.settled, url: page.url(), ...result };
+    return { ...verdict(result, flags), url: page.url(), ...result };
   });
 }

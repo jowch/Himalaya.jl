@@ -16,6 +16,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <button onclick="setTimeout(() => history.pushState({}, '', '/done'), 800)">Later</button>
   <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
   <button onclick="fetch('/hang')">Hang</button>
+  <button onclick="fetch('/api/reject', { method: 'PATCH' })">Rejected</button>
   <label>Path <input id="p"></label>
   <section id="out" aria-busy="false"></section>
 </main>
@@ -70,6 +71,11 @@ before(async () => {
       return;
     }
     if (req.url === "/hang") return;
+    if (req.url === "/api/reject") {
+      res.statusCode = 400;
+      res.end('{"error":"no patchable fields"}');
+      return;
+    }
     res.setHeader("Content-Type", "text/html");
     res.end(PAGE);
   });
@@ -120,6 +126,17 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.equal(code, 1, "an action that never settles must fail");
   assert.equal(r.settle.settled, false);
   assert.match(r.settle.inflight[0], /\/hang$/);
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected"));
+  assert.equal(code, 1, "an action whose request the server rejected must fail");
+  assert.equal(r.settle.settled, true);
+  assert.deepEqual(r.settle.httpErrors.map((e) => [e.method, new URL(e.url).pathname, e.status]), [["PATCH", "/api/reject", 400]]);
+  assert.match(r.error, /PATCH \/api\/reject returned 400/);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--allow-http-errors"));
+  assert.equal(code, 0, JSON.stringify(r));
+  ({ code, r } = await run("click", "--role", "button", "--name", "Load"));
+  assert.equal(code, 0, JSON.stringify(r));
+  assert.deepEqual(r.settle.httpErrors, []);
 
   ({ code, r } = await run("click", "--role", "button", "--name", "Twin"));
   assert.equal(code, 1);

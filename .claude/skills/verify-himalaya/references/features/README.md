@@ -127,7 +127,7 @@ Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for 
   ```
 - **Check:** `bin/verify api GET /api/experiments/1` shows `"description": null` after the clear.
 - **Gotchas:**
-  - Clearing sends `{"description": null}`, not an empty string. Exercise the clear, not only an edit: the server once answered it with 400, and the page kept the old description without showing an error.
+  - Clearing sends `{"description": null}`, not an empty string. Exercise the clear, not only an edit: the server once answered it with 400 and the page showed no error. `press` now fails when a request it triggered returns 4xx/5xx, so that case reads `"ok": false` with the failing request under `settle.httpErrors`.
   - "Rescan now" changes the rescan schedule (it goes back to hourly checks when new files are found), which no page shows. Check the schedule in the backend tests, not here.
 
 ## Not mapped yet
