@@ -35,6 +35,9 @@ function parse_prp(path::AbstractString)
     detector               = missing
     exposure_time_s        = missing
     horizontal_position_mm = missing
+    transmitted_counts     = missing
+    incident_monitor       = missing
+    counting_time_s        = missing
 
     for line in eachline(path)
         # Timestamp line has a different format: "Time this file was written: DD Mon YYYY HH:MM:SS"
@@ -86,6 +89,32 @@ function parse_prp(path::AbstractString)
                 @warn "parse_prp: could not parse Exposure time" path val_raw
             end
 
+        # physics: I_signal is the transmitted beam behind the sample (the beamstop
+        # physics: APD), integrated over the counting time and already dark-corrected.
+        # physics: Raw I_1 is not: in a typical 15 s exposure its dark counts are
+        # physics: ~97% of the total, so it is never used as a stand-in.
+        elseif key == "I_signal" && val_str !== nothing
+            try
+                transmitted_counts = parse(Float64, val_str)
+            catch
+                @warn "parse_prp: could not parse I_signal" path val_raw
+            end
+
+        # physics: I_0 is the ion chamber upstream of the sample, the incident flux.
+        elseif startswith(key, "I_0(") && val_str !== nothing
+            try
+                incident_monitor = parse(Float64, val_str)
+            catch
+                @warn "parse_prp: could not parse I_0" path val_raw
+            end
+
+        elseif key == "Counting time" && val_str !== nothing
+            try
+                counting_time_s = parse(Float64, val_str)
+            catch
+                @warn "parse_prp: could not parse Counting time" path val_raw
+            end
+
         elseif key == "Horizontal position" && val_str !== nothing
             try
                 horizontal_position_mm = parse(Float64, val_str)
@@ -103,5 +132,8 @@ function parse_prp(path::AbstractString)
         detector               = detector,
         exposure_time_s        = exposure_time_s,
         horizontal_position_mm = horizontal_position_mm,
+        transmitted_counts     = transmitted_counts,
+        incident_monitor       = incident_monitor,
+        counting_time_s        = counting_time_s,
     )
 end
