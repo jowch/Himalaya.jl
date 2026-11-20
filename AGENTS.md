@@ -118,7 +118,7 @@ When reviewing a PR (as reviewer, not author):
 - FK enforcement is ON — use `ON DELETE SET NULL` in DDL for FKs that must survive deletion
 - PKs use `AUTOINCREMENT` on mention-target tables (experiments, samples, exposures, peaks, indices)
 - `apply_event!(InTransaction(), ...)` inside `with_idempotency` — never the public `apply_event!(db, req; ...)` from within a queue mutation
-- `persist_analysis!` and `scan_and_group!` are transactional — add new writes inside `_persist_analysis_inner!` / the `scan_and_group!` write transaction
+- `persist_analysis!` is transactional, and `scan_and_group!` persists loads/samples/exposures in one write transaction (its geometry fill is a separate, earlier one) — add new writes inside `_persist_analysis_inner!` / that persist transaction
 
 ## Critical frontend patterns
 
@@ -138,7 +138,7 @@ When reviewing a PR (as reviewer, not author):
 - The stale-indices reanalyze affordance (a role=`alert`, no dedicated component) is derived from index `inputs_hash` vs exposure `analysis_inputs_hash` mismatch; the `useReanalyzeExposure` path is gated on `useExposureHasPendingPeakOps` so it doesn't flash mid-op
 - `useExposureHasPendingPeakOps` gates any UI reading `peaks(id)` derivatively during in-flight ops
 - `MutationCache.getAll()` insertion order is load-bearing for replay-as-rerun
-- Experiment dirs are read-only at runtime (except `himalaya config new`)
+- Experiment dirs are read-only at runtime (except the legacy `himalaya config new` and `migrate-toml`)
 - `Fm3m` is missing from `indexpeaks` dispatch — known gap, don't fix opportunistically
 
 ## Contract testing (six layers)

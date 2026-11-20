@@ -85,7 +85,7 @@ To assert SSE fanout, register a `(pending = Channel{String}(64),)` directly on 
 
 ## Read-only experiment directories
 
-Himalaya must never create, modify, or delete files inside an experiment dir at runtime (except `himalaya config new`). Ingestion is read-only with respect to the experiment dir and now lives in the HTTP scan path (`scan_and_group!` in `ingest.jl`), not the CLI — the manifest-driven `init`/`reingest` CLI ingest was deleted by the ingestion redesign. Tests that need a populated DB without a real on-disk scan use `seed_experiment!` (`test/seed.jl`), which writes experiment/sample/exposure rows directly via the Phase-A writers.
+Himalaya must never create, modify, or delete files inside an experiment dir at runtime (except the legacy `himalaya config new` and `migrate-toml`). Ingestion is read-only with respect to the experiment dir and now lives in the HTTP scan path (`scan_and_group!` in `ingest.jl`), not the CLI — the manifest-driven `init`/`reingest` CLI ingest was deleted by the ingestion redesign. Tests that need a populated DB without a real on-disk scan use `seed_experiment!` (`test/seed.jl`), which writes experiment/sample/exposure rows directly via the Phase-A writers.
 
 ## Curation lifecycle
 

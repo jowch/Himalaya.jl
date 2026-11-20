@@ -43,7 +43,7 @@ stays cheap because it runs interactively over SMB: a handful of shallow
 |-------|---------|
 | `name` | `basename(root)` |
 | `data_dir` | `root/data` if it exists, else `root` |
-| `analysis_dir` | The directory that holds the integration `.dat` files, found by probing one image stem against `root/analysis`, its subdirectories, and the subdirectories of `root/analysis/automatic_analysis`. Falls back to `root/analysis`, else `nothing`. |
+| `analysis_dir` | The directory that holds the integration `.dat` files, found by probing the stem of the first `*.tif` in `data_dir` against `root/analysis`, its subdirectories, and the subdirectories of `root/analysis/automatic_analysis`. Falls back to `root/analysis`, else `nothing`. |
 | `image_pattern`, `metadata_pattern`, `integration_pattern` | Set together with `analysis_dir` by the same probe (see [File patterns](#file-patterns)). `nothing` when the probe finds no integration file. |
 | `setup_file` | The latest `setup_info_*.txt` at the top of `root` or `root/analysis`. |
 | `setup_ambiguous` | `true` when no setup file was found, or when setup files exist in both places. |
@@ -51,18 +51,21 @@ stays cheap because it runs interactively over SMB: a handful of shallow
 ### File manifest
 
 `GET /api/fs/manifest` answers "what would a scan of these settings find?"
-without writing anything. It returns:
+without writing anything. `path` is the `data_dir`. It returns:
+
+- `total`: the number of non-hidden files in `data_dir`.
 
 - `matched`: how many stems match the image, metadata and integration
   patterns. Images and metadata files are matched in `data_dir`, and
   integration files in `analysis_dir` when it is given.
 - `unmatched`: every image stem that is missing its metadata or integration
-  file, with a `near` filename when an almost-matching file exists (wrong case
+  file, with a `miss` kind (`metadata`, `integration` or `image`) and a `near` filename when an almost-matching file exists (wrong case
   or one extra character in the extension, such as `.PRP` or `.prpx`). Image
   files with a near-miss extension (`.tiff` or `.TIF` against a `.tif` pattern)
   are listed too. These are the usual cause of a scan that finds half the data.
 - `geometry` and `discrepancies`: geometry derived from up to 50 metadata files
-  plus the `setup_file` (see [Geometry](#geometry)).
+  plus the `setup_file`, or, when none is given, any `setup_info_*.txt` in
+  `data_dir/analysis` (see [Geometry](#geometry)).
 - `matched_files`: up to 12 matched image filenames, for display.
 
 ### Approve
@@ -100,9 +103,10 @@ without writing anything. It returns:
 The row is created with `ingest_status = 'scanning'` and the route answers
 `202 {id, status: "scanning", name, data_dir}`. The first scan then runs on a
 spawned task. It ends with `ingest_status` set to `complete` (and the rescan
-scheduler armed) or `failed`. Progress goes out over SSE as
-`ingest_started`, `ingest_progress` (with a `stage` of `discovery`,
-`analyzing` or `thumbnails`), and then `ingest_complete` or `ingest_failed`.
+scheduler armed) or `failed`. Progress goes out on the SSE `curation`
+frame with a `kind` of `ingest_started`, `ingest_progress` (with a `stage` of
+`discovery`, `analyzing` or `thumbnails`), and then `ingest_complete` or
+`ingest_failed`. Frames from a rescan also carry `phase: "rescan"`.
 
 ## Configuration fields
 
@@ -110,10 +114,12 @@ All of these are columns on the `experiments` row.
 
 | Column | Set by | Editable later |
 |--------|--------|----------------|
-| `name`, `description` | Create, or `PATCH` | Yes, a plain write |
+| `name` | Create, or `PATCH` | Yes, a plain write |
+| `description` | `PATCH` only | Yes, a plain write |
 | `data_dir`, `analysis_dir`, `path` | Create | No: `PATCH` returns `400` |
 | `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Yes (see [Rescans](#rescans)) |
-| `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um`, `q_units` | Create, or the scan's fill-only step | Yes: the field's `*_source` becomes `user` |
+| `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Yes: the field's `*_source` becomes `user` |
+| `q_units` | `PATCH` only | Yes: its source becomes `user`. Reported as `A-1` with source `default` while `NULL` |
 
 `path` mirrors `data_dir` for new experiments. `manifest_path`, `config` and
 `experiment_type` are legacy columns that the funnel leaves `NULL` (see
@@ -168,7 +174,10 @@ source for each field:
 A field that could not be derived has source `default` and a `NULL` value.
 
 The scan's geometry step is fill-only (`_fill_unset_geometry!`, `ingest.jl`): it
-writes a field only while its source is still `default`. A rescan never
+writes a field only while its source is still `default`. It derives from the
+scanned metadata files and the setup files it finds by walking up from
+`analysis_dir` (`_find_setup_files`), not from the funnel's chosen
+`setup_file`. A rescan never
 re-derives geometry that create committed or that the user edited.
 
 The Focus page draws beam-centred q-rings only when `energy_kev`,
@@ -177,13 +186,14 @@ set. Otherwise it falls back to a centred, decorative overlay.
 
 ## Scan and grouping
 
-`scan_and_group!(db, experiment_id)` is the only ingest path. It reads
+`scan_and_group!(db, experiment_id)` is the ingest path. (The only other code that
+inserts exposures is `regroup_experiment!`, behind `himalaya upgrade-grouping`.) It reads
 `data_dir`, `analysis_dir` and the patterns from the row, then:
 
 1. **Discovers** exposures with `scan_directory` (`grouping.jl`): one per image
    in `data_dir`, with its metadata file parsed (`parse_prp`, `prp.jl`) and its
-   integration file located. An empty directory returns `status = :empty` and
-   writes nothing.
+   integration file located. If no file matches the image pattern, it returns
+   `status = :empty` and writes nothing.
 2. **Fills geometry** that is still unset (see above).
 3. **Groups** exposures with `group_into_samples`: it splits them into loads at
    large time gaps, and clusters each load into slots by horizontal position.
@@ -216,12 +226,12 @@ There are three ways a scan runs again after create:
   background. With `{"force": true}` it always scans. Otherwise it first runs
   `cheap_change_check`, which compares the number of files in `data_dir` ending
   in the image pattern's suffix with the number of exposure rows, and scans only
-  if there are more files.
+  if there are more files. It re-arms the scheduler only when a scan ran.
 - **The rescan scheduler** (`server.jl`) runs the same check on a timer: hourly,
   then daily after 6 quiet hourly checks, then stopped after 3 quiet daily
-  checks. A detected change puts it back on hourly. It is armed after each
-  successful scan, and on server start for every experiment whose ingest is
-  `complete`.
+  checks. A detected change puts it back on hourly, even if that scan then
+  fails. It is armed after a successful first scan, and on server start for
+  every experiment whose ingest is `complete`.
 - **A pattern edit.** `PATCH` with a pattern field stores it, and the
   Configuration page then calls the scan route with `force: true` so the new
   pattern applies straight away. The `PATCH` also clears `scan_signature`, but
@@ -256,14 +266,15 @@ lab-notebook CSV, and the CLI ingested them. That path, including
   columns when those are set. Analysis, the trace route and series traces call
   it, and only use the integration pattern from the result.
 - **`_beamline_from_config`** (`routes_experiments.jl`) reads beam centre,
-  pixel size and `q_units` from the blob, but only for legacy rows with no
-  typed geometry columns set.
+  pixel size and `q_units` from the blob for legacy rows with no typed
+  geometry columns set. The samples list (`routes_samples.jl`) also falls back
+  to the blob for `q_units` whenever the column is `NULL`.
 - **`himalaya upgrade-grouping`** retrofits a legacy experiment's samples and
   exposures to the current grouping while keeping its curation. It is a
   dry run unless `--apply` is passed.
-- **`himalaya config list`, `himalaya config new` and `himalaya migrate-toml`**
-  still work on `experiment.toml` files, but nothing in ingest or analysis reads
-  those files.
+- **`himalaya config list`** lists the built-in templates, and
+  **`himalaya config new`** and **`himalaya migrate-toml`** create and rewrite
+  `experiment.toml` files. Nothing in ingest or analysis reads those files.
 
 ## CLI reference
 
@@ -291,8 +302,9 @@ himalaya migrate-toml <experiment-dir>
     Legacy experiment.toml tooling (see above).
 ```
 
-`-e` takes an id, a name or a path. When it is left out, the command uses the
-only registered experiment, and fails with a list if there are several.
+`-e` takes an id, a name or a path. When it is left out, `analyze` and `show`
+use the only registered experiment and fail with a list if there are several,
+and `upgrade-grouping` runs on every experiment.
 
 ## Further reading
 

@@ -167,7 +167,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 - [peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
 - [scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
-- [experiment-config.md](docs/experiment-config.md) — `experiment.toml` schema, read-only contract, filename association, CLI reference.
+- [experiment-config.md](docs/experiment-config.md) — New-experiment funnel, experiment configuration fields, file patterns, geometry, scan and grouping, rescans, read-only contract, legacy TOML, CLI reference.
 - [frontend-dev-loop.md](docs/frontend-dev-loop.md) — running a dev session against a live backend.
 - [demo.md](docs/demo.md) — synthetic demo experiment, `make demo`, and running the app in a cloud session.
 - [event-log.md](docs/event-log.md) — `apply_event!` dispatcher contract, hash memoization invariants, SSE multiplayer semantics.
