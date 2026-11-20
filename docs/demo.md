@@ -42,7 +42,7 @@ funnel's layout auto-detect (`resolve_experiment_layout`, routes_fs.jl) recognis
 ```
 scratch/demo-experiment/
   data/<label>_S<scan>_0_001.tif     Pilatus 1M frame, signed Int32 counts, -1 in module gaps
-  data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time…)
+  data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time, beam monitors…)
   analysis/setup_info_*.txt          beam center + AgBe distance (geometry source)
   analysis/automatic_analysis/tot_files/<label>_S<scan>_tot.dat   q  I  sigma
   TRUTH.csv                          per sample: scans, generated phases + lattice, expected

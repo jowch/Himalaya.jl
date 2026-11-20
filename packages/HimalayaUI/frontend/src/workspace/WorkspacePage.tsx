@@ -21,7 +21,8 @@ import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
-import { addCompare, clampDomain, matchScale, scaledTrace, subtractTrace } from "./compare";
+import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
+import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
@@ -153,23 +154,23 @@ export function WorkspacePage(): JSX.Element {
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
   const scales = useMemo(() => {
-    const out = new Map<number, number>();
+    const out = new Map<number, CompareScale>();
     if (!mainTrace) return out;
-    compareTraces.forEach((t, rid) => out.set(rid, matchScale(mainTrace, t, peakQs)));
+    compareTraces.forEach((t, rid) => out.set(rid, compareScale(mainTrace, t, peakQs)));
     return out;
   }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
     return refs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
-      const scale = scales.get(rid);
+      const scale = scales.get(rid)?.scale;
       if (rid === sampleId || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, dash: COMPARE_DASHES[i % COMPARE_DASHES.length]!, emphasis: rid === subRef }];
     });
   }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
-  const subScale = subRef !== undefined ? scales.get(subRef) : undefined;
+  const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
     [mainTrace, subTrace, subScale],

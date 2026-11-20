@@ -15,7 +15,7 @@
 # <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample, a few of
 # them bad on purpose (BAD_SCANS):
 #   <out>/data/<base>_0_001.tif        Pilatus 1M frame, Int32 counts (-1 in module gaps)
-#   <out>/data/<base>_0_001.prp        SSRL PRP sidecar (energy, pipe length, position, time)
+#   <out>/data/<base>_0_001.prp        SSRL PRP sidecar (energy, pipe length, position, time, beam monitors)
 #   <out>/analysis/setup_info_<ts>.txt beam center + AgBe-calibrated distance
 #   <out>/analysis/automatic_analysis/tot_files/<base>_tot.dat   q  I  sigma
 #   <out>/TRUTH.csv                    per sample: generated phases, expected auto call,
@@ -152,14 +152,48 @@ function interpq(x, ys)
     ys[k] + t * (ys[k+1] - ys[k])
 end
 
+# physics: the flat floor is solvent and capillary scatter. Every capillary holds
+# physics: the same buffer, so per unit transmitted flux the floor is the same in
+# physics: every sample and buffer_blank is exactly what a subtraction should remove.
+const SOLVENT_FLOOR = 30.0
+
 "Power-law low-q upturn + flat incoherent floor, shaped like example_tot.dat."
 function background(rng, formfactor::Bool)
     amp = 0.7 + 0.6 * rand(rng)
     if formfactor
         # broad bilayer form-factor bump around 0.1-0.2 Å⁻¹ on a q^-2 upturn
-        return @. amp * (3.0 * Q^-2.0 + 120 * exp(-((Q - 0.14) / 0.045)^2) + 30)
+        return @. amp * (3.0 * Q^-2.0 + 120 * exp(-((Q - 0.14) / 0.045)^2)) + SOLVENT_FLOOR
     end
-    @. amp * (0.06 * Q^-3.2 + 1.2 * Q^-1.2 + 30)
+    @. amp * (0.06 * Q^-3.2 + 1.2 * Q^-1.2) + SOLVENT_FLOOR
+end
+
+# physics: traces are written as raw detector counts, as the beamline's integration
+# physics: writes them, so each scales with the flux that crossed the sample during
+# physics: the exposure. That flux is the incident beam (I_0, which decays between
+# physics: top-ups) times the sample's transmission, and the beamstop APD downstream
+# physics: records it as I_signal. Dividing a trace by its I_signal puts every
+# physics: exposure on one scale; a high-q match cannot, when the sample scatters there.
+# physics: The constants follow the real SSRL 2026 .prp: I_0 ≈ 1.50 V and
+# physics: I_signal ≈ 7365 counts for 15 s on a lipid sample, with the APD's dark rate
+# physics: (18320 /s) included in raw I_1 and removed from I_signal.
+const I0_VOLTS     = 1.5007
+const APD_PER_VOLT = 7365.0 / (1.5007 * 0.86)
+const APD_DARK_RATE = 18320.0
+# physics: I_signal is a small difference of two large numbers: raw I_1 minus the
+# physics: nominal dark rate × counting time, about 97% of I_1 in the real file. The
+# physics: dark rate drifts between its calibration and each exposure, so a 0.1% drift
+# physics: moves I_signal by about 4%. The demo draws that drift, so the monitor scale
+# physics: it shows carries the error a real one would, rather than agreeing exactly.
+const APD_DARK_DRIFT = 0.001
+const TRANSMISSION = Dict("buffer_blank" => 0.93, "vesicles_ULV" => 0.90)
+const AIR_TRANSMISSION = 1.0
+
+"Incident flux (relative) and transmission for one exposure."
+function beam(rng, label, kind, minutes)
+    i0 = (1.0 - 0.18 * mod(minutes, 120) / 120) * (1 + 0.01 * randn(rng))
+    kind === :beam_off && return (i0 = 0.0, t = 0.0)
+    t = kind === :missed ? AIR_TRANSMISSION : get(TRANSMISSION, label, 0.80 + 0.1 * rand(rng))
+    (i0 = i0, t = t)
 end
 
 "Noise-free model trace for one sample, plus the generated (phase, q) reflections."
@@ -257,13 +291,24 @@ end
 # raw Int32 bits as Q0f31 produces the same on-disk format as the beamline.
 write_tif(path, counts::Matrix{Int32}) = save(path, Gray.(reinterpret.(Q0f31, counts)))
 
-function write_prp(path, ts; exposure_time = 15, horiz = 58.9)
+function write_prp(path, ts; exposure_time = 15, horiz = 58.9, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
     stem = splitext(basename(path))[1]
+    counting = exposure_time + 0.8
+    transmitted = APD_PER_VOLT * I0_VOLTS * i0 * transmission * counting / 15.8 * (1 + 0.003 * randn(rng))
+    dark = APD_DARK_RATE * (1 + APD_DARK_DRIFT * randn(rng))
+    i_1 = round(transmitted + dark * counting; digits = 1)
+    i_signal = round(i_1 - APD_DARK_RATE * counting; digits = 1)
     open(path, "w") do io
         println(io, "Image file name: $stem.tif")
         println(io, "Time this file was written: $ts")
+        println(io, "I_Signal (i.e. I1 in header file) is from: i_apd")
+        println(io, "I_signal=$i_signal (corrected for dark counts)")
+        @printf(io, "I_0(daqIon3.0)=%.4f\n", I0_VOLTS * i0)
+        println(io, "I_1(daqCounter1.0)=$i_1")
+        println(io, "I_apd(daqCounter1.0)=$i_1")
         println(io, "Exposure time=$exposure_time")
-        println(io, "Counting time=$(exposure_time + 0.8)")
+        println(io, "Counting time=$counting")
+        println(io, "i1 dark counts=$APD_DARK_RATE per sec")
         println(io, "Beam energy=$ENERGY_EV eV")
         println(io, "Pipe length=$PIPE_LENGTH_MM mm")
         println(io, "Scan motor=motor\nScan range=delta mm")
@@ -329,6 +374,7 @@ function main(args = ARGS)
     # drawn, so `--no-images` yields the same .dat files `make demo` serves.
     rng = Xoshiro(seed)
     rng_img = Xoshiro(seed + 1)
+    rng_beam = Xoshiro(seed + 2)
     data = joinpath(out, "data")
     analysis = joinpath(out, "analysis")
     tot = joinpath(analysis, "automatic_analysis", "tot_files")
@@ -358,6 +404,10 @@ function main(args = ARGS)
             kind === nothing || push!(drops, base)
             kind === :flare && push!(flares, base)
             I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
+            b = beam(rng_beam, label, kind, Dates.value(t - DateTime(2026, 4, 26, 18, 0, 0)) / 60_000)
+            flux = kind === :beam_off ? 1.0 : b.i0 * b.t / 0.86
+            ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
+            I = I .* flux; sig = sig .* flux
             open(joinpath(tot, "$(base)_tot.dat"), "w") do io
                 for j in eachindex(Q)
                     Q[j] <= get(Q_MAX, label, Inf) || continue
@@ -369,10 +419,10 @@ function main(args = ARGS)
             # Each sample sits in its own capillary slot: HimalayaUI groups exposures
             # into samples by horizontal-position jumps (grouping.jl _cluster_slots).
             horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.05 * randn(rng); digits = 3)
-            write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS"); horiz)
+            write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS");
+                      horiz, i0 = b.i0, transmission = b.t, rng = rng_beam)
             tif = joinpath(data, stem * ".tif")
-            ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
-            images ? write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, 1.0; flare = kind === :flare)) : touch(tif)
+            images ? write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, flux; flare = kind === :flare)) : touch(tif)
         end
         phases = isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+")
         lattice = join((@sprintf("%g", c[2]) for c in comps), "+")

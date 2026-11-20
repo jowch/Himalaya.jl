@@ -20,15 +20,14 @@ export function interpolateAt(trace: Pick<Trace, "q" | "I">, q: number): number 
   return x1 === x0 ? y0 : y0 + ((y1 - y0) * (q - x0)) / (x1 - x0);
 }
 
-// physics: the comparison is scaled to the current trace by the median intensity
-// physics: ratio over the top 15% of their shared q range, on the assumption that
-// physics: by high q both curves are mostly solvent and capillary background.
-// physics: Bragg reflections often still sit in that window (HII and higher Lα
-// physics: orders), so q within PEAK_MASK of the current trace's own peaks is left
-// physics: out. A sample's own smooth high-q scattering (bilayer form factor, more
-// physics: lipid) still reads as extra background and over-scales the reference,
-// physics: so the buffer is over-subtracted. Scaling by transmitted flux and
-// physics: exposure time from the beam monitors is the right fix.
+// physics: without beam monitors the comparison is scaled to the current trace by
+// physics: the median intensity ratio over the top 15% of their shared q range, on
+// physics: the assumption that by high q both curves are mostly solvent and capillary
+// physics: background. Bragg reflections often still sit in that window (HII and
+// physics: higher Lα orders), so q within PEAK_MASK of the current trace's own peaks
+// physics: is left out. A sample's own smooth high-q scattering (bilayer form factor,
+// physics: more lipid) still reads as extra background and over-scales the reference,
+// physics: so this is only the fallback for exposures that lack monitors.
 export const SCALE_WINDOW = 0.15;
 export const PEAK_MASK = 0.008;
 
@@ -53,6 +52,80 @@ export function matchScale(
   if (ratios.length === 0) return 1;
   ratios.sort((a, b) => a - b);
   return ratios[Math.floor(ratios.length / 2)]!;
+}
+
+// physics: the SSRL integration writes raw detector counts, so a trace scales with
+// physics: the flux that crossed the sample while the detector counted. I_signal (the
+// physics: beamstop APD behind the sample, dark-corrected) integrates that flux over
+// physics: the counting time, which runs longer than the exposure, so the flux during
+// physics: the exposure is I_signal × exposure time / counting time. It already folds
+// physics: in the sample's transmission, so the ratio of two traces' flux puts a
+// physics: buffer on the sample's scale with no assumption about what either scatters.
+// physics: Raw counts, not counts per I_signal: the error column of the real
+// physics: test/data/*_tot.dat files is Poisson per pixel. Their first bin has
+// physics: σ² = I exactly, and at high q σ²/I ≈ 1e-3 (about 1000 pixels a ring).
+// physics: Divided by an I_signal near 7000, σ²/I would be near 1e-7, under one pixel.
+// physics: If the integration ever does divide by I_signal, set this to "per_flux".
+export const TRACE_NORMALISATION: "raw_counts" | "per_flux" = "raw_counts";
+
+// physics: one _tot.dat integrates every frame of a scan (<base>_0_NNN), so its flux
+// physics: comes from all of them, dropped ones included, since the beamline summed
+// physics: or averaged them before anyone triaged. A sum scales with the frames'
+// physics: total flux, an average with their mean. When both traces hold the same
+// physics: number of frames the two give the same ratio. Until it is known which the
+// physics: beamline does, traces with different frame counts fall back to matching.
+export const TRACE_FRAME_AGGREGATION: "sum" | "mean" | "unconfirmed" = "unconfirmed";
+
+export interface BeamMonitors {
+  transmitted_counts: number | null;
+  exposure_time: number | null;
+  counting_time: number | null;
+}
+
+const positive = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+export function transmittedFlux(m: BeamMonitors | undefined): number | null {
+  if (!m || !positive(m.transmitted_counts) || !positive(m.exposure_time) || !positive(m.counting_time)) return null;
+  return (m.transmitted_counts * m.exposure_time) / m.counting_time;
+}
+
+export interface TraceFlux {
+  total: number;
+  frames: number;
+}
+
+export function traceFlux(frames: readonly BeamMonitors[] | undefined): TraceFlux | null {
+  if (!frames || frames.length === 0) return null;
+  let total = 0;
+  for (const f of frames) {
+    if (!f || !positive(f.exposure_time) || !positive(f.counting_time)) return null;
+    if (typeof f.transmitted_counts !== "number" || !Number.isFinite(f.transmitted_counts)) return null;
+    total += (Math.max(0, f.transmitted_counts) * f.exposure_time) / f.counting_time;
+  }
+  return total > 0 ? { total, frames: frames.length } : null;
+}
+
+export function fluxRatio(main: TraceFlux, ref: TraceFlux): number | null {
+  if (TRACE_FRAME_AGGREGATION === "sum") return main.total / ref.total;
+  if (TRACE_FRAME_AGGREGATION === "mean") return main.total / main.frames / (ref.total / ref.frames);
+  return main.frames === ref.frames ? main.total / ref.total : null;
+}
+
+export interface CompareScale {
+  scale: number;
+  source: "monitor" | "matched";
+}
+
+type ScaledTrace = Pick<Trace, "q" | "I" | "frames">;
+
+export function compareScale(main: ScaledTrace, ref: ScaledTrace, peakQs: readonly number[]): CompareScale {
+  const fm = traceFlux(main.frames);
+  const fr = traceFlux(ref.frames);
+  const ratio = fm && fr ? fluxRatio(fm, fr) : null;
+  if (ratio !== null) {
+    return { scale: TRACE_NORMALISATION === "raw_counts" ? ratio : 1, source: "monitor" };
+  }
+  return { scale: matchScale(main, ref, peakQs), source: "matched" };
 }
 
 export function scaledTrace(ref: Pick<Trace, "q" | "I">, scale: number): { q: number[]; I: number[] } {

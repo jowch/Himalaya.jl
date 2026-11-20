@@ -23,10 +23,17 @@ function write_prp(path::AbstractString;
         pipe_length_mm = 1700,
         detector = "Pilatus 1M",
         exposure_time = 15,
-        horizontal_position_mm = 58.9)
+        horizontal_position_mm = 58.9,
+        i_signal = nothing,
+        i_0 = nothing)
     open(path, "w") do io
         println(io, "Image file name: $(basename(path)[1:end-4]).tif")
         println(io, "Time this file was written: $timestamp")
+        if i_signal !== nothing
+            println(io, "I_Signal (i.e. I1 in header file) is from: i_apd")
+            println(io, "I_signal=$i_signal (corrected for dark counts)")
+        end
+        i_0 === nothing || println(io, "I_0(daqIon3.0)=$i_0")
         println(io, "Exposure time=$exposure_time")
         println(io, "Counting time=$(exposure_time + 0.8)")
         println(io, "Beam energy=$beam_energy_ev eV")
@@ -346,6 +353,44 @@ end
         trunc_prp = HimalayaUI.parse_prp(trunc_path)
         @test trunc_prp.horizontal_position_mm === missing
         @test trunc_prp.detector === missing
+        @test trunc_prp.transmitted_counts === missing
+        @test trunc_prp.incident_monitor === missing
+        @test trunc_prp.counting_time_s === missing
+    end
+
+    @testset "parse_prp beam monitors" begin
+        dir = mktempdir()
+        p = joinpath(dir, "HA_01_001_S395_0_001.prp")
+        write(p, """
+            Image file name: HA_01_001_S395_0_001.tif
+            Time this file was written: 01 Nov 2026 13:32:38
+            I_Signal (i.e. I1 in header file) is from: i_apd
+            I_signal=7365.0 (corrected for dark counts)
+            I_0(daqIon3.0)=1.5007
+            I_1(daqCounter1.0)=296821.0
+            I_2(daqCounter1.1)=55470836.4 (corrected for dark counts)
+            I_apd(daqCounter1.0)=296821.0
+            Exposure time=15
+            Counting time=15.8
+            i1 dark counts=18320.0 per sec
+            Beam energy=9000.027604502573 eV
+            Beam Intensity Reference: i1 i2 acquisition_time
+            empty(air)=285.0 12753866.0 20260526_184126
+            water=37652.0 7800567 20261027_0010
+            """)
+        prp = HimalayaUI.parse_prp(p)
+        @test prp.transmitted_counts ≈ 7365.0
+        @test prp.incident_monitor ≈ 1.5007
+        @test prp.counting_time_s ≈ 15.8
+        @test prp.exposure_time_s ≈ 15.0
+
+        mixed = joinpath(dir, "mixed_case.prp")
+        write(mixed, "I_Signal=812.5 (corrected for dark counts)\n")
+        @test HimalayaUI.parse_prp(mixed).transmitted_counts ≈ 812.5
+
+        q = joinpath(dir, "no_signal.prp")
+        write(q, "I_1(daqCounter1.0)=296821.0\nExposure time=15\n")
+        @test HimalayaUI.parse_prp(q).transmitted_counts === missing
     end
 
     @testset "slot clustering" begin
@@ -641,6 +686,73 @@ end
         samps2 = Tables.rowtable(DBInterface.execute(db,
             "SELECT id FROM samples WHERE experiment_id = ?", [exp_id]))
         @test length(samps2) == 2  # samples unchanged (sample dedup keyed on a stable load_id)
+    end
+
+    @testset "scan_and_group! stores beam monitors; backfill_monitors! fills old rows once" begin
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        stems = ["HA_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001" for fi in 1:2]
+        for (fi, stem) in enumerate(stems)
+            write_prp(joinpath(data_dir, "$stem.prp");
+                timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
+                exposure_time = 15.0, i_signal = 7000.0 + fi, i_0 = 1.5)
+            write(joinpath(data_dir, "$stem.tif"), "fake tif")
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        db = fresh_db()
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "test-monitors", path = dir,
+            data_dir = data_dir, analysis_dir = analysis_dir)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+
+        monitors() = Tables.rowtable(DBInterface.execute(db,
+            "SELECT filename, transmitted_counts, incident_monitor, counting_time FROM exposures
+              WHERE experiment_id = ? ORDER BY filename", [exp_id]))
+        rows = monitors()
+        @test [r.transmitted_counts for r in rows] ≈ [7001.0, 7002.0]
+        @test all(r.incident_monitor ≈ 1.5 for r in rows)
+        @test all(r.counting_time ≈ 15.8 for r in rows)
+
+        @test all(r -> r.monitors_read == 1, Tables.rowtable(DBInterface.execute(db,
+            "SELECT monitors_read FROM exposures WHERE experiment_id = ?", [exp_id])))
+
+        DBInterface.execute(db, """UPDATE exposures SET transmitted_counts = NULL,
+            incident_monitor = NULL, counting_time = NULL, monitors_read = 0""")
+        DBInterface.execute(db,
+            "UPDATE exposures SET transmitted_counts = 1.0 WHERE filename = ?", [stems[2]])
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+        @test all(r -> ismissing(r.counting_time), monitors())
+
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 2
+        rows = monitors()
+        @test rows[1].transmitted_counts ≈ 7001.0
+        @test rows[2].transmitted_counts ≈ 1.0
+        @test all(r.counting_time ≈ 15.8 for r in rows)
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 0
+
+        write_prp(joinpath(data_dir, "$(stems[1]).prp"); exposure_time = 15.0)
+        DBInterface.execute(db, """UPDATE exposures SET transmitted_counts = NULL,
+            incident_monitor = NULL, monitors_read = 0 WHERE filename = ?""", [stems[1]])
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 1
+        @test ismissing(monitors()[1].transmitted_counts)
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 0
+    end
+
+    @testset "migrate_exposures_beam_monitors! adds the columns to an old exposures table" begin
+        db = SQLite.DB()
+        DBInterface.execute(db, "CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT)")
+        DBInterface.execute(db, "CREATE TABLE exposures (id INTEGER PRIMARY KEY, filename TEXT)")
+        DBInterface.execute(db, "INSERT INTO exposures (filename) VALUES ('a')")
+        HimalayaUI.migrate_exposures_beam_monitors!(db)
+        HimalayaUI.migrate_exposures_beam_monitors!(db)
+        cols = HimalayaUI.cols_of(db, "exposures")
+        @test all(c in cols for c in ("transmitted_counts", "incident_monitor", "counting_time", "monitors_read"))
+        r = first(Tables.rowtable(DBInterface.execute(db, "SELECT * FROM exposures")))
+        @test ismissing(r.transmitted_counts)
+        @test r.monitors_read == 0
     end
 
     @testset "derive_sample_flags" begin

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCompare, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
+import { addCompare, compareScale, fluxRatio, traceFlux, transmittedFlux, TRACE_FRAME_AGGREGATION, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
 const background = (x: number): number => 5 + 1 / x;
@@ -98,5 +98,73 @@ describe("compare", () => {
     expect(clampDomain([0.1, 0.3], [0.05, 0.2])).toEqual([0.1, 0.2]);
     expect(clampDomain([0.3, 0.4], [0.05, 0.2])).toBeNull();
     expect(clampDomain(null, [0.05, 0.2])).toBeNull();
+  });
+});
+
+describe("beam-monitor scaling", () => {
+  const mon = (transmitted_counts: number | null, exposure_time: number | null = 15, counting_time: number | null = 15.8) => ({
+    transmitted_counts, exposure_time, counting_time,
+  });
+  const withFrames = <T extends object>(t: T, ...frames: ReturnType<typeof mon>[]) => ({ ...t, frames });
+
+  it("measures the flux through the sample during the detector exposure, not the longer counting window", () => {
+    expect(transmittedFlux(mon(7900))).toBeCloseTo((7900 * 15) / 15.8, 6);
+  });
+
+  it("has no flux when a monitor is missing, zero or not a number", () => {
+    expect(transmittedFlux(mon(null))).toBeNull();
+    expect(transmittedFlux(mon(0))).toBeNull();
+    expect(transmittedFlux(mon(7000, null))).toBeNull();
+    expect(transmittedFlux(mon(7000, 15, null))).toBeNull();
+    expect(transmittedFlux(mon(Number.NaN))).toBeNull();
+    expect(transmittedFlux(undefined)).toBeNull();
+  });
+
+  it("adds every frame of a scan, a beam-off frame counting as no flux, and needs monitors on all of them", () => {
+    expect(traceFlux([mon(7900), mon(7900)])).toEqual({ total: (2 * 7900 * 15) / 15.8, frames: 2 });
+    expect(traceFlux([mon(7900), mon(-3)])).toEqual({ total: (7900 * 15) / 15.8, frames: 2 });
+    expect(traceFlux([mon(7900), mon(null)])).toBeNull();
+    expect(traceFlux([mon(-3)])).toBeNull();
+    expect(traceFlux([])).toBeNull();
+    expect(traceFlux(undefined)).toBeNull();
+  });
+
+  it("scales a raw-count reference by the ratio of transmitted flux, even when the sample scatters at high q", () => {
+    const sample = withFrames({ q, I: q.map((x) => 1.2 * background(x) + 40 * x) }, mon(6000));
+    const buffer = withFrames({ q, I: q.map((x) => 2 * background(x)) }, mon(10000));
+    const r = compareScale(sample, buffer, []);
+    expect(r.source).toBe("monitor");
+    expect(r.scale).toBeCloseTo(0.6, 9);
+    expect(Math.min(...subtractTrace(sample, buffer, r.scale).d)).toBeGreaterThan(0);
+  });
+
+  it("puts exposures of different length on one scale", () => {
+    expect(compareScale(withFrames({ q, I: q }, mon(7000, 30, 30.8)), withFrames({ q, I: q }, mon(7000, 15, 15.8)), []).scale)
+      .toBeCloseTo((30 / 30.8) / (15 / 15.8), 9);
+  });
+
+  it("uses the scan's total flux when both traces hold the same number of frames", () => {
+    const r = compareScale(withFrames({ q, I: q }, mon(6000), mon(2000)), withFrames({ q, I: q }, mon(4000), mon(4000)), []);
+    expect(r.source).toBe("monitor");
+    expect(r.scale).toBeCloseTo(1, 9);
+  });
+
+  it("falls back to matching while it is unconfirmed whether a scan's frames are summed or averaged and the counts differ", () => {
+    expect(TRACE_FRAME_AGGREGATION).toBe("unconfirmed");
+    const sample = withFrames({ q, I: q.map((x) => 3 * background(x)) }, mon(7000), mon(7000));
+    const buffer = withFrames({ q, I: q.map(background) }, mon(7000));
+    expect(fluxRatio({ total: 2, frames: 2 }, { total: 1, frames: 1 })).toBeNull();
+    const r = compareScale(sample, buffer, []);
+    expect(r.source).toBe("matched");
+    expect(r.scale).toBeCloseTo(3, 3);
+  });
+
+  it("falls back to the peak-masked high-q match when either trace lacks monitors", () => {
+    const sample = withFrames({ q, I: q.map((x) => 3 * background(x)) }, mon(7000));
+    const buffer = withFrames({ q, I: q.map(background) }, mon(null));
+    const r = compareScale(sample, buffer, []);
+    expect(r.source).toBe("matched");
+    expect(r.scale).toBeCloseTo(3, 3);
+    expect(compareScale({ q, I: sample.I }, withFrames({ q, I: buffer.I }, mon(7000)), []).source).toBe("matched");
   });
 });
