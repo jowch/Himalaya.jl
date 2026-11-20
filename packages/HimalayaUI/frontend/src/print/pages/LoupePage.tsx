@@ -258,7 +258,7 @@ export function LoupePage(): JSX.Element {
       announce("A dropped frame can't be the representative");
       return;
     }
-    if (activeExposure.selected) {
+    if (activeExposure.id === representativeId) {
       announce("Already the representative frame");
       return;
     }
@@ -266,7 +266,7 @@ export function LoupePage(): JSX.Element {
       onSuccess: () => showToast("Set as the representative frame", "success"),
       onError: notifySaveFailed,
     });
-  }, [activeExposure, setRepresentative]);
+  }, [activeExposure, representativeId, setRepresentative]);
 
   const handleAddTag = useCallback((t: Tag) => {
     addTag.mutate({ key: t.key, value: t.value ?? "" });

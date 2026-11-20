@@ -67,8 +67,8 @@ vi.mock("../../src/queries", () => ({
 // store): the page consumes its route-resolution status, so shimming it would
 // hide the mid-session bogus-URL behaviour (F-STALEURL).
 // Stub only the effect hook (it touches queries + the store); keep the real
-// `acceptableExposures` so the exposure-axis stepper filters rejected frames
-// against the same predicate production uses (FO-EXPSKIP).
+// resolver so the exposure-axis stepper filters rejected frames against the
+// same rule production uses (FO-EXPSKIP).
 vi.mock("../../src/hooks/useAutoPickExposure", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/hooks/useAutoPickExposure")>()),
   useAutoPickExposure: () => {},

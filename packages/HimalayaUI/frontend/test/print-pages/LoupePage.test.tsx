@@ -353,6 +353,7 @@ describe("LoupePage", () => {
     const announce = vi.fn();
     setAnnounceImpl(announce);
     try {
+      state.exposures = [exp({ id: 1, selected: true }), exp({ id: 2, status: "rejected" })];
       renderAt(42);
       fireEvent.keyDown(getScope(), { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "r" });

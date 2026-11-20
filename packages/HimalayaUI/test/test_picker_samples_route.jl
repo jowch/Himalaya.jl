@@ -127,6 +127,18 @@ using HimalayaUI: picker_samples
             @test rows[1][:indexing_exposure_id] == 200   # higher id wins among multiple selected
         end
     end
+
+    @testset "a dropped selected frame is not the indexing exposure" begin
+        mktempdir() do tmp
+            db = open_prepared_clone(tmp)
+            DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'E', '/tmp', '/tmp/data', '/tmp/analysis')")
+            DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name) VALUES (10, 1, 'S')")
+            DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected, status) VALUES (100, 10, 'a', 1, 'rejected')")
+            DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected) VALUES (200, 10, 'b', 0)")
+            DBInterface.execute(db, "INSERT INTO exposures (id, sample_id, filename, selected, status) VALUES (300, 10, 'c', 0, 'rejected')")
+            @test picker_samples(db, 1)[1][:indexing_exposure_id] == 200
+        end
+    end
 end
 
 @testset "picker_samples corpus (no experiment_id)" begin

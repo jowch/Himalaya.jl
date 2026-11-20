@@ -21,6 +21,7 @@ import { SampleTableRow } from "../components/SampleTableRow";
 import { toSampleRowModel } from "./samplesAdapters";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
 import { isKept } from "../../lib/exposure";
+import { announce } from "../../lib/announce";
 import { useListCursor } from "../interaction/useListCursor";
 import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
@@ -187,7 +188,12 @@ export function ExperimentCorpusPage(): JSX.Element {
     setExposureStatus.mutate({ exposureId: activeFrame.id, status: dropping ? "rejected" : null });
   }, [activeFrame, setExposureStatus]);
   const representativeFrame = useCallback(() => {
-    if (activeFrame) setRepresentative.mutate(activeFrame.id);
+    if (!activeFrame) return;
+    if (!isKept(activeFrame)) {
+      announce("A dropped frame can't be the representative");
+      return;
+    }
+    setRepresentative.mutate(activeFrame.id);
   }, [activeFrame, setRepresentative]);
 
   usePageActions({

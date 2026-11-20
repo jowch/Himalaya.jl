@@ -143,10 +143,13 @@ function register_exposures_routes!()
     @patch "/api/exposures/{id}/select" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT sample_id FROM exposures WHERE id = ?", [id]))
+            "SELECT sample_id, status FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "exposure not found")))
+        is_kept_exposure(rows[1]) || return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "a dropped exposure can't be the representative")))
         sample_id = Int(rows[1].sample_id)
 
         return with_idempotency(db, req) do

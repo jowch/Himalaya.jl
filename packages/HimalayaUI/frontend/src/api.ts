@@ -117,8 +117,8 @@ export interface Load {
 export interface CorpusSample extends Sample {
   q_units: string;
   phase?: string | null;
-  /** The representative exposure's durable assignment state (selected=1 else
-   *  highest-id). Drives the contact-sheet status: `form_factor` shows a
+  /** The representative exposure's durable assignment state (`representative_exposure_id`:
+   *  the selected frame if kept, else the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
    *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
    *  everything else reads "Not indexed". Absent on older payloads → treated as
    *  unindexed. */

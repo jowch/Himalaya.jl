@@ -28,8 +28,9 @@ describe.each(cases as Case[])("representative frame: $case", (c) => {
 
   it("is the frame Loupe opens on", () => {
     const list = exposures(c);
-    const expected = c.representative ?? list.at(-1)?.id ?? null;
+    const expected = c.representative ?? (list.length ? Math.max(...list.map((e) => e.id)) : null);
     expect(defaultExposureId(list) ?? null).toBe(expected);
+    expect(defaultExposureId([...list].reverse()) ?? null).toBe(expected);
   });
 });
 

@@ -273,14 +273,15 @@ describe("LoupePage action declaration", () => {
   });
 
   it("r (representative) through the keyboard layer fires setRepresentative", async () => {
-    renderLoupe(42, { exposures: [makeExposure(100, { selected: false })] });
+    renderLoupe(42, { exposures: [makeExposure(100, { selected: true }), makeExposure(101)] });
     await screen.findByTestId("loupe-page");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
     // r should trigger handleSetRepresentative → setRepresentative.mutate
     // Since it's not the representative, it calls selectExposureMutate (not setStatusMutate).
     fireEvent.keyDown(window, { key: "r" });
     expect(setStatusMutate).not.toHaveBeenCalled();
     expect(selectExposureMutate).toHaveBeenCalledOnce();
-    expect(selectExposureMutate).toHaveBeenCalledWith(100, expect.anything());
+    expect(selectExposureMutate).toHaveBeenCalledWith(101, expect.anything());
   });
 });
 

@@ -520,24 +520,18 @@ let
         end
     end
 
-    @testset "cli_analyze auto-selects the first non-rejected exposure when none is selected" begin
-        # Binary-status regression guard: with every exposure status=NULL (kept)
-        # and none selected, the fallback must pick the first NON-rejected frame.
-        # The pre-binary predicate keyed on status == "accepted", which nothing
-        # writes, so it silently left all-NULL samples with no representative.
+    @testset "cli_analyze leaves the representative pick alone" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir     = mktempdir()
         withenv("HIMALAYA_DB_PATH" => db_file) do
             db = open_db(db_file)
             seeded = setup_exp_dir(db, dir; name="ExpSel", stems=["ST001", "ST002"])
-            # Reject the first frame so the fallback must skip it and land on the
-            # second (the first KEPT frame) — exercises the `!= "rejected"` branch.
             DBInterface.execute(db, "UPDATE exposures SET status='rejected' WHERE id=?",
                                 [seeded.exposure_ids[1]])
             cli_analyze(["-e", dir])
             selected = [Int(r.id) for r in DBInterface.execute(db,
                 "SELECT id FROM exposures WHERE selected=1")]
-            @test selected == [seeded.exposure_ids[2]]
+            @test isempty(selected)
         end
     end
 
@@ -550,10 +544,8 @@ let
             setup_exp_dir(db, dir1; name="ExpAll1", stems=["ST001"])
             setup_exp_dir(db, dir2; name="ExpAll2", stems=["ST002"])
             cli_analyze(["--all"])
-            # One exposure per experiment; --all must have visited both, so each
-            # sample ends up with its (sole, kept) exposure selected.
             n = [Int(r.n) for r in DBInterface.execute(db,
-                "SELECT COUNT(*) AS n FROM exposures WHERE selected=1")]
+                "SELECT COUNT(*) AS n FROM exposures WHERE analysis_inputs_hash IS NOT NULL")]
             @test n == [2]
             @test_throws ErrorException cli_analyze(["--all", "-e", dir1])
         end

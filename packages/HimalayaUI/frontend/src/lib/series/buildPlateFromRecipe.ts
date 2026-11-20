@@ -12,8 +12,8 @@
  *   - order = recipe `position` (tiebreak recipe-row id), excluded rows skipped
  *     (a deliberate exclusion, not a failure — same `excluded = 0` filter);
  *   - each sample resolves to its indexing/representative exposure (the
- *     picker's `indexing_exposure_id`, which encodes the SAME highest-id
- *     selected-else-highest-id rule — comparisons.jl
+ *     picker's `indexing_exposure_id`, which encodes the SAME
+ *     representative-frame rule (representative.jl) — comparisons.jl
  *     `_picker_samples_projection`, mirrored by events.jl
  *     `_resolve_series_plate!` on the create path);
  *   - `display_order` is sequential over the RESOLVED members (no gaps);

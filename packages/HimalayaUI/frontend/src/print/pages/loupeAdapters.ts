@@ -13,7 +13,8 @@ export interface LoupeTag extends Tag {
 }
 
 export function defaultExposureId(exposures: Exposure[]): number | undefined {
-  return (representativeExposure(exposures) ?? exposures.at(-1))?.id;
+  const newest = exposures.reduce<Exposure | undefined>((best, e) => (best && best.id > e.id ? best : e), undefined);
+  return (representativeExposure(exposures) ?? newest)?.id;
 }
 
 /**

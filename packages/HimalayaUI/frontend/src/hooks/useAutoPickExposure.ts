@@ -33,7 +33,7 @@ export function resolveActiveExposure(
  * Auto-select the right exposure for the active sample (focus workspace) and
  * PERSIST it to the store, so consumers that read `activeExposureId` directly
  * (the exposure stepper, deliberate switches, the loupe) stay coherent. The
- * selection rule lives in `resolveActiveExposure` (above) — the page resolves
+ * selection rule lives in `resolveActiveExposure` — the page resolves
  * the same value at render time, so this effect only reconciles the store.
  *
  * Extracted from PlotCard so the regression tests subscribe to the same effect
