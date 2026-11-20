@@ -358,9 +358,13 @@ end
                 HimalayaUI.start_rescan_scheduler!(db, exp_id;
                     tick_interval_seconds = 86400.0, first_tick_seconds = 0.2,
                     cheap_check_fn = (_, _) -> (Threads.atomic_add!(checks, 1); false))
-                @test timedwait(() -> checks[] >= 1, 10.0) === :ok
+                quiet_ticks() = Tables.rowtable(DBInterface.execute(db,
+                    "SELECT consecutive_empty_ticks FROM experiments WHERE id = ?", [exp_id]))[1].consecutive_empty_ticks
+                @test timedwait(() -> quiet_ticks() == 1, 10.0) === :ok
+                @test checks[] == 1
             finally
                 HimalayaUI.stop_all_rescan_timers!()
+                lock(() -> nothing, HimalayaUI._rescan_lock(exp_id))
                 SQLite.close(db)
             end
         end
