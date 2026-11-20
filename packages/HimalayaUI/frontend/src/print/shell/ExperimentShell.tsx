@@ -189,6 +189,13 @@ export function ExperimentShell(): JSX.Element {
               )}
             </div>
             <Button
+              variant="accent"
+              data-testid="experiment-workspace-button"
+              onClick={() => navigate(`/experiments/${expId}/workspace`)}
+            >
+              Open workspace
+            </Button>
+            <Button
               variant="outline"
               data-testid="experiment-rescan-button"
               disabled={isProcessing}

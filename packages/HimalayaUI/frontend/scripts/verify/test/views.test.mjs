@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frameFromLabels, statusFromText } from "../views.mjs";
+import { frameFromLabels, statusFromText, workspaceStart } from "../views.mjs";
 import { tracked } from "../settle.mjs";
 
 test("the pressed thumbnail's frame number maps to the exposure list order", () => {
@@ -32,4 +32,14 @@ test("settle ignores SSE, fonts, the favicon and in-page blob or data URLs", () 
   assert.equal(tracked(req("image", "data:image/png;base64,AA")), false);
   assert.equal(tracked(req("other", "http://h/favicon.svg")), false);
   assert.equal(tracked(req("image", "http://h/favicon.ico?v=2")), false);
+});
+
+test("the workspace is read in place when the shared tab is already on it", () => {
+  const ui = "http://localhost:5173";
+  assert.deepEqual(workspaceStart(`${ui}/experiments/1/workspace/7`, ui, 1, 3), { reuse: true, route: null });
+  assert.deepEqual(workspaceStart(`${ui}/experiments/1/workspace`, ui, 1, 3), { reuse: true, route: null });
+  assert.deepEqual(workspaceStart(`${ui}/experiments/2/workspace/7`, ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
+  assert.deepEqual(workspaceStart(`${ui}/experiments/1/corpus`, ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
+  assert.deepEqual(workspaceStart("about:blank", ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
+  assert.deepEqual(workspaceStart("http://elsewhere:9000/experiments/1/workspace/7", ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
 });

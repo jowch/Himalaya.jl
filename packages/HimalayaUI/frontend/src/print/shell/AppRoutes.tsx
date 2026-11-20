@@ -8,9 +8,6 @@ import { TopNav } from "./TopNav";
 import { ExperimentShell } from "./ExperimentShell";
 import { LoupePage } from "../pages/LoupePage";
 import { FocusPage } from "../pages/FocusPage";
-import { SeriesFolioPage } from "../pages/SeriesFolioPage";
-import { SeriesBuilderPage } from "../pages/SeriesBuilderPage";
-import { SeriesScopingPage } from "../pages/SeriesScopingPage";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
 import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
@@ -22,6 +19,7 @@ import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
 import { InteractionDock } from "../interaction/InteractionDock";
 import { useKeyboardLayer } from "../interaction/useKeyboardLayer";
+import { WorkspacePage } from "../../workspace/WorkspacePage";
 
 /** Thin wrapper that reads :id from the route and passes it to GroupingReviewPage. */
 function GroupingReviewRoute(): JSX.Element {
@@ -105,28 +103,11 @@ function AppShell(): JSX.Element {
 }
 
 /**
- * SeriesBuilderRoute — keys the builder on its `:id` so each series mounts a
- * fresh instance.
- *
- * BU-MODESWITCH-LEAK: the builder holds id-scoped LOCAL state (the view
- * offset/scale, the draft undo/redo stacks, the Confirm-chain refs). React
- * reuses the same element instance across `/series/:id` param changes, so
- * without a per-id key those bleed from one series into the next (series 2's
- * view offset and undo history showing up on series 1). The global draft slot is
- * intentionally recoverable on return; this only resets the ephemeral per-visit
- * state that should never have crossed a series boundary.
- */
-function SeriesBuilderRoute(): JSX.Element {
-  const { id } = useParams<{ id: string }>();
-  return <SeriesBuilderPage key={id} />;
-}
-
-/**
  * AppRoutes — the single hoisted top-level <Routes> table, plus the shared
  * root effects (global shortcuts).
  *
  * T3.2 (App Shell Unification): one layout route, <AppShell>, hosts every
- * surface — the corpus pages, the experiment tree, Focus/Loupe, Series, AND
+ * surface — the corpus pages, the experiment tree, Focus/Loupe, AND
  * the `*` stale catch-all (PageBody). The legacy shell trio was
  * deleted in T3.2. Pre-shell redirects (`/`, `/index*`,
  * `/compare*`, `/samples`) sit outside the layout route so no chrome mounts
@@ -149,15 +130,7 @@ export function AppRoutes(): JSX.Element {
         <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
         {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
         <Route path="/sample/:sampleId" element={<FocusPage />} />
-        {/* I3.3 (#173): series folio — corpus-wide masonry of saved series. */}
-        <Route path="/series" element={<SeriesFolioPage />} />
-        {/* I3.4 (#174): series scoping — the confirm-and-build gate that writes
-            scoping sample_tags, then lands on the folio. Static /series/new
-            ranks above the dynamic /series/:id (react-router v6 specificity). */}
-        <Route path="/series/new" element={<SeriesScopingPage />} />
-        {/* I3.5a (#175): series builder — read-only visual surface. Keyed on
-            :id (SeriesBuilderRoute) so per-series visits don't leak local state. */}
-        <Route path="/series/:id" element={<SeriesBuilderRoute />} />
+        <Route path="/series/*" element={<Navigate to="/experiments" replace />} />
         {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on
             /experiments (the new home). Splat covers /inspect, /inspect/:exp,
             /inspect/:exp/:sample. */}
@@ -186,16 +159,15 @@ export function AppRoutes(): JSX.Element {
       {/* I4.4 (#181): Index retired. Bare `/` and the sampleless legacy Index
           URLs land on the experiments home; a slug-bearing `/index/:exp/:sample`
           resolves to the focus workspace via IndexSlugRedirect. */}
+      <Route path="/experiments/:id/workspace/:sampleId?" element={<WorkspacePage />} />
       <Route path="/" element={<Navigate to="/experiments" replace />} />
       <Route path="/index" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
       {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
       <Route path="/samples" element={<Navigate to="/experiments" replace />} />
-      {/* I3.6 (#177): Compare retired. The series stage replaces it; all
-          `/compare*` deep-links redirect to the series folio. */}
-      <Route path="/experiments/:eid/compare/*" element={<Navigate to="/series" replace />} />
-      <Route path="/compare/all/*" element={<Navigate to="/series" replace />} />
+      <Route path="/experiments/:eid/compare/*" element={<Navigate to="/experiments" replace />} />
+      <Route path="/compare/all/*" element={<Navigate to="/experiments" replace />} />
     </Routes>
   );
 }

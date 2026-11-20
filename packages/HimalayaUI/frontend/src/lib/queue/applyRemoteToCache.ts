@@ -254,6 +254,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       } else {
         qc.invalidateQueries({ queryKey: queryKeys.assignment(id) });
       }
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     case "speculative_created": {
@@ -273,6 +274,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "set_exposure_status": {
       qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
         old ? { ...old, status: payload?.status as Exposure["status"] } : old);
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     case "post_message": {
@@ -365,6 +367,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       // picker after a foreign re-selection would silently commit the
       // PREVIOUS representative exposure.
       qc.invalidateQueries({ queryKey: queryKeys.corpusPickerSamples });
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     case "analyze_run": {

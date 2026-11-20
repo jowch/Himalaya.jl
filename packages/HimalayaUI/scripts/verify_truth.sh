@@ -6,6 +6,7 @@ cd "$REPO"
 OUT="${VERIFY_OUT:-scratch/verify/truth}"
 DB_DIR="${DEMO_DB_DIR:-scratch/demo}"
 CONFIRM_SAMPLE="${VERIFY_CONFIRM_SAMPLE:-MO_H2O}"
+export DEMO_UI_MODE="${DEMO_UI_MODE:-build}"
 HELP=packages/HimalayaUI/scripts/verify_truth.mjs
 mkdir -p "$OUT"
 failed=()

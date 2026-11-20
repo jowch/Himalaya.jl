@@ -20,7 +20,14 @@ make demo-clean   # delete the generated data and demo DBs
 
 Overrides: `DEMO_DIR=/tmp/demo make demo` (data location), `DEMO_DB_DIR` (demo DB + logs, default `scratch/demo`), `DEMO_API_PORT` /
 `DEMO_UI_PORT` (ports, for running beside another backend; see
-[frontend-dev-loop.md](frontend-dev-loop.md)).
+[frontend-dev-loop.md](frontend-dev-loop.md)), `DEMO_UI_MODE=build` (serve a `vite build`
+through `vite preview` instead of the dev server).
+
+`make verify-truth` sets `DEMO_UI_MODE=build`. It loads Loupe and Focus about 90 times
+in one Chrome tab, and every load of the dev server's ~280 unbundled modules leaves the
+renderer holding shared-memory handles until garbage collection. In CI that piles up past
+2,000 handles and Chrome starts failing loads with `ERR_INSUFFICIENT_RESOURCES`. The built
+app loads a few chunks, stays flat, and is what people actually run.
 
 `make demo` keeps its DB in `scratch/demo/` between runs (edits persist; ingest is
 skipped when the experiment is already there, and a scan that was interrupted or
