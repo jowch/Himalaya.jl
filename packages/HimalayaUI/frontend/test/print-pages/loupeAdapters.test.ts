@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Exposure, SampleTag } from "../../src/api";
 import {
-  defaultExposureId,
   buildExposureImageUrl,
   toGalleryExposures,
   toMetaEntries,
@@ -15,21 +14,6 @@ function exp(over: Partial<Exposure>): Exposure {
     tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
   };
 }
-
-describe("defaultExposureId", () => {
-  it("prefers the representative (selected)", () => {
-    expect(defaultExposureId([exp({ id: 1 }), exp({ id: 2, selected: true })])).toBe(2);
-  });
-  it("falls back to the first kept (non-rejected) frame", () => {
-    expect(defaultExposureId([exp({ id: 1, status: "rejected" }), exp({ id: 2, status: null })])).toBe(2);
-  });
-  it("falls back to first exposure", () => {
-    expect(defaultExposureId([exp({ id: 7, status: null }), exp({ id: 8, status: null })])).toBe(7);
-  });
-  it("returns undefined for an empty list", () => {
-    expect(defaultExposureId([])).toBeUndefined();
-  });
-});
 
 describe("buildExposureImageUrl", () => {
   it("builds a full image url with the version param", () => {
@@ -54,6 +38,15 @@ describe("toGalleryExposures", () => {
     ]);
     expect(out[0]).toEqual({ id: 10, src: "/api/exposures/10/image?thumb=1&v=v9", frameNo: 1, representative: true, rejected: false });
     expect(out[1]).toEqual({ id: 11, src: "/api/exposures/11/image?thumb=1&v=v9", frameNo: 2, representative: false, rejected: true });
+  });
+
+  it("marks the representative the views open on, not a dropped selected frame", () => {
+    const out = toGalleryExposures([
+      exp({ id: 10, status: null }),
+      exp({ id: 11, selected: true, status: "rejected" }),
+      exp({ id: 12, status: null }),
+    ]);
+    expect(out.map((g) => g.representative)).toEqual([false, false, true]);
   });
 
   it("a kept (null-status) frame is simply not-rejected", () => {

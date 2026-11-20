@@ -89,7 +89,7 @@ export const COMMANDS = {
   },
   "check-truth": {
     usage: "check-truth [--strict] [--ui] [--truth <TRUTH.csv>] [--experiment <id>]",
-    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also reports an `invariants` block (status matches the confirmed call, representative never a dropped frame, views agree) that does not change the exit code. --ui opens each sample's Loupe and Focus in the browser and reads which frame each opens on.",
+    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also checks an `invariants` block (status matches the confirmed call, representative never a dropped frame, views agree); a broken one fails the exit code. --ui opens each sample's Loupe and Focus in the browser and reads which frame each opens on.",
     spec: { booleans: ["strict", "ui"], strings: ["truth", "experiment"] },
     run: (cfg, f) => checkTruth(cfg, f),
   },

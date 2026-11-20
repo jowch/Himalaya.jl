@@ -78,14 +78,14 @@ describe("LoupeSidePanel", () => {
     expect(onSetRepresentative).toHaveBeenCalledOnce();
   });
 
-  it("threads representativeDropped through to the RepresentativeBox warning", () => {
-    setup({ representativeDropped: true });
-    expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
+  it("tells the RepresentativeBox when this frame is dropped", () => {
+    setup({ dropped: true });
+    expect(screen.getByTestId("rep-dropped-note")).toBeInTheDocument();
   });
 
-  it("no dropped-representative warning by default", () => {
+  it("no dropped-frame note on a kept frame", () => {
     setup();
-    expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rep-dropped-note")).not.toBeInTheDocument();
   });
 
 

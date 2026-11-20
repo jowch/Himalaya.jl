@@ -15,6 +15,7 @@ import {
 import type { Tag } from "../ui";
 import { EmptyState, Button } from "../ui";
 import { resolveSampleOrder } from "../../lib/sample/sampleOrder";
+import { isKept, keptExposures, representativeExposure } from "../../lib/exposure";
 import { announce } from "../../lib/announce";
 import { showToast } from "../../lib/toast";
 import { isValidationError } from "../../lib/queue/errors";
@@ -117,6 +118,7 @@ export function LoupePage(): JSX.Element {
   });
 
   const computedDefault = defaultExposureId(exposures);
+  const representativeId = representativeExposure(exposures)?.id;
 
   // SA-F2: ?exposure=<id> preselects the frame the contact sheet was
   // double-clicked on. Read once for the INITIAL selection only — flipping
@@ -222,14 +224,14 @@ export function LoupePage(): JSX.Element {
   // null). There is no separate Keep/Restore.
   const handleToggleDrop = useCallback(() => {
     if (!activeExposure) return;
-    const dropping = activeExposure.status !== "rejected";
+    const dropping = isKept(activeExposure);
     // LO-LASTFRAME-NOGUARD: dropping the ONLY kept frame leaves the sample with
     // no kept frame at all — a consequential edge the bland "Frame dropped" copy
     // hid. The toggle stays reversible (X again brings it back), so name both the
     // consequence and the reversal gesture rather than guarding it outright (a
     // sample legitimately may end up all-rejected).
     const lastKept =
-      dropping && exposures.filter((e) => e.status !== "rejected").length === 1;
+      dropping && keptExposures(exposures).length === 1;
     setStatus.mutate(
       { exposureId: activeExposure.id, status: dropping ? "rejected" : null },
       {
@@ -252,9 +254,11 @@ export function LoupePage(): JSX.Element {
 
   const handleSetRepresentative = useCallback(() => {
     if (!activeExposure) return;
+    if (!isKept(activeExposure)) {
+      announce("A dropped frame can't be the representative");
+      return;
+    }
     if (activeExposure.selected) {
-      // Already the representative — no mutation, no false success toast.
-      // Quiet SR-only acknowledgement keeps the R key honest.
       announce("Already the representative frame");
       return;
     }
@@ -407,15 +411,9 @@ export function LoupePage(): JSX.Element {
     );
   }
 
-  const isDropped = activeExposure?.status === "rejected";
+  const isDropped = activeExposure ? !isKept(activeExposure) : false;
   // Binary caption: a frame is either dropped or kept (not-rejected).
   const verdictWord = isDropped ? "dropped" : "kept";
-  // Sample-level truth, not frame-level: the backend's Index-stage resolution
-  // never consults status, so a dropped representative still carries forward.
-  const representativeDropped = exposures.some(
-    (e) => e.selected && e.status === "rejected",
-  );
-
   return (
     <PageFrame width="loupe" className="px-8 py-7">
       <div data-testid="loupe-page">
@@ -467,8 +465,7 @@ export function LoupePage(): JSX.Element {
                 <LoupeSidePanel
                   meta={toMetaEntries(activeExposure, exposures)}
                   dropped={!!isDropped}
-                  isRepresentative={activeExposure.selected}
-                  representativeDropped={representativeDropped}
+                  isRepresentative={activeExposure.id === representativeId}
                   tags={toLoupeTags(sample.tags)}
                   onToggleDrop={handleToggleDrop}
                   onSetRepresentative={handleSetRepresentative}

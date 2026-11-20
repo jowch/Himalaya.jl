@@ -1,6 +1,7 @@
 import type { Exposure, SampleTag } from "../../api";
 import type { GalleryExposure } from "../components/ThumbnailGallery";
 import type { MetaEntry, Tag } from "../ui";
+import { representativeExposure } from "../../lib/exposure";
 
 /** Loupe-local tag view-model: the ui `Tag` ({key, value?}) plus the backend
  *  identity (`id`) and provenance (`source`). The `id` is what makes two
@@ -11,13 +12,8 @@ export interface LoupeTag extends Tag {
   source: string;
 }
 
-/** Default exposure when the loupe opens: representative → first kept → first. */
 export function defaultExposureId(exposures: Exposure[]): number | undefined {
-  const representative = exposures.find((e) => e.selected);
-  if (representative) return representative.id;
-  const firstKept = exposures.find((e) => e.status !== "rejected");
-  if (firstKept) return firstKept.id;
-  return exposures[0]?.id;
+  return (representativeExposure(exposures) ?? exposures.at(-1))?.id;
 }
 
 /**
@@ -41,11 +37,12 @@ export function buildExposureImageUrl(
  *  binary: a frame is either dropped (rejected) or kept (the default), so only
  *  the `rejected` channel is carried — kept needs no marker. */
 export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
+  const representative = representativeExposure(exposures)?.id;
   return exposures.map((e, i) => ({
     id: e.id,
     src: buildExposureImageUrl(e, { thumb: true }),
     frameNo: i + 1,
-    representative: e.selected,
+    representative: e.id === representative,
     rejected: e.status === "rejected",
   }));
 }

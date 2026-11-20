@@ -74,16 +74,6 @@ function register_samples_routes!()
             end
         end
 
-        # Per-sample indexing rollup (the R1/#224 contact-sheet seam). Each
-        # sample's status comes from its REPRESENTATIVE exposure — highest-id
-        # `selected=1`, else highest-id — the same exposure the picker/series
-        # index against. Exposures of one sample legitimately disagree (the beam
-        # may miss the ordered phase on some frames; a miss reads like form
-        # factor), so the representative is a faithful one-line summary rather
-        # than a lossy aggregate. We surface that exposure's durable assignment:
-        # its dominant (top-scored) confirmed phase when `indexed`, the
-        # `form_factor` declaration distinctly, else unindexed. Three bulk
-        # queries, no per-sample N+1 (mirrors picker_samples).
         rep_by_sample = Dict{Int, Int}()
         state_by_exp  = Dict{Int, String}()
         phase_by_exp  = Dict{Int, String}()
@@ -92,19 +82,13 @@ function register_samples_routes!()
             ph   = join(fill("?", length(sids)), ",")
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
             for e in Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id, sample_id, selected FROM exposures
+                    "SELECT id, sample_id, selected, status FROM exposures
                      WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
                 push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
             end
             for (sid, exps) in grouped_exps
-                rep = nothing
-                for e in Iterators.reverse(exps)   # highest-id selected wins
-                    if e.selected != 0
-                        rep = Int(e.id); break
-                    end
-                end
-                rep === nothing && (rep = Int(last(exps).id))   # else highest-id
-                rep_by_sample[sid] = rep
+                rep = representative_exposure_id(exps)
+                rep === nothing || (rep_by_sample[sid] = rep)
             end
 
             rep_ids = collect(values(rep_by_sample))

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import cases from "../fixtures/representative-exposure.json";
-import { representativeExposure } from "../../src/lib/exposure";
+import { keptExposures, representativeExposure } from "../../src/lib/exposure";
 import { resolveActiveExposure } from "../../src/hooks/useAutoPickExposure";
 import { defaultExposureId } from "../../src/print/pages/loupeAdapters";
 import type { Exposure } from "../../src/api";
@@ -30,5 +30,16 @@ describe.each(cases as Case[])("representative frame: $case", (c) => {
     const list = exposures(c);
     const expected = c.representative ?? list.at(-1)?.id ?? null;
     expect(defaultExposureId(list) ?? null).toBe(expected);
+  });
+});
+
+describe("keptExposures", () => {
+  it("drops rejected frames and keeps accepted and unmarked ones", () => {
+    const out = keptExposures([{ status: "accepted" }, { status: "rejected" }, { status: null }]);
+    expect(out.map((e) => e.status)).toEqual(["accepted", null]);
+  });
+
+  it("treats a not-yet-loaded list as empty", () => {
+    expect(keptExposures(undefined)).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@ import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { toSampleRowModel } from "./samplesAdapters";
 import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
+import { isKept } from "../../lib/exposure";
 import { useListCursor } from "../interaction/useListCursor";
 import { usePageActions } from "../interaction/usePageActions";
 import { core, page } from "../interaction/core";
@@ -182,7 +183,7 @@ export function ExperimentCorpusPage(): JSX.Element {
   // frame, X again brings it back (status null). A frame is dropped or kept.
   const toggleDropFrame = useCallback(() => {
     if (!activeFrame) return;
-    const dropping = activeFrame.status !== "rejected";
+    const dropping = isKept(activeFrame);
     setExposureStatus.mutate({ exposureId: activeFrame.id, status: dropping ? "rejected" : null });
   }, [activeFrame, setExposureStatus]);
   const representativeFrame = useCallback(() => {

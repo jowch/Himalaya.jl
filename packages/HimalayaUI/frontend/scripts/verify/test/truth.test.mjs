@@ -95,12 +95,12 @@ test("the shown status is what GET /api/samples gives the corpus, on the frame i
   assert.equal(r.summary.shown_reviewed, 1);
 });
 
-test("invariants are reported but never change ok", () => {
+test("a broken invariant fails the gate; an unchecked one does not", () => {
   const r = compareTruth(TRUTH, app());
   assert.equal(r.ok, true);
   assert.deepEqual(r.summary.invariants_failed, []);
   const broken = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
-  assert.equal(broken.ok, true);
+  assert.equal(broken.ok, false);
   assert.deepEqual(broken.summary.invariants_failed, ["status_matches_assignment"]);
   assert.equal(r.invariants.views_agree.checked, false);
   assert.equal(r.invariants.views_agree.ok, null);

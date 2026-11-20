@@ -64,7 +64,7 @@ test("check-truth reads the backend's real endpoint shapes end to end", async ()
   try {
     const code = await main(["check-truth"], { cfg, out });
     const r = out.json();
-    assert.equal(code, 0, JSON.stringify(r, null, 1));
+    assert.equal(code, 1, JSON.stringify(r, null, 1));
     assert.equal(r.experiment_id, 4);
     assert.equal(r.summary.frames_found, 3);
     assert.deepEqual(r.summary.known_gaps, ["MO_PEG5"]);
@@ -160,7 +160,8 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     const r = await checkTruth(cfg, { ui: true }, { views });
     assert.equal(asked[0].experimentId, 4);
     assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"] });
-    assert.equal(r.ok, true);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.summary.invariants_failed, ["status_matches_assignment", "representative_kept", "views_agree"]);
     assert.equal(r.invariants.views_agree.checked, true);
     assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus_api: "MO_H2O_S2", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }]);
     assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["corpus_api", "loupe"]);

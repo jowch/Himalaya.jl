@@ -119,7 +119,7 @@ beforeEach(() => {
 // ── tests ────────────────────────────────────────────────────────────────────
 describe("LoupePage action declaration", () => {
   it("frame stepper next (dock-next-frame) advances the frame count display", async () => {
-    const exposures = [makeExposure(100), makeExposure(101), makeExposure(102)];
+    const exposures = [makeExposure(100, { selected: true }), makeExposure(101), makeExposure(102)];
     renderLoupe(42, { exposures });
     await screen.findByTestId("loupe-page");
     // Initially at frame 1
