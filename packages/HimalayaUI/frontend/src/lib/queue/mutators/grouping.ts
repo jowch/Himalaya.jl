@@ -158,7 +158,10 @@ export const mergeSamplesMutator: Mutator<MergeSamplesInput, MergeSamplesScope, 
   request: (p) => api.mergeSamples(p.loserId, p.survivorId, buildAuthOpts(p)),
   // Invalidate-only confirm: the re-derived flags aren't response-derivable, and
   // the own-op path never calls applyRemoteToCache — so refetch loads(id) here.
-  onSuccess: (p, _response, qc) => invalidateLoads(qc, p.experimentId),
+  onSuccess: (p, _response, qc) => {
+    invalidateLoads(qc, p.experimentId);
+    qc.invalidateQueries({ queryKey: queryKeys.bridges(p.experimentId) });
+  },
 };
 
 // ---------------------------------------------------------------------------

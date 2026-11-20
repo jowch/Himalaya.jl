@@ -29,6 +29,9 @@ function _groups(call, exp_id)
     Set(values(by))
 end
 
+_bridge_rows(db) = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.execute(db,
+    "SELECT sample_id FROM sample_bridges")))
+
 @testset "sample bridges" begin
     @testset "bridging two unbridged samples puts them in one group" begin
         db = open_prepared_clone(mktempdir())
@@ -73,8 +76,10 @@ end
             r = call("DELETE", "/api/samples/$c/bridge"; headers=_BRIDGE_HEADERS)
             @test r.status == 200
             @test _groups(call, exp_id) == Set([Set([a, b])])
+            @test _bridge_rows(db) == Set([a, b])
             call("DELETE", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS)
             @test _groups(call, exp_id) == Set()
+            @test _bridge_rows(db) == Set{Int}()
             r = call("DELETE", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS)
             @test r.status == 200
         end
@@ -94,6 +99,75 @@ end
             @test call("DELETE", "/api/samples/999999/bridge"; headers=_BRIDGE_HEADERS).status == 404
             @test _groups(call, exp_id) == Set()
         end
+    end
+
+    @testset "a lone live sample leaves when its only partner was merged away" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c, d)) = _seed_bridge_samples(db, 4)
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            call("POST", "/api/samples/$c/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(a))
+            DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [d, b])
+            call("DELETE", "/api/samples/$c/bridge"; headers=_BRIDGE_HEADERS)
+            @test _bridge_rows(db) == Set{Int}()
+        end
+    end
+
+    @testset "a merged sample cannot be bridged on either side" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c, d)) = _seed_bridge_samples(db, 4)
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [c, b])
+            @test call("POST", "/api/samples/$b/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(d)).status == 404
+            @test call("POST", "/api/samples/$d/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b)).status == 404
+            @test _groups(call, exp_id) == Set()
+        end
+    end
+
+    @testset "merging a bridged sample hands its bridges to the survivor" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c, d, e)) = _seed_bridge_samples(db, 5)
+        merge(loser, survivor) = call -> call("POST", "/api/samples/$loser/merge"; headers=_BRIDGE_HEADERS,
+            body=Vector{UInt8}(JSON3.write(Dict(:survivor_id => survivor))))
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            @test merge(b, c)(call).status == 200
+            @test _groups(call, exp_id) == Set([Set([a, c])])
+            call("POST", "/api/samples/$d/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(e))
+            @test merge(c, d)(call).status == 200
+            @test _groups(call, exp_id) == Set([Set([a, d, e])])
+            @test merge(e, a)(call).status == 200
+            @test _groups(call, exp_id) == Set([Set([a, d])])
+        end
+        db2 = open_prepared_clone(mktempdir())
+        (exp2, (p, q, r_)) = _seed_bridge_samples(db2, 3)
+        with_inproc_routes(db2) do call
+            call("POST", "/api/samples/$p/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(q))
+            @test merge(r_, p)(call).status == 200
+            @test _groups(call, exp2) == Set([Set([p, q])])
+            @test _bridge_rows(db2) == Set([p, q])
+        end
+    end
+
+    @testset "a body that is not JSON is a 400" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b)) = _seed_bridge_samples(db, 2)
+        with_inproc_routes(db) do call
+            @test call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS,
+                       body=Vector{UInt8}("not json")).status == 400
+        end
+    end
+
+    @testset "deleting the experiment leaves no bridge rows behind" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b)) = _seed_bridge_samples(db, 2)
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            @test call("DELETE", "/api/experiments/$exp_id"; headers=_BRIDGE_HEADERS).status == 200
+        end
+        @test _bridge_rows(db) == Set{Int}()
+        @test isempty(Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_check")))
     end
 
     @testset "a group left with one live sample is not listed" begin

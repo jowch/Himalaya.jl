@@ -56,8 +56,9 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate">{s.name}</span>
                   {bridges > 0 && (
-                    <span data-bridged className="shrink-0 text-xs text-ink-faint">
-                      {bridges === 1 ? "1 bridge" : `${bridges} bridges`}
+                    <span data-bridged title={bridges === 1 ? "1 bridge" : `${bridges} bridges`} className="shrink-0 text-xs text-ink-faint tabular-nums">
+                      <span aria-hidden="true">⇄{bridges}</span>
+                      <span className="sr-only">{bridges === 1 ? "1 bridge" : `${bridges} bridges`}</span>
                     </span>
                   )}
                 </span>

@@ -893,6 +893,30 @@ describe("WorkspacePage", () => {
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 12 } });
   });
 
+  it("a bridged sample can be the subtraction reference", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A3" }));
+    expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
+    expect(screen.getByText("minus A3")).toBeInTheDocument();
+  });
+
+  it("bridging while comparisons are hidden shows them again", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "r" });
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+    fireEvent.keyDown(window, { key: "b" });
+    const input = within(screen.getByRole("dialog")).getByLabelText("Find a sample to bridge to");
+    fireEvent.change(input, { target: { value: "a4" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(1);
+  });
+
   it("Shift B does nothing on a sample without bridges, and B does nothing before a user is set", () => {
     const first = renderAt("/experiments/1/workspace/11");
     fireEvent.keyDown(window, { key: "B", shiftKey: true });
