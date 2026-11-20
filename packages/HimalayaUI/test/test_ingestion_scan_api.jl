@@ -419,7 +419,7 @@ end
             exp_id = HimalayaUI.create_experiment!(db;
                 name = "BT", path = dir, data_dir = dir, analysis_dir = dir)
 
-            # The "change" branch below calls start_rescan_scheduler!, which arms a REAL
+            # The "change" branch below calls set_rescan_tier!, which arms a REAL
             # Timer. Wrap the whole body so that timer (and any other) is always closed
             # and the DB shut even if an assertion throws — a leaked Timer would keep
             # firing against a closed DB.

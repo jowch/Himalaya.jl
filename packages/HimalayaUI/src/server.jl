@@ -210,11 +210,6 @@ function stop_rescan_scheduler!(experiment_id::Int)
     nothing
 end
 
-"""
-    rescan_interval(experiment_id) -> Union{Float64, Nothing}
-
-Seconds between the armed rescan timer's ticks, or `nothing` when no timer is armed.
-"""
 function rescan_interval(experiment_id::Int)
     lock(RESCAN_TIMERS_MU) do
         t = get(RESCAN_TIMERS, experiment_id, nothing)
@@ -264,8 +259,7 @@ path passes nothing and the real cheap-check runs. There is no `scan_fn` seam â€
 the tick calls `scan_and_group!` directly (a no-op on a directory with no matching
 triplets, so the test's empty temp dir needs no stub).
 
-Idempotent: the previous timer is closed and replaced under one lock, so a concurrent
-`rescan_interval` never sees an armed experiment as unarmed.
+Idempotent: calling twice closes the previous timer before installing a new one.
 """
 function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
                                   tick_interval_seconds::Real = RESCAN_TIER_INTERVALS["fast"],
@@ -315,9 +309,7 @@ function rearm_rescan_schedulers!(db::SQLite.DB)
     end
     for r in rows
         try
-            interval = get(RESCAN_TIER_INTERVALS, coalesce(r.last_scan_tier, "fast"), nothing)
-            interval === nothing || start_rescan_scheduler!(db, Int(r.id);
-                tick_interval_seconds = interval)
+            arm_for_tier!(db, Int(r.id), coalesce(r.last_scan_tier, "fast"))
         catch err
             @warn "rearm_rescan_schedulers!: failed to arm" experiment_id = Int(r.id) exception = err
         end
@@ -325,25 +317,25 @@ function rearm_rescan_schedulers!(db::SQLite.DB)
     nothing
 end
 
-"""
-    reset_rescan_to_fast!(db, experiment_id; fast_interval)
+function arm_for_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
+                       interval = get(RESCAN_TIER_INTERVALS, tier, nothing))
+    interval === nothing ? stop_rescan_scheduler!(experiment_id) :
+        start_rescan_scheduler!(db, experiment_id; tick_interval_seconds = interval)
+end
 
-Record that the experiment's data directory changed: persist the `fast` tier with
-a zero empty-tick count and arm the timer at `fast_interval`.
-"""
-function reset_rescan_to_fast!(db::SQLite.DB, experiment_id::Int;
-                               fast_interval::Real = RESCAN_TIER_INTERVALS["fast"])
+function set_rescan_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
+                          interval = get(RESCAN_TIER_INTERVALS, tier, nothing))
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             DBInterface.execute(db, """
                 UPDATE experiments
-                   SET last_scan_tier         = 'fast',
+                   SET last_scan_tier         = ?,
                        consecutive_empty_ticks = 0
                  WHERE id = ?
-            """, [experiment_id])
+            """, [tier, experiment_id])
         end
     end
-    start_rescan_scheduler!(db, experiment_id; tick_interval_seconds = fast_interval)
+    arm_for_tier!(db, experiment_id, tier; interval = interval)
 end
 
 """
@@ -419,7 +411,7 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
             broadcast_progress!(experiment_id; kind = "ingest_failed",
                 processed = 0, total = 0, error = sprint(showerror, err))
         end
-        reset_rescan_to_fast!(db, experiment_id; fast_interval = fast_interval)
+        set_rescan_tier!(db, experiment_id, "fast"; interval = fast_interval)
         return
     end
 
@@ -428,32 +420,9 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
     new_ticks = Int(row[1].consecutive_empty_ticks) + 1
 
     if tier == "fast" && new_ticks >= ticks_before_daily
-        # Advance to daily
-        lock(_DB_WRITE_LOCK) do
-            SQLite.transaction(db) do
-                DBInterface.execute(db, """
-                    UPDATE experiments
-                       SET last_scan_tier         = 'daily',
-                           consecutive_empty_ticks = 0
-                     WHERE id = ?
-                """, [experiment_id])
-            end
-        end
-        start_rescan_scheduler!(db, experiment_id;
-            tick_interval_seconds = daily_interval)
+        set_rescan_tier!(db, experiment_id, "daily"; interval = daily_interval)
     elseif tier == "daily" && new_ticks >= ticks_before_stop
-        # Stop the scheduler
-        lock(_DB_WRITE_LOCK) do
-            SQLite.transaction(db) do
-                DBInterface.execute(db, """
-                    UPDATE experiments
-                       SET last_scan_tier         = 'stopped',
-                           consecutive_empty_ticks = 0
-                     WHERE id = ?
-                """, [experiment_id])
-            end
-        end
-        stop_rescan_scheduler!(experiment_id)
+        set_rescan_tier!(db, experiment_id, "stopped")
     else
         # Stay in current tier, just increment the counter
         lock(_DB_WRITE_LOCK) do
