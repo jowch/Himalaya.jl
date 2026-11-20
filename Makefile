@@ -87,8 +87,6 @@ demo:
 demo-empty:
 	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
 
-# Regenerates and ingests the demo, then checks it against TRUTH.csv fresh, after
-# triage and after an `analyze` re-run (packages/HimalayaUI/scripts/verify_truth.sh).
 verify-truth:
 	packages/HimalayaUI/scripts/verify_truth.sh
 

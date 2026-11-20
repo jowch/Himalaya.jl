@@ -152,8 +152,8 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
   const views = async (_cfg, experimentId, samples) => {
     asked.push({ experimentId, samples });
     return new Map([
-      [10, { corpus_text: "Pn3m", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }],
-      [11, { corpus_text: "Pn3m", loupe: "MO_PEG5_S3", focus: "MO_PEG5_S3" }],
+      [10, { corpus_text: "Pn3m", corpus_kept: "2/2", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }],
+      [11, { corpus_text: "Pn3m", corpus_kept: "1/1", loupe: "MO_PEG5_S3", focus: "MO_PEG5_S3" }],
     ]);
   };
   try {

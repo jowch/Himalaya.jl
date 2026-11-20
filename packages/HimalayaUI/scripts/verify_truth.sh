@@ -1,48 +1,48 @@
 #!/usr/bin/env bash
-# Live check of the synthetic demo against its TRUTH.csv, through the real app:
-# a fresh demo (regenerated, ingested through the New-experiment funnel), after
-# triage drops TRUTH's bad frames, and after `himalaya analyze` re-runs the
-# pipeline, which must not change what any view shows. `make verify-truth` and CI run this. Each step's JSON lands in
-# $VERIFY_OUT; the script exits non-zero if any step fails.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$REPO"
 OUT="${VERIFY_OUT:-scratch/verify/truth}"
 DB_DIR="${DEMO_DB_DIR:-scratch/demo}"
+CONFIRM_SAMPLE="${VERIFY_CONFIRM_SAMPLE:-MO_H2O}"
+HELP=packages/HimalayaUI/scripts/verify_truth.mjs
 mkdir -p "$OUT"
 failed=()
 
 step() {
-  local name=$1; shift
-  if "$@" > "$OUT/$name.json" 2>&1; then
+  local name=$1 ext=$2; shift 2
+  if "$@" > "$OUT/$name.$ext" 2>&1; then
     echo "ok      $name"
   else
-    echo "FAILED  $name (see $OUT/$name.json)"
-    head -c 6000 "$OUT/$name.json"; echo
+    echo "FAILED  $name (see $OUT/$name.$ext)"
+    head -c 6000 "$OUT/$name.$ext"; echo
     failed+=("$name")
   fi
 }
 
+trap 'bin/verify stop > /dev/null 2>&1 || true' EXIT
 bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
-trap 'bin/verify stop > /dev/null 2>&1 || true' EXIT
 
-step 1-fresh bin/verify check-truth --ui
-step 2-triage bin/verify triage
-step 3-triaged bin/verify check-truth --ui
-step 4-analyze env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
-  julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- analyze -e "Demo (synthetic)"
-step 5-after-analyze bin/verify check-truth --ui
-step 6-analyze-changed-nothing node -e '
-  const [a, b] = process.argv.slice(1).map((f) => JSON.parse(require("fs").readFileSync(f, "utf8")));
-  const shown = (r) => Object.fromEntries((r.samples ?? []).map((s) => [s.sample, { shown: s.shown, views: s.views }]));
-  const before = shown(a), after = shown(b);
-  const changed = Object.keys(before).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
-    .map((k) => ({ sample: k, before: before[k], after: after[k] }));
-  console.log(JSON.stringify({ ok: changed.length === 0, rule: "re-running analyze changes nothing a person sees", changed }, null, 2));
-  process.exit(changed.length ? 1 : 0);
-' "$OUT/3-triaged.json" "$OUT/5-after-analyze.json"
+step 1-fresh json bin/verify check-truth --ui --expect fresh
+step 2-triage json bin/verify triage
+step 3-triaged json bin/verify check-truth --ui --expect triaged
+step 4-confirm json node "$HELP" confirm "$OUT/3-triaged.json" "$CONFIRM_SAMPLE"
+step 5-confirmed json bin/verify check-truth --ui --expect triaged
+step 5-shows-confirmed json node "$HELP" confirmed "$OUT/5-confirmed.json" "$CONFIRM_SAMPLE"
+step 6-reindex log env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
+  julia --project=packages/HimalayaUI -e '
+    using HimalayaUI, DBInterface, Tables
+    db = HimalayaUI.open_db()
+    id = Int(HimalayaUI._resolve_experiment(db, "Demo (synthetic)").id)
+    DBInterface.execute(db, "UPDATE exposures SET trace_hash = NULL, analysis_inputs_hash = NULL WHERE experiment_id = ?", [id])
+    HimalayaUI.main(["analyze", "-e", string(id)])
+    stale = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL", [id, "rejected"]))).n
+    stale == 0 || error("$stale kept exposures were not re-indexed")'
+step 7-after-reindex json bin/verify check-truth --ui --expect triaged
+step 8-reindex-changed-nothing json node "$HELP" unchanged "$OUT/5-confirmed.json" "$OUT/7-after-reindex.json"
 
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"
