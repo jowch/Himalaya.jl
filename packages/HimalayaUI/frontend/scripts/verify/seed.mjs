@@ -6,6 +6,7 @@ import { REPO } from "./config.mjs";
 import { UsageError, intFlag } from "./args.mjs";
 import { doctor } from "./doctor.mjs";
 import { reachable } from "./http.mjs";
+import { profileDir, resetBrowserProfile } from "./browser.mjs";
 
 const DEMO_SCRIPT = "packages/HimalayaUI/scripts/demo.sh";
 
@@ -56,6 +57,7 @@ export function seedPlan(cfg, flags) {
     steps.push(`stop the demo servers started by bin/verify (pid file ${pidPath(cfg)})`);
     steps.push(`delete ${cfg.demoDbDir} and ${cfg.demoDbDir}-empty (demo DBs)`);
     steps.push(`delete ${cfg.demoDir} if it holds a TRUTH.csv (make demo-clean)`);
+    steps.push(`close the bin/verify browser and delete its profile ${profileDir(cfg)}, so no open tab or localStorage still shows the old DB`);
   }
   steps.push(`run ${DEMO_SCRIPT}${flags.empty ? " --empty" : ""} detached (log ${path.join(cfg.stateDir, "demo.log")})`);
   steps.push(
@@ -73,6 +75,8 @@ export async function seed(cfg, flags) {
   if (flags.reset) {
     const stopped = await stop(cfg);
     if (stopped.ok === false) return stopped;
+    const browser = await resetBrowserProfile(cfg);
+    if (browser.ok === false) return browser;
     spawnSync("make", ["demo-clean", `DEMO_DIR=${cfg.demoDir}`, `DEMO_DB_DIR=${cfg.demoDbDir}`], { cwd: REPO, stdio: "ignore" });
   }
   const before = await doctor(cfg);

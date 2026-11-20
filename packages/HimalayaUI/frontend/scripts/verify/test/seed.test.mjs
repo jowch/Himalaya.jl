@@ -6,6 +6,7 @@ import path from "node:path";
 import { main } from "../cli.mjs";
 import { loadConfig } from "../config.mjs";
 import { stubBackend } from "./stub.mjs";
+import { resetBrowserProfile } from "../browser.mjs";
 
 function sink() {
   const chunks = [];
@@ -55,4 +56,22 @@ test("--timeout must be an integer number of ms", async () => {
   const cfg = loadConfig({ VERIFY_STATE_DIR: os.tmpdir() });
   assert.equal(await main(["seed", "--timeout", "10m"], { cfg, out }), 1);
   assert.match(out.json().error, /--timeout must be a non-negative integer/);
+});
+
+test("seed --reset plans to throw away the browser profile along with the demo DBs", async () => {
+  const cfg = loadConfig({ VERIFY_STATE_DIR: os.tmpdir() });
+  const out = sink();
+  assert.equal(await main(["seed", "--reset", "--dry-run"], { cfg, out }), 0);
+  assert.ok(out.json().steps.some((s) => s.includes(path.join(os.tmpdir(), "profile"))), JSON.stringify(out.json().steps));
+});
+
+test("resetBrowserProfile deletes the profile so a reset DB is not read through the previous run's tab or localStorage", async () => {
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "verify-profile-"));
+  const storage = path.join(state, "profile", "Default", "Local Storage");
+  fs.mkdirSync(storage, { recursive: true });
+  fs.writeFileSync(path.join(storage, "leveldb"), "himalaya-ui:state");
+  const cfg = loadConfig({ VERIFY_STATE_DIR: state, VERIFY_CDP_PORT: "1" });
+  const r = await resetBrowserProfile(cfg);
+  assert.equal(r.ok, undefined, JSON.stringify(r));
+  assert.equal(fs.existsSync(path.join(state, "profile")), false);
 });
