@@ -23,7 +23,7 @@ Overrides: `DEMO_DIR=/tmp/demo make demo` (data location), `DEMO_DB_DIR` (demo D
 [frontend-dev-loop.md](frontend-dev-loop.md)), `DEMO_UI_MODE=build` (serve a `vite build`
 through `vite preview` instead of the dev server).
 
-`make verify-truth` sets `DEMO_UI_MODE=build`. It loads Loupe and Focus about 90 times
+`make verify-truth` sets `DEMO_UI_MODE=build`. It loads the corpus and the workspace dozens of times
 in one Chrome tab, and every load of the dev server's ~280 unbundled modules leaves the
 renderer holding shared-memory handles until garbage collection. In CI that piles up past
 2,000 handles and Chrome starts failing loads with `ERR_INSUFFICIENT_RESOURCES`. The built
@@ -66,7 +66,7 @@ scratch/demo-experiment/
   Flares are the commonest reason to drop a frame at the beamline, so they are
   the commonest here:
   - Flares, in `MO_H2O_37C` (newest scan), `MO_F127` (oldest), `DOPC_H2O`
-    (newest) and `MO_AMP_10` (newest): the beam clipped the capillary wall. Loupe
+    (newest) and `MO_AMP_10` (newest): the beam clipped the capillary wall. The detector image
     shows a bright horizontal streak through the beamstop, perpendicular to the
     capillary. The sample's rings are still there at about 60% strength, and the
     1D trace gains a low-q excess. Across seeds 1–12, 36 of 48 flares kept the
@@ -75,15 +75,15 @@ scratch/demo-experiment/
     A flare must be dropped, and its auto call may lose phases but must not add
     one.
   - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
-    0.01 counts per pixel plus hot pixels, so Loupe shows a black frame.
+    0.01 counts per pixel plus hot pixels, so the detector image is black.
   - `DOPE_H2O`: the oldest scan missed the capillary: steep q⁻⁴ air and slit
-    scatter over a faint air floor, so Loupe shows a glow at the beamstop and
+    scatter over a faint air floor, so the detector image shows a glow at the beamstop and
     darkness beyond it.
   - `leaked_capillary`: both scans missed the capillary in the same way, so the
     sample has no usable frame.
 
   Nothing drops them at ingest; a triager does. `bin/verify triage`
-  drops them through the endpoint Loupe's Drop uses, so `bin/verify check-truth` can check the corpus
+  drops them through the endpoint the workspace's Drop (X) uses, so `bin/verify check-truth` can check the corpus
   after triage. `make verify-truth` (also a CI job) runs the whole sequence on a
   freshly regenerated demo, all with `--ui`: check-truth expecting every frame
   kept, triage, check-truth expecting every bad frame dropped, confirm

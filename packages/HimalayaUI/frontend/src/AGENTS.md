@@ -18,7 +18,8 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage`, pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot reuses `print/plot/TracePlot`. |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector,comb,export}/` (and `print/waterfall/`) | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder). The `lint:design` appearance guard excludes `print/{plot,detector,comb,export}/` only — `print/waterfall/` is NOT exempt |
-| Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `AppShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
+| Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage`, `ExperimentCorpusPage`, `ConfigurationPage`, `GroupingReviewPage`, `ScanFailedPage` (under the single `AppShell`) |
+| Triage workspace | `workspace/` | `WorkspacePage` at `/experiments/:id/workspace/:sampleId?` (outside `AppShell`); it replaced Focus, Loupe and Series, which were deleted |
 | Hooks | `hooks/` | `useFocusTrap`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |

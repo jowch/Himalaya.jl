@@ -64,7 +64,7 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
 });
 
-test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to the focus workspace", async ({ page }) => {
+test("legacy /index/<exp>/<sample> deep-link resolves the slug and opens the workspace", async ({ page }) => {
   await seedSession(page);
   await page.route(RESOLVE_RE, (route) => {
     route.fulfill({
@@ -77,9 +77,8 @@ test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to 
     });
   });
   await page.goto("/index/lipid/JC001");
-  // IndexSlugRedirect resolves the slug → /sample/42 (the focus workspace).
-  await expect(page).toHaveURL(/\/sample\/42$/);
-  await expect(page.getByTestId("focus-workspace")).toBeVisible();
+  await expect(page).toHaveURL(/\/experiments\/17\/workspace\/42$/);
+  await expect(page.getByTestId("workspace")).toBeVisible();
 });
 
 test("legacy /index deep-link whose slug 404s falls back to the experiments home", async ({ page }) => {

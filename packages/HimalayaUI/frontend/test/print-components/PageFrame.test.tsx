@@ -4,7 +4,7 @@ import { PageFrame, PAGE_WIDTHS } from "../../src/print/components/PageFrame";
 
 describe("PageFrame", () => {
   it("renders children inside a centered frame", () => {
-    render(<PageFrame width="loupe"><p>body</p></PageFrame>);
+    render(<PageFrame width="home"><p>body</p></PageFrame>);
     const frame = screen.getByTestId("page-frame");
     expect(frame).toHaveTextContent("body");
     expect(frame.className).toContain("mx-auto");
@@ -17,7 +17,7 @@ describe("PageFrame", () => {
     }
   });
   it("forwards a placement className", () => {
-    render(<PageFrame width="sheet" className="py-7">x</PageFrame>);
+    render(<PageFrame width="experiment" className="py-7">x</PageFrame>);
     expect(screen.getByTestId("page-frame").className).toContain("py-7");
   });
 });

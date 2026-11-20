@@ -37,6 +37,7 @@ vi.mock("../../src/queries", () => ({
   useAssignment: () => ({ data: state.assignment }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
+  useSetAssignmentState: recorder("state"),
   useSelectExposure: recorder("select"),
   useSetExposureStatus: recorder("status"),
   useAddPeak: recorder("addPeak"),
@@ -806,5 +807,46 @@ describe("WorkspacePage", () => {
     }
     fireEvent.blur(field);
     expect(field.value).toBe("250.0");
+  });
+  it("opens on the frame a link names, and falls back to the representative for a frame of another sample", () => {
+    const { unmount } = renderAt("/experiments/1/workspace/10?exposure=100");
+    expect(currentFrame()).toBe("Frame 1");
+    unmount();
+    renderAt("/experiments/1/workspace/10?exposure=999");
+    expect(currentFrame()).toBe("Frame 2");
+  });
+
+  it("0 marks the frame as no phase (form factor), and 0 again clears it", () => {
+    state.indices = [];
+    renderAt("/experiments/1/workspace/10");
+    const row = screen.getByTestId("workspace-form-factor");
+    expect(row).toHaveAttribute("aria-pressed", "false");
+    fireEvent.keyDown(window, { key: "0" });
+    expect(calls).toEqual([{ hook: "state", boundTo: 101, arg: "form_factor" }]);
+    calls.length = 0;
+    state.assignment = { exposure_id: 101, state: "form_factor", members: [] };
+    fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Frame 2" }));
+    expect(screen.getByTestId("workspace-form-factor")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("workspace-form-factor"));
+    expect(calls).toEqual([{ hook: "state", boundTo: 101, arg: "null" }]);
+  });
+
+  it("on an unselected frame, marks form factor only after the select succeeds", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "0" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
+    calls[0]!.callbacks!.onSuccess!();
+    expect(calls[1]).toEqual({ hook: "state", boundTo: 100, arg: "form_factor" });
+  });
+
+  it("form factor is not offered on a dropped frame or before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-form-factor")).toBeDisabled();
+    fireEvent.keyDown(window, { key: "0" });
+    expect(calls).toEqual([]);
   });
 });

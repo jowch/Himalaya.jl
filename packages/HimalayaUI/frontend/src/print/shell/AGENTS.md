@@ -5,7 +5,7 @@ The live application shell: the single layout shell, the topbar chrome, the rout
 ## Where things live
 
 - **Shell + chrome**: `AppShell` (the single layout shell) wraps `TopNav` (wordmark + stage-tabs + Experiment chip — composed from `../ui` primitives: `TopBar`, `Wordmark`). No appearance utilities live here — chrome appearance is owned by the `ui/` primitives (closed-look / open-placement contract).
-- **Routing**: `AppRoutes` is the route table (experiments / corpus / config / loupe / focus pages, imported from `../pages`). The triage workspace (`/experiments/:id/workspace/:sampleId?`, `src/workspace/`) mounts **outside** `AppShell` with its own header and its own keydown listener (it does not use `useKeyboardLayer` or the two-axis model below). `/series*` and `/compare*` redirect to `/experiments`; the Series pages are unreachable and are deleted with the old pages. `IndexSlugRedirect` and `StaleUrlPage` resolve/repair permalink slugs; `ResolvingFallback` is the in-flight placeholder.
+- **Routing**: `AppRoutes` is the route table (experiments home, new experiment, corpus, configuration and grouping review, imported from `../pages`). The triage workspace (`/experiments/:id/workspace/:sampleId?`, `src/workspace/`) mounts **outside** `AppShell` with its own header and its own keydown listener (it does not use `useKeyboardLayer` or the two-axis model below); `?exposure=<id>` opens it on that frame. Old links go there: `SampleRedirect` handles `/sample/:id` and `/sample/:id/loupe` (keeping `?exposure=`), and `IndexSlugRedirect` resolves `/index/:exp/:sample`. Build links with `workspaceHref` from `SampleRedirect.tsx`. `/series*` and `/compare*` redirect to `/experiments`. `StaleUrlPage` repairs unknown URLs; `ResolvingFallback` is the in-flight placeholder.
 - **Onboarding / modals / errors**: `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. The modals compose `ModalShell` (+ `Button`/`Kicker`/`IconButton`) from `../ui`.
 
 ## Import boundary
@@ -35,13 +35,13 @@ Arrow nav was lifted off the per-page scope-container `onKeyDown` into `arrowHan
 
 `InteractionDock` renders the dock UI directly from the live registry — no separate legend-sync step. `useListCursor` is the cursor primitive: ID-based, roving tabindex, SSE-survival heal.
 
-- **Two-axis model (rev 2, old pages only — supersedes the 2026-06-13 `[`/`]` lock; the workspace uses ↑↓/J for samples, ←→ for frames, 1–9 for phases, X to drop).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = detail (`prevDetail`/`nextDetail`) — candidate *preview* on Focus, frame on Loupe. Exposure stepping is **filmstrip-only** — click `ThumbnailGallery`'s `onSelect`; there is no exposure key.
+- **Two-axis model (corpus only; the workspace uses ↑↓/J for samples, ←→ for frames, 1–9 for phases, 0 for no phase, X to drop).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = the frame cursor on the active sample's thumbnails.
 
 ## The floatingDock lane protocol
 
 The `InfrastructureBanner` is fixed bottom-centre by default (most prominent for a "Saving…" / "Couldn't save" status). A page that mounts an opaque, higher-z fixed bottom-centre action bar — the contact sheet's `CullBar` / `ComposeBar` (`bg-ink z-50`) — paints straight over the banner (`z-40`) and occludes it entirely (the banner still renders, it's just hidden underneath). LA-COLLIDE.
 
-Any page mounting such a bar MUST claim the lane: call `setCenterLaneOccupied(true)` on mount and release it (`false`) on unmount. The banner reads the flag and steps aside to the bottom-right corner (free — toasts own top-right) until the lane clears, so both stay visible (`floatingDock.ts:1-30`; publisher e.g. `../pages/SamplesPage.tsx:232-242`; reader `./InfrastructureBanner.tsx:18-23`). This is **pure convention** — a small dedicated Zustand store (`useFloatingDock`), a plain boolean (not a pixel offset, so no brittle coupling to bar heights), with **no type-system enforcement**. Forget the call and the bar silently occludes the banner.
+Any page mounting such a bar MUST claim the lane: call `setCenterLaneOccupied(true)` on mount and release it (`false`) on unmount. The banner reads the flag and steps aside to the bottom-right corner (free — toasts own top-right) until the lane clears, so both stay visible (`floatingDock.ts`; reader `./InfrastructureBanner.tsx`). This is **pure convention** — a small dedicated Zustand store (`useFloatingDock`), a plain boolean (not a pixel offset, so no brittle coupling to bar heights), with **no type-system enforcement**. Forget the call and the bar silently occludes the banner.
 
 ## Key routes on `:id` when they hold ephemeral per-id local state
 
@@ -50,10 +50,6 @@ React reuses the same element instance across param changes on a single route, s
 ## OnboardingFlow defers `setUser` until `closeTutorial`
 
 For a brand-new user who hasn't seen the tutorial, `onSubmitName` stashes the created user in local `pending` state and switches to the tutorial phase **instead of** calling `setUser()` immediately (`OnboardingFlow.tsx:118-124`). The reason: `setUser()` makes `username !== undefined`, which trips the `if (username !== undefined && phase !== "tutorial") return null` unmount guard (`:96`) and skips the tutorial. The pending user is committed only in `closeTutorial()` (`:130-135`, behind `setTutorialSeen(true)`). Calling `setUser()` at creation time silently breaks the tutorial for new users.
-
-## Loupe stepper's `location.state.sampleOrder` contract
-
-The loupe prev/next stepper lives in the bottom `Dock` (`ui/Dock.tsx`, §3.3): `LoupePage` computes `prevSampleId`/`nextSampleId` via `resolveSampleOrder` + `sampleNeighbors` (~lines 317–330) and passes `gotoSample` to the Dock's IconButton callbacks. `gotoSample` navigates to `/sample/${id}/loupe` carrying the same order forward (~line 331–343). The stepper derives its traversal order from `location.state.sampleOrder` — the serialized contact-sheet order, passed as React Router history state at navigate time. When absent (a direct URL visit, or an entry-point that forgets to pass it), `resolveSampleOrder` falls back to a fresh sort, and the stepper walks a *different* order than the sheet the user came from. Any code navigating to the loupe must pass `navigate(url, { state: { sampleOrder: ordered } })` (the stepper's own `gotoSample` already does, threading the order forward step-to-step). `shell/SampleStepper.tsx` was deleted in T3.3 — the stepper is now composed inline in each page's `<Dock>` children.
 
 ## Anti-patterns
 

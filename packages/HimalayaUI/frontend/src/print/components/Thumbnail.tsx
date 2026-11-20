@@ -17,7 +17,6 @@ export interface ThumbnailProps {
    *  so the cursor stays legible even when it sits on an already-selected thumb,
    *  whose solid accent border would otherwise look identical. */
   cursored?: boolean;
-  /** `"xs"` → 30px (dense Focus exposure strip); `"sm"` → 62px (contact-sheet strip); `"lg"` → 70px (loupe strip). */
   size?: "xs" | "sm" | "lg";
   onClick?: () => void;
   onDoubleClick?: () => void;
@@ -82,11 +81,14 @@ export function Thumbnail({
       aria-label={ariaLabel}
       {...(onClick ? { "aria-pressed": selected } : {})}
       onClick={onClick}
-      {...(onDoubleClick ? { onDoubleClick } : {})}
-      // SA-THUMBKEY: keyboard parity for the double-click→loupe activate. Plain
-      // Enter stays the button's native click (select-toggle); Shift+Enter opens
-      // the loupe AT this frame. preventDefault stops the default Enter-click so
-      // the same keystroke can't ALSO toggle the selection.
+      {...(onDoubleClick
+        ? {
+            onDoubleClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              onDoubleClick();
+            },
+          }
+        : {})}
       {...(onDoubleClick
         ? {
             onKeyDown: (e: React.KeyboardEvent) => {

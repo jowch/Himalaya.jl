@@ -6,6 +6,7 @@ import { useCorpusSamples, useExperiments, useSamples } from "../../queries";
 import type { CorpusSample, Experiment, Sample } from "../../api";
 import { IconButton, ModalShell } from "../ui";
 import { sampleDisplayName } from "../../lib/sample/displayName";
+import { workspaceHref } from "./SampleRedirect";
 
 function navSkeletonRows(n: number): JSX.Element {
   return (
@@ -38,7 +39,7 @@ const SAMPLE_HIT_CAP = 8;
  * - Step "experiment": filters the experiment list; Enter/Tab commits + advances to "sample".
  *   A query that also matches sample names across the whole corpus surfaces a
  *   capped "Samples" group under the experiment matches (SA-F4) — selecting one
- *   skips the cascade and lands straight on /sample/:id. One flat highlight
+ *   skips the cascade and lands straight in the workspace. One flat highlight
  *   order spans both groups, experiments first.
  * - Step "sample": filters samples in the chosen experiment; Enter/Tab commits + closes modal.
  * - Backspace on empty input rewinds one step (removes sample chip, then experiment chip).
@@ -154,23 +155,17 @@ export function NavModal(): JSX.Element | null {
     }
     setSample(id);
     closeModal();
-    // M1 on-ramp: committing a sample is a door into the indexing workspace.
-    // Before this the picker only mutated the store and left the URL where it
-    // was; now it actually lands you on /sample/:id (the third door, beside the
-    // contact-sheet status cell and the loupe "Open in the Index stage" link).
-    navigate(`/sample/${id}`);
+    const eid = pendingExp ?? committedExp;
+    navigate(eid !== undefined ? workspaceHref(eid, id) : `/sample/${id}`);
   };
 
-  // SA-F4: a direct sample hit from the experiment step skips the cascade and
-  // lands on exactly the destination the cascading flow ends at — /sample/:id —
-  // with the sample's own experiment committed to the store.
   const commitDirectSample = (s: CorpusSample): void => {
     if (s.experiment_id !== committedExp) {
       setExperiment(s.experiment_id);
     }
     setSample(s.id);
     closeModal();
-    navigate(`/sample/${s.id}`);
+    navigate(workspaceHref(s.experiment_id, s.id));
   };
 
   const popSampleChip = (): void => {

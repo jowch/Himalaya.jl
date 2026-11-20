@@ -16,12 +16,12 @@ bin/verify doctor                 # what is up, what is missing, and the fix for
 bin/verify seed                   # demo up in the background (generate, backend :8080, ingest, Vite :5173); no-op when already up
 bin/verify open /experiments/1/corpus
 bin/verify snapshot --raw         # accessibility tree: the roles and names you can click
-bin/verify click --role button --name "MO_PEG5_S2406 (S01P03)"   # opens its Loupe
-bin/verify press Enter            # Focus; keyboard shortcuts are first-class, see the Feature Map
+bin/verify click --role button --name "MO_PEG5_S2406 (S01P03)"   # opens it in the workspace
+bin/verify press Enter            # opens the workspace; keyboard shortcuts are first-class, see the Feature Map
 bin/verify screenshot scratch/verify/shots/focus-peg5.png
 bin/verify check-truth            # phase calls, frame counts and the corpus status against TRUTH.csv
 bin/verify triage                 # drop the bad frames TRUTH lists, as a triager would
-bin/verify check-truth --ui       # also reads the corpus, Loupe and Focus in the browser
+bin/verify check-truth --ui       # also reads the corpus and the workspace in the browser
 bin/verify stop                   # stop the servers seed started (bin/verify close stops the browser)
 ```
 
@@ -39,8 +39,8 @@ Read [references/features/README.md](references/features/README.md) first. It is
 | `wait-settle [--url re]` | Wait for a server-triggered navigation (with `--url`), then for the page to settle. Fails on 4xx/5xx like the actions; its result has `settled` and `httpErrors` at the top level, not under `settle`. |
 | `screenshot [file] [--full] [--selector css]` | Save evidence. Default path `scratch/verify/shots/`. |
 | `api <METHOD> </api/path> [--data json] [--dry-run]` | Read or change backend state directly. Writes are real; use `--dry-run` to check the request first. |
-| `check-truth [--strict] [--ui]` | Compare what the app shows with the demo's `TRUTH.csv`, and report the invariants. `--ui` reads the corpus status and the frame Loupe and Focus open on in the browser (~45 s). |
-| `triage [--undo] [--dry-run]` | Drop the frames in TRUTH's `drop` column through the same endpoint Loupe's Drop uses; `--undo` keeps them again, including any a person dropped by hand. |
+| `check-truth [--strict] [--ui]` | Compare what the app shows with the demo's `TRUTH.csv`, and report the invariants. `--ui` reads the corpus status, and the status and frame the workspace shows, in the browser. |
+| `triage [--undo] [--dry-run]` | Drop the frames in TRUTH's `drop` column through the same endpoint the workspace's Drop (X) uses; `--undo` keeps them again, including any a person dropped by hand. |
 
 ## check-truth
 
@@ -50,7 +50,7 @@ Read [references/features/README.md](references/features/README.md) first. It is
 - `known_gaps` lists samples where `auto` misses `phases`. Today that is `MO_PEG5` (Pn3m + Im3m coexistence, auto keeps only Im3m) and `MO_AMP_weak` (too weak to index). `--strict` fails on these too. Use it when working on the physics.
 - Bad frames: TRUTH's `drop` column lists frames a triager should drop. Its `flare` column marks the ones that still hold the sample (the beam clipped the capillary wall); their auto call may lose phases, because the streak can hide one, but must not add one (`expected: "within Pn3m"`). The rest hold no sample (a beam-off shot, missed capillaries) and must call `none`. `frames.bad_still_kept` and `frames.good_dropped` report triage progress. Neither fails the gate unless you pass `--expect fresh` (every frame still kept) or `--expect triaged` (every bad frame dropped). With `--ui`, check-truth also reads the corpus Kept column and fails if it disagrees with the API.
 - `make verify-truth` runs the whole live check on a regenerated demo, as CI's "Demo check-truth" job does: seed, check-truth `--expect fresh`, triage, check-truth `--expect triaged`, confirm one sample's call, a forced re-index (`analyze` after clearing the analysis hashes), check-truth, then a comparison that nothing a person sees changed, the description edit-and-clear, and a custom index added and removed in the workspace. Each step's output lands in `scratch/verify/truth/`. It serves the built app (`DEMO_UI_MODE=build`), not the Vite dev server; see docs/demo.md for why.
-- `shown` is the sample's status: `unreviewed`, `phase` (with its `call`) or `form_factor`. It is read from `GET /api/samples`, the data the corpus renders, together with the frame it describes (`representative_exposure_id`, reported as `corpus_api` because the page never marks that frame). check-truth does not decide which frame is the representative: it reads the app's choice. With `--ui` it also reads the corpus status cell's text and the pressed `Frame N` thumbnail in Loupe and Focus. It fails if the text disagrees with the API, or if a view shows no single pressed frame, because then check-truth itself is misreading the app. (Focus showing no frame is expected only when every frame is dropped.)
+- `shown` is the sample's status: `unreviewed`, `phase` (with its `call`) or `form_factor`. It is read from `GET /api/samples`, the data the corpus renders, together with the frame it describes (`representative_exposure_id`, reported as `corpus_api` because the page never marks that frame). check-truth does not decide which frame is the representative: it reads the app's choice. With `--ui` it also reads the corpus status cell's text and the current `Frame N` thumbnail in the workspace. It fails if the text disagrees with the API, or if a view shows no single pressed frame, because then check-truth itself is misreading the app. (The workspace showing no frame is expected only when every frame is dropped.)
 - `assigned_frames` lists every frame carrying a human assignment, wherever it sits.
 
 ### Invariants
@@ -60,12 +60,12 @@ The `invariants` block states properties the app should hold and lists each viol
 | Invariant | Breaks when |
 |---|---|
 | `status_matches_assignment` | A sample with no confirmed call (no assignment on a kept frame) is not shown as unreviewed, or a sample with one is shown as unreviewed or with a call it does not carry. An auto call alone is not confirmed (Jonathan, 2026-11-20: an unconfirmed sample reads "Unreviewed", whether or not Himalaya has an auto call). |
-| `representative_kept` | The frame the sample status describes (`corpus_api`), or the frame Loupe or Focus opens on (`--ui`), is dropped while the sample has a kept frame. |
-| `views_agree` | `corpus_api`, Loupe and Focus are on different frames of one sample. Needs `--ui`. |
+| `representative_kept` | The frame the sample status describes (`corpus_api`), or the frame the workspace opens on (`--ui`), is dropped while the sample has a kept frame. |
+| `views_agree` | `corpus_api` and the workspace are on different frames of one sample. Needs `--ui`. |
 
-`checked` is false for `views_agree` without `--ui`, and for both view invariants when a Loupe or Focus read failed (that read is also a gate problem).
+`checked` is false for `views_agree` without `--ui`, and for both view invariants when a workspace read failed (that read is also a gate problem).
 
-The representative is one rule everywhere: the selected frame if it is kept, else the newest kept frame, else none (`frontend/src/lib/exposure.ts`, `src/representative.jl`, held together by `frontend/test/fixtures/representative-exposure.json`). Loupe and Focus open on it, except that Loupe opens the newest frame when every frame is dropped, and Focus keeps a frame you switched to in the session. Switching frames in Focus and assigning there can still break `status_matches_assignment`, since the corpus status describes the representative.
+The representative is one rule everywhere: the selected frame if it is kept, else the newest kept frame, else none (`frontend/src/lib/exposure.ts`, `src/representative.jl`, held together by `frontend/test/fixtures/representative-exposure.json`). The workspace opens on it. Switching frames in the workspace and assigning there can still break `status_matches_assignment`, since the corpus status describes the representative.
 
 ## Evidence in a PR
 

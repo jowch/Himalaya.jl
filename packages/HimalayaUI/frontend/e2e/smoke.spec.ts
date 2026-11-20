@@ -59,8 +59,6 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
   await page.route("**/api/experiments/1/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(SAMPLES) }));
-  // Corpus sample list — the focus workspace (/sample/:id, I4.4) learns each
-  // sample's experiment_id from here. Keyed by sample id alone.
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(SAMPLES) }));
@@ -95,10 +93,7 @@ test("first-run onboarding overlay is shown when no username", async ({ page }) 
 
 test("picking a new user triggers the tutorial and dismisses with 'Got it'", async ({ page }) => {
   await mockCore(page);
-  // I4.4 (#181): the three-card Index at `/` is retired; the focus workspace
-  // (/sample/:id) is the surface that renders the trace plot. Onboarding shows
-  // over it when no username is set.
-  await page.goto("/sample/10");
+  await page.goto("/experiments");
 
   await expect(page.getByTestId("onboarding-name")).toBeVisible();
   await page.getByTestId("onboarding-new-handle").fill("alice");
@@ -111,49 +106,13 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
   await page.getByTestId("tutorial-done").click();
 
   await expect(page.getByTestId("onboarding-overlay")).not.toBeVisible();
-  // Greenfield focus workspace: the retired three-card Index `plot-title` is
-  // replaced by the TracePlate trace plot on the focus surface.
-  await expect(page.getByTestId("trace-plate")).toBeVisible();
+  await expect(page.getByText("All experiments")).toBeVisible();
 });
 
-// I4.4 (#181): the legacy three-card Index's shell affordances — opening the
-// NavModal from the plot title, the `,`/`.` Zustand-driven sample-step, and
-// the in-Index ChatCard — are retired with the Index surface. The focus
-// workspace (/sample/:id) is URL-routed (sample stepping happens via the
-// corpus picker / URL, not a Zustand keyboard step) and does not host the
-// NavModal or the chat card. Those interactions are covered on the focus
-// surface by FocusWorkspacePage.*.test.tsx + qlink.spec.ts, so the three
-// legacy-Index E2E cases that exercised them are removed here rather than
-// repointed (they have no equivalent on the replacement surface).
-
-// I4.4 + plotting redesign (#280): the auto-peaks/curation model — the `+`
-// "Add index N" candidate buttons, the curated "Active set" with
-// `data-index-id`/`data-active` rows, the `/groups/:id/members` POST, and the
-// stale-indices alert (`role="alert"` + POST `/analyze` "Re-analyze") — were
-// RETIRED by the greenfield rebuild. The focus surface now uses the assignment
-// model (AssignmentRail/AssignmentCart driven by `confirmed_index`); there is no
-// curation `+`, no active-set membership row, and no stale-indices banner /
-// reanalyze affordance anywhere in `src/print` or `src/components`. The three
-// E2E cases that exercised those surfaces ("curate: clicking + adds a
-// candidate", "reanalyze: stale-indices banner fires POST /analyze", and
-// "curate → reanalyze … round-trip") are removed here rather than repointed —
-// they have no equivalent on the replacement surface (matching the legacy-Index
-// removal precedent above). Replacement coverage for the assignment model lives
-// in FocusWorkspacePage.*.test.tsx + the assignment Vitest suites.
-
-test("a /compare* URL redirects to the series folio (Compare retired, #177)", async ({ page }) => {
-  // I3.6 (#177): Compare is retired and replaced by the series stage. Every
-  // /compare* deep-link now redirects to the series folio (/series); the old
-  // Compare page + sidebar are gone.
+test("a retired /compare URL redirects to the experiments home", async ({ page }) => {
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
-  // The series folio fetches its corpus-wide listing on mount.
-  await page.route("**/api/series", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.goto("/experiments/1/compare");
-
-  await expect(page).toHaveURL(/\/series$/);
-  // Greenfield folio: folio-header replaces the retired series-folio-page testid.
-  await expect(page.getByTestId("folio-header")).toBeVisible();
-  await expect(page.getByTestId("compare-page")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/experiments$/);
+  await expect(page.getByText("All experiments")).toBeVisible();
 });

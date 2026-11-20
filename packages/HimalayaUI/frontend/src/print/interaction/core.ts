@@ -5,8 +5,7 @@ import type { Action, ActionGroup, CoreId } from "./types";
  *  shortcuts.ts global vocabulary, minus the page-interpreted ids. */
 export const CORE: Record<CoreId, { label: string; keys: string[]; group: ActionGroup }> = {
   back:      { label: "Back",  keys: ["Escape"],      group: "Navigate" },
-  openFocus: { label: "Focus", keys: ["Enter"],       group: "Navigate" },
-  openLoupe: { label: "Loupe", keys: ["l"],           group: "Navigate" },
+  openFocus: { label: "Open", keys: ["Enter"],       group: "Navigate" },
   undo:      { label: "Undo",  keys: ["Mod+z"],       group: "Edit" },
   redo:      { label: "Redo",  keys: ["Mod+Shift+z"], group: "Edit" },
   help:      { label: "Shortcuts", keys: ["?"],       group: "Screen" },

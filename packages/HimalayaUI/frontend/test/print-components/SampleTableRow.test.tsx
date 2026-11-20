@@ -147,11 +147,11 @@ const baseProps = {
 };
 
 describe("<SampleTableRow> nav seams", () => {
-  it("forwards onOpenLoupe to the SpecCell name button", () => {
-    const onOpenLoupe = vi.fn();
-    render(<SampleTableRow {...baseProps} onOpenLoupe={onOpenLoupe} />);
+  it("forwards onOpenSample to the SpecCell name button", () => {
+    const onOpenSample = vi.fn();
+    render(<SampleTableRow {...baseProps} onOpenSample={onOpenSample} />);
     fireEvent.click(screen.getByRole("button", { name: /POPC/ }));
-    expect(onOpenLoupe).toHaveBeenCalled();
+    expect(onOpenSample).toHaveBeenCalled();
   });
 
   it("forwards onActivateExposure to the gallery on thumb double-click", () => {

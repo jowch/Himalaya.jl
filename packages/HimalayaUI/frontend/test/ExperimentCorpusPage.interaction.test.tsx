@@ -1,34 +1,6 @@
-// test/ExperimentCorpusPage.interaction.test.tsx
-//
-// Interaction coverage for ExperimentCorpusPage (the /experiments/:id/corpus
-// home), ported from the retired SamplesPage unit suite when the /samples
-// contact-sheet page was deleted. ExperimentCorpusPage carries the SAME
-// cull/keep/compose/keyboard behaviour verbatim, scoped to one experiment via
-// the :id route param.
-//
-// Ported from:
-//   - test/SamplesPage.keyboard.test.tsx     → "keyboard cursor + cull verbs"
-//   - test/SamplesPage.samplePicker.test.tsx → "sample-grain compose bar"
-//   - test/SamplesPage.staleSelect.test.tsx  → "selection clears on scope change"
-//
-// Harness: mocks the `queries` hook layer (as the source suites did) so the
-// batch mutator is a directly-assertable spy and exposures are present
-// synchronously (no async React-Query settle before fireEvent). The route
-// param drives `expId`; scoped samples are pre-filtered by experiment_id, so
-// the mocked corpus lists exactly this experiment's rows.
-//
-// INTENTIONALLY DROPPED (SamplesPage-only chrome, not present in
-// ExperimentCorpusPage — the corpus is already experiment-scoped):
-//   - the contact-sheet "N / M samples screened" header / useScreenedProgress.
-//   - the ?experiment search-param filter + unknown-experiment EmptyState +
-//     "experiment N" title fallback (resolved by the :id route param instead).
-//   - URL sort key/dir round-trip (no sortable columns on this surface).
-//   - the page-title heading ("The corpus" / experiment name).
-// These have no analogue here, so their assertions are not ported.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { CorpusSample, Exposure } from "../src/api";
 
@@ -85,6 +57,11 @@ function KbLayer({ children }: { children: React.ReactNode }): JSX.Element {
   return <>{children}</>;
 }
 
+function Landed(): JSX.Element {
+  const loc = useLocation();
+  return <div data-testid="landed">{loc.pathname + loc.search}</div>;
+}
+
 // ── fixtures ────────────────────────────────────────────────────────────────
 function corpus(over: Partial<CorpusSample> = {}): CorpusSample {
   return {
@@ -110,8 +87,7 @@ function renderAt(expId = 1) {
         <KbLayer>
           <Routes>
             <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
-            <Route path="/sample/:sampleId/loupe" element={<div data-testid="loupe-route" />} />
-            <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
+            <Route path="/experiments/:id/workspace/:sampleId" element={<Landed />} />
           </Routes>
         </KbLayer>
       </MemoryRouter>
@@ -200,101 +176,14 @@ describe("ExperimentCorpusPage — Arrow navigation", () => {
   });
 });
 
-// ── sample-grain compose segment (dock-as-action-bar, items 2/5) ─────────────
-// The floating ComposeBar/CullBar were folded into the Dock: a sample-grain
-// `dock-compose` segment appears on check; a frame-grain `dock-selection-count`
-// readout appears on exposure select. Both are absent (not just hidden/inert)
-// when their selection is empty.
-describe("ExperimentCorpusPage — sample-grain picker (dock compose segment)", () => {
-  function seedPicker(): void {
-    // Two scoped samples, no exposures (compose segment is sample-grain only).
-    state.samples = [
-      corpus({ id: 10, experiment_id: 1, name: "A" }),
-      corpus({ id: 11, experiment_id: 1, name: "B" }),
-    ];
-    state.byId = new Map();
-  }
-  beforeEach(seedPicker);
-
-  it("the compose segment is absent when no samples are checked", () => {
+describe("ExperimentCorpusPage — opening a frame", () => {
+  it("double-clicking a thumbnail opens the workspace on that frame, not the representative", () => {
+    state.samples = [corpus({ id: 10, experiment_id: 1, name: "Sample 10" })];
+    state.byId = new Map<number, Exposure[]>([
+      [10, [exp({ id: 100, sample_id: 10, selected: true }), exp({ id: 101, sample_id: 10 })]],
+    ]);
     renderAt(1);
-    expect(screen.queryByTestId("dock-compose")).toBeNull();
-  });
-
-  it("the compose segment appears (count 1) when a sample is checked", async () => {
-    const user = userEvent.setup();
-    renderAt(1);
-    const checkboxes = screen.getAllByRole("checkbox");
-    await user.click(checkboxes[0]!);
-    expect(screen.getByTestId("dock-compose")).toHaveTextContent("1");
-  });
-
-  it("Clear resets the sample selection and removes the compose segment", async () => {
-    const user = userEvent.setup();
-    renderAt(1);
-    await user.click(screen.getAllByRole("checkbox")[0]!);
-    await user.click(
-      within(screen.getByTestId("dock-compose")).getByRole("button", { name: /clear/i }),
-    );
-    expect(screen.queryByTestId("dock-compose")).toBeNull();
-  });
-
-  it("the frame-grain selection readout stays independent of sample-grain checks", async () => {
-    const user = userEvent.setup();
-    renderAt(1);
-    await user.click(screen.getAllByRole("checkbox")[0]!);
-    // No exposure selected → no frame-grain selection readout in the dock.
-    expect(screen.queryByTestId("dock-selection-count")).toBeNull();
-  });
-});
-
-// ── stale-selection reset on scope change (ported from staleSelect.test) ─────
-describe("ExperimentCorpusPage — selection clears on experiment-scope change", () => {
-  beforeEach(() => {
-    // Two samples in DISTINCT experiments. The corpus is filtered by the route's
-    // :id, so re-rendering at a different /experiments/:id/corpus re-scopes the
-    // visible list — exactly the SamplesPage ?beamtime swap, now a route param.
-    state.samples = [
-      corpus({ id: 10, experiment_id: 1, name: "A" }),
-      corpus({ id: 11, experiment_id: 2, name: "B" }),
-    ];
-    state.byId = new Map();
-  });
-
-  // A sibling control that re-scopes the page IN PLACE (same router, new :id)
-  // the way the shell's experiment switcher does — a real navigation, so the
-  // page's expId changes without remounting and the reset effect fires.
-  function ScopeSwitch(): JSX.Element {
-    const navigate = useNavigate();
-    return (
-      <button data-testid="scope-switch" onClick={() => navigate("/experiments/2/corpus")}>
-        scope to exp 2
-      </button>
-    );
-  }
-
-  it("a sample-grain check does NOT survive a change of experiment scope", async () => {
-    const user = userEvent.setup();
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/experiments/1/corpus"]}>
-          <ScopeSwitch />
-          <Routes>
-            <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-
-    // Check the only experiment-1 sample → the dock compose segment carries one pick.
-    await user.click(screen.getAllByRole("checkbox")[0]!);
-    expect(screen.getByTestId("dock-compose")).toHaveTextContent("1");
-
-    // Re-scope to experiment 2 in place. The page's expId-change effect must
-    // clear both selection grains, so the carry does not linger pointing at an
-    // off-scope sample (no row remains to uncheck it).
-    await user.click(screen.getByTestId("scope-switch"));
-    expect(screen.queryByTestId("dock-compose")).toBeNull();
+    fireEvent.doubleClick(screen.getAllByTestId("thumbnail")[1]!);
+    expect(screen.getByTestId("landed")).toHaveTextContent("/experiments/1/workspace/10?exposure=101");
   });
 });
