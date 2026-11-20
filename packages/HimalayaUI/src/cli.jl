@@ -58,9 +58,7 @@ Run peak-finding + indexing for every exposure of `exp_id`, optionally
 restricted to a single sample label. Skips rejected exposures and leaves
 `selected` alone: the representative is derived by `representative_exposure_id`.
 Errors per-exposure are caught and printed as `SKIP (...)` so one bad
-.dat file doesn't abort the batch. Returns how many exposures were skipped;
-`cli_analyze` then fails, so a script or CI step can't read a broken batch as
-success.
+.dat file doesn't abort the batch.
 
 Reports any assignment members the rebuild failed to re-attach (F-WIPE W1),
 per-exposure and again as a closing summary — a withdrawn phase call is a human
