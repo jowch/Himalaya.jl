@@ -161,7 +161,7 @@ export async function closeBrowser(cfg) {
 export async function resetBrowserProfile(cfg) {
   const closed = await closeBrowser(cfg);
   if (closed.ok === false) return closed;
-  fs.rmSync(profileDir(cfg), { recursive: true, force: true });
+  fs.rmSync(profileDir(cfg), { recursive: true, force: true, maxRetries: 3 });
   return { ...closed, profile: "deleted" };
 }
 

@@ -5,7 +5,8 @@ import { join } from "node:path";
 const E2E = join(__dirname, "..", "e2e");
 
 describe("mocked e2e specs", () => {
-  const specs = readdirSync(E2E).filter((f) => f.endsWith(".spec.ts"));
+  const specs = (readdirSync(E2E, { recursive: true }) as string[])
+    .filter((f) => f.endsWith(".spec.ts") && !f.startsWith("live/"));
 
   it("exist", () => {
     expect(specs.length).toBeGreaterThan(0);
