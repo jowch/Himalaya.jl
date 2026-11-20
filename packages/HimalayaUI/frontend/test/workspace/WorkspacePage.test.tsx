@@ -115,6 +115,7 @@ function currentFrame(): string | null {
 
 afterEach(() => {
   window.localStorage.removeItem("himalaya-ui:workspace-theme");
+  window.localStorage.removeItem("himalaya-ui:workspace-plot-view");
 });
 
 beforeEach(() => {
@@ -313,18 +314,32 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("L switches the intensity axis between log and linear", () => {
+  it("L steps through log, linear, log-log and q²I, Shift L steps back, and the view buttons pick one", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
     const ticks = (): string =>
       Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] text'))
         .map((t) => t.textContent)
         .join(" ");
+    const pressed = (): string[] =>
+      within(screen.getByRole("group", { name: "Plot view" }))
+        .getAllByRole("button")
+        .filter((b) => b.getAttribute("aria-pressed") === "true")
+        .map((b) => b.textContent ?? "");
     const logTicks = ticks();
-    expect(screen.getByRole("button", { name: /Log/ })).toHaveAttribute("aria-pressed", "true");
+    expect(pressed()).toEqual(["Log"]);
     fireEvent.keyDown(window, { key: "l" });
-    expect(screen.getByRole("button", { name: /Linear/ })).toHaveAttribute("aria-pressed", "false");
+    expect(pressed()).toEqual(["Linear"]);
     expect(ticks()).not.toBe(logTicks);
+    fireEvent.keyDown(window, { key: "l" });
+    expect(pressed()).toEqual(["Log-log"]);
+    fireEvent.keyDown(window, { key: "l" });
+    expect(pressed()).toEqual(["q²I"]);
+    fireEvent.keyDown(window, { key: "L", shiftKey: true });
+    expect(pressed()).toEqual(["Log-log"]);
+    fireEvent.click(screen.getByRole("button", { name: "Log" }));
+    expect(pressed()).toEqual(["Log"]);
+    expect(ticks()).toBe(logTicks);
   });
 
   it("C opens a picker, Enter adds the sample scaled to the current trace and subtracts it", () => {
@@ -546,9 +561,9 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "k", ctrlKey: true });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "linear" } });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "q²I" } });
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
-    expect(screen.getByRole("button", { name: /Linear/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "q²I" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("the palette switches the workspace to dark and back, remembers it, and can follow the system again", () => {

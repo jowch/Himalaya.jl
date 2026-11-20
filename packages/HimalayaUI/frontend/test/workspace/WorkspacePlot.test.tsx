@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent, screen } from "@testing-library/react";
 import { WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
+import { SubtractionStrip } from "../../src/workspace/ui/SubtractionStrip";
 
 const trace = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [10, 50, 8, 6, 5], sigma: [0, 0, 0, 0, 0] };
 
@@ -17,7 +18,49 @@ describe("WorkspacePlot", () => {
     const { rerender } = render(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} compares={[compare]} />);
     const d = (): string => screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!;
     expect(d().match(/[ML]/g)).toHaveLength(2);
-    rerender(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} compares={[compare]} logY={false} />);
+    rerender(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} compares={[compare]} view="linear" />);
     expect(d().match(/[ML]/g)).toHaveLength(3);
   });
+
+  it("labels the q²I view and draws comparisons multiplied by q²", () => {
+    const compare = { id: 3, name: "buf", q: [0.05, 0.1, 0.15], I: [400, 100, 100], dash: "6 4", emphasis: false };
+    const { rerender } = render(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} compares={[compare]} view="linear" />);
+    const d = (): string => screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!;
+    const ys = (): number[] => d().split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
+    const linear = ys();
+    expect(linear[0]!).toBeLessThan(linear[2]!);
+    rerender(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} compares={[compare]} view="kratky" />);
+    const kratky = ys();
+    expect(kratky[0]!).toBeGreaterThan(kratky[2]!);
+    expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
+  });
+
+  it("puts q on a log axis in the log-log view", () => {
+    const xTicks = (): string =>
+      Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-bottom"] text'))
+        .map((t) => t.textContent)
+        .join(" ");
+    const { rerender } = render(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} view="log" />);
+    const linearQ = xTicks();
+    rerender(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} view="loglog" />);
+    expect(xTicks()).not.toBe(linearQ);
+  });
+
+  it("keeps the difference strip on the plot's q axis and intensity transform", () => {
+    const props = { q: [0.05, 0.1, 0.2], d: [0, 10, 10], label: "minus buf", xDomain: null, xExtent: [0.05, 0.2] as [number, number], peakQs: [] };
+    const xs = (): number[] =>
+      screen.getByTestId("workspace-subtraction").querySelector("path[stroke='var(--color-accent)']")!.getAttribute("d")!
+        .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[0]));
+    const ys = (): number[] =>
+      screen.getByTestId("workspace-subtraction").querySelector("path[stroke='var(--color-accent)']")!.getAttribute("d")!
+        .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
+    const { rerender } = render(<SubtractionStrip {...props} view="log" />);
+    const linearX = xs();
+    expect(ys()[1]).toBeCloseTo(ys()[2]!);
+    rerender(<SubtractionStrip {...props} view="loglog" />);
+    expect(xs()[1]! - xs()[0]!).toBeGreaterThan(linearX[1]! - linearX[0]!);
+    rerender(<SubtractionStrip {...props} view="kratky" />);
+    expect(ys()[2]!).toBeLessThan(ys()[1]!);
+  });
 });
+
