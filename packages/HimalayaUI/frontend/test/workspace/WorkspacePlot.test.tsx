@@ -35,23 +35,64 @@ describe("WorkspacePlot", () => {
     expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
   });
 
+  const linePoints = (): [number, number][] =>
+    screen.getByTestId("workspace-trace").querySelector('[data-role="trace-line"] path:last-of-type')!.getAttribute("d")!
+      .split(/[ML]/).filter(Boolean).map((p) => p.split(",").map(Number) as [number, number]);
+  const yTicks = (): number[] =>
+    Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] text'))
+      .map((t) => Number(t.textContent))
+      .filter(Number.isFinite);
+  const plotHeight = (): number => {
+    const ys = Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] [data-role="axis-spine"]'))
+      .map((l) => Number(l.getAttribute("y2")));
+    return Math.max(...ys);
+  };
+
   it("fits the q²I and linear y axes to the visible q window, but not the log axes", () => {
     const rising = { q: [0.05, 0.1, 0.15, 0.2, 0.4], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
-    const yTop = (): number =>
-      Math.max(
-        ...Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] text'))
-          .map((t) => Number(t.textContent))
-          .filter(Number.isFinite),
-      );
     const { rerender } = render(<WorkspacePlot trace={rising} peaks={[]} phase={null} combs={[]} view="kratky" />);
-    expect(yTop()).toBeGreaterThan(0.1);
-    rerender(<WorkspacePlot trace={rising} peaks={[]} phase={null} combs={[]} view="kratky" xDomain={[0.05, 0.15]} />);
-    expect(yTop()).toBeLessThan(0.03);
+    expect(Math.max(...yTicks())).toBeGreaterThan(0.1);
+    rerender(<WorkspacePlot trace={rising} peaks={[]} phase={null} combs={[]} view="kratky" xDomain={[0.1, 0.15]} />);
+    const inWindow = linePoints().slice(1, 3).map(([, y]) => y);
+    expect(Math.max(...inWindow) - Math.min(...inWindow)).toBeGreaterThan(plotHeight() * 0.3);
     const steep = { ...rising, I: [100, 50, 2, 1, 1] };
-    rerender(<WorkspacePlot trace={steep} peaks={[]} phase={null} combs={[]} view="linear" xDomain={[0.15, 0.4]} />);
-    expect(yTop()).toBeLessThan(5);
+    rerender(<WorkspacePlot trace={steep} peaks={[]} phase={null} combs={[]} view="linear" xDomain={[0.17, 0.4]} />);
+    expect(Math.max(...yTicks())).toBeLessThan(5);
     rerender(<WorkspacePlot trace={steep} peaks={[]} phase={null} combs={[]} view="log" xDomain={[0.15, 0.4]} />);
-    expect(yTop()).toBeGreaterThanOrEqual(100);
+    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(100);
+  });
+
+  it("keeps the tallest point below the top edge in the linear views", () => {
+    render(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} view="linear" />);
+    const top = Math.min(...linePoints().map(([, y]) => y));
+    expect(top).toBeGreaterThan(plotHeight() * 0.05);
+  });
+
+  it("keeps a stronger comparison inside the fitted window", () => {
+    const flat = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
+    const compare = { id: 3, name: "ref", q: flat.q, I: [5, 5, 5, 5, 5], dash: "6 4", emphasis: false };
+    render(<WorkspacePlot trace={flat} peaks={[]} phase={null} combs={[]} compares={[compare]} view="linear" xDomain={[0.1, 0.2]} />);
+    const ys = screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!
+      .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("falls back to the whole trace when the window holds no positive values", () => {
+    const gap = { q: [0.05, 0.1, 0.12, 0.14, 0.2, 0.25], I: [40, 0, -3, Number.NaN, 0, 6], sigma: [0, 0, 0, 0, 0, 0] };
+    render(<WorkspacePlot trace={gap} peaks={[]} phase={null} combs={[]} view="linear" xDomain={[0.11, 0.15]} />);
+    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(15);
+  });
+
+  it("includes the samples just outside the window so the edge segments stay in range", () => {
+    const ramp = { q: [0.05, 0.1, 0.2, 0.3, 0.4], I: [100, 50, 10, 10, 10], sigma: [0, 0, 0, 0, 0] };
+    render(<WorkspacePlot trace={ramp} peaks={[]} phase={null} combs={[]} view="linear" xDomain={[0.15, 0.35]} />);
+    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(50);
+  });
+
+  it("includes the sample just after the window too", () => {
+    const ramp = { q: [0.05, 0.1, 0.2, 0.3, 0.4], I: [10, 10, 10, 50, 100], sigma: [0, 0, 0, 0, 0] };
+    render(<WorkspacePlot trace={ramp} peaks={[]} phase={null} combs={[]} view="linear" xDomain={[0.08, 0.25]} />);
+    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(50);
   });
 
   it("puts q on a log axis in the log-log view", () => {

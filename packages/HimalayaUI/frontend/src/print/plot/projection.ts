@@ -37,16 +37,6 @@ export function makeAxis(
 export type TickKind = "major" | "mid" | "minor";
 export interface Tick { value: number; kind: TickKind; }
 
-/** Decade-anchored ticks for log axes (major = 10ⁿ, mid = ×2/×5, minor = rest);
- *  linear axes pass d3's nice ticks through as majors.
- *
- *  Density is adaptive so the axis is always legible AND always labelled:
- *   - a moderate range keeps the full detailed set (decades + ×2/×5 + minors);
- *   - a wide range (intensity over many decades) thins to majors, then strides
- *     the decades, so the label count stays near `count`;
- *   - a degenerate sub-decade window (e.g. after a tight wheel-zoom) where no
- *     decade multiple lands in range falls back to d3's nice ticks, and finally
- *     to the geometric endpoints — never an empty, unlabelled axis. */
 export function axisTicks(axis: Axis1D, count = 6): Tick[] {
   if (axis.type === "linear") {
     return axis.ticks(count).map((value) => ({ value, kind: "major" as const }));
@@ -86,9 +76,8 @@ export function axisTicks(axis: Axis1D, count = 6): Tick[] {
 
   const cap = count + 2;
   const labelled = detailed.filter((t) => t.kind !== "minor").length;
-  if (labelled < 3) {
-    const even = scaleLinear().domain([lo, hi]).ticks(count).filter(inRange);
-    if (even.length > labelled) return even.map((value) => ({ value, kind: "major" as const }));
+  if (labelled < 3 && hi / lo < 3) {
+    return scaleLinear().domain([lo, hi]).ticks(count).map((value) => ({ value, kind: "major" as const }));
   }
   if (labelled <= cap) return detailed;
 

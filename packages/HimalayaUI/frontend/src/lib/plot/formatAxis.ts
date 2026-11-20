@@ -22,13 +22,29 @@ export function formatAxis(d: number): string {
 	return d.toFixed(0);
 }
 
-export function formatTicks(values: readonly number[]): string[] {
-	if (values.length > 1 && values.every((v) => Number.isInteger(v) && Math.abs(v) < 1e4)) return values.map((v) => v.toFixed(0));
-	const base = values.map(formatAxis);
-	if (new Set(base).size === base.length) return base;
-	for (let digits = 1; digits <= 6; digits++) {
-		const labels = values.map((v) => (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e4 ? formatAxis(v) : v.toFixed(digits)));
-		if (new Set(labels).size === labels.length) return labels;
+function faithful(label: string, v: number): boolean {
+	return Math.abs(Number(label) - v) <= 1e-9 * Math.max(Math.abs(v), 1e-300);
+}
+
+function exponential(v: number): string {
+	for (let digits = 0; digits <= 10; digits++) {
+		const label = v.toExponential(digits).replace("e+", "e");
+		if (faithful(label, v)) return label;
 	}
-	return base;
+	return formatAxis(v);
+}
+
+function isExponential(v: number): boolean {
+	const av = Math.abs(v);
+	return av !== 0 && (av < 1e-3 || av >= 1e4);
+}
+
+export function formatTicks(values: readonly number[]): string[] {
+	if (values.every((v) => Number.isInteger(v) && Math.abs(v) < 1e4)) return values.map((v) => v.toFixed(0));
+	const base = values.map(formatAxis);
+	if (new Set(base).size === base.length && base.every((label, i) => faithful(label, values[i]!))) return base;
+	const fixed = values.filter((v) => !isExponential(v));
+	let digits = 0;
+	while (digits < 10 && !fixed.every((v) => faithful(v.toFixed(digits), v))) digits++;
+	return values.map((v) => (isExponential(v) ? exponential(v) : v.toFixed(digits)));
 }

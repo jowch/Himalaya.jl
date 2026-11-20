@@ -61,6 +61,7 @@ export interface TracePlotProps {
    *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
   yHeadroom?: number;
   fitYToX?: boolean;
+  fitYAlso?: readonly YFitSeries[];
   /** Paint the trace LINE in the neutral (gray) colour regardless of phase.
    *  The peak markers/labels keep their phase colour — only the curve degrades
    *  to neutral. Keeps an arbitrary coexistence-phase hue off the trace. */
@@ -83,18 +84,42 @@ export interface TracePlotProps {
   figureLabel?: string;
 }
 
+export interface YFitSeries {
+  q: readonly number[];
+  I: readonly number[];
+}
+
+function usable(v: number): boolean {
+  return Number.isFinite(v) && v > 0;
+}
+
+function windowValues(series: YFitSeries, lo: number, hi: number): number[] {
+  const out: number[] = [];
+  let below = -1;
+  let above = -1;
+  series.q.forEach((q, i) => {
+    if (q >= lo && q <= hi) out.push(series.I[i]!);
+    else if (q < lo && (below < 0 || q > series.q[below]!)) below = i;
+    else if (q > hi && (above < 0 || q < series.q[above]!)) above = i;
+  });
+  if (below >= 0) out.push(series.I[below]!);
+  if (above >= 0) out.push(series.I[above]!);
+  return out.filter(usable);
+}
+
+function fitValues(main: YFitSeries, extra: readonly YFitSeries[], domain: [number, number]): number[] {
+  const lo = Math.min(domain[0], domain[1]);
+  const hi = Math.max(domain[0], domain[1]);
+  const own = windowValues(main, lo, hi);
+  if (own.length < 2) return main.I.filter(usable);
+  return [...own, ...extra.flatMap((s) => windowValues(s, lo, hi))];
+}
+
 // BU-TRACE-DIM: unassigned (form-factor / unindexed) traces read at FULL visual
 // strength at rest — a present neutral (ink-soft), NOT ink-faint, which looked
 // like a stuck hover-dim next to the phase-colored traces. De-emphasis is
 // reserved for an explicit hover/focus (the waterfall row's opacity gate), and
 // clears completely on mouse-out.
-function visibleValues(q: readonly number[], I: readonly number[], domain: [number, number]): number[] {
-  const lo = Math.min(domain[0], domain[1]);
-  const hi = Math.max(domain[0], domain[1]);
-  const out = I.filter((_, i) => q[i]! >= lo && q[i]! <= hi);
-  return out.length >= 2 ? out : [...I];
-}
-
 const UNINDEXED_COLOR = "var(--color-ink-soft)";
 
 interface PlotState {
@@ -127,6 +152,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     highlightPeakIds,
     yHeadroom = 0,
     fitYToX = false,
+    fitYAlso = [],
     neutralLine = false,
     onHoverQ,
     hoveredQ,
@@ -139,7 +165,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
 
   const xExtent = positiveExtent(trace.trace.q);
   const curXDomain = xDomain ?? xExtent;
-  const rawYExtent = positiveExtent(fitYToX ? visibleValues(trace.trace.q, trace.trace.I, curXDomain) : trace.trace.I);
+  const rawYExtent = positiveExtent(fitYToX ? fitValues(trace.trace, fitYAlso, curXDomain) : trace.trace.I);
   const yExtent: [number, number] = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)];
 
   const margins: Margins = axes

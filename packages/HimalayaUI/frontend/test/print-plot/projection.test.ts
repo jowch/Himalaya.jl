@@ -85,11 +85,17 @@ describe("axisTicks", () => {
     expect(ts.length).toBeGreaterThan(0);
     expect(ts.some((t) => t.kind !== "minor")).toBe(true); // at least one label
   });
-  it("labels a zoomed log window that holds a single decade multiple", () => {
-    const ax = makeAxis([0.08, 0.15], [0, 400], "log");
-    const labelled = axisTicks(ax).filter((t) => t.kind !== "minor").map((t) => t.value);
-    expect(labelled.length).toBeGreaterThanOrEqual(3);
-    expect(labelled.every((v) => v >= 0.08 - 1e-9 && v <= 0.15 + 1e-9)).toBe(true);
+  it("labels a zoomed log window that holds only one or two labelled ticks", () => {
+    for (const domain of [[0.08, 0.15], [0.045, 0.11]] as [number, number][]) {
+      const labelled = axisTicks(makeAxis(domain, [0, 400], "log")).filter((t) => t.kind !== "minor").map((t) => t.value);
+      expect(labelled.length).toBeGreaterThanOrEqual(3);
+      expect(labelled.every((v) => v >= domain[0] - 1e-9 && v <= domain[1] + 1e-9)).toBe(true);
+    }
+  });
+  it("keeps decade ticks on a log window wider than a factor of 3", () => {
+    const ts = axisTicks(makeAxis([0.06, 0.45], [0, 400], "log"));
+    expect(ts.some((t) => t.kind === "minor")).toBe(true);
+    expect(ts.find((t) => Math.abs(t.value - 0.1) < 1e-9)?.kind).toBe("major");
   });
   it("caps tick density on wide log ranges (overplot regression)", () => {
     // Intensity over 7 decades: the naive loop emitted ~64 ticks / ~22 labels.
