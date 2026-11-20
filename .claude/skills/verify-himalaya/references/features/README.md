@@ -129,6 +129,27 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for now and its routes and nav are hidden in the first redesign PR). Not mapped; check-truth does not depend on it.
 
+## Experiment configuration
+
+- **Route:** `/experiments/<id>/config`.
+- **Shows:** the experiment name with "Rename experiment", the description button "Edit experiment description" (it reads "Add a description..." when empty), the Geometry card with an "Override <field>" button per field, the Acquisition timeline, and the Sources card with the three patterns and "Rescan now".
+- **Drive:** an edit, then a clear, each followed by a reload so the check proves the value persisted on the server.
+  ```bash
+  bin/verify open /experiments/1/config
+  bin/verify click --role button --name "Edit experiment description"
+  bin/verify fill --role textbox --name "Experiment description" --value "April beamtime"
+  bin/verify press Control+Enter
+  bin/verify open /experiments/1/config          # reload: the button reads "April beamtime"
+  bin/verify click --role button --name "Edit experiment description"
+  bin/verify fill --role textbox --name "Experiment description" --value ""
+  bin/verify press Control+Enter
+  bin/verify open /experiments/1/config          # reload: the button reads "Add a description..."
+  ```
+- **Check:** `bin/verify api GET /api/experiments/1` shows `"description": null` after the clear.
+- **Gotchas:**
+  - Clearing sends `{"description": null}`, not an empty string. Exercise the clear, not only an edit: the server once answered it with 400, and the page kept the old description without showing an error.
+  - "Rescan now" changes the rescan schedule (it goes back to hourly checks when new files are found), which no page shows. Check the schedule in the backend tests, not here.
+
 ## Not mapped yet
 
-Experiment configuration (`/experiments/<id>/config`), the custom-index modal, sample tags, figure export (Copy / Download formats), and the onboarding flow (`bin/verify open / --onboarding`). Add each the first time a PR touches it.
+The custom-index modal, sample tags, figure export (Copy / Download formats), and the onboarding flow (`bin/verify open / --onboarding`). Add each the first time a PR touches it.
