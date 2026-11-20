@@ -41,6 +41,9 @@ vi.mock("../../src/queries", () => ({
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
   useSetPeakExcluded: recorder("excludePeak"),
+  useCommitCustomIndex: (boundTo: number) => ({
+    mutate: (phase: string, basis: number, ratios: number[]) => calls.push({ hook: "custom", boundTo, arg: { phase, basis, ratios } }),
+  }),
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
@@ -569,6 +572,83 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
     expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  it("I opens a custom index on the top candidate; arrows nudge the lattice and Enter adds it", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    expect(within(panel).getByRole("button", { name: "Pn3m" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "ArrowRight", shiftKey: true });
+    expect(within(panel).getByText(/Add Pn3m 105\.5 Å/)).toBeInTheDocument();
+    expect(currentFrame()).toBe("Frame 2");
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    expect(calls).toHaveLength(1);
+    const c = calls[0]!;
+    expect(c).toMatchObject({ hook: "custom", boundTo: 101 });
+    const arg = c.arg as { phase: string; basis: number; ratios: number[] };
+    expect(arg.phase).toBe("Pn3m");
+    expect(arg.basis).toBeCloseTo((2 * Math.PI * Math.SQRT2) / 105.5, 6);
+    expect(arg.ratios[0]).toBe(1);
+    expect(arg.ratios[1]).toBeCloseTo(Math.sqrt(3 / 2), 6);
+  });
+
+  it("Escape cancels a custom index without writing", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("a custom index on an unselected frame selects it first", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
+    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
+    calls[0]!.callbacks!.onSuccess!();
+    expect(calls[1]).toMatchObject({ hook: "custom", boundTo: 100 });
+  });
+
+  it("does not open a custom index on a dropped frame or before a user is set", () => {
+    state.username = undefined;
+    const { unmount } = renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    unmount();
+    state.username = "jc";
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+  });
+
+  it("the indexing plot shows the assigned candidate's fit against the peaks", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto"), peak(9, 0.2, "auto", true)];
+    renderAt("/experiments/1/workspace/10");
+    const plot = screen.getByTestId("workspace-indexing");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m 100.0 Å · R² 0.9900 · 2 of 2 on peaks");
+    expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
+  });
+
+  it("the indexing plot follows the custom index while it is open", () => {
+    state.trace = makeTrace(1);
+    const a = (2 * Math.PI * Math.SQRT2) / 0.1;
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.1 * Math.sqrt(1.5), "auto")];
+    state.indices = [{ ...index(2, "Pn3m", 0.9), lattice_d: a }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 6");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2 of 6 on peaks");
+    const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
+    expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });
 
 });

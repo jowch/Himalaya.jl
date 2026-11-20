@@ -4,6 +4,7 @@ import type { Exposure, IndexEntry } from "../api";
 import {
   useAddAssignmentPhase,
   useAddPeak,
+  useCommitCustomIndex,
   useAssignment,
   useCorpusSamples,
   useExperiment,
@@ -30,6 +31,11 @@ import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
+import { CustomIndexPanel } from "./ui/CustomIndexPanel";
+import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
+import { clampLattice, draftCommit, draftLanded, draftPrediction, indexFit, initialDraft, type CustomDraft } from "./indexing";
+import { latticeBounds } from "../lib/customIndex";
+
 import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
@@ -59,7 +65,10 @@ function helpSections(mod: string): HelpSection[] {
     },
     {
       title: "Call",
-      rows: [{ keys: ["1–9"], what: "Tick or untick a phase candidate" }],
+      rows: [
+        { keys: ["1–9"], what: "Tick or untick a phase candidate" },
+        { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice; Enter adds, Esc cancels" },
+      ],
     },
     {
       title: "Plot",
@@ -154,6 +163,9 @@ export function WorkspacePage(): JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
+  const [draft, setDraft] = useState<CustomDraft | null>(null);
+  useEffect(() => setDraft(null), [exposure?.id]);
+  const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const compareTraces = useCompareTraces(refs);
 
   const onClickPeak = useCallback(
@@ -195,10 +207,12 @@ export function WorkspacePage(): JSX.Element {
     [setStatus],
   );
 
+  const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(() => {
     const shown = candidates.filter((c) => assigned.has(c.id) || c.id === hoverId);
-    return shown.map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase), emphasis: assigned.has(c.id) }));
-  }, [candidates, assigned, hoverId]);
+    const lines = shown.map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase), emphasis: assigned.has(c.id) }));
+    return draft ? [{ id: -1, qs: draftQs, color: phaseColor(draft.phase), emphasis: true }] : lines;
+  }, [candidates, assigned, hoverId, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const activeRefs = refs.filter((r) => r !== sampleId);
@@ -226,10 +240,46 @@ export function WorkspacePage(): JSX.Element {
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
     [mainTrace, subTrace, subScale],
   );
-  const xExtent: [number, number] | null =
-    mainTrace && mainTrace.q.length > 1 ? [mainTrace.q[0]!, mainTrace.q[mainTrace.q.length - 1]!] : null;
+  const xExtent = useMemo<[number, number] | null>(
+    () => (mainTrace && mainTrace.q.length > 1 ? [mainTrace.q[0]!, mainTrace.q[mainTrace.q.length - 1]!] : null),
+    [mainTrace],
+  );
   const shownDomain = clampDomain(xDomain, xExtent);
   const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !refs.includes(s.id)), [samples, sampleId, refs]);
+
+  const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
+  const canCall = Boolean(username && exposure && !exposureDropped);
+  const draftBounds = draft ? latticeBounds(draft.phase, xExtent) : null;
+  const openCustom = useCallback(() => {
+    if (!canCall) return;
+    setDraft((d) => d ?? initialDraft(candidates[0]));
+  }, [canCall, candidates]);
+  const setDraftClamped = useCallback(
+    (d: CustomDraft) => setDraft({ phase: d.phase, lattice: clampLattice(d.phase, d.lattice, xExtent) }),
+    [xExtent],
+  );
+  const addCustom = useCallback(() => {
+    if (!draft || !exposure || !canCall) return;
+    const c = draftCommit(draft);
+    if (c.ratios.length === 0) return;
+    const commit = (): void => commitCustom.mutate(c.phase, c.basis, c.ratios);
+    if (exposure.selected) commit();
+    else selectExposure.mutate(exposure.id, { onSuccess: commit });
+    setDraft(null);
+  }, [draft, exposure, canCall, commitCustom, selectExposure]);
+
+  const indexSeries: IndexSeries[] = useMemo(() => {
+    if (draft) {
+      const fit = indexFit(draftQs, activePeakQs);
+      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit, lattice: draft.lattice, r2: fit.r2 }];
+    }
+    const hovered = candidates.find((c) => c.id === hoverId);
+    const shown = hovered ? [hovered] : candidates.filter((c) => assigned.has(c.id));
+    return shown.map((c) => {
+      const fit = indexFit(c.predicted_q, activePeakQs);
+      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, r2: c.r_squared ?? fit.r2 };
+    });
+  }, [draft, draftQs, activePeakQs, candidates, hoverId, assigned]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -250,6 +300,15 @@ export function WorkspacePage(): JSX.Element {
       if (isTyping(ev.target)) {
         if (ev.key === "Escape") (ev.target as HTMLElement).blur();
         return;
+      }
+      if (draft) {
+        if (ev.key === "Escape" || ev.key === "Enter" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+          ev.preventDefault();
+          if (ev.key === "Escape") setDraft(null);
+          else if (ev.key === "Enter") addCustom();
+          else setDraftClamped({ ...draft, lattice: draft.lattice + (ev.key === "ArrowRight" ? 1 : -1) * (ev.shiftKey ? 5 : 0.5) });
+          return;
+        }
       }
       const idx = visible.findIndex((s) => s.id === sampleId);
       const step = (d: 1 | -1): void => {
@@ -284,6 +343,10 @@ export function WorkspacePage(): JSX.Element {
         case "C":
           setPicking(true);
           break;
+        case "i":
+        case "I":
+          openCustom();
+          break;
         case "?":
           setHelpOpen(true);
           break;
@@ -310,7 +373,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom]);
 
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
@@ -340,6 +403,7 @@ export function WorkspacePage(): JSX.Element {
     { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
+    { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
     ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
   ];
@@ -422,15 +486,34 @@ export function WorkspacePage(): JSX.Element {
       }
       tools={
         <>
-          <Section title="Phase">
-            {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
-            <CandidateList
-              candidates={candidates}
-              assigned={assigned}
-              disabled={exposureDropped || !username}
-              onToggle={toggleCandidate}
-              onHover={setHoverId}
-            />
+          {draft && draftBounds ? (
+            <Section title="Custom index">
+              <CustomIndexPanel
+                draft={draft}
+                min={draftBounds.min}
+                max={draftBounds.max}
+                landed={draftLanded(draft, activePeakQs)}
+                total={draftQs.length}
+                disabled={!canCall}
+                onChange={setDraftClamped}
+                onAdd={addCustom}
+                onCancel={() => setDraft(null)}
+              />
+            </Section>
+          ) : (
+            <Section title="Phase">
+              {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
+              <CandidateList
+                candidates={candidates}
+                assigned={assigned}
+                disabled={exposureDropped || !username}
+                onToggle={toggleCandidate}
+                onHover={setHoverId}
+              />
+            </Section>
+          )}
+          <Section title="Indexing">
+            <IndexingPlot series={indexSeries} empty="Hover a candidate or tick one to see its fit." />
           </Section>
           {exposure && (
             <Section title="Exposure">

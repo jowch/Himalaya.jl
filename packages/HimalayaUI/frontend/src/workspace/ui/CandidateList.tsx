@@ -34,7 +34,7 @@ export function CandidateList({ candidates, assigned, disabled, onToggle, onHove
               <Kbd>{i + 1}</Kbd>
               <PhaseChip phase={c.phase} variant="solid" />
               <span>{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
-              <span className="text-ink-soft">{c.score !== null ? c.score.toFixed(2) : ""}</span>
+              <span className="text-ink-soft">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
             </button>
           </li>
         );
