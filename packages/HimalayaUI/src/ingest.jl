@@ -46,6 +46,22 @@ function _find_setup_files(analysis_dir::AbstractString)
     return String[]
 end
 
+_nothing_if_missing(x) = ismissing(x) ? nothing : x
+
+function _backfill_monitors!(db, experiment_id, ge)
+    vals = (ge.transmitted_counts, ge.incident_monitor, ge.counting_time_s)
+    all(ismissing, vals) && return nothing
+    DBInterface.execute(db, """
+        UPDATE exposures
+           SET transmitted_counts = COALESCE(transmitted_counts, ?),
+               incident_monitor   = COALESCE(incident_monitor, ?),
+               counting_time      = COALESCE(counting_time, ?)
+         WHERE experiment_id = ? AND filename = ?
+           AND (transmitted_counts IS NULL OR incident_monitor IS NULL OR counting_time IS NULL)
+    """, [map(_nothing_if_missing, vals)..., experiment_id, ge.stem])
+    nothing
+end
+
 """
     scan_and_group!(db, experiment_id; analyze=true, on_progress=nothing)
 
@@ -197,7 +213,10 @@ function scan_and_group!(
                     end
 
                     for ge in gs.exposures
-                        ge.stem in existing_filenames && continue  # insert-only
+                        if ge.stem in existing_filenames
+                            _backfill_monitors!(db, experiment_id, ge)
+                            continue
+                        end
                         eid = create_exposure!(db;
                             experiment_id       = experiment_id,
                             sample_id           = sample_id,
@@ -212,7 +231,10 @@ function scan_and_group!(
                             horizontal_position = ismissing(ge.horizontal_position_mm) ? nothing : ge.horizontal_position_mm,
                             scan_id             = ismissing(ge.scan_id)  ? nothing : ge.scan_id,
                             frame_no            = ismissing(ge.frame_no) ? nothing : ge.frame_no,
-                            load_id             = load_id)
+                            load_id             = load_id,
+                            transmitted_counts  = _nothing_if_missing(ge.transmitted_counts),
+                            incident_monitor    = _nothing_if_missing(ge.incident_monitor),
+                            counting_time       = _nothing_if_missing(ge.counting_time_s))
                         push!(new_exposure_ids, eid)
                         push!(existing_filenames, ge.stem)
                     end
@@ -401,6 +423,9 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                     tif_path = ge.tif_path, prp_path = ge.prp_path, timestamp = ge.timestamp,
                     exposure_time = ge.exposure_time_s,
                     horizontal_position = ge.horizontal_position_mm,
+                    transmitted_counts = ge.transmitted_counts,
+                    incident_monitor = ge.incident_monitor,
+                    counting_time = ge.counting_time_s,
                     scan_id = ge.scan_id, frame_no = ge.frame_no)
             end
         end
@@ -576,7 +601,10 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                         horizontal_position = ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
                         scan_id = ismissing(bf.scan_id) ? nothing : bf.scan_id,
                         frame_no = ismissing(bf.frame_no) ? nothing : bf.frame_no,
-                        load_id = load_id_of[bf.load_index])
+                        load_id = load_id_of[bf.load_index],
+                        transmitted_counts = _nothing_if_missing(bf.transmitted_counts),
+                        incident_monitor = _nothing_if_missing(bf.incident_monitor),
+                        counting_time = _nothing_if_missing(bf.counting_time))
                     push!(new_exposure_ids, eid)
                     exposures_inserted += 1
                     continue
@@ -599,7 +627,8 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                 DBInterface.execute(db, """
                     UPDATE exposures SET sample_id = ?, load_id = ?, filename = ?, prp_path = ?,
                         timestamp = ?, exposure_time = ?, horizontal_position = ?,
-                        scan_id = ?, frame_no = ?
+                        scan_id = ?, frame_no = ?, transmitted_counts = ?,
+                        incident_monitor = ?, counting_time = ?
                     WHERE experiment_id = ? AND filename = ?
                 """, [own, load_id_of[bf.load_index], stem,
                       ismissing(bf.prp_path) ? nothing : bf.prp_path,
@@ -608,6 +637,9 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                       ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
                       ismissing(bf.scan_id) ? nothing : bf.scan_id,
                       ismissing(bf.frame_no) ? nothing : bf.frame_no,
+                      _nothing_if_missing(bf.transmitted_counts),
+                      _nothing_if_missing(bf.incident_monitor),
+                      _nothing_if_missing(bf.counting_time),
                       experiment_id, dk])
                 exposures_relinked += length(olds)
             end
