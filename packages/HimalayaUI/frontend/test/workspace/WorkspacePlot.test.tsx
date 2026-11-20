@@ -44,15 +44,16 @@ describe("WorkspacePlot", () => {
     const linearQ = xTicks();
     rerender(<WorkspacePlot trace={trace} peaks={[]} phase={null} combs={[]} view="loglog" />);
     expect(xTicks()).not.toBe(linearQ);
+    expect(xTicks().split(" ")).toContain("0.10");
   });
 
   it("keeps the difference strip on the plot's q axis and intensity transform", () => {
     const props = { q: [0.05, 0.1, 0.2], d: [0, 10, 10], label: "minus buf", xDomain: null, xExtent: [0.05, 0.2] as [number, number], peakQs: [] };
     const xs = (): number[] =>
-      screen.getByTestId("workspace-subtraction").querySelector("path[stroke='var(--color-accent)']")!.getAttribute("d")!
+      screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!
         .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[0]));
     const ys = (): number[] =>
-      screen.getByTestId("workspace-subtraction").querySelector("path[stroke='var(--color-accent)']")!.getAttribute("d")!
+      screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!
         .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
     const { rerender } = render(<SubtractionStrip {...props} view="log" />);
     const linearX = xs();
@@ -62,5 +63,27 @@ describe("WorkspacePlot", () => {
     rerender(<SubtractionStrip {...props} view="kratky" />);
     expect(ys()[2]!).toBeLessThan(ys()[1]!);
   });
-});
 
+  it("draws the trace and its peak markers multiplied by q² in the q²I view", () => {
+    const steep = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [100, 40, 15, 8, 5], sigma: [0, 0, 0, 0, 0] };
+    const peaks = [
+      { id: 1, exposure_id: 1, q: 0.05, intensity: 100, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+      { id: 2, exposure_id: 1, q: 0.25, intensity: 5, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+    ];
+    const lineYs = (): number[] =>
+      screen.getByTestId("workspace-trace").querySelector('[data-role="trace-line"] path:last-of-type')!.getAttribute("d")!
+        .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
+    const markerY = (id: number): number => {
+      const glyph = screen.getByTestId("workspace-trace").querySelector(`[data-role="peak-glyph"] [data-peak-id="${id}"]`)!;
+      return Math.max(...glyph.getAttribute("points")!.split(" ").map((pt) => Number(pt.split(",")[1])));
+    };
+    const { rerender } = render(<WorkspacePlot trace={steep} peaks={peaks} phase={null} combs={[]} view="linear" />);
+    const linear = lineYs();
+    expect(linear[0]!).toBeLessThan(linear[linear.length - 1]!);
+    expect(markerY(1)).toBeLessThan(markerY(2));
+    rerender(<WorkspacePlot trace={steep} peaks={peaks} phase={null} combs={[]} view="kratky" />);
+    const kratky = lineYs();
+    expect(kratky[0]!).toBeGreaterThan(kratky[kratky.length - 1]!);
+    expect(markerY(1)).toBeGreaterThan(markerY(2));
+  });
+});

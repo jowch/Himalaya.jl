@@ -72,13 +72,14 @@ export function CompareBar({ chips, subtractId, hidden, view, onView, onSubtract
             {hidden ? "Comparisons hidden" : "Comparisons shown"}
           </span>
         )}
-        <span role="group" aria-label="Plot view" className="inline-flex items-center gap-2" data-testid="workspace-plot-view">
+        <span role="radiogroup" aria-label="Plot view" className="inline-flex items-center gap-2" data-testid="workspace-plot-view">
           {PLOT_VIEWS.map((o) => (
             <button
               key={o.view}
               type="button"
+              role="radio"
               title={o.title}
-              aria-pressed={o.view === view}
+              aria-checked={o.view === view}
               onClick={() => onView(o.view)}
               className={o.view === view ? "text-ink" : "hover:text-ink"}
             >

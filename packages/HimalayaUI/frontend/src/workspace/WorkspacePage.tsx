@@ -33,6 +33,7 @@ import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
 import { PLOT_VIEWS, nextView, usePlotView } from "./plotView";
+import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
 import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, storedFit, type CustomDraft } from "./indexing";
@@ -262,7 +263,7 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace, subTrace, subScale],
   );
   const xExtent = useMemo<[number, number] | null>(
-    () => (mainTrace && mainTrace.q.length > 1 ? [mainTrace.q[0]!, mainTrace.q[mainTrace.q.length - 1]!] : null),
+    () => (mainTrace && mainTrace.q.length > 1 ? positiveExtent(mainTrace.q) : null),
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
@@ -464,7 +465,7 @@ export function WorkspacePage(): JSX.Element {
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
-    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.label}`, hint: "View", run: () => setView(o.view) })),
+    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, shortcut: "L", run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),

@@ -6,14 +6,15 @@ export type PlotView = "log" | "linear" | "loglog" | "kratky";
 export interface PlotViewOption {
   view: PlotView;
   label: string;
+  name: string;
   title: string;
 }
 
 export const PLOT_VIEWS: readonly PlotViewOption[] = [
-  { view: "log", label: "Log", title: "Log intensity against q" },
-  { view: "linear", label: "Linear", title: "Linear intensity against q" },
-  { view: "loglog", label: "Log-log", title: "Log intensity against log q" },
-  { view: "kratky", label: "q²I", title: "q² × intensity against q (Kratky). Lifts weak high-order peaks" },
+  { view: "log", label: "Log", name: "Log", title: "Log intensity against q" },
+  { view: "linear", label: "Linear", name: "Linear", title: "Linear intensity against q" },
+  { view: "loglog", label: "Log-log", name: "Log-log", title: "Log intensity against log q" },
+  { view: "kratky", label: "q²I", name: "q²I (Kratky)", title: "q² × intensity against q (Kratky)" },
 ];
 
 const KEY = "himalaya-ui:workspace-plot-view";
@@ -25,10 +26,11 @@ export function viewAxes(view: PlotView): { xType: ScaleType; yType: ScaleType }
   };
 }
 
-// physics: a powder pattern loses intensity with q by a Lorentz factor of 1/q², so
-// physics: q²·I (the Kratky axis) restores the relative weight of higher-order
-// physics: reflections and makes weak √14 or √16 peaks visible. It is a display
-// physics: transform only: peak finding always runs on the measured I.
+// physics: the integrated intensity of a powder reflection falls with q by a Lorentz
+// physics: factor of 1/q², so q²·I (the Kratky axis) restores the relative weight of
+// physics: higher-order reflections. A flat solvent background also grows as q², so on
+// physics: SSRL traces the high-q end can sit as high as the strongest peak. It is a
+// physics: display transform only: peak finding always runs on the measured I.
 export function viewIntensity(view: PlotView, q: number, I: number): number {
   return view === "kratky" ? q * q * I : I;
 }
