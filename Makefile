@@ -1,12 +1,15 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean lint
 
 all: frontend sysimage
 
 frontend:
 	cd $(FRONTEND_DIR) && npm ci && npm run build
+
+lint:
+	cd $(FRONTEND_DIR) && npm run lint:design && npm run lint:ratchet && npm run lint
 
 sysimage:
 	julia --project=scripts -e 'using Pkg; Pkg.instantiate()'

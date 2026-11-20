@@ -11,7 +11,6 @@ export interface ToastAction {
 }
 
 let activeImpl: (msg: string, kind: ToastKind, action?: ToastAction) => void = (msg, kind) => {
-  // eslint-disable-next-line no-console
   console.warn(`[toast:${kind}] ${msg}`);
 };
 
@@ -32,7 +31,6 @@ export function setToastImpl(
 ): void {
   if (impl === null) {
     activeImpl = (msg, kind) => {
-      // eslint-disable-next-line no-console
       console.warn(`[toast:${kind}] ${msg}`);
     };
   } else {

@@ -93,7 +93,7 @@ export function CombScaffold({ rows, xDomain, focusQRange, maxWidth, ariaLabel, 
         ? (xFirst + xLast) / 2 - paneW / 2
         : xFirst - FOCUS_LEAD_IN;
     pane.scrollLeft = Math.max(0, target);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-centre only when the focus range or plot geometry changes
   }, [focusLo, focusHi, plotW, lo, hi]);
 
   return (

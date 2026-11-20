@@ -1,0 +1,161 @@
+import { parseArgs, UsageError } from "./args.mjs";
+import { loadConfig } from "./config.mjs";
+import { doctor } from "./doctor.mjs";
+import { seed, stop } from "./seed.mjs";
+import { open, click, fill, press, snapshot, screenshot, settle } from "./page.mjs";
+import { closeBrowser } from "./browser.mjs";
+import { api } from "./api.mjs";
+import { checkTruth } from "./truth.mjs";
+
+const TARGET = ["role", "name", "label", "text", "testid", "selector", "within", "nth", "timeout"];
+
+export const COMMANDS = {
+  doctor: {
+    usage: "doctor",
+    summary: "Check node, julia, deps, Chromium, demo data, backend, DB, ingest, Vite and its /api proxy.",
+    spec: {},
+    run: (cfg) => doctor(cfg),
+  },
+  seed: {
+    usage: "seed [--empty] [--reset] [--dry-run] [--timeout <ms>]",
+    summary: "Bring the demo up (generate, backend, ingest, Vite) in the background and wait until doctor passes. No-op when already up. --reset deletes the demo DBs and data first.",
+    spec: { booleans: ["empty", "reset", "dry-run"], strings: ["timeout"] },
+    run: (cfg, f) => seed(cfg, f),
+  },
+  stop: {
+    usage: "stop",
+    summary: "Stop the demo servers that `seed` started.",
+    spec: {},
+    run: (cfg) => stop(cfg),
+  },
+  open: {
+    usage: "open <route> [--viewport 1440x900] [--user <name>] [--onboarding] [--no-settle] [--timeout <ms>]",
+    summary: "Open a route in the shared headless browser (started on demand), then wait for it to settle. Seeds a user so onboarding is skipped; --onboarding clears the user so it shows. Fails if the page does not settle.",
+    spec: { booleans: ["onboarding", "no-settle"], strings: ["viewport", "user", "timeout"] },
+    args: 1,
+    run: (cfg, f, [route]) => open(cfg, route, f),
+  },
+  snapshot: {
+    usage: "snapshot [--selector <css>] [--raw]",
+    summary: "Accessibility tree (Playwright aria snapshot, YAML) of the page or one element. Use it to find roles and names for click.",
+    spec: { booleans: ["raw"], strings: ["selector"] },
+    run: (cfg, f) => snapshot(cfg, f),
+    raw: (r) => r.snapshot,
+  },
+  screenshot: {
+    usage: "screenshot [<file.png>] [--full] [--selector <css>]",
+    summary: "Save a PNG of the viewport, the full page, or one element. Default path scratch/verify/shots/<time>.png.",
+    spec: { booleans: ["full"], strings: ["selector"] },
+    maxArgs: 1,
+    run: (cfg, f, [file]) => screenshot(cfg, file, f),
+  },
+  click: {
+    usage: "click (--role <role> [--name <name>] | --label <l> | --text <t> | --testid <id> | --selector <css>) [--exact] [--within <css>] [--nth <i>] [--no-settle] [--timeout <ms>]",
+    summary: "Click exactly one element, then wait for the page to settle (requests started by the click included). Fails with a hint when zero or several match, or when the page does not settle within --timeout (default 15000 ms).",
+    spec: { booleans: ["exact", "no-settle"], strings: TARGET },
+    run: (cfg, f) => click(cfg, f),
+  },
+  fill: {
+    usage: "fill <target flags as for click> --value <text> [--no-settle]",
+    summary: "Replace the text of one input, then wait for the page to settle.",
+    spec: { booleans: ["exact", "no-settle"], strings: [...TARGET, "value"] },
+    run: (cfg, f) => fill(cfg, f),
+  },
+  press: {
+    usage: "press <key> [target flags as for click] [--no-settle]",
+    summary: "Press a key (Playwright names: Escape, Enter, ArrowRight, Control+K) on the page or on one element.",
+    spec: { booleans: ["exact", "no-settle"], strings: TARGET },
+    args: 1,
+    run: (cfg, f, [key]) => press(cfg, key, f),
+  },
+  "wait-settle": {
+    usage: "wait-settle [--url <regex>] [--timeout <ms>]",
+    summary: "Wait until no request is in flight (SSE excluded) and no skeleton, aria-busy loader or progressbar is visible, for 500 ms. It only sees requests that start after it connects; actions settle on their own. With --url, first wait for a navigation the server triggers later (e.g. after an ingest scan). Fails when it times out.",
+    spec: { strings: ["timeout", "url"] },
+    run: (cfg, f) => settle(cfg, f),
+  },
+  close: {
+    usage: "close",
+    summary: "Close the shared headless browser.",
+    spec: {},
+    run: (cfg) => closeBrowser(cfg),
+  },
+  api: {
+    usage: "api <METHOD> </api/path> [--data <json>] [--dry-run]",
+    summary: "Call the backend and print {ok, status, body}. Writes go through as-is; use --dry-run to see the request first.",
+    spec: { booleans: ["dry-run"], strings: ["data"] },
+    args: 2,
+    run: (cfg, f, [method, p]) => api(cfg, method, p, f),
+  },
+  "check-truth": {
+    usage: "check-truth [--strict] [--truth <TRUTH.csv>] [--experiment <id>]",
+    summary: "Compare the app's per-frame auto calls and frame counts with the demo TRUTH.csv. Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases.",
+    spec: { booleans: ["strict"], strings: ["truth", "experiment"] },
+    run: (cfg, f) => checkTruth(cfg, f),
+  },
+};
+
+export function helpText(name) {
+  if (name && COMMANDS[name]) {
+    const c = COMMANDS[name];
+    return `bin/verify ${c.usage}\n\n${c.summary}\n`;
+  }
+  const lines = Object.entries(COMMANDS).map(([, c]) => `  ${c.usage}\n      ${c.summary}`);
+  return [
+    "bin/verify <command> [options]   drive and check HimalayaUI on the synthetic demo",
+    "",
+    "Every command prints one JSON object on stdout and exits 0 on success and 1 on failure; failures carry `error` and a `hint` saying what to do.",
+    "Env: DEMO_DIR, DEMO_DB_DIR, DEMO_API_PORT (8080), DEMO_UI_PORT (5173), VERIFY_CDP_PORT (9333), VERIFY_STATE_DIR, VERIFY_CHROMIUM.",
+    "",
+    "Commands:",
+    ...lines,
+    "",
+    "Typical loop: doctor -> seed -> open /experiments -> snapshot -> click --role link --name ... -> screenshot -> check-truth",
+    "",
+  ].join("\n");
+}
+
+export async function main(argv, { cfg = loadConfig(), out = process.stdout } = {}) {
+  const [name, ...rest] = argv;
+  if (!name || name === "help" || name === "--help" || name === "-h") {
+    out.write(helpText(rest[0]));
+    return 0;
+  }
+  const cmd = COMMANDS[name];
+  if (!cmd) {
+    emit(out, { ok: false, error: `unknown command ${name}`, hint: `commands: ${Object.keys(COMMANDS).join(", ")}; run \`bin/verify help\`` });
+    return 1;
+  }
+  if (rest.includes("--help") || rest.includes("-h")) {
+    out.write(helpText(name));
+    return 0;
+  }
+  try {
+    const { flags, positional } = parseArgs(rest, cmd.spec);
+    const want = cmd.args ?? 0;
+    const max = cmd.maxArgs ?? want;
+    if (positional.length > max) {
+      throw new UsageError(`too many arguments: ${positional.slice(max).join(" ")}`, `usage: bin/verify ${cmd.usage}`);
+    }
+    if (positional.length < want) throw new UsageError("missing argument", `usage: bin/verify ${cmd.usage}`);
+    const result = await cmd.run(cfg, flags, positional);
+    if (flags.raw && cmd.raw) {
+      out.write(cmd.raw(result) + "\n");
+      return 0;
+    }
+    const ok = result.ok !== false;
+    emit(out, { ok, command: name, ...result });
+    return ok ? 0 : 1;
+  } catch (err) {
+    if (err instanceof UsageError) {
+      emit(out, { ok: false, command: name, error: err.message, ...(err.hint ? { hint: err.hint } : {}) });
+      return 1;
+    }
+    emit(out, { ok: false, command: name, error: err?.message ?? String(err) });
+    return 1;
+  }
+}
+
+function emit(out, obj) {
+  out.write(JSON.stringify(obj, null, 2) + "\n");
+}
