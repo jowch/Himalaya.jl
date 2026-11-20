@@ -6,6 +6,7 @@ cd "$REPO"
 OUT="${VERIFY_OUT:-scratch/verify/truth}"
 DB_DIR="${DEMO_DB_DIR:-scratch/demo}"
 CONFIRM_SAMPLE="${VERIFY_CONFIRM_SAMPLE:-MO_H2O}"
+export DEMO_UI_MODE="${DEMO_UI_MODE:-build}"
 HELP=packages/HimalayaUI/scripts/verify_truth.mjs
 mkdir -p "$OUT"
 failed=()
@@ -18,33 +19,10 @@ step() {
     echo "FAILED  $name (see $OUT/$name.$ext)"
     head -c 6000 "$OUT/$name.$ext"; echo
     failed+=("$name")
-    echo "--- sockets at failure"; sockets
   fi
 }
 
-probe() {
-  local line="$(date +%T)"
-  for pid in $(pgrep -f chrome 2>/dev/null); do
-    local n=$(ls /proc/$pid/fd 2>/dev/null | wc -l)
-    (( n > 150 )) || continue
-    local kind=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -o -- '--type=[a-z-]*' | head -1)
-    local lim=$(awk '/Max open files/ {print $4}' /proc/$pid/limits 2>/dev/null)
-    local mix=$(ls -l /proc/$pid/fd 2>/dev/null | awk 'NR>1 {t=$NF; sub(/:.*/,"",t); sub(/\/.*$/,"/",t); c[t]++} END {for (k in c) { printf "%s%s=%d", sep, k, c[k]; sep="," }}')
-    line="$line | $pid ${kind:-browser} n=$n lim=$lim $mix"
-  done
-  echo "$line"
-}
-( while sleep 2; do probe; done ) > "$OUT/probe.log" 2>&1 &
-PROBE=$!
-sockets() {
-  ss -tan 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); m=split($5,b,":"); l=a[n]; r=b[m]; if (l+0>=30000) l="eph"; if (r+0>=30000) r="eph"; print $1, l, r}' | sort | uniq -c | sort -rn | head -20
-}
-finish() {
-  kill "$PROBE" 2>/dev/null
-  echo "--- probe"; cat "$OUT/probe.log"; echo "--- sockets"; sockets
-  bin/verify stop > /dev/null 2>&1 || true
-}
-trap finish EXIT
+trap 'bin/verify stop > /dev/null 2>&1 || true' EXIT
 bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
 
