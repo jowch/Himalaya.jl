@@ -33,6 +33,8 @@ import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
+import { PLOT_VIEWS, nextView, usePlotView } from "./plotView";
+import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
 import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, storedFit, type CustomDraft } from "./indexing";
@@ -79,7 +81,7 @@ function helpSections(mod: string): HelpSection[] {
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
         { keys: ["Z"], what: "Reset the zoom" },
-        { keys: ["L"], what: "Log or linear intensity" },
+        { keys: ["L", "Shift L"], what: "Next or previous view: log, linear, log-log, q²I" },
         { keys: ["C"], what: "Compare with another sample" },
         { keys: ["R"], what: "Hide or show comparisons" },
       ],
@@ -162,7 +164,7 @@ export function WorkspacePage(): JSX.Element {
   const setExcluded = useSetPeakExcluded(exposure?.id ?? 0);
 
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
-  const [logY, setLogY] = useState(true);
+  const [view, setView] = usePlotView();
   const [refs, setRefs] = useState<number[]>([]);
   const [subChoice, setSubRef] = useState<number | undefined>(undefined);
   const subRef = subChoice !== undefined && refs.includes(subChoice) ? subChoice : undefined;
@@ -262,7 +264,7 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace, subTrace, subScale],
   );
   const xExtent = useMemo<[number, number] | null>(
-    () => (mainTrace && mainTrace.q.length > 1 ? [mainTrace.q[0]!, mainTrace.q[mainTrace.q.length - 1]!] : null),
+    () => (mainTrace && mainTrace.q.length > 1 ? positiveExtent(mainTrace.q) : null),
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
@@ -399,7 +401,7 @@ export function WorkspacePage(): JSX.Element {
         }
         case "l":
         case "L":
-          setLogY((v) => !v);
+          setView(nextView(view, ev.shiftKey ? -1 : 1));
           break;
         case "c":
         case "C":
@@ -438,7 +440,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
 
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
@@ -464,7 +466,7 @@ export function WorkspacePage(): JSX.Element {
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
-    { id: "scale", label: logY ? "Switch to linear intensity" : "Switch to log intensity", shortcut: "L", run: () => setLogY((v) => !v) },
+    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, shortcut: "L", run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
@@ -502,8 +504,8 @@ export function WorkspacePage(): JSX.Element {
                   chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, dash: COMPARE_DASHES[refs.indexOf(rid) % COMPARE_DASHES.length]!, scale: scales.get(rid) }))}
                   subtractId={subRef}
                   hidden={!refsOn}
-                  logY={logY}
-                  onToggleLog={() => setLogY((v) => !v)}
+                  view={view}
+                  onView={setView}
                   onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
                   onRemove={removeCompare}
                   onAdd={() => setPicking(true)}
@@ -527,7 +529,7 @@ export function WorkspacePage(): JSX.Element {
                 combs={combs}
                 compares={compares}
                 xDomain={shownDomain}
-                logY={logY}
+                view={view}
                 onXDomain={setXDomain}
                 {...(draft
                   ? { onAddPeak: snapDraft, onClickPeak: snapDraftToPeak }
@@ -543,6 +545,7 @@ export function WorkspacePage(): JSX.Element {
                   xDomain={shownDomain}
                   xExtent={xExtent}
                   peakQs={peakQs}
+                  view={view}
                 />
               )}
             </Section>

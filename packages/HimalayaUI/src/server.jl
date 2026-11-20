@@ -321,6 +321,35 @@ function rearm_rescan_schedulers!(db::SQLite.DB)
     nothing
 end
 
+function try_backfill_monitors!(db::SQLite.DB, experiment_id::Int)
+    try
+        backfill_monitors!(db, experiment_id)
+    catch err
+        @warn "beam monitor backfill failed" experiment_id = experiment_id exception = err
+        0
+    end
+end
+
+function backfill_all_monitors!(db::SQLite.DB)
+    ids = Tables.rowtable(DBInterface.execute(db,
+        "SELECT DISTINCT experiment_id FROM exposures
+          WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
+    for r in ids
+        try_backfill_monitors!(db, Int(r.experiment_id))
+    end
+    nothing
+end
+
+function start_background!(db::SQLite.DB)
+    start_gc_timer!(db)
+    rearm_rescan_schedulers!(db)
+    Threads.@spawn try
+        backfill_all_monitors!(db)
+    catch err
+        @warn "boot beam monitor backfill failed" exception = err
+    end
+end
+
 function arm_for_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
                        interval = get(RESCAN_TIER_INTERVALS, tier, nothing),
                        first_tick_seconds = interval)
@@ -387,11 +416,7 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
 
     # Change detection: injected seam (test) or the real cheap_change_check. Both
     # take (db, experiment_id) and resolve data_dir themselves.
-    try
-        backfill_monitors!(db, experiment_id)
-    catch err
-        @warn "beam monitor backfill failed" experiment_id = experiment_id exception = err
-    end
+    try_backfill_monitors!(db, experiment_id)
     changed = try
         cheap_check_fn !== nothing ? cheap_check_fn(db, experiment_id) :
                                      cheap_change_check(db, experiment_id)
@@ -449,12 +474,15 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
     nothing
 end
 
-function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+function boot!(db::SQLite.DB)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
-    start_gc_timer!(db)
-    rearm_rescan_schedulers!(db)   # 6c-2: timers are in-memory; re-arm on boot
+    start_background!(db)
+end
+
+function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+    boot!(db)
     # parallel = true wraps each request in `Threads.@spawn`, dispatching
     # handlers across the default thread pool. Without it, every handler
     # runs cooperatively on HTTP.jl's single interactive thread — even with
@@ -478,9 +506,7 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
-    Oxygen.resetstate()
-    bind_db!(db)
-    register_routes!()
+    boot!(db)
     # Match production's threading model so the test suite exercises the
     # same scheduling as `serve`. Any test that depends on single-threaded
     # request ordering is a bug.

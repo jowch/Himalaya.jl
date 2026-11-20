@@ -222,7 +222,7 @@
     "src/routes_trace.jl": 4,
     "src/routes_users.jl": 3,
     "src/series.jl": 131,
-    "src/server.jl": 183,
+    "src/server.jl": 182,
     "src/speculative.jl": 244
   }
 }
