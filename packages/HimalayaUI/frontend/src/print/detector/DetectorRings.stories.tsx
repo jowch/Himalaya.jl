@@ -54,7 +54,7 @@ export const OffCenterBeam: Story = {
 // The real composition: the fixture image (filling the portrait frame) + rings
 // about the real beam center + interactive hover.
 export const OverImage: Story = {
-  render: () => {
+  render: function Render() {
     const [hovered, setHovered] = useState<number | undefined>(undefined);
     return (
       <div className={frame}>

@@ -109,3 +109,7 @@ Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `Delimi
 - **No route may INSERT/DELETE into `peak_curations` or `index_group_members` except through `apply_event!`.** It is the sole writer to view tables.
 - **From inside `with_idempotency`, call `apply_event!(InTransaction(), …)`** — never the public `apply_event!(db, req; …)`. The public method opens a nested savepoint AND broadcasts immediately, bypassing the post-commit queue. See `docs/event-log.md` §3a + `docs/mutation-queue.md`.
 - **Experiment dirs are read-only at runtime** (except `himalaya config new`).
+
+## Comments are ratcheted
+
+Backend `src/*.jl` is covered by the comment ratchet (`make lint`, or `npm run lint:ratchet` in `frontend/`). HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Allowed: comments starting with `# physics:`. A backend-only change still has to pass `make lint`. See `frontend/src/AGENTS.md` "Ratchets".

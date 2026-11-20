@@ -199,7 +199,7 @@ function NewSeriesTile({ onClick }: { onClick: () => void }): JSX.Element {
 export function SeriesFolioPage(): JSX.Element {
   const navigate = useNavigate();
   const listQ = useSeriesList();
-  const summaries = listQ.data ?? [];
+  const summaries = useMemo(() => listQ.data ?? [], [listQ.data]);
   const now = new Date();
 
   // FOL P2-3: the controls live in the URL (the house permalink convention —

@@ -69,6 +69,15 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 The Print's recurring patterns live as **closed-look** primitives in `print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
 
+**Ratchets (2026-11-19).** `npm run lint:ratchet` (`scripts/check-ratchets.mjs`, also in `npm run build`) counts two things per file against `scripts/ratchet-baseline.json` and fails if any count grows:
+
+- **Appearance tokens** (counted per token, not per `className`) in every string or template literal inside a consumer `className=` expression, including `cx(...)` and ternaries. Named tokens count too (`text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border*`, `rounded*`, …); text alignment and wrapping are placement. Exempt: `print/{ui,plot,detector,comb,export}/` and stories. `lint:design` catches bracket values and raw colours; the ratchet stops the named-token count from growing. It does not see styling built outside a `className=` expression.
+- **Comment lines** in HimalayaUI frontend `src/` (TypeScript AST, so trailing and JSX comments count and strings do not) and backend `src/*.jl` (`#`, `#= =#` and docstrings; SQL `"""` strings do not count). HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Exempt: comments that *start* with `physics:`, `eslint-disable… -- <reason>` and `@ts-expect-error`. A reason-less directive and `@ts-ignore` count. The core `Himalaya` package is exempt.
+
+A count that falls must be locked in with `npm run lint:ratchet -- --update` (commit the baseline). `--update` also accepts a rename or split as long as each total does not grow.
+
+`npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on all of `src/`, stories included.
+
 This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `print/ui/**`:
 
 - arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)

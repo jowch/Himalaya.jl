@@ -44,7 +44,6 @@ export function useFigureExport(
         await work();
       } catch (err) {
         showToast(failMsg, "error");
-        // eslint-disable-next-line no-console
         console.warn(err);
       } finally {
         inFlight.current = false;

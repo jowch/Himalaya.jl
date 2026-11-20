@@ -19,7 +19,7 @@ export const Flagged: Story = { args: { flagged: true } };
 
 /** Click the value to flip between the skipped and kept looks. */
 export const Toggling: Story = {
-  render: () => {
+  render: function Render() {
     const [flagged, setFlagged] = useState(true);
     return (
       <FlagButton

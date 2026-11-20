@@ -201,7 +201,10 @@ export function SeriesBuilderPage(): JSX.Element {
   // early return, so they are read through refs the render keeps current —
   // the listener closes over a stable ref, never a stale or not-yet-defined
   // binding.
-  const navSamples = liveDraft ? liveDraft.recipe : (series?.samples ?? []);
+  const navSamples = useMemo(
+    () => (liveDraft ? liveDraft.recipe : (series?.samples ?? [])),
+    [liveDraft, series?.samples],
+  );
   // ID-based cursor: survives recipe edits (fixes the selectedIndex bug where
   // removing a row above the cursor silently jumped to the wrong sample).
   const ids = useMemo(() => navSamples.map((r) => r.sample_id), [navSamples]);
@@ -521,7 +524,7 @@ export function SeriesBuilderPage(): JSX.Element {
         "error",
       );
     }
-  }, [save.error, commit.error]);
+  }, [save.error, commit.error, chainErrorMessage]);
 
   // ── Honest states ───────────────────────────────────────────────────────
   // BU-BADID: a non-numeric :id (NaN) is knowable synchronously from the route
