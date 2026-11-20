@@ -372,9 +372,9 @@ describe("WorkspacePage", () => {
   });
 
   it("scales by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
-    const frame = (exposure_id: number, transmitted_counts: number) => ({ exposure_id, transmitted_counts, exposure_time: 15, counting_time: 15.8 });
-    state.trace = { ...makeTrace(1), frames: [frame(101, 6000)] };
-    state.compareTraces = new Map([[11, { ...makeTrace(2), frames: [frame(111, 8000)] }]]);
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));

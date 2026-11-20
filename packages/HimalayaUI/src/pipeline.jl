@@ -925,10 +925,10 @@ acquisition_stem(filename::AbstractString) = replace(filename, r"_\d+_\d+$" => "
     resolve_trace_path(analysis_dir, integration_pattern, filename) -> String | nothing
 
 Resolve an exposure's integration `.dat` under `analysis_dir`. Tries the exact
-per-frame name (`integration_pattern` with `{name}` => `filename`) first, then
-falls back to the per-acquisition name with the trailing `_<rep>_<frame>` suffix
-dropped: the real beamline `_tot.dat` total integration is named by the
-acquisition stem and shared across that acquisition's per-frame exposures. The
+name (`integration_pattern` with `{name}` => `filename`) first, then falls back
+to the name with the trailing `_<rep>_<frame>` suffix dropped: the beamline
+writes one `_tot.dat` per exposure, named without that suffix (Jonathan,
+2026-11-20: no summing or averaging of frames into a `_tot.dat`). The
 migration rewrites `exposures.filename` to the full per-frame stem (for rescan
 dedup), so every `.dat` consumer — analyze, the trace route, series traces — must
 resolve through here. Returns the path if found, else `nothing`.
