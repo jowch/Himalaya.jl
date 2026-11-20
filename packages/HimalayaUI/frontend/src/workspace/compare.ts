@@ -20,15 +20,14 @@ export function interpolateAt(trace: Pick<Trace, "q" | "I">, q: number): number 
   return x1 === x0 ? y0 : y0 + ((y1 - y0) * (q - x0)) / (x1 - x0);
 }
 
-// physics: the comparison is scaled to the current trace by the median intensity
-// physics: ratio over the top 15% of their shared q range, on the assumption that
-// physics: by high q both curves are mostly solvent and capillary background.
-// physics: Bragg reflections often still sit in that window (HII and higher Lα
-// physics: orders), so q within PEAK_MASK of the current trace's own peaks is left
-// physics: out. A sample's own smooth high-q scattering (bilayer form factor, more
-// physics: lipid) still reads as extra background and over-scales the reference,
-// physics: so the buffer is over-subtracted. Scaling by transmitted flux and
-// physics: exposure time from the beam monitors is the right fix.
+// physics: without beam monitors the comparison is scaled to the current trace by
+// physics: the median intensity ratio over the top 15% of their shared q range, on
+// physics: the assumption that by high q both curves are mostly solvent and capillary
+// physics: background. Bragg reflections often still sit in that window (HII and
+// physics: higher Lα orders), so q within PEAK_MASK of the current trace's own peaks
+// physics: is left out. A sample's own smooth high-q scattering (bilayer form factor,
+// physics: more lipid) still reads as extra background and over-scales the reference,
+// physics: so this is only the fallback for exposures that lack monitors.
 export const SCALE_WINDOW = 0.15;
 export const PEAK_MASK = 0.008;
 
@@ -53,6 +52,50 @@ export function matchScale(
   if (ratios.length === 0) return 1;
   ratios.sort((a, b) => a - b);
   return ratios[Math.floor(ratios.length / 2)]!;
+}
+
+// physics: the SSRL integration writes raw detector counts, so a trace scales with
+// physics: the flux that crossed the sample while the detector counted. I_signal (the
+// physics: beamstop APD behind the sample, dark-corrected) integrates that flux over
+// physics: the counting time, which runs longer than the exposure, so the flux during
+// physics: the exposure is I_signal × exposure time / counting time. It already folds
+// physics: in the sample's transmission, so the ratio of two exposures' flux puts a
+// physics: buffer on the sample's scale with no assumption about what either scatters.
+// physics: If the integration ever divides by I_signal itself, the traces are already
+// physics: on one scale and the reference needs none: set this to "per_flux".
+export const TRACE_NORMALISATION: "raw_counts" | "per_flux" = "raw_counts";
+
+export interface BeamMonitors {
+  transmitted_counts: number | null;
+  exposure_time: number | null;
+  counting_time: number | null;
+}
+
+const positive = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+export function transmittedFlux(m: BeamMonitors | undefined): number | null {
+  if (!m || !positive(m.transmitted_counts) || !positive(m.exposure_time) || !positive(m.counting_time)) return null;
+  return (m.transmitted_counts * m.exposure_time) / m.counting_time;
+}
+
+export interface CompareScale {
+  scale: number;
+  source: "monitor" | "matched";
+}
+
+export function compareScale(
+  main: Pick<Trace, "q" | "I">,
+  ref: Pick<Trace, "q" | "I">,
+  mainMonitors: BeamMonitors | undefined,
+  refMonitors: BeamMonitors | undefined,
+  peakQs: readonly number[],
+): CompareScale {
+  const fm = transmittedFlux(mainMonitors);
+  const fr = transmittedFlux(refMonitors);
+  if (fm !== null && fr !== null) {
+    return { scale: TRACE_NORMALISATION === "raw_counts" ? fm / fr : 1, source: "monitor" };
+  }
+  return { scale: matchScale(main, ref, peakQs), source: "matched" };
 }
 
 export function scaledTrace(ref: Pick<Trace, "q" | "I">, scale: number): { q: number[]; I: number[] } {

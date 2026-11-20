@@ -16,6 +16,7 @@ const state = {
   trace: undefined as Trace | undefined,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
+  compareExposures: new Map<number, Exposure>(),
 };
 
 function recorder(hook: string) {
@@ -45,7 +46,9 @@ vi.mock("../../src/queries", () => ({
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
   useCompareTraces: (ids: readonly number[]) =>
-    new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : []))),
+    new Map(ids.flatMap((id) => (state.compareTraces.has(id)
+      ? [[id, { trace: state.compareTraces.get(id)!, exposure: state.compareExposures.get(id) ?? exposure(500 + id) }] as const]
+      : []))),
 }));
 
 function makeTrace(level: number): Trace {
@@ -125,6 +128,7 @@ beforeEach(() => {
   state.trace = undefined;
   state.peaks = [];
   state.compareTraces = new Map();
+  state.compareExposures = new Map();
 });
 
 describe("WorkspacePage", () => {
@@ -369,6 +373,31 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     expect(screen.getByRole("button", { name: "Remove A2" }).parentElement!).toHaveTextContent("×2.00");
+  });
+
+  it("scales by the transmitted beam when both frames carry monitors, even where high-q matching would disagree", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.exposures = [exposure(100), exposure(101, { selected: true, ...monitors(6000) })];
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    state.compareExposures = new Map([[11, exposure(111, { sample_id: 11, ...monitors(8000) })]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
+    expect(scale).toHaveAttribute("data-scale-source", "monitor");
+    expect(scale).toHaveTextContent(/^×0\.750$/);
+  });
+
+  it("says when a comparison had no monitors and was matched at high q instead", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
+    expect(scale).toHaveAttribute("data-scale-source", "matched");
+    expect(scale).toHaveTextContent("×0.500 matched");
   });
 
   it("clicking the subtracted chip stops subtracting, R hides comparisons, and × removes one", () => {

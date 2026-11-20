@@ -1,10 +1,11 @@
 import { Kbd } from "./Kbd";
+import type { CompareScale } from "../compare";
 
 export interface CompareChip {
   id: number;
   name: string;
   dash: string;
-  scale: number | undefined;
+  scale: CompareScale | undefined;
 }
 
 interface Props {
@@ -46,8 +47,13 @@ export function CompareBar({ chips, subtractId, hidden, logY, onToggleLog, onSub
               {c.name}
             </button>
             {c.scale !== undefined && (
-              <span className="text-ink-faint" title="Scale applied to this comparison">
-                ×{c.scale.toPrecision(3)}
+              <span
+                className="text-ink-faint"
+                data-scale-source={c.scale.source}
+                title={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}
+              >
+                ×{c.scale.scale.toPrecision(3)}
+                {c.scale.source === "matched" && " matched"}
               </span>
             )}
             <button type="button" aria-label={`Remove ${c.name}`} onClick={() => onRemove(c.id)} className="text-ink-faint hover:text-ink">

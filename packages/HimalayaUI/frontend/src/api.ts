@@ -400,6 +400,10 @@ export interface Exposure {
   sources: unknown[];
   trace_hash: string | null;
   analysis_inputs_hash: string | null;
+  exposure_time: number | null;
+  counting_time: number | null;
+  transmitted_counts: number | null;
+  incident_monitor: number | null;
 }
 
 export const listExposures = (sample_id: number) =>

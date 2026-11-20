@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCompare, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
+import { addCompare, compareScale, transmittedFlux, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
 const background = (x: number): number => 5 + 1 / x;
@@ -98,5 +98,47 @@ describe("compare", () => {
     expect(clampDomain([0.1, 0.3], [0.05, 0.2])).toEqual([0.1, 0.2]);
     expect(clampDomain([0.3, 0.4], [0.05, 0.2])).toBeNull();
     expect(clampDomain(null, [0.05, 0.2])).toBeNull();
+  });
+});
+
+describe("beam-monitor scaling", () => {
+  const mon = (transmitted_counts: number | null, exposure_time: number | null = 15, counting_time: number | null = 15.8) => ({
+    transmitted_counts, exposure_time, counting_time,
+  });
+
+  it("measures the flux through the sample during the detector exposure, not the longer counting window", () => {
+    expect(transmittedFlux(mon(7900))).toBeCloseTo((7900 * 15) / 15.8, 6);
+  });
+
+  it("has no flux when a monitor is missing, zero or not a number", () => {
+    expect(transmittedFlux(mon(null))).toBeNull();
+    expect(transmittedFlux(mon(0))).toBeNull();
+    expect(transmittedFlux(mon(7000, null))).toBeNull();
+    expect(transmittedFlux(mon(7000, 15, null))).toBeNull();
+    expect(transmittedFlux(mon(Number.NaN))).toBeNull();
+    expect(transmittedFlux(undefined)).toBeNull();
+  });
+
+  it("scales a raw-count reference by the ratio of transmitted flux, even when the sample scatters at high q", () => {
+    const sample = { q, I: q.map((x) => 1.2 * background(x) + 40 * x) };
+    const buffer = { q, I: q.map((x) => 2 * background(x)) };
+    const r = compareScale(sample, buffer, mon(6000), mon(10000), []);
+    expect(r.source).toBe("monitor");
+    expect(r.scale).toBeCloseTo(0.6, 9);
+    const diff = subtractTrace(sample, buffer, r.scale);
+    expect(Math.min(...diff.d)).toBeGreaterThan(0);
+  });
+
+  it("puts exposures of different length on one scale", () => {
+    expect(compareScale({ q, I: q }, { q, I: q }, mon(7000, 30, 30.8), mon(7000, 15, 15.8), []).scale).toBeCloseTo((30 / 30.8) / (15 / 15.8), 9);
+  });
+
+  it("falls back to the peak-masked high-q match when either exposure lacks monitors", () => {
+    const sample = { q, I: q.map((x) => 3 * background(x)) };
+    const buffer = { q, I: q.map(background) };
+    const r = compareScale(sample, buffer, mon(7000), mon(null), []);
+    expect(r.source).toBe("matched");
+    expect(r.scale).toBeCloseTo(3, 3);
+    expect(compareScale(sample, buffer, undefined, mon(7000), []).source).toBe("matched");
   });
 });
