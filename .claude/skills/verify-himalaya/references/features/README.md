@@ -69,7 +69,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify click --role button --name "Set as representative"
   bin/verify press Escape                             # back to the corpus
   ```
-- **Check:** `bin/verify api GET /api/samples/3/exposures` (`status` is `rejected` when dropped, `selected` marks the representative). The pressed `Frame N` thumbnail is the frame on screen; `check-truth --ui` reads it as `views.loupe`.
+- **Check:** `bin/verify api GET /api/samples/3/exposures` (`status` is `rejected` when dropped, `selected` marks the frame picked as representative; a dropped pick is ignored and the newest kept frame is used). The pressed `Frame N` thumbnail is the frame on screen; `check-truth --ui` reads it as `views.loupe`.
 - **Gotchas:**
   - Drop writes `status: rejected`; undo with the same button or `bin/verify api PATCH /api/exposures/<id>/status --data '{"status":null}'`.
   - Set as representative can be moved but not cleared (the button disappears and the frame reads "Representative for indexing"). Only `bin/verify seed --reset` returns a sample to "no frame selected".
@@ -90,7 +90,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   ```
 - **Check:** `bin/verify check-truth` (`assigned_frames`, and `shown` for what the corpus then says), or `bin/verify api GET /api/exposures/<id>/assignment`. `check-truth --ui` reads the pressed `Frame N` thumbnail as `views.focus`.
 - **Gotchas:**
-  - Focus opens the first kept frame, but the corpus status describes the newest frame. An assignment made here therefore leaves the corpus at "Not indexed", which `check-truth` reports under the `status_matches_assignment` invariant. This is the app's known representative-frame inconsistency, not a CLI bug.
+  - Focus opens the representative, the frame the corpus status describes. If you switch to another frame and assign there, the corpus still describes the representative, which `check-truth` reports under `status_matches_assignment`.
   - Adding or excluding a peak re-analyses the frame and can change its auto call, which `check-truth` then reports as a regression. Undo the edit, or `bin/verify seed --reset`.
   - `MO_PEG5` is the coexistence test case: the auto call is Im3m only, and a human must add Pn3m.
 

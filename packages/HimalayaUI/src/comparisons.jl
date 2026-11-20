@@ -402,7 +402,7 @@ the projection for every sample in the corpus, ordered by `(experiment_id, id)`
 
 For each sample, returns:
   :sample              => sample row (Symbol-keyed Dict, with :tags vector)
-  :indexing_exposure_id => Int or nothing — `selected = 1` else MAX(id) else nothing
+  :indexing_exposure_id => `representative_exposure_id` of the sample's exposures
   :all_exposures       => Vector of {:id, :filename, :selected::Bool}, ORDER BY id ASC
 
 Three bulk queries (no JOIN'd Cartesian flatten, no per-sample N+1):
@@ -442,7 +442,7 @@ function _picker_samples_projection(db::SQLite.DB, samples::AbstractVector)::Vec
     sample_ids   = [Int(s.id) for s in samples]
     placeholders = join(fill("?", length(sample_ids)), ",")
     exposures    = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, sample_id, filename, selected FROM exposures
+        "SELECT id, sample_id, filename, selected, status FROM exposures
          WHERE sample_id IN ($placeholders) ORDER BY sample_id ASC, id ASC",
         sample_ids))
     tag_rows = Tables.rowtable(DBInterface.execute(db,
@@ -465,19 +465,7 @@ function _picker_samples_projection(db::SQLite.DB, samples::AbstractVector)::Vec
         sid  = Int(sm.id)
         exps = get(grouped_exps, sid, NamedTuple[])
 
-        # Resolve indexing exposure: highest-id selected wins (defensive
-        # against legacy multi-selected data); else highest-id overall;
-        # else nothing for zero-exposure samples. `exps` is sorted id ASC,
-        # so iterating in reverse yields highest-id first.
-        idx_id = nothing
-        for e in Iterators.reverse(exps)
-            if e.selected != 0
-                idx_id = Int(e.id); break
-            end
-        end
-        if idx_id === nothing && !isempty(exps)
-            idx_id = Int(last(exps).id)   # last == max by id ASC ordering
-        end
+        idx_id = representative_exposure_id(exps)
 
         # Sample → row_to_json + bulk-grouped tags. Drop sample_id from each
         # tag dict (it's redundant once grouped under the sample).

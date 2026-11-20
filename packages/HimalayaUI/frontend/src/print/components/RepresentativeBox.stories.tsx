@@ -31,30 +31,8 @@ export const IsRepresentative: Story = {
   ),
 };
 
-// LO-REPDROP: the sample's representative frame is dropped (whichever frame
-// is active) — the box warns that it still carries to the Index stage.
-export const RepresentativeDropped: Story = {
-  args: {
-    isRepresentative: false,
-    representativeDropped: true,
-    onSetRepresentative: () => {},
-  },
-  render: (args) => (
-    <div className="bg-paper p-4 w-80">
-      <RepresentativeBox {...args} />
-    </div>
-  ),
-};
-
-// The strongest state: the ACTIVE frame is the dropped representative —
-// accent header + warning together, and NO set button (controls-don't-lie;
-// the remedy is pressing Drop again to un-cull, which the warning copy names).
-export const DroppedRepresentativeActive: Story = {
-  args: {
-    isRepresentative: true,
-    representativeDropped: true,
-    onSetRepresentative: () => {},
-  },
+export const DroppedFrame: Story = {
+  args: { isRepresentative: false, dropped: true, onSetRepresentative: () => {} },
   render: (args) => (
     <div className="bg-paper p-4 w-80">
       <RepresentativeBox {...args} />

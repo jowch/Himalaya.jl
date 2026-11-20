@@ -193,6 +193,14 @@ describe("Corpus action declaration", () => {
     expect(setRepMutate).toHaveBeenCalledWith(100);
   });
 
+  it("r on a dropped frame selects nothing", async () => {
+    const byId = new Map<number, Exposure[]>([[10, [makeExposure({ id: 100, sample_id: 10, status: "rejected" })]]]);
+    renderCorpus([{ id: 10, name: "A" }], { byId });
+    await screen.findByText("A");
+    fireEvent.keyDown(window, { key: "r" });
+    expect(setRepMutate).not.toHaveBeenCalled();
+  });
+
   it("x is inert when the cursored sample has no frames", async () => {
     renderCorpus([{ id: 10, name: "A" }], { byId: new Map<number, Exposure[]>() });
     await screen.findByText("A");

@@ -55,8 +55,8 @@ end
     _analyze_experiment!(db, exp_id; sample_filter=nothing) -> nothing
 
 Run peak-finding + indexing for every exposure of `exp_id`, optionally
-restricted to a single sample label. Skips rejected exposures and auto-
-selects the first kept (non-rejected) exposure when none is currently selected.
+restricted to a single sample label. Skips rejected exposures and leaves
+`selected` alone: the representative is derived by `representative_exposure_id`.
 Errors per-exposure are caught and printed as `SKIP (...)` so one bad
 .dat file doesn't abort the batch.
 
@@ -77,24 +77,6 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
-
-        has_selected = any(e -> Int(e.selected) == 1, exposures)
-        if !has_selected
-            # No explicit pick → fall back to the first KEPT (not-rejected) frame.
-            # Status is binary: rejected vs null (= kept); there is no positive
-            # "accepted" value to key on.
-            first_kept = findfirst(
-                e -> ismissing(e.status) || e.status != "rejected", exposures)
-            if first_kept !== nothing
-                fallback_id = Int(exposures[first_kept].id)
-                DBInterface.execute(db,
-                    "UPDATE exposures SET selected = 0 WHERE sample_id = ?",
-                    [Int(sample.id)])
-                DBInterface.execute(db,
-                    "UPDATE exposures SET selected = 1 WHERE id = ?",
-                    [fallback_id])
-            end
-        end
 
         for exp_row in exposures
             e_id = Int(exp_row.id)

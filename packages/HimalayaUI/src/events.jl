@@ -970,10 +970,8 @@ then for each non-excluded recipe sample (in `position` order) resolves its
 representative exposure and `INSERT`s one plate member with a freshly-computed
 snapshot. Returns the number of members written.
 
-Representative-exposure rule (the `_corpus_with_exposures` precedent,
-`comparisons.jl`): highest-id `selected=1` exposure wins; else highest-id
-exposure overall; else the sample resolves to NO exposure and is SKIPPED (a
-recipe sample with no exposure has nothing renderable to plate). `display_order`
+Each recipe sample plates its `representative_exposure_id`; a sample with none
+is SKIPPED. `display_order`
 is sequential over the resolved members, so skipped rows leave no gap.
 
 Used by the `series_created` dispatcher so a just-created draft lands with its
@@ -993,20 +991,10 @@ function _resolve_series_plate!(db, series_id, user_id, now_str)
     display_order = 0
     for r in recipe
         sample_id = Int(r.sample_id)
-        # Representative exposure: highest-id selected wins; else highest-id
-        # overall; else nothing (skip — no renderable trace for this sample).
         exps = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, selected FROM exposures WHERE sample_id = ? ORDER BY id ASC",
+            "SELECT id, selected, status FROM exposures WHERE sample_id = ?",
             [sample_id]))
-        eid = nothing
-        for e in Iterators.reverse(exps)
-            if e.selected != 0
-                eid = Int(e.id); break
-            end
-        end
-        if eid === nothing && !isempty(exps)
-            eid = Int(last(exps).id)
-        end
+        eid = representative_exposure_id(exps)
         eid === nothing && continue
 
         # `_insert_series_member!` reads members via `getproperty` (the commit

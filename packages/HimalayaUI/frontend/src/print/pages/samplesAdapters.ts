@@ -2,6 +2,7 @@ import type { CorpusSample, Exposure } from "../../api";
 import type { Tag } from "../ui";
 import type { GalleryExposure } from "../components/ThumbnailGallery";
 import { sampleDisplayName } from "../../lib/sample/displayName";
+import { keptExposures } from "../../lib/exposure";
 import { toGalleryExposures, toLoupeTags } from "./loupeAdapters";
 
 export interface SampleRowModel {
@@ -27,10 +28,8 @@ export function toSampleRowModel(
 ): SampleRowModel {
   const exps = exposures ?? [];
   const total = exps.length;
-  // Binary status: "Kept" means simply not-dropped (status !== rejected).
-  // kept + dropped === total — there is no untriaged middle state.
-  const dropped = exps.filter((e) => e.status === "rejected").length;
-  const kept = total - dropped;
+  const kept = keptExposures(exps).length;
+  const dropped = total - kept;
   return {
     name: sampleDisplayName(sample),
     sampleId: `#${sample.id}`,

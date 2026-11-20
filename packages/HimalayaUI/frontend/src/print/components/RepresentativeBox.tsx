@@ -5,10 +5,7 @@ import { Button, Card, Dot } from "../ui";
 export interface RepresentativeBoxProps {
   /** true = this exposure IS the representative. */
   isRepresentative: boolean;
-  /** true = the SAMPLE's representative exposure (whichever frame that is)
-   *  is currently dropped. The backend still carries it to the Index stage
-   *  (status is never consulted there), so the box must say so honestly. */
-  representativeDropped?: boolean;
+  dropped?: boolean;
   /** Set this exposure as representative. */
   onSetRepresentative?: () => void;
   /** Body explanation override. */
@@ -19,7 +16,7 @@ export interface RepresentativeBoxProps {
 
 export function RepresentativeBox({
   isRepresentative,
-  representativeDropped = false,
+  dropped = false,
   onSetRepresentative,
   children,
   className,
@@ -70,20 +67,16 @@ export function RepresentativeBox({
             "One frame per sample carries forward to the Index stage. Pick the cleanest, strongest frame."}
         </p>
 
-        {representativeDropped && (
-          // Severity-as-word (the Toast pattern): bold leading "Warning." in
-          // default ink tones — small warning-hued text fails AA on plate.
-          <p data-testid="rep-dropped-warning" className="text-caption mt-1.5">
-            <strong className="font-bold text-ink">Warning.</strong> The
-            representative frame is dropped. It still carries to the Index
-            stage. Press Drop again to bring it back, or set another frame as
-            representative.
+        {dropped && (
+          <p data-testid="rep-dropped-note" className="text-caption mt-1.5">
+            A dropped frame is never the representative. Press Drop again to
+            bring it back.
           </p>
         )}
 
         {/* Controls-don't-lie: on the representative itself the button would
             be a no-op, so it is OMITTED — the accent header already states it. */}
-        {!isRepresentative && (
+        {!isRepresentative && !dropped && (
           <Button
             variant="outline"
             className="mt-2"

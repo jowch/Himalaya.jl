@@ -49,7 +49,7 @@ Two invisible invariants in `state.ts` (`persist` config, `queries.ts`'s sibling
 `setActiveSample` cascades `activeExposureId: undefined`, so a careless call resets the user's deliberate exposure pick. Two cooperating hooks keep this in check — touching either requires understanding the whole route-hook → Zustand → auto-pick chain:
 
 - **`useSyncActiveSampleFromRoute` calls `setActiveSample` ONLY when the parsed id differs from the stored one** (`useSyncActiveSampleFromRoute.ts:67-73`). Drop the `parsed === activeSampleId` no-op guard and every render re-seeds the sample → clears the exposure → `useAutoPickExposure` re-adopts the representative, discarding an in-session deliberate switch (the FO-NAV-SKELETON / R5 representative-switcher fix).
-- **`useAutoPickExposure` writes only when the rule picks a DIFFERENT, defined exposure** (`useAutoPickExposure.ts:85-90`). Its rule (`resolveActiveExposure`) KEEPS a still-valid `currentId` and is pure, so the page resolves the same value during render — that's what paints a cached sample's trace in the same frame instead of flashing a skeleton through the store→effect seam.
+- **`useAutoPickExposure` writes only when the rule picks a DIFFERENT, defined exposure** (the effect in `useAutoPickExposure.ts`). Its rule (`resolveActiveExposure`) KEEPS a still-valid `currentId` and is pure, so the page resolves the same value during render — that's what paints a cached sample's trace in the same frame instead of flashing a skeleton through the store→effect seam.
 
 ## Per-tab SSE identity
 

@@ -101,3 +101,26 @@ end
         @test n_events == 1
     end
 end
+
+@testset "PATCH /api/exposures/:id/select refuses a dropped frame and keeps the pick" begin
+    tmp = mktempdir()
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="A")
+    e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="B")
+    DBInterface.execute(db, "UPDATE exposures SET selected = 1 WHERE id = ?", [e1])
+    DBInterface.execute(db, "UPDATE exposures SET status = 'rejected' WHERE id = ?", [e2])
+
+    with_inproc_routes(db) do call
+        r = call("PATCH", "/api/exposures/$e2/select"; headers = ["X-Username" => "alice"])
+        @test r.status == 422
+        picked = [Int(x.id) for x in Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM exposures WHERE sample_id = ? AND selected = 1", [s_id]))]
+        @test picked == [e1]
+        n_events = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'select_exposure'"))).c
+        @test n_events == 0
+    end
+end

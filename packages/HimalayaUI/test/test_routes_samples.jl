@@ -876,3 +876,35 @@ end
         @test rows[2].source == "scoping"
     end
 end
+
+@testset "representative frame: shared cross-view cases" begin
+    cases = JSON3.read(read(joinpath(@__DIR__, "..", "frontend", "test", "fixtures",
+                                     "representative-exposure.json"), String))
+    for c in cases
+        @testset "$(c.case)" begin
+            @test HimalayaUI.representative_exposure_id(c.frames) == c.representative
+        end
+    end
+end
+
+@testset "GET /api/samples: the representative is never a dropped frame" begin
+    db = SQLite.DB()
+    HimalayaUI.create_schema!(db)
+    exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
+    frames(name, n) = (s = HimalayaUI.create_sample!(db; experiment_id=exp_id, name=name);
+        [HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s, filename="$(name)$(i)") for i in 1:n])
+    drop(e) = DBInterface.execute(db, "UPDATE exposures SET status = 'rejected' WHERE id = ?", [e])
+
+    newest = frames("newest_dropped", 3); drop(newest[3])
+    picked = frames("selected_dropped", 3); drop(picked[1])
+    DBInterface.execute(db, "UPDATE exposures SET selected = 1 WHERE id = ?", [picked[1]])
+    gone = frames("all_dropped", 2); drop.(gone)
+
+    with_inproc_routes(db) do call
+        byname = Dict(String(s.name) => s for s in JSON3.read(String(call("GET", "/api/samples").body)))
+        @test byname["newest_dropped"].representative_exposure_id == newest[2]
+        @test byname["selected_dropped"].representative_exposure_id == picked[3]
+        @test byname["all_dropped"].representative_exposure_id === nothing
+        @test !haskey(byname["all_dropped"], :assignment_state) || byname["all_dropped"].assignment_state === nothing
+    end
+end

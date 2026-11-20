@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
-  useAutoPickExposure, acceptableExposures, noUsableExposureState,
+  useAutoPickExposure, noUsableExposureState,
   resolveActiveExposure,
 } from "../src/hooks/useAutoPickExposure";
 import { useAppState } from "../src/state";
@@ -57,9 +57,9 @@ describe("resolveActiveExposure (render-time exposure resolution)", () => {
     expect(resolveActiveExposure(999, accepted)).toBe(101); // stale → rep
   });
 
-  it("falls back to the first acceptable when none is flagged", () => {
+  it("falls back to the newest kept frame when none is flagged", () => {
     const noFlag = accepted.map((e) => ({ ...e, selected: false }));
-    expect(resolveActiveExposure(undefined, noFlag)).toBe(100);
+    expect(resolveActiveExposure(undefined, noFlag)).toBe(102);
   });
 
   it("skips rejected exposures (a pick on a rejected frame re-resolves to the rep)", () => {
@@ -84,7 +84,7 @@ describe("useAutoPickExposure", () => {
     );
   });
 
-  it("falls back to the first acceptable exposure when none is flagged", async () => {
+  it("falls back to the newest kept frame when none is flagged", async () => {
     vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify(EXPOSURES.map((e) => ({ ...e, selected: false }))), {
         status: 200, headers: { "Content-Type": "application/json" },
@@ -92,7 +92,7 @@ describe("useAutoPickExposure", () => {
     );
     renderHook(() => useAutoPickExposure(SAMPLE_ID), { wrapper });
     await waitFor(() =>
-      expect(useAppState.getState().activeExposureId).toBe(100),
+      expect(useAppState.getState().activeExposureId).toBe(102),
     );
   });
 
@@ -125,16 +125,6 @@ function exp(id: number, status: "accepted" | "rejected" | null): Exposure {
     tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null,
   };
 }
-
-describe("acceptableExposures", () => {
-  it("drops rejected exposures, keeps accepted and null-status", () => {
-    const out = acceptableExposures([exp(1, "accepted"), exp(2, "rejected"), exp(3, null)]);
-    expect(out.map((e) => e.id)).toEqual([1, 3]);
-  });
-  it("treats undefined (not-yet-loaded) as empty", () => {
-    expect(acceptableExposures(undefined)).toEqual([]);
-  });
-});
 
 describe("noUsableExposureState", () => {
   it("is not usable-empty while exposures are still loading (undefined)", () => {

@@ -90,7 +90,7 @@ export function SeriesBuilderPage(): JSX.Element {
   // sample.id → indexing_exposure_id (the scoping page's resolution
   // precedent). The picker's indexing_exposure_id encodes the SAME
   // representative-exposure rule the backend's create-path resolver uses
-  // (highest-id selected, else highest-id, else null).
+  // (representative.jl: selected if kept, else newest kept, else null).
   const exposureBySample = useMemo(() => {
     const m = new Map<number, number | null>();
     for (const r of pickerQ.data ?? []) m.set(r.sample.id, r.indexing_exposure_id);

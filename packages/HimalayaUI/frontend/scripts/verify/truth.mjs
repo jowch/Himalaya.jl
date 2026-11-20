@@ -175,8 +175,9 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
   const failed = samples.filter((s) => !s.ok);
   const ui = { used: appSamples.some((s) => s.views), unread: appSamples.some((s) => unreadViews(s).length) };
   const invariants = rollupInvariants(samples, ui);
+  const brokenInvariants = Object.entries(invariants).filter(([, v]) => v.ok === false).map(([k]) => k);
   return {
-    ok: failed.length === 0 && strays.length === 0,
+    ok: failed.length === 0 && strays.length === 0 && brokenInvariants.length === 0,
     gate: strict ? "truth" : "auto",
     summary: {
       samples: samples.length,
@@ -188,9 +189,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
       frames_kept: samples.reduce((n, s) => n + s.frames.kept, 0),
       bad_still_kept: samples.flatMap((s) => s.frames.bad_still_kept),
       shown_reviewed: samples.filter((s) => s.shown && s.shown.status !== "unreviewed").length,
-      invariants_failed: Object.entries(invariants).filter(([, v]) => v.ok === false).map(([k]) => k),
+      invariants_failed: brokenInvariants,
     },
-    invariants_gate: "reported only; they do not change ok or the exit code",
     invariants,
     strays,
     samples: samples.map(({ invariants: _, ...s }) => s),

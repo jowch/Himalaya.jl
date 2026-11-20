@@ -93,34 +93,18 @@ describe("<RepresentativeBox> no onSetRepresentative", () => {
   });
 });
 
-describe("<RepresentativeBox> dropped-representative warning (LO-REPDROP)", () => {
-  const WARNING_COPY =
-    "Warning. The representative frame is dropped. It still carries to the Index stage. Press Drop again to bring it back, or set another frame as representative.";
-
-  it("renders the warning when representativeDropped, leading with the severity word", () => {
-    render(
-      <RepresentativeBox isRepresentative={false} representativeDropped />
+describe("<RepresentativeBox> on a dropped frame", () => {
+  it("says a dropped frame is never the representative and offers no set button", () => {
+    render(<RepresentativeBox isRepresentative={false} dropped onSetRepresentative={() => {}} />);
+    expect(screen.getByTestId("rep-dropped-note")).toHaveTextContent(
+      "A dropped frame is never the representative. Press Drop again to bring it back.",
     );
-    const warning = screen.getByTestId("rep-dropped-warning");
-    expect(warning).toHaveTextContent(WARNING_COPY);
-    expect(warning.textContent?.startsWith("Warning.")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Set as representative" })).not.toBeInTheDocument();
   });
 
-  it("renders the warning even on the representative frame itself", () => {
-    render(<RepresentativeBox isRepresentative={true} representativeDropped />);
-    expect(screen.getByTestId("rep-dropped-warning")).toBeInTheDocument();
-  });
-
-  it("no warning when the prop is absent", () => {
+  it("shows no note on a kept frame", () => {
     render(<RepresentativeBox isRepresentative={false} />);
-    expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
-  });
-
-  it("no warning when representativeDropped is false", () => {
-    render(
-      <RepresentativeBox isRepresentative={false} representativeDropped={false} />
-    );
-    expect(screen.queryByTestId("rep-dropped-warning")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rep-dropped-note")).not.toBeInTheDocument();
   });
 });
 

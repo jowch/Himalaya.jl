@@ -54,7 +54,7 @@ Read [references/features/README.md](references/features/README.md) first. It is
 
 ### Invariants
 
-The `invariants` block states properties the app should hold and lists each violation by sample. It is reported only: it never changes `ok` or the exit code. `summary.invariants_failed` names the broken ones.
+The `invariants` block states properties the app should hold and lists each violation by sample. A broken invariant fails `ok` and the exit code, like a TRUTH regression. One that could not be checked (`checked: false`, e.g. `views_agree` without `--ui`) reports `ok: null` and does not gate. `summary.invariants_failed` names the broken ones.
 
 | Invariant | Breaks when |
 |---|---|
@@ -64,7 +64,7 @@ The `invariants` block states properties the app should hold and lists each viol
 
 `checked` is false for `views_agree` without `--ui`, and for both view invariants when a Loupe or Focus read failed (that read is also a gate problem).
 
-On a fresh demo with `--ui`, `views_agree` fails on every multi-frame sample: `corpus_api` is the newest frame, while Loupe and Focus open the first kept one. After `bin/verify triage`, `representative_kept` also fails on `MO_H2O`, whose newest frame is the dropped beam-off shot. Assigning a phase in Focus breaks `status_matches_assignment`, because the corpus status describes a different frame. These are the app's known representative-frame bugs; cleanup PR 2 makes the block gate.
+The representative is one rule everywhere: the selected frame if it is kept, else the newest kept frame, else none (`frontend/src/lib/exposure.ts`, `src/representative.jl`, held together by `frontend/test/fixtures/representative-exposure.json`). Loupe and Focus open on it, except that Loupe opens the newest frame when every frame is dropped, and Focus keeps a frame you switched to in the session. Switching frames in Focus and assigning there can still break `status_matches_assignment`, since the corpus status describes the representative.
 
 ## Evidence in a PR
 

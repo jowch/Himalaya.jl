@@ -1,0 +1,29 @@
+[
+  { "case": "no frames", "frames": [], "representative": null },
+  { "case": "the selected frame when it is kept", "frames": [
+      { "id": 1, "selected": true, "status": null },
+      { "id": 2, "selected": false, "status": null }], "representative": 1 },
+  { "case": "the newest kept frame when none is selected", "frames": [
+      { "id": 1, "selected": false, "status": null },
+      { "id": 2, "selected": false, "status": "accepted" }], "representative": 2 },
+  { "case": "the newest kept frame when the newest frame is dropped", "frames": [
+      { "id": 1, "selected": false, "status": null },
+      { "id": 2, "selected": false, "status": null },
+      { "id": 3, "selected": false, "status": "rejected" }], "representative": 2 },
+  { "case": "the newest kept frame when the selected frame is dropped", "frames": [
+      { "id": 1, "selected": false, "status": null },
+      { "id": 2, "selected": true, "status": "rejected" },
+      { "id": 3, "selected": false, "status": null },
+      { "id": 4, "selected": false, "status": "rejected" }], "representative": 3 },
+  { "case": "the newest selected kept frame when several are selected", "frames": [
+      { "id": 1, "selected": true, "status": null },
+      { "id": 2, "selected": true, "status": null },
+      { "id": 3, "selected": false, "status": null }], "representative": 2 },
+  { "case": "a kept selected frame over a newer dropped selected one", "frames": [
+      { "id": 1, "selected": true, "status": null },
+      { "id": 2, "selected": true, "status": "rejected" },
+      { "id": 3, "selected": false, "status": null }], "representative": 1 },
+  { "case": "none when every frame is dropped", "frames": [
+      { "id": 1, "selected": true, "status": "rejected" },
+      { "id": 2, "selected": false, "status": "rejected" }], "representative": null }
+]

@@ -360,7 +360,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const sampleId = payload?.sample_id as number;
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) });
       // The picker's indexing_exposure_id derives from exposure selection
-      // (highest-id selected, else highest-id), and the builder's Confirm
+      // (the representative-frame rule), and the builder's Confirm
       // resolves its plate through that projection (BU-RECIPENOOP) - a stale
       // picker after a foreign re-selection would silently commit the
       // PREVIOUS representative exposure.
