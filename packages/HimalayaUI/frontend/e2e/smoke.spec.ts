@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 const EXPERIMENT = {
   id: 1, name: "SSRL May 2026", path: "/p", data_dir: "/p/data",
@@ -47,7 +47,7 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
       await route.fulfill({ status: 201, contentType: "application/json",
         body: JSON.stringify({ id: users.length + 1, username: data.username }) });
     } else {
-      await route.continue();
+      await route.fallback();
     }
   });
   await page.route("**/api/experiments", (r) =>
@@ -66,9 +66,9 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
     // Trailing `*` covers any future query string; without it requests fall through Vite proxy to whatever's on :8080.
     await page.route(`**/api/samples/${s.id}/exposures*`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-    await page.route(`**/api/samples/${s.id}/messages`, (r) =>
-      r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   }
+  await page.route("**/api/events", (r) =>
+    r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
 }
 
 async function seedState(page: Page, extra: Record<string, unknown>): Promise<void> {

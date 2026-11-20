@@ -102,6 +102,33 @@ jobs:
       - run: npm test
       - run: npm run test:verify
 
+  e2e:
+    name: Frontend E2E (mocked)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/HimalayaUI/frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx tsc --noEmit -p tsconfig.e2e.json
+      - run: npx playwright test --trace retain-on-failure
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            packages/HimalayaUI/frontend/playwright-report/
+            packages/HimalayaUI/frontend/test-results/
+          if-no-files-found: ignore
+
   demo-truth:
     name: Demo check-truth (live app)
     runs-on: ubuntu-24.04
@@ -141,7 +168,7 @@ jobs:
   ci-ok:
     name: CI ok
     if: always()
-    needs: [core, ui-groups, ui-backend, frontend, demo-truth]
+    needs: [core, ui-groups, ui-backend, frontend, e2e, demo-truth]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

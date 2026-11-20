@@ -58,7 +58,7 @@ function pidFile(cfg) {
   return path.join(cfg.stateDir, "browser.pid");
 }
 
-function profileDir(cfg) {
+export function profileDir(cfg) {
   return path.join(cfg.stateDir, "profile");
 }
 
@@ -156,6 +156,13 @@ export async function closeBrowser(cfg) {
   }
   fs.rmSync(pidFile(cfg), { force: true });
   return { closed: true };
+}
+
+export async function resetBrowserProfile(cfg) {
+  const closed = await closeBrowser(cfg);
+  if (closed.ok === false) return closed;
+  fs.rmSync(profileDir(cfg), { recursive: true, force: true, maxRetries: 3 });
+  return { ...closed, profile: "deleted" };
 }
 
 function killQuietly(pid) {

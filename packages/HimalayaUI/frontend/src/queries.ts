@@ -158,6 +158,7 @@ export function useSamples(experimentId: number) {
   return useQuery({
     queryKey: queryKeys.samples(experimentId),
     queryFn: () => api.listSamples(experimentId),
+    enabled: experimentId > 0,
   });
 }
 
