@@ -1,0 +1,79 @@
+import { describe, it, expect, vi } from "vitest";
+import { useState } from "react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { Overlay } from "../../src/workspace/ui/Overlay";
+
+function Harness({ onClose = () => undefined, empty = false }: { onClose?: () => void; empty?: boolean }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>Open</button>
+      {open && (
+        <Overlay
+          label="Test"
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+        >
+          {!empty && (
+            <>
+              <input aria-label="First" />
+              <button type="button">Middle</button>
+              <button type="button">Last</button>
+            </>
+          )}
+        </Overlay>
+      )}
+    </>
+  );
+}
+
+function open(props: Parameters<typeof Harness>[0] = {}): HTMLElement {
+  render(<Harness {...props} />);
+  const opener = screen.getByRole("button", { name: "Open" });
+  opener.focus();
+  fireEvent.click(opener);
+  return opener;
+}
+
+describe("Overlay", () => {
+  it("moves focus into the dialog and gives it back to the opener on close", () => {
+    const opener = open();
+    expect(document.activeElement).toBe(screen.getByLabelText("First"));
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("wraps Tab from the last item to the first, and Shift Tab the other way", () => {
+    open();
+    screen.getByRole("button", { name: "Last" }).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(document.activeElement).toBe(screen.getByLabelText("First"));
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Last" }));
+  });
+
+  it("Shift Tab from the panel itself goes to the last item", () => {
+    open();
+    screen.getByRole("dialog").focus();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Last" }));
+  });
+
+  it("focuses the panel when it holds nothing focusable", () => {
+    open({ empty: true });
+    expect(document.activeElement).toBe(screen.getByRole("dialog"));
+  });
+
+  it("closes on a press on the backdrop but not on one inside the panel", () => {
+    const onClose = vi.fn();
+    open({ onClose });
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Middle" }));
+    fireEvent.mouseDown(screen.getByRole("dialog"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

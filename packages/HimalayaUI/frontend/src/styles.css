@@ -37,6 +37,14 @@
   --color-success: oklch(0.520 0.120 162);    /* sage */
   --color-warning: oklch(0.620 0.130 70);     /* amber */
   --color-error:   oklch(0.520 0.170 28);     /* red */
+  --color-phase-pn3m: oklch(0.520 0.100 200);
+  --color-phase-im3m: oklch(0.480 0.140 258);
+  --color-phase-ia3d: oklch(0.500 0.150 300);
+  --color-phase-fm3m: oklch(0.400 0.050 230);
+  --color-phase-fd3m: oklch(0.420 0.120 325);
+  --color-phase-hexagonal: oklch(0.530 0.140 130);
+  --color-phase-lamellar: oklch(0.440 0.090 100);
+  --color-phase-square: oklch(0.550 0.020 250);
   /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
      Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
      `border-hair`/`text-print-accent` utilities. `--color-accent` above is now
@@ -404,4 +412,61 @@
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-workspace-theme="system"] {
+    --color-paper:       oklch(0.165 0.005 280);
+    --color-paper-sunk:  oklch(0.140 0.005 280);
+    --color-plate:       oklch(0.195 0.006 280);
+    --color-ink:         oklch(0.900 0.004 280);
+    --color-ink-soft:    oklch(0.760 0.006 280);
+    --color-ink-faint:   oklch(0.600 0.007 280);
+    --color-hair:        oklch(0.265 0.006 280);
+    --color-hair-strong: oklch(0.345 0.007 280);
+    --color-accent:      oklch(0.700 0.130 42);
+    --color-print-accent: oklch(0.700 0.130 42);
+    --color-accent-wash: oklch(0.270 0.022 38);
+    --color-row-cursor:  oklch(0.245 0.013 280);
+    --color-success:     oklch(0.740 0.080 162);
+    --color-warning:     oklch(0.780 0.110 70);
+    --color-error:       oklch(0.700 0.150 28);
+    --color-scrim:       oklch(0 0 0 / 0.6);
+    --color-phase-pn3m: oklch(0.740 0.100 200);
+    --color-phase-im3m: oklch(0.720 0.120 258);
+    --color-phase-ia3d: oklch(0.700 0.140 300);
+    --color-phase-fm3m: oklch(0.660 0.060 230);
+    --color-phase-fd3m: oklch(0.760 0.120 325);
+    --color-phase-hexagonal: oklch(0.760 0.140 130);
+    --color-phase-lamellar: oklch(0.700 0.090 100);
+    --color-phase-square: oklch(0.840 0.020 250);
+    color-scheme: dark;
+  }
+}
+[data-workspace-theme="dark"] {
+  --color-paper:       oklch(0.165 0.005 280);
+  --color-paper-sunk:  oklch(0.140 0.005 280);
+  --color-plate:       oklch(0.195 0.006 280);
+  --color-ink:         oklch(0.900 0.004 280);
+  --color-ink-soft:    oklch(0.760 0.006 280);
+  --color-ink-faint:   oklch(0.600 0.007 280);
+  --color-hair:        oklch(0.265 0.006 280);
+  --color-hair-strong: oklch(0.345 0.007 280);
+  --color-accent:      oklch(0.700 0.130 42);
+  --color-print-accent: oklch(0.700 0.130 42);
+  --color-accent-wash: oklch(0.270 0.022 38);
+  --color-row-cursor:  oklch(0.245 0.013 280);
+  --color-success:     oklch(0.740 0.080 162);
+  --color-warning:     oklch(0.780 0.110 70);
+  --color-error:       oklch(0.700 0.150 28);
+  --color-scrim:       oklch(0 0 0 / 0.6);
+  --color-phase-pn3m: oklch(0.740 0.100 200);
+  --color-phase-im3m: oklch(0.720 0.120 258);
+  --color-phase-ia3d: oklch(0.700 0.140 300);
+  --color-phase-fm3m: oklch(0.660 0.060 230);
+  --color-phase-fd3m: oklch(0.760 0.120 325);
+  --color-phase-hexagonal: oklch(0.760 0.140 130);
+  --color-phase-lamellar: oklch(0.700 0.090 100);
+  --color-phase-square: oklch(0.840 0.020 250);
+  color-scheme: dark;
 }
