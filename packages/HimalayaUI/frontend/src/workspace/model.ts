@@ -30,8 +30,12 @@ export function nextUnreviewed(
 
 export function rankCandidates(indices: readonly IndexEntry[] | undefined): IndexEntry[] {
   return (indices ?? [])
-    .filter((ix) => ix.score !== null)
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .filter((ix) => ix.kind === "speculative" || ix.score !== null)
+    .sort((a, b) => {
+      const custom = Number(b.kind === "speculative") - Number(a.kind === "speculative");
+      if (custom !== 0) return custom;
+      return a.kind === "speculative" ? b.id - a.id : (b.score ?? 0) - (a.score ?? 0);
+    })
     .slice(0, MAX_CANDIDATES);
 }
 

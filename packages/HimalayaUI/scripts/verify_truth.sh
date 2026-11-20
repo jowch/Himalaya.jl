@@ -56,6 +56,31 @@ step 9-description-clear log bash -c '
   bin/verify api GET /api/experiments/1 | grep -q "\"description\": \"verify-truth description\""
   edit ""
   bin/verify api GET /api/experiments/1 | grep -q "\"description\": null"'
+step 10-custom-index log bash -c '
+  set -e
+  out=$1 help=$2 label=$3
+  read -r sid _ < <(node "$help" target "$out/5-confirmed.json" "$label")
+  panel="[data-testid=workspace-custom-index]"
+  list="[data-testid=workspace-candidates]"
+  custom_row() {
+    for _ in 1 2 3 4 5; do
+      bin/verify snapshot --selector "$list" --raw > "$out/10-$1.yml" || true
+      if grep -E "button \".*Custom\"" "$out/10-$1.yml" | grep -q "\[pressed\]"; then [[ $1 == added ]] && return 0
+      elif grep -qE "button \".*Custom\"" "$out/10-$1.yml"; then [[ $1 == removed ]] && return 0
+      fi
+      sleep 1
+    done
+    echo "the Phase list never showed the custom row $1 (see $out/10-$1.yml)"; return 1
+  }
+  bin/verify open "/experiments/1/workspace/$sid"
+  bin/verify press i
+  bin/verify click --role button --name Hexagonal --exact --within "$panel"
+  bin/verify click --role button --name "Add Hexagonal" --within "$panel"
+  custom_row added
+  node "$help" custom "$out/5-confirmed.json" "$label" Hexagonal on
+  bin/verify click --role button --name Custom --within "$list"
+  custom_row removed
+  node "$help" custom "$out/5-confirmed.json" "$label" Hexagonal off' _ "$OUT" "$HELP" "$CONFIRM_SAMPLE"
 
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"

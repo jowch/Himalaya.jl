@@ -6,6 +6,8 @@
 
 const TWO_PI = 2 * Math.PI;
 
+export const CUSTOM_SNAP_TOL = 0.022;
+
 // "square" is the 2D square lattice. Its q-law is q = 2π√N / a with
 // N = h²+k² — algebraically identical to the cubic case (N = h²+k²+l²), so it
 // falls through to the cubic branch everywhere kind is switched on. It is named
@@ -102,7 +104,7 @@ export function basisFor(sym: string, val: number): number {
 }
 
 /** How many predicted orders land on an observed peak (within relTol). */
-export function landsOn(sym: string, val: number, peakQs: number[], relTol = 0.022): number {
+export function landsOn(sym: string, val: number, peakQs: number[], relTol = CUSTOM_SNAP_TOL): number {
   let lands = 0;
   for (const rf of customRefls(sym, val)) {
     if (peakQs.some((pq) => Math.abs(pq - rf.q) / rf.q < relTol)) lands++;

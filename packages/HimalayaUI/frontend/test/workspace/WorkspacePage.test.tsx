@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 
-type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: { onSuccess?: () => void } };
+type Callbacks = { onSuccess?: () => void; onError?: () => void };
+type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
 const calls: Call[] = [];
 
 const state = {
@@ -20,7 +21,7 @@ const state = {
 
 function recorder(hook: string) {
   return (boundTo: number) => ({
-    mutate: (arg: unknown, callbacks?: { onSuccess?: () => void }) => {
+    mutate: (arg: unknown, callbacks?: Callbacks) => {
       calls.push({ hook, boundTo, arg, ...(callbacks ? { callbacks } : {}) });
     },
   });
@@ -41,6 +42,9 @@ vi.mock("../../src/queries", () => ({
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
   useSetPeakExcluded: recorder("excludePeak"),
+  useCommitCustomIndex: (boundTo: number) => ({
+    mutate: (phase: string, basis: number, ratios: number[]) => calls.push({ hook: "custom", boundTo, arg: { phase, basis, ratios } }),
+  }),
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
@@ -571,4 +575,236 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("option")).toBeNull();
   });
 
+  it("I opens a custom index on the top candidate; arrows nudge the lattice and Enter adds it", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    expect(within(panel).getByRole("button", { name: "Pn3m" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "ArrowRight", shiftKey: true });
+    expect(within(panel).getByText(/Add Pn3m 105\.5 Å/)).toBeInTheDocument();
+    expect(currentFrame()).toBe("Frame 2");
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    expect(calls).toHaveLength(1);
+    const c = calls[0]!;
+    expect(c).toMatchObject({ hook: "custom", boundTo: 101 });
+    const arg = c.arg as { phase: string; basis: number; ratios: number[] };
+    expect(arg.phase).toBe("Pn3m");
+    expect(arg.basis).toBeCloseTo((2 * Math.PI * Math.SQRT2) / 105.5, 6);
+    expect(arg.ratios[0]).toBe(1);
+    expect(arg.ratios[1]).toBeCloseTo(Math.sqrt(3 / 2), 6);
+  });
+
+  it("Escape cancels a custom index without writing", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("a custom index on an unselected frame selects it first", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
+    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
+    calls[0]!.callbacks!.onSuccess!();
+    expect(calls[1]).toMatchObject({ hook: "custom", boundTo: 100 });
+  });
+
+  it("does not open a custom index on a dropped frame or before a user is set", () => {
+    state.username = undefined;
+    const { unmount } = renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    unmount();
+    state.username = "jc";
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+  });
+
+  it("the indexing plot shows the assigned candidate's fit against the peaks", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto"), peak(9, 0.2, "auto", true)];
+    state.indices = [
+      index(1, "Im3m", 0.4),
+      {
+        ...index(2, "Pn3m", 0.9),
+        peaks: [
+          { peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 },
+          { peak_id: 8, ratio_position: 2, residual: 0, q_observed: 0.14 },
+        ],
+      },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const plot = screen.getByTestId("workspace-indexing");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m 100.0 Å · R² 0.9900 · 2 of 2 on peaks");
+    expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
+  });
+
+  it("the indexing plot follows the custom index while it is open", () => {
+    state.trace = makeTrace(1);
+    const a = (2 * Math.PI * Math.SQRT2) / 0.1;
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.1 * Math.sqrt(1.5), "auto")];
+    state.indices = [{ ...index(2, "Pn3m", 0.9), lattice_d: a }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 6");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2 of 6 on peaks");
+    const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
+    expect(new Set(combIds)).toEqual(new Set(["-1"]));
+  });
+
+  it("an added custom index is listed as Custom and ticked, though it has no score", () => {
+    state.indices = [index(1, "Im3m", 0.4), { ...index(5, "Hexagonal", 0), score: null, kind: "speculative", r_squared: null }];
+    state.assignment = { exposure_id: 101, state: "indexed", members: [5] };
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[0]).toHaveTextContent("Custom");
+    expect(rows[0]).toHaveAttribute("aria-pressed", "true");
+    expect(rows[1]).toHaveTextContent("0.40");
+  });
+
+  it("Enter on a button in the custom panel presses that button and does not add", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const im3m = within(panel).getByRole("button", { name: "Im3m" });
+    fireEvent.keyDown(im3m, { key: "Enter" });
+    fireEvent.keyDown(within(panel).getByRole("button", { name: /^Cancel/ }), { key: "Enter" });
+    expect(calls).toEqual([]);
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+  });
+
+  it("arrows nudge the lattice after a symmetry click, while focus is on that button", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const im3m = within(panel).getByRole("button", { name: "Im3m" });
+    fireEvent.click(im3m);
+    fireEvent.keyDown(im3m, { key: "ArrowRight" });
+    expect(within(panel).getByRole("button", { name: /^Add/ })).toHaveTextContent("Add Im3m 100.5 Å");
+  });
+
+  it("a lattice typed outside the range is flagged and blocks Add until it is clamped on blur", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const field = within(panel).getByLabelText("Lattice a value");
+    const add = within(panel).getByRole("button", { name: /^Add/ });
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "5" } });
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(add).toBeDisabled();
+    expect(within(panel).getByTestId("workspace-custom-invalid")).toHaveTextContent("Enter a value from 10.0 to");
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(calls).toEqual([]);
+    expect(field).toHaveValue(10);
+    expect(field).toHaveAttribute("aria-invalid", "false");
+    expect(add).toHaveTextContent("Add Pn3m 10.0 Å");
+    expect(within(panel).getByTestId("workspace-custom-landed")).toHaveTextContent("No reflections fall inside this trace's q range.");
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "" } });
+    expect(add).toBeDisabled();
+    fireEvent.blur(field);
+    expect(field).toHaveValue(10);
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "123.4" } });
+    expect(add).toHaveTextContent("Add Pn3m 123.4 Å");
+    fireEvent.blur(field);
+    fireEvent.click(add);
+    expect((calls[0]!.arg as { basis: number }).basis).toBeCloseTo((2 * Math.PI * Math.SQRT2) / 123.4, 6);
+  });
+
+  it("while a custom index is open, the single-key shortcuts do nothing", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    for (const key of ["x", "1", "2", "c", "j", "l", "r", "z", "ArrowDown", "ArrowUp"]) fireEvent.keyDown(window, { key });
+    expect(calls).toEqual([]);
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/10");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("while a custom index is open, a plot click puts the first order on the nearest peak and edits no peaks", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.2, "manual")];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    clickPlotAt(0.105);
+    const add = within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ });
+    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.1).toFixed(1)} Å`);
+    clickPlotAt(0.2);
+    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.2).toFixed(1)} Å`);
+    expect(calls).toEqual([]);
+  });
+
+  it("moving to another frame closes the custom index", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
+    expect(currentFrame()).toBe("Frame 1");
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+  });
+
+  it("says so and keeps the custom index open when the frame cannot be selected", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
+    act(() => calls[0]!.callbacks!.onError!());
+    expect(screen.getByRole("alert")).toHaveTextContent("could not be selected");
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(calls.filter((c) => c.hook === "custom")).toEqual([]);
+  });
+
+  it("hovering a candidate shows its fit in place of the ticked ones", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto")];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    fireEvent.mouseEnter(rows[1]!);
+    expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Im3m/)]);
+    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
+    expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
+  });
+  it("the indexing plot shows the peaks the stored index claimed, even where a fresh match would differ", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
+    state.indices = [{ ...index(2, "Pn3m", 0.9), peaks: [{ peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 }] }];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1 of 2 on peaks");
+  });
+  it("Enter on a focused button outside the custom panel does not add the index", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const row = screen.getByRole("button", { name: /A2/ });
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(calls).toEqual([]);
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+  });
+
+  it("the lattice field keeps what is typed, keystroke by keystroke", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const field = within(screen.getByTestId("workspace-custom-index")).getByLabelText("Lattice a value") as HTMLInputElement;
+    fireEvent.focus(field);
+    for (const typed of ["2", "25", "250"]) {
+      fireEvent.change(field, { target: { value: typed } });
+      expect(field.value).toBe(typed);
+    }
+    fireEvent.blur(field);
+    expect(field.value).toBe("250.0");
+  });
 });
