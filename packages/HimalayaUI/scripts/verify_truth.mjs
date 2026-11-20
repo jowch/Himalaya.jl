@@ -102,20 +102,19 @@ async function twin(file) {
     }
   }
   if (!frames.length) report({ ok: false, error: "no kept frame of an unassigned sample has two or more peaks, one of them auto" });
-  const lowest = (f) => Math.min(...f.peaks.filter((p) => p.source === "auto").map((p) => p.id));
-  frames.sort((a, b) => lowest(a) - lowest(b));
-  const autoWith = (id) => frames.find((f) => f.peaks.some((p) => p.source === "auto" && p.id === id));
-  let host = frames[0];
+  const autoIds = (f) => f.peaks.filter((p) => p.source === "auto").map((p) => p.id);
+  frames.sort((a, b) => Math.min(...autoIds(a)) - Math.min(...autoIds(b)));
+  const host = frames[0];
+  const ids = new Set(autoIds(host));
+  const last = Math.max(...ids);
   let manual = await addManual(api, host.exposure.id, host.peaks);
-  if (autoWith(manual.id) !== host) {
+  while (!ids.has(manual.id)) {
     const del = await request(api, "DELETE", `/api/peaks/manual/${manual.id}`);
-    if (!del.ok) report({ ok: false, error: `removing the probe manual peak ${manual.id} returned ${del.status}` });
-    host = autoWith(manual.id + 1);
-    if (!host) report({ ok: false, error: `no kept frame has an auto peak with id ${manual.id + 1}, the next manual peak id, so the check could not make the ids collide and would pass vacuously` });
+    if (!del.ok) report({ ok: false, error: `removing manual peak ${manual.id} returned ${del.status}` });
+    if (manual.id > last) report({ ok: false, error: `manual ids (${manual.id}) are past every auto id on exposure ${host.exposure.id} (max ${last}), so the check could not make the ids collide and would pass vacuously` });
     manual = await addManual(api, host.exposure.id, host.peaks);
   }
   const auto = host.peaks.find((p) => p.source === "auto" && p.id === manual.id);
-  if (!auto) report({ ok: false, error: `manual peak ${manual.id} on exposure ${host.exposure.id} shares no id with an auto peak there`, manual });
   console.log(JSON.stringify({ sample_id: host.s.sample_id, exposure_id: host.exposure.id, frame: host.frame, id: manual.id, manual: peakName(manual), auto: peakName(auto), excluded: peakName({ ...auto, excluded: true }) }));
 }
 

@@ -85,7 +85,7 @@ step 10-custom-index log bash -c '
 step 11-peak-clicks log bash -c '
   set -e
   out=$1 help=$2
-  twin=$(node "$help" twin "$out/5-confirmed.json")
+  twin=$(node "$help" twin "$out/5-confirmed.json") || { echo "$twin"; exit 1; }
   echo "$twin"
   get() { node -e "process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]]))" "$twin" "$1"; }
   sid=$(get sample_id) eid=$(get exposure_id) id=$(get id)
