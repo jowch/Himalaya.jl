@@ -680,3 +680,37 @@ end
         end
     end
 end
+
+@testset "SSE: the stream sends a frame as soon as it opens, and heartbeats the browser can see" begin
+    @test HimalayaUI.SSE_HEARTBEAT_FRAME == "event: heartbeat\ndata: {}\n\n"
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        port = HimalayaUI.find_free_port()
+        HimalayaUI.start_test_server!(db, port)
+        try
+            first_bytes = Channel{String}(1)
+            @async try
+                HTTP.open("GET", "http://127.0.0.1:$port/api/events";
+                          retry = false, status_exception = false, readtimeout = 5) do io
+                    HTTP.startread(io)
+                    while !eof(io)
+                        chunk = readavailable(io)
+                        isempty(chunk) && continue
+                        put!(first_bytes, String(chunk))
+                        break
+                    end
+                end
+            catch
+            end
+            got = nothing
+            for _ in 1:40
+                isready(first_bytes) && (got = take!(first_bytes); break)
+                sleep(0.05)
+            end
+            @test got !== nothing
+            got !== nothing && @test startswith(got, "retry: ")
+        finally
+            HimalayaUI.stop_test_server!()
+        end
+    end
+end

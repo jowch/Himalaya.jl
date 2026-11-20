@@ -741,6 +741,47 @@ end
         @test HimalayaUI.backfill_monitors!(db, exp_id) == 0
     end
 
+    @testset "server boot backfills beam monitors on an upgraded experiment whose rescan is stopped" begin
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        for fi in 1:2
+            stem = "HA_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001"
+            write_prp(joinpath(data_dir, "$stem.prp");
+                timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
+                exposure_time = 15.0, i_signal = 7000.0 + fi, i_0 = 1.5)
+            write(joinpath(data_dir, "$stem.tif"), "fake tif")
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "upgraded", path = dir, data_dir = data_dir, analysis_dir = analysis_dir)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+        DBInterface.execute(db, """UPDATE exposures SET transmitted_counts = NULL,
+            incident_monitor = NULL, counting_time = NULL, monitors_read = 0""")
+        DBInterface.execute(db, """UPDATE experiments SET ingest_status = 'complete',
+            last_scan_tier = 'stopped' WHERE id = ?""", [exp_id])
+        try
+            HimalayaUI.stop_all_rescan_timers!()
+            task = HimalayaUI.boot!(db)
+            @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
+            fetch(task)
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT monitors_read, transmitted_counts FROM exposures WHERE experiment_id = ?
+                  ORDER BY filename", [exp_id]))
+            @test all(r -> r.monitors_read == 1, rows)
+            @test isequal([r.transmitted_counts for r in rows], [7001.0, 7002.0])
+        finally
+            HimalayaUI.stop_gc_timer!()
+            HimalayaUI.stop_all_rescan_timers!()
+            HimalayaUI.Oxygen.resetstate()
+            HimalayaUI._DB_REF[] = nothing
+            SQLite.close(db)
+        end
+    end
+
     @testset "migrate_exposures_beam_monitors! adds the columns to an old exposures table" begin
         db = SQLite.DB()
         DBInterface.execute(db, "CREATE TABLE schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT)")
