@@ -38,13 +38,17 @@ interface Props {
 
 function comparePath(c: CompareLine, projection: Projection): string {
   let d = "";
+  let pen = false;
   c.q.forEach((q, i) => {
     const v = c.I[i]!;
-    if (!(v > 0) && projection.y.type === "log") return;
     const x = projection.x.to(q);
     const y = projection.y.to(v);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    d += `${d ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+    if ((!(v > 0) && projection.y.type === "log") || !Number.isFinite(x) || !Number.isFinite(y)) {
+      pen = false;
+      return;
+    }
+    d += `${pen ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+    pen = true;
   });
   return d;
 }
@@ -94,7 +98,7 @@ export function WorkspacePlot({
               <rect x={0} y={0} width={dims.plotWidth} height={dims.plotHeight} />
             </clipPath>
           </defs>
-          <g data-testid="workspace-compares" clipPath={`url(#${clipId})`}>
+          <g data-testid="workspace-compares" clipPath={`url(#${clipId})`} pointerEvents="none">
             {compares.map((c) => (
               <path
                 key={c.id}

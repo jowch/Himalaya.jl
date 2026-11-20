@@ -21,7 +21,7 @@ import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
-import { matchScale, scaledTrace, subtractTrace, toggleCompare } from "./compare";
+import { addCompare, clampDomain, matchScale, scaledTrace, subtractTrace } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
@@ -98,7 +98,8 @@ export function WorkspacePage(): JSX.Element {
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
   const [logY, setLogY] = useState(true);
   const [refs, setRefs] = useState<number[]>([]);
-  const [subRef, setSubRef] = useState<number | undefined>(undefined);
+  const [subChoice, setSubRef] = useState<number | undefined>(undefined);
+  const subRef = subChoice !== undefined && refs.includes(subChoice) ? subChoice : undefined;
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
   const compareTraces = useCompareTraces(refs);
@@ -150,22 +151,33 @@ export function WorkspacePage(): JSX.Element {
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const activeRefs = refs.filter((r) => r !== sampleId);
   const mainTrace = trace.data;
+  const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
+  const scales = useMemo(() => {
+    const out = new Map<number, number>();
+    if (!mainTrace) return out;
+    compareTraces.forEach((t, rid) => out.set(rid, matchScale(mainTrace, t, peakQs)));
+    return out;
+  }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
     return refs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
-      if (rid === sampleId || !t) return [];
-      const sc = scaledTrace(t, matchScale(mainTrace, t));
+      const scale = scales.get(rid);
+      if (rid === sampleId || !t || scale === undefined) return [];
+      const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, dash: COMPARE_DASHES[i % COMPARE_DASHES.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, refs, compareTraces, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
+  const subScale = subRef !== undefined ? scales.get(subRef) : undefined;
   const difference = useMemo(
-    () => (mainTrace && subTrace ? subtractTrace(mainTrace, subTrace, matchScale(mainTrace, subTrace)) : null),
-    [mainTrace, subTrace],
+    () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
+    [mainTrace, subTrace, subScale],
   );
   const xExtent: [number, number] | null =
     mainTrace && mainTrace.q.length > 1 ? [mainTrace.q[0]!, mainTrace.q[mainTrace.q.length - 1]!] : null;
+  const shownDomain = clampDomain(xDomain, xExtent);
+  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !refs.includes(s.id)), [samples, sampleId, refs]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -212,6 +224,10 @@ export function WorkspacePage(): JSX.Element {
         case "c":
         case "C":
           setPicking(true);
+          break;
+        case "z":
+        case "Z":
+          setXDomain(null);
           break;
         case "r":
         case "R":
@@ -263,7 +279,7 @@ export function WorkspacePage(): JSX.Element {
             <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
               <div className="relative mb-2">
                 <CompareBar
-                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, dash: COMPARE_DASHES[refs.indexOf(rid) % COMPARE_DASHES.length]! }))}
+                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, dash: COMPARE_DASHES[refs.indexOf(rid) % COMPARE_DASHES.length]!, scale: scales.get(rid) }))}
                   subtractId={subRef}
                   hidden={!refsOn}
                   logY={logY}
@@ -274,9 +290,10 @@ export function WorkspacePage(): JSX.Element {
                 />
                 {picking && (
                   <ComparePicker
-                    samples={samples.filter((s) => s.id !== sampleId)}
+                    samples={pickable}
                     onPick={(rid) => {
-                      setRefs((r) => toggleCompare(r, rid));
+                      setRefs((r) => addCompare(r, rid));
+                      if (subRef === undefined) setSubRef(rid);
                       setRefsOn(true);
                     }}
                     onClose={() => setPicking(false)}
@@ -289,7 +306,7 @@ export function WorkspacePage(): JSX.Element {
                 phase={callPhase}
                 combs={combs}
                 compares={compares}
-                xDomain={xDomain}
+                xDomain={shownDomain}
                 logY={logY}
                 onXDomain={setXDomain}
                 {...(canEditPeaks ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak } : {})}
@@ -299,7 +316,7 @@ export function WorkspacePage(): JSX.Element {
                   q={difference.q}
                   d={difference.d}
                   label={`minus ${sampleNames.get(subRef) ?? `Sample ${subRef}`}`}
-                  xDomain={xDomain}
+                  xDomain={shownDomain}
                   xExtent={xExtent}
                 />
               )}

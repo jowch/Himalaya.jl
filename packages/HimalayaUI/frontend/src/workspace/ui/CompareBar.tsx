@@ -4,6 +4,7 @@ export interface CompareChip {
   id: number;
   name: string;
   dash: string;
+  scale: number | undefined;
 }
 
 interface Props {
@@ -44,6 +45,11 @@ export function CompareBar({ chips, subtractId, hidden, logY, onToggleLog, onSub
             >
               {c.name}
             </button>
+            {c.scale !== undefined && (
+              <span className="text-ink-faint" title="Scale applied to this comparison">
+                ×{c.scale.toPrecision(3)}
+              </span>
+            )}
             <button type="button" aria-label={`Remove ${c.name}`} onClick={() => onRemove(c.id)} className="text-ink-faint hover:text-ink">
               ×
             </button>

@@ -1,3 +1,5 @@
+import { useId } from "react";
+import { robustRange } from "../compare";
 import { PlotFrame } from "../../print/plot/PlotFrame";
 import { makeAxis } from "../../print/plot/projection";
 
@@ -14,14 +16,9 @@ const MARGINS = { top: 18, right: 24, bottom: 6, left: 60 };
 
 export function SubtractionStrip({ q, d, label, xDomain, xExtent, height = 110 }: Props): JSX.Element {
   const dom = xDomain ?? xExtent;
-  let lo = 0;
-  let hi = 0;
-  q.forEach((x, i) => {
-    if (x < dom[0] || x > dom[1]) return;
-    lo = Math.min(lo, d[i]!);
-    hi = Math.max(hi, d[i]!);
-  });
-  const pad = (hi - lo) * 0.1 || 1;
+  const clipId = `workspace-subtraction-clip-${useId().replace(/:/g, "")}`;
+  const [lo, hi] = robustRange(d.filter((_, i) => q[i]! >= dom[0] && q[i]! <= dom[1]));
+  const pad = (hi - lo) * 0.1;
   return (
     <PlotFrame
       height={height}
@@ -42,13 +39,13 @@ export function SubtractionStrip({ q, d, label, xDomain, xExtent, height = 110 }
         return (
           <>
             <defs>
-              <clipPath id="workspace-subtraction-clip">
+              <clipPath id={clipId}>
                 <rect x={0} y={0} width={dims.plotWidth} height={dims.plotHeight} />
               </clipPath>
             </defs>
             <text x={0} y={-6} className="fill-ink-faint text-caption">{label}</text>
             <line x1={0} x2={dims.plotWidth} y1={y.to(0)} y2={y.to(0)} stroke="var(--color-hair-strong)" strokeDasharray="3 3" />
-            <path d={path} fill="none" stroke="var(--color-accent)" strokeWidth={1.4} clipPath="url(#workspace-subtraction-clip)" />
+            <path d={path} fill="none" stroke="var(--color-accent)" strokeWidth={1.4} clipPath={`url(#${clipId})`} />
           </>
         );
       }}

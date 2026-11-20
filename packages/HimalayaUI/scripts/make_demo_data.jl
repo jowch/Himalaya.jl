@@ -93,6 +93,11 @@ const SAMPLES = [
     ("leaked_capillary", 2, Component[],                                                 "none",           "capillary leaked before measurement; both scans are air, so the sample has no usable frame"),
 ]
 
+# physics: a beamtime often runs some samples at a longer camera length to reach lower
+# physics: q, so their traces stop at a lower q_max than the rest. Form-factor samples
+# physics: are the usual candidates, and with no Bragg peaks none of TRUTH's q go missing.
+const Q_MAX = Dict("vesicles_ULV" => 0.2)
+
 # Bad scans a triager should drop, by sample and scan number (1 = oldest); TRUTH's
 # `drop` column lists them.
 const BAD_SCANS = Dict(
@@ -355,6 +360,7 @@ function main(args = ARGS)
             I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
             open(joinpath(tot, "$(base)_tot.dat"), "w") do io
                 for j in eachindex(Q)
+                    Q[j] <= get(Q_MAX, label, Inf) || continue
                     @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
                 end
             end

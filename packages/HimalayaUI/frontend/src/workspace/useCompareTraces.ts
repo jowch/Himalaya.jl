@@ -1,8 +1,13 @@
+import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import * as api from "../api";
 import type { Trace } from "../api";
 import { queryKeys } from "../queries";
 import { representativeExposure } from "../lib/exposure";
+
+function dataOf(results: readonly { data?: Trace | undefined }[]): (Trace | undefined)[] {
+  return results.map((r) => r.data);
+}
 
 export function useCompareTraces(sampleIds: readonly number[]): Map<number, Trace> {
   const exposures = useQueries({
@@ -18,11 +23,15 @@ export function useCompareTraces(sampleIds: readonly number[]): Map<number, Trac
       queryFn: () => api.getTrace(eid as number),
       enabled: eid !== undefined,
     })),
+    combine: dataOf,
   });
-  const out = new Map<number, Trace>();
-  sampleIds.forEach((id, i) => {
-    const t = traces[i]?.data;
-    if (t) out.set(id, t);
-  });
-  return out;
+  const key = sampleIds.join(",");
+  return useMemo(() => {
+    const out = new Map<number, Trace>();
+    key.split(",").forEach((id, i) => {
+      const t = traces[i];
+      if (id && t) out.set(Number(id), t);
+    });
+    return out;
+  }, [key, traces]);
 }

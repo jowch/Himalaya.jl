@@ -11,7 +11,15 @@ export function ComparePicker({ samples, onPick, onClose }: Props): JSX.Element 
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
   useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    const onDown = (ev: MouseEvent): void => {
+      if (root.current && ev.target instanceof Node && !root.current.contains(ev.target)) onClose();
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, [onClose]);
   const shown = useMemo(() => {
     const f = q.trim().toLowerCase();
     return f ? samples.filter((s) => s.name.toLowerCase().includes(f)) : samples;
@@ -24,6 +32,7 @@ export function ComparePicker({ samples, onPick, onClose }: Props): JSX.Element 
   };
   return (
     <div
+      ref={root}
       role="dialog"
       aria-label="Compare with a sample"
       data-keys-trap
@@ -35,7 +44,7 @@ export function ComparePicker({ samples, onPick, onClose }: Props): JSX.Element 
           onClose();
         } else if (e.key === "ArrowDown") {
           e.preventDefault();
-          setCursor((c) => Math.min(shown.length - 1, c + 1));
+          setCursor((c) => Math.max(0, Math.min(shown.length - 1, c + 1)));
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
           setCursor((c) => Math.max(0, c - 1));

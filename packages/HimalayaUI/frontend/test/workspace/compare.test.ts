@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { interpolateAt, matchScale, scaledTrace, subtractTrace, toggleCompare, MAX_COMPARES } from "../../src/workspace/compare";
+import { addCompare, clampDomain, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
 const background = (x: number): number => 5 + 1 / x;
@@ -38,10 +38,40 @@ describe("compare", () => {
     expect(scaledTrace({ q: [0.1, 0.2], I: [1, 2] }, 3)).toEqual({ q: [0.1, 0.2], I: [3, 6] });
   });
 
-  it("toggles a comparison and keeps the most recent few", () => {
-    expect(toggleCompare([1, 2], 2)).toEqual([1]);
-    expect(toggleCompare([1, 2], 3)).toEqual([1, 2, 3]);
+  it("adds a comparison once and keeps the most recent few", () => {
+    expect(addCompare([1, 2], 2)).toEqual([1, 2]);
+    expect(addCompare([1, 2], 3)).toEqual([1, 2, 3]);
     const full = Array.from({ length: MAX_COMPARES }, (_, i) => i + 1);
-    expect(toggleCompare(full, 9)).toEqual([...full.slice(1), 9]);
+    expect(addCompare(full, 9)).toEqual([...full.slice(1), 9]);
+  });
+
+  it("masks the sample's own peaks in the high-q window, which would otherwise over-scale the reference", () => {
+    const bg = (x: number): number => 5 + 1 / x;
+    const peaksAt = [0.19, 0.2];
+    const sample = { q, I: q.map((x) => 1.3 * bg(x) + peaksAt.reduce((s, p) => s + 40 * Math.exp(-((x - p) ** 2) / 4e-6), 0)) };
+    const buffer = { q, I: q.map(bg) };
+    expect(matchScale(sample, buffer)).toBeGreaterThan(1.3 * 1.05);
+    expect(matchScale(sample, buffer, peaksAt)).toBeCloseTo(1.3, 2);
+  });
+
+  it("takes the median, so one outlier in the window does not move the scale", () => {
+    const buffer = { q, I: q.map(() => 1) };
+    const sample = { q, I: q.map((x, i) => (i === q.length - 1 ? 1000 : 2)) };
+    expect(matchScale(sample, buffer)).toBe(2);
+  });
+
+  it("sets the strip's range from the bulk of the difference, not one huge residual, and keeps zero in view", () => {
+    const d = [...Array.from({ length: 200 }, (_, i) => (i % 20 === 0 ? 50 : 1)), -5000];
+    const [lo, hi] = robustRange(d);
+    expect(lo).toBe(0);
+    expect(hi).toBe(50);
+    expect(robustRange([3, 3, 3])).toEqual([0, 3]);
+    expect(robustRange([])).toEqual([-1, 1]);
+  });
+
+  it("clamps a kept zoom to the trace's q range and drops it when they do not overlap", () => {
+    expect(clampDomain([0.1, 0.3], [0.05, 0.2])).toEqual([0.1, 0.2]);
+    expect(clampDomain([0.3, 0.4], [0.05, 0.2])).toBeNull();
+    expect(clampDomain(null, [0.05, 0.2])).toBeNull();
   });
 });
