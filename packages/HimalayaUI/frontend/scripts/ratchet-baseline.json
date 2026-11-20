@@ -253,7 +253,7 @@
     "frontend/src/print/pages/SeriesFolioPage.tsx": 92,
     "frontend/src/print/pages/SeriesScopingPage.tsx": 342,
     "frontend/src/print/pages/builderAdapters.ts": 40,
-    "frontend/src/print/pages/focusAdapters.ts": 153,
+    "frontend/src/print/pages/focusAdapters.ts": 136,
     "frontend/src/print/pages/folioAdapters.ts": 17,
     "frontend/src/print/pages/loupeAdapters.ts": 34,
     "frontend/src/print/pages/samplesAdapters.ts": 5,

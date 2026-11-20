@@ -169,3 +169,25 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     await stub.close();
   }
 });
+
+test("check-truth --ui fails when the workspace list, read in place after a write, lags the API", async () => {
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);
+  const stub = await stubBackend(routes(demoDir));
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const views = async () =>
+    new Map([
+      [10, { corpus_text: "Pn3m", loupe: "MO_H2O_S1", focus: "MO_H2O_S1", workspace: "MO_H2O_S1", workspace_text: "Unreviewed", workspace_reused: true }],
+      [11, { corpus_text: "Pn3m", loupe: "MO_PEG5_S3", focus: "MO_PEG5_S3", workspace: "MO_PEG5_S3", workspace_text: "Pn3m", workspace_reused: true }],
+    ]);
+  try {
+    const r = await checkTruth(cfg, { ui: true }, { views });
+    assert.equal(r.workspace_read, "in place");
+    assert.equal(r.ok, false);
+    assert.ok(r.summary.invariants_failed.includes("workspace_status_matches"));
+    assert.deepEqual(r.invariants.workspace_status_matches.violations, [{ sample: "MO_H2O", shown: "Pn3m", workspace: "Unreviewed" }]);
+    assert.equal("workspace_reused" in r.samples[0].views, false);
+  } finally {
+    await stub.close();
+  }
+});

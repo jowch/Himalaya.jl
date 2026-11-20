@@ -261,17 +261,22 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const truth = loadTruth(cfg, flags);
   const experimentId = await resolveExperiment(cfg, flags);
   const app = await collectApp(cfg, experimentId);
+  let workspaceRead = null;
   if (flags.ui) {
     const opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder })));
+    const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
+    workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
-      const { corpus_text: corpusText = null, workspace_text: workspaceText = null, ...frames } = opened.get(s.id) ?? {};
+      const { corpus_text: corpusText = null, workspace_text: workspaceText = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
       s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null, workspace: frames.workspace ?? null };
       s.corpusText = corpusText;
       s.workspaceText = workspaceText;
     }
   }
   for (const s of app) delete s.frameOrder;
-  return { experiment_id: experimentId, ...compareTruth(truth, app, { strict: Boolean(flags.strict) }) };
+  const result = { experiment_id: experimentId, ...compareTruth(truth, app, { strict: Boolean(flags.strict) }) };
+  if (flags.ui) result.workspace_read = workspaceRead;
+  return result;
 }
 
 export async function triage(cfg, flags) {

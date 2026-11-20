@@ -1,6 +1,6 @@
 import type { Peak, Trace } from "../../api";
 import { TracePlot } from "../../print/plot/TracePlot";
-import { toTraceModel } from "../../print/pages/focusAdapters";
+import { toTraceModel } from "../../print/plot/traceModel";
 
 export interface CombLine {
   id: number;

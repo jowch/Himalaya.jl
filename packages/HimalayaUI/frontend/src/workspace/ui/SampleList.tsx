@@ -44,6 +44,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick }: Pro
                 ref={cur ? currentRef : undefined}
                 type="button"
                 aria-current={cur ? "true" : undefined}
+                data-sample-id={s.id}
                 onClick={() => onPick(s.id)}
                 className={
                   "flex w-full items-center justify-between gap-2 px-3 py-1 text-left text-body " +

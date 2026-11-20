@@ -7,11 +7,8 @@
 // latticeForFirstOrderOnPeak). The legacy React components this ports the
 // presentation-free logic out of are cited inline.
 
-import type { Peak, IndexEntry, Trace, Experiment } from "../../api";
+import type { Peak, IndexEntry, Experiment } from "../../api";
 import { phaseColor } from "../../phases";
-import type { TraceModel } from "../plot/TracePlot";
-import { traceIntensityAt } from "../../lib/plot/traceIntensity";
-import type { PlotPeak } from "../plot/marks/PlotPeaks";
 import type { RingInput, DetectorCalibration } from "../detector/detectorGeometry";
 import type { CombSeries, CombTooth } from "../comb/combModel";
 import {
@@ -29,46 +26,6 @@ function spanTol(qs: number[]): number {
   const lo = qs.length ? Math.min(...qs) : 0;
   const hi = qs.length ? Math.max(...qs) : 1;
   return Math.max((hi - lo) * 0.02, 1e-6);
-}
-
-// ── trace peaks ───────────────────────────────────────────────────────────────
-
-/**
- * Observed `Peak[]` → trace `PlotPeak[]`; `phase` drives the trace colour
- * downstream (TracePlot resolves it via phaseColor).
- *
- * Minimal field map ({ id, q, intensity?, source, excluded }). The legacy
- * PlotCard → TraceViewer mapping does NOT decorate trace peaks with
- * `predictedAbsent`/`color` — those are index-overlay concerns (the comb /
- * detector rings carry the assignment colouring), so this adapter takes no
- * `activeIndices` param.
- *
- * A peak with no backend `intensity` (a manually-added curation peak) is
- * anchored to the trace curve at its q via {@link traceIntensityAt} so its
- * glyph sits on the data, not on the baseline. `intensity` is conditionally
- * spread (never set to `undefined`) to satisfy `exactOptionalPropertyTypes`;
- * it is omitted only when there is no curve to read (empty trace).
- */
-export function toTraceModel(
-  trace: Trace,
-  peaks: Peak[],
-  phase: string | null,
-): TraceModel {
-  return {
-    trace,
-    phase,
-    peaks: peaks.map((p): PlotPeak => {
-      const intensity =
-        p.intensity != null ? p.intensity : traceIntensityAt(p.q, trace);
-      return {
-        id: p.id,
-        q: p.q,
-        source: p.source,
-        excluded: p.excluded,
-        ...(intensity != null ? { intensity } : {}),
-      };
-    }),
-  };
 }
 
 // ── armed-edit peak click routing ────────────────────────────────────────────

@@ -60,21 +60,61 @@ async function settledGoto(page, cfg, route) {
   if (!settle.settled) throw new Error(`${route} did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
 }
 
-async function workspaceView(page, cfg, experimentId, sample) {
-  await settledGoto(page, cfg, WORKSPACE_ROUTE(experimentId, sample.id));
-  const rows = page.locator("[data-testid='workspace-samples'] [aria-current='true']");
-  const statuses = await rows.evaluateAll((els) =>
+export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId) {
+  let url;
+  try {
+    url = new URL(currentUrl);
+  } catch {
+    url = null;
+  }
+  const prefix = `/experiments/${experimentId}/workspace`;
+  if (url && url.origin === new URL(uiBase).origin && (url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))) {
+    return { reuse: true, route: null };
+  }
+  return { reuse: false, route: WORKSPACE_ROUTE(experimentId, firstSampleId) };
+}
+
+async function readWorkspaceRows(page) {
+  return page.locator("[data-testid='workspace-samples'] [data-sample-id]").evaluateAll((els) =>
     els.map((el) => {
       const mark = el.querySelector("[data-testid='workspace-status']");
-      return mark ? (mark.getAttribute("aria-label") ?? mark.textContent ?? "").trim() : null;
+      return {
+        id: Number(el.getAttribute("data-sample-id")),
+        text: mark ? (mark.getAttribute("aria-label") ?? mark.textContent ?? "").trim() : null,
+      };
     }),
   );
+}
+
+async function currentWorkspaceFrame(page, frameOrder) {
   const current = page.locator("[data-testid='workspace-exposures'] [aria-current='true']");
   const labels = await current.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
-  return {
-    workspace_text: statuses.length === 1 ? statuses[0] : null,
-    workspace: frameFromLabels(labels, sample.frameOrder),
-  };
+  return frameFromLabels(labels, frameOrder);
+}
+
+export async function readWorkspace(page, cfg, experimentId, samples) {
+  const out = new Map();
+  if (!samples.length) return out;
+  const start = workspaceStart(page.url(), cfg.uiBase, experimentId, samples[0].id);
+  if (!start.reuse) await settledGoto(page, cfg, start.route);
+  const filter = page.getByLabel("Filter samples");
+  if ((await filter.count()) && (await filter.inputValue())) {
+    await filter.fill("");
+  }
+  const texts = new Map((await readWorkspaceRows(page)).map((r) => [r.id, r.text]));
+  for (const s of samples) {
+    const row = page.locator(`[data-testid='workspace-samples'] [data-sample-id='${s.id}']`);
+    let frame = null;
+    if (await row.count()) {
+      const tracker = armSettle(page);
+      await row.click();
+      const settle = await tracker.wait({ timeoutMs: 20000 });
+      if (!settle.settled) throw new Error(`the workspace did not settle on sample ${s.id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+      frame = await currentWorkspaceFrame(page, s.frameOrder);
+    }
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_reused: start.reuse });
+  }
+  return out;
 }
 
 export async function readViews(cfg, experimentId, samples) {
@@ -86,6 +126,7 @@ export async function readViews(cfg, experimentId, samples) {
   const out = new Map();
   try {
     await prepareUser(session.page, cfg, { username: "verify", onboarding: false });
+    const workspace = await readWorkspace(session.page, cfg, experimentId, samples);
     const rows = await corpusStatuses(session.page, cfg, experimentId);
     for (const s of samples) {
       const row = rows.filter((r) => r.names.includes(s.name));
@@ -93,7 +134,7 @@ export async function readViews(cfg, experimentId, samples) {
       for (const [view, route] of Object.entries(VIEW_ROUTES)) {
         views[view] = await openedFrame(session.page, cfg, route(s.id), s.frameOrder);
       }
-      Object.assign(views, await workspaceView(session.page, cfg, experimentId, s));
+      Object.assign(views, workspace.get(s.id) ?? {});
       out.set(s.id, views);
     }
   } finally {

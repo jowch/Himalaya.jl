@@ -72,12 +72,11 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press x                                  # drop the shown frame; x again restores it (writes to the DB)
   bin/verify press /                                  # focus the filter; Esc leaves it
   ```
-- **Check:** `bin/verify check-truth --ui` reads the workspace too: the current row's status (`workspace_text`, invariant `workspace_status_matches`) and the frame the workspace opens on (`views.workspace`, folded into `views_agree` and `representative_kept`).
+- **Check:** `bin/verify check-truth --ui` reads the workspace first, the way a user moves through it: every row's status from one page (`workspace_text`, invariant `workspace_status_matches`), then a click on each row to read the frame it opens on (`views.workspace`, folded into `views_agree` and `representative_kept`). If the shared tab is already on this experiment's workspace it reads that page in place, without a reload, so run it straight after an edit to catch a list that did not refresh; the output's `workspace_read` says `in place` or `loaded`.
 - **Gotchas:**
   - A phase call on a frame that is not the selected one selects it first, then adds the phase once the select is confirmed.
   - On a dropped frame the candidates are disabled and number keys do nothing; restore the frame (x) first.
   - Keys do nothing before a username is set, or while focus is in a dialog or a text field.
-  - Not yet run against `make demo` by its author (written 2026-11-20 in a session without Julia); the first live run should confirm or fix this entry.
 
 ## Loupe (frame review)
 
