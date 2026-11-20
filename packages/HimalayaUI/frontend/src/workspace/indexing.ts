@@ -1,6 +1,5 @@
-import { customRefls, landsOn, latticeBounds, SYMS } from "../lib/customIndex";
-
-export const MATCH_TOL = 0.022;
+import type { IndexEntry } from "../api";
+import { CUSTOM_SNAP_TOL, customRefls, latticeBounds, SYMS } from "../lib/customIndex";
 
 export interface IndexPoint {
   ratio: number;
@@ -15,26 +14,40 @@ export interface IndexFit {
   landed: number;
 }
 
-export function indexFit(predicted: readonly number[], peakQs: readonly number[], tol = MATCH_TOL): IndexFit {
-  const q1 = predicted[0] ?? 0;
-  const used = new Set<number>();
-  const points: IndexPoint[] = predicted.map((q) => {
-    let best: number | null = null;
-    let bestD = tol;
+type QWindow = readonly [number, number] | null;
+
+function inWindow(q: number, window: QWindow): boolean {
+  return window === null || (q >= window[0] && q <= window[1]);
+}
+
+export function claimPeaks(predicted: readonly number[], peakQs: readonly number[], tol = CUSTOM_SNAP_TOL): (number | null)[] {
+  const best = predicted.map((q) => {
+    let pick: { peak: number; rel: number } | null = null;
     peakQs.forEach((p, i) => {
-      const d = Math.abs(p - q) / q;
-      if (d < bestD && !used.has(i)) {
-        bestD = d;
-        best = i;
-      }
+      const rel = Math.abs(p - q) / q;
+      if (rel <= tol && (pick === null || rel < pick.rel)) pick = { peak: i, rel };
     });
-    if (best !== null) used.add(best);
-    return { ratio: q1 > 0 ? q / q1 : 0, predicted: q, observed: best === null ? null : peakQs[best]! };
+    return pick as { peak: number; rel: number } | null;
   });
+  const out: (number | null)[] = predicted.map(() => null);
+  const claimed = new Set<number>();
+  best
+    .map((b, order) => ({ b, order }))
+    .filter((x): x is { b: { peak: number; rel: number }; order: number } => x.b !== null)
+    .sort((x, y) => x.b.rel - y.b.rel)
+    .forEach(({ b, order }) => {
+      if (claimed.has(b.peak)) return;
+      claimed.add(b.peak);
+      out[order] = peakQs[b.peak]!;
+    });
+  return out;
+}
+
+function fitPoints(points: IndexPoint[], fallbackSlope: number): IndexFit {
   const hit = points.filter((p): p is IndexPoint & { observed: number } => p.observed !== null);
   const sxy = hit.reduce((a, p) => a + p.ratio * p.observed, 0);
   const sxx = hit.reduce((a, p) => a + p.ratio * p.ratio, 0);
-  const slope = sxx > 0 ? sxy / sxx : q1;
+  const slope = sxx > 0 ? sxy / sxx : fallbackSlope;
   let r2: number | null = null;
   if (hit.length >= 2) {
     const mean = hit.reduce((a, p) => a + p.observed, 0) / hit.length;
@@ -43,6 +56,40 @@ export function indexFit(predicted: readonly number[], peakQs: readonly number[]
     r2 = sst > 0 ? 1 - ssr / sst : null;
   }
   return { points, slope, r2, landed: hit.length };
+}
+
+export function indexFit(predicted: readonly number[], peakQs: readonly number[], window: QWindow = null, tol = CUSTOM_SNAP_TOL): IndexFit {
+  const q1 = predicted[0] ?? 0;
+  const observed = claimPeaks(predicted, peakQs, tol);
+  const points = predicted
+    .map((q, i) => ({ ratio: q1 > 0 ? q / q1 : 0, predicted: q, observed: observed[i] ?? null }))
+    .filter((p) => p.observed !== null || inWindow(p.predicted, window));
+  return fitPoints(points, q1);
+}
+
+export function storedFit(ix: Pick<IndexEntry, "predicted_q" | "peaks" | "basis">, window: QWindow = null): IndexFit {
+  const predicted = ix.predicted_q;
+  const q1 = predicted[0] ?? 0;
+  const observed: (number | null)[] = predicted.map(() => null);
+  for (const ref of ix.peaks) {
+    const pos = ref.ratio_position as unknown;
+    let order = typeof pos === "number" && Number.isInteger(pos) && pos >= 1 && pos <= predicted.length ? pos - 1 : -1;
+    if (order < 0) {
+      let bestD = Infinity;
+      predicted.forEach((q, i) => {
+        const d = Math.abs(q - ref.q_observed);
+        if (d < bestD) {
+          bestD = d;
+          order = i;
+        }
+      });
+    }
+    if (order >= 0) observed[order] = ref.q_observed;
+  }
+  const points = predicted
+    .map((q, i) => ({ ratio: q1 > 0 ? q / q1 : 0, predicted: q, observed: observed[i] ?? null }))
+    .filter((p) => p.observed !== null || inWindow(p.predicted, window));
+  return fitPoints(points, ix.basis);
 }
 
 export const CUSTOM_PHASES = Object.keys(SYMS);
@@ -59,10 +106,6 @@ export function clampLattice(phase: string, value: number, qWindow: readonly [nu
 
 export function draftPrediction(d: CustomDraft): number[] {
   return customRefls(d.phase, d.lattice).map((r) => r.q);
-}
-
-export function draftLanded(d: CustomDraft, peakQs: number[]): number {
-  return landsOn(d.phase, d.lattice, peakQs);
 }
 
 export function draftCommit(d: CustomDraft): { phase: string; basis: number; ratios: number[] } {

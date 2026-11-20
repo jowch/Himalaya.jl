@@ -73,6 +73,12 @@ describe("rankCandidates", () => {
     expect(ranked).toHaveLength(9);
     expect(ranked.some((c) => c.id === 2)).toBe(false);
   });
+
+  it("keeps a custom index, which has no score, and lists it first", () => {
+    const custom = { ...index(5, "Hexagonal", null), kind: "speculative" as const };
+    const ranked = rankCandidates([index(1, "Im3m", 0.4), custom, index(3, "Ia3d", 0.9)]);
+    expect(ranked.map((c) => c.id)).toEqual([5, 3, 1]);
+  });
 });
 
 describe("stepExposure", () => {

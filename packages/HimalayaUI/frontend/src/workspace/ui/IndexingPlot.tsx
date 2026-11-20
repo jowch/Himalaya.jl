@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { scaleLinear } from "d3-scale";
 import { PlotFrame } from "../../print/plot/PlotFrame";
 import { makeAxis } from "../../print/plot/projection";
 import type { IndexFit } from "../indexing";
@@ -12,13 +13,13 @@ export interface IndexSeries {
   r2: number | null;
 }
 
-const MARGINS = { top: 8, right: 8, bottom: 26, left: 44 };
+const MARGINS = { top: 8, right: 8, bottom: 26, left: 50 };
 
 export function IndexingPlot({ series, empty }: { series: readonly IndexSeries[]; empty: string }): JSX.Element {
   const clipId = `workspace-index-clip-${useId().replace(/:/g, "")}`;
   if (series.length === 0) return <p className="text-caption">{empty}</p>;
-  const xmax = Math.max(...series.flatMap((s) => s.fit.points.map((p) => p.ratio))) * 1.08 || 1;
-  const ymax = Math.max(...series.flatMap((s) => s.fit.points.map((p) => Math.max(p.predicted, p.observed ?? 0)))) * 1.08 || 1;
+  const xmax = Math.max(1, ...series.flatMap((s) => s.fit.points.map((p) => p.ratio))) * 1.08;
+  const ymax = Math.max(0, ...series.flatMap((s) => s.fit.points.map((p) => Math.max(p.predicted, p.observed ?? 0)))) * 1.08 || 1;
   return (
     <div className="flex flex-col gap-1" data-testid="workspace-indexing">
       <PlotFrame
@@ -30,8 +31,10 @@ export function IndexingPlot({ series, empty }: { series: readonly IndexSeries[]
         render={(dims) => {
           const x = makeAxis([0, xmax], [0, dims.plotWidth], "linear");
           const y = makeAxis([0, ymax], [dims.plotHeight, 0], "linear");
-          const xt = [1, 2, 3, 4, 5, 6].filter((t) => t <= xmax);
-          const yt = [0.1, 0.2, 0.3, 0.4, 0.5].filter((t) => t <= ymax);
+          const xt = scaleLinear().domain([0, xmax]).ticks(5).filter((t) => t > 0);
+          const ys = scaleLinear().domain([0, ymax]);
+          const yt = ys.ticks(4).filter((t) => t > 0);
+          const yfmt = ys.tickFormat(4);
           return (
             <>
               <defs>
@@ -48,11 +51,14 @@ export function IndexingPlot({ series, empty }: { series: readonly IndexSeries[]
               ))}
               {yt.map((t) => (
                 <text key={`y${t}`} x={-5} y={y.to(t) + 4} textAnchor="end" className="fill-ink-faint text-caption">
-                  {t.toFixed(1)}
+                  {yfmt(t)}
                 </text>
               ))}
               <text x={dims.plotWidth} y={dims.plotHeight + 24} textAnchor="end" className="fill-ink-faint text-caption">
                 q / q₁
+              </text>
+              <text transform={`translate(-38 ${dims.plotHeight / 2}) rotate(-90)`} textAnchor="middle" className="fill-ink-faint text-caption">
+                q (Å⁻¹)
               </text>
               <g clipPath={`url(#${clipId})`}>
                 {series.map((s) => (

@@ -31,10 +31,10 @@ import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
-import { CustomIndexPanel } from "./ui/CustomIndexPanel";
+import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
-import { clampLattice, draftCommit, draftLanded, draftPrediction, indexFit, initialDraft, type CustomDraft } from "./indexing";
-import { latticeBounds } from "../lib/customIndex";
+import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, storedFit, type CustomDraft } from "./indexing";
+import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
 import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
@@ -164,7 +164,10 @@ export function WorkspacePage(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
+  const [customError, setCustomError] = useState<string | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
+  const draftOpen = draft !== null;
+  useEffect(() => setCustomError(null), [draftOpen]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const compareTraces = useCompareTraces(refs);
 
@@ -262,24 +265,56 @@ export function WorkspacePage(): JSX.Element {
     if (!draft || !exposure || !canCall) return;
     const c = draftCommit(draft);
     if (c.ratios.length === 0) return;
-    const commit = (): void => commitCustom.mutate(c.phase, c.basis, c.ratios);
-    if (exposure.selected) commit();
-    else selectExposure.mutate(exposure.id, { onSuccess: commit });
-    setDraft(null);
+    const commit = (): void => {
+      commitCustom.mutate(c.phase, c.basis, c.ratios);
+      setDraft(null);
+    };
+    if (exposure.selected) {
+      commit();
+      return;
+    }
+    setCustomError(null);
+    selectExposure.mutate(exposure.id, {
+      onSuccess: commit,
+      onError: () => setCustomError("This frame could not be selected, so the index was not added. Try again."),
+    });
   }, [draft, exposure, canCall, commitCustom, selectExposure]);
+  const snapDraft = useCallback(
+    (q: number) => {
+      if (!draft) return;
+      let target = q;
+      let bestD = Infinity;
+      for (const pq of activePeakQs) {
+        const d = Math.abs(pq - q);
+        if (d < bestD) {
+          bestD = d;
+          target = pq;
+        }
+      }
+      setDraftClamped({ ...draft, lattice: latticeForFirstOrderOnPeak(draft.phase, target) });
+    },
+    [draft, activePeakQs, setDraftClamped],
+  );
+  const snapDraftToPeak = useCallback(
+    (peakId: number) => {
+      const p = (peaks.data ?? []).find((pk) => pk.id === peakId);
+      if (p) snapDraft(p.q);
+    },
+    [peaks.data, snapDraft],
+  );
+  const draftFit = useMemo(() => (draft ? indexFit(draftQs, activePeakQs, xExtent) : null), [draft, draftQs, activePeakQs, xExtent]);
 
   const indexSeries: IndexSeries[] = useMemo(() => {
-    if (draft) {
-      const fit = indexFit(draftQs, activePeakQs);
-      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit, lattice: draft.lattice, r2: fit.r2 }];
+    if (draft && draftFit) {
+      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, r2: draftFit.r2 }];
     }
     const hovered = candidates.find((c) => c.id === hoverId);
     const shown = hovered ? [hovered] : candidates.filter((c) => assigned.has(c.id));
     return shown.map((c) => {
-      const fit = indexFit(c.predicted_q, activePeakQs);
+      const fit = storedFit(c, xExtent);
       return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, r2: c.r_squared ?? fit.r2 };
     });
-  }, [draft, draftQs, activePeakQs, candidates, hoverId, assigned]);
+  }, [draft, draftFit, xExtent, candidates, hoverId, assigned]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -302,13 +337,22 @@ export function WorkspacePage(): JSX.Element {
         return;
       }
       if (draft) {
-        if (ev.key === "Escape" || ev.key === "Enter" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        if (ev.key === "Escape") {
           ev.preventDefault();
-          if (ev.key === "Escape") setDraft(null);
-          else if (ev.key === "Enter") addCustom();
-          else setDraftClamped({ ...draft, lattice: draft.lattice + (ev.key === "ArrowRight" ? 1 : -1) * (ev.shiftKey ? 5 : 0.5) });
-          return;
+          setDraft(null);
+        } else if (ev.key === "Enter") {
+          if (ev.target instanceof HTMLElement && ev.target.closest("button,a")) return;
+          ev.preventDefault();
+          addCustom();
+        } else if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+          ev.preventDefault();
+          const step = (ev.key === "ArrowRight" ? 1 : -1) * (ev.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP);
+          setDraftClamped({ ...draft, lattice: draft.lattice + step });
+        } else if (ev.key === "?") {
+          ev.preventDefault();
+          setHelpOpen(true);
         }
+        return;
       }
       const idx = visible.findIndex((s) => s.id === sampleId);
       const step = (d: 1 | -1): void => {
@@ -463,7 +507,11 @@ export function WorkspacePage(): JSX.Element {
                 xDomain={shownDomain}
                 logY={logY}
                 onXDomain={setXDomain}
-                {...(canEditPeaks ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak } : {})}
+                {...(draft
+                  ? { onAddPeak: snapDraft, onClickPeak: snapDraftToPeak }
+                  : canEditPeaks
+                    ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak }
+                    : {})}
               />
               {difference && xExtent && subRef !== undefined && (
                 <SubtractionStrip
@@ -492,9 +540,10 @@ export function WorkspacePage(): JSX.Element {
                 draft={draft}
                 min={draftBounds.min}
                 max={draftBounds.max}
-                landed={draftLanded(draft, activePeakQs)}
-                total={draftQs.length}
-                disabled={!canCall}
+                landed={draftFit?.landed ?? 0}
+                total={draftFit?.points.length ?? 0}
+                disabled={!canCall || selectExposure.isPending}
+                error={customError}
                 onChange={setDraftClamped}
                 onAdd={addCustom}
                 onCancel={() => setDraft(null)}
