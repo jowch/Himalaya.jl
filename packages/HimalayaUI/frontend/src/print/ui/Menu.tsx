@@ -92,7 +92,7 @@ export function Menu<T extends string>({
       if (target < 0) target = options.findIndex((o) => !o.disabled);
     }
     if (target >= 0) itemRefs.current[target]?.focus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focus the initial item only when the menu opens
   }, [open]);
 
   if (!open) return null;

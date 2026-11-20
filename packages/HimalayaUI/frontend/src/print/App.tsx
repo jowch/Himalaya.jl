@@ -113,8 +113,7 @@ export function PrintApp(): JSX.Element {
         );
       }
     });
-    // Intentionally empty deps — rehydrate runs once at mount; qc is stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate runs once at mount; qc is stable
   }, []);
 
   return (

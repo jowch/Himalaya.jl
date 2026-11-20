@@ -12,7 +12,7 @@ export interface AnnounceOptions {
 }
 
 let activeImpl: (msg: string, opts?: AnnounceOptions) => void = (msg) => {
-  // eslint-disable-next-line no-console
+  // eslint-disable-next-line no-console -- dev fallback when no live region is mounted
   console.debug(`[announce] ${msg}`);
 };
 
@@ -33,7 +33,7 @@ export function setAnnounceImpl(
 ): void {
   if (impl === null) {
     activeImpl = (msg) => {
-      // eslint-disable-next-line no-console
+      // eslint-disable-next-line no-console -- dev fallback when no live region is mounted
       console.debug(`[announce] ${msg}`);
     };
   } else {

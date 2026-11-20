@@ -76,8 +76,7 @@ const annotatedModel: TraceModel = {
 export const HeroPlate: Story = {
   // args satisfies the Story constraint; render overrides the entire output.
   args: { trace: heroModel, height: 360 },
-  render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+  render: function Render() {
     const [scale, setScale] = useState<"log" | "linear">("log");
     return (
       <div style={{ maxWidth: 640, margin: "0 auto" }}>

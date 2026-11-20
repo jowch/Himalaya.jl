@@ -235,8 +235,7 @@ export function ConfigurationBody({ experimentId }: ConfigurationBodyProps): JSX
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // handleUndo/handleRedo close only over stable mutate/undoStack refs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleUndo/handleRedo close only over stable mutate/undoStack refs
   }, []);
 
   const handleSourceEdit = (key: string, value: string) => {
