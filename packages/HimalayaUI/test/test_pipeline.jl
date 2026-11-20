@@ -535,6 +535,32 @@ let
         end
     end
 
+    @testset "cli_analyze fails after the batch when an exposure was skipped" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir     = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            seeded = setup_exp_dir(db, dir; name="ExpSkip", stems=["ST001", "ST002"])
+            rm(joinpath(dir, "analysis", "automatic_analysis", "ST001.dat"))
+            err = try
+                redirect_stdout(devnull) do
+                    cli_analyze(["-e", dir])
+                end
+                nothing
+            catch e
+                e
+            end
+            @test err isa ErrorException
+            @test err !== nothing && occursin("1 exposure", err.msg)
+            hashed = [Int(r.id) for r in DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE analysis_inputs_hash IS NOT NULL")]
+            @test hashed == [seeded.exposure_ids[2]]
+            @test_throws ErrorException redirect_stdout(devnull) do
+                cli_analyze(["--all"])
+            end
+        end
+    end
+
     @testset "cli_analyze --all analyzes every registered experiment" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()
