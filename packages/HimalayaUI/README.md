@@ -91,7 +91,7 @@ julia --project=/path/to/Himalaya.jl/packages/HimalayaUI \
 Start the server (`himalaya serve`), open the UI, and choose **New experiment**. Pick the beamtime directory. HimalayaUI then:
 
 1. **Resolves** the layout: the raw-image directory (`data/` if present), the directory holding the integration `.dat` files, the file patterns, and the `setup_info_*.txt` calibration file.
-2. **Previews** what a scan would find with those settings, including files that are missing a sidecar or have a near-miss extension, and the geometry derived from the metadata and setup files. Correct anything that is wrong before approving.
+2. **Previews** what a scan would find with those settings: how many images, metadata and integration files match, and the geometry derived from the metadata and setup files. Correct anything that is wrong before approving.
 3. **Scans** on Approve: it creates one exposure per image, groups exposures into loads and samples by time and stage position, and runs peak-finding and indexing on each one. You land on the grouping review page while the scan runs.
 
 A typical SSRL directory looks like this:
@@ -270,7 +270,7 @@ Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved,
 
 ## Troubleshooting
 
-**Exposures or peaks missing after a scan.** Open the experiment's Configuration page: its file preview lists every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Fix the pattern there; a pattern edit forces a rescan. Check that `analysis_dir` points at the directory that actually holds the `.dat` files.
+**Exposures or peaks missing after a scan.** If the scan failed, the experiment opens on a scan-failed page that lists the files that couldn't be paired. Otherwise call `GET /api/fs/manifest?path=<data_dir>&analysis_dir=<analysis_dir>&image_pattern=…&metadata_pattern=…&integration_pattern=…` with the experiment's settings: its `unmatched` list names every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Fix the pattern on the experiment's Configuration page; a pattern edit forces a rescan. Also check that `analysis_dir` points at the directory that actually holds the `.dat` files.
 
 **`SKIP (...)` messages during `analyze`.** The analysis of that exposure raised an error (commonly: missing file, unreadable trace, no peaks). Other exposures continue; the error message indicates the cause.
 
