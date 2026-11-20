@@ -17,55 +17,55 @@ colors:
   warning: "oklch(0.620 0.130 70)"
   error: "oklch(0.520 0.170 28)"
   peak-manual: "oklch(0.550 0.200 340)"
-  phase-pn3m: "oklch(0.570 0.150 58)"
-  phase-im3m: "oklch(0.520 0.120 162)"
-  phase-ia3d: "oklch(0.520 0.130 300)"
-  phase-fm3m: "oklch(0.550 0.140 18)"
-  phase-fd3m: "oklch(0.520 0.120 318)"
-  phase-hexagonal: "oklch(0.540 0.130 350)"
-  phase-lamellar: "oklch(0.505 0.150 264)"
-  phase-square: "oklch(0.550 0.130 132)"
+  phase-pn3m: "oklch(0.520 0.100 200)"
+  phase-im3m: "oklch(0.480 0.140 258)"
+  phase-ia3d: "oklch(0.500 0.150 300)"
+  phase-fm3m: "oklch(0.400 0.050 230)"
+  phase-fd3m: "oklch(0.420 0.120 325)"
+  phase-hexagonal: "oklch(0.500 0.130 138)"
+  phase-lamellar: "oklch(0.500 0.100 105)"
+  phase-square: "oklch(0.480 0.030 80)"
 typography:
   display:
-    fontFamily: "Newsreader, Georgia, ui-serif, serif"
-    fontSize: "31px"
-    fontWeight: 500
-    lineHeight: 1.15
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 600
+    lineHeight: 1.2
     letterSpacing: "normal"
   headline:
-    fontFamily: "Newsreader, Georgia, ui-serif, serif"
-    fontSize: "19px"
-    fontWeight: 500
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 600
     lineHeight: 1.2
     letterSpacing: "normal"
   title:
-    fontFamily: "Plus Jakarta Sans, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
     fontSize: "15px"
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: "normal"
   body:
-    fontFamily: "Plus Jakarta Sans, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
     fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.5
     letterSpacing: "normal"
   label:
-    fontFamily: "Plus Jakarta Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "11.5px"
-    fontWeight: 500
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "12px"
+    fontWeight: 600
     lineHeight: 1.4
-    letterSpacing: "0.06em"
+    letterSpacing: "normal"
   caption:
-    fontFamily: "Plus Jakarta Sans, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "10.5px"
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "12px"
     fontWeight: 400
     lineHeight: 1.4
     letterSpacing: "normal"
   data:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"
-    fontSize: "11.5px"
-    fontWeight: 500
+    fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "13px"
+    fontWeight: 400
     lineHeight: 1.4
     letterSpacing: "normal"
 rounded:
@@ -124,7 +124,7 @@ HimalayaUI is composed the way a publication plate is composed: on warm paper, i
 
 Where the earlier dark "Darkroom" direction *rationed* a single accent and kept colour scarce, "The Print" lets **phase colour carry the surface**: colour here is the science (the phase identity), used generously and semantically. The chrome stays quiet, ink and hairlines on paper, and a single warm **terracotta** accent (`accent`, oklch 0.555 0.150 38) is the one interaction mark, the grease pencil: the reject ✕, the primary action, the live edit, the q-link highlight.
 
-The personality is unchanged: a **confident expert** who is quiet. The interface makes calls and shows its reasoning; it never raises its voice. Density stays high. The serif display face (**Newsreader**) sets titles, the figure-plate signature; Plus Jakarta Sans does the structural work; monospace is reserved for measured values.
+The personality is unchanged: a **confident expert** who is quiet. The interface makes calls and shows its reasoning; it never raises its voice. Density stays high. One sans family, Source Sans 3, sets everything; hierarchy comes from weight and ink tone rather than from a second typeface.
 
 This system rejects its four neighbours: not **legacy scientific software** (no toolbar soup), not a **generic SaaS dashboard** (no hero-metric tiles, no identical card grids, no gradient accents), not a **consumer app** (nothing rounded for charm), and not a **bare academic utility** (visible craft is how the analysis earns trust).
 
@@ -132,7 +132,7 @@ This system rejects its four neighbours: not **legacy scientific software** (no 
 - Warm paper field (hue ~80) so the figure leads; detector images are dark windows set into it.
 - Ink + hairline chrome; one terracotta accent as the interaction/grease-pencil mark.
 - Phase colour is generous and semantic, paper-tuned so every phase reads at AA on `plate`.
-- Newsreader serif for display titles; Plus Jakarta Sans for prose; monospace for measurements.
+- Source Sans 3 throughout, with tabular figures so numbers align without a monospace face.
 - The figure is framed as a **plate** (the one elevated object); most surfaces are flat paper + hairlines.
 
 ### Spacing & density
@@ -181,10 +181,10 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Manual-Peak Magenta** (`peak-manual`, oklch 0.550 0.200 340): paper-tuned (darker than the dark-era 0.78) for AA on the plate. Used for one thing only: peak markers the user added by hand. Its hue sits well clear of the terracotta accent (38) and every phase hue.
 
 ### Phase palette (paper-tuned, AA on plate)
-Eight semantic data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays, folio phase strips, and Compare/series. All sit at luminance ~0.50–0.58 and chroma ~0.12–0.15, darker and a touch more chromatic than the dark-era values so each reads at WCAG AA on `plate`. Hue spacing clears a ~20° exclusion zone around the terracotta accent (38).
-- **Pn3m Amber** (0.570 0.150 58) · **Im3m Sage** (0.520 0.120 162) · **Ia3d Violet** (0.520 0.130 300) · **Fm3m Coral** (0.550 0.140 18) · **Fd3m Rose-Purple** (0.520 0.120 318) · **Hexagonal Rose** (0.540 0.130 350) · **Lamellar Periwinkle-Indigo** (0.505 0.150 264) · **Square Chartreuse** (0.550 0.130 132).
+Eight data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays and phase chips. Every hue sits outside the warm band that the accent (38), error (28) and warning (70) occupy, and away from success (162), so a phase never reads as a status. Each clears WCAG AA on `plate`.
+- **Pn3m Teal** (0.520 0.100 200) · **Im3m Blue** (0.480 0.140 258) · **Ia3d Violet** (0.500 0.150 300) · **Fd3m Plum** (0.420 0.120 325) · **Hexagonal Green** (0.500 0.130 138) · **Lamellar Olive** (0.500 0.100 105) · **Fm3m Slate** (0.400 0.050 230) · **Square Taupe** (0.480 0.030 80).
 
-> Im3m / Hexagonal / Lamellar are taken verbatim from the mockups (`:root`, byte-identical). Pn3m was also mockup-verbatim at L 0.585, but AA verification in R0b (#222) measured it at 4.29:1 on `plate` — below the 4.5:1 floor — so its luminance was nudged 0.585 → 0.570 (same chroma 0.150 + hue 58), which clears AA at 4.57:1 with no perceptible hue shift. The other four (Ia3d / Fm3m / Fd3m / Square) were **provisional** values in the same L/chroma band; R0b (#222) finalized them and confirmed all eight clear WCAG AA on `plate` (Square is the tightest of the rest at 4.54:1). See `phases.ts` and `test/phases.test.ts` for the pinned values + per-phase AA assertion.
+The five phases that turn up most in lipid work (Pn3m, Im3m, Ia3d, Hexagonal, Lamellar) get the clearest hue separation. Fm3m and Square are rare and get low-chroma neutrals. Eight hues cannot all stay distinct from each other and from three warm status colours under every type of colour blindness; a simulation shows Hexagonal/Lamellar and Im3m/Ia3d close for deutan and protan viewers. That is why the phase name always travels with the colour (chip text, legend label). `test/phases.test.ts` pins the values, asserts AA on `plate`, and asserts that every phase is at least 0.05 OKLab from every other phase and from the accent and status tokens.
 
 ### Status
 - **Success** (oklch 0.520 0.120 162, sage), **Warning** (0.620 0.130 70, amber), **Error** (0.520 0.170 28, red). Paper-tuned for AA. Status-only; never decoration. (Note: the contact-sheet "kept" verdict dot is sage, not a generic green, T-4.)
@@ -196,25 +196,24 @@ Eight semantic data colours, one per liquid-crystalline phase, used for index/pe
 
 ## 3. Typography
 
-**Display font:** **Newsreader** (serif, weight 500), with `Georgia, ui-serif, serif` fallback, the figure-plate signature, used for hero/figure/sample/card titles.
-**Body font:** Plus Jakarta Sans (400/500/600), with `ui-sans-serif, system-ui` fallback, all structural prose and chrome.
-**Mono font:** the platform monospace stack, reserved exclusively for measured values.
+**Font:** **Source Sans 3** (400 and 600 only), with `ui-sans-serif, system-ui` fallback, for every surface: titles, chrome, prose and measured values.
+**Figures:** `font-variant-numeric: tabular-nums` is set on `body`, so every digit has the same width and columns of q, score and lattice values align without a monospace face.
 
-**Character.** Three voices, each a signal: serif = this is a title on a plate; sans = this is chrome/prose; monospace = this is a measurement (q, score, lattice, Miller indices, series ratio).
+**Why one family.** The previous three-voice system (serif titles, sans chrome, monospace values) ran to eight sizes, four weights, uppercase tracked labels and monospace in about ninety places, and its hierarchy did not read. Dense-UI guidance converges on one typeface, at most four sizes and at most three weights, with hierarchy carried by weight, ink tone and spacing rather than by size. Source Sans 3 was picked by eye against Geist, IBM Plex Sans, Inter and Plus Jakarta Sans in the specimen. Its x-height is smaller than those, so it reads denser at the same pixel size; that is why the smallest step is 12px and does not go lower.
 
 ### Hierarchy
-- **Display** (Newsreader 500, ~31px): the figure/sample/series hero title. The plate's name.
-- **Headline** (Newsreader 500, 19px): section-level serif titles (folio, scoping).
-- **Title** (Plus Jakarta Sans 600, 15px): card titles, primary inputs.
-- **Body** (400, 13px): the readable default.
-- **Label** (500, 11.5px, letter-spacing 0.06em, UPPERCASE): form/section labels and terracotta kickers.
-- **Caption** (400, 10.5px): timestamps, microcopy, status badges.
-- **Data** (mono 500, 11.5px): q-values, scores, lattice parameters, Miller indices, phase ratios.
+Four sizes and two weights.
+- **20px / 600** (`text-display`, `text-headline`, `text-headline-lg`): the sample or page title.
+- **15px / 600** (`text-title`): card titles, primary inputs.
+- **13px / 400** (`text-body`, `text-data`): the readable default, including measured values.
+- **12px** (`text-label`, `text-kicker` at 600; `text-caption`, `text-meta` at 400): section labels, captions, metadata.
+
+Section labels are sentence case at 600 in `ink-soft`. No uppercase, no letter-spacing; the brand wordmark is the one exception.
 
 ### Named rules
-**The Serif-Means-Title Rule.** Newsreader is for titles on a plate (sample name, figure title, card title, the progress numeral). Never set prose or chrome in serif.
-**The Monospace-Means-Measurement Rule.** Mono is for values produced by the instrument. Never for prose.
-**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/print/ui/**`.) The display step is one such extension point: it sits at 31px (restored to the mockup hero size from the greenfield shell's conservative 27px — TY-DISPLAY), a deliberate, render-verified decision made by editing the `--text-display` token, never by inlining a size.
+**The Two-Weight Rule.** 400 and 600 only. Tailwind's `font-medium` resolves to 400 and `font-bold` to 600 through `--font-weight-*`, so a stray weight cannot appear.
+**The No-Monospace Rule.** There is no `--font-mono` token. Numbers align through tabular figures. Reintroducing a monospace face for values brings back a second voice the hierarchy does not need.
+**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/print/ui/**`.)
 
 ## 4. Elevation
 
@@ -291,7 +290,7 @@ Motion is polish measured in milliseconds, never spectacle. It exists to soften 
 ### Do
 - Keep the warm paper field; let the figure (trace plate, waterfall, detector window) be the subject.
 - Treat every colour as a label; let phase colour be generous (it is the science) while the terracotta accent stays rationed.
-- Set titles in Newsreader, prose in Plus Jakarta Sans, measurements in monospace.
+- Set everything in Source Sans 3; let weight and ink tone carry hierarchy.
 - Make the active segmented-control segment ink-on-paper; make the primary action ink-solid, the grease-pencil action terracotta.
 - Pair every colour encoding with a second channel; verify phase colours at AA on `plate`.
 
