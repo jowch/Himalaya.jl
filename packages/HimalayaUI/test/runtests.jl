@@ -21,7 +21,7 @@ const GROUPS = [
     ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
                   "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
                   "test_effective_peaks_sharpness_passthrough.jl","test_ingestion_core.jl",
-                  "test_json.jl","test_image.jl"]),
+                  "test_json.jl","test_image.jl","test_demo_data.jl"]),
     ("routes",   ["test_http.jl","test_routes_users.jl","test_routes_experiments.jl",
                   "test_experiments_patch.jl",
                   "test_ingestion_scan_api.jl",
@@ -44,6 +44,9 @@ const GROUPS = [
     ("migration", ["test_http.jl","test_migration_upgrade.jl"]),
 ]
 
+GROUP == "All" || GROUP in first.(GROUPS) ||
+    error("runtests: unknown GROUP=$(GROUP); expected All or one of $(join(first.(GROUPS), ", "))")
+
 # Single source of truth for the serial bisect order — the exact historical
 # runtests include order. The buckets above must partition this same set.
 const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
@@ -54,7 +57,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_auto_group_peak_id_claiming.jl",
                    "test_effective_peaks_sharpness_passthrough.jl","test_ingestion_core.jl",
                    "test_fast_skip.jl",
-                   "test_json.jl","test_http.jl","test_inproc_equivalence.jl",
+                   "test_json.jl","test_demo_data.jl","test_http.jl","test_inproc_equivalence.jl",
                    "test_routes_health.jl","test_routes_users.jl","test_routes_experiments.jl",
                    "test_experiments_patch.jl",
                    "test_ingestion_scan_api.jl",

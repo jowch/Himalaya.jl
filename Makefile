@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel lint
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean lint
 
 all: frontend sysimage
 
@@ -53,3 +53,43 @@ test-parallel:
 		echo "== $$g =="; grep -E "Test Summary" build/test-$$g.log | tail -1 || true; \
 	done; \
 	exit $$rc
+
+# ---------------------------------------------------------------------------
+# Local / cloud dev setup and the synthetic demo (docs/demo.md)
+# ---------------------------------------------------------------------------
+
+# First-time setup, per CLAUDE.md. `npm ci` (not `npm install`) so the lockfile
+# isn't rewritten. On Julia >= 1.11 `Pkg.develop` also writes a [sources] entry
+# into HimalayaUI's Project.toml and drops its comments; the (gitignored)
+# Manifest already records the path dep, so put back the file as it was before
+# (a copy, not `git checkout`, so uncommitted edits to it survive).
+UI_PROJECT := packages/HimalayaUI/Project.toml
+setup:
+	cd $(FRONTEND_DIR) && npm ci
+	julia --project=. -e 'using Pkg; Pkg.instantiate()'
+	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak; \
+	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
+	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+
+# Synthetic SSRL-style experiment, generated on demand and NEVER committed
+# (scratch/ is gitignored). Override the target dir with DEMO_DIR=/tmp/...
+DEMO_DIR    ?= scratch/demo-experiment
+DEMO_DB_DIR ?= scratch/demo
+demo-data:
+	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
+
+# Backend + Vite with the demo experiment ingested (through the same API calls
+# the New-experiment funnel makes). Generates the data first if it is missing.
+demo:
+	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh
+
+# Backend + Vite on a fresh empty DB, to walk the ingest funnel by hand.
+demo-empty:
+	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
+
+# Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), so a mistyped
+# DEMO_DIR pointing at real data is left alone.
+demo-clean:
+	@if [ -f "$(DEMO_DIR)/TRUTH.csv" ]; then rm -rf "$(DEMO_DIR)"; \
+	elif [ -e "$(DEMO_DIR)" ]; then echo "$(DEMO_DIR) has no TRUTH.csv; not a demo tree, leaving it" >&2; fi
+	rm -rf "$(DEMO_DB_DIR)" "$(DEMO_DB_DIR)-empty"
