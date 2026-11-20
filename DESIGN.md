@@ -22,9 +22,9 @@ colors:
   phase-ia3d: "oklch(0.500 0.150 300)"
   phase-fm3m: "oklch(0.400 0.050 230)"
   phase-fd3m: "oklch(0.420 0.120 325)"
-  phase-hexagonal: "oklch(0.500 0.130 138)"
-  phase-lamellar: "oklch(0.500 0.100 105)"
-  phase-square: "oklch(0.480 0.030 80)"
+  phase-hexagonal: "oklch(0.530 0.140 130)"
+  phase-lamellar: "oklch(0.440 0.090 100)"
+  phase-square: "oklch(0.550 0.020 250)"
 typography:
   display:
     fontFamily: "Source Sans 3, ui-sans-serif, system-ui, sans-serif"
@@ -112,7 +112,7 @@ components:
 
 > **Status: this is the living visual spec for "The Print", not a finished remediation log.** It is the canonical, extendable reference: every new screen, primitive, and token is expected to be authored against the rules below and to extend the named scales rather than scatter one-offs. The token primitives in the frontmatter are normative; the prose contextualizes how to apply them.
 >
-> History, for accuracy: the system was first authored 2026-05-27 for the redesign's fidelity pass; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223), the shipped tokens (`styles.css` `@theme`, `phases.ts`) were verified to match this doc at R9 (#232), and the retired dark "Darkroom" defaults are gone. The system is a single light "Print" identity; there is no dark theme. The primitives were later relocated to `src/print/ui/` (the old `src/components/ui/` directory no longer exists) as the whole frontend moved under `src/print/`. When you add a screen, component, state, or token, add it here too, keeping the doc and the shipped system in lockstep.
+> History, for accuracy: the system was first authored 2026-05-27 for the redesign's fidelity pass; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223), the shipped tokens (`styles.css` `@theme`, `phases.ts`) were verified to match this doc at R9 (#232), and the retired dark "Darkroom" defaults are gone. The system ships a single light "Print" identity today. A dark theme is deferred to the new workspace; its approved direction is a desaturated charcoal near-black with a faint blue-violet tint (oklch around 0.165 0.005 280), not warm brown. The primitives were later relocated to `src/print/ui/` (the old `src/components/ui/` directory no longer exists) as the whole frontend moved under `src/print/`. When you add a screen, component, state, or token, add it here too, keeping the doc and the shipped system in lockstep.
 >
 > **Update (component-library extraction).** The Print's recurring patterns were extracted into closed-look primitives under `src/print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, Toast, HintText, and the base-layer Input, Field, Menu, Chip, Tooltip, and more) and the system is now **mechanically enforced**: `scripts/check-design.mjs` runs as a pure-absolute `lint:design` build step that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-authoring dirs (`src/print/ui/**`, plus the renderer dirs `src/print/plot/**`, `src/print/detector/**`, `src/print/comb/**`, `src/print/export/**`). Consumers pass placement-only `className`; appearance lives in the primitives. Two token truths changed at extraction: `rounded.md` 7px → 5px (radius collapsed to one 5px step), and `--color-print-accent` now sources from `--color-accent`. The enforced contract lives in `packages/HimalayaUI/frontend/src/AGENTS.md` §"Design system"; the live visual catalog is Storybook (`npm run storybook` from `packages/HimalayaUI/frontend`). (The hand-maintained `docs/design-system.html` mock was retired 2026-06-21 — it drifted from the living primitives; the `.stories.tsx` files are the source of truth.)
 
@@ -181,10 +181,10 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Manual-Peak Magenta** (`peak-manual`, oklch 0.550 0.200 340): paper-tuned (darker than the dark-era 0.78) for AA on the plate. Used for one thing only: peak markers the user added by hand. Its hue sits well clear of the terracotta accent (38) and every phase hue.
 
 ### Phase palette (paper-tuned, AA on plate)
-Eight data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays and phase chips. Every hue sits outside the warm band that the accent (38), error (28) and warning (70) occupy, and away from success (162), so a phase never reads as a status. Each clears WCAG AA on `plate`.
-- **Pn3m Teal** (0.520 0.100 200) · **Im3m Blue** (0.480 0.140 258) · **Ia3d Violet** (0.500 0.150 300) · **Fd3m Plum** (0.420 0.120 325) · **Hexagonal Green** (0.500 0.130 138) · **Lamellar Olive** (0.500 0.100 105) · **Fm3m Slate** (0.400 0.050 230) · **Square Taupe** (0.480 0.030 80).
+Eight data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays and phase chips. Every chromatic phase hue (chroma ≥ 0.06) sits at least 30° from the accent (38), error (28), warning (70) and success (162), so a phase never reads as a status. Hexagonal moved to 130 and Lamellar to 100 to clear success and warning; they keep apart from each other by lightness (0.53 against 0.44). Each clears WCAG AA on `plate`.
+- **Pn3m Teal** (0.520 0.100 200) · **Im3m Blue** (0.480 0.140 258) · **Ia3d Violet** (0.500 0.150 300) · **Fd3m Plum** (0.420 0.120 325) · **Hexagonal Green** (0.530 0.140 130) · **Lamellar Olive** (0.440 0.090 100) · **Fm3m Slate** (0.400 0.050 230) · **Square Grey** (0.550 0.020 250).
 
-The five phases that turn up most in lipid work (Pn3m, Im3m, Ia3d, Hexagonal, Lamellar) get the clearest hue separation. Fm3m and Square are rare and get low-chroma neutrals. Eight hues cannot all stay distinct from each other and from three warm status colours under every type of colour blindness; a simulation shows Hexagonal/Lamellar and Im3m/Ia3d close for deutan and protan viewers. That is why the phase name always travels with the colour (chip text, legend label). `test/phases.test.ts` pins the values, asserts AA on `plate`, and asserts that every phase is at least 0.05 OKLab from every other phase and from the accent and status tokens.
+The five phases that turn up most in lipid work (Pn3m, Im3m, Ia3d, Hexagonal, Lamellar) get the clearest hue separation. Fm3m and Square are rare and get low-chroma cool neutrals, kept clear of the warm ink tones. Eight hues cannot all stay distinct from each other and from three warm status colours under every type of colour blindness; a simulation shows Hexagonal/Lamellar and Im3m/Ia3d close for deutan and protan viewers. That is why the phase name always travels with the colour (chip text, legend label). `test/phases.test.ts` reads the values from this file and from `styles.css` and asserts: AA on `plate`; at least 0.05 OKLab between every pair of phases and between each phase and the accent, status and ink tokens; and the 30° hue gap for chromatic phases.
 
 ### Status
 - **Success** (oklch 0.520 0.120 162, sage), **Warning** (0.620 0.130 70, amber), **Error** (0.520 0.170 28, red). Paper-tuned for AA. Status-only; never decoration. (Note: the contact-sheet "kept" verdict dot is sage, not a generic green, T-4.)
@@ -208,7 +208,7 @@ Four sizes and two weights.
 - **13px / 400** (`text-body`, `text-data`): the readable default, including measured values.
 - **12px** (`text-label`, `text-kicker` at 600; `text-caption`, `text-meta` at 400): section labels, captions, metadata.
 
-Section labels are sentence case at 600 in `ink-soft`. No uppercase, no letter-spacing; the brand wordmark is the one exception.
+Section labels are sentence case at 600 in `ink-soft`. No uppercase, no letter-spacing. The one exception is the brand wordmark (`Wordmark`): Source Sans 3 at 600, uppercase, tracked 0.16em.
 
 ### Named rules
 **The Two-Weight Rule.** 400 and 600 only. Tailwind's `font-medium` resolves to 400 and `font-bold` to 600 through `--font-weight-*`, so a stray weight cannot appear.

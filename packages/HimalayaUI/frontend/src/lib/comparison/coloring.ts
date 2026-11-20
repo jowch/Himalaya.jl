@@ -71,7 +71,7 @@ export const COMPARE_PALETTE: readonly string[] = [
   "oklch(0.52 0.13 165)",
   "oklch(0.52 0.13 180)",
   "oklch(0.52 0.13 215)",
-  "oklch(0.52 0.13 244)",
+  "oklch(0.52 0.13 115)",
   "oklch(0.52 0.13 279)",
   "oklch(0.55 0.13 345)",
 ];

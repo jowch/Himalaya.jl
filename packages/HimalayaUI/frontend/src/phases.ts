@@ -15,12 +15,12 @@ export const PHASE_PALETTE: Readonly<Record<KnownPhase, string>> = {
   Ia3d:      "oklch(0.500 0.150 300)",
   Fm3m:      "oklch(0.400 0.050 230)",
   Fd3m:      "oklch(0.420 0.120 325)",
-  Hexagonal: "oklch(0.500 0.130 138)",
-  Lamellar:  "oklch(0.500 0.100 105)",
-  Square:    "oklch(0.480 0.030 80)",
+  Hexagonal: "oklch(0.530 0.140 130)",
+  Lamellar:  "oklch(0.440 0.090 100)",
+  Square:    "oklch(0.550 0.020 250)",
 };
 
-const FALLBACK = "oklch(0.65 0.02 270)"; // neutral cool-gray
+const FALLBACK = "oklch(0.65 0.02 270)";
 
 export function phaseColor(phase: string): string {
   return (PHASE_PALETTE as Record<string, string>)[phase] ?? FALLBACK;
