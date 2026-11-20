@@ -7,12 +7,36 @@ interface Props {
   candidates: readonly IndexEntry[];
   assigned: ReadonlySet<number>;
   disabled: boolean;
+  formFactor: boolean;
   onToggle: (ix: IndexEntry) => void;
+  onFormFactor: () => void;
   onHover: (id: number | undefined) => void;
 }
 
-export function CandidateList({ candidates, assigned, disabled, onToggle, onHover }: Props): JSX.Element {
-  if (candidates.length === 0) return <Note>No candidate indices for this exposure.</Note>;
+export function CandidateList({ candidates, assigned, disabled, formFactor, onToggle, onFormFactor, onHover }: Props): JSX.Element {
+  return (
+    <div className="flex flex-col gap-1">
+      {candidates.length === 0 && <Note>No candidate indices for this exposure.</Note>}
+      {candidates.length > 0 && <Rows candidates={candidates} assigned={assigned} disabled={disabled} onToggle={onToggle} onHover={onHover} />}
+      <button
+        type="button"
+        aria-pressed={formFactor}
+        disabled={disabled}
+        onClick={onFormFactor}
+        data-testid="workspace-form-factor"
+        className={
+          "grid w-full grid-cols-[auto_1fr] items-center gap-2 rounded-sm border px-2 py-1 text-left text-body disabled:opacity-50 " +
+          (formFactor ? "border-accent bg-accent-wash" : "border-transparent hover:bg-paper-sunk")
+        }
+      >
+        <Kbd>0</Kbd>
+        <span>No phase (form factor)</span>
+      </button>
+    </div>
+  );
+}
+
+function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props, "formFactor" | "onFormFactor">): JSX.Element {
   return (
     <ol className="flex flex-col gap-0.5" data-testid="workspace-candidates" onMouseLeave={() => onHover(undefined)}>
       {candidates.map((c, i) => {

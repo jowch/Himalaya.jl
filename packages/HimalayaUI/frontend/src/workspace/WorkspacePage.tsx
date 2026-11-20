@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Exposure, IndexEntry } from "../api";
 import {
   useAddAssignmentPhase,
@@ -12,6 +12,7 @@ import {
   useIndices,
   usePeaks,
   useRemoveAssignmentPhase,
+  useSetAssignmentState,
   useRemovePeak,
   useSelectExposure,
   useSetExposureStatus,
@@ -67,6 +68,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Call",
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
+        { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
         { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice; Enter adds, Esc cancels" },
       ],
     },
@@ -106,6 +108,9 @@ export function WorkspacePage(): JSX.Element {
   const { id, sampleId: sampleParam } = useParams<{ id: string; sampleId?: string }>();
   const experimentId = Number(id);
   const navigate = useNavigate();
+  const [search] = useSearchParams();
+  const linkedParam = Number(search.get("exposure"));
+  const linkedExposure = Number.isInteger(linkedParam) && linkedParam > 0 ? linkedParam : undefined;
   const username = useAppState((s) => s.username);
   const experiment = useExperiment(experimentId);
   const corpus = useCorpusSamples();
@@ -129,8 +134,8 @@ export function WorkspacePage(): JSX.Element {
   );
 
   const exposures = useExposures(sampleId);
-  const [exposureId, setExposureId] = useState<number | undefined>(undefined);
-  useEffect(() => setExposureId(undefined), [sampleId]);
+  const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
+  useEffect(() => setExposureId(linkedExposure), [sampleId, linkedExposure]);
   const exposureList: Exposure[] = useMemo(() => exposures.data ?? [], [exposures.data]);
   const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
 
@@ -144,6 +149,8 @@ export function WorkspacePage(): JSX.Element {
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
+  const setCallState = useSetAssignmentState(exposure?.id ?? 0);
+  const isFormFactor = assignment.data?.state === "form_factor";
   const selectExposure = useSelectExposure(sampleId ?? 0);
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
@@ -201,6 +208,16 @@ export function WorkspacePage(): JSX.Element {
     },
     [exposure, assigned, addPhase, removePhase, selectExposure],
   );
+
+  const toggleFormFactor = useCallback(() => {
+    if (!exposure || exposure.status === "rejected") return;
+    const next = isFormFactor ? "null" : "form_factor";
+    if (exposure.selected) {
+      setCallState.mutate(next);
+      return;
+    }
+    selectExposure.mutate(exposure.id, { onSuccess: () => setCallState.mutate(next) });
+  }, [exposure, isFormFactor, setCallState, selectExposure]);
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
@@ -406,6 +423,9 @@ export function WorkspacePage(): JSX.Element {
         case "X":
           if (exposure && username) toggleDrop(exposure);
           break;
+        case "0":
+          if (username) toggleFormFactor();
+          break;
         default: {
           const n = Number(ev.key);
           const c = Number.isInteger(n) && n >= 1 ? candidates[n - 1] : undefined;
@@ -417,7 +437,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor]);
 
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
@@ -448,6 +468,7 @@ export function WorkspacePage(): JSX.Element {
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
+    ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: toggleFormFactor }] : []),
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
     ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
   ];
@@ -556,7 +577,9 @@ export function WorkspacePage(): JSX.Element {
                 candidates={candidates}
                 assigned={assigned}
                 disabled={exposureDropped || !username}
+                formFactor={isFormFactor}
                 onToggle={toggleCandidate}
+                onFormFactor={toggleFormFactor}
                 onHover={setHoverId}
               />
             </Section>

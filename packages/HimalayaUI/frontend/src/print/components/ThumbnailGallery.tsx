@@ -23,7 +23,7 @@ export interface ThumbnailGalleryProps {
    *  one. */
   cursoredId?: number;
   onSelect?: (id: number) => void;
-  /** Double-click handler — opens the loupe for the clicked exposure. */
+  /** Double-click handler — opens the workspace on the clicked exposure. */
   onActivate?: (id: number) => void;
   /** Child thumbnail size; forwarded to every Thumbnail. Default `"sm"`. */
   size?: "xs" | "sm" | "lg";

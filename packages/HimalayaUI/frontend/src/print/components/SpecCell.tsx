@@ -8,7 +8,7 @@ export interface SpecCellProps {
    *  When undefined, no slot chip renders. */
   slotIndex?: number;
   /** When provided, promotes the name to a keyboard-accessible button that
-   *  opens the loupe view for this sample. When absent, the name renders as
+   *  opens this sample in the workspace. When absent, the name renders as
    *  a static span (other consumers unaffected). */
   onOpenSample?: () => void;
   /** Override tabIndex on the name button. Absent → the button's natural tab order. */

@@ -180,9 +180,9 @@ scanned metadata files and the setup files it finds by walking up from
 `setup_file`. A rescan never
 re-derives geometry that create committed or that the user edited.
 
-The Focus page draws beam-centred q-rings only when `energy_kev`,
-`flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` are all
-set. Otherwise it falls back to a centred, decorative overlay.
+Beam-centred q-rings on the detector image need `energy_kev`,
+`flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` all set.
+No view draws them since the Focus page was deleted (2026-11-20).
 
 ## Scan and grouping
 

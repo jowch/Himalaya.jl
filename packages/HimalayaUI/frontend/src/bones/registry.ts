@@ -3,11 +3,7 @@
 import { registerBones } from 'boneyard-js/react'
 
 import _contact_sheet from './contact-sheet.bones.json'
-import _focus from './focus.bones.json'
-import _plot_card from './plot-card.bones.json'
 
 registerBones({
   "contact-sheet": _contact_sheet,
-  "focus": _focus,
-  "plot-card": _plot_card,
 })

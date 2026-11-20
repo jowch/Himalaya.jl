@@ -30,7 +30,7 @@ one layer in isolation.
                                    into a cache-row mutation per kind.
 4. Cache row shape               (the resulting Peak / Index / Exposure object)
                                    What downstream consumers (TracePlate,
-                                   AssignmentRail, LoupeSidePanel) read.
+                                   the workspace's Phase list and indexing plot) read.
 5. Mutator onMutate              lib/queue/mutators/*.ts (optimistic write)
                                    Builds the optimistic placeholder row +
                                    returns the rollback closure.

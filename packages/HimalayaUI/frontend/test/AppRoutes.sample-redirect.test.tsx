@@ -7,7 +7,8 @@ import { AppRoutes } from "../src/print/shell/AppRoutes";
 vi.mock("../src/workspace/WorkspacePage", () => ({ WorkspacePage: () => <div data-testid="workspace-stub" /> }));
 
 function Where(): JSX.Element {
-  return <div data-testid="where">{useLocation().pathname}</div>;
+  const loc = useLocation();
+  return <div data-testid="where">{loc.pathname + loc.search}</div>;
 }
 
 function stubApi(resolveBody?: unknown): void {
@@ -52,5 +53,17 @@ describe("old sample links open the workspace", () => {
     stubApi({ experiment_id: 7, experiment_name: "lipid", sample_id: 42, sample_name: "A1" });
     renderAt("/index/lipid/A1");
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments/7/workspace/42"));
+  });
+
+  it("keeps the frame an old Loupe link asked for", async () => {
+    stubApi();
+    renderAt("/sample/42/loupe?experiment=7&exposure=105");
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments/7/workspace/42?exposure=105"));
+  });
+
+  it("keeps the frame a resolved permalink names", async () => {
+    stubApi({ experiment_id: 7, experiment_name: "lipid", sample_id: 42, sample_name: "A1", exposure_id: 105 });
+    renderAt("/index/lipid/A1");
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments/7/workspace/42?exposure=105"));
   });
 });

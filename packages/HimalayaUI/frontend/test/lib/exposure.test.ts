@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import cases from "../fixtures/representative-exposure.json";
 import { keptExposures, representativeExposure } from "../../src/lib/exposure";
-import { defaultExposureId } from "../../src/print/pages/loupeAdapters";
 import type { Exposure } from "../../src/api";
 
 type Case = { case: string; frames: Pick<Exposure, "id" | "selected" | "status">[]; representative: number | null };
@@ -17,12 +16,6 @@ describe.each(cases as Case[])("representative frame: $case", (c) => {
     expect(representativeExposure(exposures(c))?.id ?? null).toBe(c.representative);
   });
 
-  it("is the frame Loupe opens on", () => {
-    const list = exposures(c);
-    const expected = c.representative ?? (list.length ? Math.max(...list.map((e) => e.id)) : null);
-    expect(defaultExposureId(list) ?? null).toBe(expected);
-    expect(defaultExposureId([...list].reverse()) ?? null).toBe(expected);
-  });
 });
 
 describe("keptExposures", () => {

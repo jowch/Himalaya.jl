@@ -40,10 +40,10 @@ export interface SampleTableRowProps {
    *  "Form factor" rather than the phase chip or the "Not indexed" invite. */
   formFactor?: boolean;
   /** When set, the sample name in the SpecCell becomes a button that opens the
-   *  loupe view for this sample. */
+   *  workspace for this sample. */
   onOpenSample?: () => void;
   /** When set, double-clicking a thumbnail fires this with the exposure id,
-   *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
+   *  opening the workspace on that frame. Forwarded to ThumbnailGallery.onActivate. */
   onActivateExposure?: (id: number) => void;
   /** When provided, a checkbox column is rendered as the left-most cell. */
   checked?: boolean;

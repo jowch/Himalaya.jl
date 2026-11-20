@@ -427,7 +427,7 @@ response, and the SSE echo land out of order.
 
 Canonical consumers:
 
-- the stale-indices indicator on the Focus/sample surface — don't show "stale" while a re-analyze is mid-flight.
+- a stale-indices indicator on the sample surface — don't show "stale" while a re-analyze is mid-flight.
 - `useSpeculativeSnap` — don't snap to a peak that may roll back.
 
 Reuse the hook for any new card or query that reads `peaks(exposureId)`

@@ -12,7 +12,7 @@
  *   dock-action-<id>  — page actions: openLoupe, drop, representative
  *
  * Covered cases:
- *   IC-1  Click a row → data-cursored="true"; Enter navigates to /sample/<id>
+ *   IC-1  Click a row → data-cursored="true"; Enter opens the workspace
  *   IC-2  dock-next-sample and ArrowDown land on the SAME cursored row (parity)
  *   IC-3  Exactly one [role="row"][tabindex="0"] at a time (roving invariant)
  *   IC-4  Drop dock button acts on the cursored frame → status PATCH rejected
@@ -136,7 +136,7 @@ test.beforeEach(async ({ page }) => {
 // IC-1: Click a row → cursored; Enter → navigate
 // ---------------------------------------------------------------------------
 
-test("IC-1: clicking a row parks the cursor there; Enter navigates to /sample/<id>", async ({ page }) => {
+test("IC-1: clicking a row parks the cursor there; Enter opens it in the workspace", async ({ page }) => {
   await mockCorpus(page, 3);
   await page.goto(`/experiments/${EXPERIMENT_ID}/corpus`);
 
@@ -153,9 +153,8 @@ test("IC-1: clicking a row parks the cursor there; Enter navigates to /sample/<i
   // First row loses the cursor.
   await expect(rows.first()).toHaveAttribute("data-cursored", "false");
 
-  // Enter fires the openFocus action through the keyboard layer → navigate.
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/sample\/101/);
+  await expect(page).toHaveURL(new RegExp(`/experiments/${EXPERIMENT_ID}/workspace/101$`));
 });
 
 // ---------------------------------------------------------------------------

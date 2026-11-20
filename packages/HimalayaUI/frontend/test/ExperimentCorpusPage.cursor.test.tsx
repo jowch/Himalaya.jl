@@ -65,7 +65,7 @@ function renderCorpus(samples: Array<{ id: number; name: string }>, expId = 1) {
         <KbLayer>
           <Routes>
             <Route path="/experiments/:id/corpus" element={<ExperimentCorpusPage />} />
-            <Route path="/sample/:sampleId" element={<div data-testid="focus-route" />} />
+            <Route path="/experiments/:id/workspace/:sampleId" element={<div data-testid="workspace-route" />} />
           </Routes>
         </KbLayer>
       </MemoryRouter>

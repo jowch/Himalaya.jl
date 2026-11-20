@@ -12,14 +12,13 @@ import {
   useSelectExposure,
 } from "../../queries";
 import * as api from "../../api";
-import { Button } from "../ui/Button";
 import { ProgressBar } from "../ui/ProgressBar";
 import { SegmentedProgressBar } from "../ui/SegmentedProgressBar";
 import { ScanFailedPage } from "./ScanFailedPage";
 import { SheetTable } from "../components/SheetTable";
 import { SampleTableRow } from "../components/SampleTableRow";
 import { toSampleRowModel } from "./samplesAdapters";
-import { navigateToNewSeries } from "../../lib/series/newSeriesNav";
+import { workspaceHref as sampleHref } from "../shell/SampleRedirect";
 import { isKept } from "../../lib/exposure";
 import { announce } from "../../lib/announce";
 import { useListCursor } from "../interaction/useListCursor";
@@ -148,8 +147,7 @@ export function ExperimentCorpusPage(): JSX.Element {
   );
   const corpusExposures = useCorpusExposures(scopedSamples);
 
-  // --- ID-based sample cursor (roving tabindex, Enter → navigate to Focus) ---
-  const workspaceHref = (sampleId: number): string => `/experiments/${expId}/workspace/${sampleId}`;
+  const workspaceHref = (sampleId: number, exposureId?: number): string => sampleHref(expId, sampleId, exposureId);
   const sampleIds = useMemo(() => scopedSamples.map((s) => s.id), [scopedSamples]);
   const sampleCursor = useListCursor({
     ids: sampleIds,
@@ -164,10 +162,6 @@ export function ExperimentCorpusPage(): JSX.Element {
   const [frameIndex, setFrameIndex] = useState(0);
   useEffect(() => { setFrameIndex(0); }, [sampleCursor.cursorId]);
 
-  // Sample-grain selection lives on the cursor (`sampleCursor.selected`, the row
-  // checkbox) — it feeds compose / + New series. Per-exposure verdicts (drop /
-  // keep / representative) act on the FRAME cursor — the ←/→ thumbnail — mirroring
-  // the Loupe, not a separate multi-select.
   const activeFrames = activeSample ? (corpusExposures.byId.get(activeSample.id) ?? []) : [];
   const activeFrame = activeFrames[frameIndex];
   const setExposureStatus = useSetExposureStatus(activeSample?.id ?? 0);
@@ -179,10 +173,6 @@ export function ExperimentCorpusPage(): JSX.Element {
   useEffect(() => { setFrameIndex(0); }, [expId]);
 
 
-  // --- Per-exposure verdicts on the FRAME cursor (declared to the registry) ---
-  // The current thumbnail (the ←/→ frame cursor) takes Drop / Set representative,
-  // mirroring the Loupe. Drop is the sole cull verb and a TOGGLE: X drops a kept
-  // frame, X again brings it back (status null). A frame is dropped or kept.
   const toggleDropFrame = useCallback(() => {
     if (!activeFrame) return;
     const dropping = isKept(activeFrame);
@@ -334,7 +324,7 @@ export function ExperimentCorpusPage(): JSX.Element {
         {corpusQuery.isLoading ? (
           <div className="p-8 text-sm text-ink-soft">Loading samples…</div>
         ) : (
-          <SheetTable checkboxColumn>
+          <SheetTable>
             {scopedSamples.map((s) => {
               const { ref: rowRef, ...rowRest } = sampleCursor.rowProps(s.id);
               const loadedExposures = corpusExposures.byId.get(s.id);
@@ -355,8 +345,6 @@ export function ExperimentCorpusPage(): JSX.Element {
                   {...(m.phase !== undefined ? { phase: m.phase } : {})}
                   {...(m.formFactor ? { formFactor: true } : {})}
                   {...(slotBySample.has(s.id) ? { slotIndex: slotBySample.get(s.id)! } : {})}
-                  checked={sampleCursor.selected.has(s.id)}
-                  onCheck={() => sampleCursor.toggleSelect(s.id)}
                   cursored={sampleCursor.cursorId === s.id}
                   {...(sampleCursor.cursorId === s.id && activeFrame
                     ? { cursoredExposureId: activeFrame.id }
@@ -369,9 +357,9 @@ export function ExperimentCorpusPage(): JSX.Element {
                     const fi = frames.findIndex((e) => e.id === eid);
                     if (fi >= 0) setFrameIndex(fi);
                   }}
-                  onActivateExposure={() => {
+                  onActivateExposure={(eid) => {
                     sampleCursor.setCursor(s.id);
-                    navigate(workspaceHref(s.id));
+                    navigate(workspaceHref(s.id, eid));
                   }}
                   onOpenSample={() => {
                     sampleCursor.setCursor(s.id);
@@ -384,19 +372,6 @@ export function ExperimentCorpusPage(): JSX.Element {
         )}
       </div>
 
-      {/* Compose segment — appears when samples are selected. Reads the ONE
-          sample selection (`sampleCursor.selected`) to build a new series. */}
-      {sampleCursor.selected.size > 0 && (
-        <div className="flex items-center gap-2 px-4 py-2" data-testid="dock-compose">
-          <span className="text-meta text-ink-soft">
-            {sampleCursor.selected.size} sample{sampleCursor.selected.size === 1 ? "" : "s"}
-          </span>
-          <Button variant="accent" data-testid="dock-new-series"
-            onClick={() => navigateToNewSeries(sampleCursor.selected, navigate)}>+ New series</Button>
-          <Button variant="ghost" data-testid="dock-clear-checks"
-            onClick={() => { for (const sid of [...sampleCursor.selected]) sampleCursor.toggleSelect(sid); }}>Clear</Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -61,7 +61,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 ## Workspace (three-pane triage)
 
 - **Route:** `/experiments/<id>/workspace/<sampleId>`; without a sample id it opens the first sample. Reached from the "Open workspace" button in the experiment header. It mounts outside the app shell, so there is no top nav; "← Corpus" in its header goes back.
-- **Shows:** the sample list (`list` in `navigation "Samples"`, the current row has `aria-current`; each row ends in the phase, "Form factor", or an `img "Unreviewed"` ○), the progress "N of M reviewed", the trace plot, the frame thumbnails (`button "Frame N"` / `"Frame N, dropped"`, the shown one has `aria-current`), the ranked phase candidates (buttons with a keycap 1–9, `aria-pressed` when assigned) and the exposure details. Above the plot sits the compare bar: one chip per comparison sample (its name is a button, `aria-pressed` when it is the subtraction reference, then the scale applied as `×N`, or `×N matched` with `data-scale-source="matched"` when either frame lacks beam monitors; `button "Remove NAME"`), "+ Compare", and the `Log`/`Linear` scale button. With a subtraction reference, `workspace-subtraction` under the plot is labelled "minus NAME".
+- **Shows:** the sample list (`list` in `navigation "Samples"`, the current row has `aria-current`; each row ends in the phase, "Form factor", or an `img "Unreviewed"` ○), the progress "N of M reviewed", the trace plot, the frame thumbnails (`button "Frame N"` / `"Frame N, dropped"`, the shown one has `aria-current`), the ranked phase candidates (buttons with a keycap 1–9, `aria-pressed` when assigned; a custom index reads "Custom"), the `button "0 No phase (form factor)"` row (`aria-pressed` when the frame is marked form factor) and the exposure details. `?exposure=<id>` on the route opens that frame; old `/sample/:id` and `/sample/:id/loupe` links redirect here and keep it. Above the plot sits the compare bar: one chip per comparison sample (its name is a button, `aria-pressed` when it is the subtraction reference, then the scale applied as `×N`, or `×N matched` with `data-scale-source="matched"` when either frame lacks beam monitors; `button "Remove NAME"`), "+ Compare", and the `Log`/`Linear` scale button. With a subtraction reference, `workspace-subtraction` under the plot is labelled "minus NAME".
 - **Drive:**
   ```bash
   bin/verify open /experiments/1/workspace/1
@@ -69,6 +69,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press ArrowDown                          # next sample in the list
   bin/verify press ArrowRight                         # next frame
   bin/verify press 1                                  # toggle the top candidate on the shown frame (writes to the DB)
+  bin/verify press 0                                  # mark the shown frame no phase (form factor); 0 again clears it (writes to the DB)
   bin/verify press x                                  # drop the shown frame; x again restores it (writes to the DB)
   bin/verify press /                                  # focus the filter; Esc leaves it
   bin/verify press c                                  # open the compare picker (dialog "Compare with a sample"); type, Enter adds; it subtracts too when nothing else is
@@ -131,4 +132,4 @@ Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for 
 
 ## Not mapped yet
 
-The custom-index modal, sample tags, figure export (Copy / Download formats), and the onboarding flow (`bin/verify open / --onboarding`). Add each the first time a PR touches it.
+The onboarding flow (`bin/verify open / --onboarding`). Add it the first time a PR touches it. Sample tags, figure export and the full-size detector view went with Focus and Loupe; the workspace has none of them yet.

@@ -71,5 +71,5 @@ Stopping the Julia backend can disrupt other work the user is doing — manual p
 ## Gotchas
 
 - **Port reuse:** Playwright's `webServer` config has `reuseExistingServer: !process.env.CI`. If Vite is already running, Playwright reuses it. If your Vite was started with `npm run dev` (default `--host`), it binds to `localhost` (potentially `::1` IPv6) and Playwright's `127.0.0.1` checks fail with a 60-second timeout. Always use `--host 127.0.0.1` when starting Vite for E2E.
-- **Test count:** 11 mocked spec files (corpus-culling, figure-export, loupe-tags, multiplayer-replay-rerun, new-series-creation, permalinks, qlink, series-builder, series-folio, series-scoping, smoke). All should pass when the backend is stopped. If specs still fail with the backend down, that's a real bug, not the leak.
+- **Test count:** 5 mocked spec files (experiment-corpus, grouping-review, interaction-corpus, permalinks, smoke). All should pass when the backend is stopped, except two grouping-review cases (filter, move) that also fail on main as of 2026-11-20. If specs still fail with the backend down, that's a real bug, not the leak.
 - **The leak is asymmetric:** read-only routes leak through and return real data. Mutations (POST/PATCH) might 404 or silently succeed against the wrong sample. Don't trust E2E mutation assertions when the backend is up.
