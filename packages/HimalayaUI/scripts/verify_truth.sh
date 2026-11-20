@@ -82,6 +82,22 @@ step 10-custom-index log bash -c '
   custom_row removed
   node "$help" custom "$out/5-confirmed.json" "$label" Hexagonal off' _ "$OUT" "$HELP" "$CONFIRM_SAMPLE"
 
+step 11-peak-clicks log bash -c '
+  set -e
+  out=$1 help=$2
+  twin=$(node "$help" twin "$out/5-confirmed.json")
+  echo "$twin"
+  get() { node -e "process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]]))" "$twin" "$1"; }
+  sid=$(get sample_id) eid=$(get exposure_id) id=$(get id)
+  bin/verify open "/experiments/1/workspace/$sid"
+  bin/verify click --role button --name "$(get frame)" --exact
+  bin/verify click --role button --name "$(get manual)" --exact
+  node "$help" twin-state "$eid" "$id" removed
+  bin/verify click --role button --name "$(get auto)" --exact
+  node "$help" twin-state "$eid" "$id" excluded
+  bin/verify click --role button --name "$(get excluded)" --exact
+  node "$help" twin-state "$eid" "$id" restored' _ "$OUT" "$HELP"
+
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"
   exit 1
