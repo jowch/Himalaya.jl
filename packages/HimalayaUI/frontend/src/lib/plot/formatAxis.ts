@@ -21,3 +21,14 @@ export function formatAxis(d: number): string {
 	if (ad < 100) return d.toFixed(ad < 10 ? 1 : 0);
 	return d.toFixed(0);
 }
+
+export function formatTicks(values: readonly number[]): string[] {
+	if (values.length > 1 && values.every((v) => Number.isInteger(v) && Math.abs(v) < 1e4)) return values.map((v) => v.toFixed(0));
+	const base = values.map(formatAxis);
+	if (new Set(base).size === base.length) return base;
+	for (let digits = 1; digits <= 6; digits++) {
+		const labels = values.map((v) => (Math.abs(v) < 1e-3 || Math.abs(v) >= 1e4 ? formatAxis(v) : v.toFixed(digits)));
+		if (new Set(labels).size === labels.length) return labels;
+	}
+	return base;
+}

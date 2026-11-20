@@ -85,6 +85,12 @@ describe("axisTicks", () => {
     expect(ts.length).toBeGreaterThan(0);
     expect(ts.some((t) => t.kind !== "minor")).toBe(true); // at least one label
   });
+  it("labels a zoomed log window that holds a single decade multiple", () => {
+    const ax = makeAxis([0.08, 0.15], [0, 400], "log");
+    const labelled = axisTicks(ax).filter((t) => t.kind !== "minor").map((t) => t.value);
+    expect(labelled.length).toBeGreaterThanOrEqual(3);
+    expect(labelled.every((v) => v >= 0.08 - 1e-9 && v <= 0.15 + 1e-9)).toBe(true);
+  });
   it("caps tick density on wide log ranges (overplot regression)", () => {
     // Intensity over 7 decades: the naive loop emitted ~64 ticks / ~22 labels.
     const ax = makeAxis([1e-2, 1e5], [0, 400], "log");

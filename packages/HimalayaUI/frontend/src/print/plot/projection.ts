@@ -86,6 +86,10 @@ export function axisTicks(axis: Axis1D, count = 6): Tick[] {
 
   const cap = count + 2;
   const labelled = detailed.filter((t) => t.kind !== "minor").length;
+  if (labelled < 3) {
+    const even = scaleLinear().domain([lo, hi]).ticks(count).filter(inRange);
+    if (even.length > labelled) return even.map((value) => ({ value, kind: "major" as const }));
+  }
   if (labelled <= cap) return detailed;
 
   // Too dense → decades only, strided to keep ~`count` labels.
