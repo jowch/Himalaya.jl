@@ -15,6 +15,7 @@ permissions:
 
 env:
   JULIA_VERSION: '1.13'
+  JULIA_CPU_TARGET: 'generic;haswell,clone_all'
 
 jobs:
   core:
