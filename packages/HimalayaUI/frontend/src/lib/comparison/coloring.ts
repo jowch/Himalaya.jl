@@ -48,22 +48,13 @@ export type GroupingMode = "bySample" | "byPhase" | "distinct";
  * surface.
  *
  * **Phase-offset invariant.** Each entry is held ≥13° from every hue in
- * `PHASE_PALETTE` (`phases.ts`), with nine of twelve sitting at exactly 15°.
- * At L≈0.55 C≈0.13 a 13° hue shift is ΔE2000 ≈ 2.5 — perceptually distinct,
- * the smallest gap the geometry allows while keeping twelve entries (the
- * eight phase hues pack the warm and purple sectors tightly enough that
- * ≥15° everywhere AND twelve mutually-distinct entries is infeasible — see
- * the proof in `test/coloring.test.ts`'s phase-offset block). The egregious
- * 3° collision the round-1 review caught (entry 315 vs Fd3m 318) has been
- * resolved by relocating that entry to 285.
+ * `PHASE_PALETTE` (`phases.ts`). At L≈0.55 C≈0.13 a 13° hue shift is
+ * ΔE2000 ≈ 2.5, the smallest gap that keeps byPhase and bySample traces
+ * from conflating.
  *
  * The offset matters because `byPhase` resolves through `PHASE_PALETTE` and
  * `bySample`/`distinct` walk this palette: a sample never indexed as Pn3m
- * must not render in something perceptually identical to Pn3m's amber.
- *
- * Tradeoff: hue 285 sits 6° from neighbour 279, so the two render as
- * "purple" and "violet-purple" in legend order — visually paired but
- * distinct. Acceptable; this palette is categorical, not a rainbow.
+ * must not render in something perceptually identical to Pn3m's teal.
  *
  * Regression tests in `test/coloring.test.ts` pin the invariants: the
  * numeric phase-offset floor (≥13°), the L-band (0.50–0.58), and the AA-
@@ -71,18 +62,18 @@ export type GroupingMode = "bySample" | "byPhase" | "distinct";
  * green if you re-tune hues here.
  */
 export const COMPARE_PALETTE: readonly string[] = [
-  "oklch(0.55 0.14  33)", // warm coral
-  "oklch(0.56 0.14  73)", // gold
-  "oklch(0.52 0.13 147)", // moss
-  "oklch(0.52 0.12 177)", // teal
-  "oklch(0.52 0.12 200)", // cyan
-  "oklch(0.52 0.12 220)", // azure
-  "oklch(0.52 0.14 249)", // lavender
-  "oklch(0.52 0.13 279)", // purple
-  "oklch(0.52 0.13 285)", // violet-purple (was 315 = 3° from Fd3m 318; #251 r1)
-  "oklch(0.55 0.14 333)", // raspberry
-  "oklch(0.55 0.14   5)", // pink-red
-  "oklch(0.55 0.13 105)", // chartreuse
+  "oklch(0.55 0.13   5)",
+  "oklch(0.55 0.13  20)",
+  "oklch(0.55 0.13  35)",
+  "oklch(0.55 0.13  50)",
+  "oklch(0.55 0.13  65)",
+  "oklch(0.52 0.13 151)",
+  "oklch(0.52 0.13 165)",
+  "oklch(0.52 0.13 180)",
+  "oklch(0.52 0.13 215)",
+  "oklch(0.52 0.13 115)",
+  "oklch(0.52 0.13 279)",
+  "oklch(0.55 0.13 345)",
 ];
 
 /** Neutral cool-gray for orphans (NULL exposure, no phase, etc.). */

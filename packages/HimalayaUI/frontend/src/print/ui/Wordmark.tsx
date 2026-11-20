@@ -8,12 +8,6 @@ interface WordmarkProps {
   className?: string;
 }
 
-
-/** The brand wordmark (mockup `.wordmark`): SANS, uppercase, weight 700,
- *  wide tracking — NOT a serif title (serif is reserved for plate titles).
- *  `tracking-[0.16em]` is the brand mark's specified tracking (an intentional
- *  in-print/ui arbitrary value for this one signature element); requires the
- *  Plus Jakarta Sans 700 weight (imported in styles.css). */
 export function Wordmark({ children, tail, className = "" }: WordmarkProps): JSX.Element {
   return (
     <span
