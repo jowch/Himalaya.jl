@@ -105,7 +105,7 @@ make sysimage          # creates build/himalaya.so
 # serve has no path arg — it serves the central DB (HIMALAYA_DB_PATH / default_db_path),
 # creating an empty one if none exists. Create experiments in the UI (New experiment).
 bin/himalaya serve --port 8080
-bin/himalaya analyze -e <id|name|path>       # analyze/show take -e <id|name|path>
+bin/himalaya analyze -e <id|name|path>       # or --all; show takes -e too
 
 # Without sysimage (slower cold start, no build required):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
