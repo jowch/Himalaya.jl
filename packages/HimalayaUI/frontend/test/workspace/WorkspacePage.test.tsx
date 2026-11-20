@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, Trace } from "../../src/api";
@@ -107,6 +107,10 @@ function currentFrame(): string | null {
   const strip = screen.getByTestId("workspace-exposures");
   return strip.querySelector("[aria-current='true']")?.getAttribute("aria-label") ?? null;
 }
+
+afterEach(() => {
+  window.localStorage.removeItem("himalaya-ui:workspace-theme");
+});
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -465,4 +469,106 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-trace").querySelector('[data-role="trace-line"] path')?.getAttribute("d")).toMatch(/^M/);
     expect(xTicks()).toContain("0.03");
   });
+  it("? opens the shortcut list, the header button opens it too, and Escape closes it", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "?", shiftKey: true });
+    const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(within(help).getByText("Reset the zoom")).toBeInTheDocument();
+    fireEvent.keyDown(help, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+  });
+
+  it("shortcuts do nothing while the shortcut list is open", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "?", shiftKey: true });
+    const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(document.activeElement).toBe(help);
+    fireEvent.keyDown(help, { key: "x" });
+    fireEvent.keyDown(help, { key: "j" });
+    fireEvent.keyDown(help, { key: "ArrowDown" });
+    expect(calls).toEqual([]);
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+  });
+
+  it("⌘K over the compare picker replaces it, so only one dialog is open", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    expect(screen.getByRole("dialog", { name: "Compare with a sample" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByLabelText("Find a sample to compare"), { key: "k", metaKey: true });
+    expect(screen.getAllByRole("dialog").map((d) => d.getAttribute("aria-label"))).toEqual(["Commands"]);
+  });
+
+  it("⌘ Shift K is left alone", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "K", metaKey: true, shiftKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("the palette shows each command's key as a keycap and tracks the cursor for screen readers", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const input = screen.getByRole("combobox", { name: "Command or sample" });
+    fireEvent.change(input, { target: { value: "reset zoom" } });
+    const option = screen.getByRole("option", { name: /Reset zoom/ });
+    expect(option.querySelector("kbd")?.textContent).toBe("Z");
+    expect(input.getAttribute("aria-activedescendant")).toBe(option.id);
+    fireEvent.change(input, { target: { value: "go" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const second = screen.getAllByRole("option")[1]!;
+    expect(second).toHaveAttribute("aria-selected", "true");
+    expect(input.getAttribute("aria-activedescendant")).toBe(second.id);
+    expect(second.querySelector("kbd")).toBeNull();
+  });
+
+  it("⌘K opens the command palette and Enter goes to the matching sample", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: "go a3" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+  });
+
+  it("Ctrl+K toggles the palette, and a command runs the same action as its key", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "linear" } });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    expect(screen.getByRole("button", { name: /Linear/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("the palette switches the workspace to dark and back, remembers it, and can follow the system again", () => {
+    const { unmount } = renderAt("/experiments/1/workspace/10");
+    const root = screen.getByTestId("workspace");
+    expect(root).toHaveAttribute("data-workspace-theme", "system");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "dark theme" } });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    expect(root).toHaveAttribute("data-workspace-theme", "dark");
+    unmount();
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "dark");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "light theme" } });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "light");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
+    expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
 });
