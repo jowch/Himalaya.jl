@@ -14,8 +14,8 @@ const _GEOMETRY_PATCH_FIELDS = [
 ]
 const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
                            "id", "created_at"]
-const _PLAIN_PATCH_FIELDS = ["name", "description"]                                # plain write, NO *_source, NO rescan
-const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]  # plain write + rescan trigger
+const _PLAIN_PATCH_FIELDS = ["name", "description"]
+const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]
 
 # Serialize a GroupingFlag (MergeFlag/SplitFlag) to the §8.8 wire shape. The
 # internal structs carry no `kind` field, but the frontend `GroupingFlag` union

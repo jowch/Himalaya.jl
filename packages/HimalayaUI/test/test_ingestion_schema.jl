@@ -170,10 +170,15 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             DBInterface.execute(db, "ALTER TABLE experiments ADD COLUMN scan_signature TEXT")
             DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?",
                                 [HimalayaUI.MIGRATION_DROP_SCAN_SIGNATURE])
-            seed_experiment(db)
+            eid = seed_experiment(db; name = "kept")
+            DBInterface.execute(db, "UPDATE experiments SET scan_signature = 'sig' WHERE id = ?", [eid])
             HimalayaUI.migrate_schema!(db)
             @test !("scan_signature" in cols(db, "experiments"))
-            @test length(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))) == 1
+            rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, name, data_dir FROM experiments"))
+            @test length(rows) == 1
+            @test rows[1].id == eid
+            @test rows[1].name == "kept"
+            @test rows[1].data_dir == "/exp/kept/data"
             HimalayaUI.migrate_schema!(db)
             @test !("scan_signature" in cols(db, "experiments"))
         end

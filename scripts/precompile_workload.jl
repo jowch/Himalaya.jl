@@ -9,7 +9,8 @@ mktempdir() do tmp
     withenv("HIMALAYA_DB_PATH" => db_path) do
         try
             HimalayaUI.main(["analyze", "--all"])
-        catch
+        catch e
+            e isa ErrorException && e.msg == "No experiments registered." || rethrow()
         end
     end
 end

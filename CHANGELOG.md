@@ -11,16 +11,23 @@ under `Unreleased` are application-level unless stated otherwise.
 
 - **`samples.label` removed; replaced by `name` (stable identifier, was column 3) and
   `display_name` (editable label, was column 2). Manifest column meanings swapped.**
-  Existing experiments need `himalaya migrate-toml <experiment-dir>` to upgrade
-  their `experiment.toml`. Existing DBs auto-migrate on first `open_db` after
-  deploy. Issue #88.
+  Existing DBs auto-migrate on first `open_db` after deploy. Issue #88.
 - **`/api/export` CSV header changed: `sample_label` → `sample_display_name`.**
   Downstream pipelines parsing this CSV need to update their column names.
 - **`PATCH /api/samples/:id` no longer accepts `name`; use `display_name`.**
   `samples.name` is now the stable identifier and is set only at ingest time.
-- **`PATCH /api/experiments/:id` no longer accepts any field.** The route is
-  retained as defensive surface for future fields. Experiment renames must go
-  through `experiment.toml` + reingest.
+- **`experiment.toml` support removed.** The `himalaya config new`,
+  `himalaya config list` and `himalaya migrate-toml` commands, the
+  `HIMALAYA_CONFIGS_DIR` env var and the bundled `configs/simple.toml` are gone.
+  `HimalayaUI` now exports only `main`; `ExperimentConfig`, `load_config`,
+  `list_config_types`, `load_builtin_config`, `resolve_files` and
+  `config_from_db` are deleted. Experiments are created through the New-experiment funnel and edited
+  with `PATCH /api/experiments/:id`. A legacy `[files].integration` pattern in a
+  stored config blob is still honoured. See `docs/experiment-config.md`.
+- **`experiments.scan_signature` dropped (one-way).** The first `open_db` after
+  deploy drops the unread column. An older binary cannot write to a migrated DB:
+  its `create_experiment!` still names the column, and its geometry migration
+  will not re-add it, so keep a backup before upgrading if you may roll back.
 - **First boot after migration purges `idempotent_responses`.** In-flight
   `client_op_id` retries from before the deploy will get fresh executions
   rather than cached pre-rename response bodies.

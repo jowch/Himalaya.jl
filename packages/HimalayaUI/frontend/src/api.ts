@@ -32,8 +32,6 @@ export interface Experiment {
   q_units_source: GeometrySource;
   last_scanned_at: string | null;
   ingest_status: IngestStatus;
-  // Phase E1 additive columns: editable file-pattern globs (Task 1c migration).
-  // NULL = use legacy experiment.toml fallback.
   image_pattern: string | null;
   metadata_pattern: string | null;
   integration_pattern: string | null;

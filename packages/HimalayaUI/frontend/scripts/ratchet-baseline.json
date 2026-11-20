@@ -70,7 +70,7 @@
     "frontend/src/print/waterfall/WaterfallChart.tsx": 13
   },
   "comments": {
-    "frontend/src/api.ts": 268,
+    "frontend/src/api.ts": 266,
     "frontend/src/bones/registry.ts": 1,
     "frontend/src/hooks/useAutoPickExposure.ts": 22,
     "frontend/src/hooks/useClickOutside.ts": 6,
@@ -358,10 +358,10 @@
     "src/pipeline.jl": 438,
     "src/prp.jl": 28,
     "src/routes_analysis.jl": 149,
-    "src/routes_experiments.jl": 172,
+    "src/routes_experiments.jl": 170,
     "src/routes_export.jl": 7,
     "src/routes_exposures.jl": 80,
-    "src/routes_fs.jl": 117,
+    "src/routes_fs.jl": 116,
     "src/routes_grouping.jl": 86,
     "src/routes_messages.jl": 19,
     "src/routes_peaks.jl": 85,

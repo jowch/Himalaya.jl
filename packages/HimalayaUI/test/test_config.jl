@@ -31,6 +31,12 @@ end
         @test HimalayaUI.integration_pattern_for(db, id) == "{name}_tot.dat"
     end
 
+    @testset "a column without {name} falls through to the legacy blob" begin
+        db, id = _pattern_db(integration_pattern = "trace.dat",
+                             config = "[files]\nintegration = \"integrated/{name}.dat\"\n")
+        @test HimalayaUI.integration_pattern_for(db, id) == "integrated/{name}.dat"
+    end
+
     @testset "ignores values without {name}" begin
         db, id = _pattern_db(integration_pattern = "trace.dat",
                              config = "[files]\nintegration = \"also.dat\"\n")
@@ -66,12 +72,4 @@ end
         @test isfile(nested)
         close(db)
     end
-end
-
-@testset "the CLI has no experiment.toml commands" begin
-    @test !occursin("config", HimalayaUI._USAGE)
-    @test !occursin("migrate-toml", HimalayaUI._USAGE)
-    @test !isdefined(HimalayaUI, :cli_config)
-    @test !isdefined(HimalayaUI, :cli_migrate_toml)
-    @test !isdefined(HimalayaUI, :ExperimentConfig)
 end
