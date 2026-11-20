@@ -83,6 +83,9 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
 let bucket_files = Set(Iterators.flatten(fs for (_, fs) in GROUPS))
     drift = symdiff(bucket_files, Set(ALL_ORDER))
     isempty(drift) || error("runtests: GROUP buckets ↔ ALL_ORDER drift: $(sort(collect(drift)))")
+    listed = [f for (_, fs) in GROUPS for f in fs if f != "test_http.jl"]
+    dupes = sort(unique(f for f in listed if count(==(f), listed) > 1))
+    isempty(dupes) || error("runtests: test files in more than one GROUP bucket: $(dupes)")
 end
 
 # Second guard (closes the disk↔list gap): every test_*.jl on disk must be in

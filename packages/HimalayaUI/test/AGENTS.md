@@ -11,7 +11,7 @@ The suite is **~3 min serial / ~2 min parallel** (2026-06 perf refactor: in-proc
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
 grep -E "Test Summary|did not pass|fail" /tmp/jl-test.out; tail -50 /tmp/jl-test.out
 
-# Parallel — 7 GROUP buckets as separate processes, wall-bounded by the slowest (events). ~2 min.
+# Parallel — 7 GROUP buckets as separate processes, wall-bounded by the slowest bucket. ~2 min.
 make test-parallel                  # logs per bucket → build/test-<g>.log
 
 # One bucket only (db | pipeline | routes | routes2 | events | wire | migration):
