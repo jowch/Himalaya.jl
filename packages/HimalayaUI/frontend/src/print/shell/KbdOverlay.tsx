@@ -23,7 +23,6 @@ const OVERLAY_IDS: ShortcutId[] = [
   "prevDetail",
   "nextDetail",
   "openFocus",
-  "openLoupe",
   "drop",
   "representative",
   "dismiss",

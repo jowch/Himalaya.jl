@@ -6,14 +6,13 @@ import { useInteraction } from "../interaction/registry";
 import { core } from "../interaction/core";
 import { TopNav } from "./TopNav";
 import { ExperimentShell } from "./ExperimentShell";
-import { LoupePage } from "../pages/LoupePage";
-import { FocusPage } from "../pages/FocusPage";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
 import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
 import { ConfigurationPage } from "../pages/ConfigurationPage";
 import { GroupingReviewPage } from "../pages/GroupingReviewPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
+import { SampleRedirect } from "./SampleRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
@@ -126,10 +125,6 @@ export function AppRoutes(): JSX.Element {
     <Routes>
       {/* T3.2: single AppShell wraps every surface. */}
       <Route element={<AppShell />}>
-        {/* T3.2: flat loupe route — /sample/:sampleId/loupe (matches gotoSample + loupeHref). */}
-        <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
-        {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
-        <Route path="/sample/:sampleId" element={<FocusPage />} />
         <Route path="/series/*" element={<Navigate to="/experiments" replace />} />
         {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on
             /experiments (the new home). Splat covers /inspect, /inspect/:exp,
@@ -160,6 +155,7 @@ export function AppRoutes(): JSX.Element {
           URLs land on the experiments home; a slug-bearing `/index/:exp/:sample`
           resolves to the focus workspace via IndexSlugRedirect. */}
       <Route path="/experiments/:id/workspace/:sampleId?" element={<WorkspacePage />} />
+      <Route path="/sample/:sampleId/*" element={<SampleRedirect />} />
       <Route path="/" element={<Navigate to="/experiments" replace />} />
       <Route path="/index" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment" element={<Navigate to="/experiments" replace />} />

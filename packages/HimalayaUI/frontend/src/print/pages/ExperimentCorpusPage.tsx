@@ -149,10 +149,11 @@ export function ExperimentCorpusPage(): JSX.Element {
   const corpusExposures = useCorpusExposures(scopedSamples);
 
   // --- ID-based sample cursor (roving tabindex, Enter → navigate to Focus) ---
+  const workspaceHref = (sampleId: number): string => `/experiments/${expId}/workspace/${sampleId}`;
   const sampleIds = useMemo(() => scopedSamples.map((s) => s.id), [scopedSamples]);
   const sampleCursor = useListCursor({
     ids: sampleIds,
-    onActivate: (id) => navigate(`/sample/${id}`),
+    onActivate: (id) => navigate(workspaceHref(id)),
     stepperLabel: "Sample",
     stepperTestIdBase: "sample",
     axis: "vertical",
@@ -231,24 +232,9 @@ export function ExperimentCorpusPage(): JSX.Element {
         enabled: () => activeFrame != null,
         run: () => representativeFrame(),
       }),
-      // Loupe sits at the right edge of the action group, just left of the
-      // primary Focus button (dock renders non-primary buttons in array order).
-      core("openLoupe", {
-        run: () => { if (activeSample) navigate(`/sample/${activeSample.id}/loupe`); },
-        dock: true,
-        enabled: () => activeSample != null,
-      }),
     ],
   });
 
-  // LO-NEXT: hand the loupe the exact visible order so its prev/next walk
-  // matches what's on screen.
-  const sampleOrder = useMemo(() => scopedSamples.map((s) => s.id), [scopedSamples]);
-  function loupeHref(sampleId: number, exposureId?: number): string {
-    const params = new URLSearchParams({ experiment: String(expId) });
-    if (exposureId !== undefined) params.set("exposure", String(exposureId));
-    return `/sample/${sampleId}/loupe?${params.toString()}`;
-  }
 
   // ── Takeover states (no sheet/dock) ──────────────────────────────────────
   if (scanning) {
@@ -383,13 +369,13 @@ export function ExperimentCorpusPage(): JSX.Element {
                     const fi = frames.findIndex((e) => e.id === eid);
                     if (fi >= 0) setFrameIndex(fi);
                   }}
-                  onActivateExposure={(eid) => {
+                  onActivateExposure={() => {
                     sampleCursor.setCursor(s.id);
-                    navigate(loupeHref(s.id, eid), { state: { sampleOrder } });
+                    navigate(workspaceHref(s.id));
                   }}
-                  onOpenLoupe={() => {
+                  onOpenSample={() => {
                     sampleCursor.setCursor(s.id);
-                    navigate(loupeHref(s.id), { state: { sampleOrder } });
+                    navigate(workspaceHref(s.id));
                   }}
                 />
               );

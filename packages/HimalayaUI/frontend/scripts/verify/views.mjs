@@ -4,11 +4,6 @@ import { armSettle } from "./settle.mjs";
 import { reachable } from "./http.mjs";
 import { prepareUser, routeUrl } from "./page.mjs";
 
-export const VIEW_ROUTES = {
-  loupe: (id) => `/sample/${id}/loupe`,
-  focus: (id) => `/sample/${id}`,
-};
-
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return null;
@@ -50,13 +45,6 @@ export function frameFromLabels(labels, frameOrder) {
   const numbers = labels.map((l) => /^Frame (\d+)\b/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
   if (numbers.length !== 1) return null;
   return frameOrder[numbers[0] - 1] ?? null;
-}
-
-async function openedFrame(page, cfg, route, frameOrder) {
-  await settledGoto(page, cfg, route);
-  const pressed = page.getByRole("button", { name: /^Frame \d+/, pressed: true });
-  const labels = await pressed.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
-  return frameFromLabels(labels, frameOrder);
 }
 
 export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
@@ -134,7 +122,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
 
 export async function readViews(cfg, experimentId, samples) {
   if (!(await reachable(cfg.uiBase, "/"))) {
-    throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the corpus, Loupe, Focus and the workspace in the browser; run `bin/verify seed`");
+    throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the corpus and the workspace in the browser; run `bin/verify seed`");
   }
   await ensureBrowser(cfg);
   const session = await connect(cfg);
@@ -146,9 +134,6 @@ export async function readViews(cfg, experimentId, samples) {
     for (const s of samples) {
       const row = rows.filter((r) => r.names.includes(s.name));
       const views = { corpus_text: row.length === 1 ? row[0].status : null, corpus_kept: row.length === 1 ? row[0].kept : null };
-      for (const [view, route] of Object.entries(VIEW_ROUTES)) {
-        views[view] = await openedFrame(session.page, cfg, route(s.id), s.frameOrder);
-      }
       Object.assign(views, workspace.get(s.id) ?? {});
       out.set(s.id, views);
     }

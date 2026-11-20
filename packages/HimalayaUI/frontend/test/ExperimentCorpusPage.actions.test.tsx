@@ -121,11 +121,11 @@ beforeEach(() => {
 
 // ── tests ────────────────────────────────────────────────────────────────────
 describe("Corpus action declaration", () => {
-  it("renders the shell dock primary 'Focus' and navigates on click", async () => {
+  it("the shell dock primary opens the sample in the workspace", async () => {
     renderCorpus([{ id: 10, name: "A" }]);
     await screen.findByText("A");
     fireEvent.click(screen.getByTestId("dock-primary"));
-    expect(navigateSpy).toHaveBeenCalledWith("/sample/10");
+    expect(navigateSpy).toHaveBeenCalledWith("/experiments/1/workspace/10");
   });
 
   it("the sample stepper in the shell dock drives the cursor", async () => {
@@ -144,20 +144,20 @@ describe("Corpus action declaration", () => {
     expect(screen.getByTestId("dock-action-representative")).toBeEnabled();
   });
 
-  it("Enter (through the window keyboard layer) navigates to Focus", async () => {
+  it("Enter (through the window keyboard layer) opens the sample in the workspace", async () => {
     renderCorpus([{ id: 10, name: "A" }]);
     await screen.findByText("A");
     // Enter flows: window keydown → useKeyboardLayer → core("openFocus") →
     // sampleCursor.activate(). No row-level handler.
     fireEvent.keyDown(window, { key: "Enter" });
-    expect(navigateSpy).toHaveBeenCalledWith("/sample/10");
+    expect(navigateSpy).toHaveBeenCalledWith("/experiments/1/workspace/10");
   });
 
-  it("l (openLoupe) through the keyboard layer navigates to the loupe", async () => {
+  it("l no longer opens anything", async () => {
     renderCorpus([{ id: 10, name: "A" }]);
     await screen.findByText("A");
     fireEvent.keyDown(window, { key: "l" });
-    expect(navigateSpy).toHaveBeenCalledWith("/sample/10/loupe");
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   it("x (Drop) sets the cursored frame's status to rejected", async () => {

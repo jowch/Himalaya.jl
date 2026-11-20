@@ -41,7 +41,7 @@ export interface SampleTableRowProps {
   formFactor?: boolean;
   /** When set, the sample name in the SpecCell becomes a button that opens the
    *  loupe view for this sample. */
-  onOpenLoupe?: () => void;
+  onOpenSample?: () => void;
   /** When set, double-clicking a thumbnail fires this with the exposure id,
    *  opening the loupe at that frame. Forwarded to ThumbnailGallery.onActivate. */
   onActivateExposure?: (id: number) => void;
@@ -132,7 +132,7 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
   onRemoveTag,
   phase,
   formFactor = false,
-  onOpenLoupe,
+  onOpenSample,
   onActivateExposure,
   checked,
   indeterminate,
@@ -215,7 +215,7 @@ export const SampleTableRow = forwardRef<HTMLDivElement, SampleTableRowProps>(fu
           <SpecCell
             name={name}
             sampleId={sampleId}
-            {...(onOpenLoupe ? { onOpenLoupe } : {})}
+            {...(onOpenSample ? { onOpenSample } : {})}
             {...(slotIndex !== undefined ? { slotIndex } : {})}
           />
         </div>

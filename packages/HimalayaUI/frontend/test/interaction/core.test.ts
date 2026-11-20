@@ -15,7 +15,7 @@ describe("core()", () => {
   it("fills label/keys/group from CORE, page supplies the handler", () => {
     const run = (): void => {};
     const a = core("openFocus", { run, dock: "primary" });
-    expect(a).toMatchObject({ id: "openFocus", label: "Focus", keys: ["Enter"], group: "Navigate", dock: "primary" });
+    expect(a).toMatchObject({ id: "openFocus", label: "Open", keys: ["Enter"], group: "Navigate", dock: "primary" });
     expect(a.run).toBe(run);
   });
   it("lets the page override the label only", () => {

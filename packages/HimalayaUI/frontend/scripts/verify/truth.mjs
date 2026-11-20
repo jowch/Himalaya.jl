@@ -45,13 +45,11 @@ function statusMatches(shown, confirmed) {
   return confirmed.some((c) => (shown.status === "form_factor" ? c.call === "none" : c.call.split("+").includes(shown.call)));
 }
 
-const VIEW_NAMES = { loupe: "Loupe", focus: "Focus", workspace: "the workspace" };
+const VIEW_NAMES = { workspace: "the workspace" };
 
 export function unreadViews(app) {
   if (!app.views) return [];
   const unread = [];
-  if (app.frames.length && !app.views.loupe) unread.push("loupe");
-  if (app.frames.some(isKept) && !app.views.focus) unread.push("focus");
   if (app.frames.some(isKept) && !app.views.workspace) unread.push("workspace");
   return unread;
 }
@@ -81,8 +79,8 @@ function sampleInvariants(app, frames) {
 
 export const INVARIANTS = {
   status_matches_assignment: "A sample with no confirmed call (no assignment on a kept frame) is shown as unreviewed; a sample with one is shown with that call.",
-  representative_kept: "The frame the sample status describes (corpus_api) or Loupe, Focus or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
-  views_agree: "The sample status (corpus_api), Loupe, Focus and the workspace describe the same frame of a sample (needs --ui).",
+  representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
+  views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
 };
 
@@ -293,7 +291,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
       const { corpus_text: corpusText = null, corpus_kept: corpusKept = null, workspace_text: workspaceText = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
-      s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null, workspace: frames.workspace ?? null };
+      s.views = { workspace: frames.workspace ?? null };
       s.corpusText = corpusText;
       s.corpusKept = corpusKept;
       s.workspaceText = workspaceText;

@@ -18,7 +18,6 @@ export type ShortcutId =
   | "prevDetail"
   | "nextDetail"
   | "openFocus"
-  | "openLoupe"
   | "toggleSelect"
   | "extendPrev"
   | "extendNext"
@@ -58,8 +57,7 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   nextFlagged: { id: "nextFlagged", keys: ["Shift+ArrowDown"], label: "Next flagged", group: "Navigate" },
   prevDetail: { id: "prevDetail", keys: ["ArrowLeft"], label: "Previous detail", group: "Navigate" },
   nextDetail: { id: "nextDetail", keys: ["ArrowRight"], label: "Next detail", group: "Navigate" },
-  openFocus: { id: "openFocus", keys: ["Enter"], label: "Open Focus workspace", group: "Navigate" },
-  openLoupe: { id: "openLoupe", keys: ["l"], label: "Open Loupe", group: "Navigate" },
+  openFocus: { id: "openFocus", keys: ["Enter"], label: "Open in the workspace", group: "Navigate" },
   // Select — multi-select verbs.
   toggleSelect: { id: "toggleSelect", keys: [" "], label: "Toggle selection", group: "Navigate" },
   extendPrev: { id: "extendPrev", keys: ["Shift+ArrowLeft"], label: "Extend selection left", group: "Navigate" },

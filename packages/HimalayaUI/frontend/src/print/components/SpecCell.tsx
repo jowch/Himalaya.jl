@@ -10,7 +10,7 @@ export interface SpecCellProps {
   /** When provided, promotes the name to a keyboard-accessible button that
    *  opens the loupe view for this sample. When absent, the name renders as
    *  a static span (other consumers unaffected). */
-  onOpenLoupe?: () => void;
+  onOpenSample?: () => void;
   /** Override tabIndex on the name button. Absent → the button's natural tab order. */
   tabIndex?: number;
   /** PLACEMENT-ONLY. */
@@ -21,9 +21,9 @@ export interface SpecCellProps {
  *  chip when a slot coordinate is provided. The chip sits inline on the id line,
  *  right of the id: the id may `truncate` to yield room while the chip holds its
  *  size (`flex-shrink-0`), so the column still scans. */
-/** Forwards its ref to the focusable name button when `onOpenLoupe` is provided. */
+/** Forwards its ref to the focusable name button when `onOpenSample` is provided. */
 export const SpecCell = forwardRef<HTMLButtonElement, SpecCellProps>(function SpecCell(
-  { name, sampleId, slotIndex, onOpenLoupe, tabIndex, className },
+  { name, sampleId, slotIndex, onOpenSample, tabIndex, className },
   ref,
 ): JSX.Element {
   return (
@@ -31,12 +31,12 @@ export const SpecCell = forwardRef<HTMLButtonElement, SpecCellProps>(function Sp
       data-testid="spec-cell"
       className={`min-w-0${className ? ` ${className}` : ""}`}
     >
-      {onOpenLoupe ? (
+      {onOpenSample ? (
         <button
           ref={ref}
           type="button"
           data-role="spec-name"
-          onClick={onOpenLoupe}
+          onClick={onOpenSample}
           {...(tabIndex !== undefined ? { tabIndex } : {})}
           className="text-body font-semibold block leading-tight line-clamp-2 text-left hover:text-print-accent"
         >

@@ -3,7 +3,7 @@ import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 export type ActionGroup = "Navigate" | "Act" | "Screen" | "Edit";
 
 /** Fixed cross-page gestures. Keys are app-wide constants (see core.ts). */
-export type CoreId = "back" | "openFocus" | "openLoupe" | "undo" | "redo" | "help" | "find";
+export type CoreId = "back" | "openFocus" | "undo" | "redo" | "help" | "find";
 
 /** A page-local verb id is any other string (e.g. "cull", "merge", "addPeak"). */
 export type ActionId = CoreId | (string & {});
