@@ -13,6 +13,7 @@ import { attachPersistence, rehydrate } from "../lib/queue/persistence";
 import { resolveMutator } from "../lib/queue/mutatorRegistry";
 import { exposeTestHelpers } from "../lib/queue/testHelpers";
 import { showToast } from "../lib/toast";
+import { onReconnect } from "../lib/sseReconnect";
 import { useAppState } from "../state";
 import type { SseEvent } from "../lib/queue/types";
 
@@ -36,6 +37,7 @@ export function PrintApp(): JSX.Element {
 
   useEffect(() => {
     const es = new EventSource("/api/events");
+    onReconnect(es, () => void qc.invalidateQueries());
     es.addEventListener("curation", (e) => {
       try {
         const parsed = JSON.parse((e as MessageEvent).data as string) as SseEvent;

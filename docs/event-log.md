@@ -253,8 +253,10 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on EventSource
-  reconnect via TanStack Query refetch — `src/print/App.tsx` (`PrintApp`)
-  invalidates the exposure's query keys on the first reconnect.
+  reconnect via TanStack Query refetch: `src/print/App.tsx` (`PrintApp`)
+  invalidates every query each time the stream opens again after its first
+  open (`lib/sseReconnect.ts`), since any frame sent while it was down is
+  lost. `e2e/reconnect.spec.ts` covers it in the browser.
 - Slow subscribers (channel full) and disconnected subscribers (channel
   closed) are pruned via `_try_put!` rather than blocking the broadcast
   loop. A pruned subscriber reconnects on the EventSource side and gets
