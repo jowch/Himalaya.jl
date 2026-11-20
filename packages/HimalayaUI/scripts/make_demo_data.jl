@@ -227,9 +227,8 @@ function poisson(rng, λ)
     end
 end
 
-function make_frame(rng, Itrace, qm, dx, dy, gaps, frame_scale; flare = false)
+function make_frame(rng, ring, qm, dx, dy, gaps, frame_scale; flare = false)
     counts = Matrix{Int32}(undef, DET_H, DET_W)
-    ring = flare ? Itrace .- flare_average.(Q) : Itrace
     for i in eachindex(qm)
         # radial profile -> 2D, scaled to plausible per-pixel counts for a 15 s exposure
         λ = interpq(qm[i], ring)
@@ -366,7 +365,8 @@ function main(args = ARGS)
             horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.05 * randn(rng); digits = 3)
             write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS"); horiz)
             tif = joinpath(data, stem * ".tif")
-            images ? write_tif(tif, make_frame(rng_img, I, qm, dx, dy, gaps, 1.0; flare = kind === :flare)) : touch(tif)
+            ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
+            images ? write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, 1.0; flare = kind === :flare)) : touch(tif)
         end
         phases = isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+")
         lattice = join((@sprintf("%g", c[2]) for c in comps), "+")
