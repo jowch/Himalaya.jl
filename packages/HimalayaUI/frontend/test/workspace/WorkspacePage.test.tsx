@@ -786,4 +786,25 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1 of 2 on peaks");
   });
+  it("Enter on a focused button outside the custom panel does not add the index", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const row = screen.getByRole("button", { name: /A2/ });
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(calls).toEqual([]);
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+  });
+
+  it("the lattice field keeps what is typed, keystroke by keystroke", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const field = within(screen.getByTestId("workspace-custom-index")).getByLabelText("Lattice a value") as HTMLInputElement;
+    fireEvent.focus(field);
+    for (const typed of ["2", "25", "250"]) {
+      fireEvent.change(field, { target: { value: typed } });
+      expect(field.value).toBe(typed);
+    }
+    fireEvent.blur(field);
+    expect(field.value).toBe("250.0");
+  });
 });
