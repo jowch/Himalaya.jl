@@ -40,6 +40,7 @@ import {
   splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
 } from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
+import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -53,6 +54,8 @@ export const queryKeys = {
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
+  bridges:    (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "bridges"] as const,
   loads:      (id: number | undefined) =>
     ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -145,6 +148,24 @@ export function useExperiment(id: number) {
  *  manual reload. Polling while the scan is live (mirrors useExperiment's ingest
  *  self-heal) picks up the committed loads regardless of the invalidation race;
  *  it stops the moment the caller's `scanning` flag clears. */
+export function useBridges(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.bridges(experimentId),
+    queryFn: () => api.listBridges(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
+export function useBridgeSamples(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(bridgeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useUnbridgeSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(unbridgeSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
 export function useLoads(id: number, refetchWhileScanning = false) {
   return useQuery({
     queryKey: queryKeys.loads(id),

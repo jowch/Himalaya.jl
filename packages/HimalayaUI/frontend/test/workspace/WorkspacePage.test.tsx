@@ -894,10 +894,12 @@ describe("WorkspacePage", () => {
   });
 
   it("Shift B does nothing on a sample without bridges, and B does nothing before a user is set", () => {
-    renderAt("/experiments/1/workspace/11");
+    const first = renderAt("/experiments/1/workspace/11");
     fireEvent.keyDown(window, { key: "B", shiftKey: true });
     expect(calls.filter((c) => c.hook === "unbridge")).toHaveLength(0);
+    first.unmount();
     state.username = undefined;
+    renderAt("/experiments/1/workspace/11");
     fireEvent.keyDown(window, { key: "b" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });

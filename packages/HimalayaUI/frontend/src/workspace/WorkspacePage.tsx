@@ -6,6 +6,8 @@ import {
   useAddPeak,
   useCommitCustomIndex,
   useAssignment,
+  useBridgeSamples,
+  useBridges,
   useCorpusSamples,
   useExperiment,
   useExposures,
@@ -18,7 +20,9 @@ import {
   useSetExposureStatus,
   useSetPeakExcluded,
   useTrace,
+  useUnbridgeSample,
 } from "../queries";
+import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -81,6 +85,13 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["L"], what: "Log or linear intensity" },
         { keys: ["C"], what: "Compare with another sample" },
         { keys: ["R"], what: "Hide or show comparisons" },
+      ],
+    },
+    {
+      title: "Bridges",
+      rows: [
+        { keys: ["B"], what: "Bridge this sample to another, so they always show together" },
+        { keys: ["Shift B"], what: "Take this sample out of its bridges" },
       ],
     },
     {
@@ -164,7 +175,6 @@ export function WorkspacePage(): JSX.Element {
   const [logY, setLogY] = useState(true);
   const [refs, setRefs] = useState<number[]>([]);
   const [subChoice, setSubRef] = useState<number | undefined>(undefined);
-  const subRef = subChoice !== undefined && refs.includes(subChoice) ? subChoice : undefined;
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -176,7 +186,16 @@ export function WorkspacePage(): JSX.Element {
   const draftOpen = draft !== null;
   useEffect(() => setCustomError(null), [draftOpen]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
-  const compareTraces = useCompareTraces(refs);
+  const bridges = useBridges(experimentId);
+  const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
+  const bridgeSamples = useBridgeSamples(experimentId);
+  const unbridgeSample = useUnbridgeSample(experimentId);
+  const [bridging, setBridging] = useState(false);
+  const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
+  const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
+  const compareTraces = useCompareTraces(shownRefs);
 
   const onClickPeak = useCallback(
     (peakId: number) => {
@@ -235,7 +254,7 @@ export function WorkspacePage(): JSX.Element {
   }, [candidates, assigned, hoverId, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
-  const activeRefs = refs.filter((r) => r !== sampleId);
+  const activeRefs = shownRefs.filter((r) => r !== sampleId);
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
   const scales = useMemo(() => {
@@ -246,14 +265,14 @@ export function WorkspacePage(): JSX.Element {
   }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
-    return refs.flatMap((rid, i) => {
+    return shownRefs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
       if (rid === sampleId || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, dash: COMPARE_DASHES[i % COMPARE_DASHES.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, shownRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
@@ -265,7 +284,24 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
-  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !refs.includes(s.id)), [samples, sampleId, refs]);
+  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
+  const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
+  const openBridge = useCallback(() => {
+    if (username && sampleId !== undefined) setBridging(true);
+  }, [username, sampleId]);
+  const leaveBridges = useCallback(() => {
+    if (username && sampleId !== undefined && bridged.length > 0) unbridgeSample.mutate({ sampleId });
+  }, [username, sampleId, bridged, unbridgeSample]);
+  const onRemoveChip = useCallback(
+    (rid: number) => {
+      if (!bridged.includes(rid)) {
+        removeCompare(rid);
+        return;
+      }
+      if (username) unbridgeSample.mutate({ sampleId: rid });
+    },
+    [bridged, removeCompare, username, unbridgeSample],
+  );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
   const canCall = Boolean(username && exposure && !exposureDropped);
@@ -339,6 +375,7 @@ export function WorkspacePage(): JSX.Element {
         ev.preventDefault();
         setHelpOpen(false);
         setPicking(false);
+        setBridging(false);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -404,6 +441,11 @@ export function WorkspacePage(): JSX.Element {
         case "C":
           setPicking(true);
           break;
+        case "b":
+        case "B":
+          if (ev.shiftKey) leaveBridges();
+          else openBridge();
+          break;
         case "i":
         case "I":
           openCustom();
@@ -437,7 +479,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, openBridge, leaveBridges]);
 
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
@@ -462,6 +504,12 @@ export function WorkspacePage(): JSX.Element {
       },
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
+    ...(username && sample
+      ? [
+          { id: "bridge", label: `Bridge ${sample.name} to a sample`, shortcut: "B", run: openBridge },
+          ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, shortcut: "Shift B", run: leaveBridges }] : []),
+        ]
+      : []),
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
     { id: "scale", label: logY ? "Switch to linear intensity" : "Switch to log intensity", shortcut: "L", run: () => setLogY((v) => !v) },
     { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
@@ -491,20 +539,26 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} />}
       main={
         sample ? (
           <>
             <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
               <div className="relative mb-2">
                 <CompareBar
-                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, dash: COMPARE_DASHES[refs.indexOf(rid) % COMPARE_DASHES.length]!, scale: scales.get(rid) }))}
+                  chips={activeRefs.map((rid) => ({
+                    id: rid,
+                    name: sampleNames.get(rid) ?? `Sample ${rid}`,
+                    dash: COMPARE_DASHES[shownRefs.indexOf(rid) % COMPARE_DASHES.length]!,
+                    scale: scales.get(rid),
+                    bridged: bridged.includes(rid),
+                  }))}
                   subtractId={subRef}
                   hidden={!refsOn}
                   logY={logY}
                   onToggleLog={() => setLogY((v) => !v)}
                   onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
-                  onRemove={removeCompare}
+                  onRemove={onRemoveChip}
                   onAdd={() => setPicking(true)}
                 />
                 {picking && (
@@ -516,6 +570,18 @@ export function WorkspacePage(): JSX.Element {
                       setRefsOn(true);
                     }}
                     onClose={() => setPicking(false)}
+                  />
+                )}
+                {bridging && (
+                  <ComparePicker
+                    samples={bridgePickable}
+                    label={`Bridge ${sample.name} to a sample`}
+                    inputLabel="Find a sample to bridge to"
+                    onPick={(rid) => {
+                      bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
+                      setRefsOn(true);
+                    }}
+                    onClose={() => setBridging(false)}
                   />
                 )}
               </div>

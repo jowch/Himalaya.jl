@@ -6,6 +6,7 @@ export interface CompareChip {
   name: string;
   dash: string;
   scale: CompareScale | undefined;
+  bridged?: boolean;
 }
 
 interface Props {
@@ -56,7 +57,18 @@ export function CompareBar({ chips, subtractId, hidden, logY, onToggleLog, onSub
                 {c.scale.source === "matched" && " matched"}
               </span>
             )}
-            <button type="button" aria-label={`Remove ${c.name}`} onClick={() => onRemove(c.id)} className="text-ink-faint hover:text-ink">
+            {c.bridged && (
+              <span className="text-ink-faint" data-bridged-chip>
+                bridged
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label={c.bridged ? `Remove bridge to ${c.name}` : `Remove ${c.name}`}
+              title={c.bridged ? "Take this sample out of the bridge" : undefined}
+              onClick={() => onRemove(c.id)}
+              className="text-ink-faint hover:text-ink"
+            >
               ×
             </button>
           </span>
