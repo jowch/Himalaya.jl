@@ -12,13 +12,14 @@
 #       [out_dir] [--seed 7] [--no-images]
 #
 # Layout written (what routes_fs.jl `resolve_experiment_layout` auto-detects);
-# <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample:
+# <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample, a few of
+# them bad on purpose (BAD_SCANS):
 #   <out>/data/<base>_0_001.tif        Pilatus 1M frame, Int32 counts (-1 in module gaps)
 #   <out>/data/<base>_0_001.prp        SSRL PRP sidecar (energy, pipe length, position, time)
 #   <out>/analysis/setup_info_<ts>.txt beam center + AgBe-calibrated distance
 #   <out>/analysis/automatic_analysis/tot_files/<base>_tot.dat   q  I  sigma
 #   <out>/TRUTH.csv                    per sample: generated phases, expected auto call,
-#                                      phase-tagged reflection q values
+#                                      phase-tagged reflection q values, scans to drop
 # test/test_demo_data.jl holds the regression floor on the expected auto calls.
 #
 # Output is deterministic for a given seed and Julia version (Xoshiro streams are
@@ -87,7 +88,21 @@ const SAMPLES = [
     ("MO_AMP_10",      3, Component[(Pn3m, 96.0, 25.0, 9e-4), (Hexagonal, 53.0, 35.0, 1.0e-3)], "Hexagonal+Pn3m", "Pn3m drifting to HII under peptide"),
     ("buffer_blank",   1, Component[],                                                   "none",           "buffer only, no Bragg peaks"),
     ("vesicles_ULV",   2, Component[],                                                   "none",           "unilamellar vesicles, form factor only"),
+    ("leaked_capillary", 2, Component[],                                                 "none",           "capillary leaked before measurement; both scans are air, so the sample has no usable frame"),
 ]
+
+# Bad scans a triager should drop, by sample and scan number (1 = oldest). They
+# exercise the drop and representative rules: a bad newest frame (the backend's
+# highest-id fallback), a bad oldest frame (Focus opens frame 1), and a sample
+# with no usable frame at all. TRUTH's `drop` column lists them.
+#   :beam_off  shutter stayed closed, so the detector saw only dark counts
+#   :missed    beam went through air beside the capillary: parasitic scatter, no sample
+const BAD_SCANS = Dict(
+    "MO_H2O"           => Dict(3 => :beam_off),
+    "DOPE_H2O"         => Dict(1 => :missed),
+    "leaked_capillary" => Dict(1 => :missed, 2 => :missed),
+)
+const BAD_SCALE = Dict(:beam_off => 0.02, :missed => 0.3)
 const LOAD_SPLIT = 6        # samples 1..6 in holder 1, the rest in holder 2
 const FIRST_SCAN = 2401
 
@@ -112,7 +127,7 @@ function background(rng, formfactor::Bool)
     @. amp * (0.06 * Q^-3.2 + 1.2 * Q^-1.2 + 30)
 end
 
-"Noise-free model trace for one sample, plus the generated (phase, q) reflections."
+"Noise-free model trace and its background for one sample, plus the generated (phase, q) reflections."
 function model_trace(rng, label, comps)
     bg = background(rng, startswith(label, "vesicles"))
     I = copy(bg)
@@ -131,7 +146,7 @@ function model_trace(rng, label, comps)
             push!(peaks, (phase_name(P), round(qk; digits = 5)))
         end
     end
-    I, peaks
+    I, bg, peaks
 end
 
 "One noisy measurement of a model trace; σ is the noise actually applied."
@@ -289,19 +304,22 @@ function main(args = ARGS)
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)
     gaps = gap_mask()
-    truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,note"]
+    truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,note"]
     scan = FIRST_SCAN
     t = DateTime(2026, 4, 26, 18, 0, 0)
     for (k, (label, nscans, comps, auto, note)) in enumerate(SAMPLES)
         # Holder 2 goes in after a >1 h break, so load segmentation finds 2 loads.
         k == LOAD_SPLIT + 1 && (t += Minute(75))
         slot = k <= LOAD_SPLIT ? k : k - LOAD_SPLIT
-        model, peaks = model_trace(rng, label, comps)
-        bases = String[]
-        for _ in 1:nscans
+        model, bg, peaks = model_trace(rng, label, comps)
+        bad = get(BAD_SCANS, label, Dict{Int,Symbol}())
+        bases = String[]; drops = String[]
+        for n in 1:nscans
             base = "$(label)_S$(scan)"; scan += 1
             push!(bases, base)
-            I, sig = measure(rng, model)
+            kind = get(bad, n, nothing)
+            kind === nothing || push!(drops, base)
+            I, sig = measure(rng, kind === nothing ? model : bg .* BAD_SCALE[kind])
             open(joinpath(tot, "$(base)_tot.dat"), "w") do io
                 for j in eachindex(Q)
                     @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
@@ -320,7 +338,7 @@ function main(args = ARGS)
         lattice = join((@sprintf("%g", c[2]) for c in comps), "+")
         qs = join(("$p:$q" for (p, q) in peaks), " ")
         push!(truth, join([label, join(bases, " "), phases, lattice, auto, qs,
-                           string(images), csvq(note)], ","))
+                           string(images), join(drops, " "), csvq(note)], ","))
     end
     write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
     println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",
