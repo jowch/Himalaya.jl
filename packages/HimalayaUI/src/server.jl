@@ -473,11 +473,15 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
     nothing
 end
 
-function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+function boot!(db::SQLite.DB)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
     start_background!(db)
+end
+
+function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+    boot!(db)
     # parallel = true wraps each request in `Threads.@spawn`, dispatching
     # handlers across the default thread pool. Without it, every handler
     # runs cooperatively on HTTP.jl's single interactive thread — even with
@@ -501,9 +505,7 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
-    Oxygen.resetstate()
-    bind_db!(db)
-    register_routes!()
+    boot!(db)
     # Match production's threading model so the test suite exercises the
     # same scheduling as `serve`. Any test that depends on single-threaded
     # request ordering is a bug.

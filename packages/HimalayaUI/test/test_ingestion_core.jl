@@ -765,17 +765,19 @@ end
             last_scan_tier = 'stopped' WHERE id = ?""", [exp_id])
         try
             HimalayaUI.stop_all_rescan_timers!()
-            task = HimalayaUI.start_background!(db)
+            task = HimalayaUI.boot!(db)
             @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
             fetch(task)
             rows = Tables.rowtable(DBInterface.execute(db,
                 "SELECT monitors_read, transmitted_counts FROM exposures WHERE experiment_id = ?
                   ORDER BY filename", [exp_id]))
             @test all(r -> r.monitors_read == 1, rows)
-            @test [r.transmitted_counts for r in rows] ≈ [7001.0, 7002.0]
+            @test isequal([r.transmitted_counts for r in rows], [7001.0, 7002.0])
         finally
             HimalayaUI.stop_gc_timer!()
             HimalayaUI.stop_all_rescan_timers!()
+            HimalayaUI.Oxygen.resetstate()
+            HimalayaUI._DB_REF[] = nothing
             SQLite.close(db)
         end
     end
