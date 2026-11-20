@@ -1,5 +1,6 @@
 using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 using HimalayaUI
+using Himalaya
 
 # Route response-shape contract test (deep-scan follow-up).
 #

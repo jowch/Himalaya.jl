@@ -1,5 +1,6 @@
 using Test, HTTP, SQLite, JSON3
 using HimalayaUI
+using Himalaya
 
 function with_test_server(f, db::SQLite.DB)
     port = HimalayaUI.find_free_port()

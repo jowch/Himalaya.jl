@@ -22,16 +22,15 @@ const GROUPS = [
                   "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
                   "test_effective_peaks_sharpness_passthrough.jl","test_ingestion_core.jl",
                   "test_json.jl","test_image.jl","test_demo_data.jl"]),
-    ("routes",   ["test_http.jl","test_routes_users.jl","test_routes_experiments.jl",
-                  "test_experiments_patch.jl",
-                  "test_ingestion_scan_api.jl",
+    ("routes",   ["test_http.jl","test_routes_experiments.jl","test_experiments_patch.jl",
                   "test_routes_samples.jl","test_routes_exposures.jl","test_routes_image.jl",
-                  "test_routes_peaks.jl","test_routes_messages.jl","test_routes_trace.jl",
-                  "test_routes_analysis.jl","test_speculative.jl","test_routes_export.jl",
+                  "test_routes_peaks.jl","test_routes_trace.jl","test_routes_export.jl",
                   "test_routes_mentions.jl","test_route_response_shapes.jl",
-                  "test_route_validation_routing.jl","test_routes_series.jl",
-                  "test_picker_routes.jl","test_picker_samples_route.jl","test_routes_resolve.jl",
-                  "test_routes_fs.jl",
+                  "test_routes_series.jl","test_routes_fs.jl"]),
+    ("routes2",  ["test_http.jl","test_routes_users.jl","test_ingestion_scan_api.jl",
+                  "test_routes_messages.jl","test_routes_analysis.jl","test_speculative.jl",
+                  "test_route_validation_routing.jl","test_picker_routes.jl",
+                  "test_picker_samples_route.jl","test_routes_resolve.jl",
                   "test_inproc_equivalence.jl"]),
     ("events",   ["test_http.jl","test_actions.jl","test_events.jl","test_assignment_reattach.jl",
                   "test_ingestion_structural_events.jl",
@@ -84,6 +83,9 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
 let bucket_files = Set(Iterators.flatten(fs for (_, fs) in GROUPS))
     drift = symdiff(bucket_files, Set(ALL_ORDER))
     isempty(drift) || error("runtests: GROUP buckets ↔ ALL_ORDER drift: $(sort(collect(drift)))")
+    listed = [f for (_, fs) in GROUPS for f in fs if f != "test_http.jl"]
+    dupes = sort(unique(f for f in listed if count(==(f), listed) > 1))
+    isempty(dupes) || error("runtests: test files in more than one GROUP bucket: $(dupes)")
 end
 
 # Second guard (closes the disk↔list gap): every test_*.jl on disk must be in
