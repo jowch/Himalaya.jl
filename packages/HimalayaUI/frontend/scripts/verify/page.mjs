@@ -13,7 +13,7 @@ export function routeUrl(cfg, route) {
   return new URL(route.startsWith("/") ? route : `/${route}`, cfg.uiBase).toString();
 }
 
-async function prepareUser(page, cfg, { username, onboarding }) {
+export async function prepareUser(page, cfg, { username, onboarding }) {
   if (!page.url().startsWith(cfg.uiBase)) await page.goto(cfg.uiBase, { waitUntil: "domcontentloaded" });
   return page.evaluate(
     ({ key, version, username, onboarding }) => {
