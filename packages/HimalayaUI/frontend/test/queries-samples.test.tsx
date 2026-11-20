@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
-  useUpdateSample, useAddSampleTag, useRemoveSampleTag, queryKeys,
+  useSamples, useUpdateSample, useAddSampleTag, useRemoveSampleTag, queryKeys,
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
 
@@ -25,6 +25,18 @@ function mockOnce(status: number, body: unknown): void {
     }),
   );
 }
+
+describe("useSamples", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("asks for nothing until an experiment is picked", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch");
+    const { wrapper } = withClient();
+    const { result } = renderHook(() => useSamples(0), { wrapper });
+    await waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
 
 describe("queries — sample mutations (queue-driven)", () => {
   beforeEach(() => {
