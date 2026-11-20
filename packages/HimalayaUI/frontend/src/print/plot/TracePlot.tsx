@@ -97,13 +97,17 @@ function windowValues(series: YFitSeries, lo: number, hi: number): number[] {
   const out: number[] = [];
   let below = -1;
   let above = -1;
+  let reachesLo = false;
+  let reachesHi = false;
   series.q.forEach((q, i) => {
+    if (q >= lo) reachesLo = true;
+    if (q <= hi) reachesHi = true;
     if (q >= lo && q <= hi) out.push(series.I[i]!);
     else if (q < lo && (below < 0 || q > series.q[below]!)) below = i;
     else if (q > hi && (above < 0 || q < series.q[above]!)) above = i;
   });
-  if (below >= 0) out.push(series.I[below]!);
-  if (above >= 0) out.push(series.I[above]!);
+  if (below >= 0 && reachesLo) out.push(series.I[below]!);
+  if (above >= 0 && reachesHi) out.push(series.I[above]!);
   return out.filter(usable);
 }
 

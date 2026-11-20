@@ -68,13 +68,34 @@ describe("WorkspacePlot", () => {
     expect(top).toBeGreaterThan(plotHeight() * 0.05);
   });
 
-  it("keeps a stronger comparison inside the fitted window", () => {
+  const comparePoints = (): [number, number][] =>
+    screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!
+      .split(/[ML]/).filter(Boolean).map((p) => p.split(",").map(Number) as [number, number]);
+
+  it("fits a stronger comparison into the window, after the view transform", () => {
     const flat = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
     const compare = { id: 3, name: "ref", q: flat.q, I: [5, 5, 5, 5, 5], dash: "6 4", emphasis: false };
-    render(<WorkspacePlot trace={flat} peaks={[]} phase={null} combs={[]} compares={[compare]} view="linear" xDomain={[0.1, 0.2]} />);
-    const ys = screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!
-      .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
-    expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
+    for (const view of ["linear", "kratky"] as const) {
+      const { unmount } = render(<WorkspacePlot trace={flat} peaks={[]} phase={null} combs={[]} compares={[compare]} view={view} xDomain={[0.1, 0.2]} />);
+      const ys = comparePoints().map(([, y]) => y);
+      expect(Math.min(...ys)).toBeGreaterThanOrEqual(0);
+      expect(Math.min(...ys)).toBeLessThan(plotHeight() * 0.3);
+      unmount();
+    }
+  });
+
+  it("ignores a comparison that ends before the window", () => {
+    const flat = { q: [0.05, 0.1, 0.3, 0.35, 0.4], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
+    const short = { id: 4, name: "short", q: [0.02, 0.05, 0.08], I: [100, 100, 100], dash: "6 4", emphasis: false };
+    render(<WorkspacePlot trace={flat} peaks={[]} phase={null} combs={[]} compares={[short]} view="linear" xDomain={[0.32, 0.4]} />);
+    expect(Math.max(...yTicks())).toBeLessThan(5);
+  });
+
+  it("ignores a comparison that starts after the window", () => {
+    const flat = { q: [0.05, 0.1, 0.15, 0.3, 0.4], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
+    const late = { id: 5, name: "late", q: [0.3, 0.35, 0.4], I: [100, 100, 100], dash: "6 4", emphasis: false };
+    render(<WorkspacePlot trace={flat} peaks={[]} phase={null} combs={[]} compares={[late]} view="linear" xDomain={[0.05, 0.16]} />);
+    expect(Math.max(...yTicks())).toBeLessThan(5);
   });
 
   it("falls back to the whole trace when the window holds no positive values", () => {
