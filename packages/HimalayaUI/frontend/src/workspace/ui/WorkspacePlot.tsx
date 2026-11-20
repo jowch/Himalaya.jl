@@ -3,6 +3,7 @@ import type { Peak, Trace } from "../../api";
 import { TracePlot } from "../../print/plot/TracePlot";
 import { toTraceModel } from "../../print/plot/traceModel";
 import type { Projection } from "../../print/plot/projection";
+import { applyView, viewAxes, viewIntensity, viewLabel, type PlotView } from "../plotView";
 
 export interface CombLine {
   id: number;
@@ -29,18 +30,18 @@ interface Props {
   combs: readonly CombLine[];
   compares?: readonly CompareLine[];
   xDomain?: [number, number] | null;
-  logY?: boolean;
+  view?: PlotView;
   onXDomain?: (d: [number, number] | null) => void;
   onAddPeak?: (q: number) => void;
   onClickPeak?: (id: number) => void;
   height?: number;
 }
 
-function comparePath(c: CompareLine, projection: Projection): string {
+function comparePath(c: CompareLine, projection: Projection, view: PlotView): string {
   let d = "";
   let pen = false;
   c.q.forEach((q, i) => {
-    const v = c.I[i]!;
+    const v = viewIntensity(view, q, c.I[i]!);
     const x = projection.x.to(q);
     const y = projection.y.to(v);
     if ((!(v > 0) && projection.y.type === "log") || !Number.isFinite(x) || !Number.isFinite(y)) {
@@ -60,22 +61,28 @@ export function WorkspacePlot({
   combs,
   compares = [],
   xDomain = null,
-  logY = true,
+  view = "log",
   onXDomain,
   onAddPeak,
   onClickPeak,
   height = 360,
 }: Props): JSX.Element {
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
+  const { xType, yType } = viewAxes(view);
   if (!trace || trace.q.length < 2) {
     return <div className="rounded-sm bg-paper-sunk" style={{ height }} data-testid="workspace-trace-empty" />;
   }
   return (
     <TracePlot
-      trace={toTraceModel(trace, [...peaks], phase)}
+      trace={toTraceModel(
+        applyView(view, trace),
+        peaks.map((p) => (p.intensity != null ? { ...p, intensity: viewIntensity(view, p.q, p.intensity) } : p)),
+        phase,
+      )}
       height={height}
-      xType="linear"
-      yType={logY ? "log" : "linear"}
+      xType={xType}
+      yType={yType}
+      yLabel={viewLabel(view)}
       xDomain={xDomain}
       axes
       paperColor="var(--color-paper)"
@@ -103,7 +110,7 @@ export function WorkspacePlot({
               <path
                 key={c.id}
                 data-compare={c.id}
-                d={comparePath(c, projection)}
+                d={comparePath(c, projection, view)}
                 fill="none"
                 stroke="var(--color-ink-soft)"
                 strokeOpacity={c.emphasis ? 0.9 : 0.6}
