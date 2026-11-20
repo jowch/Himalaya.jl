@@ -113,7 +113,7 @@ Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for 
 
 - **Route:** `/experiments/<id>/config`.
 - **Shows:** the experiment name with "Rename experiment", the description button "Edit experiment description" (it reads "Add a description..." when empty), the Geometry card with an "Override <field>" button per field, the Acquisition timeline, and the Sources card with the three patterns and "Rescan now".
-- **Drive:** an edit, then a clear, each followed by a reload so the check reads what the server stored, not the optimistic cache.
+- **Drive:** an edit, then a clear, each followed by a reload so the check proves the value persisted on the server.
   ```bash
   bin/verify open /experiments/1/config
   bin/verify click --role button --name "Edit experiment description"

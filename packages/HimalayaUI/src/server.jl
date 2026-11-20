@@ -171,7 +171,7 @@ end
 
 const RESCAN_TIER_INTERVALS = Dict("fast" => 3600.0, "daily" => 86400.0)
 
-const RESCAN_TIMERS = Dict{Int, @NamedTuple{timer::Timer, interval::Float64}}()
+const RESCAN_TIMERS = Dict{Int, @NamedTuple{timer::Timer, first_tick::Float64, interval::Float64}}()
 const RESCAN_TIMERS_MU = ReentrantLock()
 
 # Per-experiment reentrancy guard (spec §9.4: protect with an explicit
@@ -263,8 +263,9 @@ Idempotent: calling twice closes the previous timer before installing a new one.
 """
 function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
                                   tick_interval_seconds::Real = RESCAN_TIER_INTERVALS["fast"],
+                                  first_tick_seconds::Real = tick_interval_seconds,
                                   cheap_check_fn = nothing)
-    timer = Timer(tick_interval_seconds; interval = tick_interval_seconds) do _
+    timer = Timer(first_tick_seconds; interval = tick_interval_seconds) do _
         # Do NOTHING that touches the per-experiment lock on the timer thread.
         # Spawn first, then trylock/unlock both on the spawned task (same-task
         # ownership — see docstring).
@@ -284,7 +285,8 @@ function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
     lock(RESCAN_TIMERS_MU) do
         old = get(RESCAN_TIMERS, experiment_id, nothing)
         old === nothing || close(old.timer)
-        RESCAN_TIMERS[experiment_id] = (timer = timer, interval = Float64(tick_interval_seconds))
+        RESCAN_TIMERS[experiment_id] = (timer = timer, first_tick = Float64(first_tick_seconds),
+                                        interval = Float64(tick_interval_seconds))
     end
     nothing
 end
@@ -309,7 +311,8 @@ function rearm_rescan_schedulers!(db::SQLite.DB)
     end
     for r in rows
         try
-            arm_for_tier!(db, Int(r.id), coalesce(r.last_scan_tier, "fast"))
+            arm_for_tier!(db, Int(r.id), coalesce(r.last_scan_tier, "fast");
+                first_tick_seconds = RESCAN_TIER_INTERVALS["fast"])
         catch err
             @warn "rearm_rescan_schedulers!: failed to arm" experiment_id = Int(r.id) exception = err
         end
@@ -318,9 +321,11 @@ function rearm_rescan_schedulers!(db::SQLite.DB)
 end
 
 function arm_for_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
-                       interval = get(RESCAN_TIER_INTERVALS, tier, nothing))
+                       interval = get(RESCAN_TIER_INTERVALS, tier, nothing),
+                       first_tick_seconds = interval)
     interval === nothing ? stop_rescan_scheduler!(experiment_id) :
-        start_rescan_scheduler!(db, experiment_id; tick_interval_seconds = interval)
+        start_rescan_scheduler!(db, experiment_id; tick_interval_seconds = interval,
+            first_tick_seconds = min(first_tick_seconds, interval))
 end
 
 function set_rescan_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;

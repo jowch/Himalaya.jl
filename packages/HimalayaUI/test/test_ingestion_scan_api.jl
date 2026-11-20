@@ -348,6 +348,24 @@ end
         end
     end
 
+    @testset "the first rescan tick fires after first_tick_seconds, not the full interval" begin
+        mktempdir() do dir
+            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
+            exp_id = HimalayaUI.create_experiment!(db;
+                name = "early", path = dir, data_dir = dir, analysis_dir = dir)
+            checks = Threads.Atomic{Int}(0)
+            try
+                HimalayaUI.start_rescan_scheduler!(db, exp_id;
+                    tick_interval_seconds = 86400.0, first_tick_seconds = 0.2,
+                    cheap_check_fn = (_, _) -> (Threads.atomic_add!(checks, 1); false))
+                @test timedwait(() -> checks[] >= 1, 10.0) === :ok
+            finally
+                HimalayaUI.stop_all_rescan_timers!()
+                SQLite.close(db)
+            end
+        end
+    end
+
     @testset "a restart resumes each experiment at its persisted rescan tier" begin
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
@@ -366,6 +384,9 @@ end
                 @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["daily"]
                 restart!()
                 @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["daily"]
+                @testset "a server restarted more often than daily still checks a daily experiment" begin
+                    @test HimalayaUI.RESCAN_TIMERS[exp_id].first_tick == HimalayaUI.RESCAN_TIER_INTERVALS["fast"]
+                end
 
                 quiet_tick(); quiet_tick()
                 @test HimalayaUI.rescan_interval(exp_id) === nothing

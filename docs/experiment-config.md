@@ -235,7 +235,9 @@ There are three ways a scan runs again after create:
   row (`last_scan_tier`, `consecutive_empty_ticks`). The scheduler is armed
   after a successful first scan, and on server start every experiment whose
   ingest is `complete` resumes at its stored tier, so a stopped experiment stays
-  stopped until a manual scan finds new files.
+  stopped until a manual scan finds new files. Time since the last check is not
+  stored, so after a restart the first check comes within an hour, then the
+  tier's interval applies.
 - **A pattern edit.** `PATCH` with a pattern field stores it, and the
   Configuration page then calls the scan route with `force: true` so the new
   pattern applies straight away.
