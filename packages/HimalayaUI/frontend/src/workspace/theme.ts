@@ -22,7 +22,7 @@ export function effectiveTheme(theme: WorkspaceTheme, prefersDark: boolean): "li
   return theme;
 }
 
-export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; toggle: () => void } {
+export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; toggle: () => void; followSystem: () => void } {
   const [theme, setTheme] = useState<WorkspaceTheme>(read);
   const [prefersDark, setPrefersDark] = useState(systemDark);
   useEffect(() => {
@@ -33,14 +33,16 @@ export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; t
     return () => mq.removeEventListener?.("change", on);
   }, []);
   const isDark = effectiveTheme(theme, prefersDark) === "dark";
-  const toggle = useCallback(() => {
-    const next: WorkspaceTheme = isDark ? "light" : "dark";
+  const choose = useCallback((next: WorkspaceTheme) => {
     setTheme(next);
     try {
-      window.localStorage.setItem(KEY, next);
+      if (next === "system") window.localStorage.removeItem(KEY);
+      else window.localStorage.setItem(KEY, next);
     } catch {
       return;
     }
-  }, [isDark]);
-  return { theme, isDark, toggle };
+  }, []);
+  const toggle = useCallback(() => choose(isDark ? "light" : "dark"), [choose, isDark]);
+  const followSystem = useCallback(() => choose("system"), [choose]);
+  return { theme, isDark, toggle, followSystem };
 }

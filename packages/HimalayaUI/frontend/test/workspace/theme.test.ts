@@ -2,21 +2,10 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { effectiveTheme } from "../../src/workspace/theme";
+import { cssBlock, stylesCss } from "../helpers/cssBlocks";
 
-const css = readFileSync(resolve(__dirname, "../../src/styles.css"), "utf8");
-
-function block(selector: string): Map<string, string> {
-  const start = css.indexOf(selector + " {");
-  expect(start).toBeGreaterThan(-1);
-  const body = css.slice(css.indexOf("{", start) + 1, css.indexOf("}", start));
-  return new Map(
-    body
-      .split(";")
-      .map((d) => d.trim())
-      .filter((d) => d.startsWith("--"))
-      .map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()] as [string, string]),
-  );
-}
+const css = stylesCss;
+const block = (selector: string) => cssBlock(selector);
 
 describe("workspace theme", () => {
   it("follows the system setting unless the user picked one", () => {

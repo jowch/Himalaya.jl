@@ -2,7 +2,8 @@ import { Fragment } from "react";
 import { Kbd } from "./Kbd";
 import { Overlay } from "./Overlay";
 
-export type HelpSection = { title: string; rows: { keys: string[]; what: string }[] };
+export type HelpRow = { keys: string[]; gesture?: never; what: string } | { gesture: string; keys?: never; what: string };
+export type HelpSection = { title: string; rows: HelpRow[] };
 
 export function HelpOverlay({ sections, onClose }: { sections: readonly HelpSection[]; onClose: () => void }): JSX.Element {
   return (
@@ -14,9 +15,7 @@ export function HelpOverlay({ sections, onClose }: { sections: readonly HelpSect
             {s.rows.map((r) => (
               <Fragment key={r.what}>
                 <span className="inline-flex items-center gap-1">
-                  {r.keys.map((k) => (
-                    <Kbd key={k}>{k}</Kbd>
-                  ))}
+                  {r.keys ? r.keys.map((k) => <Kbd key={k}>{k}</Kbd>) : <span className="text-ink-soft">{r.gesture}</span>}
                 </span>
                 <span>{r.what}</span>
               </Fragment>
