@@ -30,7 +30,6 @@ using HimalayaUI: with_inproc_routes, open_prepared_clone
             r3b = call("GET", "/api/experiments/$exp_id")
             @test JSON3.read(r3b.body)["description"] == "AgBe SAXS run"
 
-            # image_pattern is patchable AND resets scan_signature
             r4 = call("PATCH", "/api/experiments/$exp_id";
                 headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
                 body=Vector{UInt8}(JSON3.write(Dict("image_pattern" => "*.tif"))))
@@ -38,7 +37,7 @@ using HimalayaUI: with_inproc_routes, open_prepared_clone
             r4b = call("GET", "/api/experiments/$exp_id")
             exp4 = JSON3.read(r4b.body)
             @test exp4["image_pattern"] == "*.tif"
-            @test ismissing(exp4["scan_signature"]) || exp4["scan_signature"] === nothing
+            @test !haskey(exp4, "scan_signature")
 
             # data_dir stays read-only (400)
             r5 = call("PATCH", "/api/experiments/$exp_id";

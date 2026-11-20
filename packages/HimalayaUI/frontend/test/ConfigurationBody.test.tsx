@@ -19,7 +19,7 @@ vi.mock("../src/queries", async (orig) => {
     // E1's Experiment carries PER-FIELD *_source columns (NOT a combined
     // beam_center_source): energy_kev_source, flight_path_m_source,
     // beam_center_x_source, beam_center_y_source, pixel_size_um_source,
-    // q_units_source -- plus ingest_status/scan_signature/last_scanned_at.
+    // q_units_source -- plus ingest_status/last_scanned_at.
     useExperiment: () => ({
       data: {
         id: 7, name: "SSRL · 1p7m",
@@ -32,7 +32,7 @@ vi.mock("../src/queries", async (orig) => {
         beam_center_x: 421.4, beam_center_x_source: "setup",
         beam_center_y: 836.9, beam_center_y_source: "setup",
         pixel_size_um: 172, pixel_size_um_source: "prp", q_units_source: "prp",
-        last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "idle",
+        last_scanned_at: "2026-04-12T10:00:00", ingest_status: "idle",
       },
       isLoading: false,
     }),

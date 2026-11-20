@@ -28,6 +28,8 @@ const MIGRATION_EXPERIMENTS_CONFIG_COLS = "experiments_config_cols_v1"
 # Sentinel marker name for the session_id backfill on existing loads.
 const MIGRATION_LOAD_SESSIONS_BACKFILL = "load_sessions_backfill_v1"
 
+const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table. Mirrors the inlined pattern in
 # `migrate_assignments!` / `migrate_comparisons_to_series!`.
@@ -75,7 +77,6 @@ CREATE TABLE IF NOT EXISTS experiments (
     q_units                  TEXT,
     q_units_source           TEXT DEFAULT 'default',
     last_scanned_at          TEXT,
-    scan_signature           TEXT,
     ingest_status            TEXT DEFAULT 'idle',
     last_scan_tier           TEXT DEFAULT 'fast',
     consecutive_empty_ticks  INTEGER NOT NULL DEFAULT 0
@@ -496,16 +497,6 @@ function migrate_schema!(db::SQLite.DB)
     # sentinel-gated; own transaction.
     migrate_assignments!(db)
 
-    # PR #107 left the on-disk experiment.toml AND the in-DB experiments.config
-    # blob using the legacy `[manifest].label/name` shape. The deprecation
-    # error in `_build_config` (config.jl) hard-fails any route that calls
-    # `config_from_db` (trace plot, analyze_exposure!, reanalyze) for those
-    # experiments. Migrate the in-DB blob in place; the on-disk file is the
-    # operator's responsibility (`himalaya migrate-toml <dir>`) but is no
-    # longer load-bearing at runtime since `experiments.config` is the
-    # source of truth for `analyze_exposure!`.
-    migrate_experiment_config_label_to_name!(db)
-
     # Ingestion redesign (Phase A): additive schema scaffolding. Sentinel-gated
     # stubs for now — later tasks fill in the real DDL. Run AFTER
     # migrate_samples_naming!, in dependency order:
@@ -527,6 +518,8 @@ function migrate_schema!(db::SQLite.DB)
     # Session-id backfill: assign macro-session indices to all existing loads whose
     # session_id is NULL. Run AFTER migrate_loads_table! (the loads table must exist).
     backfill_load_sessions!(db)
+
+    migrate_drop_scan_signature!(db)
 
     # Speculative peak durability (2026-07-14 spec): intents table + legacy
     # basis rescale + heal trigger. Must run last — see the function docstring
@@ -683,6 +676,16 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
     end
 end
 
+function migrate_drop_scan_signature!(db::SQLite.DB)
+    _migrated(db, MIGRATION_DROP_SCAN_SIGNATURE) && return nothing
+    SQLite.transaction(db) do
+        "scan_signature" in cols_of(db, "experiments") &&
+            DBInterface.execute(db, "ALTER TABLE experiments DROP COLUMN scan_signature")
+        _record_migration!(db, MIGRATION_DROP_SCAN_SIGNATURE)
+    end
+    nothing
+end
+
 function migrate_experiments_geometry!(db::SQLite.DB)
     _migrated(db, MIGRATION_EXPERIMENTS_GEOMETRY) && return nothing
     SQLite.transaction(db) do
@@ -696,7 +699,7 @@ function migrate_experiments_geometry!(db::SQLite.DB)
             ("beam_center_y_source", "TEXT DEFAULT 'default'"),
             ("pixel_size_um_source", "TEXT DEFAULT 'default'"),
             ("q_units_source", "TEXT DEFAULT 'default'"),
-            ("last_scanned_at", "TEXT"), ("scan_signature", "TEXT"),
+            ("last_scanned_at", "TEXT"),
             ("ingest_status", "TEXT DEFAULT 'idle'"),
             ("last_scan_tier", "TEXT DEFAULT 'fast'"),
             ("consecutive_empty_ticks", "INTEGER NOT NULL DEFAULT 0"),
@@ -821,47 +824,6 @@ function backfill_load_sessions!(db::SQLite.DB)
     end
     SQLite.transaction(db) do
         _record_migration!(db, MIGRATION_LOAD_SESSIONS_BACKFILL)
-    end
-    nothing
-end
-
-"""
-    migrate_experiment_config_label_to_name!(db)
-
-Rewrite each `experiments.config` blob from the legacy `[manifest].label/name`
-shape to the canonical `[manifest].name/display_name` shape (PR #107). Pure
-text rewrite via `migrate_manifest_toml_text`; only touches blobs that
-actually contain `[manifest].label`. Idempotent — already-migrated blobs
-return unchanged and we skip the UPDATE.
-
-If a blob is in the corrupt "both `label` AND `display_name`" state, the
-helper raises; we let it propagate so the operator can see which experiment
-is broken rather than silently masking it.
-"""
-function migrate_experiment_config_label_to_name!(db::SQLite.DB)
-    rows = try
-        Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, config FROM experiments WHERE config IS NOT NULL"))
-    catch err
-        # In normal `migrate_schema!` flow the `config` column already
-        # exists — `alter_stmts` adds it earlier in the same function. This
-        # tolerance is purely for test fixtures that build a `SQLite.DB`
-        # directly and call this migration in isolation (no
-        # `migrate_schema!` invocation). Production `open_db` callers never
-        # hit this branch.
-        msg = lowercase(sprint(showerror, err))
-        (occursin("no such column", msg) || occursin("no such table", msg)) ||
-            rethrow()
-        return nothing
-    end
-    for row in rows
-        blob = String(row.config)
-        new_text, changed = migrate_manifest_toml_text(blob)
-        changed || continue
-        DBInterface.execute(db,
-            "UPDATE experiments SET config = ? WHERE id = ?",
-            [new_text, row.id])
-        @info "Healed experiments.config blob (legacy [manifest].label → name/display_name)" experiment_id = Int(row.id)
     end
     nothing
 end
@@ -2430,7 +2392,7 @@ function create_experiment!(db::SQLite.DB;
         beam_center_y = nothing, beam_center_y_source = "default",
         pixel_size_um = nothing, pixel_size_um_source = "default",
         q_units = nothing, q_units_source = "default",
-        last_scanned_at = nothing, scan_signature = nothing, ingest_status = "idle")
+        last_scanned_at = nothing, ingest_status = "idle")
     result = DBInterface.execute(db, """
         INSERT INTO experiments
             (name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
@@ -2438,14 +2400,14 @@ function create_experiment!(db::SQLite.DB;
              energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
              beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
              pixel_size_um, pixel_size_um_source, q_units, q_units_source,
-             last_scanned_at, scan_signature, ingest_status)
-        VALUES (?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?)
+             last_scanned_at, ingest_status)
+        VALUES (?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?)
     """, [name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
           image_pattern, metadata_pattern, integration_pattern,
           energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
           beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
           pixel_size_um, pixel_size_um_source, q_units, q_units_source,
-          last_scanned_at, scan_signature, ingest_status])
+          last_scanned_at, ingest_status])
     return Int(DBInterface.lastrowid(result))
 end
 

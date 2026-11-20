@@ -67,7 +67,7 @@ write was removed; confirmation is now carried by `assignment_add` /
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
 `set_exposure_status`, `select_exposure`, `add_tag`, `remove_tag`,
-`edit_tag`, `post_message`, `update_sample`, `analyze`, `reingest`. The
+`edit_tag`, `post_message`, `update_sample`, `analyze`, `scan`, `experiment_created`. The
 dispatcher carries explicit no-op `return nothing` guards for the
 view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
 
@@ -279,7 +279,7 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    every frame for future presence/attribution UI, but it no longer
    gates routing.
 3. System-emitted events have no `client_id` (e.g. `analyze_run`
-   issued by `_system_request()` during reingest). These broadcast to
+   issued by `_system_request()` during an ingest scan or the CLI `analyze`). These broadcast to
    *all* tabs — there's no originating tab to suppress.
 4. Dispatch on `remote.kind` via `applyRemoteToCache`'s switch
    statement — each event kind has a per-kind cache merge branch

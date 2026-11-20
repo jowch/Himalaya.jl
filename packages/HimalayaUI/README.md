@@ -1,12 +1,12 @@
 # HimalayaUI
 
-A web application for semi-automatic indexing of SAXS diffraction patterns. Drop an `experiment.toml` next to your data and lab notebook, and HimalayaUI will auto-find peaks, index them against known lipid phases, and present the results in a browser for review and refinement.
+A web application for semi-automatic indexing of SAXS diffraction patterns. Point it at a beamtime directory, and HimalayaUI will group the exposures into samples, auto-find peaks, index them against known lipid phases, and present the results in a browser for review and refinement.
 
 ---
 
 ## What you get
 
-- **Five commands per experiment.** `config new` → edit → `init` → `analyze` → `serve`. Plus `reingest` whenever the manifest changes.
+- **Create experiments in the browser.** Run `himalaya serve`, choose New experiment, and pick a beamtime directory. HimalayaUI infers the layout, file patterns and geometry for you to confirm, then scans and analyzes the data.
 - **Browser UI** with:
   - Sample list with tag-based filter
   - Log-log trace viewer (I(q) with σ ribbon); click to add/remove peaks
@@ -14,9 +14,9 @@ A web application for semi-automatic indexing of SAXS diffraction patterns. Drop
   - Miller-index scatter with linear fit per candidate index
   - Phase panel with Active / Alternatives sections (confirm with `+`, exclude with `−`)
   - Tabbed properties panel: Exposures · Peaks table · Sample tags · Notes
-- **Adapter-driven file I/O.** Different beamlines and experiment types lay out files differently. An `experiment.toml` per experiment describes manifest columns, file patterns, and beamline parameters — no code changes to support a new layout.
+- **Configurable file patterns.** Image, metadata and integration filenames are matched by `{name}` patterns that you can correct per experiment, so a different layout needs no code changes.
 - **One central database.** A single SQLite DB at `~/.himalaya/himalaya.db` (override with `HIMALAYA_DB_PATH`) holds every experiment ever registered. Experiment directories are read-only data sources.
-- **Re-ingestable.** Edit the manifest or config and run `himalaya reingest` to update the DB. Curation (accepted/rejected exposures, manual peaks) is preserved.
+- **Additive rescans.** New files on disk are picked up by a rescan (manual or scheduled). Rescans only add rows, so curation (rejections, renames, manual peaks, phase calls) is preserved.
 - **Multi-user by attribution.** Each browser session identifies as a username; every edit is logged to the `user_actions` audit table.
 
 ---
@@ -86,86 +86,29 @@ julia --project=/path/to/Himalaya.jl/packages/HimalayaUI \
 
 ---
 
-## Experiment directory layout
+## Creating an experiment
 
-HimalayaUI expects a per-experiment folder roughly like a beamline output, plus an `experiment.toml` and a manifest CSV that you place in the directory:
+Start the server (`himalaya serve`), open the UI, and choose **New experiment**. Pick the beamtime directory. HimalayaUI then:
+
+1. **Resolves** the layout: the raw-image directory (`data/` if present), the directory holding the integration `.dat` files, the file patterns, and the `setup_info_*.txt` calibration file.
+2. **Previews** what a scan would find with those settings: how many images, metadata and integration files match, and the geometry derived from the metadata and setup files. Correct anything that is wrong before approving.
+3. **Scans** on Approve: it creates one exposure per image, groups exposures into loads and samples by time and stage position, and runs peak-finding and indexing on each one. You land on the grouping review page while the scan runs.
+
+A typical SSRL directory looks like this:
 
 ```
 my-experiment/
-├── experiment.toml                # config (manifest columns, file patterns, beamline params)
-├── manifest.csv                   # lab notebook (TSV / CSV — format described in experiment.toml)
-├── data/                          # raw detector images
+├── data/                                  # raw detector images (.tif) + metadata (.prp)
 └── analysis/
+    ├── setup_info_20260412_101500.txt     # AgBe calibration: beam centre, distance
     └── automatic_analysis/
-        ├── JC001.dat              # ← 1D-integrated traces; what HimalayaUI reads
-        ├── JC002.dat
-        └── ...
+        └── tot_files/
+            └── HA_85_422_S2404_tot.dat    # 1D-integrated trace: q  I  σ
 ```
 
-Each `.dat` file is a whitespace-separated three-column table of `q  I  σ`. **Experiment directories are read-only at runtime** — HimalayaUI only writes to the central DB. The sole exception is `himalaya config new --dir`, which writes `experiment.toml` once during setup (and refuses to overwrite).
+**Experiment directories are read-only at runtime.** HimalayaUI writes only to the central DB, and caches thumbnails next to it.
 
-The directory paths and filename patterns above are the **defaults** in `simple.toml`. They're configurable per experiment — see [Configuring an experiment](#configuring-an-experiment).
-
----
-
-## Configuring an experiment
-
-Every experiment is described by an `experiment.toml`. Generate one from a built-in template:
-
-```bash
-himalaya config new --type simple --dir ~/beamtime/2026-04-exp42
-# → Created ~/beamtime/2026-04-exp42/experiment.toml from template 'simple'
-```
-
-Edit it to set the experiment name, beamline parameters, and column mappings to match your lab notebook:
-
-```toml
-[experiment]
-name        = "SSRL-2026-Apr/Exp42"
-description = "Lipid A cubic phase screen"
-manifest    = "manifest.csv"
-
-[beamline]
-energy_kev    = 12.0
-flight_path_m = 2.5
-
-[manifest]
-delimiter      = "\t"          # "\t" for tab, "," for CSV
-skip_rows      = 1             # rows before header/data
-header_row     = 0             # 1-based row of named headers; 0 = positional only
-sample_id      = 1             # column index OR header name (string)
-label          = 2
-name           = 3
-filenames      = 9
-notes_sample   = 10
-notes_exposure = 11
-
-[layout]
-data_dir      = "data"
-analysis_dir  = "analysis/automatic_analysis"
-exposure_type = "simple"
-
-[files]
-integration = "{name}.dat"     # `{name}` = filename stem
-image       = "{name}.tiff"    # patterns may include subdirs: "images/{name}.tiff"
-```
-
-See [docs/experiment-config.md](../../docs/experiment-config.md) for the full schema, column-resolution semantics, and filename-association rules. To list available templates: `himalaya config list`.
-
----
-
-## The manifest
-
-The manifest is your lab notebook — typically a tab-separated Google Sheets export. The `[manifest]` section of `experiment.toml` describes how to read it:
-
-- **Positional columns** (integers): the column-1, column-2, etc. position of each field.
-- **Named columns** (strings): a header name to look up at the row given by `header_row`. Mix and match — keep some fields positional and some named during a transition.
-
-Rows whose `sample_id` column doesn't parse as an integer are silently skipped, so you can keep human-readable section headers in your notebook.
-
-**Filename ranges** like `JC001-004` or `JC013-JC016` are expanded to individual prefixes (`JC001`, `JC002`, `JC003`, `JC004`). All filename entries — ranges, single names, or bare prefixes — are treated as **prefixes against the filesystem**: each is scanned for matching files using the `[files].integration` pattern. Disk decides what actually exists; missing files emit warnings, not errors.
-
-**Word-boundary matching.** A prefix only matches a filename when the character immediately after the prefix is non-alphanumeric (typically `_`, `.`, or `-`). This prevents the obvious collision where `JC_C04` would otherwise also catch every `JC_C04s_*.dat` file, and the numeric variant where `JC001` would catch `JC0010`. So `JC` alone does **not** match `JC001` — use the range form (`JC001-009`) when you want to enumerate.
+See [docs/experiment-config.md](../../docs/experiment-config.md) for the funnel, the configuration fields, file patterns, geometry, grouping and rescans.
 
 ---
 
@@ -173,65 +116,25 @@ Rows whose `sample_id` column doesn't parse as an integer are silently skipped, 
 
 All commands accept `--help`. The DB is centralised — every command opens the same database resolved from `HIMALAYA_DB_PATH` or `~/.himalaya/himalaya.db` (created on first use).
 
-### `himalaya config new --type <name> --dir <path>`
+The CLI does not create experiments; use the New-experiment funnel in the UI.
 
-Copies the named built-in template to `<path>/experiment.toml`. Refuses to overwrite an existing file. This is the only command that writes to an experiment directory.
+### Identifying an experiment
 
-```bash
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-  config new --type simple --dir ~/beamtime/2026-04-exp42
-```
-
-### `himalaya config list`
-
-Lists the built-in templates available to `config new`.
-
-### `himalaya init <experiment_path> [--no-analyze]`
-
-Reads `experiment.toml` and the manifest from `<experiment_path>`, registers the experiment/samples/exposures in the central DB, **and runs the full analysis pipeline** (peak-finding + indexing) over every exposure. Discovers exposures by filesystem prefix scan against the integration pattern.
-
-```bash
-himalaya init ~/beamtime/2026-04-exp42
-# → Imported 37 samples and 148 exposures from manifest.csv.
-# → Initialized experiment 'SSRL-2026-Apr/Exp42' (id=1) at /Users/me/beamtime/2026-04-exp42
-# → Running analysis (peak-finding + indexing)...
-# →   Analyzing D1 / JC_D01_1_S2449 ... done
-# →   ...
-```
-
-Pass `--no-analyze` to skip the analysis step (run `himalaya analyze -e <id>` later). Useful when you want to inspect what got registered before committing to compute, or when the analysis dir isn't yet populated.
-
-### Identifying an experiment after `init`
-
-Once an experiment is registered, `reingest`, `analyze`, and `show` resolve it
-from the central DB rather than from a path argument. They take an
-`-e`/`--experiment` flag whose value can be:
+`analyze`, `show` and `upgrade-grouping` take an `-e`/`--experiment` flag whose value can be:
 
 - an **id** (`-e 1`)
 - a **name** (`-e "SSRL April 2026"`, must match `experiments.name`)
 - a **path** (`-e ~/beamtime/2026-04-exp42`, looked up against `experiments.path`)
 
-`-e` is **required** for the write commands (`reingest`, `analyze`) and
-**optional** for the read-only `show` (which defaults to the sole registered
-experiment).
+Without `-e`, `analyze` and `show` use the only registered experiment and fail with a list if there are several. `upgrade-grouping` runs on every experiment.
 
-### `himalaya reingest -e <experiment>`
+### `himalaya analyze [-e <experiment> | --all] [--sample <name>]`
 
-Re-reads `experiment.toml` + manifest from the experiment's stored path and updates the DB. **Preserves curation** — exposures with `accepted`/`rejected` status or manual peaks are never deleted or modified, only new ones get inserted. Wrapped in a SQLite transaction so partial failures roll back. Safe to run repeatedly.
-
-```bash
-himalaya reingest -e 1                           # by id
-himalaya reingest -e "SSRL April 2026"           # by name
-himalaya reingest -e ~/beamtime/2026-04-exp42    # by path
-```
-
-### `himalaya analyze -e <experiment> [--sample <label>]`
-
-Runs the full pipeline — peak-finding → indexing → auto-grouping → persistence — for every exposure (or only the matching sample). Idempotent: re-running replaces prior auto-picked peaks and auto groups, but preserves any manual peaks and the user's custom group.
+Runs peak-finding and indexing for every exposure that is not rejected (or only the matching sample). Idempotent: re-running replaces prior auto-picked peaks, but preserves manual peaks and phase calls. `--all` runs every registered experiment.
 
 ```bash
 himalaya analyze -e 1
-himalaya analyze -e 1 --sample D1
+himalaya analyze -e 1 --sample "HA_85_422 (S01P02)"
 ```
 
 ### `himalaya show [-e <experiment>] --sample <label>`
@@ -255,6 +158,13 @@ ssh -L 8080:127.0.0.1:8080 user@lab-workstation
 
 Then open `http://localhost:8080/` locally.
 
+If no DB exists at the resolved path, `serve` creates an empty one and warns, so a new user can create the first experiment in the UI.
+
+### `himalaya upgrade-grouping [--apply] [-e <experiment>]`
+
+Retrofits experiments ingested before the current auto-grouping to the loads/samples/exposures partition a fresh scan would produce, keeping curation. Dry run by default; pass `--apply` to commit. Back up the DB first.
+
+
 ---
 
 ## Environment variables
@@ -264,7 +174,6 @@ Deployment is configured through environment variables. See [`.env.example`](.en
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `HIMALAYA_DB_PATH` | `~/.himalaya/himalaya.db` | Central DB location. For workstation deployments, point at `/opt/himalaya/himalaya.db` or similar. |
-| `HIMALAYA_CONFIGS_DIR` | bundled `configs/` | Where `config new --type` reads templates from. Drop your own `*.toml` files here for lab-specific defaults. |
 | `HIMALAYA_HOST` | `127.0.0.1` | `serve` bind address (override only if behind an auth-aware reverse proxy). |
 | `HIMALAYA_PORT` | `8080` | `serve` bind port. |
 | `HIMALAYA_FRONTEND_DIST` | bundled `frontend/dist/` | Path to the built frontend (for `/opt`-style deployments where build artefacts ship separately). |
@@ -346,7 +255,8 @@ On first visit you'll see a username prompt — enter a new name or pick from ex
 
 Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved, defaults to `~/.himalaya/himalaya.db`). The schema is defined in [`packages/HimalayaUI/src/db.jl`](src/db.jl). Highlights:
 
-- `experiments.config` — full `experiment.toml` content as a TEXT blob, so the DB is self-contained for re-analysis even if the experiment directory is unmounted. Mirror columns (`experiment_type`, `energy_kev`, `flight_path_m`) keep beamline params first-class for queries.
+- `experiments` — one row per experiment: `data_dir`, `analysis_dir`, the image/metadata/integration patterns, and geometry with a `*_source` per field. `config` holds the TOML of legacy experiments and is `NULL` for new ones.
+- `loads` → `samples` → `exposures` — the auto-grouping: loads split by time gaps, samples by stage position within a load.
 - `peaks` — auto-picked and manually-added peaks. Auto peaks are replaced on re-analysis; manual peaks persist.
 - `indices` + `index_peaks` — candidate phase assignments with per-peak ratio positions and residuals. An index's `status` flips to `stale` when the user edits peaks that support it.
 - `index_groups` — one `auto` group per exposure always exists; a `custom` group is created on first manual add/remove. Custom wins once present.
@@ -356,21 +266,13 @@ Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved,
 
 ## Troubleshooting
 
-**`experiment.toml not found in <path>`** when running `init` or `reingest`. Run `himalaya config new --dir <path>` first, then edit the generated TOML.
-
-**`no database at <path> — run himalaya init first`** when running `serve`. The DB at `default_db_path()` doesn't exist yet. Run `himalaya init <experiment_path>` against your first experiment to create it. Check `HIMALAYA_DB_PATH` if you expected a different location.
-
-**`done` prints for every exposure but the UI shows no peaks.** The `.dat` files were probably not found under the registered `analysis_dir`. Check the experiment row: the `config` column embeds `data_dir` / `analysis_dir` / `[files].integration`. Verify the files actually exist at `<analysis_dir>/<integration_pattern>` and that the manifest filenames are valid prefixes.
-
-**`No integration files found for prefix '<X>' in <dir>`** during `init` or `reingest`. The manifest references files that don't exist on disk under the configured pattern. Either the prefix is wrong, the pattern in `[files].integration` is wrong, or the files truly aren't there yet. The other prefixes still get processed.
+**Exposures or peaks missing after a scan.** If the scan failed, the experiment opens on a scan-failed page that lists the files that couldn't be paired. Otherwise call `GET /api/fs/manifest?path=<data_dir>&analysis_dir=<analysis_dir>&image_pattern=…&metadata_pattern=…&integration_pattern=…` with the experiment's settings: its `unmatched` list names every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Fix the pattern on the experiment's Configuration page; a pattern edit forces a rescan. Also check that `analysis_dir` points at the directory that actually holds the `.dat` files.
 
 **`SKIP (...)` messages during `analyze`.** The analysis of that exposure raised an error (commonly: missing file, unreadable trace, no peaks). Other exposures continue; the error message indicates the cause.
 
 **Browser stays blank at `/`.** Either the frontend wasn't built (`cd packages/HimalayaUI/frontend && npm run build`) or `HIMALAYA_FRONTEND_DIST` points somewhere empty. `serve` prints the resolved DB path on startup; check the server logs for `dynamicfiles` mounting.
 
 **Pre-existing analyses "disappear" after re-running `analyze`.** Only **auto** peaks/indices/groups are replaced. Manual peaks and any custom group are preserved. If you see stale-index banners that won't clear, run `analyze` on that exposure (`POST /api/exposures/:id/analyze` from the UI) or globally (`himalaya analyze --sample <label>`).
-
-**Curation lost after `reingest`.** Shouldn't happen — `reingest` only inserts new exposures, never touches existing ones with status or peaks. If it does, file an issue with the before/after `experiments.config` blob.
 
 ---
 

@@ -17,7 +17,7 @@ _want(g) = GROUP == "All" || GROUP == g
 const GROUPS = [
     ("db",       ["test_http.jl","test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
                   "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
-                  "test_ingestion_schema.jl","test_migrate_toml.jl"]),
+                  "test_ingestion_schema.jl"]),
     ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
                   "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
                   "test_effective_peaks_sharpness_passthrough.jl","test_ingestion_core.jl",
@@ -73,7 +73,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_comparisons.jl","test_routes_series.jl","test_picker_routes.jl",
                    "test_picker_samples_route.jl","test_routes_resolve.jl",
                    "test_routes_fs.jl",
-                   "test_comparison_pins.jl","test_migrate_toml.jl",
+                   "test_comparison_pins.jl",
                    "test_spa_fallback.jl","test_migration_upgrade.jl"]
 
 # Drift guard: the buckets and ALL_ORDER must cover the identical file set, so a

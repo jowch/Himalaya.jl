@@ -32,7 +32,7 @@ Julia monorepo for indexing SAXS diffraction patterns. Core `Himalaya` package (
 
 Read these in order before touching code:
 1. `docs/peak-finding.md` — peak-finding design (load-bearing)
-2. `docs/experiment-config.md` — if touching config/manifest/cli
+2. `docs/experiment-config.md` — if touching the New-experiment funnel, experiment create/scan, or config.jl
 3. `docs/scoring.md` — if touching score/auto_group/remove_subsets
 4. `docs/event-log.md` — if touching events.jl, hash.jl, SSE, or the stale-indices reanalyze affordance
 5. `docs/mutation-queue.md` — if touching lib/queue/, idempotency.jl, or applyRemoteToCache.ts
@@ -118,7 +118,7 @@ When reviewing a PR (as reviewer, not author):
 - FK enforcement is ON — use `ON DELETE SET NULL` in DDL for FKs that must survive deletion
 - PKs use `AUTOINCREMENT` on mention-target tables (experiments, samples, exposures, peaks, indices)
 - `apply_event!(InTransaction(), ...)` inside `with_idempotency` — never the public `apply_event!(db, req; ...)` from within a queue mutation
-- `persist_analysis!` and `reingest!` are transactional — add new writes inside `_persist_analysis_inner!` / `_reingest_inner!`
+- `persist_analysis!` is transactional, and `scan_and_group!` persists loads/samples/exposures in one write transaction (its geometry fill is a separate, earlier one) — add new writes inside `_persist_analysis_inner!` / that persist transaction
 
 ## Critical frontend patterns
 
@@ -138,8 +138,7 @@ When reviewing a PR (as reviewer, not author):
 - The stale-indices reanalyze affordance (a role=`alert`, no dedicated component) is derived from index `inputs_hash` vs exposure `analysis_inputs_hash` mismatch; the `useReanalyzeExposure` path is gated on `useExposureHasPendingPeakOps` so it doesn't flash mid-op
 - `useExposureHasPendingPeakOps` gates any UI reading `peaks(id)` derivatively during in-flight ops
 - `MutationCache.getAll()` insertion order is load-bearing for replay-as-rerun
-- Experiment dirs are read-only at runtime (except `himalaya config new`)
-- `parse_manifest(cfg::ExperimentConfig, source)` is the config-driven method — use in new code
+- Experiment dirs are read-only at runtime
 - `Fm3m` is missing from `indexpeaks` dispatch — known gap, don't fix opportunistically
 
 ## Contract testing (six layers)
@@ -161,7 +160,7 @@ See `docs/contract-testing.md` for canonical paired test files.
 | Peak finding | `src/peakfinding.jl`, `src/persistence.jl`, `src/sharpness.jl`, `src/threshold.jl` |
 | Phase types & indexing | `src/phase.jl`, `src/index.jl` |
 | DB schema + CRUD | `packages/HimalayaUI/src/db.jl` |
-| Config/manifest | `packages/HimalayaUI/src/config.jl`, `packages/HimalayaUI/src/manifest.jl` |
+| Ingest funnel + scan | `packages/HimalayaUI/src/routes_fs.jl`, `packages/HimalayaUI/src/routes_experiments.jl`, `packages/HimalayaUI/src/ingest.jl`, `packages/HimalayaUI/src/grouping.jl` |
 | Analysis pipeline | `packages/HimalayaUI/src/pipeline.jl` |
 | CLI | `packages/HimalayaUI/src/cli.jl` |
 | Events + SSE | `packages/HimalayaUI/src/events.jl` |

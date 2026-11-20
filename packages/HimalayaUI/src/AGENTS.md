@@ -7,14 +7,14 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 | Task | Location | Notes |
 |------|----------|-------|
 | DB schema + CRUD | `db.jl` | FK enforcement ON; `AUTOINCREMENT` on mention-target tables |
-| Experiment config | `config.jl` | `ExperimentConfig` + `load_config` + `resolve_files` |
+| Integration pattern | `config.jl` | `integration_pattern_for` (row column, else legacy `config` blob) |
 | Ingestion (auto-scan) | `ingest.jl` | `scan_and_group!` — sole ingestion entry point (HTTP scan); read-only wrt experiment dir |
 | Analysis pipeline | `pipeline.jl` | `analyze_exposure!`, `auto_group`, `persist_analysis!` |
 | Curation contract | `pipeline.jl::effective_peaks` | `auto_peaks − excludes ∪ adds` |
 | Event log + SSE | `events.jl` | `apply_event!` is the sole writer to view tables |
 | Idempotency | `idempotency.jl` | `with_idempotency` + `InTransaction` sentinel |
 | Speculative indices | `speculative.jl` | Build/delete + re-resolve |
-| CLI | `cli.jl` | `analyze`, `show`, `serve`, `config`, `migrate-toml` (ingestion is HTTP-scan-only, no `init`/`reingest`) |
+| CLI | `cli.jl` | `analyze`, `show`, `serve`, `upgrade-grouping` (ingestion is HTTP-only) |
 | REST routes | `routes_*.jl` | One file per resource |
 | Audit log | `actions.jl` | `X-Username` extraction + `user_actions` writer |
 | TIFF → PNG | `image.jl` | `load_and_lognormalize` (Q0f31-aware) |
@@ -26,7 +26,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 - **`DBInterface.lastrowid` takes the query *result*, not the db**: `res = DBInterface.execute(db, sql, params); id = Int(DBInterface.lastrowid(res))`.
 - **Raw rows from `DBInterface.execute` lose values after the query closes.** Materialize with `Tables.rowtable(DBInterface.execute(...))` to get stable `NamedTuple`s (access via `row.name`).
 - **`Tables.rowtable` returns `missing` for SQL NULL, not `nothing`.** Use `ismissing(row.field)`; normalize to `nothing` when mixing with literals: `existing = ismissing(row.field) ? nothing : row.field`. `routes_users.jl` is the canonical NULL-fill example.
-- **`samples.name` is the stable identifier; `samples.display_name` is editable.** `name` is set at ingest from manifest column 2 and is never UI-mutable. `display_name` (column 3) is user-editable via PATCH, **but reingest refreshes it from the manifest** (`_reingest_inner!` runs `UPDATE samples SET display_name = ?, notes = ?`, `cli.jl`) — overwriting UI edits unless the manifest carries the same value (see `docs/experiment-config.md`). `UNIQUE INDEX (experiment_id, name)`. Use the `sampleDisplayName(s)` helper everywhere in the frontend.
+- **`samples.name` is auto-assigned at ingest and renamable.** `scan_and_group!` names each sample `<label> (SNNPMM)` (`_auto_name`, `grouping.jl`); `PATCH /api/samples/:id/name` and a `name` in `PATCH /api/samples/:id` both rename it and set `name_source = 'user'`. Rescans are insert-only, so they never overwrite a rename. The old `display_name` column was collapsed into `name` (`migrate_samples_name_collapse!`), and `name` is not unique within an experiment. Use the `sampleDisplayName(s)` helper everywhere in the frontend.
 - **`exposure_sources.role` encodes two derived-exposure use-cases in one table** (`db.jl`): `role='signal'` alone = simple averaging; `role='signal'` + `role='background'` together = background subtraction. The single text-enum column is deliberate — a third provenance type extends it without a schema migration. (Derived-exposure construction itself is still a future feature.)
 - **FK enforcement is on.** `open_db` runs `PRAGMA foreign_keys = ON` per connection. FKs that must survive user deletion need `ON DELETE SET NULL` in the schema DDL — at the column, not at call sites. `index_groups.created_by` and `user_actions.user_id` already have this.
 - **`PRAGMA schema_version = N+1` requires `writable_schema = ON`** on most SQLite builds. Used as a VACUUM-free schema-cache invalidator; silently no-ops if `writable_schema` is off. The FK-heal fallback toggles it back on for the bump.
@@ -59,20 +59,16 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 
 ## Experiment config
 
-`experiment.toml` is the source of truth. Every experiment dir has one; `himalaya init` slurps it into `experiments.config` so the DB is self-contained. `analyze_exposure!` reads via `config_from_db` (in-memory parse — no tempfile per call), falling back to `simple.toml` defaults when `config IS NULL`.
+The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/resolve` → `/api/fs/manifest` → `POST /api/experiments`); `PATCH /api/experiments/:id` edits all but the path fields. The `experiments.config` blob holds legacy TOML; only `integration_pattern_for` (fallback for `[files].integration`), `_beamline_from_config` and the samples-list `q_units` fallback read it. There is no `experiment.toml`.
 
-- **`himalaya config new --dir <path>`** is the ONLY command that writes inside an experiment dir; refuses to overwrite.
-- **`layout.exposure_type`** is validated at parse against `VALID_EXPOSURE_TYPES` (currently `("simple",)`) — extend the tuple before adding a new type.
-- Malformed TOML throws a wrapped `Invalid TOML in <path>: …` error.
-- **`_build_config(::AbstractDict)`** is the shared helper between `config_from_db` and `load_config`.
 
-Read `docs/experiment-config.md` before touching `config.jl` or the ingestion (`ingest.jl` / HTTP scan) path.
+Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.
 
 ## Filesystem + DB layout
 
-- **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during ingestion (`scan_and_group!` / HTTP scan), `analyze`, or `serve`. Sole exception: `himalaya config new --dir`.
+- **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during ingestion (`scan_and_group!` / HTTP scan), `analyze`, or `serve`.
 - **Central DB.** All CLI commands open the same DB resolved by `default_db_path()` in `db.jl`: `HIMALAYA_DB_PATH` if set, else `~/.himalaya/himalaya.db` (parent auto-created). One DB stores every experiment; experiment dirs are pure read-only data sources. Tests pass an explicit file path (`open_db(joinpath(tmp, "himalaya.db"))`) for isolation.
-- **Filename ↔ exposure association via filesystem prefix scan.** Manifest filename entries are always prefixes: `JC001-004` expands to four, each scanned via `resolve_files(cfg, dir, prefix, cfg.integration_pattern)` against the filesystem. The manifest declares intent; disk decides what exists. Missing files produce a warning, not an error. When debugging "exposures missing after init/reingest," check actual files in `analysis_dir` first.
+- **One exposure per image.** `scan_directory` enumerates images in `data_dir` by `image_pattern`, and builds each metadata and integration path by putting the stem into its pattern. When debugging "exposures missing" or "no peaks after a scan," run `GET /api/fs/manifest` with the experiment's `data_dir` as `path`, its `analysis_dir`, and its patterns (without `analysis_dir`, every stem is reported as missing its integration file): its `unmatched` list names each stem missing a sidecar, with near-miss filenames.
 
 ## Image route
 
@@ -108,7 +104,7 @@ Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `Delimi
 
 - **No route may INSERT/DELETE into `peak_curations` or `index_group_members` except through `apply_event!`.** It is the sole writer to view tables.
 - **From inside `with_idempotency`, call `apply_event!(InTransaction(), …)`** — never the public `apply_event!(db, req; …)`. The public method opens a nested savepoint AND broadcasts immediately, bypassing the post-commit queue. See `docs/event-log.md` §3a + `docs/mutation-queue.md`.
-- **Experiment dirs are read-only at runtime** (except `himalaya config new`).
+- **Experiment dirs are read-only at runtime.**
 
 ## Comments are ratcheted
 

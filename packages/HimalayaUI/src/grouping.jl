@@ -32,11 +32,6 @@ end
 Enumerate every TIFF found in `data_dir`, then pair each with its PRP and .dat
 sidecar (the file the pattern names with `{name}` replaced by the stem). Returns
 one `ExposureMeta` per TIFF stem, sorted by stem.
-
-TIF enumeration scans the directory directly and strips the TIF suffix to derive
-stems, rather than using `resolve_files` with an empty prefix (which
-`_matches_prefix_with_boundary` rejects for alphanumeric-leading names — the
-common case).
 """
 function scan_directory(
     data_dir::AbstractString,
