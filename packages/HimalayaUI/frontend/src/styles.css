@@ -405,3 +405,48 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Workspace dark theme (DESIGN.md: desaturated charcoal near-black, faint
+   blue-violet tint). Scoped to the workspace root so the older pages keep the
+   light Print identity until they are deleted. Tokens that mix other tokens are
+   restated here, because a custom property resolves where it is declared. */
+@media (prefers-color-scheme: dark) {
+  [data-workspace-theme="system"] {
+    --color-paper:       oklch(0.165 0.005 280);
+    --color-paper-sunk:  oklch(0.140 0.005 280);
+    --color-plate:       oklch(0.195 0.006 280);
+    --color-ink:         oklch(0.900 0.004 280);
+    --color-ink-soft:    oklch(0.760 0.006 280);
+    --color-ink-faint:   oklch(0.580 0.007 280);
+    --color-hair:        oklch(0.265 0.006 280);
+    --color-hair-strong: oklch(0.345 0.007 280);
+    --color-accent:      oklch(0.700 0.130 42);
+    --color-print-accent: oklch(0.700 0.130 42);
+    --color-accent-wash: oklch(0.300 0.050 38);
+    --color-row-cursor:  oklch(0.245 0.013 280);
+    --color-success:     oklch(0.740 0.090 150);
+    --color-warning:     oklch(0.770 0.120 75);
+    --color-error:       oklch(0.700 0.150 28);
+    --color-scrim:       oklch(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+[data-workspace-theme="dark"] {
+  --color-paper:       oklch(0.165 0.005 280);
+  --color-paper-sunk:  oklch(0.140 0.005 280);
+  --color-plate:       oklch(0.195 0.006 280);
+  --color-ink:         oklch(0.900 0.004 280);
+  --color-ink-soft:    oklch(0.760 0.006 280);
+  --color-ink-faint:   oklch(0.580 0.007 280);
+  --color-hair:        oklch(0.265 0.006 280);
+  --color-hair-strong: oklch(0.345 0.007 280);
+  --color-accent:      oklch(0.700 0.130 42);
+  --color-print-accent: oklch(0.700 0.130 42);
+  --color-accent-wash: oklch(0.300 0.050 38);
+  --color-row-cursor:  oklch(0.245 0.013 280);
+  --color-success:     oklch(0.740 0.090 150);
+  --color-warning:     oklch(0.770 0.120 75);
+  --color-error:       oklch(0.700 0.150 28);
+  --color-scrim:       oklch(0 0 0 / 0.6);
+  color-scheme: dark;
+}

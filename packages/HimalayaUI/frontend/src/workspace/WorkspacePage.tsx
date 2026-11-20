@@ -27,6 +27,49 @@ import { useCompareTraces } from "./useCompareTraces";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
+import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
+import { CommandPalette, type Command } from "./ui/CommandPalette";
+import { useWorkspaceTheme } from "./theme";
+
+const HELP: HelpSection[] = [
+  {
+    title: "Move",
+    rows: [
+      { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
+      { keys: ["J", "Shift J"], what: "Next or previous unreviewed sample" },
+      { keys: ["/"], what: "Filter samples by name" },
+    ],
+  },
+  {
+    title: "Exposures",
+    rows: [
+      { keys: ["←", "→"], what: "Previous or next exposure" },
+      { keys: ["X"], what: "Drop or restore the exposure" },
+    ],
+  },
+  {
+    title: "Call",
+    rows: [{ keys: ["1–9"], what: "Tick or untick a phase candidate" }],
+  },
+  {
+    title: "Plot",
+    rows: [
+      { keys: ["Click"], what: "Turn a peak off or on, remove one you added, or add one" },
+      { keys: ["Scroll"], what: "Zoom q" },
+      { keys: ["Z"], what: "Reset the zoom" },
+      { keys: ["L"], what: "Log or linear intensity" },
+      { keys: ["C"], what: "Compare with another sample" },
+      { keys: ["R"], what: "Hide or show comparisons" },
+    ],
+  },
+  {
+    title: "Anywhere",
+    rows: [
+      { keys: ["⌘", "K"], what: "Commands and go to a sample" },
+      { keys: ["?"], what: "This list" },
+    ],
+  },
+];
 import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
@@ -103,6 +146,9 @@ export function WorkspacePage(): JSX.Element {
   const subRef = subChoice !== undefined && refs.includes(subChoice) ? subChoice : undefined;
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const theme = useWorkspaceTheme();
   const compareTraces = useCompareTraces(refs);
 
   const onClickPeak = useCallback(
@@ -182,6 +228,12 @@ export function WorkspacePage(): JSX.Element {
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "k") {
+        ev.preventDefault();
+        setHelpOpen(false);
+        setPaletteOpen((o) => !o);
+        return;
+      }
       if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       if (inOverlay(ev.target)) return;
       if (ev.key === "/" && !isTyping(ev.target)) {
@@ -226,6 +278,9 @@ export function WorkspacePage(): JSX.Element {
         case "C":
           setPicking(true);
           break;
+        case "?":
+          setHelpOpen(true);
+          break;
         case "z":
         case "Z":
           setXDomain(null);
@@ -263,14 +318,41 @@ export function WorkspacePage(): JSX.Element {
         ? "No samples in this experiment."
         : "This sample is not in this experiment.";
 
+  const commands: Command[] = [
+    {
+      id: "next-unreviewed",
+      label: "Next unreviewed sample",
+      hint: "J",
+      run: () => {
+        const nid = nextUnreviewed(visible, sampleId, 1);
+        if (nid !== undefined) goSample(nid);
+      },
+    },
+    { id: "compare", label: "Compare with a sample", hint: "C", run: () => setPicking(true) },
+    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", hint: "R", run: () => setRefsOn((v) => !v) },
+    { id: "scale", label: logY ? "Switch to linear intensity" : "Switch to log intensity", hint: "L", run: () => setLogY((v) => !v) },
+    { id: "zoom", label: "Reset zoom", hint: "Z", run: () => setXDomain(null) },
+    { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
+    { id: "help", label: "Keyboard shortcuts", hint: "?", run: () => setHelpOpen(true) },
+    ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
+  ];
+
   return (
     <WorkspaceLayout
+      theme={theme.theme}
+      overlay={
+        <>
+          {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+        </>
+      }
       header={
         <WorkspaceHeader
           experimentId={experimentId}
           experimentName={experiment.data?.name ?? `Experiment ${experimentId}`}
           reviewed={reviewed}
           total={samples.length}
+          onHelp={() => setHelpOpen(true)}
         />
       }
       nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} />}

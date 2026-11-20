@@ -68,11 +68,11 @@ export function CompareBar({ chips, subtractId, hidden, logY, onToggleLog, onSub
       <span className="ml-auto inline-flex items-center gap-3 text-caption text-ink-faint">
         {chips.length > 0 && (
           <span className="inline-flex items-center gap-1">
-            {hidden ? "Comparisons hidden" : "Comparisons shown"} <Kbd>R</Kbd>
+            {hidden ? "Comparisons hidden" : "Comparisons shown"}
           </span>
         )}
         <button type="button" onClick={onToggleLog} aria-pressed={logY} className="inline-flex items-center gap-1 hover:text-ink">
-          {logY ? "Log" : "Linear"} <Kbd>L</Kbd>
+          {logY ? "Log" : "Linear"}
         </button>
       </span>
     </div>
