@@ -269,7 +269,7 @@
     "frontend/src/print/plot/marks/TraceLine.tsx": 2,
     "frontend/src/print/plot/peakFocusOrder.ts": 22,
     "frontend/src/print/plot/projection.ts": 27,
-    "frontend/src/print/shell/AppRoutes.tsx": 70,
+    "frontend/src/print/shell/AppRoutes.tsx": 68,
     "frontend/src/print/shell/ExperimentShell.tsx": 49,
     "frontend/src/print/shell/IndexSlugRedirect.tsx": 11,
     "frontend/src/print/shell/InfrastructureBanner.tsx": 17,

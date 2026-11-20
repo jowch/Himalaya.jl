@@ -16,13 +16,13 @@ import {
 } from "../queries";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
+import { useAppState } from "../state";
 import { nextUnreviewed, rankCandidates, sampleStatus, stepExposure } from "./model";
-import type { CombLine } from "./plot";
 import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
-import { TraceCanvas } from "./ui/TraceCanvas";
+import { WorkspacePlot, type CombLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
@@ -32,10 +32,15 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 }
 
+function inOverlay(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('[role="dialog"],[data-keys-trap]') !== null;
+}
+
 export function WorkspacePage(): JSX.Element {
   const { id, sampleId: sampleParam } = useParams<{ id: string; sampleId?: string }>();
   const experimentId = Number(id);
   const navigate = useNavigate();
+  const username = useAppState((s) => s.username);
   const experiment = useExperiment(experimentId);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
@@ -49,8 +54,9 @@ export function WorkspacePage(): JSX.Element {
     return f ? samples.filter((s) => s.name.toLowerCase().includes(f)) : samples;
   }, [samples, filter]);
 
-  const sampleId = sampleParam ? Number(sampleParam) : samples[0]?.id;
-  const sample = samples.find((s) => s.id === sampleId);
+  const requested = sampleParam === undefined ? undefined : Number(sampleParam);
+  const sample = requested === undefined ? samples[0] : samples.find((s) => s.id === requested);
+  const sampleId = sample?.id;
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
@@ -75,21 +81,29 @@ export function WorkspacePage(): JSX.Element {
   const selectExposure = useSelectExposure(sampleId ?? 0);
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
+  const exposureDropped = exposure?.status === "rejected";
+
   const toggleCandidate = useCallback(
     (ix: IndexEntry) => {
-      if (!exposure) return;
+      if (!exposure || exposure.status === "rejected") return;
       if (assigned.has(ix.id)) {
         removePhase.mutate(ix.id);
         return;
       }
-      if (!exposure.selected) selectExposure.mutate(exposure.id);
-      addPhase.mutate(ix.id);
+      if (exposure.selected) {
+        addPhase.mutate(ix.id);
+        return;
+      }
+      selectExposure.mutate(exposure.id, { onSuccess: () => addPhase.mutate(ix.id) });
     },
     [exposure, assigned, addPhase, removePhase, selectExposure],
   );
 
   const toggleDrop = useCallback(
-    (e: Exposure) => setStatus.mutate({ exposureId: e.id, status: e.status === "rejected" ? null : "rejected" }),
+    (e: Exposure) => {
+      setExposureId(e.id);
+      setStatus.mutate({ exposureId: e.id, status: e.status === "rejected" ? null : "rejected" });
+    },
     [setStatus],
   );
 
@@ -100,7 +114,8 @@ export function WorkspacePage(): JSX.Element {
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
-      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (inOverlay(ev.target)) return;
       if (ev.key === "/" && !isTyping(ev.target)) {
         ev.preventDefault();
         document.getElementById("workspace-filter")?.focus();
@@ -137,12 +152,12 @@ export function WorkspacePage(): JSX.Element {
         }
         case "x":
         case "X":
-          if (exposure) toggleDrop(exposure);
+          if (exposure && username) toggleDrop(exposure);
           break;
         default: {
           const n = Number(ev.key);
           const c = Number.isInteger(n) && n >= 1 ? candidates[n - 1] : undefined;
-          if (c) toggleCandidate(c);
+          if (c && username) toggleCandidate(c);
           else handled = false;
         }
       }
@@ -150,11 +165,19 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username]);
 
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
+  const callPhase = candidates.find((c) => assigned.has(c.id))?.phase ?? null;
+  const emptyMessage = !Number.isInteger(experimentId)
+    ? "This workspace link is not valid."
+    : corpus.isLoading
+      ? "Loading samples…"
+      : samples.length === 0
+        ? "No samples in this experiment."
+        : "This sample is not in this experiment.";
 
   return (
     <WorkspaceLayout
@@ -170,21 +193,28 @@ export function WorkspacePage(): JSX.Element {
       main={
         sample ? (
           <>
-            <Section title={sample.name} aside={exposure ? `Exposure ${exposureIndex} of ${exposureList.length}` : undefined}>
-              <TraceCanvas trace={trace.data} peaks={peaks.data ?? []} combs={combs} />
+            <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
+              <WorkspacePlot trace={trace.data} peaks={peaks.data ?? []} phase={callPhase} combs={combs} />
             </Section>
-            <Section title="Exposures" aside="← → to step, X to drop">
+            <Section title="Exposures">
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
             </Section>
           </>
         ) : (
-          <Note>{corpus.isLoading ? "Loading samples…" : "No samples in this experiment."}</Note>
+          <Note>{emptyMessage}</Note>
         )
       }
       tools={
         <>
-          <Section title="Phase" aside="Press 1–9">
-            <CandidateList candidates={candidates} assigned={assigned} onToggle={toggleCandidate} onHover={setHoverId} />
+          <Section title="Phase">
+            {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
+            <CandidateList
+              candidates={candidates}
+              assigned={assigned}
+              disabled={exposureDropped || !username}
+              onToggle={toggleCandidate}
+              onHover={setHoverId}
+            />
           </Section>
           {exposure && (
             <Section title="Exposure">

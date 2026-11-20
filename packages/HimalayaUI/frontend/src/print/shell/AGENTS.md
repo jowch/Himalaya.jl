@@ -5,7 +5,7 @@ The live application shell: the single layout shell, the topbar chrome, the rout
 ## Where things live
 
 - **Shell + chrome**: `AppShell` (the single layout shell) wraps `TopNav` (wordmark + stage-tabs + Experiment chip — composed from `../ui` primitives: `TopBar`, `Wordmark`). No appearance utilities live here — chrome appearance is owned by the `ui/` primitives (closed-look / open-placement contract).
-- **Routing**: `AppRoutes` is the route table (samples / loupe / focus / series folio·builder·scoping pages, all imported from `../pages`). `IndexSlugRedirect` and `StaleUrlPage` resolve/repair permalink slugs; `ResolvingFallback` is the in-flight placeholder.
+- **Routing**: `AppRoutes` is the route table (experiments / corpus / config / loupe / focus pages, imported from `../pages`). The triage workspace (`/experiments/:id/workspace/:sampleId?`, `src/workspace/`) mounts **outside** `AppShell` with its own header and its own keydown listener (it does not use `useKeyboardLayer` or the two-axis model below). `/series*` and `/compare*` redirect to `/experiments`; the Series pages are unreachable and are deleted with the old pages. `IndexSlugRedirect` and `StaleUrlPage` resolve/repair permalink slugs; `ResolvingFallback` is the in-flight placeholder.
 - **Onboarding / modals / errors**: `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. The modals compose `ModalShell` (+ `Button`/`Kicker`/`IconButton`) from `../ui`.
 
 ## Import boundary
@@ -35,7 +35,7 @@ Arrow nav was lifted off the per-page scope-container `onKeyDown` into `arrowHan
 
 `InteractionDock` renders the dock UI directly from the live registry — no separate legend-sync step. `useListCursor` is the cursor primitive: ID-based, roving tabindex, SSE-survival heal.
 
-- **Two-axis model (rev 2, app-wide — supersedes the 2026-06-13 `[`/`]` lock).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = detail (`prevDetail`/`nextDetail`) — candidate *preview* on Focus, frame on Loupe. Exposure stepping is **filmstrip-only** — click `ThumbnailGallery`'s `onSelect`; there is no exposure key.
+- **Two-axis model (rev 2, old pages only — supersedes the 2026-06-13 `[`/`]` lock; the workspace uses ↑↓/J for samples, ←→ for frames, 1–9 for phases, X to drop).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = detail (`prevDetail`/`nextDetail`) — candidate *preview* on Focus, frame on Loupe. Exposure stepping is **filmstrip-only** — click `ThumbnailGallery`'s `onSelect`; there is no exposure key.
 
 ## The floatingDock lane protocol
 
@@ -45,7 +45,7 @@ Any page mounting such a bar MUST claim the lane: call `setCenterLaneOccupied(tr
 
 ## Key routes on `:id` when they hold ephemeral per-id local state
 
-React reuses the same element instance across param changes on a single route, so page-level LOCAL state (undo/redo stacks, view offset/scale, Confirm-chain refs) bleeds from one id into the next unless the route element is keyed on the param. `SeriesBuilderRoute` wraps `SeriesBuilderPage` with `key={id}` so each series mounts a fresh instance (BU-MODESWITCH-LEAK; `AppRoutes.tsx:58-73`). Any new `/foo/:id` route with ephemeral per-visit local state needs the same wrapper. (The global draft slot is intentionally recoverable on return; the key resets only the per-visit state that should never cross an id boundary.)
+React reuses the same element instance across param changes on a single route, so page-level LOCAL state (undo/redo stacks, view offset/scale, Confirm-chain refs) bleeds from one id into the next unless the route element is keyed on the param. `GroupingReviewRoute` keys `GroupingReviewPage` on the experiment id for this reason (the old `SeriesBuilderRoute` did the same before Series was hidden). Any new `/foo/:id` route with ephemeral per-visit local state needs the same wrapper. (The global draft slot is intentionally recoverable on return; the key resets only the per-visit state that should never cross an id boundary.)
 
 ## OnboardingFlow defers `setUser` until `closeTutorial`
 

@@ -14,7 +14,7 @@ const ITEMS: readonly NavItem[] = [
 
 /**
  * TopNav — the unified top navigation bar (App Shell Unification spec §3.1).
- * Wordmark "Himalaya · SAXS" links to /experiments; two section tabs
+ * Wordmark "Himalaya · SAXS" links to /experiments; one section tab
  * (Experiments) with router-derived active state. Replaces both
  * the legacy triple-chrome that preceded it in T3.2. No Samples tab,
  * no Beamtime chip, no gear (Configuration rides the experiment header, §3.1).

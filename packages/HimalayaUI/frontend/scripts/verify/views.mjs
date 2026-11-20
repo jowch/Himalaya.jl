@@ -40,6 +40,15 @@ export function frameFromLabels(labels, frameOrder) {
 }
 
 async function openedFrame(page, cfg, route, frameOrder) {
+  await settledGoto(page, cfg, route);
+  const pressed = page.getByRole("button", { name: /^Frame \d+/, pressed: true });
+  const labels = await pressed.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
+  return frameFromLabels(labels, frameOrder);
+}
+
+export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
+
+async function settledGoto(page, cfg, route) {
   const tracker = armSettle(page);
   try {
     await page.goto(routeUrl(cfg, route), { waitUntil: "domcontentloaded" });
@@ -49,14 +58,28 @@ async function openedFrame(page, cfg, route, frameOrder) {
   }
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`${route} did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-  const pressed = page.getByRole("button", { name: /^Frame \d+/, pressed: true });
-  const labels = await pressed.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
-  return frameFromLabels(labels, frameOrder);
+}
+
+async function workspaceView(page, cfg, experimentId, sample) {
+  await settledGoto(page, cfg, WORKSPACE_ROUTE(experimentId, sample.id));
+  const rows = page.locator("[data-testid='workspace-samples'] [aria-current='true']");
+  const statuses = await rows.evaluateAll((els) =>
+    els.map((el) => {
+      const mark = el.querySelector("[data-testid='workspace-status']");
+      return mark ? (mark.getAttribute("aria-label") ?? mark.textContent ?? "").trim() : null;
+    }),
+  );
+  const current = page.locator("[data-testid='workspace-exposures'] [aria-current='true']");
+  const labels = await current.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
+  return {
+    workspace_text: statuses.length === 1 ? statuses[0] : null,
+    workspace: frameFromLabels(labels, sample.frameOrder),
+  };
 }
 
 export async function readViews(cfg, experimentId, samples) {
   if (!(await reachable(cfg.uiBase, "/"))) {
-    throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads Loupe and Focus in the browser; run `bin/verify seed`");
+    throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the corpus, Loupe, Focus and the workspace in the browser; run `bin/verify seed`");
   }
   await ensureBrowser(cfg);
   const session = await connect(cfg);
@@ -70,6 +93,7 @@ export async function readViews(cfg, experimentId, samples) {
       for (const [view, route] of Object.entries(VIEW_ROUTES)) {
         views[view] = await openedFrame(session.page, cfg, route(s.id), s.frameOrder);
       }
+      Object.assign(views, await workspaceView(session.page, cfg, experimentId, s));
       out.set(s.id, views);
     }
   } finally {

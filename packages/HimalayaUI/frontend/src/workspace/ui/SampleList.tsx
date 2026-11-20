@@ -12,9 +12,9 @@ interface Props {
 
 function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   const st = sampleStatus(s);
-  if (st.kind === "phase") return <span className="text-xs text-ink-soft">{st.phase}</span>;
-  if (st.kind === "form_factor") return <span className="text-xs text-ink-soft">Form factor</span>;
-  return <span className="text-xs text-ink-faint" aria-label="Unreviewed" title="Unreviewed">○</span>;
+  if (st.kind === "phase") return <span data-testid="workspace-status" className="text-xs text-ink-soft">{st.phase}</span>;
+  if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-soft">Form factor</span>;
+  return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
 }
 
 export function SampleList({ samples, currentId, filter, onFilter, onPick }: Props): JSX.Element {

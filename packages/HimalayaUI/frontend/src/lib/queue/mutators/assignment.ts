@@ -90,6 +90,7 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
     // Strip queue metadata; write ONLY the assignment cache (never exposure).
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
+    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
   },
   synthesizeFromSse: synthAssignment,
   affectsExposurePeaks: () => false,
@@ -118,6 +119,7 @@ export const removeAssignmentPhaseMutator: Mutator<RemovePhaseInput, AssignmentS
   onSuccess: (p, response, qc) => {
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
+    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
   },
   synthesizeFromSse: synthAssignment,
   affectsExposurePeaks: () => false,
@@ -151,6 +153,7 @@ export const setAssignmentStateMutator: Mutator<SetStateInput, AssignmentScope, 
   onSuccess: (p, response, qc) => {
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
+    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
   },
   synthesizeFromSse: synthAssignment,
   affectsExposurePeaks: () => false,

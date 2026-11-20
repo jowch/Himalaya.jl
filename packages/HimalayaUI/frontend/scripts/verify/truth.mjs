@@ -45,11 +45,14 @@ function statusMatches(shown, confirmed) {
   return confirmed.some((c) => (shown.status === "form_factor" ? c.call === "none" : c.call.split("+").includes(shown.call)));
 }
 
+const VIEW_NAMES = { loupe: "Loupe", focus: "Focus", workspace: "the workspace" };
+
 export function unreadViews(app) {
   if (!app.views) return [];
   const unread = [];
   if (app.frames.length && !app.views.loupe) unread.push("loupe");
   if (app.frames.some(isKept) && !app.views.focus) unread.push("focus");
+  if (app.frames.some(isKept) && !app.views.workspace) unread.push("workspace");
   return unread;
 }
 
@@ -67,7 +70,9 @@ function sampleInvariants(app, frames) {
     .filter(({ frame }) => frame && !isKept(frame) && kept.length)
     .map(({ view, frame }) => ({ view, frame: frame.filename, kept: keptNames }));
   const allRead = app.views && unreadViews(app).length === 0;
+  const workspaceRead = app.views ? statusFromText(app.workspaceText) : null;
   return {
+    workspace_status_matches: app.views && workspaceRead !== shown.status ? [{ shown: shownLabel(shown), workspace: app.workspaceText ?? null }] : null,
     status_matches_assignment: statusMatches(shown, confirmed) ? null : [{ shown: shownLabel(shown), confirmed }],
     representative_kept: onDropped.length ? onDropped : null,
     views_agree: allRead && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
@@ -76,17 +81,19 @@ function sampleInvariants(app, frames) {
 
 export const INVARIANTS = {
   status_matches_assignment: "A sample with no confirmed call (no assignment on a kept frame) is shown as unreviewed; a sample with one is shown with that call.",
-  representative_kept: "The frame the sample status describes (corpus_api) or Loupe or Focus opens on (--ui) is never a dropped frame while the sample has a kept one.",
-  views_agree: "The sample status (corpus_api), Loupe and Focus describe the same frame of a sample (needs --ui).",
+  representative_kept: "The frame the sample status describes (corpus_api) or Loupe, Focus or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
+  views_agree: "The sample status (corpus_api), Loupe, Focus and the workspace describe the same frame of a sample (needs --ui).",
+  workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
 };
 
-const NEEDS_VIEWS = new Set(["representative_kept", "views_agree"]);
+const NEEDS_VIEWS = new Set(["representative_kept", "views_agree", "workspace_status_matches"]);
+const NEEDS_UI = new Set(["views_agree", "workspace_status_matches"]);
 
 function rollupInvariants(perSample, ui) {
   const out = {};
   for (const [name, rule] of Object.entries(INVARIANTS)) {
     let checked = true;
-    if (name === "views_agree" && !ui.used) checked = false;
+    if (NEEDS_UI.has(name) && !ui.used) checked = false;
     if (NEEDS_VIEWS.has(name) && ui.unread) checked = false;
     const violations = perSample
       .filter((s) => s.invariants && s.invariants[name])
@@ -141,7 +148,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
       const read = statusFromText(one.corpusText);
       const expected = one.frames.length ? shown.status : "no_exposures";
       if (read !== expected) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${expected}; check-truth is misreading the app`);
-      for (const view of unread) problems.push(`could not read which frame ${view === "loupe" ? "Loupe" : "Focus"} opens on (no single pressed "Frame N" thumbnail); check-truth is misreading the app`);
+      shown.workspace_text = one.workspaceText ?? null;
+      for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Frame N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
       .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))
@@ -256,9 +264,10 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   if (flags.ui) {
     const opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder })));
     for (const s of app) {
-      const { corpus_text: corpusText = null, ...frames } = opened.get(s.id) ?? {};
-      s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null };
+      const { corpus_text: corpusText = null, workspace_text: workspaceText = null, ...frames } = opened.get(s.id) ?? {};
+      s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null, workspace: frames.workspace ?? null };
       s.corpusText = corpusText;
+      s.workspaceText = workspaceText;
     }
   }
   for (const s of app) delete s.frameOrder;

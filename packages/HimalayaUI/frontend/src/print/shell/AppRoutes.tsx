@@ -166,8 +166,6 @@ export function AppRoutes(): JSX.Element {
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
       {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
       <Route path="/samples" element={<Navigate to="/experiments" replace />} />
-      {/* Compare and Series are retired; old
-          deep-links land on the experiments home. */}
       <Route path="/experiments/:eid/compare/*" element={<Navigate to="/experiments" replace />} />
       <Route path="/compare/all/*" element={<Navigate to="/experiments" replace />} />
     </Routes>

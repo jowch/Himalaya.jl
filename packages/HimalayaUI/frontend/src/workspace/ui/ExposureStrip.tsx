@@ -1,5 +1,6 @@
 import type { Exposure } from "../../api";
 import { imageUrl } from "../model";
+import { Kbd } from "./Kbd";
 
 interface Props {
   exposures: readonly Exposure[];
@@ -16,11 +17,11 @@ export function ExposureStrip({ exposures, currentId, onPick, onToggleDrop }: Pr
         const dropped = e.status === "rejected";
         const src = imageUrl(e, true);
         return (
-          <li key={e.id} className={"group flex flex-col gap-1 rounded-sm p-1 " + (cur ? "outline outline-2 outline-accent" : "")}>
+          <li key={e.id} className={"flex flex-col gap-1 rounded-sm p-1 " + (cur ? "outline outline-2 outline-accent" : "")}>
             <button
               type="button"
-              aria-pressed={cur}
-              aria-label={`Exposure ${i + 1}${dropped ? ", dropped" : ""}`}
+              aria-current={cur ? "true" : undefined}
+              aria-label={`Frame ${i + 1}${dropped ? ", dropped" : ""}`}
               onClick={() => onPick(e.id)}
               className={"relative aspect-square w-full overflow-hidden rounded-sm bg-frame-edge " + (dropped ? "opacity-40" : "")}
             >
@@ -30,16 +31,18 @@ export function ExposureStrip({ exposures, currentId, onPick, onToggleDrop }: Pr
                 <span className="text-xs text-frame-tag">No image</span>
               )}
             </button>
-            <div className={"flex items-center justify-between gap-1 text-xs " + (cur ? "" : "invisible group-hover:visible")}>
-              <span className="text-ink-soft">{dropped ? "Dropped" : ""}</span>
-              <button
-                type="button"
-                onClick={() => onToggleDrop(e)}
-                className="rounded-sm border border-hair-strong bg-plate px-1.5 text-ink hover:bg-paper-sunk"
-              >
-                {dropped ? "Restore" : "Drop"}
-              </button>
-            </div>
+            {cur && (
+              <div className="flex items-center justify-between gap-1 text-xs">
+                <span className="text-ink-soft">{dropped ? "Dropped" : ""}</span>
+                <button
+                  type="button"
+                  onClick={() => onToggleDrop(e)}
+                  className="flex items-center gap-1 rounded-sm border border-hair-strong bg-plate px-1.5 text-ink hover:bg-paper-sunk"
+                >
+                  {dropped ? "Restore" : "Drop"} <Kbd>X</Kbd>
+                </button>
+              </div>
+            )}
           </li>
         );
       })}

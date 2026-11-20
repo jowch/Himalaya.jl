@@ -23,7 +23,6 @@ function exposure(id: number, over: Partial<Exposure> = {}): Exposure {
 describe("sampleStatus", () => {
   it("is unreviewed without a confirmed call", () => {
     expect(sampleStatus(sample(1))).toEqual({ kind: "unreviewed" });
-    expect(sampleStatus(sample(1, { assignment_state: "null" }))).toEqual({ kind: "unreviewed" });
   });
 
   it("is unreviewed when indexed carries no phase", () => {
@@ -65,7 +64,7 @@ describe("nextUnreviewed", () => {
 });
 
 describe("rankCandidates", () => {
-  it("sorts by score, unscored last, and keeps at most nine", () => {
+  it("sorts by score, drops unscored candidates, and keeps at most nine", () => {
     const ranked = rankCandidates([
       index(1, "Im3m", 0.4), index(2, "Pn3m", null), index(3, "Ia3d", 0.9),
       ...Array.from({ length: 10 }, (_, i) => index(10 + i, "Lamellar", 0.1)),

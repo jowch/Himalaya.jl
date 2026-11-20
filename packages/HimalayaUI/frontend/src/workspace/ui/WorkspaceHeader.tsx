@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { Kbd } from "./Kbd";
 
 interface Props {
   experimentId: number;
@@ -15,11 +14,8 @@ export function WorkspaceHeader({ experimentId, experimentName, reviewed, total 
         ← Corpus
       </Link>
       <h1 className="text-title truncate">{experimentName}</h1>
-      <span className="text-caption">
+      <span className="text-caption" data-testid="workspace-progress">
         {reviewed} of {total} reviewed
-      </span>
-      <span className="ml-auto flex items-center gap-1 text-caption">
-        <Kbd>J</Kbd> next unreviewed
       </span>
     </>
   );
