@@ -31,7 +31,7 @@ const GROUPS = [
                   "test_routes_messages.jl","test_routes_analysis.jl","test_speculative.jl",
                   "test_route_validation_routing.jl","test_picker_routes.jl",
                   "test_picker_samples_route.jl","test_routes_resolve.jl",
-                  "test_inproc_equivalence.jl"]),
+                  "test_inproc_equivalence.jl","test_routes_bridges.jl"]),
     ("events",   ["test_http.jl","test_actions.jl","test_events.jl","test_assignment_reattach.jl",
                   "test_ingestion_structural_events.jl",
                   "test_assignments.jl","test_fast_skip.jl","test_idempotency.jl",
@@ -71,7 +71,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_idempotency.jl","test_idempotency_replay_invariant.jl",
                    "test_concurrent_writes.jl","test_idempotency_sse_suppression.jl",
                    "test_comparisons.jl","test_routes_series.jl","test_picker_routes.jl",
-                   "test_picker_samples_route.jl","test_routes_resolve.jl",
+                   "test_picker_samples_route.jl","test_routes_resolve.jl","test_routes_bridges.jl",
                    "test_routes_fs.jl",
                    "test_comparison_pins.jl",
                    "test_spa_fallback.jl","test_migration_upgrade.jl"]
