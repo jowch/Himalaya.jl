@@ -1,5 +1,6 @@
 using Test
 using HimalayaUI
+using Himalaya
 using SQLite, DBInterface, Tables
 using JSON3, HTTP
 

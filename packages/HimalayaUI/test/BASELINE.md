@@ -70,3 +70,5 @@ M2/M3 ROI at this scale is marginal — see scope note above; deferred pending r
 The decisive win is M1 (in-process dispatch) — which also removed the contention sensitivity that
 made the suite feel like ~20min. M3's parallel runner roughly halves wall-clock further. To go
 below ~119s, split the `routes` bucket (it bounds the parallel wall).
+
+That split landed in #315: `routes` became `routes` + `routes2` (about 1m50s of tests each in CI, 2026-11-20).
