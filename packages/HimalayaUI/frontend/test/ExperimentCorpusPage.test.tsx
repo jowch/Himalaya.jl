@@ -18,7 +18,7 @@ const FAILED_EXPERIMENT: Experiment = {
   energy_kev_source: "computed", flight_path_m_source: "computed",
   beam_center_x_source: "computed", beam_center_y_source: "computed",
   pixel_size_um_source: "computed", q_units_source: "computed",
-  last_scanned_at: null, scan_signature: null, ingest_status: "failed",
+  last_scanned_at: null, ingest_status: "failed",
   image_pattern: "*.tif", metadata_pattern: null, integration_pattern: null,
 };
 

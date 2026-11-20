@@ -155,11 +155,32 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             for col in ["beam_center_x","beam_center_y","pixel_size_um","q_units",
                         "energy_kev_source","flight_path_m_source","beam_center_x_source",
                         "beam_center_y_source","pixel_size_um_source","q_units_source",
-                        "last_scanned_at","scan_signature","ingest_status",
+                        "last_scanned_at","ingest_status",
                         "last_scan_tier","consecutive_empty_ticks"]
                 @test col in c
             end
             @test !("detector_distance_mm" in c)   # spec §10: no separate column
+            @test !("scan_signature" in c)
+        end
+    end
+
+    @testset "drop_scan_signature migration removes the legacy column" begin
+        path = fresh_db()
+        with_db(path) do db
+            DBInterface.execute(db, "ALTER TABLE experiments ADD COLUMN scan_signature TEXT")
+            DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?",
+                                [HimalayaUI.MIGRATION_DROP_SCAN_SIGNATURE])
+            eid = seed_experiment(db; name = "kept")
+            DBInterface.execute(db, "UPDATE experiments SET scan_signature = 'sig' WHERE id = ?", [eid])
+            HimalayaUI.migrate_schema!(db)
+            @test !("scan_signature" in cols(db, "experiments"))
+            rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, name, data_dir FROM experiments"))
+            @test length(rows) == 1
+            @test rows[1].id == eid
+            @test rows[1].name == "kept"
+            @test rows[1].data_dir == "/exp/kept/data"
+            HimalayaUI.migrate_schema!(db)
+            @test !("scan_signature" in cols(db, "experiments"))
         end
     end
 

@@ -29,7 +29,7 @@ const EXP: api.Experiment = {
   beam_center_x: 1, beam_center_y: 1, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8,
   energy_kev_source: "prp", flight_path_m_source: "setup", beam_center_x_source: "setup",
   beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
-  last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "complete",
+  last_scanned_at: "2026-04-12T10:00:00", ingest_status: "complete",
   image_pattern: null, metadata_pattern: null, integration_pattern: null,
   stats: { loads: 4, samples: 12, exposures: 48, sessions: 2, span_hours: 6.5, started_at: "2026-04-12T10:00:00" },
 };

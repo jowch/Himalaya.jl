@@ -22,8 +22,8 @@ function register_trace_routes!()
         # acquisition `_tot.dat` — migrated filenames are the full per-frame stem
         # while the trace total is named by the acquisition stem). See
         # resolve_trace_path.
-        cfg  = config_from_db(db, Int(row.experiment_id))
-        path = resolve_trace_path(String(row.analysis_dir), cfg.integration_pattern, String(row.filename))
+        path = resolve_trace_path(String(row.analysis_dir),
+            integration_pattern_for(db, Int(row.experiment_id)), String(row.filename))
         path === nothing && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => ".dat file not found for $(row.filename)")))

@@ -9,9 +9,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 # ─────────────────────────────────────────────────────────────────────────────
 # Structural experiment-layout resolver (funnel resolution, 2026-06-21).
 # Given an experiment ROOT directory, auto-discover sensible defaults the user
-# then corrects in Configuration before Approve. PURELY STRUCTURAL — no
-# experiment.toml / manifest.toml (deprecated going forward); everything is
-# inferred from the directory tree:
+# then corrects in Configuration before Approve. PURELY STRUCTURAL —
+# everything is inferred from the directory tree:
 #   name         = basename(root)
 #   data_dir     = the root or an immediate subdir holding the most .tif (raw images)
 #   analysis_dir = the dir (under a non-data subtree) holding the most .dat (integration)
@@ -208,10 +207,6 @@ function register_fs_routes!()
         analysis_dir_q = get(q, "analysis_dir", "")
         integ_files = (!isempty(analysis_dir_q) && isdir(analysis_dir_q)) ?
             filter(!startswith("."), readdir(analysis_dir_q)) : files
-        # {name}-capture per type, inlined. Do NOT add a module helper — grouping.jl
-        # / config.jl already own pattern matching; if the manifest's needs grow,
-        # call the shared matcher (config.jl `_matches_prefix_with_boundary` /
-        # `resolve_files`) rather than maintaining a second one (ponytail review).
         function stems(filelist, pat)
             occursin("{name}", pat) || return Set{String}()
             pre, post = split(pat, "{name}"; limit = 2)

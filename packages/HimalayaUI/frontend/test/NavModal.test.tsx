@@ -44,7 +44,6 @@ const EXP_BASE = {
   pixel_size_um_source: "default" as api.GeometrySource,
   q_units_source: "default" as api.GeometrySource,
   last_scanned_at: null,
-  scan_signature: null,
   ingest_status: "idle" as api.IngestStatus,
   image_pattern: null,
   metadata_pattern: null,

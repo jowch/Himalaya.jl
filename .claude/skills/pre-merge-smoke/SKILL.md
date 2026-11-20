@@ -40,7 +40,7 @@ Then in the worktree root:
 bin/himalaya serve --port 8080 &
 ```
 
-(If the user hasn't set up a dev experiment, ask before scaffolding one — `himalaya config new --dir` writes to disk.)
+(If the user has no dev experiment, ask before creating one: `make demo` generates a synthetic experiment into gitignored `scratch/` and ingests it.)
 
 Open the preview at `http://127.0.0.1:8080` (backend serves frontend from `frontend/dist/`).
 

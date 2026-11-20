@@ -2,7 +2,7 @@
  * units.ts — pretty-print unit strings for axis labels.
  *
  * Storage convention is ASCII: users type `A-1`, `nm-1`, or `1/A` in
- * `experiment.toml` to avoid Unicode-input pain. The display layer renders
+ * the experiment configuration to avoid Unicode-input pain. The display layer renders
  * those as `Å⁻¹`, `nm⁻¹`, and `Å⁻¹` respectively.
  *
  * Idempotent — already-prettified strings are returned unchanged.
@@ -44,7 +44,7 @@ export function prettifyUnits(s: string): string {
 /**
  * Real-space lattice unit derived from the q-units stored on the experiment.
  * `1/A`, `A-1`, `Å⁻¹` → `Å`. `nm-1`, `nm⁻¹` → `nm`. Defaults to `Å` when
- * unset (matches the backend's `A-1` default in `experiment.toml`).
+ * unset (matches the backend's `A-1` default).
  */
 export function latticeUnitFromQUnits(qUnits: string | null | undefined): string {
   if (!qUnits) return "Å";

@@ -13,7 +13,7 @@ describe("ingestion api types (Phase E1)", () => {
       energy_kev_source: "prp", flight_path_m_source: "setup",
       beam_center_x_source: "setup", beam_center_y_source: "setup",
       pixel_size_um_source: "prp", q_units_source: "prp",
-      last_scanned_at: "2026-04-12T10:00:00", scan_signature: "sig", ingest_status: "idle",
+      last_scanned_at: "2026-04-12T10:00:00", ingest_status: "idle",
       image_pattern: "*.tif", metadata_pattern: null, integration_pattern: null,
     };
     expect(e.flight_path_m_source).toBe("setup");
