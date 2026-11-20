@@ -93,14 +93,15 @@ async function twin(file) {
   const api = loadConfig().apiBase;
   const frames = [];
   for (const s of read(file).samples ?? []) {
+    if (s.assigned_frames?.length) continue;
     const exposures = await getJson(api, `/api/samples/${s.sample_id}/exposures`);
     for (const [i, exposure] of exposures.entries()) {
       if (exposure.status === "rejected") continue;
       const peaks = await getJson(api, `/api/exposures/${exposure.id}/peaks`);
-      if (peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, frame: `Frame ${i + 1}`, peaks });
+      if (peaks.length >= 2 && peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, frame: `Frame ${i + 1}`, peaks });
     }
   }
-  if (!frames.length) report({ ok: false, error: "no kept frame has auto peaks" });
+  if (!frames.length) report({ ok: false, error: "no kept frame of an unassigned sample has two or more peaks, one of them auto" });
   const lowest = (f) => Math.min(...f.peaks.filter((p) => p.source === "auto").map((p) => p.id));
   frames.sort((a, b) => lowest(a) - lowest(b));
   const autoWith = (id) => frames.find((f) => f.peaks.some((p) => p.source === "auto" && p.id === id));

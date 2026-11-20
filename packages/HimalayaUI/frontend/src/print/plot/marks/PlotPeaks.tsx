@@ -14,9 +14,9 @@ const MARKER_LIFT = 3;
 const EXCLUDED_R = 3.25;
 
 /** A one-shot request to move keyboard focus onto a specific peak mark. The
- *  `nonce` lets the consumer re-fire even when the same id repeats (e.g. two
+ *  `nonce` lets the consumer re-fire even when the same key repeats (e.g. two
  *  removes in a row that both land focus on the same surviving neighbour).
- *  `id: null` (or an id whose mark no longer exists) means "no peak survived" —
+ *  `key: null` (or a key whose mark no longer exists) means "no peak survived" —
  *  the layer calls `onFocusFallback` so the consumer can park focus elsewhere
  *  (the "+ Peak" toolbar button). */
 export interface PeakFocusRequest {
@@ -47,7 +47,7 @@ export interface PlotPeaksProps {
   baselineI?: number;
   /** Paper colour threaded to PeakGlyph's halo (export-parity). */
   paperColor?: string;
-  /** Keyboard focus/blur handler for accessibility. Called with peak id on focus, null on blur. */
+  /** Keyboard focus/blur handler for accessibility. Called with the peak key on focus, null on blur. */
   onPeakFocus?: (key: string | null) => void;
   /** Armed keyboard editing. Its PRESENCE gates focusability: each mark becomes
    *  a tabbable role=button named by its q. Enter/Space activate with
@@ -59,7 +59,7 @@ export interface PlotPeaksProps {
   highlightPeakKeys?: ReadonlySet<string>;
   /** One-shot keyboard-focus re-anchor (WCAG 2.4.3). After a destructive edit
    *  unmounts the activated mark, the consumer requests focus on the nearest
-   *  surviving peak by id; this layer moves focus to its `<g data-peak-id>` once
+   *  surviving peak by key; this layer moves focus to its `<g data-peak-key>` once
    *  per nonce. Only meaningful while editing is armed (focusable marks). */
   focusRequest?: PeakFocusRequest;
   /** Called once per focusRequest nonce when no surviving mark can take focus
