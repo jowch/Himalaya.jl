@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: { onSuccess?: () => void } };
@@ -13,6 +13,9 @@ const state = {
   indices: [] as IndexEntry[],
   assignment: undefined as Assignment | undefined,
   username: "jc" as string | undefined,
+  trace: undefined as Trace | undefined,
+  peaks: [] as Peak[],
+  compareTraces: new Map<number, Trace>(),
 };
 
 function recorder(hook: string) {
@@ -27,15 +30,38 @@ vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19" } }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: undefined }),
-  usePeaks: () => ({ data: [] }),
+  useTrace: () => ({ data: state.trace }),
+  usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSelectExposure: recorder("select"),
   useSetExposureStatus: recorder("status"),
+  useAddPeak: recorder("addPeak"),
+  useRemovePeak: recorder("removePeak"),
+  useSetPeakExcluded: recorder("excludePeak"),
 }));
+
+vi.mock("../../src/workspace/useCompareTraces", () => ({
+  useCompareTraces: (ids: readonly number[]) =>
+    new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : []))),
+}));
+
+function makeTrace(level: number): Trace {
+  const q = Array.from({ length: 21 }, (_, i) => 0.05 + i * 0.01);
+  return { q, I: q.map((x) => level * (1 + 10 * Math.exp(-((x - 0.1) ** 2) / 1e-5))), sigma: q.map(() => 0) };
+}
+
+function peak(id: number, q: number, source: "auto" | "manual", excluded = false): Peak {
+  return { id, exposure_id: 101, q, intensity: null, prominence: null, sharpness: null, source, excluded };
+}
+
+function clickPlotAt(q: number, detail = 1): void {
+  const plotWidth = 640 - 60 - 24;
+  const px = 60 + ((q - 0.05) / 0.2) * plotWidth;
+  fireEvent.click(screen.getByTestId("workspace-trace"), { clientX: px, clientY: 100, detail });
+}
 
 vi.mock("../../src/state", () => ({
   useAppState: (sel: (s: { username: string | undefined }) => unknown) => sel({ username: state.username }),
@@ -96,6 +122,9 @@ beforeEach(() => {
   state.exposures = [exposure(100), exposure(101, { selected: true })];
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+  state.trace = undefined;
+  state.peaks = [];
+  state.compareTraces = new Map();
 });
 
 describe("WorkspacePage", () => {
@@ -225,5 +254,192 @@ describe("WorkspacePage", () => {
   it("says when the link is not valid", () => {
     renderAt("/experiments/abc/workspace");
     expect(screen.getByText("This workspace link is not valid.")).toBeInTheDocument();
+  });
+  it("a click near an auto peak disables it, near a manual peak removes it, and elsewhere adds one", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.2, "manual")];
+    renderAt("/experiments/1/workspace/10");
+    clickPlotAt(0.1);
+    clickPlotAt(0.2);
+    clickPlotAt(0.15);
+    expect(calls.slice(0, 2)).toEqual([
+      { hook: "excludePeak", boundTo: 101, arg: { peakId: 7, excluded: true } },
+      { hook: "removePeak", boundTo: 101, arg: 8 },
+    ]);
+    expect(calls[2]).toMatchObject({ hook: "addPeak", boundTo: 101 });
+    expect(calls[2]!.arg as number).toBeCloseTo(0.15, 2);
+  });
+
+  it("a double-click adds one peak, not two", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    clickPlotAt(0.15, 1);
+    clickPlotAt(0.15, 2);
+    expect(calls.filter((c) => c.hook === "addPeak")).toHaveLength(1);
+  });
+
+  it("a click on a disabled auto peak restores it", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto", true)];
+    renderAt("/experiments/1/workspace/10");
+    clickPlotAt(0.1);
+    expect(calls).toEqual([{ hook: "excludePeak", boundTo: 101, arg: { peakId: 7, excluded: false } }]);
+  });
+
+  it("does not edit peaks before a user is set", () => {
+    state.trace = makeTrace(1);
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    clickPlotAt(0.15);
+    expect(calls).toEqual([]);
+  });
+
+  it("does not edit peaks on a dropped frame", () => {
+    state.trace = makeTrace(1);
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+    clickPlotAt(0.15);
+    expect(calls).toEqual([]);
+  });
+
+  it("L switches the intensity axis between log and linear", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const ticks = (): string =>
+      Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] text'))
+        .map((t) => t.textContent)
+        .join(" ");
+    const logTicks = ticks();
+    expect(screen.getByRole("button", { name: /Log/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "l" });
+    expect(screen.getByRole("button", { name: /Linear/ })).toHaveAttribute("aria-pressed", "false");
+    expect(ticks()).not.toBe(logTicks);
+  });
+
+  it("C opens a picker, Enter adds the sample scaled to the current trace and subtracts it", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
+    expect(within(picker).queryByText("A1")).toBeNull();
+    fireEvent.change(within(picker).getByLabelText("Find a sample to compare"), { target: { value: "a2" } });
+    fireEvent.keyDown(within(picker).getByLabelText("Find a sample to compare"), { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const chip = screen.getByRole("button", { name: "Remove A2" }).parentElement!;
+    expect(chip).toHaveTextContent("×0.500");
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("minus A2")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='11']")?.getAttribute("d")).toMatch(/^M/);
+  });
+
+  it("the picker only adds: samples already compared are not offered", () => {
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    fireEvent.keyDown(window, { key: "c" });
+    expect(within(screen.getByRole("dialog")).queryByText("A2")).toBeNull();
+    fireEvent.keyDown(screen.getByLabelText("Find a sample to compare"), { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
+  });
+
+  it("Escape and an outside click close the picker without adding anything", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.keyDown(screen.getByLabelText("Find a sample to compare"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.mouseDown(screen.getByTestId("workspace-trace"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+  });
+
+  it("subtracts with the scale that matches the high-q background, ignoring the sample's own peaks there", () => {
+    const q = Array.from({ length: 101 }, (_, i) => 0.05 + i * 0.002);
+    const bg = (x: number): number => 10 + 1 / x;
+    const peakQ = [0.232, 0.244];
+    state.trace = { q, I: q.map((x) => 2 * bg(x) + peakQ.reduce((a, p) => a + 500 * Math.exp(-((x - p) ** 2) / 4e-6), 0)), sigma: q.map(() => 0) };
+    state.peaks = peakQ.map((p, i) => peak(7 + i, p, "auto"));
+    state.compareTraces = new Map([[11, { q, I: q.map(bg), sigma: q.map(() => 0) }]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    expect(screen.getByRole("button", { name: "Remove A2" }).parentElement!).toHaveTextContent("×2.00");
+  });
+
+  it("clicking the subtracted chip stops subtracting, R hides comparisons, and × removes one", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    fireEvent.click(screen.getByRole("button", { name: "A2" }));
+    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "A2" }));
+    expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "r" });
+    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+    fireEvent.keyDown(window, { key: "r" });
+    fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
+    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+  });
+
+  it("re-adding a removed comparison leaves the current subtraction alone", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    renderAt("/experiments/1/workspace/10");
+    const pick = (id: number): void => {
+      fireEvent.keyDown(window, { key: "c" });
+      fireEvent.click(screen.getByRole("dialog").querySelector(`[data-sample-id='${id}']`)!);
+    };
+    pick(11);
+    pick(12);
+    fireEvent.click(screen.getByRole("button", { name: "A3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
+    pick(11);
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "A3" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("minus A3")).toBeInTheDocument();
+  });
+
+  it("keeps comparisons when moving to another sample, but never compares a sample with itself", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const overlay = (): Element | null => screen.getByTestId("workspace-compares").querySelector("[data-compare='11']");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.queryByRole("button", { name: "Remove A2" })).toBeNull();
+    expect(overlay()).toBeNull();
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
+    expect(overlay()).not.toBeNull();
+  });
+
+  it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {
+    state.trace = makeTrace(1);
+    const { rerender } = renderAt("/experiments/1/workspace/10");
+    const plot = screen.getByTestId("workspace-trace");
+    const xTicks = (): string =>
+      Array.from(plot.ownerDocument.querySelectorAll('[data-testid="workspace-trace"] [data-role="axis-bottom"] text')).map((t) => t.textContent).join(" ");
+    const full = xTicks();
+    for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 500 });
+    expect(xTicks()).not.toBe(full);
+    fireEvent.keyDown(window, { key: "z" });
+    expect(xTicks()).toBe(full);
+    for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 540 });
+    const q = Array.from({ length: 21 }, (_, i) => 0.01 + i * 0.002);
+    state.trace = { q, I: q.map(() => 5), sigma: q.map(() => 0) };
+    rerender(page("/experiments/1/workspace/10"));
+    expect(screen.getByTestId("workspace-trace").querySelector('[data-role="trace-line"] path')?.getAttribute("d")).toMatch(/^M/);
+    expect(xTicks()).toContain("0.03");
   });
 });

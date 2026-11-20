@@ -61,7 +61,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 ## Workspace (three-pane triage)
 
 - **Route:** `/experiments/<id>/workspace/<sampleId>`; without a sample id it opens the first sample. Reached from the "Open workspace" button in the experiment header. It mounts outside the app shell, so there is no top nav; "← Corpus" in its header goes back.
-- **Shows:** the sample list (`list` in `navigation "Samples"`, the current row has `aria-current`; each row ends in the phase, "Form factor", or an `img "Unreviewed"` ○), the progress "N of M reviewed", the trace plot, the frame thumbnails (`button "Frame N"` / `"Frame N, dropped"`, the shown one has `aria-current`), the ranked phase candidates (buttons with a keycap 1–9, `aria-pressed` when assigned) and the exposure details.
+- **Shows:** the sample list (`list` in `navigation "Samples"`, the current row has `aria-current`; each row ends in the phase, "Form factor", or an `img "Unreviewed"` ○), the progress "N of M reviewed", the trace plot, the frame thumbnails (`button "Frame N"` / `"Frame N, dropped"`, the shown one has `aria-current`), the ranked phase candidates (buttons with a keycap 1–9, `aria-pressed` when assigned) and the exposure details. Above the plot sits the compare bar: one chip per comparison sample (its name is a button, `aria-pressed` when it is the subtraction reference, then the scale applied as `×N`; `button "Remove NAME"`), "+ Compare", and the `Log`/`Linear` scale button. With a subtraction reference, `workspace-subtraction` under the plot is labelled "minus NAME".
 - **Drive:**
   ```bash
   bin/verify open /experiments/1/workspace/1
@@ -71,7 +71,12 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press 1                                  # toggle the top candidate on the shown frame (writes to the DB)
   bin/verify press x                                  # drop the shown frame; x again restores it (writes to the DB)
   bin/verify press /                                  # focus the filter; Esc leaves it
+  bin/verify press c                                  # open the compare picker (dialog "Compare with a sample"); type, Enter adds; it subtracts too when nothing else is
+  bin/verify press r                                  # hide or show comparisons and the subtraction strip
+  bin/verify press l                                  # log / linear intensity
+  bin/verify press z                                  # reset the zoom
   ```
+  Scroll on the plot zooms q (the zoom is kept across samples, clamped to each trace's q range and dropped when they don't overlap; Z resets it, double-click does not). `vesicles_ULV` in the demo stops at q = 0.2, so zoom past 0.2 and step to it to see the clamp. A click within 10 px of a peak disables or restores an auto peak and removes a manual one; a click elsewhere adds a manual peak (writes to the DB, needs a user and a kept frame). The picker only adds; samples already compared are not offered. Comparisons are scaled to the current trace by the median ratio over the top 15% of shared q with the current trace's own peaks masked, and draw each sample's representative frame.
 - **Check:** `bin/verify check-truth --ui` reads the workspace first, the way a user moves through it: every row's status from one page (`workspace_text`, invariant `workspace_status_matches`), then a click on each row to read the frame it opens on (`views.workspace`, folded into `views_agree` and `representative_kept`). If the shared tab is already on this experiment's workspace it reads that page in place, without a reload, so run it straight after an edit to catch a list that did not refresh; the output's `workspace_read` says `in place` or `loaded`.
 - **Gotchas:**
   - A phase call on a frame that is not the selected one selects it first, then adds the phase once the select is confirmed.
