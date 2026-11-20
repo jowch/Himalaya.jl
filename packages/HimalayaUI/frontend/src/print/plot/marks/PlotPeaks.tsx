@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from "react";
 import { type Projection } from "../projection";
 import { PeakGlyph } from "../../ui/PeakGlyph";
 import { peakGlyph } from "../../ui/peakMark";
+import { peakKey, type PeakRef } from "../../../lib/peakRef";
 
 /** Vertical clearance (px) between the trace and the peak marker's apex so the
  *  glyph's outline floats just above the curve instead of overlapping it. */
@@ -19,7 +20,7 @@ const EXCLUDED_R = 3.25;
  *  the layer calls `onFocusFallback` so the consumer can park focus elsewhere
  *  (the "+ Peak" toolbar button). */
 export interface PeakFocusRequest {
-  id: number | null;
+  key: string | null;
   nonce: number;
 }
 
@@ -47,15 +48,15 @@ export interface PlotPeaksProps {
   /** Paper colour threaded to PeakGlyph's halo (export-parity). */
   paperColor?: string;
   /** Keyboard focus/blur handler for accessibility. Called with peak id on focus, null on blur. */
-  onPeakFocus?: (id: number | null) => void;
+  onPeakFocus?: (key: string | null) => void;
   /** Armed keyboard editing. Its PRESENCE gates focusability: each mark becomes
    *  a tabbable role=button named by its q. Enter/Space activate with
    *  altKey=false (remove); Alt+Enter activates with altKey=true (exclude).
    *  Omit it while editing is disarmed so read-only marks stay roleless — an
    *  inert focusable control would lie. */
-  onPeakActivate?: (id: number) => void;
+  onPeakActivate?: (peak: PeakRef) => void;
   /** When non-empty, peaks NOT in this set (and not hot) fade to neutral gray. */
-  highlightPeakIds?: ReadonlySet<number>;
+  highlightPeakKeys?: ReadonlySet<string>;
   /** One-shot keyboard-focus re-anchor (WCAG 2.4.3). After a destructive edit
    *  unmounts the activated mark, the consumer requests focus on the nearest
    *  surviving peak by id; this layer moves focus to its `<g data-peak-id>` once
@@ -74,7 +75,7 @@ export function PlotPeaks({
   paperColor,
   onPeakFocus,
   onPeakActivate,
-  highlightPeakIds,
+  highlightPeakKeys,
   focusRequest,
   onFocusFallback,
 }: PlotPeaksProps): JSX.Element {
@@ -93,9 +94,9 @@ export function PlotPeaks({
     lastNonce.current = focusRequest.nonce;
     const root = rootRef.current;
     const target =
-      root && focusRequest.id != null
+      root && focusRequest.key != null
         ? root.querySelector<SVGGElement>(
-            `g[data-peak-id="${focusRequest.id}"]`,
+            `g[data-peak-key="${focusRequest.key}"]`,
           )
         : null;
     // A survivor outside the zoom window renders non-focusable (no tabIndex —
@@ -125,8 +126,9 @@ export function PlotPeaks({
         // the marker `py`, so that is the minimum py the body can sit at.
         const yTop = Math.min(y.range[0], y.range[1]);
         const py = Math.max(rawPy, yTop + MARKER_LIFT + 4 * 1.75);
-        const hl = highlightPeakIds;
-        const dimmed = !!hl && hl.size > 0 && !hl.has(p.id) && !p.hot; // hot wins over dim
+        const key = peakKey(p);
+        const hl = highlightPeakKeys;
+        const dimmed = !!hl && hl.size > 0 && !hl.has(key) && !p.hot; // hot wins over dim
         const c = dimmed ? "var(--color-ink-faint)" : (p.color ?? color);
         // The resolved colour lands on the wrapping <g>'s CSS `color`; the
         // glyph + q-line paint via currentColor. SVG fill/stroke attributes
@@ -161,7 +163,7 @@ export function PlotPeaks({
         // tabIndex/role/name appear with it and vanish when editing disarms.
         const focusAttrs = onPeakFocus
           ? {
-              onFocus: () => onPeakFocus(p.id),
+              onFocus: () => onPeakFocus(key),
               onBlur: () => onPeakFocus(null),
             }
           : {};
@@ -183,16 +185,14 @@ export function PlotPeaks({
                 // Activation is a single verb now — the peak's provenance
                 // decides the outcome downstream (auto toggles off, manual
                 // removes), so there is no modifier to thread.
-                onPeakActivate(p.id);
+                onPeakActivate({ id: p.id, source: p.source });
               },
             }
           : {};
         return (
           <g
-            key={p.id}
-            // The wrapper carries data-peak-id (mirroring the inner glyph) so
-            // the focus-re-anchor layer effect can find the survivor by id.
-            data-peak-id={p.id}
+            key={key}
+            data-peak-key={key}
             {...focusAttrs}
             {...activateAttrs}
             {...(dimmed ? { "data-dimmed": "true" } : {})}
@@ -219,7 +219,7 @@ export function PlotPeaks({
               // Lift the apex a few px off the curve so the glyph outline doesn't
               // overlap the trace line.
               y={py - MARKER_LIFT}
-              dataPeakId={p.id}
+              dataPeakKey={key}
               {...(paperColor ? { haloStroke: paperColor } : {})}
             />
           </g>

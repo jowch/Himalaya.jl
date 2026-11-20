@@ -2,6 +2,7 @@ import { useId } from "react";
 import type { Peak, Trace } from "../../api";
 import { TracePlot } from "../../print/plot/TracePlot";
 import { toTraceModel } from "../../print/plot/traceModel";
+import type { PeakRef } from "../../lib/peakRef";
 import type { Projection } from "../../print/plot/projection";
 
 export interface CombLine {
@@ -32,7 +33,7 @@ interface Props {
   logY?: boolean;
   onXDomain?: (d: [number, number] | null) => void;
   onAddPeak?: (q: number) => void;
-  onClickPeak?: (id: number) => void;
+  onClickPeak?: (peak: PeakRef) => void;
   height?: number;
 }
 

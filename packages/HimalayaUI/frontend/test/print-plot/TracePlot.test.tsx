@@ -128,7 +128,7 @@ describe("TracePlot", () => {
     expect(container.querySelector('[data-role="plot-peaks"]')).toBeNull();
   });
 
-  describe("highlightPeakIds threading", () => {
+  describe("highlightPeakKeys threading", () => {
     const modelWith2Peaks: TraceModel = {
       trace: { q: [0.1, 0.2, 0.3], I: [10, 20, 15], sigma: [1, 1, 1] },
       peaks: [
@@ -138,24 +138,24 @@ describe("TracePlot", () => {
       phase: "Ia3d",
     };
 
-    it("non-highlighted peaks get data-dimmed when highlightPeakIds is set", () => {
+    it("non-highlighted peaks get data-dimmed when highlightPeakKeys is set", () => {
       const { container } = render(
         <TracePlot
           trace={modelWith2Peaks}
           width={500}
           height={300}
-          highlightPeakIds={new Set([1])}
+          highlightPeakKeys={new Set(["auto:1"])}
         />,
       );
       const allGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
       const g2 = Array.from(allGs).find(
-        (g) => g.querySelector('[data-peak-id="2"]'),
+        (g) => g.querySelector('[data-peak-key="auto:2"]'),
       );
       expect(g2).toBeTruthy();
       expect(g2!.getAttribute("data-dimmed")).toBe("true");
     });
 
-    it("no peaks dimmed when highlightPeakIds is not provided", () => {
+    it("no peaks dimmed when highlightPeakKeys is not provided", () => {
       const { container } = render(
         <TracePlot trace={modelWith2Peaks} width={500} height={300} />,
       );
@@ -256,6 +256,32 @@ describe("TracePlot", () => {
     // PointerEvents (arrives as 0, never hits), and with peaks hidden there is
     // no focusable peak <g> to drive the focus path. The readout is gated on
     // `layers.peaks` in TracePlot; the positive path is covered by D1.
+  });
+
+  describe("auto and manual peaks that share an id", () => {
+    const twins: TraceModel = {
+      trace: { q: [0.1, 0.2, 0.3], I: [10, 20, 15], sigma: [1, 1, 1] },
+      peaks: [
+        { id: 1, q: 0.15, source: "auto", intensity: 10 },
+        { id: 1, q: 0.25, source: "manual", intensity: 15 },
+      ],
+      phase: null,
+    };
+
+    it("lights and activates only the peak the user is on", () => {
+      const onClickPeak = vi.fn();
+      const { container } = render(
+        <TracePlot trace={twins} width={500} height={300} interaction={{ onXDomain: () => {}, onClickPeak }} />,
+      );
+      const manual = container.querySelector('[data-role="plot-peaks"] > g[data-peak-key="manual:1"]')!;
+      const auto = container.querySelector('[data-role="plot-peaks"] > g[data-peak-key="auto:1"]')!;
+      fireEvent.focus(manual);
+      expect(manual.querySelector('[data-hot="true"]')).not.toBeNull();
+      expect(auto.querySelector('[data-hot="true"]')).toBeNull();
+      fireEvent.keyDown(manual, { key: "Enter" });
+      expect(onClickPeak).toHaveBeenCalledWith({ id: 1, source: "manual" });
+      expect(onClickPeak).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("q-link (cross-panel hover wires)", () => {

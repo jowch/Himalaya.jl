@@ -220,7 +220,7 @@ describe("PlotPeaks", () => {
     // proj's window is [0.1, 0.3]. A peak at q=0.5 maps off-window: its glyph
     // and focus ring are clipped (invisible), so an armed role=button/tabindex
     // would be a phantom tab stop with no visible target. The <g> still renders
-    // (data-peak-id is kept for the focus-re-anchor lookup) but is NOT a control.
+    // (data-peak-key is kept for the focus-re-anchor lookup) but is NOT a control.
     const { container } = render(
       <svg>
         <PlotPeaks
@@ -234,8 +234,8 @@ describe("PlotPeaks", () => {
         />
       </svg>,
     );
-    const inWindow = container.querySelector('g[data-peak-id="1"]');
-    const offWindow = container.querySelector('g[data-peak-id="2"]');
+    const inWindow = container.querySelector('g[data-peak-key="auto:1"]');
+    const offWindow = container.querySelector('g[data-peak-key="auto:2"]');
     // In-window peak is a real, focusable control.
     expect(inWindow!.getAttribute("tabindex")).toBe("0");
     expect(inWindow!.getAttribute("role")).toBe("button");
@@ -261,13 +261,13 @@ describe("PlotPeaks", () => {
     const peakG = container.querySelector('[data-role="plot-peaks"] > g')!;
     // Enter activates. fireEvent returns false when default was prevented.
     expect(fireEvent.keyDown(peakG, { key: "Enter" })).toBe(false);
-    expect(spy).toHaveBeenLastCalledWith(7);
+    expect(spy).toHaveBeenLastCalledWith({ id: 7, source: "auto" });
     // Space activates (and must preventDefault so the page does not scroll).
     expect(fireEvent.keyDown(peakG, { key: " " })).toBe(false);
-    expect(spy).toHaveBeenLastCalledWith(7);
+    expect(spy).toHaveBeenLastCalledWith({ id: 7, source: "auto" });
     // Alt is retired: Alt+Enter is a plain activation, no second argument.
     fireEvent.keyDown(peakG, { key: "Enter", altKey: true });
-    expect(spy).toHaveBeenLastCalledWith(7);
+    expect(spy).toHaveBeenLastCalledWith({ id: 7, source: "auto" });
     expect(spy).toHaveBeenCalledTimes(3);
     // Unrelated keys are ignored.
     fireEvent.keyDown(peakG, { key: "a" });
@@ -291,7 +291,7 @@ describe("PlotPeaks", () => {
     );
     const peakG = container.querySelector('[data-role="plot-peaks"] > g')!;
     fireEvent.focus(peakG);
-    expect(spy).toHaveBeenCalledWith(42);
+    expect(spy).toHaveBeenCalledWith("auto:42");
     fireEvent.blur(peakG);
     expect(spy).toHaveBeenCalledWith(null);
   });
@@ -313,7 +313,7 @@ describe("PlotPeaks", () => {
   });
 
   describe("focusRequest — keyboard re-anchor after a destructive edit", () => {
-    it("the focusable wrapper <g> carries data-peak-id so the survivor can be found", () => {
+    it("the focusable wrapper <g> carries data-peak-key so the survivor can be found", () => {
       const { container } = render(
         <svg>
           <PlotPeaks
@@ -325,7 +325,7 @@ describe("PlotPeaks", () => {
         </svg>,
       );
       const wrapper = container.querySelector(
-        '[data-role="plot-peaks"] > g[data-peak-id="7"]',
+        '[data-role="plot-peaks"] > g[data-peak-key="auto:7"]',
       );
       expect(wrapper).toBeTruthy();
       expect(wrapper!.getAttribute("role")).toBe("button");
@@ -353,7 +353,7 @@ describe("PlotPeaks", () => {
             color="var(--color-accent)"
             onPeakActivate={vi.fn()}
             onFocusFallback={fallback}
-            focusRequest={{ id: null, nonce: 1 }}
+            focusRequest={{ key: null, nonce: 1 }}
           />
         </svg>,
       );
@@ -370,7 +370,7 @@ describe("PlotPeaks", () => {
             color="var(--color-accent)"
             onPeakActivate={vi.fn()}
             onFocusFallback={fallback}
-            focusRequest={{ id: null, nonce }}
+            focusRequest={{ key: null, nonce }}
           />
         </svg>
       );
@@ -386,7 +386,7 @@ describe("PlotPeaks", () => {
     });
   });
 
-  describe("highlightPeakIds — index/phase highlight", () => {
+  describe("highlightPeakKeys — index/phase highlight", () => {
     const peaks3: PlotPeak[] = [
       { id: 1, q: 0.13, source: "auto", intensity: 10 },
       { id: 2, q: 0.18, source: "auto", intensity: 15 },
@@ -400,24 +400,24 @@ describe("PlotPeaks", () => {
             peaks={peaks3}
             projection={proj}
             color="oklch(0.5 0.1 30)"
-            highlightPeakIds={new Set([1])}
+            highlightPeakKeys={new Set(["auto:1"])}
           />
         </svg>,
       );
       const allPeakGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
       // Find the <g> for peak id=1 (highlighted) — must NOT be dimmed
       const g1 = Array.from(allPeakGs).find(
-        (g) => g.querySelector('[data-peak-id="1"]'),
+        (g) => g.querySelector('[data-peak-key="auto:1"]'),
       );
       expect(g1).toBeTruthy();
       expect(g1!.getAttribute("data-dimmed")).toBeNull();
 
       // Peaks 2 and 3 must be dimmed
       const g2 = Array.from(allPeakGs).find(
-        (g) => g.querySelector('[data-peak-id="2"]'),
+        (g) => g.querySelector('[data-peak-key="auto:2"]'),
       );
       const g3 = Array.from(allPeakGs).find(
-        (g) => g.querySelector('[data-peak-id="3"]'),
+        (g) => g.querySelector('[data-peak-key="auto:3"]'),
       );
       expect(g2).toBeTruthy();
       expect(g3).toBeTruthy();
@@ -437,7 +437,7 @@ describe("PlotPeaks", () => {
       ).toBe("currentColor");
     });
 
-    it("no <g> has data-dimmed when highlightPeakIds is not provided", () => {
+    it("no <g> has data-dimmed when highlightPeakKeys is not provided", () => {
       const { container } = render(
         <svg>
           <PlotPeaks peaks={peaks3} projection={proj} color="oklch(0.5 0.1 30)" />
@@ -449,14 +449,14 @@ describe("PlotPeaks", () => {
       expect(dimmed.length).toBe(0);
     });
 
-    it("no <g> has data-dimmed when highlightPeakIds is an empty set", () => {
+    it("no <g> has data-dimmed when highlightPeakKeys is an empty set", () => {
       const { container } = render(
         <svg>
           <PlotPeaks
             peaks={peaks3}
             projection={proj}
             color="oklch(0.5 0.1 30)"
-            highlightPeakIds={new Set()}
+            highlightPeakKeys={new Set()}
           />
         </svg>,
       );
@@ -466,7 +466,7 @@ describe("PlotPeaks", () => {
       expect(dimmed.length).toBe(0);
     });
 
-    it("hot peak is exempt from dimming even if not in highlightPeakIds", () => {
+    it("hot peak is exempt from dimming even if not in highlightPeakKeys", () => {
       const peaksWithHot: PlotPeak[] = [
         { id: 1, q: 0.13, source: "auto", intensity: 10 },
         { id: 2, q: 0.18, source: "auto", intensity: 15, hot: true },
@@ -478,14 +478,14 @@ describe("PlotPeaks", () => {
             peaks={peaksWithHot}
             projection={proj}
             color="oklch(0.5 0.1 30)"
-            highlightPeakIds={new Set([1])}
+            highlightPeakKeys={new Set(["auto:1"])}
           />
         </svg>,
       );
       const allPeakGs = container.querySelectorAll('[data-role="plot-peaks"] > g');
-      // Peak 2 is hot and NOT in highlightPeakIds → must NOT be dimmed
+      // Peak 2 is hot and NOT in highlightPeakKeys → must NOT be dimmed
       const g2 = Array.from(allPeakGs).find(
-        (g) => g.querySelector('[data-peak-id="2"]'),
+        (g) => g.querySelector('[data-peak-key="auto:2"]'),
       );
       expect(g2).toBeTruthy();
       expect(g2!.getAttribute("data-dimmed")).toBeNull();

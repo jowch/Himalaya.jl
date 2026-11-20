@@ -107,8 +107,8 @@ describe("PlotLabels", () => {
     expect(gap).toBeLessThan(30); // but far less than the old uniform width
   });
 
-  // ── highlightPeakIds — label dimming ---------------------------------------
-  describe("highlightPeakIds — label dimming", () => {
+  // ── highlightPeakKeys — label dimming ---------------------------------------
+  describe("highlightPeakKeys — label dimming", () => {
     const peaks3: PlotPeak[] = [
       { id: 1, q: 50, source: "auto", intensity: 10, label: "α" },
       { id: 2, q: 150, source: "auto", intensity: 15, label: "β" },
@@ -120,7 +120,7 @@ describe("PlotLabels", () => {
         peaks: peaks3,
         projection: proj,
         color,
-        highlightPeakIds: new Set([1]),
+        highlightPeakKeys: new Set(["auto:1"]),
       });
       const allTexts = container.querySelectorAll('[data-role="peak-label"]');
       expect(allTexts.length).toBe(3);
@@ -149,7 +149,7 @@ describe("PlotLabels", () => {
       expect((t3 as HTMLElement).style.fill).toBe("currentColor");
     });
 
-    it("no label has data-dimmed when highlightPeakIds is not provided", () => {
+    it("no label has data-dimmed when highlightPeakKeys is not provided", () => {
       const { container } = wrap({ peaks: peaks3, projection: proj, color });
       const dimmed = container.querySelectorAll(
         '[data-role="peak-label"][data-dimmed]',
@@ -157,12 +157,12 @@ describe("PlotLabels", () => {
       expect(dimmed.length).toBe(0);
     });
 
-    it("no label has data-dimmed when highlightPeakIds is an empty set", () => {
+    it("no label has data-dimmed when highlightPeakKeys is an empty set", () => {
       const { container } = wrap({
         peaks: peaks3,
         projection: proj,
         color,
-        highlightPeakIds: new Set(),
+        highlightPeakKeys: new Set(),
       });
       const dimmed = container.querySelectorAll(
         '[data-role="peak-label"][data-dimmed]',

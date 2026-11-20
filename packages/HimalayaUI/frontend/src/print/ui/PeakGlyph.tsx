@@ -24,7 +24,7 @@ export interface PeakGlyphProps {
   /** Opacity multiplier (ghosting / dim states). */
   opacity?: number;
   /** Optional data attributes for hit-testing / E2E selectors. */
-  dataPeakId?: number;
+  dataPeakKey?: string;
 }
 
 /** Build the SVG path geometry for one descriptor centred at (x, y). The
@@ -53,10 +53,10 @@ export function PeakGlyph({
   y,
   haloStroke = "var(--color-paper)",
   opacity = 1,
-  dataPeakId,
+  dataPeakKey,
 }: PeakGlyphProps): JSX.Element {
   const { shape, fill, stroke, strokeWidth, ring, r } = descriptor;
-  const idAttr = dataPeakId !== undefined ? { "data-peak-id": String(dataPeakId) } : {};
+  const idAttr = dataPeakKey !== undefined ? { "data-peak-key": dataPeakKey } : {};
   const isCaret = shape === "caret";
   const pts = isCaret
     ? `${x - r},${y - r * 1.4} ${x},${y} ${x + r},${y - r * 1.4}`

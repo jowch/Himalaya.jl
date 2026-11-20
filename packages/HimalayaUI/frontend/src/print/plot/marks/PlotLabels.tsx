@@ -1,5 +1,6 @@
 import { type Projection } from "../projection";
 import { type PlotPeak } from "./PlotPeaks";
+import { peakKey } from "../../../lib/peakRef";
 import { measureTextWidth } from "../../../lib/plot/measureText";
 
 // The label type face (mirrors the <text> style below) — fed to the text
@@ -22,7 +23,7 @@ export interface PlotLabelsProps {
   /** y data-value for peaks lacking an intensity (anchors them to baseline). */
   baselineI?: number;
   /** When non-empty, labels for peaks NOT in this set fade to neutral gray. */
-  highlightPeakIds?: ReadonlySet<number>;
+  highlightPeakKeys?: ReadonlySet<string>;
   /** Z-order split so the dodge connector can render BENEATH the peak markers
    *  (TracePlot draws `"connectors"` before PlotPeaks and `"text"` after).
    *  Default `"all"` renders both in one pass. */
@@ -61,7 +62,7 @@ export function dodgeX(
 
 /** One renderable label entry (pixel-space, pre-sorted). */
 interface LabelEntry {
-  id: number;
+  key: string;
   naturalPx: number;
   py: number;
   label: string;
@@ -77,7 +78,7 @@ export function PlotLabels({
   color,
   offsetPx = 12,
   baselineI,
-  highlightPeakIds,
+  highlightPeakKeys,
   part = "all",
 }: PlotLabelsProps): JSX.Element {
   const { x, y } = projection;
@@ -98,11 +99,11 @@ export function PlotLabels({
       iVal != null && Number.isFinite(iVal) ? y.to(iVal) : y.range[0];
 
     const dimmed =
-      !!highlightPeakIds &&
-      highlightPeakIds.size > 0 &&
-      !highlightPeakIds.has(p.id);
+      !!highlightPeakKeys &&
+      highlightPeakKeys.size > 0 &&
+      !highlightPeakKeys.has(peakKey(p));
     entries.push({
-      id: p.id,
+      key: peakKey(p),
       naturalPx: px,
       py,
       label: p.label,
@@ -134,7 +135,7 @@ export function PlotLabels({
         const shifted = Math.abs(dodgedX - naturalX) > 0.5;
 
         return (
-          <g key={e.id}>
+          <g key={e.key}>
             {/* Connector only when the label actually moved. It attaches at the
                 marker's CENTRE (naturalX, py − MARKER_CENTER_DY) and renders in
                 the `"connectors"` pass, which TracePlot draws BEFORE the markers

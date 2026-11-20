@@ -13,6 +13,7 @@ import { PlotLabels } from "./marks/PlotLabels";
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "./interaction";
 import { phaseColor } from "../../phases";
 import { type Trace } from "../../api";
+import { peakKey, type PeakRef } from "../../lib/peakRef";
 
 export interface TraceModel {
   trace: Trace;
@@ -29,7 +30,7 @@ export interface PlotContext {
 export interface TracePlotInteraction {
   onXDomain: (d: [number, number] | null) => void;
   onAddPeak?: (q: number) => void;
-  onClickPeak?: (peakId: number) => void;
+  onClickPeak?: (peak: PeakRef) => void;
   onReset?: () => void;
   hitTolerancePx?: number;
   doubleClickResets?: boolean;
@@ -56,7 +57,7 @@ export interface TracePlotProps {
   /** Gate which annotation layers render. Axes/grid stay governed by `axes`. */
   show?: { peaks?: boolean; labels?: boolean; band?: boolean };
   /** When non-empty, peaks/labels NOT in this set fade to neutral gray. Hot peaks are exempt. */
-  highlightPeakIds?: ReadonlySet<number>;
+  highlightPeakKeys?: ReadonlySet<string>;
   /** Multiply the y-domain top by (1 + yHeadroom) so peaks keep headroom below
    *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
   yHeadroom?: number;
@@ -116,7 +117,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     className,
     "data-testid": testid,
     show,
-    highlightPeakIds,
+    highlightPeakKeys,
     yHeadroom = 0,
     neutralLine = false,
     onHoverQ,
@@ -139,12 +140,12 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
 
   const stateRef = useRef<PlotState | null>(null);
 
-  const [hoverId, setHoverId] = useState<number | null>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
   // The plot-relative x pixel of the hover crosshair: snapped to a peak's x when
   // one is within tolerance, else the free cursor x. null = not over the body.
   // Drives a vertical q-leader line + readout in EVERY mode, so a peak's q is
   // legible on hover even where no marker is (and tuning a new peak's q is
-  // visual). Separate from hoverId so the line shows off-peak too.
+  // visual). Separate from hoverKey so the line shows off-peak too.
   const [hoverPx, setHoverPx] = useState<number | null>(null);
   // Unique clip-path id (multiple TracePlots coexist — e.g. the waterfall stack).
   // useId() returns colon-wrapped ids; strip them so url(#…) resolves.
@@ -152,14 +153,14 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
 
   // Outward q-link: emit the hovered peak's q whenever the INTERNAL hover changes
   // (covers both the frame hit-test and the per-glyph focus, which both write
-  // hoverId). Keyed on hoverId — NOT hoveredQ — so an incoming external hover can
+  // hoverKey). Keyed on hoverKey — NOT hoveredQ — so an incoming external hover can
   // never round-trip back out and form a feedback loop.
   useEffect(() => {
     if (!onHoverQ) return;
     const p =
-      hoverId == null ? undefined : trace.peaks.find((pk) => pk.id === hoverId);
+      hoverKey == null ? undefined : trace.peaks.find((pk) => peakKey(pk) === hoverKey);
     onHoverQ(p?.q);
-  }, [hoverId, onHoverQ, trace.peaks]);
+  }, [hoverKey, onHoverQ, trace.peaks]);
 
   const handlePointerMovePx = useCallback((px: number, py: number) => {
     const s = stateRef.current;
@@ -167,19 +168,19 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     const plotPx = px - s.dims.margins.left;
     const plotPy = py - s.dims.margins.top;
     if (plotPx < 0 || plotPx > s.dims.plotWidth || plotPy < 0 || plotPy > s.dims.plotHeight) {
-      setHoverId(null);
+      setHoverKey(null);
       setHoverPx(null);
       return;
     }
     const tol = s.interaction.hitTolerancePx ?? PEAK_HIT_PX;
     const hit = hitTestPeaks(s.peaks, plotPx, (q) => s.projection.x.to(q), tol);
-    setHoverId(hit ? hit.id : null);
+    setHoverKey(hit ? peakKey(hit) : null);
     // Snap the crosshair to the peak's x when one is hit, else track the cursor.
     setHoverPx(hit ? s.projection.x.to(hit.q) : plotPx);
   }, []);
 
   const handlePointerLeave = useCallback(() => {
-    setHoverId(null);
+    setHoverKey(null);
     setHoverPx(null);
   }, []);
 
@@ -226,7 +227,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
         tol,
       );
       if (hit && s.interaction.onClickPeak) {
-        s.interaction.onClickPeak(hit.id);
+        s.interaction.onClickPeak({ id: hit.id, source: hit.source });
       } else if (s.interaction.onAddPeak) {
         s.interaction.onAddPeak(q);
       }
@@ -284,11 +285,11 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
         };
         // Incoming q-link: resolve hoveredQ to the nearest peak within the same
         // pixel tolerance the hit-test uses. Internal hover stays authoritative.
-        const externalHotId =
+        const externalHotKey =
           hoveredQ == null
             ? null
             : (() => {
-                let best: number | null = null;
+                let best: string | null = null;
                 let bestPx = Infinity;
                 const tol =
                   (interaction && interaction.hitTolerancePx) || PEAK_HIT_PX;
@@ -297,12 +298,12 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                   const d = Math.abs(projection.x.to(p.q) - targetPx);
                   if (d <= tol && d < bestPx) {
                     bestPx = d;
-                    best = p.id;
+                    best = peakKey(p);
                   }
                 }
                 return best;
               })();
-        const effectiveHoverId = hoverId ?? externalHotId;
+        const effectiveHoverKey = hoverKey ?? externalHotKey;
         return (
           <>
             {/* Clip the trace + peaks + labels to the plot rect so a curve / glyphs
@@ -356,13 +357,13 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                   projection={projection}
                   color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
                   baselineI={yExtent[0]}
-                  {...(highlightPeakIds ? { highlightPeakIds } : {})}
+                  {...(highlightPeakKeys ? { highlightPeakKeys } : {})}
                 />
               ) : null}
               {layers.peaks ? (() => {
-              const peaksWithHover = effectiveHoverId == null
+              const peaksWithHover = effectiveHoverKey == null
                 ? trace.peaks
-                : trace.peaks.map((p) => (p.id === effectiveHoverId ? { ...p, hot: true } : p));
+                : trace.peaks.map((p) => (peakKey(p) === effectiveHoverKey ? { ...p, hot: true } : p));
               return (
                 <PlotPeaks
                   peaks={peaksWithHover}
@@ -370,7 +371,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                   color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
                   baselineI={yExtent[0]}
                   {...(paperColor ? { paperColor } : {})}
-                  {...(interaction ? { onPeakFocus: setHoverId } : {})}
+                  {...(interaction ? { onPeakFocus: setHoverKey } : {})}
                   {
                     // Keyboard peak editing rides the same gate as pointer
                     // editing: onClickPeak is only threaded while the consumer
@@ -380,7 +381,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                       ? { onPeakActivate: interaction.onClickPeak }
                       : {})
                   }
-                  {...(highlightPeakIds ? { highlightPeakIds } : {})}
+                  {...(highlightPeakKeys ? { highlightPeakKeys } : {})}
                   {...(focusRequest ? { focusRequest } : {})}
                   {...(onFocusFallback ? { onFocusFallback } : {})}
                 />
@@ -393,7 +394,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                   projection={projection}
                   color={trace.phase ? phaseColor(trace.phase) : UNINDEXED_COLOR}
                   baselineI={yExtent[0]}
-                  {...(highlightPeakIds ? { highlightPeakIds } : {})}
+                  {...(highlightPeakKeys ? { highlightPeakKeys } : {})}
                 />
               ) : null}
             </g>
@@ -407,8 +408,8 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
                 axis only — never an intensity readout. Motion is instant
                 (reduced-motion-safe). */}
             {(() => {
-              const snapped = effectiveHoverId != null && layers.peaks
-                ? trace.peaks.find((p) => p.id === effectiveHoverId) ?? null
+              const snapped = effectiveHoverKey != null && layers.peaks
+                ? trace.peaks.find((p) => peakKey(p) === effectiveHoverKey) ?? null
                 : null;
               let qx: number;
               let q: number;
