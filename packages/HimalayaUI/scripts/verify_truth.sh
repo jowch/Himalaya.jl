@@ -18,10 +18,33 @@ step() {
     echo "FAILED  $name (see $OUT/$name.$ext)"
     head -c 6000 "$OUT/$name.$ext"; echo
     failed+=("$name")
+    echo "--- sockets at failure"; sockets
   fi
 }
 
-trap 'bin/verify stop > /dev/null 2>&1 || true' EXIT
+probe() {
+  local line="$(date +%T)"
+  for name in chrome node julia; do
+    local n=0
+    for pid in $(pgrep -f "$name" 2>/dev/null); do n=$((n + $(ls /proc/$pid/fd 2>/dev/null | wc -l))); done
+    line="$line $name-fds=$n"
+  done
+  line="$line est5173=$(ss -tan 2>/dev/null | awk '$1=="ESTAB" && $5 ~ /:5173$/' | wc -l)"
+  line="$line est-backend=$(ss -tan 2>/dev/null | awk '$1=="ESTAB" && $4 ~ /:(8080|8000|8765)$/' | wc -l)"
+  line="$line tw=$(ss -tan state time-wait 2>/dev/null | wc -l) shm=$(ls /dev/shm 2>/dev/null | wc -l)"
+  echo "$line"
+}
+( while sleep 2; do probe; done ) > "$OUT/probe.log" 2>&1 &
+PROBE=$!
+sockets() {
+  ss -tan 2>/dev/null | awk 'NR>1 {n=split($4,a,":"); m=split($5,b,":"); l=a[n]; r=b[m]; if (l+0>=30000) l="eph"; if (r+0>=30000) r="eph"; print $1, l, r}' | sort | uniq -c | sort -rn | head -20
+}
+finish() {
+  kill "$PROBE" 2>/dev/null
+  echo "--- probe"; cat "$OUT/probe.log"; echo "--- sockets"; sockets
+  bin/verify stop > /dev/null 2>&1 || true
+}
+trap finish EXIT
 bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
 
