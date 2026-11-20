@@ -56,9 +56,13 @@ scratch/demo-experiment/
 - **Some scans are bad on purpose**, so the drop and representative rules have
   something to act on. TRUTH's `drop` column lists them (`BAD_SCANS` in the
   generator):
-  - `MO_H2O`: the newest scan is a beam-off shot (dark counts only).
-  - `DOPE_H2O`: the oldest scan missed the capillary (air scatter, no sample).
-  - `leaked_capillary`: both scans are air, so the sample has no usable frame.
+  - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
+    0.01 counts per pixel plus hot pixels, so Loupe shows a black frame.
+  - `DOPE_H2O`: the oldest scan missed the capillary: steep q⁻⁴ air and slit
+    scatter over a faint air floor, so Loupe shows a glow at the beamstop and
+    darkness beyond it.
+  - `leaked_capillary`: both scans missed the capillary in the same way, so the
+    sample has no usable frame.
 
   Nothing drops them at ingest; a triager does. `bin/verify triage`
   drops them through the endpoint Loupe's Drop uses, so `bin/verify check-truth` can check the corpus

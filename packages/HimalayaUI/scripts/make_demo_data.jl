@@ -91,18 +91,26 @@ const SAMPLES = [
     ("leaked_capillary", 2, Component[],                                                 "none",           "capillary leaked before measurement; both scans are air, so the sample has no usable frame"),
 ]
 
-# Bad scans a triager should drop, by sample and scan number (1 = oldest). They
-# exercise the drop and representative rules: a bad newest frame (the backend's
-# highest-id fallback), a bad oldest frame (Focus opens frame 1), and a sample
-# with no usable frame at all. TRUTH's `drop` column lists them.
-#   :beam_off  shutter stayed closed, so the detector saw only dark counts
-#   :missed    beam went through air beside the capillary: parasitic scatter, no sample
+# Bad scans a triager should drop, by sample and scan number (1 = oldest); TRUTH's
+# `drop` column lists them.
 const BAD_SCANS = Dict(
     "MO_H2O"           => Dict(3 => :beam_off),
     "DOPE_H2O"         => Dict(1 => :missed),
     "leaked_capillary" => Dict(1 => :missed, 2 => :missed),
 )
-const BAD_SCALE = Dict(:beam_off => 0.02, :missed => 0.3)
+
+# physics: beam off (shutter closed) leaves only the detector's dark floor, about
+# physics: 0.01 counts per pixel in 15 s, with no q dependence.
+# physics: a missed capillary leaves only air and slit (parasitic) scatter: a steep
+# physics: ~q^-4 rise into the beamstop over a faint air floor, about an eighth of the
+# physics: incoherent floor a filled capillary gives, so the frame is dark past the
+# physics: first few hundred pixels.
+const DARK_FLOOR = 0.2
+const AIR_FLOOR = 4.0
+bad_trace(kind::Symbol) =
+    kind === :beam_off ? fill(DARK_FLOOR, length(Q)) :
+    kind === :missed   ? @.(0.002 * Q^-4 + AIR_FLOOR) :
+    error("unknown bad scan kind $kind")
 const LOAD_SPLIT = 6        # samples 1..6 in holder 1, the rest in holder 2
 const FIRST_SCAN = 2401
 
@@ -127,7 +135,7 @@ function background(rng, formfactor::Bool)
     @. amp * (0.06 * Q^-3.2 + 1.2 * Q^-1.2 + 30)
 end
 
-"Noise-free model trace and its background for one sample, plus the generated (phase, q) reflections."
+"Noise-free model trace for one sample, plus the generated (phase, q) reflections."
 function model_trace(rng, label, comps)
     bg = background(rng, startswith(label, "vesicles"))
     I = copy(bg)
@@ -146,7 +154,7 @@ function model_trace(rng, label, comps)
             push!(peaks, (phase_name(P), round(qk; digits = 5)))
         end
     end
-    I, bg, peaks
+    I, peaks
 end
 
 "One noisy measurement of a model trace; σ is the noise actually applied."
@@ -311,7 +319,7 @@ function main(args = ARGS)
         # Holder 2 goes in after a >1 h break, so load segmentation finds 2 loads.
         k == LOAD_SPLIT + 1 && (t += Minute(75))
         slot = k <= LOAD_SPLIT ? k : k - LOAD_SPLIT
-        model, bg, peaks = model_trace(rng, label, comps)
+        model, peaks = model_trace(rng, label, comps)
         bad = get(BAD_SCANS, label, Dict{Int,Symbol}())
         bases = String[]; drops = String[]
         for n in 1:nscans
@@ -319,7 +327,7 @@ function main(args = ARGS)
             push!(bases, base)
             kind = get(bad, n, nothing)
             kind === nothing || push!(drops, base)
-            I, sig = measure(rng, kind === nothing ? model : bg .* BAD_SCALE[kind])
+            I, sig = measure(rng, kind === nothing ? model : bad_trace(kind))
             open(joinpath(tot, "$(base)_tot.dat"), "w") do io
                 for j in eachindex(Q)
                     @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
