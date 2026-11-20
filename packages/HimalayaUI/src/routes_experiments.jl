@@ -15,6 +15,7 @@ const _GEOMETRY_PATCH_FIELDS = [
 const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
                            "id", "created_at"]
 const _PLAIN_PATCH_FIELDS = ["name", "description"]
+const _CLEARABLE_PATCH_FIELDS = ("description",)
 const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]
 
 # Serialize a GroupingFlag (MergeFlag/SplitFlag) to the §8.8 wire shape. The
@@ -276,8 +277,7 @@ function register_experiments_routes!()
                     end
                 end
                 broadcast_progress!(exp_id; kind = "ingest_complete", processed = 0, total = 0)
-                # Arm the rescan scheduler after a successful first scan.
-                start_rescan_scheduler!(db, exp_id)
+                set_rescan_tier!(db, exp_id, "fast")
             catch err
                 @warn "first scan failed" experiment_id = exp_id exception = err
                 lock(_DB_WRITE_LOCK) do
@@ -351,11 +351,11 @@ function register_experiments_routes!()
             push!(set_clauses, "$(field)_source = 'user'")
         end
 
-        # Plain identity fields: no *_source stamp, no rescan.
         for field in _PLAIN_PATCH_FIELDS
+            (haskey(body, Symbol(field)) || haskey(body, field)) || continue
             val = get(body, Symbol(field), get(body, field, nothing))
-            val === nothing && continue
-            push!(set_clauses, "$field = ?"); push!(params, val)
+            val === nothing && !(field in _CLEARABLE_PATCH_FIELDS) && continue
+            push!(set_clauses, "$field = ?"); push!(params, something(val, missing))
         end
 
         for field in _PATTERN_FIELDS
@@ -507,7 +507,7 @@ function register_experiments_routes!()
                         on_progress = (p, t, stage) -> broadcast_progress!(id;
                             kind = "ingest_progress", processed = p, total = t,
                             phase = "rescan", stage = stage))
-                    start_rescan_scheduler!(db, id)   # re-arm the fast-tier scheduler
+                    set_rescan_tier!(db, id, "fast")
                 end
 
                 lock(_DB_WRITE_LOCK) do

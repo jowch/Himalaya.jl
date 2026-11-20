@@ -30,6 +30,14 @@ using HimalayaUI: with_inproc_routes, open_prepared_clone
             r3b = call("GET", "/api/experiments/$exp_id")
             @test JSON3.read(r3b.body)["description"] == "AgBe SAXS run"
 
+            r3c = call("PATCH", "/api/experiments/$exp_id";
+                headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
+                body=Vector{UInt8}("{\"description\":null}"))
+            @test r3c.status == 200
+            @test JSON3.read(r3c.body)["description"] === nothing
+            r3d = call("GET", "/api/experiments/$exp_id")
+            @test JSON3.read(r3d.body)["description"] === nothing
+
             r4 = call("PATCH", "/api/experiments/$exp_id";
                 headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
                 body=Vector{UInt8}(JSON3.write(Dict("image_pattern" => "*.tif"))))
