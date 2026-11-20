@@ -156,20 +156,20 @@ export function WorkspacePage(): JSX.Element {
   const scales = useMemo(() => {
     const out = new Map<number, CompareScale>();
     if (!mainTrace) return out;
-    compareTraces.forEach((r, rid) => out.set(rid, compareScale(mainTrace, r.trace, exposure, r.exposure, peakQs)));
+    compareTraces.forEach((t, rid) => out.set(rid, compareScale(mainTrace, t, peakQs)));
     return out;
-  }, [mainTrace, compareTraces, exposure, peakQs]);
+  }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
     return refs.flatMap((rid, i) => {
-      const t = compareTraces.get(rid)?.trace;
+      const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
       if (rid === sampleId || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, dash: COMPARE_DASHES[i % COMPARE_DASHES.length]!, emphasis: rid === subRef }];
     });
   }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
-  const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef)?.trace : undefined;
+  const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),

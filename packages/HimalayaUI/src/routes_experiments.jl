@@ -501,6 +501,7 @@ function register_experiments_routes!()
         # the row themselves, and return gracefully on an empty directory.
         Threads.@spawn begin
             try
+                backfill_monitors!(db, id)
                 changed = force_scan || cheap_change_check(db, id)
                 if changed
                     scan_and_group!(db, id;

@@ -136,7 +136,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     content_fingerprint  TEXT,
     transmitted_counts   REAL,
     incident_monitor     REAL,
-    counting_time        REAL
+    counting_time        REAL,
+    monitors_read        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -786,9 +787,10 @@ function migrate_exposures_beam_monitors!(db::SQLite.DB)
     _migrated(db, MIGRATION_EXPOSURES_BEAM_MONITORS) && return nothing
     SQLite.transaction(db) do
         existing = cols_of(db, "exposures")
-        for name in ("transmitted_counts", "incident_monitor", "counting_time")
+        for (name, decl) in (("transmitted_counts", "REAL"), ("incident_monitor", "REAL"),
+                             ("counting_time", "REAL"), ("monitors_read", "INTEGER NOT NULL DEFAULT 0"))
             name in existing || DBInterface.execute(db,
-                "ALTER TABLE exposures ADD COLUMN $name REAL")
+                "ALTER TABLE exposures ADD COLUMN $name $decl")
         end
         _record_migration!(db, MIGRATION_EXPOSURES_BEAM_MONITORS)
     end
@@ -2489,16 +2491,19 @@ function create_exposure!(db::SQLite.DB;
         content_fingerprint = nothing,
         transmitted_counts = nothing,
         incident_monitor  = nothing,
-        counting_time     = nothing)
+        counting_time     = nothing,
+        monitors_read::Bool = prp_path !== nothing)
     result = DBInterface.execute(db, """
         INSERT INTO exposures
             (experiment_id, sample_id, filename, kind, selected, status, image_path,
              prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
-             load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time)
-        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?)
+             load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
+             monitors_read)
+        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?)
     """, [experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
           prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
-          load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time])
+          load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
+          Int(monitors_read)])
     return Int(DBInterface.lastrowid(result))
 end
 

@@ -769,6 +769,34 @@ end
         end
     end
 
+    @testset "regroup stores beam monitors on relinked and newly inserted exposures" begin
+        base = DateTime(2026, 4, 26, 23, 0, 0)
+        exps = [(id = 300 + i, sample_id = 40, stem = "MON_$(i)_001",
+                 hpos = 70.0, ts = base + Dates.Second(2i)) for i in 1:2]
+        dir = mktempdir()
+        path = build_focused_db(dir; samples = [(id = 40, name = "MON")], exposures = exps)
+        data_dir = joinpath(dir, "data"); analysis_dir = joinpath(dir, "analysis")
+        for (i, e) in enumerate(exps)
+            write_stem_fixtures!(data_dir, analysis_dir, e.stem;
+                horizontal_position_mm = e.hpos, timestamp = e.ts, i_signal = 7000.0 + i, i_0 = 1.5)
+        end
+        write_stem_fixtures!(data_dir, analysis_dir, "MON_3_001";
+            horizontal_position_mm = 70.0, timestamp = base + Dates.Second(6), i_signal = 7003.0, i_0 = 1.5)
+        with_migration_db(path) do db
+            HimalayaUI.regroup_experiment!(db, 1)
+            rows = Tables.rowtable(DBInterface.execute(db,
+                """SELECT id, filename, transmitted_counts, incident_monitor, counting_time, monitors_read
+                     FROM exposures WHERE experiment_id = 1 ORDER BY filename"""))
+            @test [String(r.filename) for r in rows] == ["MON_1_001", "MON_2_001", "MON_3_001"]
+            @test [r.transmitted_counts for r in rows] ≈ [7001.0, 7002.0, 7003.0]
+            @test all(r.incident_monitor ≈ 1.5 for r in rows)
+            @test all(r.counting_time ≈ 15.8 for r in rows)
+            @test all(r.monitors_read == 1 for r in rows)
+            @test Int(rows[1].id) == 301 && Int(rows[2].id) == 302
+            @test Int(rows[3].id) ∉ (301, 302)
+        end
+    end
+
     @testset "every file-present exposure gets non-NULL load_id + a sample" begin
         path, info = build_migrated_db(mktempdir())
         with_migration_db(path) do db

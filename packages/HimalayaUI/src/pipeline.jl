@@ -919,6 +919,8 @@ function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
     bytes2hex(SHA.sha256(buf))
 end
 
+acquisition_stem(filename::AbstractString) = replace(filename, r"_\d+_\d+$" => "")
+
 """
     resolve_trace_path(analysis_dir, integration_pattern, filename) -> String | nothing
 
@@ -936,7 +938,7 @@ function resolve_trace_path(analysis_dir::AbstractString,
                             filename::AbstractString)
     exact = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
     isfile(exact) && return exact
-    stripped = replace(filename, r"_\d+_\d+$" => "")
+    stripped = acquisition_stem(filename)
     if stripped != filename
         alt = joinpath(analysis_dir, replace(integration_pattern, "{name}" => stripped))
         isfile(alt) && return alt

@@ -12,9 +12,9 @@
 #   detector               :: Union{String, Missing}     — e.g. "Pilatus 1M"
 #   exposure_time_s        :: Union{Float64, Missing}    — "Exposure time"
 #   horizontal_position_mm :: Union{Float64, Missing}    — "Horizontal position"
-#
-# Dropped fields (constant/noise per spec §4): Vertical position, dispx, dispy,
-# detector_vert/horz, Phi, slit widths, attenuator, per-counter voltages, scan motor.
+#   transmitted_counts     :: Union{Float64, Missing}    — "I_signal" (any case)
+#   incident_monitor       :: Union{Float64, Missing}    — "I_0(<channel>)"
+#   counting_time_s        :: Union{Float64, Missing}    — "Counting time"
 
 using Dates
 
@@ -93,7 +93,7 @@ function parse_prp(path::AbstractString)
         # physics: APD), integrated over the counting time and already dark-corrected.
         # physics: Raw I_1 is not: in a typical 15 s exposure its dark counts are
         # physics: ~97% of the total, so it is never used as a stand-in.
-        elseif key == "I_signal" && val_str !== nothing
+        elseif lowercase(key) == "i_signal" && val_str !== nothing
             try
                 transmitted_counts = parse(Float64, val_str)
             catch

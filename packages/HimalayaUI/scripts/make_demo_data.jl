@@ -179,6 +179,12 @@ end
 const I0_VOLTS     = 1.5007
 const APD_PER_VOLT = 7365.0 / (1.5007 * 0.86)
 const APD_DARK_RATE = 18320.0
+# physics: I_signal is a small difference of two large numbers: raw I_1 minus the
+# physics: nominal dark rate × counting time, about 97% of I_1 in the real file. The
+# physics: dark rate drifts between its calibration and each exposure, so a 0.1% drift
+# physics: moves I_signal by about 4%. The demo draws that drift, so the monitor scale
+# physics: it shows carries the error a real one would, rather than agreeing exactly.
+const APD_DARK_DRIFT = 0.001
 const TRANSMISSION = Dict("buffer_blank" => 0.93, "vesicles_ULV" => 0.90)
 const AIR_TRANSMISSION = 1.0
 
@@ -288,8 +294,10 @@ write_tif(path, counts::Matrix{Int32}) = save(path, Gray.(reinterpret.(Q0f31, co
 function write_prp(path, ts; exposure_time = 15, horiz = 58.9, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
     stem = splitext(basename(path))[1]
     counting = exposure_time + 0.8
-    i_signal = round(APD_PER_VOLT * I0_VOLTS * i0 * transmission * exposure_time / 15 * (1 + 0.003 * randn(rng)); digits = 1)
-    i_1 = round(i_signal + APD_DARK_RATE * counting; digits = 1)
+    transmitted = APD_PER_VOLT * I0_VOLTS * i0 * transmission * counting / 15.8 * (1 + 0.003 * randn(rng))
+    dark = APD_DARK_RATE * (1 + APD_DARK_DRIFT * randn(rng))
+    i_1 = round(transmitted + dark * counting; digits = 1)
+    i_signal = round(i_1 - APD_DARK_RATE * counting; digits = 1)
     open(path, "w") do io
         println(io, "Image file name: $stem.tif")
         println(io, "Time this file was written: $ts")

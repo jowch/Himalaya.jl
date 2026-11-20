@@ -384,6 +384,10 @@ end
         @test prp.counting_time_s ≈ 15.8
         @test prp.exposure_time_s ≈ 15.0
 
+        mixed = joinpath(dir, "mixed_case.prp")
+        write(mixed, "I_Signal=812.5 (corrected for dark counts)\n")
+        @test HimalayaUI.parse_prp(mixed).transmitted_counts ≈ 812.5
+
         q = joinpath(dir, "no_signal.prp")
         write(q, "I_1(daqCounter1.0)=296821.0\nExposure time=15\n")
         @test HimalayaUI.parse_prp(q).transmitted_counts === missing
@@ -684,7 +688,7 @@ end
         @test length(samps2) == 2  # samples unchanged (sample dedup keyed on a stable load_id)
     end
 
-    @testset "scan_and_group! stores beam monitors and backfills them on rescan" begin
+    @testset "scan_and_group! stores beam monitors; backfill_monitors! fills old rows once" begin
         dir = mktempdir()
         data_dir     = joinpath(dir, "data")
         analysis_dir = joinpath(dir, "analysis")
@@ -712,16 +716,29 @@ end
         @test all(r.incident_monitor ≈ 1.5 for r in rows)
         @test all(r.counting_time ≈ 15.8 for r in rows)
 
-        DBInterface.execute(db,
-            "UPDATE exposures SET transmitted_counts = NULL, incident_monitor = NULL, counting_time = NULL")
+        @test all(r -> r.monitors_read == 1, Tables.rowtable(DBInterface.execute(db,
+            "SELECT monitors_read FROM exposures WHERE experiment_id = ?", [exp_id])))
+
+        DBInterface.execute(db, """UPDATE exposures SET transmitted_counts = NULL,
+            incident_monitor = NULL, counting_time = NULL, monitors_read = 0""")
         DBInterface.execute(db,
             "UPDATE exposures SET transmitted_counts = 1.0 WHERE filename = ?", [stems[2]])
         HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+        @test all(r -> ismissing(r.counting_time), monitors())
+
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 2
         rows = monitors()
-        @test length(rows) == 2
         @test rows[1].transmitted_counts ≈ 7001.0
         @test rows[2].transmitted_counts ≈ 1.0
         @test all(r.counting_time ≈ 15.8 for r in rows)
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 0
+
+        write_prp(joinpath(data_dir, "$(stems[1]).prp"); exposure_time = 15.0)
+        DBInterface.execute(db, """UPDATE exposures SET transmitted_counts = NULL,
+            incident_monitor = NULL, monitors_read = 0 WHERE filename = ?""", [stems[1]])
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 1
+        @test ismissing(monitors()[1].transmitted_counts)
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 0
     end
 
     @testset "migrate_exposures_beam_monitors! adds the columns to an old exposures table" begin
@@ -732,9 +749,10 @@ end
         HimalayaUI.migrate_exposures_beam_monitors!(db)
         HimalayaUI.migrate_exposures_beam_monitors!(db)
         cols = HimalayaUI.cols_of(db, "exposures")
-        @test all(c in cols for c in ("transmitted_counts", "incident_monitor", "counting_time"))
+        @test all(c in cols for c in ("transmitted_counts", "incident_monitor", "counting_time", "monitors_read"))
         r = first(Tables.rowtable(DBInterface.execute(db, "SELECT * FROM exposures")))
         @test ismissing(r.transmitted_counts)
+        @test r.monitors_read == 0
     end
 
     @testset "derive_sample_flags" begin

@@ -597,6 +597,57 @@ end
         SQLite.close(db)
     end
 
+    @testset "a plain rescan with no new files still backfills missing beam monitors" begin
+        db, dir, exp_id = scan_test_db()
+        stems = ["MON_S$(lpad(i, 4, '0'))_0_001" for i in 1:2]
+        for (i, stem) in enumerate(stems)
+            write(joinpath(dir, "$stem.tif"), "fake tif")
+            write(joinpath(dir, "$stem.prp"),
+                "I_signal=$(7000.0 + i) (corrected for dark counts)\nI_0(daqIon3.0)=1.5\n" *
+                "Exposure time=15\nCounting time=15.8\n")
+            HimalayaUI.create_exposure!(db; experiment_id = exp_id, filename = stem,
+                prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
+        end
+        @test !HimalayaUI.cheap_change_check(db, exp_id)
+        monitors() = Tables.rowtable(DBInterface.execute(db,
+            "SELECT transmitted_counts, counting_time FROM exposures WHERE experiment_id = ? ORDER BY filename",
+            [exp_id]))
+        status() = Tables.rowtable(DBInterface.execute(db,
+            "SELECT ingest_status FROM experiments WHERE id = ?", [exp_id]))[1].ingest_status
+        try
+            with_test_server(db) do port, base
+                r = HTTP.post("$base/api/experiments/$exp_id/scan";
+                    body = JSON3.write(Dict(:force => false)),
+                    headers = ["Content-Type" => "application/json"],
+                    status_exception = false)
+                @test r.status == 202
+                @test timedwait(() -> status() == "complete", 30.0) === :ok
+            end
+            @test [m.transmitted_counts for m in monitors()] ≈ [7001.0, 7002.0]
+            @test all(m.counting_time ≈ 15.8 for m in monitors())
+        finally
+            HimalayaUI.stop_all_rescan_timers!()
+            SQLite.close(db)
+        end
+    end
+
+    @testset "a quiet scheduler tick backfills missing beam monitors" begin
+        db, dir, exp_id = scan_test_db()
+        stem = "TICK_S0001_0_001"
+        write(joinpath(dir, "$stem.prp"), "I_signal=6500.0\nExposure time=15\nCounting time=15.8\n")
+        HimalayaUI.create_exposure!(db; experiment_id = exp_id, filename = stem,
+            prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
+        try
+            HimalayaUI._rescan_tick!(db, exp_id; cheap_check_fn = (_, _) -> false)
+            r = Tables.rowtable(DBInterface.execute(db,
+                "SELECT transmitted_counts FROM exposures WHERE experiment_id = ?", [exp_id]))[1]
+            @test r.transmitted_counts ≈ 6500.0
+        finally
+            HimalayaUI.stop_all_rescan_timers!()
+            SQLite.close(db)
+        end
+    end
+
     @testset "a manual rescan that finds new files resets the backoff to the fast tier" begin
         db, dir, exp_id = scan_test_db()
         DBInterface.execute(db, """

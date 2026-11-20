@@ -431,10 +431,18 @@ export const removeExposureTag = (
   "DELETE", `/api/exposures/${id}/tags/${tag_id}`, undefined, opts);
 
 // Trace
+export interface TraceFrame {
+  exposure_id: number;
+  transmitted_counts: number | null;
+  exposure_time: number | null;
+  counting_time: number | null;
+}
+
 export interface Trace {
   q: number[];
   I: number[];
   sigma: number[];
+  frames?: TraceFrame[];
 }
 
 export const getTrace = (exposure_id: number) =>

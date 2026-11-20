@@ -48,18 +48,42 @@ end
 
 _nothing_if_missing(x) = ismissing(x) ? nothing : x
 
-function _backfill_monitors!(db, experiment_id, ge)
-    vals = (ge.transmitted_counts, ge.incident_monitor, ge.counting_time_s)
-    all(ismissing, vals) && return nothing
-    DBInterface.execute(db, """
-        UPDATE exposures
-           SET transmitted_counts = COALESCE(transmitted_counts, ?),
-               incident_monitor   = COALESCE(incident_monitor, ?),
-               counting_time      = COALESCE(counting_time, ?)
-         WHERE experiment_id = ? AND filename = ?
-           AND (transmitted_counts IS NULL OR incident_monitor IS NULL OR counting_time IS NULL)
-    """, [map(_nothing_if_missing, vals)..., experiment_id, ge.stem])
-    nothing
+function backfill_monitors!(db::SQLite.DB, experiment_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, prp_path FROM exposures
+          WHERE experiment_id = ? AND prp_path IS NOT NULL AND monitors_read = 0",
+        [experiment_id]))
+    isempty(rows) && return 0
+    parsed = Tuple{Int,NamedTuple}[]
+    for r in rows
+        path = String(r.prp_path)
+        isfile(path) || continue
+        prp = try
+            parse_prp(path)
+        catch err
+            @warn "backfill_monitors!: could not read" path exception = err
+            continue
+        end
+        push!(parsed, (Int(r.id), _monitors(prp)))
+    end
+    isempty(parsed) && return 0
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            for (id, m) in parsed
+                DBInterface.execute(db, """
+                    UPDATE exposures
+                       SET transmitted_counts = COALESCE(transmitted_counts, ?),
+                           incident_monitor   = COALESCE(incident_monitor, ?),
+                           counting_time      = COALESCE(counting_time, ?),
+                           monitors_read      = 1
+                     WHERE id = ?
+                """, [_nothing_if_missing(m.transmitted_counts),
+                      _nothing_if_missing(m.incident_monitor),
+                      _nothing_if_missing(m.counting_time_s), id])
+            end
+        end
+    end
+    length(parsed)
 end
 
 """
@@ -213,10 +237,7 @@ function scan_and_group!(
                     end
 
                     for ge in gs.exposures
-                        if ge.stem in existing_filenames
-                            _backfill_monitors!(db, experiment_id, ge)
-                            continue
-                        end
+                        ge.stem in existing_filenames && continue
                         eid = create_exposure!(db;
                             experiment_id       = experiment_id,
                             sample_id           = sample_id,
@@ -628,7 +649,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                     UPDATE exposures SET sample_id = ?, load_id = ?, filename = ?, prp_path = ?,
                         timestamp = ?, exposure_time = ?, horizontal_position = ?,
                         scan_id = ?, frame_no = ?, transmitted_counts = ?,
-                        incident_monitor = ?, counting_time = ?
+                        incident_monitor = ?, counting_time = ?, monitors_read = ?
                     WHERE experiment_id = ? AND filename = ?
                 """, [own, load_id_of[bf.load_index], stem,
                       ismissing(bf.prp_path) ? nothing : bf.prp_path,
@@ -640,6 +661,7 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                       _nothing_if_missing(bf.transmitted_counts),
                       _nothing_if_missing(bf.incident_monitor),
                       _nothing_if_missing(bf.counting_time),
+                      Int(!ismissing(bf.prp_path) && bf.prp_path !== nothing),
                       experiment_id, dk])
                 exposures_relinked += length(olds)
             end
