@@ -33,6 +33,35 @@ describe("refresh after the live-update stream reconnects", () => {
     expect(qc.getQueryState(queryKeys.trace(EXPOSURE_ID))?.isInvalidated).toBe(false);
   });
 
+  it("runs one refresh for several reconnects that happen while an edit is pending", async () => {
+    vi.spyOn(api, "listPeaks").mockResolvedValue([peak(7), peak(8)]);
+    let finishRemove!: (r: PeakRemoveResponse) => void;
+    vi.spyOn(api, "removePeak").mockImplementation(() => new Promise((resolve) => { finishRemove = resolve; }));
+    const qc = makeClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => ({ peaks: usePeaks(EXPOSURE_ID), remove: useRemovePeak(EXPOSURE_ID) }), { wrapper });
+    await waitFor(() => expect(result.current.peaks.data).toBeDefined());
+    act(() => result.current.remove.mutate(7));
+    await waitFor(() => expect(qc.getMutationCache().getAll()[0]?.state.status).toBe("pending"));
+
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const refresh = createReconnectRefresh(qc, qc.getMutationCache());
+    refresh();
+    refresh();
+    refresh();
+    expect(invalidate).not.toHaveBeenCalled();
+    await act(async () => {
+      finishRemove({ event_id: 1, view_row_id: 7, analysis_inputs_hash: "h" } as PeakRemoveResponse);
+    });
+    await waitFor(() => expect(qc.getMutationCache().getAll()[0]?.state.status).toBe("success"));
+    const fromRefresh = invalidate.mock.calls.filter(([f]) => typeof f?.predicate === "function" && f.queryKey === undefined);
+    expect(fromRefresh).toHaveLength(1);
+    refresh();
+    expect(invalidate.mock.calls.filter(([f]) => typeof f?.predicate === "function" && f.queryKey === undefined)).toHaveLength(2);
+  });
+
   it("a peak removed while the backend was down stays removed once the refetch lands", async () => {
     let server = [peak(7), peak(8)];
     vi.spyOn(api, "listPeaks").mockImplementation(async () => server.map((p) => ({ ...p })));
