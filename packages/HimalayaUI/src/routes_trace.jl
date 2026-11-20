@@ -19,10 +19,6 @@ function register_trace_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "exposure has no filename")))
 
-        # Resolve via the shared resolver (exact per-frame name, else the per-
-        # acquisition `_tot.dat` — migrated filenames are the full per-frame stem
-        # while the trace total is named by the acquisition stem). See
-        # resolve_trace_path.
         pattern = integration_pattern_for(db, Int(row.experiment_id))
         filename = String(row.filename)
         path = resolve_trace_path(String(row.analysis_dir), pattern, filename)

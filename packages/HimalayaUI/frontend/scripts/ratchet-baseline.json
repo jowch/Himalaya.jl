@@ -369,7 +369,6 @@
     "src/routes_resolve.jl": 28,
     "src/routes_samples.jl": 91,
     "src/routes_series.jl": 85,
-    "src/routes_trace.jl": 4,
     "src/routes_users.jl": 3,
     "src/series.jl": 131,
     "src/server.jl": 185,
