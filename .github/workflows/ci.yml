@@ -102,10 +102,46 @@ jobs:
       - run: npm test
       - run: npm run test:verify
 
+  demo-truth:
+    name: Demo check-truth (live app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ env.JULIA_VERSION }}
+      - uses: julia-actions/cache@v2
+        with:
+          cache-name: demo-truth-${{ env.JULIA_CPU_TARGET }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
+      - name: Install
+        run: |
+          (cd packages/HimalayaUI/frontend && npm ci && npx playwright install --with-deps chromium)
+          julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+      - name: Check the demo against TRUTH.csv
+        run: make verify-truth
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-truth
+          path: |
+            scratch/verify/truth/
+            scratch/verify/demo.log
+            scratch/demo/backend.log
+          if-no-files-found: ignore
+
   ci-ok:
     name: CI ok
     if: always()
-    needs: [core, ui-groups, ui-backend, frontend]
+    needs: [core, ui-groups, ui-backend, frontend, demo-truth]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

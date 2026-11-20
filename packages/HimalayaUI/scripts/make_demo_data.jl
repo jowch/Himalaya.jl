@@ -19,7 +19,8 @@
 #   <out>/analysis/setup_info_<ts>.txt beam center + AgBe-calibrated distance
 #   <out>/analysis/automatic_analysis/tot_files/<base>_tot.dat   q  I  sigma
 #   <out>/TRUTH.csv                    per sample: generated phases, expected auto call,
-#                                      phase-tagged reflection q values, scans to drop
+#                                      phase-tagged reflection q values, scans to drop,
+#                                      and which of those are flares (sample still there)
 # test/test_demo_data.jl holds the regression floor on the expected auto calls.
 #
 # Output is deterministic for a given seed and Julia version (Xoshiro streams are
@@ -38,6 +39,7 @@ const MEAN_DISTANCE_MM = 1809.5                 # AgBe-calibrated sample-detecto
 const BEAM_X, BEAM_Y   = 421.409, 836.946       # detector px, origin bottom-left, y-up
 const PIXEL_UM         = 172.0
 const DET_W, DET_H     = 981, 1043              # Pilatus 1M: 2 x 5 modules of 487 x 195
+const PILATUS_MAX_COUNTS = 1_000_000
 const MOD_W, MOD_H, GAP_X, GAP_Y = 487, 195, 7, 17
 const SLOT0_MM, SLOT_PITCH_MM = 58.9, 3.95      # sample-holder slot positions (real SSRL pitch)
 
@@ -95,7 +97,11 @@ const SAMPLES = [
 # `drop` column lists them.
 const BAD_SCANS = Dict(
     "MO_H2O"           => Dict(3 => :beam_off),
+    "MO_H2O_37C"       => Dict(2 => :flare),
+    "MO_F127"          => Dict(1 => :flare),
     "DOPE_H2O"         => Dict(1 => :missed),
+    "DOPC_H2O"         => Dict(2 => :flare),
+    "MO_AMP_10"        => Dict(3 => :flare),
     "leaked_capillary" => Dict(1 => :missed, 2 => :missed),
 )
 
@@ -107,10 +113,26 @@ const BAD_SCANS = Dict(
 # physics: first few hundred pixels.
 const DARK_FLOOR = 0.2
 const AIR_FLOOR = 4.0
-bad_trace(kind::Symbol) =
+bad_trace(kind::Symbol, model) =
     kind === :beam_off ? fill(DARK_FLOOR, length(Q)) :
     kind === :missed   ? @.(0.002 * Q^-4 + AIR_FLOOR) :
+    kind === :flare    ? @.(FLARE_SAMPLE_FRACTION * model + flare_average(Q)) :
     error("unknown bad scan kind $kind")
+
+# physics: the commonest bad frame is a flare: the beam clips the capillary's glass
+# physics: wall. The wall scatters into a bright, narrow streak through the beamstop,
+# physics: perpendicular to the (vertical) capillary axis, so horizontal on the
+# physics: detector. A flat interface scatters into a rod along its normal whose
+# physics: intensity falls as q^-2, so the streak reaches well past the rings.
+# physics: Less of the beam crosses the sample, so its peaks weaken but stay. An
+# physics: azimuthal average dilutes the streak by its share of each ring: two
+# physics: Gaussian arms of half-width w on a ring of radius r cover w*sqrt(pi)/(pi r).
+const FLARE_SAMPLE_FRACTION = 0.6
+const FLARE_HALF_WIDTH_PX = 12.0
+const FLARE_AMP = 160.0
+flare_streak(q) = FLARE_AMP * q^-2
+radius_px(q) = MEAN_DISTANCE_MM * 1e-3 * tan(2 * asin(q * WAVELENGTH_A / (4π))) / (PIXEL_UM * 1e-6)
+flare_average(q) = flare_streak(q) * FLARE_HALF_WIDTH_PX / (sqrt(π) * radius_px(q))
 const LOAD_SPLIT = 6        # samples 1..6 in holder 1, the rest in holder 2
 const FIRST_SCAN = 2401
 
@@ -205,11 +227,14 @@ function poisson(rng, λ)
     end
 end
 
-function make_frame(rng, Itrace, qm, dx, dy, gaps, frame_scale)
+function make_frame(rng, Itrace, qm, dx, dy, gaps, frame_scale; flare = false)
     counts = Matrix{Int32}(undef, DET_H, DET_W)
+    ring = flare ? Itrace .- flare_average.(Q) : Itrace
     for i in eachindex(qm)
         # radial profile -> 2D, scaled to plausible per-pixel counts for a 15 s exposure
-        counts[i] = poisson(rng, interpq(qm[i], Itrace) * 0.05 * frame_scale)
+        λ = interpq(qm[i], ring)
+        flare && (λ += flare_streak(qm[i]) * exp(-(dy[i] / FLARE_HALF_WIDTH_PX)^2))
+        counts[i] = min(poisson(rng, λ * 0.05 * frame_scale), PILATUS_MAX_COUNTS)
         # beamstop + arm shadow (arm runs down-left from the beam centre)
         r = hypot(dx[i], dy[i])
         if r < 18 || (abs(dy[i] - 0.55 * dx[i]) < 6 && dx[i] < 0)
@@ -217,7 +242,7 @@ function make_frame(rng, Itrace, qm, dx, dy, gaps, frame_scale)
         end
     end
     for k in rand(rng, 1:length(counts), 6)        # a few hot pixels
-        counts[k] = 1_000_000
+        counts[k] = PILATUS_MAX_COUNTS
     end
     counts[gaps] .= -1
     counts
@@ -312,7 +337,7 @@ function main(args = ARGS)
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)
     gaps = gap_mask()
-    truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,note"]
+    truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"]
     scan = FIRST_SCAN
     t = DateTime(2026, 4, 26, 18, 0, 0)
     for (k, (label, nscans, comps, auto, note)) in enumerate(SAMPLES)
@@ -321,13 +346,14 @@ function main(args = ARGS)
         slot = k <= LOAD_SPLIT ? k : k - LOAD_SPLIT
         model, peaks = model_trace(rng, label, comps)
         bad = get(BAD_SCANS, label, Dict{Int,Symbol}())
-        bases = String[]; drops = String[]
+        bases = String[]; drops = String[]; flares = String[]
         for n in 1:nscans
             base = "$(label)_S$(scan)"; scan += 1
             push!(bases, base)
             kind = get(bad, n, nothing)
             kind === nothing || push!(drops, base)
-            I, sig = measure(rng, kind === nothing ? model : bad_trace(kind))
+            kind === :flare && push!(flares, base)
+            I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
             open(joinpath(tot, "$(base)_tot.dat"), "w") do io
                 for j in eachindex(Q)
                     @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
@@ -340,13 +366,13 @@ function main(args = ARGS)
             horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.05 * randn(rng); digits = 3)
             write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS"); horiz)
             tif = joinpath(data, stem * ".tif")
-            images ? write_tif(tif, make_frame(rng_img, I, qm, dx, dy, gaps, 1.0)) : touch(tif)
+            images ? write_tif(tif, make_frame(rng_img, I, qm, dx, dy, gaps, 1.0; flare = kind === :flare)) : touch(tif)
         end
         phases = isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+")
         lattice = join((@sprintf("%g", c[2]) for c in comps), "+")
         qs = join(("$p:$q" for (p, q) in peaks), " ")
         push!(truth, join([label, join(bases, " "), phases, lattice, auto, qs,
-                           string(images), join(drops, " "), csvq(note)], ","))
+                           string(images), join(drops, " "), join(flares, " "), csvq(note)], ","))
     end
     write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
     println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",

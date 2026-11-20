@@ -55,7 +55,17 @@ scratch/demo-experiment/
   layout detection keys on).
 - **Some scans are bad on purpose**, so the drop and representative rules have
   something to act on. TRUTH's `drop` column lists them (`BAD_SCANS` in the
-  generator):
+  generator), and its `flare` column says which of those still hold the sample.
+  Flares are the commonest reason to drop a frame at the beamline, so they are
+  the commonest here:
+  - Flares, in `MO_H2O_37C` (newest scan), `MO_F127` (oldest), `DOPC_H2O`
+    (newest) and `MO_AMP_10` (newest): the beam clipped the capillary wall. Loupe
+    shows a bright horizontal streak through the beamstop, perpendicular to the
+    capillary. The sample's rings are still there at about 60% strength, and the
+    1D trace gains a low-q excess. Across seeds 1–12, 36 of 48 flares kept the
+    sample's auto call and 12 lost a phase (most often `MO_AMP_10`'s weaker
+    lattice), so a flare can mislead the auto call without looking wrong in 1D.
+    TRUTH pins no auto call for a flare; it only has to be dropped.
   - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
     0.01 counts per pixel plus hot pixels, so Loupe shows a black frame.
   - `DOPE_H2O`: the oldest scan missed the capillary: steep q⁻⁴ air and slit
@@ -66,7 +76,9 @@ scratch/demo-experiment/
 
   Nothing drops them at ingest; a triager does. `bin/verify triage`
   drops them through the endpoint Loupe's Drop uses, so `bin/verify check-truth` can check the corpus
-  after triage.
+  after triage. `make verify-truth` (also a CI job) runs the whole sequence on a
+  freshly regenerated demo: check-truth, triage, check-truth, a
+  `himalaya analyze` re-run, and check-truth again, all with `--ui`.
 - **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
   column is what Himalaya's own pipeline calls. Two samples differ:
   - `MO_PEG5`: Pn3m √6 overlaps Im3m √10, so `auto_group` keeps Im3m. Pn3m stays

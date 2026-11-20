@@ -117,6 +117,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
     const expectedAuto = normalizeCall(row.auto);
     const expectedFrames = words(row.bases);
     const bad = new Set(words(row.drop));
+    const flared = new Set(words(row.flare));
+    const empty = new Set([...bad].filter((b) => !flared.has(b)));
     const matches = appByTruth.get(row.sample) ?? [];
     const problems = [];
     if (matches.length === 0) problems.push("sample missing from the app");
@@ -126,8 +128,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
     const missing = expectedFrames.filter((b) => !seen.includes(b));
     const kept = frames.filter(isKept);
     if (matches.length && missing.length) problems.push(`missing frames: ${missing.join(" ")}`);
-    const autoCalls = frames.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases), expected: bad.has(f.filename) ? "none" : expectedAuto }));
-    const wrongAuto = autoCalls.filter((c) => c.call !== c.expected);
+    const autoCalls = frames.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases), expected: flared.has(f.filename) ? "any" : empty.has(f.filename) ? "none" : expectedAuto }));
+    const wrongAuto = autoCalls.filter((c) => c.expected !== "any" && c.call !== c.expected);
     if (wrongAuto.length) {
       problems.push(`auto call ${wrongAuto.map((c) => `${c.frame}=${c.call} (expected ${c.expected})`).join(" ")}`);
     }

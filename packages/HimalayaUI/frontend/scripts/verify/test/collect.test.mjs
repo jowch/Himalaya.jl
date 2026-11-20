@@ -9,9 +9,9 @@ import { loadConfig } from "../config.mjs";
 import { stubBackend } from "./stub.mjs";
 
 const TRUTH = [
-  "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,note",
-  "MO_H2O,MO_H2O_S1 MO_H2O_S2,Pn3m,102,Pn3m,,true,MO_H2O_S2,clean",
-  'MO_PEG5,MO_PEG5_S3,Pn3m+Im3m,108+138,Im3m,,true,,"coexistence, Pn3m hidden"',
+  "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note",
+  "MO_H2O,MO_H2O_S1 MO_H2O_S2,Pn3m,102,Pn3m,,true,MO_H2O_S2,,clean",
+  'MO_PEG5,MO_PEG5_S3,Pn3m+Im3m,108+138,Im3m,,true,,,"coexistence, Pn3m hidden"',
 ].join("\n");
 
 function routes(demoDir) {

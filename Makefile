@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean lint
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean verify-truth lint
 
 all: frontend sysimage
 
@@ -86,6 +86,11 @@ demo:
 # Backend + Vite on a fresh empty DB, to walk the ingest funnel by hand.
 demo-empty:
 	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
+
+# Regenerates and ingests the demo, then checks it against TRUTH.csv fresh, after
+# triage and after an `analyze` re-run (packages/HimalayaUI/scripts/verify_truth.sh).
+verify-truth:
+	packages/HimalayaUI/scripts/verify_truth.sh
 
 # Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), so a mistyped
 # DEMO_DIR pointing at real data is left alone.

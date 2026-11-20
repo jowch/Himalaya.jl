@@ -83,6 +83,18 @@ test("a frame in TRUTH's drop column must call none, and whether it is dropped i
   assert.match(indexed.samples[0].problems[0], /MO_H2O_S2=Pn3m \(expected none\)/);
 });
 
+test("a flared frame is to be dropped, but its auto call is not pinned", () => {
+  const truth = [{ ...TRUTH[0], drop: "MO_H2O_S2", flare: "MO_H2O_S2" }, TRUTH[1]];
+  for (const call of [["Pn3m"], [], ["Ia3d"]]) {
+    const r = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", call)] }));
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.samples[0].frames.bad_still_kept, ["MO_H2O_S2"]);
+    assert.equal(r.samples[0].auto_calls[1].expected, "any");
+  }
+  const unflared = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", []), frame("MO_H2O_S2", ["Pn3m"])] }));
+  assert.equal(unflared.ok, false);
+});
+
 test("the shown status is what GET /api/samples gives the corpus, on the frame it names", () => {
   assert.deepEqual(shownStatus({ phase: "Pn3m", state: "indexed" }), { status: "phase", call: "Pn3m" });
   assert.deepEqual(shownStatus({ phase: null, state: "form_factor" }), { status: "form_factor", call: "none" });
