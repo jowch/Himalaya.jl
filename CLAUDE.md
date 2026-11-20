@@ -88,7 +88,7 @@ GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("Himala
 # HimalayaUI frontend — from packages/HimalayaUI/frontend/
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
-npm run e2e           # Playwright E2E (mocked; auto-starts Vite)
+npm run e2e           # Playwright E2E (mocked; builds and serves the bundle; runs in CI)
 npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # lint:design + lint:ratchet + eslint + tsc --noEmit + vite build (must pass before PR)
 ```
