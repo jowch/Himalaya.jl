@@ -44,6 +44,7 @@ jobs:
         with:
           version: ${{ env.JULIA_VERSION }}
       - id: groups
+        shell: bash
         run: |
           julia -e '
             ex = Meta.parseall(read("packages/HimalayaUI/test/runtests.jl", String))
@@ -95,7 +96,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - run: npm run --if-present test:verify
+      - run: npm run test:verify
 
   ci-ok:
     name: CI ok
