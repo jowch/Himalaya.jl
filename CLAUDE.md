@@ -80,9 +80,9 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 # HimalayaUI backend (Julia) — ~3 min serial. Capture once. See packages/HimalayaUI/test/AGENTS.md
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
-# Faster (~2 min): run the 5 GROUP buckets as parallel processes:
+# Faster (~2 min): run the 7 GROUP buckets as parallel processes:
 make test-parallel
-# One bucket only (db|pipeline|routes|events|wire):
+# One bucket only (db|pipeline|routes|routes2|events|wire|migration):
 GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
 
 # HimalayaUI frontend — from packages/HimalayaUI/frontend/
