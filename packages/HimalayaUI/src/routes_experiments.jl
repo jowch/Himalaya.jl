@@ -3,7 +3,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 # PATCH /experiments writes three tiers of fields into one UPDATE:
 #  - geometry (_GEOMETRY_PATCH_FIELDS): each has a companion *_source column set
 #    to "user" on override and never refreshed by rescan.
-#  - plain (_PLAIN_PATCH_FIELDS = name, description): plain write, no *_source, no rescan.
+#  - plain (_PLAIN_PATCH_FIELDS = name): plain write, no *_source, no rescan.
+#  - clearable (_CLEARABLE_PATCH_FIELDS = description): like plain, and JSON null clears it.
 #  - patterns (_PATTERN_FIELDS): plain write; the client forces a rescan afterwards
 #    (the discovered file set changes when a pattern changes).
 # The path fields (data_dir, analysis_dir, manifest_path, path) + id/created_at stay
@@ -14,7 +15,8 @@ const _GEOMETRY_PATCH_FIELDS = [
 ]
 const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
                            "id", "created_at"]
-const _PLAIN_PATCH_FIELDS = ["name", "description"]
+const _PLAIN_PATCH_FIELDS = ["name"]
+const _CLEARABLE_PATCH_FIELDS = ["description"]
 const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]
 
 # Serialize a GroupingFlag (MergeFlag/SplitFlag) to the §8.8 wire shape. The
@@ -276,8 +278,7 @@ function register_experiments_routes!()
                     end
                 end
                 broadcast_progress!(exp_id; kind = "ingest_complete", processed = 0, total = 0)
-                # Arm the rescan scheduler after a successful first scan.
-                start_rescan_scheduler!(db, exp_id)
+                reset_rescan_to_fast!(db, exp_id)
             catch err
                 @warn "first scan failed" experiment_id = exp_id exception = err
                 lock(_DB_WRITE_LOCK) do
@@ -351,11 +352,16 @@ function register_experiments_routes!()
             push!(set_clauses, "$(field)_source = 'user'")
         end
 
-        # Plain identity fields: no *_source stamp, no rescan.
         for field in _PLAIN_PATCH_FIELDS
             val = get(body, Symbol(field), get(body, field, nothing))
             val === nothing && continue
             push!(set_clauses, "$field = ?"); push!(params, val)
+        end
+
+        for field in _CLEARABLE_PATCH_FIELDS
+            (haskey(body, Symbol(field)) || haskey(body, field)) || continue
+            val = get(body, Symbol(field), get(body, field, nothing))
+            push!(set_clauses, "$field = ?"); push!(params, something(val, missing))
         end
 
         for field in _PATTERN_FIELDS
@@ -507,7 +513,7 @@ function register_experiments_routes!()
                         on_progress = (p, t, stage) -> broadcast_progress!(id;
                             kind = "ingest_progress", processed = p, total = t,
                             phase = "rescan", stage = stage))
-                    start_rescan_scheduler!(db, id)   # re-arm the fast-tier scheduler
+                    reset_rescan_to_fast!(db, id)
                 end
 
                 lock(_DB_WRITE_LOCK) do

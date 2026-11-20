@@ -226,12 +226,16 @@ There are three ways a scan runs again after create:
   background. With `{"force": true}` it always scans. Otherwise it first runs
   `cheap_change_check`, which compares the number of files in `data_dir` ending
   in the image pattern's suffix with the number of exposure rows, and scans only
-  if there are more files. It re-arms the scheduler only when a scan ran.
+  if there are more files. When a scan ran, it puts the scheduler back on
+  hourly checks.
 - **The rescan scheduler** (`server.jl`) runs the same check on a timer: hourly,
   then daily after 6 quiet hourly checks, then stopped after 3 quiet daily
   checks. A detected change puts it back on hourly, even if that scan then
-  fails. It is armed after a successful first scan, and on server start for
-  every experiment whose ingest is `complete`.
+  fails. The tier and the count of quiet checks are stored on the experiment
+  row (`last_scan_tier`, `consecutive_empty_ticks`). The scheduler is armed
+  after a successful first scan, and on server start every experiment whose
+  ingest is `complete` resumes at its stored tier, so a stopped experiment stays
+  stopped until a manual scan finds new files.
 - **A pattern edit.** `PATCH` with a pattern field stores it, and the
   Configuration page then calls the scan route with `force: true` so the new
   pattern applies straight away.
