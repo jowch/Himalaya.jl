@@ -21,7 +21,7 @@
  *          row click parks the cursor + puts focus in the interaction scope)
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -124,6 +124,17 @@ async function mockCorpus(page: Page, sampleCount = 3): Promise<void> {
   }
 }
 
+async function mockWorkspaceFrame(page: Page, exposureId: number): Promise<void> {
+  const q = Array.from({ length: 50 }, (_, i) => 0.01 + i * 0.004);
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  await page.route(`**/api/exposures/${exposureId}/trace`, (r) =>
+    r.fulfill(json({ q, I: q.map((x) => 1 / x), sigma: q.map(() => 0.01) })));
+  await page.route(`**/api/exposures/${exposureId}/peaks`, (r) => r.fulfill(json([])));
+  await page.route(`**/api/exposures/${exposureId}/indices`, (r) => r.fulfill(json([])));
+  await page.route(`**/api/exposures/${exposureId}/assignment`, (r) =>
+    r.fulfill(json({ exposure_id: exposureId, state: "indexed", members: [] })));
+}
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -138,6 +149,7 @@ test.beforeEach(async ({ page }) => {
 
 test("IC-1: clicking a row parks the cursor there; Enter opens it in the workspace", async ({ page }) => {
   await mockCorpus(page, 3);
+  await mockWorkspaceFrame(page, 201);
   await page.goto(`/experiments/${EXPERIMENT_ID}/corpus`);
 
   const rows = page.getByTestId("sample-table-row");
@@ -155,6 +167,8 @@ test("IC-1: clicking a row parks the cursor there; Enter opens it in the workspa
 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/experiments/${EXPERIMENT_ID}/workspace/101$`));
+  await expect(page.locator("[data-testid='workspace-samples'] [aria-current='true']")).toHaveText(/Sample 2/);
+  await expect(page.getByTestId("workspace-trace")).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

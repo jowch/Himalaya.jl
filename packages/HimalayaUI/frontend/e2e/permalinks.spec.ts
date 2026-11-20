@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 // Spec §8.2 — Playwright mocked. /api/* is intercepted so this runs without a
 // backend.
@@ -60,8 +60,8 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples/42/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/samples/42/messages", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/events", (r) =>
+    r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
 });
 
 test("legacy /index/<exp>/<sample> deep-link resolves the slug and opens the workspace", async ({ page }) => {
@@ -79,6 +79,7 @@ test("legacy /index/<exp>/<sample> deep-link resolves the slug and opens the wor
   await page.goto("/index/lipid/JC001");
   await expect(page).toHaveURL(/\/experiments\/17\/workspace\/42$/);
   await expect(page.getByTestId("workspace")).toBeVisible();
+  await expect(page.locator("[data-testid='workspace-samples'] [aria-current='true']")).toHaveText(/JC001/);
 });
 
 test("legacy /index deep-link whose slug 404s falls back to the experiments home", async ({ page }) => {

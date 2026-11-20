@@ -3,8 +3,8 @@
  *
  * Exercises the `/experiments/:id/grouping` route:
  *   1. Default "Needs review" filter shows only flagged loads; "All loads" reveals all.
- *   2. Glob filter (HA8*) narrows results; selecting a sample then changing filter
- *      keeps the selection (bulk bar count stays).
+ *   2. Glob filter (HA8*) narrows results; a selected sample outside the filter
+ *      stays visible and selected.
  *   3. Merge-prompt "Merge into that sample" → confirm modal → loser sample disappears
  *      + undo toast shows (merge = POST /api/samples/:loser/merge → 200).
  *   4. Split divider "Split here" → split fires (POST /api/samples/:id/split → 201).
@@ -15,7 +15,7 @@
  * /loads GET (returning the post-edit roll-up). Own-op SSE reconcile is NOT tested
  * here (no SSE needed for own-op; the queue resolves via onSuccess + invalidation).
  */
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 // ---------------------------------------------------------------------------
 // Shared fixture data (§8.8 shapes: sample has sample_id, exposures have .id)
@@ -138,7 +138,11 @@ const LOAD_CLEAN: object = {
 };
 
 const ALL_LOADS = [LOAD_FLAGGED, LOAD_SPLIT, LOAD_CLEAN];
-const FLAGGED_LOADS = [LOAD_FLAGGED, LOAD_SPLIT];
+
+const PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -178,6 +182,8 @@ async function mockGrouping(
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/series", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route(/\/api\/exposures\/\d+\/image\?thumb=1$/, (r) =>
+    r.fulfill({ status: 200, contentType: "image/png", body: PIXEL_PNG }));
 }
 
 // ---------------------------------------------------------------------------
@@ -209,35 +215,32 @@ test("grouping: default view shows only flagged loads; switching to 'All loads' 
   await expect(page.getByText("JC C01")).toBeVisible();
 });
 
-test("grouping filter: glob HA8* narrows; selection survives filter change", async ({ page }) => {
+test("grouping filter: glob HA8* narrows; a selected sample outside the filter stays visible", async ({ page }) => {
   await mockGrouping(page, ALL_LOADS);
   await page.goto(`/experiments/${EXPERIMENT_ID}/grouping`);
 
   await expect(page.getByRole("heading", { level: 1, name: /Check the grouping/ })).toBeVisible();
-
-  // All loads visible initially (flagged ones are expanded by default).
-  // Switch to All loads so the clean one is also shown.
-  // SegmentedControl renders role="group" with aria-pressed buttons by default.
   await page.getByRole("button", { name: "All loads" }).click();
-  await expect(page.getByTestId("load-fold")).toHaveCount(3);
+  const folds = page.getByTestId("load-fold");
+  await expect(folds).toHaveCount(3);
 
-  // Select a sample by clicking its checkbox before filtering.
-  // HA85 (S02P01) is in Load 1 — click its checkbox via aria-label.
-  const survivor = page.getByRole("checkbox", { name: `Select HA85 (S02P01)` });
-  await expect(survivor).toBeVisible();
-  await survivor.click({ force: true });
-  // Bulk bar appears showing 1 sample.
-  await expect(page.getByTestId("bulk-bar")).toBeVisible();
-  await expect(page.getByTestId("bulk-bar")).toContainText("1 sample selected");
+  const filter = page.getByRole("textbox", { name: "Filter samples" });
+  await filter.fill("HA8*");
+  await expect(folds).toHaveCount(2);
+  await expect(page.getByText("JC C01")).toBeHidden();
+  await filter.fill("");
+  await expect(folds).toHaveCount(3);
 
-  // Apply a glob filter for HA8* — narrows to Load 1 + Load 2 (both have HA85/HA86).
-  await page.getByRole("textbox", { name: "Filter samples" }).fill("HA8*");
-  await expect(page.getByTestId("load-fold")).toHaveCount(2);
+  const outsider = page.getByRole("checkbox", { name: "Select JC C01" });
+  await outsider.click({ force: true });
+  const selectionCount = page.getByTestId("grouping-selection-count");
+  await expect(selectionCount).toHaveText("1 selected");
 
-  // The selected sample (HA85 S02P01) stays visible even though only HA8* matches —
-  // GroupingReviewPage preserves selection across filter changes.
-  await expect(page.getByTestId("bulk-bar")).toBeVisible();
-  await expect(page.getByTestId("bulk-bar")).toContainText("1 sample selected");
+  await filter.fill("HA8*");
+  await expect(folds).toHaveCount(3);
+  await expect(page.getByText("JC C01")).toBeVisible();
+  await expect(outsider).toBeChecked();
+  await expect(selectionCount).toHaveText("1 selected");
 });
 
 test("grouping merge: confirm modal fires POST /merge; loser disappears + undo toast shows", async ({ page }) => {
@@ -294,8 +297,8 @@ test("grouping merge: confirm modal fires POST /merge; loser disappears + undo t
   // POST was sent with the correct survivor_id.
   await expect.poll(() => mergeBody).toMatchObject({ survivor_id: SURVIVOR_SAMPLE_ID });
 
-  // Toast appears confirming the merge.
   await expect(page.getByRole("status")).toContainText(/Merged into/);
+  await expect(page.getByRole("checkbox", { name: "Select HA85 (S01P01)" })).toHaveCount(0);
 });
 
 test("grouping split: split-divider 'Split here' fires POST /split", async ({ page }) => {
@@ -383,14 +386,13 @@ test("grouping move: per-exposure move fires POST /move and shows undo toast", a
   const loserFold = sampleFolds.first();
   await expect(loserFold).toBeVisible();
 
-  // The ExposureLeaf Move button fires onMoveExposure. Click it to trigger the move.
-  const moveBtn = loserFold.getByRole("button", { name: /Move/i }).first();
-  await expect(moveBtn).toBeVisible();
-  await moveBtn.click();
+  await loserFold.getByRole("button", { name: "Move to another sample" }).click();
+  const picker = page.getByRole("menu", { name: "Move exposure to sample" });
+  await expect(picker).toBeVisible();
+  await expect(moveBody).toBeNull();
+  await picker.getByRole("menuitem", { name: "HA85 (S02P01)" }).click();
 
-  // POST was fired with exposure id + destination sample id (the current sample,
-  // as per the stub handler in GroupingReviewPage).
-  await expect.poll(() => moveBody).not.toBeNull();
+  await expect.poll(() => moveBody).toEqual({ sample_id: SURVIVOR_SAMPLE_ID });
 
   // Undo toast appears.
   await expect(page.getByRole("status")).toContainText(/Moved exposure/);

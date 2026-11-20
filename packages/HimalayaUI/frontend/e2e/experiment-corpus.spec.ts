@@ -9,7 +9,7 @@
  *   4. `failed` — ingest_status=failed → ScanFailedPage rendered.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -114,6 +114,25 @@ async function mockExperiment(
   // Corpus-wide sample list (NavModal / SheetTable / SamplesPage may request it).
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
+  for (const sample of loads.flatMap((l) => (l as { samples: { sample_id: number; exposures: { id: number; filename: string }[] }[] }).samples)) {
+    const exposures = sample.exposures.map((e) => ({
+      id: e.id, sample_id: sample.sample_id, filename: e.filename, kind: "file",
+      selected: false, status: null, image_path: null,
+    }));
+    await page.route(`**/api/samples/${sample.sample_id}/exposures`, (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exposures) }));
+  }
+  await page.route(/\/api\/fs\/manifest\?/, (r) =>
+    r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({
+        total: 2, matched: { image: 0, metadata: 0, integration: 0 },
+        unmatched: [
+          { file: "HA_01_001.tif", miss: "image" },
+          { file: "HA_01_002.tif", miss: "image" },
+        ],
+      }),
+    }));
   await page.route("**/api/sample-tags", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/series", (r) =>
@@ -140,6 +159,7 @@ test("experiment corpus shows the scoped sheet when clean", async ({ page }) => 
   await page.goto("/experiments/7/corpus");
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByRole("row")).toHaveCount(4); // header + 3
+  await expect(page.getByTestId("kept-cell").first()).toHaveText(/1\s*\/\s*1/);
 });
 
 test("experiment corpus shows the scoped sheet when complete with no flags", async ({ page }) => {
@@ -168,6 +188,7 @@ test("experiment corpus shows ScanFailedPage when ingest_status=failed", async (
   await page.goto("/experiments/7/corpus");
   // The failed branch renders ScanFailedPage — the primary action is "Open Configuration".
   await expect(page.getByRole("button", { name: /Open Configuration/i })).toBeVisible();
+  await expect(page.getByLabel("Unmatched files")).toContainText("HA_01_002.tif");
   // The table must NOT be visible on the failed branch.
   await expect(page.getByRole("table")).toHaveCount(0);
 });
