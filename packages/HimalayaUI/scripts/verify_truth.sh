@@ -24,14 +24,14 @@ step() {
 
 probe() {
   local line="$(date +%T)"
-  for name in chrome node julia; do
-    local n=0
-    for pid in $(pgrep -f "$name" 2>/dev/null); do n=$((n + $(ls /proc/$pid/fd 2>/dev/null | wc -l))); done
-    line="$line $name-fds=$n"
+  for pid in $(pgrep -f chrome 2>/dev/null); do
+    local n=$(ls /proc/$pid/fd 2>/dev/null | wc -l)
+    (( n > 150 )) || continue
+    local kind=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -o -- '--type=[a-z-]*' | head -1)
+    local lim=$(awk '/Max open files/ {print $4}' /proc/$pid/limits 2>/dev/null)
+    local mix=$(ls -l /proc/$pid/fd 2>/dev/null | awk 'NR>1 {t=$NF; sub(/:.*/,"",t); sub(/\/.*$/,"/",t); c[t]++} END {for (k in c) { printf "%s%s=%d", sep, k, c[k]; sep="," }}')
+    line="$line | $pid ${kind:-browser} n=$n lim=$lim $mix"
   done
-  line="$line est5173=$(ss -tan 2>/dev/null | awk '$1=="ESTAB" && $5 ~ /:5173$/' | wc -l)"
-  line="$line est-backend=$(ss -tan 2>/dev/null | awk '$1=="ESTAB" && $4 ~ /:(8080|8000|8765)$/' | wc -l)"
-  line="$line tw=$(ss -tan state time-wait 2>/dev/null | wc -l) shm=$(ls /dev/shm 2>/dev/null | wc -l)"
   echo "$line"
 }
 ( while sleep 2; do probe; done ) > "$OUT/probe.log" 2>&1 &
