@@ -51,6 +51,7 @@ function parseViewport(value) {
 }
 
 export async function open(cfg, route, flags) {
+  checkHttpFlags(flags);
   const viewport = parseViewport(flags.viewport);
   const url = routeUrl(cfg, route);
   if (!(await reachable(new URL(url).origin, "/"))) {
@@ -70,7 +71,7 @@ export async function open(cfg, route, flags) {
     }
     const settle = await finish(tracker, flags);
     return {
-      ok: settle ? settle.settled : true,
+      ...verdict(settle, flags),
       url: page.url(),
       title: await page.title(),
       status: response?.status() ?? null,
@@ -129,6 +130,49 @@ async function resolveOne(page, flags) {
   return { loc, what, count };
 }
 
+export function parseExpectHttp(values = []) {
+  return values.map((raw) => {
+    const m = /^([1-5][0-9x]{2}):(.+)$/.exec(raw);
+    if (!m) throw new UsageError(`--expect-http must look like 400:/api/fs/resolve, got ${raw}`, "status digits may use x as a wildcard (4xx); the path is a regular expression");
+    let path;
+    try {
+      path = new RegExp(m[2]);
+    } catch (e) {
+      throw new UsageError(`--expect-http path is not a valid regular expression: ${e.message}`);
+    }
+    const status = new RegExp(`^${m[1].replace(/x/g, "\\d")}$`);
+    return { raw, matches: (e) => status.test(String(e.status)) && path.test(new URL(e.url).pathname) };
+  });
+}
+
+function checkHttpFlags(flags) {
+  if (parseExpectHttp(flags["expect-http"]).length && flags["no-settle"]) {
+    throw new UsageError("--expect-http needs the action to settle", "drop --no-settle");
+  }
+}
+
+const describe = (e) => `${e.method} ${new URL(e.url).pathname} returned ${e.status}`;
+
+export function verdict(settle, flags) {
+  const expected = parseExpectHttp(flags["expect-http"]);
+  if (!settle) return { ok: true, httpChecked: false };
+  for (const e of settle.httpErrors) e.expected = expected.some((x) => x.matches(e));
+  const unexpected = settle.httpErrors.filter((e) => !e.expected);
+  const unmet = expected.filter((x) => !settle.httpErrors.some((e) => x.matches(e)));
+  const problems = [];
+  if (!settle.settled) problems.push(`the page did not settle within ${settle.ms} ms`);
+  if (unexpected.length) problems.push(`${unexpected.length} request(s) failed, first ${describe(unexpected[0])}`);
+  if (settle.settled && unmet.length) problems.push(`no response matched --expect-http ${unmet.map((x) => x.raw).join(", ")}`);
+  if (!problems.length) return { ok: true };
+  return {
+    ok: false,
+    error: problems.join("; "),
+    hint: unexpected.length
+      ? "the page may look fine while the server rejected the change; if this status is the app's normal answer, pass --expect-http <status>:<path regex>"
+      : unmet.length && settle.settled ? "the error path you expected did not happen; check the request the action sends" : "raise --timeout, or snapshot to see what is still loading",
+  };
+}
+
 async function finish(tracker, flags) {
   if (flags["no-settle"]) {
     tracker.disarm();
@@ -146,10 +190,11 @@ async function act(page, flags, action) {
     throw e;
   }
   const settle = await finish(tracker, flags);
-  return { ok: settle ? settle.settled : true, url: page.url(), settle };
+  return { ...verdict(settle, flags), url: page.url(), settle };
 }
 
 export async function click(cfg, flags) {
+  checkHttpFlags(flags);
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
     return { clicked: target.what, ...(await act(page, flags, () => target.loc.click({ timeout: 5000 }))) };
@@ -157,6 +202,7 @@ export async function click(cfg, flags) {
 }
 
 export async function fill(cfg, flags) {
+  checkHttpFlags(flags);
   if (flags.value === undefined) throw new UsageError("fill needs --value <text>");
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
@@ -165,6 +211,7 @@ export async function fill(cfg, flags) {
 }
 
 export async function press(cfg, key, flags) {
+  checkHttpFlags(flags);
   if (!key) throw new UsageError("press needs a key", "e.g. `bin/verify press Escape` or `bin/verify press Control+K`");
   return withPage(cfg, async (page) => {
     const targeted = flags.role || flags.label || flags.text || flags.testid || flags.selector;
@@ -193,6 +240,7 @@ export async function screenshot(cfg, file, flags) {
 }
 
 export async function settle(cfg, flags) {
+  checkHttpFlags(flags);
   const timeoutMs = intFlag(flags, "timeout", 15000);
   let pattern = null;
   if (flags.url) {
@@ -213,6 +261,6 @@ export async function settle(cfg, flags) {
       }
     }
     const result = await tracker.wait({ timeoutMs });
-    return { ok: result.settled, url: page.url(), ...result };
+    return { ...verdict(result, flags), url: page.url(), ...result };
   });
 }

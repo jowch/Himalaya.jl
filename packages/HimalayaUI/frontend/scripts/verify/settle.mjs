@@ -9,15 +9,22 @@ export function tracked(request) {
 
 export function armSettle(page) {
   const inflight = new Set();
+  const httpErrors = [];
   const onRequest = (r) => {
     if (tracked(r)) inflight.add(r);
   };
   const onDone = (r) => inflight.delete(r);
+  const onResponse = (res) => {
+    const r = res.request();
+    if (res.status() >= 400 && tracked(r)) httpErrors.push({ method: r.method(), url: r.url(), status: res.status() });
+  };
   page.on("request", onRequest);
+  page.on("response", onResponse);
   page.on("requestfinished", onDone);
   page.on("requestfailed", onDone);
   const disarm = () => {
     page.off("request", onRequest);
+    page.off("response", onResponse);
     page.off("requestfinished", onDone);
     page.off("requestfailed", onDone);
   };
@@ -38,10 +45,10 @@ export function armSettle(page) {
         if (probe.ready !== "complete" || probe.busy > 0 || inflight.size > 0) quietSince = now;
         if (now - quietSince >= quietMs) {
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
-          return { settled: true, ms: now - started };
+          return { settled: true, ms: now - started, httpErrors };
         }
         if (now - started > timeoutMs) {
-          return { settled: false, ms: now - started, busy: probe.busy, inflight: [...inflight].map((r) => r.url()).slice(0, 5) };
+          return { settled: false, ms: now - started, busy: probe.busy, inflight: [...inflight].map((r) => r.url()).slice(0, 5), httpErrors };
         }
         await sleep(100);
       }
