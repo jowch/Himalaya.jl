@@ -32,6 +32,7 @@ export interface TracePlotInteraction {
   onClickPeak?: (peakId: number) => void;
   onReset?: () => void;
   hitTolerancePx?: number;
+  doubleClickResets?: boolean;
 }
 
 export interface TracePlotProps {
@@ -252,7 +253,7 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
         ? {
             onWheelPx: handleWheelPx,
             onClickPx: handleClickPx,
-            onDoubleClickPx: handleDblClick,
+            ...(interaction.doubleClickResets === false ? {} : { onDoubleClickPx: handleDblClick }),
             onPointerMovePx: handlePointerMovePx,
             onPointerLeave: handlePointerLeave,
           }

@@ -53,3 +53,14 @@ export function imageUrl(e: Pick<Exposure, "id" | "image_path" | "image_version"
   const qs = params.toString();
   return `/api/exposures/${e.id}/image${qs ? `?${qs}` : ""}`;
 }
+
+export type PeakClick = { kind: "exclude"; excluded: boolean } | { kind: "remove" };
+
+export function peakClick(
+  peaks: readonly { id: number; source: string; excluded: boolean }[],
+  id: number,
+): PeakClick | null {
+  const p = peaks.find((pk) => pk.id === id);
+  if (!p) return null;
+  return p.source === "auto" ? { kind: "exclude", excluded: !p.excluded } : { kind: "remove" };
+}

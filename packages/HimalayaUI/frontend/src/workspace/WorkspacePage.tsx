@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import type { Exposure, IndexEntry } from "../api";
 import {
   useAddAssignmentPhase,
+  useAddPeak,
   useAssignment,
   useCorpusSamples,
   useExperiment,
@@ -10,19 +11,26 @@ import {
   useIndices,
   usePeaks,
   useRemoveAssignmentPhase,
+  useRemovePeak,
   useSelectExposure,
   useSetExposureStatus,
+  useSetPeakExcluded,
   useTrace,
 } from "../queries";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { nextUnreviewed, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { matchScale, scaledTrace, subtractTrace, toggleCompare } from "./compare";
+import { useCompareTraces } from "./useCompareTraces";
+import { CompareBar } from "./ui/CompareBar";
+import { ComparePicker } from "./ui/ComparePicker";
+import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
-import { WorkspacePlot, type CombLine } from "./ui/WorkspacePlot";
+import { COMPARE_DASHES, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
@@ -82,6 +90,33 @@ export function WorkspacePage(): JSX.Element {
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
   const exposureDropped = exposure?.status === "rejected";
+  const canEditPeaks = Boolean(username && exposure && !exposureDropped);
+  const addPeak = useAddPeak(exposure?.id ?? 0);
+  const removePeak = useRemovePeak(exposure?.id ?? 0);
+  const setExcluded = useSetPeakExcluded(exposure?.id ?? 0);
+
+  const [xDomain, setXDomain] = useState<[number, number] | null>(null);
+  const [logY, setLogY] = useState(true);
+  const [refs, setRefs] = useState<number[]>([]);
+  const [subRef, setSubRef] = useState<number | undefined>(undefined);
+  const [refsOn, setRefsOn] = useState(true);
+  const [picking, setPicking] = useState(false);
+  const compareTraces = useCompareTraces(refs);
+
+  const onClickPeak = useCallback(
+    (peakId: number) => {
+      const action = peakClick(peaks.data ?? [], peakId);
+      if (!action) return;
+      if (action.kind === "remove") removePeak.mutate(peakId);
+      else setExcluded.mutate({ peakId, excluded: action.excluded });
+    },
+    [peaks.data, removePeak, setExcluded],
+  );
+
+  const removeCompare = useCallback((rid: number) => {
+    setRefs((r) => r.filter((x) => x !== rid));
+    setSubRef((cur) => (cur === rid ? undefined : cur));
+  }, []);
 
   const toggleCandidate = useCallback(
     (ix: IndexEntry) => {
@@ -111,6 +146,26 @@ export function WorkspacePage(): JSX.Element {
     const shown = candidates.filter((c) => assigned.has(c.id) || c.id === hoverId);
     return shown.map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase), emphasis: assigned.has(c.id) }));
   }, [candidates, assigned, hoverId]);
+
+  const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
+  const activeRefs = refs.filter((r) => r !== sampleId);
+  const mainTrace = trace.data;
+  const compares: CompareLine[] = useMemo(() => {
+    if (!mainTrace || !refsOn) return [];
+    return refs.flatMap((rid, i) => {
+      const t = compareTraces.get(rid);
+      if (rid === sampleId || !t) return [];
+      const sc = scaledTrace(t, matchScale(mainTrace, t));
+      return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, dash: COMPARE_DASHES[i % COMPARE_DASHES.length]!, emphasis: rid === subRef }];
+    });
+  }, [mainTrace, refsOn, refs, compareTraces, sampleId, sampleNames, subRef]);
+  const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
+  const difference = useMemo(
+    () => (mainTrace && subTrace ? subtractTrace(mainTrace, subTrace, matchScale(mainTrace, subTrace)) : null),
+    [mainTrace, subTrace],
+  );
+  const xExtent: [number, number] | null =
+    mainTrace && mainTrace.q.length > 1 ? [mainTrace.q[0]!, mainTrace.q[mainTrace.q.length - 1]!] : null;
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
@@ -150,6 +205,18 @@ export function WorkspacePage(): JSX.Element {
           if (eid !== undefined) setExposureId(eid);
           break;
         }
+        case "l":
+        case "L":
+          setLogY((v) => !v);
+          break;
+        case "c":
+        case "C":
+          setPicking(true);
+          break;
+        case "r":
+        case "R":
+          setRefsOn((v) => !v);
+          break;
         case "x":
         case "X":
           if (exposure && username) toggleDrop(exposure);
@@ -194,7 +261,48 @@ export function WorkspacePage(): JSX.Element {
         sample ? (
           <>
             <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
-              <WorkspacePlot trace={trace.data} peaks={peaks.data ?? []} phase={callPhase} combs={combs} />
+              <div className="relative mb-2">
+                <CompareBar
+                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, dash: COMPARE_DASHES[refs.indexOf(rid) % COMPARE_DASHES.length]! }))}
+                  subtractId={subRef}
+                  hidden={!refsOn}
+                  logY={logY}
+                  onToggleLog={() => setLogY((v) => !v)}
+                  onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
+                  onRemove={removeCompare}
+                  onAdd={() => setPicking(true)}
+                />
+                {picking && (
+                  <ComparePicker
+                    samples={samples.filter((s) => s.id !== sampleId)}
+                    onPick={(rid) => {
+                      setRefs((r) => toggleCompare(r, rid));
+                      setRefsOn(true);
+                    }}
+                    onClose={() => setPicking(false)}
+                  />
+                )}
+              </div>
+              <WorkspacePlot
+                trace={trace.data}
+                peaks={peaks.data ?? []}
+                phase={callPhase}
+                combs={combs}
+                compares={compares}
+                xDomain={xDomain}
+                logY={logY}
+                onXDomain={setXDomain}
+                {...(canEditPeaks ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak } : {})}
+              />
+              {difference && xExtent && subRef !== undefined && (
+                <SubtractionStrip
+                  q={difference.q}
+                  d={difference.d}
+                  label={`minus ${sampleNames.get(subRef) ?? `Sample ${subRef}`}`}
+                  xDomain={xDomain}
+                  xExtent={xExtent}
+                />
+              )}
             </Section>
             <Section title="Exposures">
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
