@@ -31,6 +31,8 @@ jobs:
         with:
           version: ${{ env.JULIA_VERSION }}
       - uses: julia-actions/cache@v2
+        with:
+          cache-name: core-${{ env.JULIA_CPU_TARGET }}
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
   ui-groups:
@@ -71,6 +73,7 @@ jobs:
           version: ${{ env.JULIA_VERSION }}
       - uses: julia-actions/cache@v2
         with:
+          cache-name: ui-backend-${{ env.JULIA_CPU_TARGET }}
           include-matrix: false
       - name: Install
         run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
