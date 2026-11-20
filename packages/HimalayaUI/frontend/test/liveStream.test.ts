@@ -68,15 +68,14 @@ describe("openLiveStream", () => {
 
   it("caps the wait between attempts at 5 s", () => {
     last().fire("open");
-    const waits: number[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (const wait of [1000, 2000, 4000, 5000, 5000]) {
       const before = FakeES.all.length;
       last().failForGood();
-      let waited = 0;
-      while (FakeES.all.length === before) { vi.advanceTimersByTime(500); waited += 500; }
-      waits.push(waited);
+      vi.advanceTimersByTime(wait - 1);
+      expect(FakeES.all).toHaveLength(before);
+      vi.advanceTimersByTime(1);
+      expect(FakeES.all).toHaveLength(before + 1);
     }
-    expect(waits).toEqual([1000, 2000, 4000, 5000, 5000]);
   });
 
   it("starts the wait from 1 s again after a stream opens", () => {

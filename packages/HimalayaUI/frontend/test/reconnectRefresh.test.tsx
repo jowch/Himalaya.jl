@@ -51,6 +51,7 @@ describe("refresh after the live-update stream reconnects", () => {
     refresh();
     refresh();
     refresh();
+    await new Promise((r) => setTimeout(r, 20));
     expect(invalidate).not.toHaveBeenCalled();
     await act(async () => {
       finishRemove({ event_id: 1, view_row_id: 7, analysis_inputs_hash: "h" } as PeakRemoveResponse);
@@ -60,6 +61,34 @@ describe("refresh after the live-update stream reconnects", () => {
     expect(fromRefresh).toHaveLength(1);
     refresh();
     expect(invalidate.mock.calls.filter(([f]) => typeof f?.predicate === "function" && f.queryKey === undefined)).toHaveLength(2);
+  });
+
+  it("waits for every pending edit to settle, not just the first one", async () => {
+    vi.spyOn(api, "listPeaks").mockResolvedValue([peak(7), peak(8)]);
+    const finish: ((r: PeakRemoveResponse) => void)[] = [];
+    vi.spyOn(api, "removePeak").mockImplementation(() => new Promise((resolve) => { finish.push(resolve); }));
+    const qc = makeClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => ({ peaks: usePeaks(EXPOSURE_ID), remove: useRemovePeak(EXPOSURE_ID) }), { wrapper });
+    await waitFor(() => expect(result.current.peaks.data).toBeDefined());
+    act(() => result.current.remove.mutate(7));
+    act(() => result.current.remove.mutate(8));
+    await waitFor(() => expect(finish).toHaveLength(2));
+
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const fromRefresh = () => invalidate.mock.calls.filter(([f]) => typeof f?.predicate === "function" && f.queryKey === undefined);
+    createReconnectRefresh(qc, qc.getMutationCache())();
+    await act(async () => {
+      finish[0]!({ event_id: 1, view_row_id: 7, analysis_inputs_hash: "h" } as PeakRemoveResponse);
+    });
+    await waitFor(() => expect(qc.getMutationCache().getAll().filter((m) => m.state.status === "success")).toHaveLength(1));
+    expect(fromRefresh()).toHaveLength(0);
+    await act(async () => {
+      finish[1]!({ event_id: 2, view_row_id: 8, analysis_inputs_hash: "h2" } as PeakRemoveResponse);
+    });
+    await waitFor(() => expect(fromRefresh()).toHaveLength(1));
   });
 
   it("a peak removed while the backend was down stays removed once the refetch lands", async () => {
