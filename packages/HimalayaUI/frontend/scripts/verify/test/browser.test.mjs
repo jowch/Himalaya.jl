@@ -42,6 +42,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
 </script></body></html>`;
 
 let server;
+let rejects = 0;
 let cfg;
 let out;
 function chromiumOrNull() {
@@ -86,6 +87,7 @@ before(async () => {
       return;
     }
     if (req.url.startsWith("/api/reject")) {
+      rejects++;
       res.statusCode = 400;
       res.end('{"error":"no patchable fields"}');
       return;
@@ -159,9 +161,19 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   ({ code, r } = await run("click", "--role", "button", "--name", "Load"));
   assert.equal(code, 0, JSON.stringify(r));
   assert.deepEqual(r.settle.httpErrors, []);
+  let before = rejects;
   ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact", "--expect-http", "nope"));
   assert.equal(code, 1);
   assert.match(r.error, /--expect-http must look like/);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Rejected", "--exact", "--expect-http", "400:/api/reject", "--no-settle"));
+  assert.equal(code, 1);
+  assert.match(r.error, /needs the action to settle/);
+  ({ code } = await run("fill", "--label", "Probe", "--value", "z", "--expect-http", "400:("));
+  assert.equal(code, 1);
+  ({ code } = await run("press", "Delete", "--expect-http", "4:"));
+  assert.equal(code, 1);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(rejects, before, "a malformed --expect-http must be refused before the action runs");
 
   ({ code, r } = await run("click", "--role", "button", "--name", "StuckReject", "--timeout", "1000"));
   assert.equal(code, 1);

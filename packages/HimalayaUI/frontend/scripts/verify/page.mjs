@@ -51,6 +51,7 @@ function parseViewport(value) {
 }
 
 export async function open(cfg, route, flags) {
+  checkHttpFlags(flags);
   const viewport = parseViewport(flags.viewport);
   const url = routeUrl(cfg, route);
   if (!(await reachable(new URL(url).origin, "/"))) {
@@ -144,14 +145,17 @@ export function parseExpectHttp(values = []) {
   });
 }
 
+function checkHttpFlags(flags) {
+  if (parseExpectHttp(flags["expect-http"]).length && flags["no-settle"]) {
+    throw new UsageError("--expect-http needs the action to settle", "drop --no-settle");
+  }
+}
+
 const describe = (e) => `${e.method} ${new URL(e.url).pathname} returned ${e.status}`;
 
 export function verdict(settle, flags) {
   const expected = parseExpectHttp(flags["expect-http"]);
-  if (!settle) {
-    if (expected.length) throw new UsageError("--expect-http needs the action to settle", "drop --no-settle");
-    return { ok: true, httpChecked: false };
-  }
+  if (!settle) return { ok: true, httpChecked: false };
   for (const e of settle.httpErrors) e.expected = expected.some((x) => x.matches(e));
   const unexpected = settle.httpErrors.filter((e) => !e.expected);
   const unmet = expected.filter((x) => !settle.httpErrors.some((e) => x.matches(e)));
@@ -190,6 +194,7 @@ async function act(page, flags, action) {
 }
 
 export async function click(cfg, flags) {
+  checkHttpFlags(flags);
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
     return { clicked: target.what, ...(await act(page, flags, () => target.loc.click({ timeout: 5000 }))) };
@@ -197,6 +202,7 @@ export async function click(cfg, flags) {
 }
 
 export async function fill(cfg, flags) {
+  checkHttpFlags(flags);
   if (flags.value === undefined) throw new UsageError("fill needs --value <text>");
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
@@ -205,6 +211,7 @@ export async function fill(cfg, flags) {
 }
 
 export async function press(cfg, key, flags) {
+  checkHttpFlags(flags);
   if (!key) throw new UsageError("press needs a key", "e.g. `bin/verify press Escape` or `bin/verify press Control+K`");
   return withPage(cfg, async (page) => {
     const targeted = flags.role || flags.label || flags.text || flags.testid || flags.selector;
@@ -233,6 +240,7 @@ export async function screenshot(cfg, file, flags) {
 }
 
 export async function settle(cfg, flags) {
+  checkHttpFlags(flags);
   const timeoutMs = intFlag(flags, "timeout", 15000);
   let pattern = null;
   if (flags.url) {
