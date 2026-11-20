@@ -508,7 +508,9 @@ export const setExposureStatusMutator: Mutator<
     };
   },
   request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
-  onSuccess: () => {},
+  onSuccess: (_p, _r, qc) => {
+    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -530,7 +532,9 @@ export const selectExposureMutator: Mutator<
     };
   },
   request: (p) => api.selectExposure(p.exposureId, buildAuthOpts(p)),
-  onSuccess: () => {},
+  onSuccess: (_p, _r, qc) => {
+    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+  },
 };
 
 // ---------------------------------------------------------------------------

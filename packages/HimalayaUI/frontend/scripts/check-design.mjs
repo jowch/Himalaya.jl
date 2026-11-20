@@ -138,6 +138,7 @@ function relToSrc(absPath) {
 function isExcluded(relPath) {
   return (
     relPath.startsWith("print/ui/") ||
+    relPath.startsWith("workspace/ui/") ||
     relPath.startsWith("print/plot/") ||
     relPath.startsWith("print/detector/") ||
     relPath.startsWith("print/comb/") ||

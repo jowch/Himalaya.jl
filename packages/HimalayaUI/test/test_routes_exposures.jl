@@ -12,7 +12,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id,
         name="D1")
-    e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot",
+        exposure_time=15.0, transmitted_counts=7365.0, incident_monitor=1.5007, counting_time=15.8)
     e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="other")
 
     with_inproc_routes(db) do call
@@ -25,6 +26,11 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].selected === false
         @test list[1].tags     == []
         @test list[1].sources  == []
+        @test list[1].transmitted_counts ≈ 7365.0
+        @test list[1].incident_monitor ≈ 1.5007
+        @test list[1].counting_time ≈ 15.8
+        @test list[1].exposure_time ≈ 15.0
+        @test list[2].transmitted_counts === nothing
 
         # Select e2
         r = call("PATCH", "/api/exposures/$e2/select";

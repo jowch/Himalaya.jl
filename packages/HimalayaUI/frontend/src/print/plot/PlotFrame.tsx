@@ -92,7 +92,7 @@ export function PlotFrame({
 
   function handleClick(ev: React.MouseEvent): void {
     const el = containerRef.current;
-    if (!onClickPx || !el) return;
+    if (!onClickPx || !el || ev.detail > 1) return;
     const rect = el.getBoundingClientRect();
     onClickPx(ev.clientX - rect.left, ev.clientY - rect.top, ev.altKey);
   }

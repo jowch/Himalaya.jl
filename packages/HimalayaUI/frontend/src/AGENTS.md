@@ -15,6 +15,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
 | App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
+| Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage`, pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot reuses `print/plot/TracePlot`. |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector,comb,export}/` (and `print/waterfall/`) | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder). The `lint:design` appearance guard excludes `print/{plot,detector,comb,export}/` only — `print/waterfall/` is NOT exempt |
 | Pages | `print/pages/` | `SamplesPage`, `LoupePage`, `FocusPage`, `SeriesFolioPage`, `SeriesScopingPage`, `SeriesBuilderPage` (all under the single `AppShell`; legacy Index/Inspect/Compare pages + `AppShell` retired) |
@@ -78,7 +79,7 @@ A count that falls must be locked in with `npm run lint:ratchet -- --update` (co
 
 `npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on all of `src/`, stories included.
 
-This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `print/ui/**`:
+This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `print/ui/**` and `workspace/ui/**`:
 
 - arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)
 - arbitrary radius `rounded-[…]` → `rounded-sm` / `rounded-md` (both 5px) / `rounded-full`

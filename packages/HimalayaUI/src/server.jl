@@ -386,6 +386,11 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
 
     # Change detection: injected seam (test) or the real cheap_change_check. Both
     # take (db, experiment_id) and resolve data_dir themselves.
+    try
+        backfill_monitors!(db, experiment_id)
+    catch err
+        @warn "beam monitor backfill failed" experiment_id = experiment_id exception = err
+    end
     changed = try
         cheap_check_fn !== nothing ? cheap_check_fn(db, experiment_id) :
                                      cheap_change_check(db, experiment_id)

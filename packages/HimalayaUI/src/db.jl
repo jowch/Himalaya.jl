@@ -30,6 +30,8 @@ const MIGRATION_LOAD_SESSIONS_BACKFILL = "load_sessions_backfill_v1"
 
 const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 
+const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table. Mirrors the inlined pattern in
 # `migrate_assignments!` / `migrate_comparisons_to_series!`.
@@ -131,7 +133,11 @@ CREATE TABLE IF NOT EXISTS exposures (
     scan_id              INTEGER,
     frame_no             INTEGER,
     load_id              INTEGER REFERENCES loads(id),
-    content_fingerprint  TEXT
+    content_fingerprint  TEXT,
+    transmitted_counts   REAL,
+    incident_monitor     REAL,
+    counting_time        REAL,
+    monitors_read        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -520,6 +526,7 @@ function migrate_schema!(db::SQLite.DB)
     backfill_load_sessions!(db)
 
     migrate_drop_scan_signature!(db)
+    migrate_exposures_beam_monitors!(db)
 
     # Speculative peak durability (2026-07-14 spec): intents table + legacy
     # basis rescale + heal trigger. Must run last — see the function docstring
@@ -772,6 +779,20 @@ function migrate_experiments_config_cols!(db::SQLite.DB)
                 "ALTER TABLE experiments ADD COLUMN $name $decl")
         end
         _record_migration!(db, MIGRATION_EXPERIMENTS_CONFIG_COLS)
+    end
+    nothing
+end
+
+function migrate_exposures_beam_monitors!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_BEAM_MONITORS) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        for (name, decl) in (("transmitted_counts", "REAL"), ("incident_monitor", "REAL"),
+                             ("counting_time", "REAL"), ("monitors_read", "INTEGER NOT NULL DEFAULT 0"))
+            name in existing || DBInterface.execute(db,
+                "ALTER TABLE exposures ADD COLUMN $name $decl")
+        end
+        _record_migration!(db, MIGRATION_EXPOSURES_BEAM_MONITORS)
     end
     nothing
 end
@@ -2467,16 +2488,22 @@ function create_exposure!(db::SQLite.DB;
         scan_id           = nothing,
         frame_no          = nothing,
         load_id           = nothing,
-        content_fingerprint = nothing)
+        content_fingerprint = nothing,
+        transmitted_counts = nothing,
+        incident_monitor  = nothing,
+        counting_time     = nothing,
+        monitors_read::Bool = prp_path !== nothing)
     result = DBInterface.execute(db, """
         INSERT INTO exposures
             (experiment_id, sample_id, filename, kind, selected, status, image_path,
              prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
-             load_id, content_fingerprint)
-        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?)
+             load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
+             monitors_read)
+        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?)
     """, [experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
           prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
-          load_id, content_fingerprint])
+          load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
+          Int(monitors_read)])
     return Int(DBInterface.lastrowid(result))
 end
 

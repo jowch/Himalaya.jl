@@ -11,6 +11,7 @@
 #   DEMO_DB_DIR    where the demo DB + logs live  [scratch/demo]
 #   DEMO_API_PORT  backend port                   [8080]
 #   DEMO_UI_PORT   Vite port                      [5173]
+#   DEMO_UI_MODE   dev (Vite dev server) or build (vite build, then vite preview) [dev]
 # Vite stays in the foreground; Ctrl-C stops both servers.
 set -euo pipefail
 
@@ -73,4 +74,10 @@ fi
 
 echo "Open http://127.0.0.1:$UI_PORT/"
 cd packages/HimalayaUI/frontend
-VITE_API_PORT="$API_PORT" npm run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort
+case "${DEMO_UI_MODE:-dev}" in
+  dev) VITE_API_PORT="$API_PORT" npm run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort ;;
+  build)
+    npx vite build
+    VITE_API_PORT="$API_PORT" npx vite preview --host 127.0.0.1 --port "$UI_PORT" --strictPort ;;
+  *) echo "DEMO_UI_MODE must be dev or build, not ${DEMO_UI_MODE}" >&2; exit 2 ;;
+esac

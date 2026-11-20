@@ -9,11 +9,11 @@ function renderWithRouter(ui: React.ReactElement, { route = "/" }: { route?: str
 }
 
 describe("TopNav", () => {
-  test("TopNav: wordmark→/experiments, two tabs, no Samples/beamtime/gear", () => {
+  test("TopNav: wordmark→/experiments, one tab, no Samples/beamtime/gear", () => {
     renderWithRouter(<TopNav />, { route: "/experiments" });
     expect(screen.getByRole("link", { name: /himalaya/i })).toHaveAttribute("href", "/experiments");
     expect(screen.getByRole("link", { name: "Experiments" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Series" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Series" })).toBeNull();
     expect(screen.queryByText("Samples")).toBeNull();
     expect(screen.queryByRole("button", { name: /beamtime/i })).toBeNull();
   });

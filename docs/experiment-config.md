@@ -206,6 +206,13 @@ inserts exposures is `regroup_experiment!`, behind `himalaya upgrade-grouping`.)
    `(experiment_id, filename)`. A rescan of an unchanged directory is a no-op,
    and new files only add rows. Existing samples and exposures are never
    rewritten, so renames, rejections, peak curation and phase calls survive.
+   The one exception is the beam monitors (`transmitted_counts` from
+   `I_signal`, `incident_monitor` from `I_0`, `counting_time`).
+   `backfill_monitors!` reads them from the stored `prp_path` of every exposure
+   still marked `monitors_read = 0`, on every Rescan request and scheduler tick,
+   before the change check, so a finished beamtime ingested before the monitors
+   were parsed picks them up with no new files. Each file is read once, and a
+   stored value is never overwritten.
 5. **Analyzes** each new exposure with `analyze_exposure!`, outside the write
    transaction, so an analysis failure cannot roll back the ingest. A failure
    is logged and the scan moves on.

@@ -45,6 +45,7 @@ const FIXTURE_EXPOSURE = {
   selected: false, status: null, image_path: null,
   image_version: "", tags: [], sources: [],
   trace_hash: null, analysis_inputs_hash: null,
+  exposure_time: null, counting_time: null, transmitted_counts: null, incident_monitor: null,
 };
 // EX-SPACING: the loupe body grid (detector hero + 286px side panel) is a
 // skeleton↔real ALIGNMENT INVARIANT — the loading placeholder must use the same

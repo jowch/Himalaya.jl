@@ -310,6 +310,7 @@ end
                     :experiment_id, :prp_path, :timestamp, :exposure_time,
                     :horizontal_position, :scan_id, :frame_no, :load_id,
                     :content_fingerprint,
+                    :transmitted_counts, :incident_monitor, :counting_time, :monitors_read,
                     :tags, :sources, :image_version,
                 ]
                 assert_keys(body, expected)

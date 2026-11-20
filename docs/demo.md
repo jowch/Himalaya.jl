@@ -20,7 +20,14 @@ make demo-clean   # delete the generated data and demo DBs
 
 Overrides: `DEMO_DIR=/tmp/demo make demo` (data location), `DEMO_DB_DIR` (demo DB + logs, default `scratch/demo`), `DEMO_API_PORT` /
 `DEMO_UI_PORT` (ports, for running beside another backend; see
-[frontend-dev-loop.md](frontend-dev-loop.md)).
+[frontend-dev-loop.md](frontend-dev-loop.md)), `DEMO_UI_MODE=build` (serve a `vite build`
+through `vite preview` instead of the dev server).
+
+`make verify-truth` sets `DEMO_UI_MODE=build`. It loads Loupe and Focus about 90 times
+in one Chrome tab, and every load of the dev server's ~280 unbundled modules leaves the
+renderer holding shared-memory handles until garbage collection. In CI that piles up past
+2,000 handles and Chrome starts failing loads with `ERR_INSUFFICIENT_RESOURCES`. The built
+app loads a few chunks, stays flat, and is what people actually run.
 
 `make demo` keeps its DB in `scratch/demo/` between runs (edits persist; ingest is
 skipped when the experiment is already there, and a scan that was interrupted or
@@ -35,7 +42,7 @@ funnel's layout auto-detect (`resolve_experiment_layout`, routes_fs.jl) recognis
 ```
 scratch/demo-experiment/
   data/<label>_S<scan>_0_001.tif     Pilatus 1M frame, signed Int32 counts, -1 in module gaps
-  data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time…)
+  data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time, beam monitors…)
   analysis/setup_info_*.txt          beam center + AgBe distance (geometry source)
   analysis/automatic_analysis/tot_files/<label>_S<scan>_tot.dat   q  I  sigma
   TRUTH.csv                          per sample: scans, generated phases + lattice, expected

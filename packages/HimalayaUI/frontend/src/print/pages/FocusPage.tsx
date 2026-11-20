@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Skeleton } from "boneyard-js/react";
+import { toTraceModel } from "../plot/traceModel";
 import { TracePlate } from "../components/TracePlate";
 import { DetectorPanel } from "../components/DetectorPanel";
 import { ThumbnailGallery } from "../components/ThumbnailGallery";
@@ -22,7 +23,6 @@ import { phaseSegment } from "../export/seriesFigureKeys";
 import { phaseHex } from "../export/traceColors";
 import { waterfallQDomain } from "../waterfall/waterfallModel";
 import {
-  toTraceModel,
   peakClickAction,
   toDetectorRings,
   toCombSeries,

@@ -292,6 +292,9 @@ struct GroupedExposure
     timestamp  ::Union{DateTime, Missing}
     exposure_time_s        ::Union{Float64, Missing}
     horizontal_position_mm ::Union{Float64, Missing}
+    transmitted_counts     ::Union{Float64, Missing}
+    incident_monitor       ::Union{Float64, Missing}
+    counting_time_s        ::Union{Float64, Missing}
     scan_id    ::Union{Int, Missing}   # parsed from the `_S<digits>_` filename token
     frame_no   ::Union{Int, Missing}   # parsed from the trailing `_<digits>` frame index
 end
@@ -541,6 +544,12 @@ function _assign_sessions(start_times::AbstractVector; session_gap_hours::Float6
     ids
 end
 
+_monitors(prp) = (
+    transmitted_counts = prp === nothing ? missing : get(prp, :transmitted_counts, missing),
+    incident_monitor   = prp === nothing ? missing : get(prp, :incident_monitor, missing),
+    counting_time_s    = prp === nothing ? missing : get(prp, :counting_time_s, missing),
+)
+
 function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
     isempty(metas) && return GroupingResult(GroupedLoad[], String[])
 
@@ -576,10 +585,12 @@ function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
                 ts  = (m.prp !== nothing && !ismissing(m.prp.timestamp)) ? m.prp.timestamp : missing
                 ets = m.prp !== nothing ? m.prp.exposure_time_s : missing
                 hpm = m.prp !== nothing ? m.prp.horizontal_position_mm : missing
+                mon = _monitors(m.prp)
                 GroupedExposure(
                     m.stem,
                     m.tif_path, m.prp_path, m.dat_path,
                     ts, ets, hpm,
+                    mon.transmitted_counts, mon.incident_monitor, mon.counting_time_s,
                     sid, fno,
                 )
             end for m in slot_metas]
