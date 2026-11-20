@@ -318,6 +318,7 @@ export function WorkspacePage(): JSX.Element {
                   label={`minus ${sampleNames.get(subRef) ?? `Sample ${subRef}`}`}
                   xDomain={shownDomain}
                   xExtent={xExtent}
+                  peakQs={peakQs}
                 />
               )}
             </Section>

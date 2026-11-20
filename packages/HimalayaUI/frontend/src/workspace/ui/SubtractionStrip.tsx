@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { robustRange } from "../compare";
+import { stripRange } from "../compare";
 import { PlotFrame } from "../../print/plot/PlotFrame";
 import { makeAxis } from "../../print/plot/projection";
 
@@ -9,15 +9,16 @@ interface Props {
   label: string;
   xDomain: [number, number] | null;
   xExtent: [number, number];
+  peakQs: readonly number[];
   height?: number;
 }
 
 const MARGINS = { top: 18, right: 24, bottom: 6, left: 60 };
 
-export function SubtractionStrip({ q, d, label, xDomain, xExtent, height = 110 }: Props): JSX.Element {
+export function SubtractionStrip({ q, d, label, xDomain, xExtent, peakQs, height = 110 }: Props): JSX.Element {
   const dom = xDomain ?? xExtent;
   const clipId = `workspace-subtraction-clip-${useId().replace(/:/g, "")}`;
-  const [lo, hi] = robustRange(d.filter((_, i) => q[i]! >= dom[0] && q[i]! <= dom[1]));
+  const [lo, hi] = stripRange(q, d, dom, peakQs);
   const pad = (hi - lo) * 0.1;
   return (
     <PlotFrame

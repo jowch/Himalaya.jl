@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCompare, clampDomain, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
+import { addCompare, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
 const background = (x: number): number => 5 + 1 / x;
@@ -67,6 +67,31 @@ describe("compare", () => {
     expect(hi).toBe(50);
     expect(robustRange([3, 3, 3])).toEqual([0, 3]);
     expect(robustRange([])).toEqual([-1, 1]);
+  });
+
+  describe("stripRange with a realistic low-q residual", () => {
+    const qs = Array.from({ length: 919 }, (_, i) => 0.0058 + i * ((0.4045 - 0.0058) / 918));
+    const peakQ = [0.127, 0.18, 0.22];
+    const d = qs.map(
+      (x) => -4000 * Math.exp(-(x - 0.0058) / 0.008) + peakQ.reduce((a, p) => a + 20 * Math.exp(-((x - p) ** 2) / 4e-6), 0),
+    );
+    const residualShare = d.filter((v) => v < -20).length / d.length;
+
+    it("the residual is more than the outlier cut can drop", () => {
+      expect(residualShare).toBeGreaterThan(0.03);
+      expect(robustRange(d)[0]).toBeLessThan(-100);
+    });
+
+    it("starts the range just below the first peak in view", () => {
+      const [lo, hi] = stripRange(qs, d, [qs[0]!, qs[qs.length - 1]!], peakQ);
+      expect(hi).toBeGreaterThan(15);
+      expect(lo).toBeGreaterThan(-1);
+    });
+
+    it("skips the low-q end when no peak is in view", () => {
+      const [lo] = stripRange(qs, d, [qs[0]!, 0.12], []);
+      expect(lo).toBeGreaterThan(-20);
+    });
   });
 
   it("clamps a kept zoom to the trace's q range and drops it when they do not overlap", () => {
