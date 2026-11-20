@@ -104,6 +104,7 @@ export async function ensureBrowser(cfg, { width = 1440, height = 900 } = {}) {
       "--disable-gpu",
       "--no-first-run",
       "--no-default-browser-check",
+      "--disable-features=BackForwardCache",
       `--remote-debugging-port=${cfg.cdpPort}`,
       `--user-data-dir=${profileDir(cfg)}`,
       `--window-size=${width},${height}`,

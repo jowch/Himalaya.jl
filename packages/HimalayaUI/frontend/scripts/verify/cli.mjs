@@ -5,7 +5,7 @@ import { seed, stop } from "./seed.mjs";
 import { open, click, fill, press, snapshot, screenshot, settle } from "./page.mjs";
 import { closeBrowser } from "./browser.mjs";
 import { api } from "./api.mjs";
-import { checkTruth } from "./truth.mjs";
+import { checkTruth, triage } from "./truth.mjs";
 
 const TARGET = ["role", "name", "label", "text", "testid", "selector", "within", "nth", "timeout"];
 
@@ -88,10 +88,16 @@ export const COMMANDS = {
     run: (cfg, f, [method, p]) => api(cfg, method, p, f),
   },
   "check-truth": {
-    usage: "check-truth [--strict] [--truth <TRUTH.csv>] [--experiment <id>]",
-    summary: "Compare the app's per-frame auto calls and frame counts with the demo TRUTH.csv. Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases.",
-    spec: { booleans: ["strict"], strings: ["truth", "experiment"] },
+    usage: "check-truth [--strict] [--ui] [--truth <TRUTH.csv>] [--experiment <id>]",
+    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also reports an `invariants` block (status matches the confirmed call, representative never a dropped frame, views agree) that does not change the exit code. --ui opens each sample's Loupe and Focus in the browser and reads which frame each opens on.",
+    spec: { booleans: ["strict", "ui"], strings: ["truth", "experiment"] },
     run: (cfg, f) => checkTruth(cfg, f),
+  },
+  triage: {
+    usage: "triage [--undo] [--dry-run] [--truth <TRUTH.csv>] [--experiment <id>]",
+    summary: "Drop the bad frames listed in TRUTH's `drop` column (PATCH /api/exposures/<id>/status), as a triager would in Loupe. --undo keeps them again, including any of those frames a person dropped before triage ran. Idempotent.",
+    spec: { booleans: ["undo", "dry-run"], strings: ["truth", "experiment"] },
+    run: (cfg, f) => triage(cfg, f),
   },
 };
 
@@ -110,7 +116,7 @@ export function helpText(name) {
     "Commands:",
     ...lines,
     "",
-    "Typical loop: doctor -> seed -> open /experiments -> snapshot -> click --role link --name ... -> screenshot -> check-truth",
+    "Typical loop: doctor -> seed -> open /experiments -> snapshot -> click --role link --name ... -> screenshot -> check-truth (after triage, check-truth --ui)",
     "",
   ].join("\n");
 }

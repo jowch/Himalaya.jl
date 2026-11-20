@@ -140,6 +140,7 @@ function register_samples_routes!()
             d[:q_units] = ismissing(sm.experiment_id) ? "A-1" :
                 get(qunits_by_exp, Int(sm.experiment_id), "A-1")
             rep = get(rep_by_sample, Int(sm.id), nothing)
+            d[:representative_exposure_id] = rep
             if rep !== nothing
                 state = get(state_by_exp, rep, "indexed")
                 d[:assignment_state] = state

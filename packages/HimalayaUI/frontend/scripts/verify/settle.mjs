@@ -2,10 +2,14 @@ export const BUSY_SELECTOR = "[data-boneyard-overlay], [aria-busy='true'], [role
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+export function tracked(request) {
+  return !["eventsource", "font"].includes(request.resourceType()) && !/^(blob|data):/.test(request.url());
+}
+
 export function armSettle(page) {
   const inflight = new Set();
   const onRequest = (r) => {
-    if (r.resourceType() !== "eventsource") inflight.add(r);
+    if (tracked(r)) inflight.add(r);
   };
   const onDone = (r) => inflight.delete(r);
   page.on("request", onRequest);

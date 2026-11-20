@@ -39,7 +39,8 @@ scratch/demo-experiment/
   analysis/setup_info_*.txt          beam center + AgBe distance (geometry source)
   analysis/automatic_analysis/tot_files/<label>_S<scan>_tot.dat   q  I  sigma
   TRUTH.csv                          per sample: scans, generated phases + lattice, expected
-                                     auto call (`auto`), phase-tagged reflection q values
+                                     auto call (`auto`), phase-tagged reflection q values,
+                                     scans to drop (`drop`)
 ```
 
 - **Not real data, never committed.** It lives under gitignored `scratch/` (or
@@ -48,9 +49,24 @@ scratch/demo-experiment/
   change to the core ratio tables (e.g. the √11 removal in #304).
 - 12 samples in two capillary holders (two loads, 75 min apart), one sample per
   slot (3.95 mm pitch, so the slot clustering in grouping.jl splits them), 1–3
-  scans each (26 exposures): clean Pn3m ×2, Pn3m+Im3m, Im3m, Ia3d, HII, Lα,
-  Lα+HII, weak Pn3m, Pn3m+HII, a buffer blank, and a ULV form-factor-only trace.
-  Each scan is one frame (`_0_001`, the frame the funnel's layout detection keys on).
+  scans each (28 exposures): clean Pn3m ×2, Pn3m+Im3m, Im3m, Ia3d, HII, Lα,
+  Lα+HII, weak Pn3m, Pn3m+HII, a buffer blank, a ULV form-factor-only trace, and
+  a leaked capillary. Each scan is one frame (`_0_001`, the frame the funnel's
+  layout detection keys on).
+- **Some scans are bad on purpose**, so the drop and representative rules have
+  something to act on. TRUTH's `drop` column lists them (`BAD_SCANS` in the
+  generator):
+  - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
+    0.01 counts per pixel plus hot pixels, so Loupe shows a black frame.
+  - `DOPE_H2O`: the oldest scan missed the capillary: steep q⁻⁴ air and slit
+    scatter over a faint air floor, so Loupe shows a glow at the beamstop and
+    darkness beyond it.
+  - `leaked_capillary`: both scans missed the capillary in the same way, so the
+    sample has no usable frame.
+
+  Nothing drops them at ingest; a triager does. `bin/verify triage`
+  drops them through the endpoint Loupe's Drop uses, so `bin/verify check-truth` can check the corpus
+  after triage.
 - **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
   column is what Himalaya's own pipeline calls. Two samples differ:
   - `MO_PEG5`: Pn3m √6 overlaps Im3m √10, so `auto_group` keeps Im3m. Pn3m stays

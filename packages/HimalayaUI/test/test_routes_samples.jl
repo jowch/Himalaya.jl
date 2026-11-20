@@ -81,7 +81,7 @@ end
 
     # Sample C — UNINDEXED. Representative exposure, no assignment row.
     sC = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="C")
-    HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sC, filename="c1")
+    eC = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sC, filename="c1")
 
     with_inproc_routes(db) do call
         list   = JSON3.read(String(call("GET", "/api/samples").body))
@@ -93,6 +93,9 @@ end
         @test byname["B"].phase === nothing      # form factor carries no phase
         @test byname["C"].assignment_state == "indexed"  # default (no members)
         @test byname["C"].phase === nothing      # unindexed
+        @test byname["A"].representative_exposure_id == eA1
+        @test byname["B"].representative_exposure_id == eB
+        @test byname["C"].representative_exposure_id == eC
     end
 end
 

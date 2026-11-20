@@ -42,21 +42,29 @@ end
         @test all(l -> l.flag == :ok, g.loads)
         @test sum(length(l.samples) for l in g.loads) == length(DemoGen.SAMPLES)
 
-        # Phase calls vs TRUTH's `auto` column.
+        # Phase calls vs TRUTH's `auto` column; a scan in TRUTH's `drop` column
+        # holds no sample, so it must call "none".
+        rows = Dict(begin
+                f = split(l, ","; limit = 9)
+                f[1] => (bases = split(f[2]), drop = Set(split(f[8])))
+            end for l in readlines(joinpath(root, "TRUTH.csv"))[2:end])
+        @test sum(length(r.drop) for r in values(rows)) == sum(length(v) for v in values(DemoGen.BAD_SCANS))
         tot = r.analysis_dir
         for (label, _, comps, auto, _) in DemoGen.SAMPLES
             truth = Set(string(nameof(c[1])) for c in comps)
-            for f in filter(f -> startswith(f, label * "_S"), readdir(tot))
-                call = _demo_call(joinpath(tot, f))
+            for base in rows[label].bases
+                bad = base in rows[label].drop
+                call = _demo_call(joinpath(tot, base * "_tot.dat"))
                 total += 1
-                hits += call == auto
-                call == "none" || (spurious += count(p -> p ∉ truth, split(call, "+")))
+                hits += call == (bad ? "none" : auto)
+                call == "none" || (spurious += count(p -> bad || p ∉ truth, split(call, "+")))
             end
         end
     end
-    # Floors, not exact counts (CLAUDE.md): 3 seeds × 26 exposures. Measured
-    # 2026-11-19 over seeds 1-12: every call matched except MO_AMP_10 on 3 of 36
-    # scans (an extra Pn3m lattice claims HII's first peak). Raise deliberately.
+    # Floors, not exact counts (CLAUDE.md): 3 seeds × 28 exposures. Measured
+    # 2026-11-20 over seeds 1-12: every call matched, the 48 bad scans all "none",
+    # except MO_AMP_10 on 3 of 36 scans (an extra Pn3m lattice claims HII's first
+    # peak). Raise deliberately.
     @test hits / total >= 0.95
     @test spurious <= 1
 end
