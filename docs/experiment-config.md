@@ -145,18 +145,19 @@ for every image, whether or not its metadata or integration file is present.
 
 The resolver recognises two layouts by probing one image stem:
 
-1. **SSRL total integration.** If `{base}_tot.dat` exists, where `{base}` is the
-   stem with its `_0_NNN` frame suffix removed, the patterns become
-   `{name}_0_NNN.tif`, `{name}_0_NNN.prp` and `{name}_tot.dat`, using the
-   frame suffix of the probed file.
-2. **Per-frame integration.** If `{stem}.dat` exists, the patterns are the
-   defaults.
+1. **SSRL `_tot.dat`.** The beamline writes one `.tif`, `.prp` and `_tot.dat`
+   per exposure, including repeated exposures of the same sample at the same
+   position. Nothing sums or averages exposures into a `_tot.dat`. If
+   `{base}_tot.dat` exists, where `{base}` is the stem with its `_0_NNN`
+   suffix removed, the patterns become `{name}_0_NNN.tif`, `{name}_0_NNN.prp`
+   and `{name}_tot.dat`, using the suffix of the probed file.
+2. **Plain `.dat`.** If `{stem}.dat` exists, the patterns are the defaults.
 
 Every reader of integration files (analysis, the trace route, series traces)
 resolves the path through `resolve_trace_path` (`pipeline.jl`). It tries the
-exact name first, then the name with a trailing `_<rep>_<frame>` removed,
-because older experiments migrated by `upgrade-grouping` store the full
-per-frame stem while the total integration is named by the acquisition stem.
+exact name first, then the name with a trailing `_0_001` removed, because older
+experiments migrated by `upgrade-grouping` store the stem with that suffix
+while the exposure's `_tot.dat` is named without it.
 
 ## Geometry
 

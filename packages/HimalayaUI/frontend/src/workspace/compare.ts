@@ -1,4 +1,4 @@
-import type { Trace } from "../api";
+import type { Trace, TraceMonitors } from "../api";
 
 export const MAX_COMPARES = 3;
 
@@ -68,11 +68,7 @@ export function matchScale(
 // physics: If the integration ever does divide by I_signal, set this to "per_flux".
 export const TRACE_NORMALISATION: "raw_counts" | "per_flux" = "raw_counts";
 
-export interface BeamMonitors {
-  transmitted_counts: number | null;
-  exposure_time: number | null;
-  counting_time: number | null;
-}
+export type BeamMonitors = TraceMonitors;
 
 const positive = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 

@@ -416,7 +416,6 @@ function series_member_traces(db::SQLite.DB, series_id::Integer)
         row.filename === missing && continue
         eid = Int(row.experiment_id)
         pattern = get!(() -> integration_pattern_for(db, eid), pattern_cache, eid)
-        # Shared resolver: exact per-frame name, else the per-acquisition `_tot.dat`.
         path = resolve_trace_path(String(row.analysis_dir), pattern, String(row.filename))
         path === nothing && continue
         q, I, σ = load_dat(path)
