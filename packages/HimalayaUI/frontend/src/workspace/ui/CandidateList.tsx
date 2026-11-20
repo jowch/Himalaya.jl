@@ -1,0 +1,42 @@
+import type { IndexEntry } from "../../api";
+import { Kbd } from "./Kbd";
+import { PhaseChip } from "./PhaseChip";
+import { Note } from "./Note";
+
+interface Props {
+  candidates: readonly IndexEntry[];
+  assigned: ReadonlySet<number>;
+  onToggle: (ix: IndexEntry) => void;
+  onHover: (id: number | undefined) => void;
+}
+
+export function CandidateList({ candidates, assigned, onToggle, onHover }: Props): JSX.Element {
+  if (candidates.length === 0) return <Note>No candidate indices for this exposure.</Note>;
+  return (
+    <ol className="flex flex-col gap-0.5" data-testid="workspace-candidates" onMouseLeave={() => onHover(undefined)}>
+      {candidates.map((c, i) => {
+        const on = assigned.has(c.id);
+        return (
+          <li key={c.id}>
+            <button
+              type="button"
+              aria-pressed={on}
+              onClick={() => onToggle(c)}
+              onMouseEnter={() => onHover(c.id)}
+              onFocus={() => onHover(c.id)}
+              className={
+                "grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-sm border px-2 py-1 text-left text-body " +
+                (on ? "border-accent bg-accent-wash" : "border-transparent hover:bg-paper-sunk")
+              }
+            >
+              <Kbd>{i + 1}</Kbd>
+              <PhaseChip phase={c.phase} />
+              <span>{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
+              <span className="text-ink-soft">{c.score !== null ? c.score.toFixed(2) : ""}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}

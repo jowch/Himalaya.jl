@@ -1,11 +1,10 @@
 /**
  * AppRoutes — the single hoisted route table (T3.2: AppShell unified).
  * TopNav is the single shell; CorpusShell/CorpusTopbar/ExperimentTopNav deleted.
- * Includes the relocated #77 compare-sync tests (formerly AppShell.test.tsx).
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter, useNavigate } from "react-router-dom";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
 import { AppRoutes } from "../src/print/shell/AppRoutes";
@@ -41,16 +40,8 @@ describe("AppRoutes — single unified shell (TopNav, T3.2)", () => {
       activeExperimentId: undefined,
       staleUrlContext: null,
     });
-    vi.spyOn(api, "listSeries").mockResolvedValue([]);
   });
   afterEach(() => vi.restoreAllMocks());
-
-  it("mounts the single app shell at /series", async () => {
-    renderRoutes("/series");
-    expect(await screen.findByTestId("app-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("folio-header")).toBeInTheDocument();
-    expect(screen.queryByTestId("corpus-shell")).toBeNull();
-  });
 
   it("mounts the single app shell at the stale catch-all (T3.2: unified shell)", async () => {
     renderRoutes("/totally/unknown");
@@ -59,67 +50,23 @@ describe("AppRoutes — single unified shell (TopNav, T3.2)", () => {
     expect(screen.queryByTestId("corpus-shell")).toBeNull();
   });
 
-  it("redirects a /compare* URL to the series folio (Compare retired, #177)", async () => {
-    renderRoutes("/compare/all");
-    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
-    expect(screen.queryByTestId("compare-page")).toBeNull();
-  });
+  it.each(["/series", "/series/4", "/compare/all", "/experiments/7/compare/123"])(
+    "redirects retired %s to the experiments home",
+    async (path) => {
+      vi.spyOn(api, "listExperiments").mockResolvedValue([]);
+      renderRoutes(path);
+      expect(await screen.findByText("All experiments")).toBeInTheDocument();
+      expect(useAppState.getState().staleUrlContext).toBeNull();
+    },
+  );
 
-  it("redirects an experiment-scoped /compare URL to the series folio (#177)", async () => {
-    renderRoutes("/experiments/7/compare/123");
-    expect(await screen.findByTestId("folio-header")).toBeInTheDocument();
-    expect(screen.queryByTestId("compare-page")).toBeNull();
-  });
-
-  it("does not flag /series as a stale path", async () => {
-    renderRoutes("/series");
-    await screen.findByTestId("folio-header");
-    expect(useAppState.getState().staleUrlContext).toBeNull();
-  });
-
-  it("keeps the single app shell mounted across the series↔stale boundary (T3.2)", async () => {
-    // T3.2: one AppShell. Stays mounted whether the route is a matched surface
-    // or the `*` stale catch-all; only the body swaps.
-    function NavButtons(): JSX.Element {
-      const navigate = useNavigate();
-      return (
-        <>
-          <button data-testid="go-series" onClick={() => navigate("/series")}>series</button>
-          <button data-testid="go-stale" onClick={() => navigate("/totally/unknown")}>stale</button>
-        </>
-      );
-    }
-
-    const qc = makeQc();
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/series"]}>
-          <NavButtons />
-          <AppRoutes />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-
-    // Start: app shell up, folio rendered, no legacy corpus-shell.
-    expect(await screen.findByTestId("app-shell")).toBeInTheDocument();
-    expect(screen.getByTestId("folio-header")).toBeInTheDocument();
-    expect(screen.queryByTestId("corpus-shell")).toBeNull();
-
-    // Cross to the stale catch-all — app shell stays; body becomes StaleUrlPage.
-    fireEvent.click(screen.getByTestId("go-stale"));
-    await waitFor(() => {
-      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
-      expect(screen.getByTestId("stale-url-page")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("corpus-shell")).toBeNull();
-
-    // Cross back to series route — folio returns under the same shell.
-    fireEvent.click(screen.getByTestId("go-series"));
-    await waitFor(() => {
-      expect(screen.getByTestId("app-shell")).toBeInTheDocument();
-      expect(screen.getByTestId("folio-header")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("corpus-shell")).toBeNull();
+  it("mounts the workspace outside the app shell", async () => {
+    vi.spyOn(api, "listCorpusSamples").mockResolvedValue([]);
+    vi.spyOn(api, "getExperiment").mockResolvedValue({ id: 7, name: "BL-19" } as Awaited<ReturnType<typeof api.getExperiment>>);
+    renderRoutes("/experiments/7/workspace");
+    expect(await screen.findByTestId("workspace")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-shell")).toBeNull();
+    expect(await screen.findByText("No samples in this experiment.")).toBeInTheDocument();
   });
 });
 
@@ -222,12 +169,4 @@ describe("AppRoutes — bare / always lands on experiments home (#77 / I4.4 / E1
     expect(screen.queryByTestId("compare-page")).toBeNull();
   });
 
-  it("a compare URL redirects to the series folio (Compare retired, #177)", async () => {
-    useAppState.setState({ activeExperimentId: 7 });
-    renderRoutes("/experiments/7/compare/123");
-    await waitFor(() => {
-      expect(screen.getByTestId("folio-header")).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId("compare-page")).toBeNull();
-  });
 });

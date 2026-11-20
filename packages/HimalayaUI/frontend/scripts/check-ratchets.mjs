@@ -10,7 +10,7 @@ const FRONTEND_SRC = join(PKG_DIR, "frontend", "src");
 const BACKEND_SRC = join(PKG_DIR, "src");
 const BASELINE_PATH = join(SCRIPTS_DIR, "ratchet-baseline.json");
 
-const APPEARANCE_EXEMPT_PREFIXES = ["print/ui/", "print/plot/", "print/detector/", "print/comb/", "print/export/"];
+const APPEARANCE_EXEMPT_PREFIXES = ["print/ui/", "workspace/ui/", "print/plot/", "print/detector/", "print/comb/", "print/export/"];
 
 const APPEARANCE_TOKEN =
   /^(text-(?!(?:left|right|center|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip)$)[a-z][\w-]*|bg-[\w-]+|border(?:-[\w-]+)?|rounded(?:-[\w-]+)?|shadow(?:-[\w-]+)?|font-[\w-]+|tracking-[\w-]+|leading-[\w-]+|uppercase|lowercase|italic|underline|opacity-\d+|ring(?:-[\w-]+)?)$/;

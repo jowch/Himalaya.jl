@@ -3,20 +3,19 @@ import { TopBar } from "../ui/TopBar";
 import { Wordmark } from "../ui/Wordmark";
 
 interface NavItem {
-  id: "experiments" | "series";
+  id: "experiments";
   label: string;
   to: string;
 }
 
 const ITEMS: readonly NavItem[] = [
   { id: "experiments", label: "Experiments", to: "/experiments" },
-  { id: "series", label: "Series", to: "/series" },
 ];
 
 /**
  * TopNav — the unified top navigation bar (App Shell Unification spec §3.1).
  * Wordmark "Himalaya · SAXS" links to /experiments; two section tabs
- * (Experiments, Series) with router-derived active state. Replaces both
+ * (Experiments) with router-derived active state. Replaces both
  * the legacy triple-chrome that preceded it in T3.2. No Samples tab,
  * no Beamtime chip, no gear (Configuration rides the experiment header, §3.1).
  */

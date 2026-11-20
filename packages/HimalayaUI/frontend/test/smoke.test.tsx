@@ -72,8 +72,6 @@ describe("App smoke", () => {
         sample_id: 10, sample_name: "s1",
         exposure_id: undefined, exposure_filename: undefined,
       },
-      // Series folio listing — a /compare* URL now redirects here (#177).
-      "/api/series": [],
     });
   });
 
@@ -96,10 +94,4 @@ describe("App smoke", () => {
     expect(screen.getByTestId("onboarding-overlay")).toBeInTheDocument();
   });
 
-  it("a /compare* URL redirects to the series folio (Compare retired, #177)", async () => {
-    renderAppAt("/experiments/1/compare");
-    await waitFor(() => expect(screen.getByTestId("folio-header")).toBeInTheDocument(),
-      { timeout: 3000 });
-    expect(screen.queryByTestId("compare-page")).toBeNull();
-  });
 });
