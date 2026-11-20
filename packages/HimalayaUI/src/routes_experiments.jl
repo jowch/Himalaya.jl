@@ -4,7 +4,7 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 #  - geometry (_GEOMETRY_PATCH_FIELDS): each has a companion *_source column set
 #    to "user" on override and never refreshed by rescan.
 #  - plain (_PLAIN_PATCH_FIELDS = name, description): plain write, no *_source, no rescan.
-#  - patterns (_PATTERN_FIELDS): plain write AND NULL scan_signature to trigger a rescan
+#  - patterns (_PATTERN_FIELDS): plain write; the client forces a rescan afterwards
 #    (the discovered file set changes when a pattern changes).
 # The path fields (data_dir, analysis_dir, manifest_path, path) + id/created_at stay
 # read-only (_READONLY_FIELDS): set at create time, must stay in sync with the filesystem.
@@ -358,15 +358,11 @@ function register_experiments_routes!()
             push!(set_clauses, "$field = ?"); push!(params, val)
         end
 
-        # Pattern fields: plain write + invalidate scan_signature so the next scan re-discovers.
-        pattern_touched = false
         for field in _PATTERN_FIELDS
             val = get(body, Symbol(field), get(body, field, nothing))
             val === nothing && continue
             push!(set_clauses, "$field = ?"); push!(params, val)
-            pattern_touched = true
         end
-        pattern_touched && push!(set_clauses, "scan_signature = NULL")
 
         # No recognized patchable field in the body → 400, matching the
         # codebase's PATCH validation convention (cf. PATCH /samples, exercised by

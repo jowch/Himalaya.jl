@@ -990,9 +990,8 @@ curations exist for the exposure, the function performs ZERO file I/O —
 inputs hash is computed from the DB alone and matched against the stored
 value; if they match, the call is effectively free.
 
-The .dat filename is constructed from `exposures.filename` and the integration
-pattern stored in the experiment's config (defaults to `{name}.dat` for
-experiments without an explicit config).
+The .dat filename is constructed from `exposures.filename` and the
+experiment's integration pattern (`integration_pattern_for`).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String;
                             trace_known_unchanged::Bool=false,
@@ -1006,8 +1005,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     filename      = rows[1].filename
     experiment_id = rows[1].experiment_id
 
-    cfg = config_from_db(db, experiment_id)
-    dat_path = joinpath(analysis_dir, replace(cfg.integration_pattern, "{name}" => filename))
+    integration_pattern = integration_pattern_for(db, experiment_id)
+    dat_path = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
 
     # DB-only reads first so the fast path can short-circuit before any file I/O.
     stored_trace_hash  = read_trace_hash(db, exposure_id)
@@ -1040,7 +1039,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     # Slow path: resolve the trace (per-frame name, else the shared per-acquisition
     # `_tot.dat` — see resolve_trace_path).
-    resolved = resolve_trace_path(analysis_dir, cfg.integration_pattern, String(filename))
+    resolved = resolve_trace_path(analysis_dir, integration_pattern, String(filename))
     resolved === nothing && error("dat file not found: $dat_path")
     dat_path = resolved
 

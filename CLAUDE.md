@@ -40,7 +40,6 @@ test/                               # core tests
 packages/HimalayaUI/
   src/                              # backend — see packages/HimalayaUI/src/AGENTS.md
   test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
-  configs/                          # built-in experiment.toml templates (simple.toml)
   frontend/
     src/                            # frontend — see frontend/src/AGENTS.md
       print/                        # all presentation: shell/, ui/, components/, pages/, render layers
@@ -114,7 +113,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 `serve` blocks. Frontend is served from `packages/HimalayaUI/frontend/dist/` if present.
 
-**Env vars** (see `packages/HimalayaUI/.env.example`): `HIMALAYA_DB_PATH`, `HIMALAYA_CONFIGS_DIR`, `HIMALAYA_HOST`, `HIMALAYA_PORT`, `HIMALAYA_FRONTEND_DIST`.
+**Env vars** (see `packages/HimalayaUI/.env.example`): `HIMALAYA_DB_PATH`, `HIMALAYA_HOST`, `HIMALAYA_PORT`, `HIMALAYA_FRONTEND_DIST`.
 
 Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md).
 
@@ -151,8 +150,8 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - **Greenfield cutover MERGED to `main` (PR #281, merge-commit `dcac451`, 2026-06-15):** "The Print" is the sole app. The real app lives in `packages/HimalayaUI/frontend/src/print/App.tsx` (`PrintApp`); `index.html → src/print/main.tsx` is the single entry (mounts `#app`); the legacy `src/App.tsx`/`src/main.tsx`/`print.html` were deleted. `npm run build` emits `dist/index.html` containing the real app. The `worktree-greenfield-ui-rebuild` branch has been deleted. Follow-ups on `main`: #282 (dropped the dead `/api/comparisons` frontend client) and #283 (beam-center calibration).
 - Core Himalaya: `v0.5.3` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + Focus/Index workspace + Inspect page + Series (folio/scoping/builder) + experiment-config system + skeleton loading + multiplayer + instrumentation foundation + mutation queue + slug permalinks + figure export + functional-redesign sweep (M1–M3) + component-library extraction (enforced design system) complete:
-  - **Backend:** transactional SQLite pipeline, HTTP ingest funnel (`/api/fs/*` → `POST /api/experiments` → `scan_and_group!`), FK enforcement, REST API (Oxygen.jl), CLI (`analyze`, `show`, `serve`, `upgrade-grouping`, legacy `config`/`migrate-toml`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.
-  - **Ingest:** the New-experiment funnel infers `data_dir`/`analysis_dir`/file patterns/geometry from the directory tree; `scan_and_group!` groups exposures into loads and samples by time and position, insert-only on rescan. `experiment.toml` is legacy. See `docs/experiment-config.md`.
+  - **Backend:** transactional SQLite pipeline, HTTP ingest funnel (`/api/fs/*` → `POST /api/experiments` → `scan_and_group!`), FK enforcement, REST API (Oxygen.jl), CLI (`analyze`, `show`, `serve`, `upgrade-grouping`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.
+  - **Ingest:** the New-experiment funnel infers `data_dir`/`analysis_dir`/file patterns/geometry from the directory tree; `scan_and_group!` groups exposures into loads and samples by time and position, insert-only on rescan. There is no `experiment.toml`. See `docs/experiment-config.md`.
   - **Frontend:** corpus contact sheet → loupe → Focus workspace (`/sample/:id`: trace plate on the d3 `TracePlot` engine, detector + combs panels, phase-call + assignment rail), with clickable corpus→sample doors, peak editing + auto-fit + log/linear toggle, custom-index modal, Loupe/Inspect page (detector image + thumbnail gallery + reject-reason chips + sample metadata), OnboardingFlow + NavModal with focus trapping, skeleton loading on all data-driven surfaces. The earlier three-card *chat* Index and the @-mention subsystem were **retired 2026-05-29** (presentation deleted, message data plane parked).
   - **Plan 7 — Multiplayer + Instrumentation:** Auto/curation peak split, diff-update preserves auto peak IDs, content-hash memoization, structured `user_actions` log via `apply_event!`, SSE multiplayer at `GET /api/events`. R5b (If-Match conflict resolution) **cancelled 2026-06-03** — no conflict UI; multiplayer stays last-write-wins, replaced by edit-tracking → undo/redo → versioning (designed in Layer 4). See `docs/event-log.md` §"Conflict resolution".
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.

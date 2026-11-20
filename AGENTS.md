@@ -138,7 +138,7 @@ When reviewing a PR (as reviewer, not author):
 - The stale-indices reanalyze affordance (a role=`alert`, no dedicated component) is derived from index `inputs_hash` vs exposure `analysis_inputs_hash` mismatch; the `useReanalyzeExposure` path is gated on `useExposureHasPendingPeakOps` so it doesn't flash mid-op
 - `useExposureHasPendingPeakOps` gates any UI reading `peaks(id)` derivatively during in-flight ops
 - `MutationCache.getAll()` insertion order is load-bearing for replay-as-rerun
-- Experiment dirs are read-only at runtime (except the legacy `himalaya config new` and `migrate-toml`)
+- Experiment dirs are read-only at runtime
 - `Fm3m` is missing from `indexpeaks` dispatch — known gap, don't fix opportunistically
 
 ## Contract testing (six layers)

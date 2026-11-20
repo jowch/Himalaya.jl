@@ -390,7 +390,7 @@ Resolve and load every member trace of `series_id`, keyed by exposure_id, in
 display order. Members with no exposure, a derived (non-"file") exposure, no
 filename, or a missing `.dat` on disk are SKIPPED (omitted from the map) — the
 batch route degrades gracefully; the folio's `toWaterfallRows` renders an empty
-row for any absent exposure. `config_from_db` is memoized per experiment.
+row for any absent exposure. The integration pattern is memoized per experiment.
 
 Note the deliberate skip-vs-throw asymmetry: a member whose `.dat` is *absent*
 is skipped, but a member whose `.dat` is *present-but-corrupt* (unparseable /
@@ -409,17 +409,15 @@ function series_member_traces(db::SQLite.DB, series_id::Integer)
            ORDER BY sm.display_order ASC, sm.id ASC""", [series_id]))
 
     out = Dict{Int,Any}()
-    cfg_cache = Dict{Int,Any}()
+    pattern_cache = Dict{Int,String}()
     for row in rows
         row.kind === missing && continue
         String(row.kind) == "file" || continue
         row.filename === missing && continue
         eid = Int(row.experiment_id)
-        cfg = get!(cfg_cache, eid) do
-            config_from_db(db, eid)
-        end
+        pattern = get!(() -> integration_pattern_for(db, eid), pattern_cache, eid)
         # Shared resolver: exact per-frame name, else the per-acquisition `_tot.dat`.
-        path = resolve_trace_path(String(row.analysis_dir), cfg.integration_pattern, String(row.filename))
+        path = resolve_trace_path(String(row.analysis_dir), pattern, String(row.filename))
         path === nothing && continue
         q, I, σ = load_dat(path)
         out[Int(row.exposure_id)] = Dict(:q => q, :I => I, :sigma => σ)

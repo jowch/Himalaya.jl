@@ -208,10 +208,6 @@ function register_fs_routes!()
         analysis_dir_q = get(q, "analysis_dir", "")
         integ_files = (!isempty(analysis_dir_q) && isdir(analysis_dir_q)) ?
             filter(!startswith("."), readdir(analysis_dir_q)) : files
-        # {name}-capture per type, inlined. Do NOT add a module helper — grouping.jl
-        # / config.jl already own pattern matching; if the manifest's needs grow,
-        # call the shared matcher (config.jl `_matches_prefix_with_boundary` /
-        # `resolve_files`) rather than maintaining a second one (ponytail review).
         function stems(filelist, pat)
             occursin("{name}", pat) || return Set{String}()
             pre, post = split(pat, "{name}"; limit = 2)

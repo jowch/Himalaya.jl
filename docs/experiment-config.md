@@ -234,8 +234,7 @@ There are three ways a scan runs again after create:
   every experiment whose ingest is `complete`.
 - **A pattern edit.** `PATCH` with a pattern field stores it, and the
   Configuration page then calls the scan route with `force: true` so the new
-  pattern applies straight away. The `PATCH` also clears `scan_signature`, but
-  nothing reads that column today.
+  pattern applies straight away.
 
 Rescans are additive. A pattern change that stops matching some existing files
 does not remove their exposures.
@@ -245,8 +244,7 @@ does not remove their exposures.
 Himalaya never creates, modifies or deletes a file inside an experiment
 directory while resolving, previewing, scanning, analyzing or serving. The
 funnel probes only read, and thumbnails are cached next to the DB
-(`<db_dir>/cache/thumb-128/`), not next to the images. The legacy commands
-`himalaya config new` and `himalaya migrate-toml` are the only code that writes
+(`<db_dir>/cache/thumb-128/`), not next to the images. No code path writes
 into an experiment directory.
 
 This rule is kept by code review. No test checks it for the scan path.
@@ -260,11 +258,10 @@ lab-notebook CSV, and the CLI ingested them. That path, including
 
 - **`experiments.config`** holds the TOML text for experiments created that
   way. The funnel leaves it `NULL`.
-- **`config_from_db`** (`config.jl`) parses that blob into an
-  `ExperimentConfig`, or loads the built-in `configs/simple.toml` when it is
-  `NULL`. It then replaces the image and integration patterns with the row's
-  columns when those are set. Analysis, the trace route and series traces call
-  it, and only use the integration pattern from the result.
+- **`integration_pattern_for`** (`config.jl`) reads `[files].integration`
+  from that blob when the row's `integration_pattern` column is unset, so
+  legacy experiments keep finding their traces. Analysis, the trace route and
+  series traces resolve the pattern through it.
 - **`_beamline_from_config`** (`routes_experiments.jl`) reads beam centre,
   pixel size and `q_units` from the blob for legacy rows with no typed
   geometry columns set. The samples list (`routes_samples.jl`) also falls back
@@ -272,9 +269,10 @@ lab-notebook CSV, and the CLI ingested them. That path, including
 - **`himalaya upgrade-grouping`** retrofits a legacy experiment's samples and
   exposures to the current grouping while keeping its curation. It is a
   dry run unless `--apply` is passed.
-- **`himalaya config list`** lists the built-in templates, and
-  **`himalaya config new`** and **`himalaya migrate-toml`** create and rewrite
-  `experiment.toml` files. Nothing in ingest or analysis reads those files.
+
+Nothing reads an `experiment.toml` file. The commands that wrote one
+(`himalaya config new/list`, `himalaya migrate-toml`) and the built-in
+`configs/simple.toml` template have been deleted.
 
 ## CLI reference
 
@@ -295,11 +293,6 @@ himalaya serve [--port N] [--host H]
 himalaya upgrade-grouping [--apply] [-e <experiment>]
     Retrofit legacy experiments to the current auto-grouping. Dry run by
     default.
-
-himalaya config list
-himalaya config new [--type <name>] --dir <path>
-himalaya migrate-toml <experiment-dir>
-    Legacy experiment.toml tooling (see above).
 ```
 
 `-e` takes an id, a name or a path. When it is left out, `analyze` and `show`
@@ -313,4 +306,4 @@ and `upgrade-grouping` runs on every experiment.
 - [packages/HimalayaUI/src/ingest.jl](../packages/HimalayaUI/src/ingest.jl): `scan_and_group!`, `cheap_change_check`, `regroup_experiment!`
 - [packages/HimalayaUI/src/grouping.jl](../packages/HimalayaUI/src/grouping.jl): discovery, loads, slots, sample names, flags
 - [packages/HimalayaUI/src/geometry.jl](../packages/HimalayaUI/src/geometry.jl): geometry derivation
-- [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl): the legacy `ExperimentConfig`
+- [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl): `integration_pattern_for`

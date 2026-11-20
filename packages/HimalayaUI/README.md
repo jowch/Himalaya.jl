@@ -164,9 +164,6 @@ If no DB exists at the resolved path, `serve` creates an empty one and warns, so
 
 Retrofits experiments ingested before the current auto-grouping to the loads/samples/exposures partition a fresh scan would produce, keeping curation. Dry run by default; pass `--apply` to commit. Back up the DB first.
 
-### Legacy: `himalaya config list`, `config new`, `migrate-toml`
-
-These still manage `experiment.toml` files from the old manifest-driven ingest, but nothing in ingest or analysis reads those files any more.
 
 ---
 
@@ -177,7 +174,6 @@ Deployment is configured through environment variables. See [`.env.example`](.en
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `HIMALAYA_DB_PATH` | `~/.himalaya/himalaya.db` | Central DB location. For workstation deployments, point at `/opt/himalaya/himalaya.db` or similar. |
-| `HIMALAYA_CONFIGS_DIR` | bundled `configs/` | Where the legacy `config new --type` reads templates from. |
 | `HIMALAYA_HOST` | `127.0.0.1` | `serve` bind address (override only if behind an auth-aware reverse proxy). |
 | `HIMALAYA_PORT` | `8080` | `serve` bind port. |
 | `HIMALAYA_FRONTEND_DIST` | bundled `frontend/dist/` | Path to the built frontend (for `/opt`-style deployments where build artefacts ship separately). |

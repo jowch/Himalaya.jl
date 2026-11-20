@@ -7,14 +7,14 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 | Task | Location | Notes |
 |------|----------|-------|
 | DB schema + CRUD | `db.jl` | FK enforcement ON; `AUTOINCREMENT` on mention-target tables |
-| Experiment config | `config.jl` | `ExperimentConfig` + `load_config` + `resolve_files` |
+| Integration pattern | `config.jl` | `integration_pattern_for` (row column, else legacy `config` blob) |
 | Ingestion (auto-scan) | `ingest.jl` | `scan_and_group!` — sole ingestion entry point (HTTP scan); read-only wrt experiment dir |
 | Analysis pipeline | `pipeline.jl` | `analyze_exposure!`, `auto_group`, `persist_analysis!` |
 | Curation contract | `pipeline.jl::effective_peaks` | `auto_peaks − excludes ∪ adds` |
 | Event log + SSE | `events.jl` | `apply_event!` is the sole writer to view tables |
 | Idempotency | `idempotency.jl` | `with_idempotency` + `InTransaction` sentinel |
 | Speculative indices | `speculative.jl` | Build/delete + re-resolve |
-| CLI | `cli.jl` | `analyze`, `show`, `serve`, `upgrade-grouping`, legacy `config` and `migrate-toml` (ingestion is HTTP-only, no `init`/`reingest`) |
+| CLI | `cli.jl` | `analyze`, `show`, `serve`, `upgrade-grouping` (ingestion is HTTP-only) |
 | REST routes | `routes_*.jl` | One file per resource |
 | Audit log | `actions.jl` | `X-Username` extraction + `user_actions` writer |
 | TIFF → PNG | `image.jl` | `load_and_lognormalize` (Q0f31-aware) |
@@ -59,15 +59,14 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 
 ## Experiment config
 
-The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/resolve` → `/api/fs/manifest` → `POST /api/experiments`); `PATCH /api/experiments/:id` edits all but the path fields. `experiment.toml` and the `experiments.config` blob are legacy: `config_from_db` still parses the blob (or `simple.toml` when `NULL`), but the row's pattern columns override it and nothing in ingest reads `experiment.toml`.
+The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/resolve` → `/api/fs/manifest` → `POST /api/experiments`); `PATCH /api/experiments/:id` edits all but the path fields. The `experiments.config` blob holds legacy TOML; only `integration_pattern_for` (fallback for `[files].integration`), `_beamline_from_config` and the samples-list `q_units` fallback read it. There is no `experiment.toml`.
 
-- **`_build_config(::AbstractDict)`** is the shared helper between `config_from_db` and `load_config`.
 
 Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.
 
 ## Filesystem + DB layout
 
-- **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during ingestion (`scan_and_group!` / HTTP scan), `analyze`, or `serve`. The only exceptions are the legacy `himalaya config new --dir` and `himalaya migrate-toml`.
+- **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during ingestion (`scan_and_group!` / HTTP scan), `analyze`, or `serve`.
 - **Central DB.** All CLI commands open the same DB resolved by `default_db_path()` in `db.jl`: `HIMALAYA_DB_PATH` if set, else `~/.himalaya/himalaya.db` (parent auto-created). One DB stores every experiment; experiment dirs are pure read-only data sources. Tests pass an explicit file path (`open_db(joinpath(tmp, "himalaya.db"))`) for isolation.
 - **One exposure per image.** `scan_directory` enumerates images in `data_dir` by `image_pattern`, and builds each metadata and integration path by putting the stem into its pattern. When debugging "exposures missing" or "no peaks after a scan," run `GET /api/fs/manifest` with the experiment's `data_dir` as `path`, its `analysis_dir`, and its patterns (without `analysis_dir`, every stem is reported as missing its integration file): its `unmatched` list names each stem missing a sidecar, with near-miss filenames.
 
@@ -105,7 +104,7 @@ Stdlibs used directly in a package (`Sockets`, `Printf`, `SparseArrays`, `Delimi
 
 - **No route may INSERT/DELETE into `peak_curations` or `index_group_members` except through `apply_event!`.** It is the sole writer to view tables.
 - **From inside `with_idempotency`, call `apply_event!(InTransaction(), …)`** — never the public `apply_event!(db, req; …)`. The public method opens a nested savepoint AND broadcasts immediately, bypassing the post-commit queue. See `docs/event-log.md` §3a + `docs/mutation-queue.md`.
-- **Experiment dirs are read-only at runtime** (except the legacy `himalaya config new` and `migrate-toml`).
+- **Experiment dirs are read-only at runtime.**
 
 ## Comments are ratcheted
 

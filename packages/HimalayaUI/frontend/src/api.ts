@@ -31,7 +31,6 @@ export interface Experiment {
   pixel_size_um_source: GeometrySource;
   q_units_source: GeometrySource;
   last_scanned_at: string | null;
-  scan_signature: string | null;
   ingest_status: IngestStatus;
   // Phase E1 additive columns: editable file-pattern globs (Task 1c migration).
   // NULL = use legacy experiment.toml fallback.
@@ -186,8 +185,8 @@ export const createUser = (
  *  - name/description: plain writes, NO *_source stamp, NO rescan.
  *  - Geometry ×6: each field written + *_source stamped 'user' server-side
  *    (already built in Phase C — this widens the same route).
- *  - File patterns ×3: plain write + scan_signature invalidated server-side
- *    so the next scan re-discovers with the new glob.
+ *  - File patterns ×3: plain write; the caller forces a rescan so the new
+ *    glob is applied.
  *  - data_dir/analysis_dir/path are READ-ONLY (400 if sent). */
 export interface ExperimentPatch {
   name?: string;

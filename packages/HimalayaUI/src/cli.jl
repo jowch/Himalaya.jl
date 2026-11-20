@@ -205,87 +205,6 @@ function cli_show(args)
     end
 end
 
-"""
-    cli_config_list(io=stdout)
-
-Print the names of all built-in config templates, one per line.
-"""
-function cli_config_list(io::IO = stdout)
-    types = list_config_types()
-    if isempty(types)
-        println(io, "(no built-in config types found)")
-    else
-        for t in types
-            println(io, t)
-        end
-    end
-end
-
-"""
-    cli_config_new(; type_name::String="simple", dir::String)
-
-Copy the named built-in template to `<dir>/experiment.toml`. Errors if
-the destination already exists with content (will not overwrite). An
-empty or whitespace-only file is treated as a placeholder and gets
-filled — this supports read-only experiment dirs where a sysadmin
-pre-creates the file with the right permissions for a curator to
-populate. This is the only documented operation that writes to an
-experiment directory.
-"""
-function cli_config_new(; type_name::String = "simple", dir::String)
-    isdir(dir) || error("Directory not found: $dir")
-    dest = joinpath(dir, "experiment.toml")
-    placeholder = isfile(dest)
-    if placeholder && !isempty(strip(read(dest, String)))
-        error("experiment.toml already exists at $dest with content — will not overwrite")
-    end
-    src = joinpath(configs_dir(), type_name * ".toml")
-    isfile(src) || error("Unknown config type '$type_name'. Run 'himalaya config list' to see options.")
-    # When filling a pre-existing placeholder, write into the existing file
-    # rather than unlink+copy — the parent dir may be read-only (which is
-    # the whole reason the placeholder exists). For new files we cp, so
-    # mode/ownership stay sensible.
-    if placeholder
-        write(dest, read(src, String))
-    else
-        cp(src, dest)
-    end
-    println("Created $dest from template '$type_name'")
-    println("Edit it to set your experiment name, beamline parameters, and manifest column mappings.")
-    dest
-end
-
-function cli_config(args)
-    if isempty(args) || first(args) in ("--help", "-h", "help")
-        println("""
-Usage: himalaya config <subcommand> [options]
-
-Subcommands:
-  list                                  List built-in config templates
-  new --type <name> --dir <path>        Copy a template to <path>/experiment.toml
-""")
-        return
-    end
-    sub = popfirst!(args)
-    if sub == "list"
-        cli_config_list()
-    elseif sub == "new"
-        s = ArgParseSettings(prog = "himalaya config new")
-        @add_arg_table! s begin
-            "--type"
-                default = "simple"
-                help    = "built-in template name (see 'himalaya config list')"
-            "--dir"
-                required = true
-                help     = "directory in which to write experiment.toml"
-        end
-        p = parse_args(args, s; as_symbols = true)
-        cli_config_new(type_name = p[:type], dir = p[:dir])
-    else
-        println("Unknown config subcommand: $sub. Available: list, new")
-    end
-end
-
 function cli_serve(args)
     s = ArgParseSettings(prog = "himalaya serve")
     @add_arg_table! s begin
@@ -310,41 +229,6 @@ function cli_serve(args)
     db = open_db(db_path)
     println("HimalayaUI serving $(fresh ? "a new empty " : "")DB at $db_path on http://$(p[:host]):$(p[:port])")
     serve(db; host = p[:host], port = p[:port])
-end
-
-"""
-    cli_migrate_toml(args)
-
-Rewrite `<dir>/experiment.toml` from the legacy `[manifest].label/name` shape
-to the canonical `[manifest].name/display_name` shape. Section-aware: only
-substitutes inside the `[manifest]` block so the "axis label units" comment
-in `[beamline]` is not misfired. Idempotent. Atomic file write.
-"""
-function cli_migrate_toml(args::Vector{<:AbstractString})
-    isempty(args) && error("Usage: himalaya migrate-toml <experiment-dir>")
-    dir  = args[1]
-    path = joinpath(dir, "experiment.toml")
-    isfile(path) || error("experiment.toml not found in $dir")
-
-    text = read(path, String)
-    new_text, changed = try
-        migrate_manifest_toml_text(text)
-    catch err
-        # Re-raise with a path-aware prefix; intentionally a fresh exception
-        # rather than `rethrow(err)` because the helper's bare message lacks
-        # the file path that operators need in this CLI context.
-        throw(ErrorException("experiment.toml at $path: $(sprint(showerror, err))"))
-    end
-    if !changed
-        @info "experiment.toml at $path already migrated (or no `[manifest].label` to migrate)"
-        return nothing
-    end
-
-    tmp = path * ".tmp"
-    open(tmp, "w") do io; print(io, new_text); end
-    mv(tmp, path; force=true)
-    @info "Migrated $path"
-    nothing
 end
 
 """
@@ -488,8 +372,6 @@ const _USAGE = """
 Usage: himalaya <command> [options]
 
 Commands:
-  config new --type <name> --dir <path>     Create experiment.toml from a template
-  config list                               List built-in config templates
   analyze   [-e <experiment> | --all] [-s <label>]  Run peak-finding + indexing
   show     [-e <experiment>] -s <label>     Print stored analysis for one sample
   serve    [--port N] [--host H]            Start the web server
@@ -518,10 +400,6 @@ function main(args = copy(ARGS))
         cli_show(args)
     elseif cmd == "serve"
         cli_serve(args)
-    elseif cmd == "config"
-        cli_config(args)
-    elseif cmd == "migrate-toml"
-        cli_migrate_toml(args)
     elseif cmd == "upgrade-grouping"
         cli_upgrade_grouping(args)
     else
