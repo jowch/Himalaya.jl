@@ -34,6 +34,8 @@ const _DB_WRITE_LOCK = ReentrantLock()
 # eliminates the TOCTOU race that an isready/wait combo would introduce).
 const SSE_SUBSCRIBERS = Ref{Vector{Any}}([])
 const SSE_LOCK        = ReentrantLock()
+const SSE_OPENING_FRAME   = "retry: 3000\n\n"
+const SSE_HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
 
 function current_db()
     db = _DB_REF[]
@@ -78,15 +80,14 @@ function register_routes!()
     # Plan A: Oxygen 1.10.x @stream macro — receives an HTTP.Stream directly.
     # This is the cleanest path: no forked HTTP.serve, no response-body callback
     # gymnastics. The handler runs in its own task; we block on take!(pending)
-    # so there's no busy-poll. A per-subscriber heartbeat Timer pushes
-    # ":heartbeat\n\n" every 15 s onto the same channel so reverse proxies
-    # don't drop idle connections. On disconnect the write throws and we prune.
+    # so there's no busy-poll. On disconnect the write throws and we prune.
     @stream "/api/events" function(stream::HTTP.Stream)
         HTTP.setheader(stream, "Content-Type"      => "text/event-stream")
         HTTP.setheader(stream, "Cache-Control"     => "no-cache")
         HTTP.setheader(stream, "Connection"        => "keep-alive")
         HTTP.setheader(stream, "X-Accel-Buffering" => "no")
         startwrite(stream)
+        write(stream, SSE_OPENING_FRAME)
 
         pending = Channel{String}(64)
         sub = (pending = pending,)
@@ -101,7 +102,7 @@ function register_routes!()
         # Timer task — a slow client must not be able to leak heartbeat
         # tasks at one-per-15s.
         heartbeat = Timer(15; interval = 15) do _
-            _try_put!(pending, ":heartbeat\n\n")
+            _try_put!(pending, SSE_HEARTBEAT_FRAME)
         end
 
         try

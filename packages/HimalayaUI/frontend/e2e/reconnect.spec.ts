@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures";
+import { test, expect, type Page } from "./fixtures";
 
 const experiment = (name: string) => ({
   id: 3, name, path: "/data", data_dir: "/data", analysis_dir: "/analysis",
@@ -6,30 +6,45 @@ const experiment = (name: string) => ({
   ingest_status: "complete", stats: { loads: 1, samples: 1, exposures: 1, sessions: 1 },
 });
 
-test("after the live-update stream drops and reconnects, the page shows what changed while it was down", async ({ page }) => {
+type Answer = { status: number; body: string; contentType: string };
+const stream = (body: string): Answer => ({ status: 200, contentType: "text/event-stream", body });
+const KEEP_QUIET = stream("retry: 600000\n\n");
+
+async function mockApp(page: Page, answers: Answer[]): Promise<{ connections: () => number }> {
   await page.addInitScript(() => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 5 }));
   });
-  let restarted = false;
+  let connections = 0;
+  let listed = 0;
   await page.route("**/api/users", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/experiments", (r) =>
-    r.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify([experiment(restarted ? "Renamed while the stream was down" : "Before the restart")]),
-    }));
-  let connections = 0;
-  await page.route("**/api/events", (r) => {
-    connections += 1;
+  await page.route("**/api/experiments", (r) => {
+    listed += 1;
+    const afterRestart = listed > 1 && connections > 1;
     return r.fulfill({
-      status: 200, contentType: "text/event-stream",
-      body: connections === 1 ? "retry: 300\n\n" : "retry: 600000\n\n",
+      status: 200, contentType: "application/json",
+      body: JSON.stringify([experiment(afterRestart ? "Renamed while the stream was down" : "Before the restart")]),
     });
   });
+  await page.route("**/api/events", (r) => {
+    connections += 1;
+    return r.fulfill(answers[connections - 1] ?? KEEP_QUIET);
+  });
+  return { connections: () => connections };
+}
 
+test("after the stream ends and the browser reconnects, the page shows what changed while it was down", async ({ page }) => {
+  await mockApp(page, [stream("retry: 1\n\n")]);
   await page.goto("/experiments");
-  await expect(page.getByText("Before the restart")).toBeVisible();
-  restarted = true;
-  await expect.poll(() => connections).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText("Renamed while the stream was down")).toBeVisible();
+});
+
+test("after the proxy answers 500 while the backend is down, the app opens a new stream and refreshes", async ({ page }) => {
+  const app = await mockApp(page, [
+    stream("retry: 1\n\n"),
+    { status: 500, contentType: "text/plain", body: "upstream down" },
+  ]);
+  await page.goto("/experiments");
+  await expect.poll(app.connections).toBeGreaterThanOrEqual(3);
   await expect(page.getByText("Renamed while the stream was down")).toBeVisible();
 });

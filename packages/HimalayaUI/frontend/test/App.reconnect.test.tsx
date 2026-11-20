@@ -20,6 +20,7 @@ class FakeES {
 }
 
 const KEY = ["samples", "corpus-probe"];
+const OTHER = ["exposure", 9, "peaks"];
 
 describe("PrintApp after the live-update stream reconnects", () => {
   let qc: QueryClient;
@@ -29,6 +30,7 @@ describe("PrintApp after the live-update stream reconnects", () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
     qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     qc.setQueryData(KEY, ["cached before the backend restarted"]);
+    qc.setQueryData(OTHER, []);
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
@@ -47,5 +49,6 @@ describe("PrintApp after the live-update stream reconnects", () => {
     FakeES.last!.fire("error");
     FakeES.last!.fire("open");
     expect(qc.getQueryState(KEY)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(OTHER)?.isInvalidated).toBe(true);
   });
 });
