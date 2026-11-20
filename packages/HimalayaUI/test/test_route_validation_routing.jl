@@ -79,7 +79,7 @@ end
                 ("POST",  "/api/exposures/$(ctx.exposure_id)/peaks",
                  Dict(:q => "not-a-number"),
                  "POST /exposures/:id/peaks — non-numeric q"),
-                ("PATCH", "/api/peaks/$(ctx.auto_peak_id)",
+                ("PATCH", "/api/peaks/auto/$(ctx.auto_peak_id)",
                  Dict(:NOT_excluded => true),
                  "PATCH /peaks/:id — missing excluded"),
                 ("POST",  "/api/exposures/$(ctx.exposure_id)/speculative",

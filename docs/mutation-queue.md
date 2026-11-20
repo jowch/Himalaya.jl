@@ -201,7 +201,7 @@ must tolerate negatives:
 
 - Don't `id > 0`-filter — strips legitimate optimistic rows.
 - Don't strict-parse against a backend URL pattern without a sign check.
-- Don't dereference into URLs (`/api/peaks/${id}`) without first confirming
+- Don't dereference into URLs (`/api/peaks/manual/${id}`) without first confirming
   the id is positive — a negative id will 404.
 
 This is documented as a wall comment at the top of `types.ts`. Breaking it
