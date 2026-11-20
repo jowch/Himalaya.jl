@@ -1,22 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareTruth, normalizeCall, representativeFrame } from "../truth.mjs";
+import { compareTruth, normalizeCall, shownStatus } from "../truth.mjs";
 
 const TRUTH = [
-  { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", note: "" },
-  { sample: "MO_PEG5", bases: "MO_PEG5_S3", phases: "Pn3m+Im3m", auto: "Im3m", note: "Pn3m √6 overlaps Im3m √10" },
+  { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
+  { sample: "MO_PEG5", bases: "MO_PEG5_S3", phases: "Pn3m+Im3m", auto: "Im3m", drop: "", note: "Pn3m √6 overlaps Im3m √10" },
 ];
+
+const NOT_INDEXED = { phase: null, state: "indexed" };
 
 function frame(filename, autoPhases, extra = {}) {
   return { id: Number(filename.at(-1)), filename, status: null, selected: false, autoPhases, assignment: { state: "indexed", phases: [] }, ...extra };
 }
 
+function sample(id, name, frames, shown = {}) {
+  return { id, name, frames, shown: { ...NOT_INDEXED, representative_id: frames.at(-1).id, ...shown } };
+}
+
 function app(overrides = {}) {
   return [
-    { id: 1, name: "MO_H2O_S1 (S01P01)", frames: overrides.h2o ?? [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"])] },
-    { id: 2, name: "MO_PEG5_S3 (S01P02)", frames: overrides.peg ?? [frame("MO_PEG5_S3", ["Im3m"])] },
+    sample(1, "MO_H2O_S1 (S01P01)", overrides.h2o ?? [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"])], overrides.h2oShown),
+    sample(2, "MO_PEG5_S3 (S01P02)", overrides.peg ?? [frame("MO_PEG5_S3", ["Im3m"])], overrides.pegShown),
   ];
 }
+
+const dropped = { status: "rejected" };
 
 test("normalizeCall sorts, dedupes and maps empty to none", () => {
   assert.equal(normalizeCall("Pn3m+Im3m"), "Im3m+Pn3m");
@@ -42,7 +50,7 @@ test("--strict fails where the auto call misses the generated phases", () => {
 test("a changed auto call is a regression", () => {
   const r = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Ia3d"])] }));
   assert.equal(r.ok, false);
-  assert.match(r.samples[0].problems[0], /MO_H2O_S2=Ia3d, expected Pn3m/);
+  assert.match(r.samples[0].problems[0], /MO_H2O_S2=Ia3d \(expected Pn3m\)/);
 });
 
 test("a missing frame and a missing sample fail", () => {
@@ -53,36 +61,118 @@ test("a missing frame and a missing sample fail", () => {
 });
 
 test("an app sample mixing two truth samples is a stray", () => {
-  const merged = [{ id: 9, name: "merged", frames: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_PEG5_S3", ["Im3m"])] }];
+  const merged = [sample(9, "merged", [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_PEG5_S3", ["Im3m"])])];
   const r = compareTruth(TRUTH, merged);
   assert.equal(r.ok, false);
   assert.deepEqual(r.strays[0].owners.sort(), ["MO_H2O", "MO_PEG5"]);
 });
 
-test("representative frame: selected if kept, else newest kept, else none", () => {
-  const a = frame("a1", []);
-  const b = frame("b2", [], { selected: true });
-  const c = frame("c3", []);
-  assert.equal(representativeFrame([a, b, c]).filename, "b2");
-  assert.equal(representativeFrame([a, { ...b, status: "rejected" }, c]).filename, "c3");
-  assert.equal(representativeFrame([a, { ...c, status: "rejected" }]).filename, "a1");
-  assert.equal(representativeFrame([{ ...a, status: "rejected" }]), null);
+test("a frame in TRUTH's drop column must call none, and whether it is dropped is reported", () => {
+  const truth = [{ ...TRUTH[0], drop: "MO_H2O_S2" }, TRUTH[1]];
+  const kept = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", [])] }));
+  assert.equal(kept.ok, true);
+  assert.deepEqual(kept.samples[0].frames.bad_still_kept, ["MO_H2O_S2"]);
+  assert.deepEqual(kept.summary.bad_still_kept, ["MO_H2O_S2"]);
+
+  const triaged = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], dropped), frame("MO_H2O_S2", [], dropped)] }));
+  assert.deepEqual(triaged.samples[0].frames.bad_still_kept, []);
+  assert.deepEqual(triaged.samples[0].frames.good_dropped, ["MO_H2O_S1"]);
+
+  const indexed = compareTruth(truth, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"])] }));
+  assert.equal(indexed.ok, false);
+  assert.match(indexed.samples[0].problems[0], /MO_H2O_S2=Pn3m \(expected none\)/);
 });
 
-test("the assigned call is read from the representative frame and flagged when it sits elsewhere", () => {
-  const assigned = { state: "indexed", phases: ["Pn3m", "Im3m"] };
-  const onRep = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: assigned })] }));
-  assert.equal(onRep.samples[1].assigned, "Im3m+Pn3m");
-  assert.equal(onRep.samples[1].assigned_matches_truth, true);
+test("the shown status is what GET /api/samples gives the corpus, on the frame it names", () => {
+  assert.deepEqual(shownStatus({ phase: "Pn3m", state: "indexed" }), { status: "phase", call: "Pn3m" });
+  assert.deepEqual(shownStatus({ phase: null, state: "form_factor" }), { status: "form_factor", call: "none" });
+  assert.deepEqual(shownStatus(NOT_INDEXED), { status: "not_indexed", call: null });
 
-  const offRep = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: { state: "indexed", phases: ["Pn3m"] } }), frame("MO_H2O_S2", ["Pn3m"])] }));
-  assert.equal(offRep.samples[0].assigned, null);
-  assert.deepEqual(offRep.summary.assigned_off_representative, ["MO_H2O"]);
+  const r = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
+  assert.deepEqual(r.samples[1].shown, { status: "phase", call: "Im3m", frame: "MO_PEG5_S3" });
+  assert.equal(r.samples[1].shown_matches_truth, false);
+  assert.equal(r.samples[0].shown_matches_truth, null);
+  assert.equal(r.summary.shown_indexed, 1);
 });
 
-test("a form-factor assignment reads as none", () => {
-  const ff = { state: "form_factor", phases: [] };
-  const r = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: ff })] }));
-  assert.equal(r.samples[1].assigned, "none");
-  assert.equal(r.samples[1].assigned_matches_truth, false);
+test("invariants are reported but never change ok", () => {
+  const r = compareTruth(TRUTH, app());
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.summary.invariants_failed, ["auto_shown_as_indexed"]);
+  assert.equal(r.invariants.views_agree.checked, false);
+  assert.equal(r.invariants.views_agree.ok, null);
+  assert.equal("invariants" in r.samples[0], false);
+});
+
+test("status_shows_assignment: a kept frame with members while the corpus shows Not indexed", () => {
+  const assigned = { state: "indexed", phases: ["Pn3m"] };
+  const off = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Pn3m"])] }));
+  assert.equal(off.invariants.status_shows_assignment.ok, false);
+  assert.deepEqual(off.invariants.status_shows_assignment.violations, [
+    { sample: "MO_H2O", shown: "Not indexed", assigned: [{ frame: "MO_H2O_S1", call: "Pn3m" }] },
+  ]);
+
+  const shown = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Pn3m"])], h2oShown: { phase: "Pn3m" } }));
+  assert.equal(shown.invariants.status_shows_assignment.ok, true);
+
+  const onDropped = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned, ...dropped }), frame("MO_H2O_S2", ["Pn3m"])] }));
+  assert.equal(onDropped.invariants.status_shows_assignment.ok, true);
+
+  const formFactor = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: { state: "form_factor", phases: [] } })] }));
+  assert.equal(formFactor.invariants.status_shows_assignment.ok, false);
+});
+
+test("representative_kept: the corpus status describes a dropped frame while a kept one exists", () => {
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped)];
+  const r = compareTruth(TRUTH, app({ h2o }));
+  assert.deepEqual(r.invariants.representative_kept.violations, [
+    { sample: "MO_H2O", view: "corpus", frame: "MO_H2O_S2", kept: ["MO_H2O_S1"] },
+  ]);
+
+  const allDropped = compareTruth(TRUTH, app({ h2o: h2o.map((f) => ({ ...f, ...dropped })) }));
+  assert.equal(allDropped.invariants.representative_kept.ok, true);
+
+  const onKept = compareTruth(TRUTH, app({ h2o, h2oShown: { representative_id: 1 } }));
+  assert.equal(onKept.invariants.representative_kept.ok, true);
+});
+
+test("auto_shown_as_indexed counts only kept frames with an auto candidate", () => {
+  const r = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], dropped), frame("MO_H2O_S2", [])], pegShown: { phase: "Im3m" } }));
+  assert.equal(r.invariants.auto_shown_as_indexed.ok, true);
+  const w = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
+  assert.deepEqual(w.invariants.auto_shown_as_indexed.violations.map((v) => v.sample), ["MO_H2O"]);
+});
+
+function withViews(samples, views, corpusText = "Not indexed") {
+  return samples.map((s) => ({ ...s, views: views[s.id] ?? { loupe: s.frames.at(-1).filename, focus: s.frames.at(-1).filename }, corpusText }));
+}
+
+test("views_agree compares the corpus frame with the frames Loupe and Focus open on", () => {
+  const agree = compareTruth(TRUTH, withViews(app(), {}));
+  assert.equal(agree.invariants.views_agree.checked, true);
+  assert.equal(agree.invariants.views_agree.ok, true);
+
+  const split = compareTruth(TRUTH, withViews(app(), { 1: { loupe: "MO_H2O_S1", focus: "MO_H2O_S1" } }));
+  assert.deepEqual(split.invariants.views_agree.violations, [
+    { sample: "MO_H2O", corpus: "MO_H2O_S2", loupe: "MO_H2O_S1", focus: "MO_H2O_S1" },
+  ]);
+  assert.deepEqual(split.samples[0].views, { loupe: "MO_H2O_S1", focus: "MO_H2O_S1" });
+});
+
+test("a view opening on a dropped frame breaks representative_kept", () => {
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"], dropped), frame("MO_H2O_S2", ["Pn3m"])];
+  const r = compareTruth(TRUTH, withViews(app({ h2o }), { 1: { loupe: "MO_H2O_S1", focus: "MO_H2O_S2" } }));
+  assert.deepEqual(r.invariants.representative_kept.violations, [
+    { sample: "MO_H2O", view: "loupe", frame: "MO_H2O_S1", kept: ["MO_H2O_S2"] },
+  ]);
+});
+
+test("with --ui, the corpus text must match the status read from the API", () => {
+  const same = compareTruth(TRUTH, withViews(app(), {}));
+  assert.equal(same.ok, true);
+  assert.equal(same.samples[0].shown.corpus_text, "Not indexed");
+
+  const differ = compareTruth(TRUTH, withViews(app({ pegShown: { phase: "Im3m" } }), {}));
+  assert.equal(differ.ok, false);
+  assert.match(differ.samples[1].problems[0], /corpus reads "Not indexed" but GET \/api\/samples says phase/);
 });

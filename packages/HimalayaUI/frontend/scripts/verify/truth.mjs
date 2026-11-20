@@ -1,6 +1,7 @@
-import { getJson } from "./http.mjs";
+import { getJson, request } from "./http.mjs";
 import { findDemoExperiment, readTruth } from "./demo.mjs";
 import { UsageError, intFlag } from "./args.mjs";
+import { readViews, statusFromText } from "./views.mjs";
 
 export function normalizeCall(phases) {
   const list = (Array.isArray(phases) ? phases : String(phases ?? "").split("+"))
@@ -13,22 +14,75 @@ export function isKept(frame) {
   return frame.status !== "rejected";
 }
 
-export function representativeFrame(frames) {
-  const kept = frames.filter(isKept);
-  const selected = kept.filter((f) => f.selected);
-  if (selected.length) return selected[selected.length - 1];
-  return kept.length ? kept[kept.length - 1] : null;
+function words(value) {
+  return String(value ?? "").split(/\s+/).filter(Boolean);
 }
 
 function assignedCall(assignment) {
   if (!assignment) return null;
-  if (assignment.state === "form_factor" || assignment.state === "null") return "none";
+  if (assignment.state === "form_factor") return "none";
+  if (assignment.state === "null") return null;
   return assignment.phases.length ? normalizeCall(assignment.phases) : null;
+}
+
+export function shownStatus(shown) {
+  if (shown.phase) return { status: "phase", call: normalizeCall([shown.phase]) };
+  if (shown.state === "form_factor") return { status: "form_factor", call: "none" };
+  return { status: "not_indexed", call: null };
+}
+
+function filenameOf(frames, id) {
+  return frames.find((f) => f.id === id)?.filename ?? null;
+}
+
+function sampleInvariants(app, frames) {
+  const kept = frames.filter(isKept);
+  const keptNames = kept.map((f) => f.filename);
+  const shown = shownStatus(app.shown);
+  const rep = frames.find((f) => f.id === (app.shown.representative_id ?? null)) ?? null;
+  const assignedKept = kept.filter((f) => assignedCall(f.assignment) !== null);
+  const autoKept = kept.filter((f) => normalizeCall(f.autoPhases) !== "none");
+  const opened = { corpus: rep?.filename ?? null, ...(app.views ?? {}) };
+  const onDropped = Object.entries(opened)
+    .map(([view, name]) => ({ view, frame: frames.find((f) => f.filename === name) }))
+    .filter(({ frame }) => frame && !isKept(frame) && kept.length)
+    .map(({ view, frame }) => ({ view, frame: frame.filename, kept: keptNames }));
+  return {
+    status_shows_assignment:
+      shown.status === "not_indexed" && assignedKept.length
+        ? [{ shown: "Not indexed", assigned: assignedKept.map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) })) }]
+        : null,
+    representative_kept: onDropped.length ? onDropped : null,
+    views_agree: app.views && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
+    auto_shown_as_indexed:
+      shown.status === "not_indexed" && autoKept.length
+        ? [{ shown: "Not indexed", auto: autoKept.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases) })) }]
+        : null,
+  };
+}
+
+export const INVARIANTS = {
+  status_shows_assignment: "The corpus does not show \"Not indexed\" for a sample whose kept frame carries an assignment.",
+  representative_kept: "The frame a view describes or opens on is never a dropped frame while the sample has a kept one.",
+  views_agree: "The corpus status, Loupe and Focus describe the same frame of a sample (needs --ui).",
+  auto_shown_as_indexed: "A sample whose kept frame has an auto candidate does not show \"Not indexed\".",
+};
+
+function rollupInvariants(perSample, uiChecked) {
+  const out = {};
+  for (const [name, rule] of Object.entries(INVARIANTS)) {
+    const checked = name !== "views_agree" || uiChecked;
+    const violations = perSample
+      .filter((s) => s.invariants && s.invariants[name])
+      .flatMap((s) => s.invariants[name].map((v) => ({ sample: s.sample, ...v })));
+    out[name] = { rule, checked, ok: checked ? violations.length === 0 : null, violations };
+  }
+  return out;
 }
 
 export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
   const ownerOf = new Map();
-  for (const row of truthRows) for (const base of row.bases.split(/\s+/).filter(Boolean)) ownerOf.set(base, row.sample);
+  for (const row of truthRows) for (const base of words(row.bases)) ownerOf.set(base, row.sample);
   const appByTruth = new Map();
   const strays = [];
   for (const s of appSamples) {
@@ -45,7 +99,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
   const samples = truthRows.map((row) => {
     const truth = normalizeCall(row.phases);
     const expectedAuto = normalizeCall(row.auto);
-    const expectedFrames = row.bases.split(/\s+/).filter(Boolean);
+    const expectedFrames = words(row.bases);
+    const bad = new Set(words(row.drop));
     const matches = appByTruth.get(row.sample) ?? [];
     const problems = [];
     if (matches.length === 0) problems.push("sample missing from the app");
@@ -55,36 +110,52 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
     const missing = expectedFrames.filter((b) => !seen.includes(b));
     const kept = frames.filter(isKept);
     if (matches.length && missing.length) problems.push(`missing frames: ${missing.join(" ")}`);
-    const autoCalls = frames.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases) }));
-    const wrongAuto = autoCalls.filter((c) => c.call !== expectedAuto);
+    const autoCalls = frames.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases), expected: bad.has(f.filename) ? "none" : expectedAuto }));
+    const wrongAuto = autoCalls.filter((c) => c.call !== c.expected);
     if (wrongAuto.length) {
-      problems.push(`auto call ${wrongAuto.map((c) => `${c.frame}=${c.call}`).join(" ")}, expected ${expectedAuto}`);
+      problems.push(`auto call ${wrongAuto.map((c) => `${c.frame}=${c.call} (expected ${c.expected})`).join(" ")}`);
     }
     const knownGap = expectedAuto !== truth;
     if (strict && knownGap) problems.push(`auto call ${expectedAuto} misses the generated truth ${truth}`);
-    const rep = matches.length === 1 ? representativeFrame(matches[0].frames) : null;
-    const assigned = rep ? assignedCall(rep.assignment) : null;
+    const one = matches.length === 1 ? matches[0] : null;
+    const shown = one ? { ...shownStatus(one.shown), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
+    if (one && one.views) {
+      shown.corpus_text = one.corpusText;
+      const read = statusFromText(one.corpusText);
+      if (read !== shown.status) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${shown.status}; check-truth is misreading the app`);
+    }
     const assignedFrames = frames
       .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))
       .filter((f) => f.call !== null);
     return {
       sample: row.sample,
-      sample_id: matches.length === 1 ? matches[0].id : null,
+      sample_id: one ? one.id : null,
       ok: problems.length === 0,
       problems,
       truth,
       expected_auto: expectedAuto,
       known_gap: knownGap ? row.note || `auto ${expectedAuto} vs truth ${truth}` : null,
-      frames: { expected: expectedFrames.length, found: frames.length, kept: kept.length, missing },
+      frames: {
+        expected: expectedFrames.length,
+        found: frames.length,
+        kept: kept.length,
+        missing,
+        to_drop: [...bad],
+        bad_still_kept: kept.filter((f) => bad.has(f.filename)).map((f) => f.filename),
+        good_dropped: frames.filter((f) => !isKept(f) && !bad.has(f.filename)).map((f) => f.filename),
+      },
       auto_calls: autoCalls,
-      representative: rep ? rep.filename : null,
-      assigned,
-      assigned_matches_truth: assigned === null ? null : assigned === truth,
+      shown,
+      shown_matches_truth: shown && shown.call !== null ? shown.call === truth : null,
       assigned_frames: assignedFrames,
+      ...(one && one.views ? { views: one.views } : {}),
+      invariants: one ? sampleInvariants(one, one.frames) : null,
     };
   });
 
   const failed = samples.filter((s) => !s.ok);
+  const uiChecked = appSamples.some((s) => s.views);
+  const invariants = rollupInvariants(samples, uiChecked);
   return {
     ok: failed.length === 0 && strays.length === 0,
     gate: strict ? "truth" : "auto",
@@ -95,13 +166,15 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
       known_gaps: samples.filter((s) => s.known_gap).map((s) => s.sample),
       frames_expected: samples.reduce((n, s) => n + s.frames.expected, 0),
       frames_found: samples.reduce((n, s) => n + s.frames.found, 0),
-      assigned: samples.filter((s) => s.assigned !== null).length,
-      assigned_off_representative: samples
-        .filter((s) => s.assigned === null && s.assigned_frames.length > 0)
-        .map((s) => s.sample),
+      frames_kept: samples.reduce((n, s) => n + s.frames.kept, 0),
+      bad_still_kept: samples.flatMap((s) => s.frames.bad_still_kept),
+      shown_indexed: samples.filter((s) => s.shown && s.shown.status !== "not_indexed").length,
+      invariants_failed: Object.entries(invariants).filter(([, v]) => v.ok === false).map(([k]) => k),
     },
+    invariants_gate: "reported only; they do not change ok or the exit code",
+    invariants,
     strays,
-    samples,
+    samples: samples.map(({ invariants: _, ...s }) => s),
   };
 }
 
@@ -129,23 +202,67 @@ export async function collectApp(cfg, experimentId) {
         .sort((a, b) => a.id - b.id)
         .map((e) => ({ id: e.id, filename: e.filename, status: e.status, selected: Boolean(e.selected), autoPhases: autoByFrame.get(e.filename) ?? [] }));
       for (const f of frames) f.assignment = await readAssignment(api, f.id);
-      return { id: s.id, name: s.name, frames };
+      return {
+        id: s.id,
+        name: s.name,
+        shown: { phase: s.phase ?? null, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
+        frameOrder: exposures.map((e) => e.filename),
+        frames,
+      };
     }),
   );
 }
 
-export async function checkTruth(cfg, flags) {
+async function resolveExperiment(cfg, flags) {
+  const experimentId = intFlag(flags, "experiment", null);
+  if (experimentId !== null) return experimentId;
+  const exp = await findDemoExperiment(cfg).catch(() => {
+    throw new UsageError(`backend not answering at ${cfg.apiBase}`, "run `bin/verify seed`");
+  });
+  if (!exp) throw new UsageError("the demo experiment is not ingested", "run `bin/verify seed`");
+  if (exp.ingest_status !== "complete") throw new UsageError(`demo experiment ${exp.id} is ${exp.ingest_status}`, "wait for the scan to finish; `bin/verify doctor` shows progress");
+  return exp.id;
+}
+
+function loadTruth(cfg, flags) {
   const truth = readTruth(cfg, flags.truth);
   if (!truth) throw new UsageError(`no TRUTH.csv at ${flags.truth ?? cfg.demoDir}`, "run `make demo-data` or pass --truth <file>");
-  let experimentId = intFlag(flags, "experiment", null);
-  if (experimentId === null) {
-    const exp = await findDemoExperiment(cfg).catch(() => {
-      throw new UsageError(`backend not answering at ${cfg.apiBase}`, "run `bin/verify seed`");
-    });
-    if (!exp) throw new UsageError("the demo experiment is not ingested", "run `bin/verify seed`");
-    if (exp.ingest_status !== "complete") throw new UsageError(`demo experiment ${exp.id} is ${exp.ingest_status}`, "wait for the scan to finish; `bin/verify doctor` shows progress");
-    experimentId = exp.id;
-  }
+  return truth;
+}
+
+export async function checkTruth(cfg, flags, { views = readViews } = {}) {
+  const truth = loadTruth(cfg, flags);
+  const experimentId = await resolveExperiment(cfg, flags);
   const app = await collectApp(cfg, experimentId);
+  if (flags.ui) {
+    const opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder })));
+    for (const s of app) {
+      const { corpus_text: corpusText = null, ...frames } = opened.get(s.id) ?? {};
+      s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null };
+      s.corpusText = corpusText;
+    }
+  }
+  for (const s of app) delete s.frameOrder;
   return { experiment_id: experimentId, ...compareTruth(truth, app, { strict: Boolean(flags.strict) }) };
+}
+
+export async function triage(cfg, flags) {
+  const truth = loadTruth(cfg, flags);
+  const experimentId = await resolveExperiment(cfg, flags);
+  const app = await collectApp(cfg, experimentId);
+  const bad = new Set(truth.flatMap((r) => words(r.drop)));
+  const status = flags.undo ? null : "rejected";
+  const changed = [];
+  for (const s of app) {
+    for (const f of s.frames) {
+      if (!bad.has(f.filename) || (f.status === "rejected") === (status === "rejected")) continue;
+      if (!flags["dry-run"]) {
+        const res = await request(cfg.apiBase, "PATCH", `/api/exposures/${f.id}/status`, { data: { status } });
+        if (res.status >= 300) throw new Error(`PATCH /api/exposures/${f.id}/status returned ${res.status}`);
+      }
+      changed.push({ sample_id: s.id, frame: f.filename, exposure_id: f.id, status: status ?? "kept" });
+    }
+  }
+  const unknown = [...bad].filter((b) => !app.some((s) => s.frames.some((f) => f.filename === b)));
+  return { ok: unknown.length === 0, experiment_id: experimentId, dry_run: Boolean(flags["dry-run"]), changed, ...(unknown.length ? { error: `frames in TRUTH's drop column are not in the app: ${unknown.join(" ")}` } : {}) };
 }

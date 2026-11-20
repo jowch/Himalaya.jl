@@ -4,13 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { main } from "../cli.mjs";
+import { checkTruth } from "../truth.mjs";
 import { loadConfig } from "../config.mjs";
 import { stubBackend } from "./stub.mjs";
 
 const TRUTH = [
-  "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,note",
-  "MO_H2O,MO_H2O_S1 MO_H2O_S2,Pn3m,102,Pn3m,,true,clean",
-  'MO_PEG5,MO_PEG5_S3,Pn3m+Im3m,108+138,Im3m,,true,"coexistence, Pn3m hidden"',
+  "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,note",
+  "MO_H2O,MO_H2O_S1 MO_H2O_S2,Pn3m,102,Pn3m,,true,MO_H2O_S2,clean",
+  'MO_PEG5,MO_PEG5_S3,Pn3m+Im3m,108+138,Im3m,,true,,"coexistence, Pn3m hidden"',
 ].join("\n");
 
 function routes(demoDir) {
@@ -20,24 +21,25 @@ function routes(demoDir) {
       { id: 4, data_dir: path.join(demoDir, "data"), ingest_status: "complete" },
     ],
     "/api/samples?experiment_id=4": [
-      { id: 10, name: "MO_H2O_S1 (S01P01)" },
-      { id: 11, name: "MO_PEG5_S3 (S01P02)" },
+      { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: null, representative_exposure_id: 2 },
+      { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", representative_exposure_id: 3 },
     ],
     "/api/experiments/4/export": [
       { name: "MO_H2O_S1 (S01P01)", exposures: [
         { filename: "MO_H2O_S1", selected: false, active_group_kind: "auto", indices: [{ phase: "Pn3m", basis: 0.087 }] },
-        { filename: "MO_H2O_S2", selected: false, active_group_kind: "auto", indices: [{ phase: "Pn3m", basis: 0.087 }] },
+        { filename: "MO_H2O_S2", selected: false, active_group_kind: "auto", indices: [] },
       ] },
       { name: "MO_PEG5_S3 (S01P02)", exposures: [
         { filename: "MO_PEG5_S3", selected: false, active_group_kind: "auto", indices: [{ phase: "Im3m", basis: 0.064 }] },
       ] },
     ],
     "/api/samples/10/exposures": [
-      { id: 2, filename: "MO_H2O_S2", status: null, selected: false, sample_id: 10 },
+      { id: 2, filename: "MO_H2O_S2", status: "rejected", selected: false, sample_id: 10 },
       { id: 1, filename: "MO_H2O_S1", status: null, selected: false, sample_id: 10 },
     ],
     "/api/samples/11/exposures": [{ id: 3, filename: "MO_PEG5_S3", status: null, selected: false, sample_id: 11 }],
-    "/api/exposures/1/assignment": { exposure_id: 1, state: "indexed", members: [] },
+    "/api/exposures/1/assignment": { exposure_id: 1, state: "indexed", members: [5] },
+    "/api/exposures/1/indices": [{ id: 5, phase: "Pn3m", kind: "auto", status: "candidate" }],
     "/api/exposures/2/assignment": { exposure_id: 2, state: "indexed", members: [] },
     "/api/exposures/3/assignment": { exposure_id: 3, state: "indexed", members: [7, 9] },
     "/api/exposures/3/indices": [
@@ -67,10 +69,12 @@ test("check-truth reads the backend's real endpoint shapes end to end", async ()
     assert.equal(r.summary.frames_found, 3);
     assert.deepEqual(r.summary.known_gaps, ["MO_PEG5"]);
     const [h2o, peg] = r.samples;
-    assert.deepEqual(h2o.auto_calls.map((c) => c.frame), ["MO_H2O_S1", "MO_H2O_S2"]);
-    assert.equal(h2o.representative, "MO_H2O_S2");
-    assert.equal(peg.assigned, "Im3m+Pn3m");
-    assert.equal(peg.assigned_matches_truth, true);
+    assert.deepEqual(h2o.auto_calls.map((c) => [c.frame, c.expected]), [["MO_H2O_S1", "Pn3m"], ["MO_H2O_S2", "none"]]);
+    assert.deepEqual(h2o.shown, { status: "not_indexed", call: null, frame: "MO_H2O_S2" });
+    assert.deepEqual(h2o.assigned_frames, [{ frame: "MO_H2O_S1", call: "Pn3m" }]);
+    assert.deepEqual(peg.shown, { status: "phase", call: "Pn3m", frame: "MO_PEG5_S3" });
+    assert.deepEqual(peg.assigned_frames, [{ frame: "MO_PEG5_S3", call: "Im3m+Pn3m" }]);
+    assert.deepEqual(r.summary.invariants_failed, ["status_shows_assignment", "representative_kept", "auto_shown_as_indexed"]);
     assert.ok(stub.seen.includes("/api/samples?experiment_id=4"));
     assert.ok(!stub.seen.some((u) => u.includes("experiment_id=3")));
   } finally {
@@ -103,6 +107,63 @@ test("check-truth says to seed when the demo experiment is missing", async () =>
   try {
     assert.equal(await main(["check-truth"], { cfg, out }), 1);
     assert.match(out.json().hint, /bin\/verify seed/);
+  } finally {
+    await stub.close();
+  }
+});
+
+test("triage drops TRUTH's bad frames once and --undo keeps them again", async () => {
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);
+  const r0 = routes(demoDir);
+  r0["/api/samples/10/exposures"][0].status = null;
+  r0["PATCH /api/exposures/2/status"] = { id: 2, status: "rejected" };
+  const stub = await stubBackend(r0);
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  try {
+    const dry = sink();
+    assert.equal(await main(["triage", "--dry-run"], { cfg, out: dry }), 0);
+    assert.deepEqual(dry.json().changed.map((c) => c.frame), ["MO_H2O_S2"]);
+    assert.deepEqual(stub.sent, []);
+
+    const out = sink();
+    assert.equal(await main(["triage"], { cfg, out }), 0);
+    assert.deepEqual(stub.sent, [{ key: "PATCH /api/exposures/2/status", body: { status: "rejected" } }]);
+
+    r0["/api/samples/10/exposures"][0].status = "rejected";
+    const again = sink();
+    assert.equal(await main(["triage"], { cfg, out: again }), 0);
+    assert.deepEqual(again.json().changed, []);
+
+    const undo = sink();
+    assert.equal(await main(["triage", "--undo"], { cfg, out: undo }), 0);
+    assert.deepEqual(stub.sent.at(-1), { key: "PATCH /api/exposures/2/status", body: { status: null } });
+  } finally {
+    await stub.close();
+  }
+});
+
+test("check-truth --ui hands the reader each sample's exposure order and folds in what it saw", async () => {
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);
+  const stub = await stubBackend(routes(demoDir));
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const asked = [];
+  const views = async (_cfg, experimentId, samples) => {
+    asked.push({ experimentId, samples });
+    return new Map([
+      [10, { corpus_text: "Not indexed", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }],
+      [11, { corpus_text: "Pn3m", loupe: "MO_PEG5_S3", focus: "MO_PEG5_S3" }],
+    ]);
+  };
+  try {
+    const r = await checkTruth(cfg, { ui: true }, { views });
+    assert.equal(asked[0].experimentId, 4);
+    assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"] });
+    assert.equal(r.ok, true);
+    assert.equal(r.invariants.views_agree.checked, true);
+    assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus: "MO_H2O_S2", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }]);
+    assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["corpus", "loupe"]);
   } finally {
     await stub.close();
   }

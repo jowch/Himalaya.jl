@@ -60,8 +60,8 @@ scratch/demo-experiment/
   - `DOPE_H2O`: the oldest scan missed the capillary (air scatter, no sample).
   - `leaked_capillary`: both scans are air, so the sample has no usable frame.
 
-  Nothing drops them at ingest; a triager does. `bin/verify seed --triage`
-  drops them through the API, so `bin/verify check-truth` can check the corpus
+  Nothing drops them at ingest; a triager does. `bin/verify triage`
+  drops them through the endpoint Loupe's Drop uses, so `bin/verify check-truth` can check the corpus
   after triage.
 - **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
   column is what Himalaya's own pipeline calls. Two samples differ:

@@ -8,9 +8,16 @@ export async function listen(handler) {
 
 export async function stubBackend(routes) {
   const seen = [];
-  const api = await listen((req, res) => {
-    seen.push(req.url);
-    const body = routes[req.url];
+  const sent = [];
+  const api = await listen(async (req, res) => {
+    const key = req.method === "GET" ? req.url : `${req.method} ${req.url}`;
+    seen.push(key);
+    if (req.method !== "GET") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      sent.push({ key, body: raw ? JSON.parse(raw) : null });
+    }
+    const body = routes[key];
     if (body === undefined) {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: `no stub for ${req.url}` }));
@@ -30,6 +37,7 @@ export async function stubBackend(routes) {
   });
   return {
     seen,
+    sent,
     env: { DEMO_API_PORT: String(api.port), DEMO_UI_PORT: String(ui.port) },
     close: async () => {
       await api.close();

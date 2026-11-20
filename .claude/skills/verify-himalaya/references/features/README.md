@@ -1,6 +1,6 @@
 # Himalaya Feature Map
 
-How a user reaches each feature, the `bin/verify` commands that drive it, what to check, and its gotchas. Every recipe here was run against `make demo` data on 2026-11-19. The ids below (experiment 1, sample 3 = `MO_PEG5`) hold for a fresh `bin/verify seed`; on another DB, read them from `bin/verify api GET /api/samples`.
+How a user reaches each feature, the `bin/verify` commands that drive it, what to check, and its gotchas. Every recipe here was run against `make demo` data on 2026-11-19, and the corpus, Loupe and Focus recipes again on 2026-11-20 after the demo gained bad frames. The ids below (experiment 1, sample 1 = `MO_H2O`, sample 3 = `MO_PEG5`) hold for a fresh `bin/verify seed`; on another DB, read them from `bin/verify api GET /api/samples`.
 
 Names in `--name` come from `bin/verify snapshot --raw`. When a recipe stops matching, the UI changed: fix the entry in the same PR.
 
@@ -33,7 +33,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify check-truth
   bin/verify close && bin/verify stop                  # then unset the four variables
   ```
-- **Check:** the config page reads "Indexed 26 exposures found", and `check-truth` passes on the new experiment.
+- **Check:** the config page reads "Indexed 28 exposures found", and `check-truth` passes on the new experiment.
 - **Gotchas:**
   - The three checks under the path field (`status: ✓ directory exists`, and so on) are the funnel's validation. Snapshot them before clicking "Review →".
   - The config step keeps its state in memory. Reloading `/experiments/new/config` (or a Vite full reload, which can follow an edit under `frontend/`) shows "No experiment selected"; start again from `/experiments/new`.
@@ -52,10 +52,11 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press x                                  # drop the cursor frame; x again restores it (writes to the DB)
   bin/verify click --role checkbox --name "Select sample" --nth 2
   ```
-- **Check:** `bin/verify api GET "/api/samples?experiment_id=1"` (`assignment_state`, `phase`).
+- **Check:** `bin/verify check-truth` (`shown`, and the `invariants` block), or `bin/verify api GET "/api/samples?experiment_id=1"` (`assignment_state`, `phase`, `representative_exposure_id`: the frame the status cell describes). `check-truth --ui` reads the status cell text itself.
 - **Gotchas:**
   - Returning from Loupe with Esc resets the cursor to the first sample (seen 2026-11-19: ↓↓, `l` opens sample 3's Loupe, Esc, then Enter opens sample 1). After a round trip, `open /sample/<id>` directly instead of relying on the cursor.
   - The bottom dock ("Drop X", "Set representative R", "Loupe L", "Focus ↵") acts on the cursor sample, not the checkbox selection.
+  - Bad frames to drop (TRUTH's `drop` column): `MO_H2O` frame 3 (beam-off), `DOPE_H2O` frame 1 (missed capillary), and both frames of `leaked_capillary`. `bin/verify triage` drops them; `bin/verify triage --undo` keeps them again. A dropped thumbnail reads "Frame 3, dropped" and the Kept cell "2 / 3".
 
 ## Loupe (frame review)
 
@@ -68,7 +69,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify click --role button --name "Set as representative"
   bin/verify press Escape                             # back to the corpus
   ```
-- **Check:** `bin/verify api GET /api/samples/3/exposures` (`status` is `rejected` when dropped, `selected` marks the representative).
+- **Check:** `bin/verify api GET /api/samples/3/exposures` (`status` is `rejected` when dropped, `selected` marks the representative). The pressed `Frame N` thumbnail is the frame on screen; `check-truth --ui` reads it as `views.loupe`.
 - **Gotchas:**
   - Drop writes `status: rejected`; undo with the same button or `bin/verify api PATCH /api/exposures/<id>/status --data '{"status":null}'`.
   - Set as representative can be moved but not cleared (the button disappears and the frame reads "Representative for indexing"). Only `bin/verify seed --reset` returns a sample to "no frame selected".
@@ -87,9 +88,9 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press p                                               # add-peak mode; peaks show as "Auto peak at q = …"
   bin/verify press ArrowDown                                       # next sample
   ```
-- **Check:** `bin/verify check-truth` (`assigned`, `assigned_matches_truth`, `assigned_frames`), or `bin/verify api GET /api/exposures/<id>/assignment`.
+- **Check:** `bin/verify check-truth` (`assigned_frames`, and `shown` for what the corpus then says), or `bin/verify api GET /api/exposures/<id>/assignment`. `check-truth --ui` reads the pressed `Frame N` thumbnail as `views.focus`.
 - **Gotchas:**
-  - Focus opens frame 1, but the agreed representative rule picks the newest kept frame. An assignment made here therefore shows up in `check-truth` under `assigned_off_representative`. This is the app's known representative-frame inconsistency, not a CLI bug.
+  - Focus opens the first kept frame, but the corpus status describes the newest frame. An assignment made here therefore leaves the corpus at "Not indexed", which `check-truth` reports under the `status_shows_assignment` invariant. This is the app's known representative-frame inconsistency, not a CLI bug.
   - Adding or excluding a peak re-analyses the frame and can change its auto call, which `check-truth` then reports as a regression. Undo the edit, or `bin/verify seed --reset`.
   - `MO_PEG5` is the coexistence test case: the auto call is Im3m only, and a human must add Pn3m.
 
