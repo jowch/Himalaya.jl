@@ -36,6 +36,10 @@ describe("countAppearance", () => {
     expect(countAppearance("print/pages/X.stories.tsx", src)).toBe(0);
   });
 
+  it("counts opacity-slash and important forms", () => {
+    expect(countAppearance("print/pages/X.tsx", '<i className="bg-ink/50 !font-mono hover:!text-ink/70" />')).toBe(3);
+  });
+
   it("treats text alignment and wrapping as placement", () => {
     expect(countAppearance("print/pages/X.tsx", '<p className="text-center text-nowrap" />')).toBe(0);
   });

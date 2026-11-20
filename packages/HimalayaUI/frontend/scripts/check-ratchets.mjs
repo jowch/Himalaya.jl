@@ -85,7 +85,8 @@ export function classNameLiterals(content) {
   return out;
 }
 
-const isAppearanceToken = (tok) => APPEARANCE_TOKEN.test(tok.split(":").pop() ?? "");
+const isAppearanceToken = (tok) =>
+  APPEARANCE_TOKEN.test((tok.split(":").pop() ?? "").replace(/^!/, "").replace(/\/[\w.[\]]+$/, ""));
 
 export function countAppearance(relPath, content) {
   if (relPath.includes(".stories.")) return 0;
