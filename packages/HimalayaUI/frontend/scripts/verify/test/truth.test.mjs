@@ -86,47 +86,67 @@ test("a frame in TRUTH's drop column must call none, and whether it is dropped i
 test("the shown status is what GET /api/samples gives the corpus, on the frame it names", () => {
   assert.deepEqual(shownStatus({ phase: "Pn3m", state: "indexed" }), { status: "phase", call: "Pn3m" });
   assert.deepEqual(shownStatus({ phase: null, state: "form_factor" }), { status: "form_factor", call: "none" });
-  assert.deepEqual(shownStatus(NOT_INDEXED), { status: "not_indexed", call: null });
+  assert.deepEqual(shownStatus(NOT_INDEXED), { status: "unreviewed", call: null });
 
   const r = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
   assert.deepEqual(r.samples[1].shown, { status: "phase", call: "Im3m", frame: "MO_PEG5_S3" });
   assert.equal(r.samples[1].shown_matches_truth, false);
   assert.equal(r.samples[0].shown_matches_truth, null);
-  assert.equal(r.summary.shown_indexed, 1);
+  assert.equal(r.summary.shown_reviewed, 1);
 });
 
 test("invariants are reported but never change ok", () => {
   const r = compareTruth(TRUTH, app());
   assert.equal(r.ok, true);
-  assert.deepEqual(r.summary.invariants_failed, ["auto_shown_as_indexed"]);
+  assert.deepEqual(r.summary.invariants_failed, []);
+  const broken = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
+  assert.equal(broken.ok, true);
+  assert.deepEqual(broken.summary.invariants_failed, ["status_matches_assignment"]);
   assert.equal(r.invariants.views_agree.checked, false);
   assert.equal(r.invariants.views_agree.ok, null);
   assert.equal("invariants" in r.samples[0], false);
 });
 
-test("status_shows_assignment: a kept frame with members while the corpus shows Not indexed", () => {
+test("status_matches_assignment: unconfirmed reads unreviewed, confirmed reads that call", () => {
   const assigned = { state: "indexed", phases: ["Pn3m"] };
-  const off = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Pn3m"])] }));
-  assert.equal(off.invariants.status_shows_assignment.ok, false);
-  assert.deepEqual(off.invariants.status_shows_assignment.violations, [
-    { sample: "MO_H2O", shown: "Not indexed", assigned: [{ frame: "MO_H2O_S1", call: "Pn3m" }] },
+  const h2oAssigned = [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Pn3m"])];
+
+  const fresh = compareTruth(TRUTH, app());
+  assert.equal(fresh.invariants.status_matches_assignment.ok, true, "an auto call alone is not a confirmed call");
+
+  const hidden = compareTruth(TRUTH, app({ h2o: h2oAssigned }));
+  assert.deepEqual(hidden.invariants.status_matches_assignment.violations, [
+    { sample: "MO_H2O", shown: "unreviewed", confirmed: [{ frame: "MO_H2O_S1", call: "Pn3m" }] },
   ]);
 
-  const shown = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Pn3m"])], h2oShown: { phase: "Pn3m" } }));
-  assert.equal(shown.invariants.status_shows_assignment.ok, true);
+  const shown = compareTruth(TRUTH, app({ h2o: h2oAssigned, h2oShown: { phase: "Pn3m" } }));
+  assert.equal(shown.invariants.status_matches_assignment.ok, true);
+
+  const wrong = compareTruth(TRUTH, app({ h2o: h2oAssigned, h2oShown: { phase: "Ia3d" } }));
+  assert.equal(wrong.invariants.status_matches_assignment.ok, false);
+
+  const unconfirmedShown = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
+  assert.deepEqual(unconfirmedShown.invariants.status_matches_assignment.violations, [{ sample: "MO_PEG5", shown: "Im3m", confirmed: [] }]);
+
+  const coexistence = { state: "indexed", phases: ["Pn3m", "Im3m"] };
+  const peg = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m" } }));
+  assert.equal(peg.invariants.status_matches_assignment.ok, true, "the corpus shows one phase of a coexistence call");
 
   const onDropped = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned, ...dropped }), frame("MO_H2O_S2", ["Pn3m"])] }));
-  assert.equal(onDropped.invariants.status_shows_assignment.ok, true);
+  assert.equal(onDropped.invariants.status_matches_assignment.ok, true);
 
-  const formFactor = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: { state: "form_factor", phases: [] } })] }));
-  assert.equal(formFactor.invariants.status_shows_assignment.ok, false);
+  const ff = { state: "form_factor", phases: [] };
+  const ffHidden = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: ff })] }));
+  assert.equal(ffHidden.invariants.status_matches_assignment.ok, false);
+  const ffShown = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: ff })], pegShown: { state: "form_factor" } }));
+  assert.equal(ffShown.invariants.status_matches_assignment.ok, true);
 });
 
 test("representative_kept: the corpus status describes a dropped frame while a kept one exists", () => {
   const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped)];
   const r = compareTruth(TRUTH, app({ h2o }));
   assert.deepEqual(r.invariants.representative_kept.violations, [
-    { sample: "MO_H2O", view: "corpus", frame: "MO_H2O_S2", kept: ["MO_H2O_S1"] },
+    { sample: "MO_H2O", view: "corpus_api", frame: "MO_H2O_S2", kept: ["MO_H2O_S1"] },
   ]);
 
   const allDropped = compareTruth(TRUTH, app({ h2o: h2o.map((f) => ({ ...f, ...dropped })) }));
@@ -134,13 +154,6 @@ test("representative_kept: the corpus status describes a dropped frame while a k
 
   const onKept = compareTruth(TRUTH, app({ h2o, h2oShown: { representative_id: 1 } }));
   assert.equal(onKept.invariants.representative_kept.ok, true);
-});
-
-test("auto_shown_as_indexed counts only kept frames with an auto candidate", () => {
-  const r = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], dropped), frame("MO_H2O_S2", [])], pegShown: { phase: "Im3m" } }));
-  assert.equal(r.invariants.auto_shown_as_indexed.ok, true);
-  const w = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
-  assert.deepEqual(w.invariants.auto_shown_as_indexed.violations.map((v) => v.sample), ["MO_H2O"]);
 });
 
 function withViews(samples, views, corpusText = "Not indexed") {
@@ -154,7 +167,7 @@ test("views_agree compares the corpus frame with the frames Loupe and Focus open
 
   const split = compareTruth(TRUTH, withViews(app(), { 1: { loupe: "MO_H2O_S1", focus: "MO_H2O_S1" } }));
   assert.deepEqual(split.invariants.views_agree.violations, [
-    { sample: "MO_H2O", corpus: "MO_H2O_S2", loupe: "MO_H2O_S1", focus: "MO_H2O_S1" },
+    { sample: "MO_H2O", corpus_api: "MO_H2O_S2", loupe: "MO_H2O_S1", focus: "MO_H2O_S1" },
   ]);
   assert.deepEqual(split.samples[0].views, { loupe: "MO_H2O_S1", focus: "MO_H2O_S1" });
 });
@@ -175,4 +188,24 @@ test("with --ui, the corpus text must match the status read from the API", () =>
   const differ = compareTruth(TRUTH, withViews(app({ pegShown: { phase: "Im3m" } }), {}));
   assert.equal(differ.ok, false);
   assert.match(differ.samples[1].problems[0], /corpus reads "Not indexed" but GET \/api\/samples says phase/);
+});
+
+test("a Loupe or Focus read that finds no frame is a problem, and the view invariants report unchecked", () => {
+  const r = compareTruth(TRUTH, withViews(app(), { 1: { loupe: null, focus: "MO_H2O_S2" }, 2: { loupe: "MO_PEG5_S3", focus: null } }));
+  assert.equal(r.ok, false);
+  assert.match(r.samples[0].problems[0], /could not read which frame Loupe opens on/);
+  assert.match(r.samples[1].problems[0], /could not read which frame Focus opens on/);
+  for (const name of ["representative_kept", "views_agree"]) {
+    assert.equal(r.invariants[name].checked, false);
+    assert.equal(r.invariants[name].ok, null);
+  }
+  assert.deepEqual(r.invariants.views_agree.violations, []);
+  assert.equal(r.invariants.status_matches_assignment.checked, true);
+});
+
+test("Focus opening nothing is expected when every frame is dropped", () => {
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"], dropped), frame("MO_H2O_S2", ["Pn3m"], dropped)];
+  const r = compareTruth(TRUTH, withViews(app({ h2o }), { 1: { loupe: "MO_H2O_S1", focus: null } }));
+  assert.deepEqual(r.samples[0].problems, []);
+  assert.equal(r.invariants.views_agree.checked, true);
 });

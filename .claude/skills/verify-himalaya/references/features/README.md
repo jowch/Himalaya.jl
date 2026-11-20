@@ -56,7 +56,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 - **Gotchas:**
   - Returning from Loupe with Esc resets the cursor to the first sample (seen 2026-11-19: ↓↓, `l` opens sample 3's Loupe, Esc, then Enter opens sample 1). After a round trip, `open /sample/<id>` directly instead of relying on the cursor.
   - The bottom dock ("Drop X", "Set representative R", "Loupe L", "Focus ↵") acts on the cursor sample, not the checkbox selection.
-  - Bad frames to drop (TRUTH's `drop` column): `MO_H2O` frame 3 (beam-off), `DOPE_H2O` frame 1 (missed capillary), and both frames of `leaked_capillary`. `bin/verify triage` drops them; `bin/verify triage --undo` keeps them again. A dropped thumbnail reads "Frame 3, dropped" and the Kept cell "2 / 3".
+  - Bad frames to drop (TRUTH's `drop` column): `MO_H2O` frame 3 (beam-off), `DOPE_H2O` frame 1 (missed capillary), and both frames of `leaked_capillary`. `bin/verify triage` drops them; `bin/verify triage --undo` keeps them again. A dropped thumbnail reads "Frame 3, dropped" and the Kept cell "2 / 3". In Loupe the beam-off frame is black with sparse speckle, and a missed capillary is dark apart from a glow around the beamstop.
 
 ## Loupe (frame review)
 
@@ -90,7 +90,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   ```
 - **Check:** `bin/verify check-truth` (`assigned_frames`, and `shown` for what the corpus then says), or `bin/verify api GET /api/exposures/<id>/assignment`. `check-truth --ui` reads the pressed `Frame N` thumbnail as `views.focus`.
 - **Gotchas:**
-  - Focus opens the first kept frame, but the corpus status describes the newest frame. An assignment made here therefore leaves the corpus at "Not indexed", which `check-truth` reports under the `status_shows_assignment` invariant. This is the app's known representative-frame inconsistency, not a CLI bug.
+  - Focus opens the first kept frame, but the corpus status describes the newest frame. An assignment made here therefore leaves the corpus at "Not indexed", which `check-truth` reports under the `status_matches_assignment` invariant. This is the app's known representative-frame inconsistency, not a CLI bug.
   - Adding or excluding a peak re-analyses the frame and can change its auto call, which `check-truth` then reports as a regression. Undo the edit, or `bin/verify seed --reset`.
   - `MO_PEG5` is the coexistence test case: the auto call is Im3m only, and a human must add Pn3m.
 

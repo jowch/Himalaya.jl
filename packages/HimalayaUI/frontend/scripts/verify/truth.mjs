@@ -28,11 +28,29 @@ function assignedCall(assignment) {
 export function shownStatus(shown) {
   if (shown.phase) return { status: "phase", call: normalizeCall([shown.phase]) };
   if (shown.state === "form_factor") return { status: "form_factor", call: "none" };
-  return { status: "not_indexed", call: null };
+  return { status: "unreviewed", call: null };
 }
 
 function filenameOf(frames, id) {
   return frames.find((f) => f.id === id)?.filename ?? null;
+}
+
+function shownLabel(shown) {
+  return shown.status === "phase" ? shown.call : shown.status;
+}
+
+function statusMatches(shown, confirmed) {
+  if (!confirmed.length) return shown.status === "unreviewed";
+  if (shown.status === "unreviewed") return false;
+  return confirmed.some((c) => (shown.status === "form_factor" ? c.call === "none" : c.call.split("+").includes(shown.call)));
+}
+
+export function unreadViews(app) {
+  if (!app.views) return [];
+  const unread = [];
+  if (app.frames.length && !app.views.loupe) unread.push("loupe");
+  if (app.frames.some(isKept) && !app.views.focus) unread.push("focus");
+  return unread;
 }
 
 function sampleInvariants(app, frames) {
@@ -40,38 +58,36 @@ function sampleInvariants(app, frames) {
   const keptNames = kept.map((f) => f.filename);
   const shown = shownStatus(app.shown);
   const rep = frames.find((f) => f.id === (app.shown.representative_id ?? null)) ?? null;
-  const assignedKept = kept.filter((f) => assignedCall(f.assignment) !== null);
-  const autoKept = kept.filter((f) => normalizeCall(f.autoPhases) !== "none");
-  const opened = { corpus: rep?.filename ?? null, ...(app.views ?? {}) };
+  const confirmed = kept
+    .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))
+    .filter((c) => c.call !== null);
+  const opened = { corpus_api: rep?.filename ?? null, ...(app.views ?? {}) };
   const onDropped = Object.entries(opened)
     .map(([view, name]) => ({ view, frame: frames.find((f) => f.filename === name) }))
     .filter(({ frame }) => frame && !isKept(frame) && kept.length)
     .map(({ view, frame }) => ({ view, frame: frame.filename, kept: keptNames }));
+  const allRead = app.views && unreadViews(app).length === 0;
   return {
-    status_shows_assignment:
-      shown.status === "not_indexed" && assignedKept.length
-        ? [{ shown: "Not indexed", assigned: assignedKept.map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) })) }]
-        : null,
+    status_matches_assignment: statusMatches(shown, confirmed) ? null : [{ shown: shownLabel(shown), confirmed }],
     representative_kept: onDropped.length ? onDropped : null,
-    views_agree: app.views && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
-    auto_shown_as_indexed:
-      shown.status === "not_indexed" && autoKept.length
-        ? [{ shown: "Not indexed", auto: autoKept.map((f) => ({ frame: f.filename, call: normalizeCall(f.autoPhases) })) }]
-        : null,
+    views_agree: allRead && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
   };
 }
 
 export const INVARIANTS = {
-  status_shows_assignment: "The corpus does not show \"Not indexed\" for a sample whose kept frame carries an assignment.",
-  representative_kept: "The frame a view describes or opens on is never a dropped frame while the sample has a kept one.",
-  views_agree: "The corpus status, Loupe and Focus describe the same frame of a sample (needs --ui).",
-  auto_shown_as_indexed: "A sample whose kept frame has an auto candidate does not show \"Not indexed\".",
+  status_matches_assignment: "A sample with no confirmed call (no assignment on a kept frame) is shown as unreviewed; a sample with one is shown with that call.",
+  representative_kept: "The frame the sample status describes (corpus_api) or Loupe or Focus opens on (--ui) is never a dropped frame while the sample has a kept one.",
+  views_agree: "The sample status (corpus_api), Loupe and Focus describe the same frame of a sample (needs --ui).",
 };
 
-function rollupInvariants(perSample, uiChecked) {
+const NEEDS_VIEWS = new Set(["representative_kept", "views_agree"]);
+
+function rollupInvariants(perSample, ui) {
   const out = {};
   for (const [name, rule] of Object.entries(INVARIANTS)) {
-    const checked = name !== "views_agree" || uiChecked;
+    let checked = true;
+    if (name === "views_agree" && !ui.used) checked = false;
+    if (NEEDS_VIEWS.has(name) && ui.unread) checked = false;
     const violations = perSample
       .filter((s) => s.invariants && s.invariants[name])
       .flatMap((s) => s.invariants[name].map((v) => ({ sample: s.sample, ...v })));
@@ -119,10 +135,13 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
     if (strict && knownGap) problems.push(`auto call ${expectedAuto} misses the generated truth ${truth}`);
     const one = matches.length === 1 ? matches[0] : null;
     const shown = one ? { ...shownStatus(one.shown), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
+    const unread = one ? unreadViews(one) : [];
     if (one && one.views) {
       shown.corpus_text = one.corpusText;
       const read = statusFromText(one.corpusText);
-      if (read !== shown.status) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${shown.status}; check-truth is misreading the app`);
+      const expected = one.frames.length ? shown.status : "no_exposures";
+      if (read !== expected) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${expected}; check-truth is misreading the app`);
+      for (const view of unread) problems.push(`could not read which frame ${view === "loupe" ? "Loupe" : "Focus"} opens on (no single pressed "Frame N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
       .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))
@@ -154,8 +173,8 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
   });
 
   const failed = samples.filter((s) => !s.ok);
-  const uiChecked = appSamples.some((s) => s.views);
-  const invariants = rollupInvariants(samples, uiChecked);
+  const ui = { used: appSamples.some((s) => s.views), unread: appSamples.some((s) => unreadViews(s).length) };
+  const invariants = rollupInvariants(samples, ui);
   return {
     ok: failed.length === 0 && strays.length === 0,
     gate: strict ? "truth" : "auto",
@@ -168,7 +187,7 @@ export function compareTruth(truthRows, appSamples, { strict = false } = {}) {
       frames_found: samples.reduce((n, s) => n + s.frames.found, 0),
       frames_kept: samples.reduce((n, s) => n + s.frames.kept, 0),
       bad_still_kept: samples.flatMap((s) => s.frames.bad_still_kept),
-      shown_indexed: samples.filter((s) => s.shown && s.shown.status !== "not_indexed").length,
+      shown_reviewed: samples.filter((s) => s.shown && s.shown.status !== "unreviewed").length,
       invariants_failed: Object.entries(invariants).filter(([, v]) => v.ok === false).map(([k]) => k),
     },
     invariants_gate: "reported only; they do not change ok or the exit code",

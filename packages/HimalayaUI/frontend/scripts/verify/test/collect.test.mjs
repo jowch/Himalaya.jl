@@ -70,11 +70,11 @@ test("check-truth reads the backend's real endpoint shapes end to end", async ()
     assert.deepEqual(r.summary.known_gaps, ["MO_PEG5"]);
     const [h2o, peg] = r.samples;
     assert.deepEqual(h2o.auto_calls.map((c) => [c.frame, c.expected]), [["MO_H2O_S1", "Pn3m"], ["MO_H2O_S2", "none"]]);
-    assert.deepEqual(h2o.shown, { status: "not_indexed", call: null, frame: "MO_H2O_S2" });
+    assert.deepEqual(h2o.shown, { status: "unreviewed", call: null, frame: "MO_H2O_S2" });
     assert.deepEqual(h2o.assigned_frames, [{ frame: "MO_H2O_S1", call: "Pn3m" }]);
     assert.deepEqual(peg.shown, { status: "phase", call: "Pn3m", frame: "MO_PEG5_S3" });
     assert.deepEqual(peg.assigned_frames, [{ frame: "MO_PEG5_S3", call: "Im3m+Pn3m" }]);
-    assert.deepEqual(r.summary.invariants_failed, ["status_shows_assignment", "representative_kept", "auto_shown_as_indexed"]);
+    assert.deepEqual(r.summary.invariants_failed, ["status_matches_assignment", "representative_kept"]);
     assert.ok(stub.seen.includes("/api/samples?experiment_id=4"));
     assert.ok(!stub.seen.some((u) => u.includes("experiment_id=3")));
   } finally {
@@ -162,8 +162,8 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"] });
     assert.equal(r.ok, true);
     assert.equal(r.invariants.views_agree.checked, true);
-    assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus: "MO_H2O_S2", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }]);
-    assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["corpus", "loupe"]);
+    assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus_api: "MO_H2O_S2", loupe: "MO_H2O_S2", focus: "MO_H2O_S1" }]);
+    assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["corpus_api", "loupe"]);
   } finally {
     await stub.close();
   }

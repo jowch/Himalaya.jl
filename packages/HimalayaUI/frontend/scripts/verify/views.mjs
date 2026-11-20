@@ -12,7 +12,7 @@ export const VIEW_ROUTES = {
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return null;
-  if (/^Not indexed$|^Index\b/.test(t)) return "not_indexed";
+  if (/^(Not indexed|Unreviewed)$|^Index\b/.test(t)) return "unreviewed";
   if (/^Form factor$/i.test(t)) return "form_factor";
   if (/^No exposures$/.test(t)) return "no_exposures";
   return "phase";
@@ -25,7 +25,10 @@ async function corpusStatuses(page, cfg, experimentId) {
   if (!settle.settled) throw new Error(`the corpus did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
   return page.locator("[role='row']").evaluateAll((rows) =>
     rows
-      .map((row) => ({ text: row.textContent ?? "", status: row.querySelector("[data-testid='status-cell']")?.textContent?.trim() ?? null }))
+      .map((row) => ({
+        names: [...row.querySelectorAll("button")].map((b) => (b.textContent ?? "").trim()),
+        status: row.querySelector("[data-testid='status-cell']")?.textContent?.trim() ?? null,
+      }))
       .filter((r) => r.status !== null),
   );
 }
@@ -62,7 +65,7 @@ export async function readViews(cfg, experimentId, samples) {
     await prepareUser(session.page, cfg, { username: "verify", onboarding: false });
     const rows = await corpusStatuses(session.page, cfg, experimentId);
     for (const s of samples) {
-      const row = rows.filter((r) => r.text.includes(s.name));
+      const row = rows.filter((r) => r.names.includes(s.name));
       const views = { corpus_text: row.length === 1 ? row[0].status : null };
       for (const [view, route] of Object.entries(VIEW_ROUTES)) {
         views[view] = await openedFrame(session.page, cfg, route(s.id), s.frameOrder);

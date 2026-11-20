@@ -89,13 +89,13 @@ export const COMMANDS = {
   },
   "check-truth": {
     usage: "check-truth [--strict] [--ui] [--truth <TRUTH.csv>] [--experiment <id>]",
-    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also reports an `invariants` block (status vs assignments, representative never a dropped frame, views agree, auto vs indexed) that does not change the exit code. --ui opens each sample's Loupe and Focus in the browser and reads which frame each opens on.",
+    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also reports an `invariants` block (status matches the confirmed call, representative never a dropped frame, views agree) that does not change the exit code. --ui opens each sample's Loupe and Focus in the browser and reads which frame each opens on.",
     spec: { booleans: ["strict", "ui"], strings: ["truth", "experiment"] },
     run: (cfg, f) => checkTruth(cfg, f),
   },
   triage: {
     usage: "triage [--undo] [--dry-run] [--truth <TRUTH.csv>] [--experiment <id>]",
-    summary: "Drop the bad frames listed in TRUTH's `drop` column (PATCH /api/exposures/<id>/status), as a triager would in Loupe. --undo keeps them again. Idempotent.",
+    summary: "Drop the bad frames listed in TRUTH's `drop` column (PATCH /api/exposures/<id>/status), as a triager would in Loupe. --undo keeps them again, including any of those frames a person dropped before triage ran. Idempotent.",
     spec: { booleans: ["undo", "dry-run"], strings: ["truth", "experiment"] },
     run: (cfg, f) => triage(cfg, f),
   },

@@ -13,8 +13,9 @@ test("the pressed thumbnail's frame number maps to the exposure list order", () 
 });
 
 test("corpus status text maps onto the StatusCell states", () => {
-  assert.equal(statusFromText("Not indexed"), "not_indexed");
-  assert.equal(statusFromText("Index →"), "not_indexed");
+  assert.equal(statusFromText("Not indexed"), "unreviewed");
+  assert.equal(statusFromText("Unreviewed"), "unreviewed");
+  assert.equal(statusFromText("Index →"), "unreviewed");
   assert.equal(statusFromText("Form factor"), "form_factor");
   assert.equal(statusFromText("No exposures"), "no_exposures");
   assert.equal(statusFromText(" Pn3m "), "phase");
