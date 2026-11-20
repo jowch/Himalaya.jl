@@ -63,6 +63,9 @@ function makeLoads(sampleCount: number, withFlag = false): object[] {
         horizontal_position: 10.0 + i,
         timestamp: "2026-01-01T10:00:00",
       },
+      ...(i === 0
+        ? [{ id: 300, filename: "sample_1_flare.dat", horizontal_position: 10.0, timestamp: "2026-01-01T10:01:00" }]
+        : []),
     ],
   }));
   return [
@@ -117,7 +120,7 @@ async function mockExperiment(
   for (const sample of loads.flatMap((l) => (l as { samples: { sample_id: number; exposures: { id: number; filename: string }[] }[] }).samples)) {
     const exposures = sample.exposures.map((e) => ({
       id: e.id, sample_id: sample.sample_id, filename: e.filename, kind: "file",
-      selected: false, status: null, image_path: null,
+      selected: false, status: e.id === 300 ? "rejected" : null, image_path: null,
     }));
     await page.route(`**/api/samples/${sample.sample_id}/exposures`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exposures) }));
@@ -159,7 +162,9 @@ test("experiment corpus shows the scoped sheet when clean", async ({ page }) => 
   await page.goto("/experiments/7/corpus");
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByRole("row")).toHaveCount(4); // header + 3
-  await expect(page.getByTestId("kept-cell").first()).toHaveText(/1\s*\/\s*1/);
+  const kept = page.getByTestId("sample-table-row").filter({ hasText: "Sample 1" }).getByTestId("kept-cell");
+  await expect(kept.locator("[data-role='kept-count']")).toHaveText("1");
+  await expect(kept.locator("[data-role='kept-total']")).toHaveText(/^\D*2\D*$/);
 });
 
 test("experiment corpus shows the scoped sheet when complete with no flags", async ({ page }) => {

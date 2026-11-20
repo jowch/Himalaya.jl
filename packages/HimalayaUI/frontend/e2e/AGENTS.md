@@ -43,17 +43,7 @@ See the live specs for the full pattern.
 
 ## Port binding
 
-`playwright.config.ts` expects the dev server on `http://127.0.0.1:5173`, **not `localhost`**. If another process holds that port, tests hang for 60s then fail:
-
-```bash
-lsof -ti:5173 | xargs kill -9
-```
-
-If starting Vite separately before `npm run e2e`, bind it explicitly:
-
-```bash
-npm run dev -- --host 127.0.0.1
-```
+`npm run e2e` builds the bundle and serves it on `http://127.0.0.1:5173` (not `localhost`) with `vite preview`. There's no need to start a server first. Outside CI it reuses whatever already answers on :5173 (a dev server or the demo). Because every `/api` request is answered inside the browser, the backend behind that server is never reached. If something else holds :5173 and doesn't serve the app, free it: `lsof -ti:5173 | xargs kill -9`.
 
 ## Live-integration timing
 

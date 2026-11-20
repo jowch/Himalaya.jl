@@ -47,7 +47,7 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
       await route.fulfill({ status: 201, contentType: "application/json",
         body: JSON.stringify({ id: users.length + 1, username: data.username }) });
     } else {
-      await route.continue();
+      await route.fallback();
     }
   });
   await page.route("**/api/experiments", (r) =>
