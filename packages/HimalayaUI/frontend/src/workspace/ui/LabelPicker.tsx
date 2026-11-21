@@ -53,6 +53,9 @@ export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClos
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
           setCursor(Math.max(0, at - 1));
+        } else if (e.key === "Tab") {
+          e.preventDefault();
+          if (rows.length > 0) setCursor((at + (e.shiftKey ? -1 : 1) + rows.length) % rows.length);
         } else if (e.key === "Enter") {
           e.preventDefault();
           pick(rows[at]);
@@ -77,8 +80,10 @@ export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClos
             <button
               type="button"
               data-label-option={r.create ? "create" : "existing"}
+              tabIndex={-1}
               aria-current={i === at ? "true" : undefined}
               onMouseEnter={() => setCursor(i)}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => pick(r)}
               className={"w-full px-3 py-1 text-left text-body " + (i === at ? "bg-row-cursor" : "") + (r.create ? " text-ink-soft" : "")}
             >

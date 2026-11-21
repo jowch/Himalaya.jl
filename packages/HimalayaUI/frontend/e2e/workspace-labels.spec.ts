@@ -116,3 +116,34 @@ test("labels share the title row, and the picker opens under + Label", async ({ 
   expect(Math.abs(picker.x + picker.width - (add.x + add.width))).toBeLessThan(2);
   expect(picker.y).toBeGreaterThanOrEqual(add.y + add.height);
 });
+
+test("Tab and Shift+Tab move the picker's highlight, focus stays in the field, and Enter adds the highlighted row", async ({ page }) => {
+  const posts: unknown[] = [];
+  await page.route(/\/api\/samples\/41\/labels$/, (r) => {
+    posts.push(r.request().postDataJSON());
+    return r.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+  await page.goto("/experiments/17/workspace/41");
+  await expect(page.getByRole("button", { name: "+ Label L" })).toBeVisible();
+  await page.keyboard.press("l");
+  const picker = page.getByRole("dialog", { name: "Add a label" });
+  const field = picker.getByLabel("Label name");
+  await field.fill("ca");
+  const highlighted = picker.locator("[aria-current=true]");
+  const options = await picker.getByRole("button").allTextContents();
+  expect(options.length).toBeGreaterThan(1);
+  await expect(highlighted).toHaveText(options[0]!);
+  await page.keyboard.press("Tab");
+  await expect(field).toBeFocused();
+  await expect(highlighted).toHaveText(options[1]!);
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(field).toBeFocused();
+  await expect(highlighted).toHaveText(options.at(-1)!);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ label: options[1] });
+});
