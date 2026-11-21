@@ -14,6 +14,15 @@ describe("WorkspacePlot", () => {
     expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("This frame's trace has no points.");
   });
 
+  it("paints the axis titles over the traces, so the trace never runs through the q label", () => {
+    const compare = { id: 3, name: "buf", q: [0.05, 0.1, 0.15], I: [1, 2, 3], color: "var(--color-compare-1)", emphasis: false };
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} compares={[compare]} />);
+    const svg = screen.getByTestId("workspace-trace").closest("div")!.querySelector("svg")!;
+    const order = [...svg.querySelectorAll("[data-role], [data-testid]")].map((el) => el.getAttribute("data-role") ?? el.getAttribute("data-testid"));
+    expect(order.indexOf("axis-title")).toBeGreaterThan(order.indexOf("trace-line"));
+    expect(order.indexOf("axis-title")).toBeGreaterThan(order.indexOf("workspace-compares"));
+  });
+
   it("double-click does not reset the zoom", () => {
     const onXDomain = vi.fn();
     render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} xDomain={[0.1, 0.2]} onXDomain={onXDomain} />);

@@ -216,16 +216,6 @@ export function WorkspacePlot({
                 </text>
               ))}
             </g>
-            <g data-role="axis-title" className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke" aria-hidden="true">
-              <text x={dims.plotWidth} y={dims.plotHeight - 6} textAnchor="end">
-                q (Å⁻¹)
-              </text>
-              {yLabel && (
-                <text x={6} y={12}>
-                  {yLabel}
-                </text>
-              )}
-            </g>
             <g clipPath={`url(#${clipId})`} pointerEvents="none">
               <g data-testid="workspace-compares">
                 {shownCompares.map((c) => (
@@ -259,6 +249,16 @@ export function WorkspacePlot({
                   )),
                 )}
               </g>
+            </g>
+            <g data-role="axis-title" className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke" aria-hidden="true">
+              <text x={dims.plotWidth} y={dims.plotHeight - 6} textAnchor="end">
+                q (Å⁻¹)
+              </text>
+              {yLabel && (
+                <text x={6} y={12}>
+                  {yLabel}
+                </text>
+              )}
             </g>
             <g data-role="peak-glyph">
               {shownPeaks.map((p) => (
