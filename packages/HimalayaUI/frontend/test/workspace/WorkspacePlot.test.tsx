@@ -71,7 +71,8 @@ describe("WorkspacePlot", () => {
 
   const comparePoints = (): [number, number][] =>
     screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!
-      .split(/[ML]/).filter(Boolean).map((p) => p.split(",").map(Number) as [number, number]);
+      .split(/[ML]/).filter(Boolean).map((p) => p.split(",").map(Number) as [number, number])
+      .filter(([x]) => x >= 0 && x <= 640 - PLOT_MARGINS.left - PLOT_MARGINS.right);
 
   it("fits a stronger comparison into the window, after the view transform", () => {
     const flat = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
@@ -105,16 +106,16 @@ describe("WorkspacePlot", () => {
     expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(15);
   });
 
-  it("includes the samples just outside the window so the edge segments stay in range", () => {
-    const ramp = { q: [0.05, 0.1, 0.2, 0.3, 0.4], I: [100, 50, 10, 10, 10], sigma: [0, 0, 0, 0, 0] };
-    render(<WorkspacePlot trace={ramp} peaks={[]} combs={[]} view="linear" xDomain={[0.15, 0.35]} />);
-    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(50);
+  it("ignores a strong peak just outside the window, so a zoom beside it is not flattened", () => {
+    const spike = { q: [0.05, 0.1, 0.12, 0.2, 0.3, 0.4], I: [10, 100, 10, 10, 11, 10], sigma: [0, 0, 0, 0, 0, 0] };
+    render(<WorkspacePlot trace={spike} peaks={[]} combs={[]} view="linear" xDomain={[0.15, 0.35]} />);
+    expect(Math.max(...yTicks())).toBeLessThan(15);
   });
 
-  it("includes the sample just after the window too", () => {
-    const ramp = { q: [0.05, 0.1, 0.2, 0.3, 0.4], I: [10, 10, 10, 50, 100], sigma: [0, 0, 0, 0, 0] };
-    render(<WorkspacePlot trace={ramp} peaks={[]} combs={[]} view="linear" xDomain={[0.08, 0.25]} />);
-    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(50);
+  it("keeps the line where it crosses the window edge inside the plot", () => {
+    const ramp = { q: [0.05, 0.1, 0.2, 0.3, 0.4], I: [100, 50, 10, 10, 10], sigma: [0, 0, 0, 0, 0] };
+    render(<WorkspacePlot trace={ramp} peaks={[]} combs={[]} view="linear" xDomain={[0.15, 0.35]} />);
+    expect(Math.max(...yTicks())).toBeGreaterThanOrEqual(30);
   });
 
   it("puts q on a log axis in the log-log view", () => {

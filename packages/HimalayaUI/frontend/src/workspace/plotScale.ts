@@ -18,29 +18,32 @@ function usable(v: number): boolean {
   return Number.isFinite(v) && v > 0;
 }
 
-function windowValues(series: Series, lo: number, hi: number): number[] {
-  const out: number[] = [];
-  let below = -1;
-  let above = -1;
-  let reachesLo = false;
-  let reachesHi = false;
-  series.q.forEach((q, i) => {
-    if (q >= lo) reachesLo = true;
-    if (q <= hi) reachesHi = true;
-    if (q >= lo && q <= hi) out.push(series.I[i]!);
-    else if (q < lo && (below < 0 || q > series.q[below]!)) below = i;
-    else if (q > hi && (above < 0 || q < series.q[above]!)) above = i;
-  });
-  if (below >= 0 && reachesLo) out.push(series.I[below]!);
-  if (above >= 0 && reachesHi) out.push(series.I[above]!);
-  return out.filter(usable);
+function edgeValue(series: Series, at: number, log: boolean): number | null {
+  for (let i = 1; i < series.q.length; i++) {
+    const q0 = series.q[i - 1]!;
+    const q1 = series.q[i]!;
+    if ((q0 - at) * (q1 - at) > 0) continue;
+    const a = series.I[i - 1]!;
+    const b = series.I[i]!;
+    if (!usable(a) || !usable(b) || q1 === q0) return null;
+    const t = (at - q0) / (q1 - q0);
+    return log ? 10 ** (Math.log10(a) + t * (Math.log10(b) - Math.log10(a))) : a + t * (b - a);
+  }
+  return null;
+}
+
+function windowValues(series: Series, lo: number, hi: number, log: boolean): number[] {
+  const inside = series.I.filter((v, i) => series.q[i]! >= lo && series.q[i]! <= hi && usable(v));
+  const edges = [edgeValue(series, lo, log), edgeValue(series, hi, log)].filter((v): v is number => v !== null);
+  return [...inside, ...edges];
 }
 
 export function fitYDomain(main: Series, extra: readonly Series[], xDomain: [number, number], type: ScaleType): [number, number] {
   const lo = Math.min(xDomain[0], xDomain[1]);
   const hi = Math.max(xDomain[0], xDomain[1]);
-  const own = windowValues(main, lo, hi);
-  const values = own.length < 2 ? main.I.filter(usable) : [...own, ...extra.flatMap((s) => windowValues(s, lo, hi))];
+  const log = type === "log";
+  const own = windowValues(main, lo, hi, log);
+  const values = own.length < 2 ? main.I.filter(usable) : [...own, ...extra.flatMap((s) => windowValues(s, lo, hi, log))];
   if (values.length === 0) return type === "log" ? [1, 10] : [0, 1];
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -76,7 +79,7 @@ export function logTicks(domain: [number, number], count: number, decades: boole
   if (decades) {
     const exps: number[] = [];
     for (let e = Math.ceil(Math.log10(lo) - 1e-9); e <= Math.floor(Math.log10(hi) + 1e-9); e++) exps.push(e);
-    if (exps.length >= 2) {
+    if (exps.length >= 3) {
       const stride = Math.ceil(exps.length / (count + 2));
       return exps.filter((_, i) => i % stride === 0).map((e) => ({ value: 10 ** e, label: decadeLabel(e) }));
     }

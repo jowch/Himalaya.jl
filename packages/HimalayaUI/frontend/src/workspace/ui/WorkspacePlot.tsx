@@ -153,7 +153,7 @@ export function WorkspacePlot({
         const x = makeAxis(shownX, [0, dims.plotWidth], xType);
         const y = makeAxis(yDomain, [dims.plotHeight, 0], yType);
         geometry.current = { x, dims, xDomain: shownX, xExtent, xType };
-        const xTicks = ticksFor(shownX, xType, 8, false);
+        const xTicks = ticksFor(shownX, xType, Math.max(3, Math.floor(dims.plotWidth / 90)), false);
         const yTicks = ticksFor(yDomain, yType, 5, true);
         const inX = (q: number): boolean => q >= Math.min(...shownX) && q <= Math.max(...shownX);
         return (
@@ -173,7 +173,7 @@ export function WorkspacePlot({
             </g>
             <g data-role="axis-bottom" className="fill-ink-faint text-caption" textAnchor="middle" aria-hidden="true">
               {xTicks.map((t) => (
-                <text key={t.value} x={x.to(t.value)} y={dims.plotHeight + 15}>
+                <text key={t.value} x={x.to(t.value)} y={dims.plotHeight + 15} {...(x.to(t.value) > dims.plotWidth - 16 ? { textAnchor: "end" } : {})}>
                   {t.label}
                 </text>
               ))}
