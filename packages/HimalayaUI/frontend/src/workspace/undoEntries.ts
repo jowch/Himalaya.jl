@@ -1,5 +1,6 @@
 import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, LabelColor } from "../api";
 import type { EditOps } from "../queries";
+import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import { bridgedWith } from "../lib/bridges";
 import { sameLabel } from "../lib/labels";
 import { peakQTol } from "../lib/queue/peakQTol";
@@ -232,6 +233,20 @@ export function labelColorEntry(
     },
     redo: async () => {
       ops.setLabelColor(at.tag, at.next);
+      return 1;
+    },
+  };
+}
+
+export function experimentEntry(ops: EditOps, at: Where & { prev: ExperimentPatch; next: ExperimentPatch }): UndoEntry {
+  return {
+    ...at,
+    undo: async () => {
+      ops.patchExperiment(at.prev);
+      return 1;
+    },
+    redo: async () => {
+      ops.patchExperiment(at.next);
       return 1;
     },
   };
