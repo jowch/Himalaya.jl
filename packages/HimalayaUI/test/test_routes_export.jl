@@ -29,7 +29,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(s.exposures) == 1
         @test s.exposures[1].filename == "example_tot"
         @test length(s.exposures[1].indices) >= 1
-        @test collect(s.tags) == ["Buffer", "37C"]
+        @test collect(s.labels) == ["Buffer", "37C"]
+        @test !haskey(s, :tags)
 
         # CSV
         r = call("GET", "/api/experiments/$exp_id/export?format=csv")
@@ -38,6 +39,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         csv_body = String(r.body)
         @test startswith(csv_body, "sample_name,exposure_filename,phases")
         @test occursin("D1,example_tot", csv_body)
+        @test strip(last(split(first(split(csv_body, "\n")), ","))) == "labels"
         @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C")
 
         # Default = json
