@@ -33,6 +33,7 @@ export interface WorkspacePaletteInput {
   views: { options: readonly PlotViewOption[]; current: PlotView; set: (v: PlotView) => void };
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
+  settings: { name: string; description: string; save: (patch: { name?: string; description?: string | null }) => void } | undefined;
   rescan: (() => void) | undefined;
   problems: (() => void) | undefined;
   removeExperiment: (() => void) | undefined;
@@ -40,6 +41,7 @@ export interface WorkspacePaletteInput {
   theme: { current: WorkspaceTheme; choose: (t: WorkspaceTheme) => void };
   user: { name: string | undefined; switch: () => void };
   help: () => void;
+  history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
 }
@@ -91,6 +93,39 @@ function recolourForm(l: PaletteLabel, p: WorkspacePaletteInput): PaletteForm {
   };
 }
 
+function textForm(title: string, value: string, check: (v: string) => string | undefined, save: (v: string) => void): PaletteForm {
+  return {
+    title,
+    verb: "save",
+    fields: [{ id: "v", label: title, kind: "text", value, check }],
+    submit: (v) => {
+      const next = (v.v ?? "").trim();
+      if (next !== value) save(next);
+    },
+  };
+}
+
+function settingsPage(s: NonNullable<WorkspacePaletteInput["settings"]>): PalettePage {
+  return {
+    title: "Settings",
+    placeholder: "Find a setting",
+    items: [
+      {
+        id: "setting-name",
+        label: "Name",
+        value: s.name,
+        form: () => textForm("Name", s.name, (v) => (v.trim() ? undefined : "Type a name."), (name) => s.save({ name })),
+      },
+      {
+        id: "setting-description",
+        label: "Description",
+        value: s.description,
+        form: () => textForm("Description", s.description, () => undefined, (d) => s.save({ description: d || null })),
+      },
+    ],
+  };
+}
+
 export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGroup[]; pages: Record<string, PalettePage> } {
   const pages: Record<string, PalettePage> = {
     compare: {
@@ -112,6 +147,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === p.theme.current ? "Current" : undefined, run: () => p.theme.choose(t.theme) })),
     },
   };
+  if (p.settings) pages.settings = settingsPage(p.settings);
   if (p.canEdit) {
     pages.bridge = {
       title: "Bridge to",
@@ -185,6 +221,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "refs", label: p.comparisons.shown ? "Hide comparisons" : "Show comparisons", run: p.comparisons.toggle },
   ];
   const experiment: PaletteItem[] = [
+    ...(pages.settings ? [{ id: "settings", label: "Settings", hint: "Name, description", page: "settings" }] : []),
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
     { id: "home", label: "Back to all experiments", run: p.home },
@@ -196,6 +233,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "theme", label: "Theme", hint: themeName, page: "theme" },
     { id: "switch-user", label: p.user.name ? "Switch user" : "Sign in", hint: p.user.name, run: p.user.switch },
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: p.help },
+    ...(p.history.undo ? [{ id: "undo", label: `Undo: ${p.history.undo}`, shortcut: `${p.modKey} Z`, typeOnly: true, run: () => p.history.run("undo") }] : []),
+    ...(p.history.redo ? [{ id: "redo", label: `Redo: ${p.history.redo}`, shortcut: `${p.modKey} ⇧ Z`, typeOnly: true, run: () => p.history.run("redo") }] : []),
   ];
   const groups: PaletteGroup[] = [
     { title: "This sample", items: sample },

@@ -385,4 +385,20 @@ describe("cycleOption", () => {
     expect(cycleOption(opts, "zz", 1)).toBe("a");
     expect(cycleOption(opts, "zz", -1)).toBe("c");
   });
+
+  it("shows a setting row's value next to its label, and None when it is empty", () => {
+    const pages: Record<string, PalettePage> = {
+      settings: {
+        title: "Settings",
+        items: [
+          { id: "name", label: "Name", value: "BL-19", form: () => newLabel("x") },
+          { id: "description", label: "Description", value: "", form: () => newLabel("y") },
+        ],
+      },
+    };
+    render(<Palette groups={[{ title: "Experiment", items: [{ id: "settings", label: "Settings", page: "settings" }] }]} pages={pages} onClose={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    expect(screen.getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["Name, BL-19", "Description, None"]);
+    expect(screen.getByRole("option", { name: "Description, None" })).toHaveTextContent("DescriptionNone");
+  });
 });

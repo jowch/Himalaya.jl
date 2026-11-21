@@ -149,23 +149,31 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
                     id={optionId(i)}
                     role="option"
                     aria-selected={i === at}
-                    aria-label={`${path ? `${path} › ` : ""}${item.label}${item.hint ? `, ${item.hint}` : ""}`}
+                    aria-label={`${path ? `${path} › ` : ""}${item.label}${item.value !== undefined ? `, ${item.value || "None"}` : ""}${item.hint ? `, ${item.hint}` : ""}`}
                     data-palette-item={item.id}
                     onMouseEnter={() => highlight.setAt(i)}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => choose(item)}
                     className={
-                      "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
+                      "grid h-8 cursor-pointer items-center gap-x-3 rounded-sm px-2 text-base " +
+                      (item.value !== undefined ? "grid-cols-[140px_minmax(0,1fr)_auto_minmax(32px,auto)] " : "grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] ") +
                       (i === at ? "bg-row-cursor" : "")
                     }
                   >
-                    <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
-                      {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
-                      <span className="truncate">
-                        {path && <span className="text-ink-faint">{path} › </span>}
-                        {item.label}
+                    {item.value !== undefined ? (
+                      <>
+                        <span className="truncate text-ink-soft">{item.label}</span>
+                        <span className={"truncate " + (item.value ? "" : "text-ink-faint")}>{item.value || "None"}</span>
+                      </>
+                    ) : (
+                      <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
+                        {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
+                        <span className="truncate">
+                          {path && <span className="text-ink-faint">{path} › </span>}
+                          {item.label}
+                        </span>
                       </span>
-                    </span>
+                    )}
                     <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
                     <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
                   </div>

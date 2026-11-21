@@ -30,10 +30,12 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     rescan: undefined,
     problems: undefined,
     removeExperiment: undefined,
+    settings: undefined,
     home: noop,
     theme: { current: "system", choose: noop },
     user: { name: "jc", switch: noop },
     help: noop,
+    history: { undo: undefined, redo: undefined, run: noop },
     samples: [],
     goSample: noop,
     ...over,
@@ -77,6 +79,18 @@ describe("workspacePalette", () => {
     const { groups } = workspacePalette(input({ removeExperiment: vi.fn() }));
     expect(groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "remove-experiment")).toMatchObject({ typeOnly: true, danger: true });
   });
+  it("keeps the root order and lists undo and redo only when typed, at the end of App", () => {
+    const run = vi.fn();
+    const { groups } = workspacePalette(input({ history: { undo: "dropped frame 2 of A1", redo: "ticked Pn3m on A1", run } }));
+    expect(groups.map((g) => g.title)).toEqual(workspacePalette(input()).groups.map((g) => g.title));
+    expect(groups[0]!.items[0]!.id).toBe("next-unreviewed");
+    const app = groups.find((g) => g.title === "App")!.items;
+    const undo = app.find((i) => i.id === "undo")!;
+    expect(undo).toMatchObject({ label: "Undo: dropped frame 2 of A1", typeOnly: true });
+    expect(app.find((i) => i.id === "redo")).toMatchObject({ label: "Redo: ticked Pn3m on A1", typeOnly: true });
+    undo.run?.();
+    expect(run).toHaveBeenCalledWith("undo");
+  });
 
   it("offers Create for a typed name the experiment does not have yet, which opens a name and colour form", () => {
     const create = vi.fn();
@@ -116,5 +130,41 @@ describe("workspacePalette", () => {
     expect(recolour).not.toHaveBeenCalled();
     form.submit({ color: "green" });
     expect(recolour).toHaveBeenCalledWith("37C", "green");
+  });
+
+  it("lists the experiment name and description on the Settings page only when the user can edit", () => {
+    const save = vi.fn();
+    expect(workspacePalette(input()).pages.settings).toBeUndefined();
+    const { groups, pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save } }));
+    expect(groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "settings")?.page).toBe("settings");
+    expect(pages.settings!.items.map((i) => [i.label, i.value])).toEqual([
+      ["Name", "Beamtime 11"],
+      ["Description", ""],
+    ]);
+  });
+
+  it("saves a trimmed name only when it changed and refuses an empty one", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save } }));
+    const form = pages.settings!.items[0]!.form!();
+    expect(form.fields[0]!.check!("  ")).toBe("Type a name.");
+    form.submit({ v: " Beamtime 11 " });
+    expect(save).not.toHaveBeenCalled();
+    form.submit({ v: " Beamtime 12 " });
+    expect(save).toHaveBeenCalledWith({ name: "Beamtime 12" });
+  });
+
+  it("trims stray whitespace off a stored name when it is saved unchanged", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11 ", description: "", save } }));
+    pages.settings!.items[0]!.form!().submit({ v: "Beamtime 11 " });
+    expect(save).toHaveBeenCalledWith({ name: "Beamtime 11" });
+  });
+
+  it("clears the description to null when it is emptied", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "B", description: "Lipid screen", save } }));
+    pages.settings!.items[1]!.form!().submit({ v: "  " });
+    expect(save).toHaveBeenCalledWith({ description: null });
   });
 });

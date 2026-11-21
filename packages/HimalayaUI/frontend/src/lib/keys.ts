@@ -26,9 +26,8 @@
  *    before the modal's focus trap engages.
  *
  * Modifier-key chords (⌘/Ctrl/Alt) are deliberately NOT handled here: some
- * callers bind chords themselves (the interaction layer's shell actions own ⌘K;
- * page action declarations own ⌘Z), so each mutating call site keeps its own
- * `if (e.metaKey || e.ctrlKey || e.altKey) return;` line where appropriate.
+ * callers bind chords themselves (the shell keys own ⌘K), so each call site keeps
+ * its own `if (e.metaKey || e.ctrlKey || e.altKey) return;` line where appropriate.
  *
  * The contenteditable check pairs the spec'd `isContentEditable` property
  * (the browser source of truth, covers inheritance + designMode) with an
@@ -61,35 +60,4 @@ export function suppressGlobalKeys(e: KeyboardEvent): boolean {
     if (t.closest('[role="dialog"], [data-keys-trap]') !== null) return true;
   }
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
-}
-
-/**
- * isNativeInteractiveTarget — guard for `Enter` actions registered in the
- * keyboard layer (e.g. `openFocus` / "Apply"). When Enter lands on a native
- * interactive control, the control owns the event: a button activates, a link
- * follows, an input submits/edits, a select opens, a contenteditable inserts a
- * break. The page-level Enter action must yield rather than hijacking.
- *
- * Covers:
- *   • Typing contexts  — INPUT, TEXTAREA, SELECT, contenteditable
- *     (Enter inserts or submits; page navigation must not fire)
- *   • Activation targets — button, a, [role=button], sortable column header
- *     (Enter natively clicks the control; page navigation must not fire)
- *
- * Previously each page's `openFocus` binding called this and early-returned.
- * Now it is also enforced centrally in `useKeyboardLayer` so the guarantee is
- * branch-wide and page authors cannot forget it.
- */
-export function isNativeInteractiveTarget(e: KeyboardEvent): boolean {
-  if (!(e.target instanceof Element)) return false;
-  // Typing contexts: Enter submits/edits rather than navigating.
-  if (e.target instanceof HTMLElement) {
-    const tag = e.target.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-    if (e.target.isContentEditable) return true;
-    const editableHost = e.target.closest("[contenteditable]");
-    if (editableHost !== null && editableHost.getAttribute("contenteditable") !== "false") return true;
-  }
-  // Activation targets: Enter natively activates the control.
-  return e.target.closest("button, a, [role=button], [aria-sort]") != null;
 }
