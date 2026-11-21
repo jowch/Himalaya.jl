@@ -42,7 +42,7 @@ import { bufferRole, buffersFirst, displayTag, labelsFor, sampleMatchesFilter, t
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -93,7 +93,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Exposures",
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
-        { keys: ["X"], what: "Drop or restore the exposure" },
+        { keys: ["X"], what: "Drop the exposure and show the nearest kept one, or restore a dropped one" },
         { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
@@ -342,10 +342,11 @@ export function WorkspacePage(): JSX.Element {
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
-      setExposureId(e.id);
-      setStatus.mutate({ exposureId: e.id, status: e.status === "rejected" ? null : "rejected" });
+      const dropping = e.status !== "rejected";
+      setExposureId(dropping ? (nearestKeptExposure(exposureList, e.id) ?? e.id) : e.id);
+      setStatus.mutate({ exposureId: e.id, status: dropping ? "rejected" : null });
     },
-    [setStatus],
+    [setStatus, exposureList],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
