@@ -32,6 +32,27 @@ using ImageCore.FixedPointNumbers: Q0f31
     end
 end
 
+@testset "a flat dark-floor frame (beam off) renders and encodes" begin
+    counts = fill(Int32(3), 64, 64)
+    counts[1, 1] = Int32(-1)
+    counts[2, 2] = Int32(40)
+    img = Gray.(reinterpret.(Q0f31, counts))
+    path = tempname() * ".tiff"
+    save(path, img)
+    try
+        for out in (HimalayaUI.load_and_lognormalize(path), HimalayaUI.load_and_lognormalize_thumb(path, 16))
+            arr = Float32.(channelview(out))
+            @test all(0f0 .<= arr .<= 1f0)
+            @test !isempty(HimalayaUI.encode_png(out))
+        end
+        arr = Float32.(channelview(HimalayaUI.load_and_lognormalize(path)))
+        @test arr[5, 5] == 0f0
+        @test arr[2, 2] == 1f0
+    finally
+        rm(path; force=true)
+    end
+end
+
 # ---------------------------------------------------------------------------
 # Issue #261 (H) — thumb downscale-before-lognormalize + disk cache + prewarm
 # ---------------------------------------------------------------------------

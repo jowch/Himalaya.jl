@@ -54,15 +54,25 @@ function load_and_lognormalize(path::String)
     # p5 of positives so the faint background floor of real signal collapses
     # to the same pure black as detector dead pixels — otherwise the whole
     # frame sits on a slightly-lifted gray haze that hides ring contrast.
+    colorview(Gray, _clip_normalize(lv))
+end
+
+"""
+    _clip_normalize(lv) -> Matrix{Float32}
+
+Map log-counts onto [0, 1] between the low and high percentiles of the positive
+pixels.
+"""
+function _clip_normalize(lv::AbstractMatrix{Float32})
     pos = sort!(filter(>(0f0), vec(lv)))
-    if isempty(pos)
-        return colorview(Gray, lv)
-    end
+    isempty(pos) && return lv
     lo = pos[max(1, round(Int, LOW_CLIP_PERCENTILE * length(pos)))]
     hi = pos[min(end, round(Int, HIGH_CLIP_PERCENTILE * length(pos)))]
-
-    normed = hi > lo ? clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0) : lv
-    colorview(Gray, normed)
+    # physics: a beam-off frame is the detector's flat dark floor, so the clip
+    # points coincide. The floor renders black and only pixels above it (hot
+    # pixels, stray light) render white.
+    hi > lo || return Float32.(lv .> lo)
+    clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0)
 end
 
 """
@@ -116,12 +126,7 @@ function load_and_lognormalize_thumb(path::String, max_px::Int = 128)
     img_small = resize_to_fit(img_full, max_px)
 
     lv = log1p.(Float32.(channelview(img_small)))
-    pos = sort!(filter(>(0f0), vec(lv)))
-    isempty(pos) && return colorview(Gray, lv)
-    lo = pos[max(1, round(Int, LOW_CLIP_PERCENTILE * length(pos)))]
-    hi = pos[min(end, round(Int, HIGH_CLIP_PERCENTILE * length(pos)))]
-    normed = hi > lo ? clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0) : lv
-    colorview(Gray, normed)
+    colorview(Gray, _clip_normalize(lv))
 end
 
 """
