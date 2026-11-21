@@ -48,6 +48,15 @@ export function isInfrastructureError(err: unknown): boolean {
   return true;
 }
 
+const UNREACHABLE_STATUSES = new Set([502, 503, 504]);
+
+export function isUnreachableError(err: unknown): boolean {
+  const e = asErrorWithStatus(err);
+  if (!e) return false;
+  if (typeof e.status === "number") return UNREACHABLE_STATUSES.has(e.status);
+  return !(err instanceof DOMException && err.name === "AbortError");
+}
+
 const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   peak_added: "Couldn't add peak",
   peak_excluded: "Couldn't exclude peak",
@@ -74,4 +83,9 @@ export function buildValidationMessage(kind: OpKind, err: unknown): string {
   const detail =
     asErrorWithStatus(err)?.message ?? "see browser console for details";
   return `${head}: ${detail}`;
+}
+
+export function buildServerErrorMessage(kind: OpKind): string {
+  const head = VALIDATION_COPY[kind] ?? "Action failed";
+  return `${head}: the server hit an error, so the change was undone`;
 }

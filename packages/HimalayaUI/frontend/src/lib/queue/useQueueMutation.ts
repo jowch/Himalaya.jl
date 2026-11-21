@@ -6,8 +6,10 @@ import { makeDeferred, clearDeferred } from "./deferred";
 import {
   isValidationError,
   isInfrastructureError,
+  isUnreachableError,
   is404Error,
   buildValidationMessage,
+  buildServerErrorMessage,
 } from "./errors";
 import type { FlatPayload, Mutator, RollbackContext } from "./types";
 
@@ -17,10 +19,9 @@ import type { FlatPayload, Mutator, RollbackContext } from "./types";
  * - `onSuccess` fires on CONFIRMATION — HTTP response or own-op SSE frame,
  *   whichever wins the race. Consumers use it for honest success toasts
  *   (never toast optimistically at mutate() time).
- * - `onError` fires on TERMINAL failure — for infrastructure errors that is
- *   after the retry policy exhausts (the InfrastructureBanner only covers the
- *   pending window; once the mutation settles as error it disappears, so a
- *   consumer that claimed nothing would leave a silent rollback).
+ * - `onError` fires on TERMINAL failure. An unreachable server never makes an
+ *   edit terminal (it stays queued under the InfrastructureBanner); other 5xx
+ *   turn terminal after the retry budget and the global handler toasts.
  * TanStack semantics apply: when mutate() is called again before the previous
  * call settles, only the LATEST call's callbacks fire (no toast pile-up).
   * NOTE: onError also fires for 404s a `treats404AsSuccess` mutator treats
@@ -44,7 +45,7 @@ export interface UseQueueMutationResult<TInput, TResponse = unknown> {
 }
 
 const MAX_RETRIES = 5;
-const MAX_BACKOFF_MS = 30_000;
+const MAX_BACKOFF_MS = 5_000;
 
 /**
  * Wires a Mutator into TanStack Query's useMutation with:
@@ -53,8 +54,9 @@ const MAX_BACKOFF_MS = 30_000;
  * - deferred-promise resolution: HTTP and SSE race; first to land wins
  * - failure-class routing: 4xx → Validation toast, 5xx/network → infrastructure
  *   (banner is mounted by M2 at App.tsx and reads from useMutationState directly)
- * - retry policy: validation never retries; infrastructure retries up to 5x
- *   with exponential backoff capped at 30s
+ * - retry policy: validation never retries; an unreachable server (network
+ *   failure, 502/503/504) retries until it answers; other 5xx retry up to 5x
+ *   and then toast; backoff is exponential, capped at 5s
  *
  * `scope` is merged into every payload before mutator callbacks run. Use it
  * for invariants the mutator needs but that aren't part of the per-call input
@@ -123,12 +125,13 @@ export function useQueueMutation<TInput, TScope, TResponse>(
           // own bespoke error surface; gate via instanceof.
           if (err instanceof ConflictError) return;
           showToast(buildValidationMessage(mutator.kind, err), "error");
+        } else if (isInfrastructureError(err)) {
+          showToast(buildServerErrorMessage(mutator.kind), "error");
         }
-        // Infrastructure errors: handled by retry; the banner reads from
-        // useMutationState — nothing per-mutation to do here.
       },
       retry: (failureCount, err) => {
         if (isValidationError(err)) return false;
+        if (isUnreachableError(err)) return true;
         if (isInfrastructureError(err)) return failureCount < MAX_RETRIES;
         return false;
       },
