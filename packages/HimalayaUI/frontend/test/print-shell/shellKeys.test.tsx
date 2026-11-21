@@ -34,13 +34,26 @@ describe("shell keys on the pages outside the workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
-  it("? on the new-experiment page lists its own keys", async () => {
+  it("⌘K opens the finder from inside a text field, where ? and / keep typing", async () => {
     renderAt("/experiments/new");
+    await screen.findByTestId("app-shell");
+    const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    expect(document.activeElement).toBe(field);
+    fireEvent.keyDown(field, { key: "?" });
+    fireEvent.keyDown(field, { key: "/" });
+    expect(useAppState.getState().navModalOpen).toBe(false);
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    fireEvent.keyDown(field, { key: "k", metaKey: true });
+    expect(useAppState.getState().navModalOpen).toBe(true);
+  });
+
+  it("⌘K does nothing inside an open dialog", async () => {
+    renderAt("/experiments");
     await screen.findByTestId("app-shell");
     fireEvent.keyDown(document.body, { key: "?" });
     const help = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
-    expect(help).toHaveTextContent("Complete the folder path");
-    expect(help).not.toHaveTextContent("Move between experiments");
+    fireEvent.keyDown(help, { key: "k", ctrlKey: true });
+    expect(useAppState.getState().navModalOpen).toBe(false);
   });
 
   it.each([
