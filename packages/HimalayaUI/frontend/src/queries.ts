@@ -341,6 +341,7 @@ export interface EditReads {
   assignment: (exposureId: number) => Promise<api.Assignment>;
   labels: () => Promise<api.SampleLabel[]>;
   bridges: () => Promise<api.SampleBridge[]>;
+  experiment: () => Promise<api.Experiment>;
 }
 
 export interface EditOps {
@@ -430,6 +431,7 @@ export function useEditOps(experimentId: number): EditOps {
       assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
       labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
       bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+      experiment: () => fresh(queryKeys.experiment(experimentId), () => api.getExperiment(experimentId)),
     },
     whenSaved: () => whenQueueIdle(qc),
     saving: () => queueBusy(qc),
@@ -476,8 +478,6 @@ export function useTriggerScan(experimentId: number) {
     mutate: (force = false) => inner.mutate(force),
   };
 }
-
-
 
 export function useDeleteExperiment(experimentId: number) {
   const username = useAppState((s) => s.username);

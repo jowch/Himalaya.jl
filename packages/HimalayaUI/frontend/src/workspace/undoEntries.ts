@@ -238,17 +238,27 @@ export function labelColorEntry(
   };
 }
 
+const experimentField = (p: { name?: string | null; description?: string | null }, field: keyof ExperimentPatch): string | null => {
+  const v = p[field];
+  return v === undefined || v === null || v === "" ? null : v;
+};
+
 export function experimentEntry(ops: EditOps, at: Where & { prev: ExperimentPatch; next: ExperimentPatch }): UndoEntry {
+  const apply = async (from: ExperimentPatch, to: ExperimentPatch): Promise<number> => {
+    const server = await ops.read.experiment();
+    const patch: ExperimentPatch = {};
+    if (to.name !== undefined && experimentField(server, "name") === experimentField(from, "name")) patch.name = to.name;
+    if (to.description !== undefined && experimentField(server, "description") === experimentField(from, "description")) {
+      patch.description = to.description;
+    }
+    const sent = Object.keys(patch).length;
+    if (sent > 0) ops.patchExperiment(patch);
+    return sent;
+  };
   return {
     ...at,
-    undo: async () => {
-      ops.patchExperiment(at.prev);
-      return 1;
-    },
-    redo: async () => {
-      ops.patchExperiment(at.next);
-      return 1;
-    },
+    undo: () => apply(at.next, at.prev),
+    redo: () => apply(at.prev, at.next),
   };
 }
 
