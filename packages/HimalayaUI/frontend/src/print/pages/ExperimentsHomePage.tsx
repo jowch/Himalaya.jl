@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useExperiments } from "../../queries";
 import { useAppState } from "../../state";
@@ -10,6 +11,8 @@ import { EmptyState } from "../ui/EmptyState";
 import { NoticePill } from "../ui/NoticePill";
 import type { NoticePillTone } from "../ui/NoticePill";
 import type { Experiment } from "../../api";
+import { suppressGlobalKeys } from "../../lib/keys";
+import { gridStep, isGridKey } from "../../lib/gridFocus";
 
 // ─── State chip ─────────────────────────────────────────────────────────────
 
@@ -80,6 +83,21 @@ export function ExperimentsHomePage(): JSX.Element {
 
   const list = experiments.data ?? [];
   const groups = groupByYear(list);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !isGridKey(e.key) || suppressGlobalKeys(e)) return;
+      const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-experiment-card]"));
+      if (cards.length === 0) return;
+      const current = cards.findIndex((c) => c === document.activeElement);
+      const next = cards[gridStep(cards.map((c) => c.getBoundingClientRect()), current, e.key)];
+      if (!next) return;
+      e.preventDefault();
+      next.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // Empty gallery: the prominent banner CTA carries the call to action, so the
   // header CTA is redundant — disable it and let the banner drive (note 1).
   const isEmpty = experiments.isSuccess && list.length === 0;
@@ -168,6 +186,7 @@ export function ExperimentsHomePage(): JSX.Element {
                         padding="md"
                         className="w-full text-left"
                         data-testid={`experiment-card-${e.id}`}
+                        data-experiment-card
                         onClick={() => open(e.id)}
                       >
                         {/* Card header: name + state chip */}

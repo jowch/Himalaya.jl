@@ -9,7 +9,7 @@ import { Button } from "../ui/Button";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
 import { KbKey } from "../ui/KbKey";
-import { keyComboLabel } from "../shell/shortcuts";
+import { modCombo } from "../../lib/modKey";
 import { Kicker } from "../ui/Kicker";
 
 type Patterns = api.SetupPreview["patterns"];
@@ -238,7 +238,9 @@ export function NewExperimentPage(): JSX.Element {
   }, [setups]);
 
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
-  const canSubmit = chosen.length > 0 && !submitting && chosen.every((s) => edits[s.root]!.name.trim() !== "");
+  const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
+  const canSubmit = current && chosen.length > 0 && !submitting && chosen.every((s) => edits[s.root]!.name.trim() !== "");
+  const [submitWhenReady, setSubmitWhenReady] = useState<string | undefined>(undefined);
   const inFlight = useRef(false);
 
   const submit = useCallback(async (): Promise<void> => {
@@ -284,6 +286,15 @@ export function NewExperimentPage(): JSX.Element {
   }, [canSubmit, chosen, edits, navigate, queryClient]);
 
   useEffect(() => {
+    if (submitWhenReady === undefined) return;
+    if (submitWhenReady !== path.trim()) setSubmitWhenReady(undefined);
+    else if (current) {
+      setSubmitWhenReady(undefined);
+      if (canSubmit) void submit();
+    }
+  }, [submitWhenReady, path, current, canSubmit, submit]);
+
+  useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
       if (ev.isComposing || ev.repeat || ev.shiftKey || ev.altKey || !canSubmit) return;
@@ -318,7 +329,7 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} suggestions={suggestions} />
+          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady(path.trim()))} suggestions={suggestions} autoFocus />
           <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{status}</p>
         </div>
         {setups.length > 0 && (
@@ -337,7 +348,7 @@ export function NewExperimentPage(): JSX.Element {
         <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
         <Button variant="accent" data-testid="create-submit" disabled={!canSubmit} onClick={() => { void submit(); }}>
           {chosen.length > 1 ? `Add ${chosen.length} experiments` : "Add experiment"}
-          <KbKey variant="frost" className="ml-2">{keyComboLabel("Mod+Enter")}</KbKey>
+          <KbKey variant="frost" className="ml-2">{modCombo("↵")}</KbKey>
         </Button>
       </footer>
     </>

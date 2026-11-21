@@ -61,6 +61,7 @@ import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
+import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { Palette } from "./ui/palette/Palette";
 import { workspacePalette } from "./palette";
@@ -135,7 +136,6 @@ function helpSections(mod: string): HelpSection[] {
   ];
 }
 
-const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 const HELP = helpSections(MOD_KEY);
 
 function exposureRows(e: Exposure): [string, string][] {
