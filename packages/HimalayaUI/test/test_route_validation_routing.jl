@@ -31,7 +31,7 @@ function _setup_full_fixture(tmp::String)
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
-    # Ensure there's at least one auto-peak so PATCH /peaks/:id has a
+    # Ensure there's at least one auto-peak so PATCH /peaks/auto/:id has a
     # real id to target.
     auto_id = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1", [e_id]))).id
@@ -79,9 +79,9 @@ end
                 ("POST",  "/api/exposures/$(ctx.exposure_id)/peaks",
                  Dict(:q => "not-a-number"),
                  "POST /exposures/:id/peaks — non-numeric q"),
-                ("PATCH", "/api/peaks/$(ctx.auto_peak_id)",
+                ("PATCH", "/api/peaks/auto/$(ctx.auto_peak_id)",
                  Dict(:NOT_excluded => true),
-                 "PATCH /peaks/:id — missing excluded"),
+                 "PATCH /peaks/auto/:id — missing excluded"),
                 ("POST",  "/api/exposures/$(ctx.exposure_id)/speculative",
                  Dict(:phase => "Pn3m"),
                  "POST /speculative — missing anchor_peak_id"),
