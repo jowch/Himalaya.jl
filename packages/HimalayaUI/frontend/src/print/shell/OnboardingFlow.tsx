@@ -19,7 +19,8 @@ const TUTORIAL_SLIDES: readonly { title: string; body: readonly Segment[] }[] = 
     title: "One sample at a time",
     body: [
       "An experiment opens on the first unreviewed sample: its trace, its exposures " +
-        "and the ranked phase candidates. Step through exposures with ",
+        "and the ranked phase candidates. Move between samples with ",
+      { key: "↑" }, " ", { key: "↓" }, ", step through exposures with ",
       { key: "←" }, " ", { key: "→" }, ", enlarge a detector image with ", { key: "Space" },
       " and drop a bad exposure with ", { key: "X" }, ".",
     ],
@@ -28,7 +29,7 @@ const TUTORIAL_SLIDES: readonly { title: string; body: readonly Segment[] }[] = 
     title: "Call it and move on",
     body: [
       "Tick a candidate with ", { key: "1–9" }, ", mark no phase with ", { key: "0" },
-      ", or fit your own with ", { key: "I" }, ". ", { key: "C" },
+      ", or drag a lattice of your own with ", { key: "I" }, ". ", { key: "C" },
       " overlays another sample, such as the buffer. ", { key: "Z" },
       " goes to the next unreviewed sample, and ", { key: "?" }, " lists every key.",
     ],
