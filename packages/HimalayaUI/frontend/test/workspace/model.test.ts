@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, nearestKeptExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
@@ -103,6 +103,28 @@ describe("stepExposure", () => {
     expect(stepExposure(list, 1, 1)).toBe(2);
     expect(stepExposure(list, 3, 1)).toBe(3);
     expect(stepExposure(list, 1, -1)).toBe(1);
+  });
+});
+
+describe("nearestKeptExposure", () => {
+  const kept = (id: number) => exposure(id);
+  const dropped = (id: number) => exposure(id, { status: "rejected" });
+
+  it("is the next kept frame after the one just dropped", () => {
+    expect(nearestKeptExposure([kept(1), kept(2), kept(3)], 2)).toBe(3);
+  });
+
+  it("falls back to the previous kept frame when the dropped one is last", () => {
+    expect(nearestKeptExposure([kept(1), kept(2), kept(3)], 3)).toBe(2);
+  });
+
+  it("skips frames that are already dropped, picking the closer side", () => {
+    expect(nearestKeptExposure([kept(1), dropped(2), kept(3), dropped(4), dropped(5), kept(6)], 4)).toBe(3);
+    expect(nearestKeptExposure([kept(1), dropped(2), dropped(3), kept(4)], 2)).toBe(1);
+  });
+
+  it("is undefined when no other frame is kept", () => {
+    expect(nearestKeptExposure([dropped(1), kept(2)], 2)).toBeUndefined();
   });
 });
 
