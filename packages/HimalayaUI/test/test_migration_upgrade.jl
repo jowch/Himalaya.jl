@@ -31,7 +31,6 @@ function count_curation(db::SQLite.DB)
      index_groups          = n("index_groups"),
      assignments           = n("assignments"),
      assignment_members    = n("assignment_members"),
-     exposure_tags         = n("exposure_tags"),
      exposure_sources      = n("exposure_sources"))
 end
 
@@ -353,8 +352,7 @@ end
                                ("indices", "exposure_id"),
                                ("index_groups", "exposure_id"),
                                ("assignments", "exposure_id"),
-                               ("assignment_members", "exposure_id"),
-                               ("exposure_tags", "exposure_id"))
+                               ("assignment_members", "exposure_id"))
                 n = first(Tables.rowtable(DBInterface.execute(db,
                     "SELECT COUNT(*) AS c FROM $tbl WHERE $col = ?", [nsid]))).c
                 @test n == 0
@@ -374,13 +372,11 @@ end
         path, info = build_legacy_db(mktempdir())
         with_migration_db(path) do db
             # exposure 101 is the non-survivor (NULL trace_hash). Hang an
-            # auto_peak + a peak_curation + an exposure_tag off it.
+            # auto_peak + a peak_curation off it.
             DBInterface.execute(db,
                 "INSERT INTO auto_peaks (id, exposure_id, q, intensity) VALUES (1101, 101, 0.4, 2.0)")
             DBInterface.execute(db,
                 "INSERT INTO peak_curations (id, exposure_id, kind, q) VALUES (1102, 101, 'add', 0.5)")
-            DBInterface.execute(db,
-                "INSERT INTO exposure_tags (id, exposure_id, key, value) VALUES (1103, 101, 'k', 'v')")
         end
 
         # Count the affected tables directly (count_curation also probes tables
@@ -390,7 +386,6 @@ end
         with_migration_db(path) do db
             @test cnt(db, "auto_peaks") == 2      # survivor's 1 + non-survivor's 1
             @test cnt(db, "peak_curations") == 1
-            @test cnt(db, "exposure_tags") == 1
         end
 
         with_migration_db(path) do db
@@ -402,7 +397,6 @@ end
             # the non-survivor's redundant children are gone; the survivor's stay.
             @test c.auto_peaks == 1           # only the survivor's auto_peak
             @test c.peak_curations == 0
-            @test c.exposure_tags == 0
             @test c.indices == 1              # survivor's, untouched
             @test c.index_peaks == 1
         end
@@ -474,7 +468,7 @@ end
             c = count_curation(db)
             @test propertynames(c) == (:auto_peaks, :peak_curations, :indices,
                 :index_peaks, :index_group_members, :index_groups, :assignments,
-                :assignment_members, :exposure_tags, :exposure_sources)
+                :assignment_members, :exposure_sources)
             @test all(v -> v isa Integer && v >= 0, values(c))
         end
     end

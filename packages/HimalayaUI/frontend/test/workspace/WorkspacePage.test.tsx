@@ -143,13 +143,13 @@ vi.mock("../../src/state", () => ({
 }));
 
 function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): CorpusSample {
-  return { id, experiment_id: 1, name, notes: null, tags: [], q_units: "A-1", ...extra } as CorpusSample;
+  return { id, experiment_id: 1, name, notes: null, q_units: "A-1", ...extra } as CorpusSample;
 }
 
 function exposure(id: number, extra: Partial<Exposure> = {}): Exposure {
   return {
     id, sample_id: 10, filename: `f${id}.dat`, kind: "file", selected: false, status: null,
-    image_path: null, image_version: "", tags: [], sources: [], ...extra,
+    image_path: null, image_version: "", sources: [], ...extra,
   } as Exposure;
 }
 
@@ -565,6 +565,29 @@ describe("WorkspacePage", () => {
   it("says a frame has no integrated trace without guessing when I₀ is unknown", () => {
     state.traceError = true;
     state.traceErr = new ApiError(404, ".dat file not found", null);
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
+  });
+
+  it("says a frame is waiting for its trace when ingest reports it pending, matching the notice", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 101, filename: "f101", sample_id: 10, sample_name: "S", problem: "no_trace", reason: "no trace" },
+    ] };
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 exposure waiting for a trace");
+  });
+
+  it("keeps saying no integrated trace when only another frame is pending", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true })];
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 999, filename: "f999", sample_id: 11, sample_name: "T", problem: "no_trace", reason: "no trace" },
+    ] };
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
   });

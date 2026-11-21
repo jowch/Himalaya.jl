@@ -23,9 +23,8 @@ function mockOnce(status: number, body: unknown): void {
 
 const CORPUS_ROWS = [
   { id: 1, experiment_id: 1, name: "s1", display_name: null, notes: "",
-    tags: [], q_units: "A-1" },
+    q_units: "A-1" },
   { id: 2, experiment_id: 2, name: "s2", display_name: null, notes: "",
-    tags: [{ id: 9, key: "lipid", value: "DOPC", source: "manual" }],
     q_units: "nm-1" },
 ];
 
@@ -46,7 +45,6 @@ describe("queries — useCorpusSamples", () => {
     expect(result.current.data).toHaveLength(2);
     expect(result.current.data?.[0].q_units).toBe("A-1");
     expect(result.current.data?.[1].q_units).toBe("nm-1");
-    expect(result.current.data?.[1].tags[0].key).toBe("lipid");
   });
 
   it("uses the ['corpus','samples'] key, distinct from per-experiment samples", () => {

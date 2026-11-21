@@ -91,6 +91,7 @@ export function invalidateIngestFrameCache(
     qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.problems(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.labels(expId) });
+    qc.invalidateQueries({ predicate: (q) => q.queryKey[2] === "trace" && q.state.status === "error" });
   }
 }
 
@@ -252,27 +253,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           : list,
       );
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-      break;
-    }
-    case "add_tag":
-    case "remove_tag":
-    case "edit_tag": {
-      if (remote.entity_type === "sample") {
-        // A sample tag appears in two cached projections: the per-experiment
-        // samples list AND the corpus-wide contact-sheet list. The route
-        // always emits experiment_id, so the experiment key still invalidates
-        // (a harmless no-op if not cached); the corpusSamples invalidation is
-        // what refreshes the contact sheet from a foreign tab (#159).
-        qc.invalidateQueries({
-          queryKey: queryKeys.samples(payload?.experiment_id as number),
-        });
-        qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-        qc.invalidateQueries({ queryKey: queryKeys.corpusSampleTags });
-      } else {
-        qc.invalidateQueries({
-          queryKey: queryKeys.exposures(payload?.sample_id as number),
-        });
-      }
       break;
     }
     case "update_sample": {

@@ -11,7 +11,6 @@ import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { makeFakeMutation } from "./helpers";
 import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
-import { addCorpusSampleTagMutator } from "../../src/lib/queue/mutators/trivial";
 
 describe("persistence: mirrorToSessionStorage", () => {
   beforeEach(() => {
@@ -148,13 +147,13 @@ describe("persistence: rehydrate", () => {
     expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0, lost: 0 });
   });
 
-  it("rehydrate accepts a resolver function for dual-scope kinds", async () => {
+  it("rehydrate accepts a resolver function for kinds whose mutator depends on the payload", async () => {
     sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify([
         {
           schemaVersion: SCHEMA_VERSION,
-          kind: "add_tag",
+          kind: "add_label",
           clientOpId: "op-resolver",
           payload: { experimentId: 1, sampleId: 10, key: "k", value: "v" },
         },
@@ -162,20 +161,20 @@ describe("persistence: rehydrate", () => {
     );
     const requestSpy = vi.fn().mockResolvedValue({ id: 5 });
     const sampleScopedMutator: Mutator<any, any, any> = {
-      kind: "add_tag",
+      kind: "add_label",
       onMutate: () => ({ restore: () => {} }),
       request: requestSpy,
       onSuccess: () => {},
     };
     const exposureScopedSpy = vi.fn();
     const exposureScopedMutator: Mutator<any, any, any> = {
-      kind: "add_tag",
+      kind: "add_label",
       onMutate: () => ({ restore: () => {} }),
       request: exposureScopedSpy,
       onSuccess: () => {},
     };
     const resolver: MutatorResolver = (op) => {
-      if (op.kind !== "add_tag") return undefined;
+      if (op.kind !== "add_label") return undefined;
       const p = op.payload as { experimentId?: number };
       return p?.experimentId !== undefined
         ? sampleScopedMutator
@@ -300,6 +299,9 @@ describe("persistence: stale-schemaVersion op drop", () => {
   it.each([
     ["series_save", { title: "draft", samples: [] }],
     ["post_message", { sampleId: 10, body: "hi" }],
+    ["add_tag", { sampleId: 10, key: "rejection_reason", value: "air" }],
+    ["remove_tag", { exposureId: 11, tagId: 3 }],
+    ["edit_tag", { exposureId: 11, tagId: 3, value: "air" }],
   ])("drops a persisted op of a deleted kind (%s) without replaying it", async (kind, payload) => {
     sessionStorage.setItem(
       STORAGE_KEY,
@@ -318,23 +320,4 @@ describe("persistence: stale-schemaVersion op drop", () => {
     expect(result.failed).toBe(0);
   });
 
-  it("drops a version-5 Series scoping add_tag op ({key, tags}) instead of replaying it as a corpus tag", async () => {
-    const requestSpy = vi.spyOn(addCorpusSampleTagMutator, "request");
-    sessionStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify([
-        {
-          schemaVersion: 5,
-          kind: "add_tag",
-          clientOpId: "op-scoping",
-          payload: { key: "temperature", tags: [{ sample_id: 10, value: "25" }] },
-        },
-      ]),
-    );
-    const result = await rehydrate(new QueryClient(), resolveMutator);
-    expect(result.dropped).toBe(1);
-    expect(result.replayed).toBe(0);
-    expect(requestSpy).not.toHaveBeenCalled();
-    requestSpy.mockRestore();
-  });
 });
