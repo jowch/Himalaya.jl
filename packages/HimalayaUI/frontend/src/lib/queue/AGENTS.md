@@ -31,11 +31,6 @@ lib/queue/
     ├── customIndex.ts
     ├── indexGroup.ts
     ├── assignment.ts
-    ├── scopeSeries.ts
-    ├── createSeries.ts
-    ├── saveSeries.ts
-    ├── deleteSeries.ts
-    ├── commitSeriesPlate.ts
     └── trivial.ts
 
 # Note: clientOpId.ts (idempotency-key minting) and clientId.ts (per-tab SSE

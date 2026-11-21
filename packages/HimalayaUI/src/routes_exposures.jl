@@ -66,17 +66,9 @@ function register_exposures_routes!()
             # already-downscaled raster (~250x fewer pixels).
             ensure_thumb_cached(db, id, path; token = vtoken)
         else
-            # Full path: run the percentile-clip math at full resolution (the
-            # science-quality view), capture the RAW dims (the beam center's
-            # coordinate space) BEFORE the 1536 display cap, THEN cap the
-            # rendered raster at 1536px max-side (issue #260, G) so the
-            # loupe/focus big frame ships a sub-MB PNG instead of a multi-MB
-            # native-resolution one. `resize_to_fit` no-ops when the detector is
-            # already <= 1536px.
-            img = load_and_lognormalize(path)
-            raw_h, raw_w = size(img)          # Julia size = (rows, cols) = (h, w)
-            img = resize_to_fit(img, 1536)
-            encode_png(img)
+            full = ensure_full_cached(db, id, path; token = vtoken)
+            raw_h, raw_w = full.raw_h, full.raw_w
+            full.bytes
         end
 
         # The frontend appends `?v=<image_version_token>` to the URL, so the

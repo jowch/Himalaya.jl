@@ -256,9 +256,9 @@ does not remove their exposures.
 
 Himalaya never creates, modifies or deletes a file inside an experiment
 directory while resolving, previewing, scanning, analyzing or serving. The
-funnel probes only read, and thumbnails are cached next to the DB
-(`<db_dir>/cache/thumb-128/`), not next to the images. No code path writes
-into an experiment directory.
+funnel probes only read, and thumbnails and full images are cached next to
+the DB (`<db_dir>/cache/thumb-128/`, `<db_dir>/cache/full-1536/`), not next
+to the images. No code path writes into an experiment directory.
 
 This rule is kept by code review. No test checks it for the scan path.
 
