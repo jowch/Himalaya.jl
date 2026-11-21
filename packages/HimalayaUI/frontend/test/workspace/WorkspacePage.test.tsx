@@ -163,6 +163,11 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("2 of 4 reviewed");
   });
 
+  it("links the Himalaya brand back to the corpus", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments/1/corpus");
+  });
+
   it("updates the list and the count when the corpus status changes", () => {
     const { rerender } = renderAt("/experiments/1/workspace/11");
     state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m" } : s));

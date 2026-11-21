@@ -48,7 +48,7 @@ import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
-import { Section } from "./ui/Section";
+import { MainSection, SampleHeading, Section } from "./ui/Section";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -496,28 +496,29 @@ export function WorkspacePage(): JSX.Element {
       main={
         sample ? (
           <>
-            <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
-              <div className="relative mb-2">
-                <CompareBar
-                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, color: COMPARE_COLORS[refs.indexOf(rid) % COMPARE_COLORS.length]!, scale: scales.get(rid) }))}
-                  subtractId={subRef}
-                  hidden={!refsOn}
-                  onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
-                  onRemove={removeCompare}
-                  onAdd={() => setPicking(true)}
+            <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
+            <div className="relative px-3.5 py-1">
+              <CompareBar
+                chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, color: COMPARE_COLORS[refs.indexOf(rid) % COMPARE_COLORS.length]!, scale: scales.get(rid) }))}
+                subtractId={subRef}
+                hidden={!refsOn}
+                onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
+                onRemove={removeCompare}
+                onAdd={() => setPicking(true)}
+              />
+              {picking && (
+                <ComparePicker
+                  samples={pickable}
+                  onPick={(rid) => {
+                    setRefs((r) => addCompare(r, rid));
+                    if (subRef === undefined) setSubRef(rid);
+                    setRefsOn(true);
+                  }}
+                  onClose={() => setPicking(false)}
                 />
-                {picking && (
-                  <ComparePicker
-                    samples={pickable}
-                    onPick={(rid) => {
-                      setRefs((r) => addCompare(r, rid));
-                      if (subRef === undefined) setSubRef(rid);
-                      setRefsOn(true);
-                    }}
-                    onClose={() => setPicking(false)}
-                  />
-                )}
-              </div>
+              )}
+            </div>
+            <div className="mx-3.5">
               <PlotCard>
                 <WorkspacePlot
                   trace={trace.data}
@@ -545,13 +546,15 @@ export function WorkspacePage(): JSX.Element {
                   />
                 )}
               </PlotCard>
-            </Section>
-            <Section title="Exposures">
+            </div>
+            <MainSection title="Exposures">
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
-            </Section>
+            </MainSection>
           </>
         ) : (
-          <Note>{emptyMessage}</Note>
+          <div className="px-3.5 py-3">
+            <Note>{emptyMessage}</Note>
+          </div>
         )
       }
       tools={
