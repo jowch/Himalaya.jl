@@ -185,12 +185,15 @@ export function useExposures(sampleId: number | undefined) {
   });
 }
 
+export const traceRetry = (failures: number, error: unknown): boolean =>
+  !(error instanceof api.ApiError && error.status === 404) && failures < 1;
+
 export function useTrace(exposureId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
-    retry: (failures, error) => !(error instanceof api.ApiError && error.status === 404) && failures < 1,
+    retry: traceRetry,
   });
 }
 
