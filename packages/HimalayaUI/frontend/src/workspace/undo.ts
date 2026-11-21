@@ -49,10 +49,7 @@ export function useUndoHistory(resetKey: unknown): UndoControls {
     setHistory(next);
   }, []);
   useEffect(() => commit(emptyHistory), [resetKey, commit]);
-  const record = useCallback((entry: UndoEntry) => {
-    entry.redo();
-    commit(recordEntry(ref.current, entry));
-  }, [commit]);
+  const record = useCallback((entry: UndoEntry) => commit(recordEntry(ref.current, entry)), [commit]);
   const undo = useCallback(() => {
     const step = stepBack(ref.current);
     step.entry?.undo();

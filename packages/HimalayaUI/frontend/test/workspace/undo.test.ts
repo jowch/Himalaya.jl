@@ -36,11 +36,11 @@ describe("undo history", () => {
 });
 
 describe("useUndoHistory", () => {
-  it("runs an edit when it is recorded, its inverse on undo and the edit again on redo", () => {
+  it("records an edit without running it, runs its inverse on undo and the edit again on redo", () => {
     const { result } = renderHook(() => useUndoHistory(1));
     const e = entry("drop");
     act(() => result.current.record(e));
-    expect(e.redo).toHaveBeenCalledTimes(1);
+    expect(e.redo).not.toHaveBeenCalled();
     expect(result.current.nextUndo).toBe(e);
     let undone: UndoEntry | undefined;
     act(() => { undone = result.current.undo(); });
@@ -49,7 +49,7 @@ describe("useUndoHistory", () => {
     expect(result.current.nextUndo).toBeUndefined();
     expect(result.current.nextRedo).toBe(e);
     act(() => { result.current.redo(); });
-    expect(e.redo).toHaveBeenCalledTimes(2);
+    expect(e.redo).toHaveBeenCalledTimes(1);
     expect(result.current.nextUndo).toBe(e);
   });
 

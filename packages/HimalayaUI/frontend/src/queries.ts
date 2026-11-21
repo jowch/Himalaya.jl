@@ -30,6 +30,7 @@ import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutator
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { setTagColorMutator } from "./lib/queue/mutators/tagColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
+import { peakQTol } from "./lib/queue/peakQTol";
 
 const CLIENT_ID = getClientId();
 
@@ -339,6 +340,52 @@ export function useCommitCustomIndex(exposureId: number) {
   };
 }
 
+
+export interface EditOps {
+  addPhase: (exposureId: number, indexId: number) => void;
+  removePhase: (exposureId: number, indexId: number) => void;
+  setCallState: (sampleId: number, state: api.AssignmentState) => void;
+  setStatus: (sampleId: number, exposureId: number, status: api.Exposure["status"]) => void;
+  addPeak: (exposureId: number, q: number) => void;
+  removeManualPeakNear: (exposureId: number, q: number) => void;
+  setPeakExcluded: (exposureId: number, peakId: number, excluded: boolean) => void;
+}
+
+export function useEditOps(): EditOps {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  const base = { username, clientId: CLIENT_ID, exposureId: 0, sampleId: 0 };
+  const add = useQueueMutation(addAssignmentPhaseMutator, base);
+  const remove = useQueueMutation(removeAssignmentPhaseMutator, base);
+  const callState = useQueueMutation(setSampleCallStateMutator, base);
+  const status = useQueueMutation(setExposureStatusMutator, base);
+  const addPeak = useQueueMutation(peakAddMutator, base);
+  const removePeak = useQueueMutation(peakRemoveMutator, base);
+  const exclude = useQueueMutation(peakExcludeMutator, base);
+  const unexclude = useQueueMutation(peakUnexcludeMutator, base);
+  const at = <T extends object>(input: T, ids: object): T => ({ ...input, ...ids }) as T;
+  return {
+    addPhase: (exposureId, indexId) => add.mutate(at({ indexId }, { exposureId })),
+    removePhase: (exposureId, indexId) => remove.mutate({ exposureId, indexId }),
+    setCallState: (sampleId, state) => callState.mutate(at({ state }, { sampleId })),
+    setStatus: (sampleId, exposureId, next) => status.mutate(at({ exposureId, status: next }, { sampleId })),
+    addPeak: (exposureId, q) => addPeak.mutate(at({ q }, { exposureId })),
+    removeManualPeakNear: (exposureId, q) => {
+      const near = (peaks: readonly api.Peak[] | undefined) =>
+        peaks?.find((p) => p.source !== "auto" && p.id > 0 && Math.abs(p.q - q) < peakQTol(q));
+      const removeHit = (hit: api.Peak | undefined) => {
+        if (hit) removePeak.mutate(at({ peakId: hit.id }, { exposureId }));
+      };
+      const cached = near(qc.getQueryData<api.Peak[]>(queryKeys.peaks(exposureId)));
+      if (cached) return removeHit(cached);
+      void qc
+        .fetchQuery({ queryKey: queryKeys.peaks(exposureId), queryFn: () => api.listPeaks(exposureId) })
+        .then((peaks) => removeHit(near(peaks)));
+    },
+    setPeakExcluded: (exposureId, peakId, excluded) =>
+      (excluded ? exclude : unexclude).mutate(at({ peakId }, { exposureId })),
+  };
+}
 
 export function useAddSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
