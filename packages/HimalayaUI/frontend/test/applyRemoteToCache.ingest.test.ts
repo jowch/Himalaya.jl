@@ -1,6 +1,6 @@
 // test/applyRemoteToCache.ingest.test.ts
 import { describe, it, expect, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { applyRemoteToCache, invalidateIngestFrameCache } from "../src/lib/queue/applyRemoteToCache";
 import { queryKeys } from "../src/queries";
 import type { SseEvent } from "../src/lib/queue/types";
@@ -49,6 +49,23 @@ describe("ingest_* cache arms (Phase E1)", () => {
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.labels(7)));
     expect(keys).not.toContain(JSON.stringify(queryKeys.labels(8)));
+  });
+
+  it("ingest_complete refetches a trace that was missing, so a late trace replaces the waiting message", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let missing = 0;
+    let present = 0;
+    const watch = (id: number, fn: () => Promise<unknown>) => new QueryObserver(qc, { queryKey: queryKeys.trace(id), queryFn: fn }).subscribe(() => {});
+    const stop = [
+      watch(5, () => { missing += 1; return Promise.reject(new Error("404")); }),
+      watch(6, () => { present += 1; return Promise.resolve({ q: [1], I: [1], sigma: [1] }); }),
+    ];
+    await vi.waitFor(() => expect(qc.getQueryState(queryKeys.trace(5))?.status).toBe("error"));
+    await vi.waitFor(() => expect(qc.getQueryState(queryKeys.trace(6))?.status).toBe("success"));
+    applyRemoteToCache(ingestFrame("ingest_complete", 7), qc);
+    await vi.waitFor(() => expect(missing).toBe(2));
+    expect(present).toBe(1);
+    stop.forEach((s) => s());
   });
 
   it("ingest_failed invalidates the experiment detail and its problems, so Details shows the error", () => {
