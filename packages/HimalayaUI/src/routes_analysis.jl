@@ -226,7 +226,7 @@ function register_analysis_routes!()
             isempty(Tables.rowtable(DBInterface.execute(db,
                 "SELECT 1 FROM indices WHERE id = ? AND exposure_id = ?", [index_id, id]))) &&
                 return HTTP.Response(409, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "index $index_id is not one of this exposure's current indices")))
+                    JSON3.write(Dict(:error => "this index changed after re-analysis, so pick it again")))
             result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_add",
                 entity_type = "exposure",
