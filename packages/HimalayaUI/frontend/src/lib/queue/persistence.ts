@@ -1,6 +1,7 @@
 import type { MutationCache, QueryClient } from "@tanstack/react-query";
-import type { OpKind, Mutator, RollbackContext } from "./types";
+import type { OpKind, Mutator } from "./types";
 import type { PersistedOpForResolution } from "./mutatorRegistry";
+import { queueMutationOptions } from "./useQueueMutation";
 
 export const STORAGE_KEY = "himalaya-ui:queue";
 // Bumped 1 → 2 in issue #88: sample.label dropped, payload.name → payload.display_name.
@@ -81,32 +82,19 @@ export interface RehydrateResult {
   failed: number;
 }
 
-/**
- * On tab reload, replay each persisted op through its registered mutator.
- * Server-side request-level idempotency (X-Client-Op-Id; M0.3) returns the
- * cached response on retry, so duplicate execution is impossible — this
- * call settles the local cache to match the server's view.
- *
- * Returns counts; the caller surfaces a toast for `dropped > 0` so the user
- * knows some edits from the prior session couldn't be replayed (schema-
- * version drift after a deploy, or unknown kind after a feature removal).
- *
- * The storage key is cleared after rehydrate so a subsequent reload starts
- * from a clean slate.
- */
 export async function rehydrate(
   qc: QueryClient,
   mutators: Map<OpKind, Mutator<any, any, any>> | MutatorResolver,
 ): Promise<RehydrateResult> {
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return { dropped: 0, replayed: 0, failed: 0 };
+  sessionStorage.removeItem(STORAGE_KEY);
 
   let ops: PersistedOp[] = [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) ops = parsed as PersistedOp[];
   } catch {
-    sessionStorage.removeItem(STORAGE_KEY);
     return { dropped: 0, replayed: 0, failed: 0 };
   }
 
@@ -119,6 +107,7 @@ export async function rehydrate(
   let replayed = 0;
   let failed = 0;
   const fires: Promise<unknown>[] = [];
+  const mc = qc.getMutationCache();
 
   for (const op of ops) {
     if (op.schemaVersion !== SCHEMA_VERSION) {
@@ -130,42 +119,15 @@ export async function rehydrate(
       dropped++;
       continue;
     }
-    // Re-run optimistic effect against fresh cache. If the mutator throws
-    // during onMutate (e.g. malformed persisted payload after a deploy that
-    // didn't bump SCHEMA_VERSION), count it as failed and continue the loop
-    // — without this guard a single bad op would abort all remaining replays.
-    let restoreCtx: RollbackContext | undefined;
-    try {
-      restoreCtx = mutator.onMutate(op.payload, qc);
-    } catch {
-      failed++;
-      continue;
-    }
-    // Re-fire the request. AbortController is not wired through to rehydrate
-    // because the original mutate() call's signal is gone; rehydrate-fired
-    // requests run to completion and rely on idempotency for safety.
-    const ctrl = new AbortController();
+    const mutation = mc.build(qc, queueMutationOptions(mutator, qc));
     fires.push(
-      mutator
-        .request(op.payload, ctrl.signal)
-        .then((response) => {
-          mutator.onSuccess(op.payload, response, qc);
-          replayed++;
-        })
-        .catch(() => {
-          // Retried request failed. Roll back the optimistic effect so the
-          // local cache doesn't show a phantom write that the server never
-          // accepted. The HTTP retry semantics in M1.5 will also kick in
-          // for any in-flight session; here we count it so the caller can
-          // surface a "couldn't replay" toast accurately.
-          restoreCtx?.restore?.();
-          failed++;
-        }),
+      mutation
+        .execute(op.payload as Record<string, unknown> & { kind: string; clientOpId: string })
+        .then(() => { replayed++; })
+        .catch(() => { failed++; }),
     );
   }
 
-  // Wait for all replays to settle so callers can act on the result.
   await Promise.all(fires);
-  sessionStorage.removeItem(STORAGE_KEY);
   return { dropped, replayed, failed };
 }

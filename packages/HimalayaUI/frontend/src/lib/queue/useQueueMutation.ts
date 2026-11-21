@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { MutationOptions, QueryClient, UseMutationOptions } from "@tanstack/react-query";
 import { newClientOpId } from "../clientOpId";
 import { showToast } from "../toast";
 import { makeDeferred, clearDeferred } from "./deferred";
@@ -50,6 +51,8 @@ const MAX_BACKOFF_MS = 5_000;
 
 const ownErrorSurface = new Set<string>();
 
+type QueuePayload = { kind: string; clientOpId: string } & Record<string, unknown>;
+
 /**
  * Wires a Mutator into TanStack Query's useMutation with:
  * - per-call client_op_id mint (newClientOpId() on every mutate())
@@ -67,6 +70,73 @@ const ownErrorSurface = new Set<string>();
  * **Important:** the per-call clientOpId is minted INSIDE `mutate(input)`, not
  * at hook construction. Each mutate() call produces a unique idempotency key.
  */
+export function queueMutationOptions<TResponse>(
+  mutator: Mutator<any, any, TResponse>,
+  qc: QueryClient,
+): MutationOptions<TResponse, unknown, QueuePayload, RollbackContext> {
+  return {
+    mutationKey: [mutator.kind],
+    scope: { id: "queue" },
+    mutationFn: async (payload: QueuePayload) => {
+      // TanStack v5 doesn't surface a per-call AbortSignal on the
+      // MutationFunctionContext, so we mint our own. mutator.request still
+      // honours signal.aborted; if the mutation is reset/cancelled future
+      // wiring can call controller.abort().
+      const controller = new AbortController();
+      const { signal } = controller;
+      const deferred = makeDeferred<TResponse>(payload.clientOpId);
+      // Stash the controller on the deferred so the SSE-resolution path in
+      // replayCoordinator can abort the HTTP request when SSE wins the race.
+      deferred.controller = controller;
+      // Wire HTTP into the deferred. If SSE arrives first, the HTTP
+      // resolution becomes a no-op (deferred already cleared).
+      mutator
+        .request(payload, signal)
+        .then((response) => deferred.resolve(response))
+        .catch((err) => deferred.reject(err));
+      // AbortSignal cleanup: clear the registry entry and reject deferred
+      // so a leftover entry doesn't accumulate after early abort.
+      const onAbort = () => {
+        clearDeferred(payload.clientOpId);
+        deferred.reject(new DOMException("aborted", "AbortError"));
+      };
+      signal.addEventListener("abort", onAbort);
+      try {
+        return await deferred.promise;
+      } finally {
+        signal.removeEventListener("abort", onAbort);
+        clearDeferred(payload.clientOpId);
+      }
+    },
+    onMutate: (payload: QueuePayload) => mutator.onMutate(payload, qc),
+    onSuccess: (response, payload) =>
+      mutator.onSuccess(payload, response, qc),
+    onError: (err, _payload, context) => {
+      // Mutators that opt into `treats404AsSuccess` (idempotent removes)
+      // swallow a 404 entirely: the optimistic effect already reflects the
+      // desired end state, and re-running rollback would re-insert a row
+      // the server has already deleted. Skip both restore and toast.
+      if (mutator.treats404AsSuccess && is404Error(err)) return;
+      context?.restore?.();
+      if (isValidationError(err)) {
+        showToast(buildValidationMessage(mutator.kind, err), "error");
+      } else if (isServerError(err) && !ownErrorSurface.has(_payload.clientOpId)) {
+        showToast(buildServerErrorMessage(mutator.kind), "error");
+      }
+    },
+    onSettled: (_data, _err, payload) => {
+      ownErrorSurface.delete(payload.clientOpId);
+    },
+    retry: (failureCount, err) => {
+      if (isValidationError(err)) return false;
+      if (isUnreachableError(err)) return true;
+      if (isInfrastructureError(err)) return failureCount < MAX_RETRIES;
+      return false;
+    },
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS),
+  };
+}
+
 export function useQueueMutation<TInput, TScope, TResponse>(
   mutator: Mutator<TInput, TScope, TResponse>,
   scope: TScope,
@@ -76,67 +146,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
   type Payload = FlatPayload<TInput, TScope>;
 
   const mutation = useMutation<TResponse, unknown, Payload, RollbackContext>(
-    {
-      mutationKey: [mutator.kind],
-      scope: { id: "queue" },
-      mutationFn: async (payload) => {
-        // TanStack v5 doesn't surface a per-call AbortSignal on the
-        // MutationFunctionContext, so we mint our own. mutator.request still
-        // honours signal.aborted; if the mutation is reset/cancelled future
-        // wiring can call controller.abort().
-        const controller = new AbortController();
-        const { signal } = controller;
-        const deferred = makeDeferred<TResponse>(payload.clientOpId);
-        // Stash the controller on the deferred so the SSE-resolution path in
-        // replayCoordinator can abort the HTTP request when SSE wins the race.
-        deferred.controller = controller;
-        // Wire HTTP into the deferred. If SSE arrives first, the HTTP
-        // resolution becomes a no-op (deferred already cleared).
-        mutator
-          .request(payload, signal)
-          .then((response) => deferred.resolve(response))
-          .catch((err) => deferred.reject(err));
-        // AbortSignal cleanup: clear the registry entry and reject deferred
-        // so a leftover entry doesn't accumulate after early abort.
-        const onAbort = () => {
-          clearDeferred(payload.clientOpId);
-          deferred.reject(new DOMException("aborted", "AbortError"));
-        };
-        signal.addEventListener("abort", onAbort);
-        try {
-          return await deferred.promise;
-        } finally {
-          signal.removeEventListener("abort", onAbort);
-          clearDeferred(payload.clientOpId);
-        }
-      },
-      onMutate: (payload) => mutator.onMutate(payload, qc),
-      onSuccess: (response, payload) =>
-        mutator.onSuccess(payload, response, qc),
-      onError: (err, _payload, context) => {
-        // Mutators that opt into `treats404AsSuccess` (idempotent removes)
-        // swallow a 404 entirely: the optimistic effect already reflects the
-        // desired end state, and re-running rollback would re-insert a row
-        // the server has already deleted. Skip both restore and toast.
-        if (mutator.treats404AsSuccess && is404Error(err)) return;
-        context?.restore?.();
-        if (isValidationError(err)) {
-          showToast(buildValidationMessage(mutator.kind, err), "error");
-        } else if (isServerError(err) && !ownErrorSurface.has(_payload.clientOpId)) {
-          showToast(buildServerErrorMessage(mutator.kind), "error");
-        }
-      },
-      onSettled: (_data, _err, payload) => {
-        ownErrorSurface.delete(payload.clientOpId);
-      },
-      retry: (failureCount, err) => {
-        if (isValidationError(err)) return false;
-        if (isUnreachableError(err)) return true;
-        if (isInfrastructureError(err)) return failureCount < MAX_RETRIES;
-        return false;
-      },
-      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS),
-    },
+    queueMutationOptions(mutator, qc) as unknown as UseMutationOptions<TResponse, unknown, Payload, RollbackContext>,
   );
 
   const mutate = (input: TInput, callbacks?: MutateCallbacks<TResponse>): void => {

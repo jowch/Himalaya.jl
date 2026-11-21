@@ -239,7 +239,7 @@ describe("persistence: rehydrate", () => {
     const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate: () => ({ restore }),
-      request: vi.fn().mockRejectedValue(new Error("boom")),
+      request: vi.fn().mockRejectedValue(Object.assign(new Error("rejected"), { status: 422 })),
       onSuccess: () => {},
     };
     const qc = new QueryClient();
@@ -255,7 +255,7 @@ describe("persistence: rehydrate", () => {
     const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate: () => ({ restore: () => {} }),
-      request: vi.fn().mockRejectedValue(new Error("boom")),
+      request: vi.fn().mockRejectedValue(Object.assign(new Error("rejected"), { status: 422 })),
       onSuccess: () => {},
     };
     const qc = new QueryClient();

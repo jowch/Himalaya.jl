@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./shell/AppRoutes";
 import { OnboardingFlow } from "./shell/OnboardingFlow";
@@ -90,35 +90,27 @@ export function PrintApp(): JSX.Element {
     });
   }, [qc, mc, setIngestProgress, clearIngestProgress]); // stable selector results; EventSource lifetime unchanged
 
-  // Mirror pending mutation queue to sessionStorage so a tab reload can
-  // rehydrate it. attach is safe to mount unconditionally; subscription is
-  // cheap.
+  const rehydrated = useRef(false);
   useEffect(() => {
+    if (!rehydrated.current) {
+      rehydrated.current = true;
+      void rehydrate(qc, resolveMutator).then(({ dropped, failed }) => {
+        if (dropped > 0) {
+          showToast(
+            `${dropped} edits from a previous session couldn't be restored`,
+            "warning",
+          );
+        }
+        if (failed > 0) {
+          showToast(
+            `${failed} edits failed to replay; please retry`,
+            "error",
+          );
+        }
+      });
+    }
     return attachPersistence(mc);
-  }, [mc]);
-
-  // On mount, replay any persisted ops left over from a previous tab
-  // session through their matching mutators. Server-side request-level
-  // idempotency (X-Client-Op-Id) makes this safe even if the original op
-  // already landed. Surfacing dropped/failed counts as toasts so the user
-  // knows when edits couldn't be restored.
-  useEffect(() => {
-    void rehydrate(qc, resolveMutator).then(({ dropped, failed }) => {
-      if (dropped > 0) {
-        showToast(
-          `${dropped} edits from a previous session couldn't be restored`,
-          "warning",
-        );
-      }
-      if (failed > 0) {
-        showToast(
-          `${failed} edits failed to replay; please retry`,
-          "error",
-        );
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate runs once at mount; qc is stable
-  }, []);
+  }, [qc, mc]);
 
   return (
     <>
