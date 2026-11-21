@@ -21,7 +21,7 @@ import {
 import { customIndexMutator } from "./mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./mutators/labels";
-import { setTagColorMutator } from "./mutators/tagColors";
+import { setLabelColorMutator } from "./mutators/labelColors";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -79,7 +79,7 @@ export function resolveMutator(
     case "unbridge_sample":        return unbridgeSampleMutator;
     case "add_label":              return addLabelMutator;
     case "remove_label":           return removeLabelMutator;
-    case "set_tag_color":          return setTagColorMutator;
+    case "set_tag_color":          return setLabelColorMutator;
     default:
       return undefined;
   }
@@ -116,7 +116,7 @@ export function resolveMutatorForEvent(
     case "sample_unbridged":         return unbridgeSampleMutator;
     case "label_added":              return addLabelMutator;
     case "label_removed":            return removeLabelMutator;
-    case "tag_color_set":            return setTagColorMutator;
+    case "tag_color_set":            return setLabelColorMutator;
     // Event kinds with no queue mutator fall through here (handled entirely by
     // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".

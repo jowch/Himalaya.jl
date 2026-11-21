@@ -1,19 +1,19 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
-import { TAG_COLORS, type TagColor } from "../../api";
-import { TAG_SWATCH } from "./tagSwatches";
+import { LABEL_COLORS, type LabelColor } from "../../api";
+import { LABEL_SWATCH } from "./labelSwatches";
 
 interface Props {
   name: string;
-  current: TagColor;
+  current: LabelColor;
   isDefault: boolean;
   left: number;
-  onPick: (color: TagColor | null) => void;
+  onPick: (color: LabelColor | null) => void;
   onClose: (restoreFocus: boolean) => void;
 }
 
 const STEP: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
 
-export function TagColorMenu({ name, current, isDefault, left, onPick, onClose }: Props): JSX.Element {
+export function LabelColorMenu({ name, current, isDefault, left, onPick, onClose }: Props): JSX.Element {
   const root = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     root.current?.querySelector<HTMLButtonElement>("[aria-checked='true']")?.focus();
@@ -25,7 +25,7 @@ export function TagColorMenu({ name, current, isDefault, left, onPick, onClose }
     document.addEventListener("mousedown", onDown, true);
     return () => document.removeEventListener("mousedown", onDown, true);
   }, [onClose]);
-  const pick = (color: TagColor | null): void => {
+  const pick = (color: LabelColor | null): void => {
     onPick(color);
     onClose(true);
   };
@@ -43,9 +43,9 @@ export function TagColorMenu({ name, current, isDefault, left, onPick, onClose }
     <div
       ref={root}
       role="dialog"
-      aria-label={`Colour of tag ${name}`}
+      aria-label={`Colour of label ${name}`}
       data-keys-trap
-      data-testid="workspace-tag-colors"
+      data-testid="workspace-label-colors"
       style={{ left }}
       className="absolute top-full z-20 mt-1 rounded-sm border border-hair bg-plate p-2 shadow-lg"
       onKeyDown={(e) => {
@@ -56,19 +56,19 @@ export function TagColorMenu({ name, current, isDefault, left, onPick, onClose }
         }
       }}
     >
-      <div role="radiogroup" aria-label={`Colour of tag ${name}`} className="flex items-center gap-1.5" onKeyDown={move}>
-        {TAG_COLORS.map((c) => (
+      <div role="radiogroup" aria-label={`Colour of label ${name}`} className="flex items-center gap-1.5" onKeyDown={move}>
+        {LABEL_COLORS.map((c) => (
           <button
             key={c}
             type="button"
             role="radio"
             aria-checked={c === current}
             tabIndex={c === current ? 0 : -1}
-            aria-label={TAG_SWATCH[c].name}
-            title={TAG_SWATCH[c].name}
-            data-tag-color={c}
+            aria-label={LABEL_SWATCH[c].name}
+            title={LABEL_SWATCH[c].name}
+            data-label-color={c}
             onClick={() => pick(c)}
-            className={`h-5 w-5 rounded-full ${TAG_SWATCH[c].solid} ${c === current ? "ring-2 ring-ink ring-offset-2 ring-offset-plate" : ""}`}
+            className={`h-5 w-5 rounded-full ${LABEL_SWATCH[c].solid} ${c === current ? "ring-2 ring-ink ring-offset-2 ring-offset-plate" : ""}`}
           />
         ))}
       </div>
