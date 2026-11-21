@@ -16,6 +16,7 @@ export function openLiveStream(url: string, opts: LiveStreamOptions): () => void
   const maxBackoffMs = opts.maxBackoffMs ?? 5_000;
   let source: EventSource | null = null;
   let openedBefore = false;
+  let wentDown = false;
   let attempt = 0;
   let lastHeard = Date.now();
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -40,8 +41,9 @@ export function openLiveStream(url: string, opts: LiveStreamOptions): () => void
       heard();
       attempt = 0;
       opts.onStatus?.("open");
-      if (openedBefore) opts.onReconnect();
+      if (openedBefore || wentDown) opts.onReconnect();
       openedBefore = true;
+      wentDown = false;
     });
     es.addEventListener("heartbeat", heard);
     for (const [type, fn] of Object.entries(opts.listeners)) {
@@ -50,6 +52,7 @@ export function openLiveStream(url: string, opts: LiveStreamOptions): () => void
     es.addEventListener("error", () => {
       if (source !== es) return;
       opts.onStatus?.("down");
+      wentDown = true;
       if (es.readyState !== CLOSED) return;
       replace(Math.min(1000 * 2 ** attempt, maxBackoffMs));
       attempt += 1;

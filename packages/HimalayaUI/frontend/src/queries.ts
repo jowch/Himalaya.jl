@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
@@ -476,12 +476,14 @@ export function useDeleteExperiment(experimentId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.deleteExperiment(experimentId, buildAuthOpts(username, CLIENT_ID)),
-    onSuccess: () => {
-      qc.removeQueries({ queryKey: queryKeys.experiment(experimentId) });
-      void qc.invalidateQueries({ queryKey: queryKeys.experiments });
-      void qc.invalidateQueries({ queryKey: queryKeys.folderPreviews });
-    },
+    onSuccess: () => forgetExperiment(qc, experimentId),
   });
+}
+
+export function forgetExperiment(qc: QueryClient, experimentId: number): void {
+  qc.removeQueries({ queryKey: queryKeys.experiment(experimentId) });
+  void qc.invalidateQueries({ queryKey: queryKeys.experiments });
+  void qc.invalidateQueries({ queryKey: queryKeys.folderPreviews });
 }
 
 export function useCheckForNewFilesOnOpen(experimentId: number): void {

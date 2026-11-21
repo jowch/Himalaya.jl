@@ -134,10 +134,10 @@ describe("persistence: rehydrate", () => {
     expect(result.replayed).toBe(0);
   });
 
-  it("returns {dropped: 0, replayed: 0, failed: 0} when no persisted state", async () => {
+  it("returns all zeros when no persisted state", async () => {
     const qc = new QueryClient();
     const result = await rehydrate(qc, new Map());
-    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0 });
+    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0, lost: 0 });
   });
 
   it("clears the storage key on malformed JSON", async () => {
@@ -145,7 +145,7 @@ describe("persistence: rehydrate", () => {
     const qc = new QueryClient();
     const result = await rehydrate(qc, new Map());
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
-    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0 });
+    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 0, lost: 0 });
   });
 
   it("rehydrate accepts a resolver function for dual-scope kinds", async () => {
@@ -207,7 +207,7 @@ describe("persistence: rehydrate", () => {
     expect(result.replayed).toBe(0);
   });
 
-  it("counts onMutate throws as failed without aborting remaining ops", async () => {
+  it("counts onMutate throws as lost without aborting remaining ops", async () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify([
       { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-throw", payload: { bad: true } },
       { schemaVersion: SCHEMA_VERSION, kind: "peak_added", clientOpId: "op-good", payload: { q: 1.0 } },
@@ -225,8 +225,8 @@ describe("persistence: rehydrate", () => {
     };
     const qc = new QueryClient();
     const result = await rehydrate(qc, new Map([["peak_added", mutator]]));
-    // First op's onMutate threw → counted as failed; loop continued so second op still ran.
-    expect(result.failed).toBe(1);
+    expect(result.lost).toBe(1);
+    expect(result.failed).toBe(0);
     expect(result.replayed).toBe(1);
     expect(requestSpy).toHaveBeenCalledTimes(1);
   });
@@ -239,7 +239,7 @@ describe("persistence: rehydrate", () => {
     const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate: () => ({ restore }),
-      request: vi.fn().mockRejectedValue(new Error("boom")),
+      request: vi.fn().mockRejectedValue(Object.assign(new Error("rejected"), { status: 422 })),
       onSuccess: () => {},
     };
     const qc = new QueryClient();
@@ -255,7 +255,7 @@ describe("persistence: rehydrate", () => {
     const mutator: Mutator<any, any, any> = {
       kind: "peak_added",
       onMutate: () => ({ restore: () => {} }),
-      request: vi.fn().mockRejectedValue(new Error("boom")),
+      request: vi.fn().mockRejectedValue(Object.assign(new Error("rejected"), { status: 422 })),
       onSuccess: () => {},
     };
     const qc = new QueryClient();
