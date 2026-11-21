@@ -80,7 +80,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 ## Loupe and Focus (deleted)
 
-Both pages were deleted on 2026-11-20 in favour of the workspace. `/sample/<id>` and `/sample/<id>/loupe` now redirect to `/experiments/<eid>/workspace/<id>`, and `/index/<exp>/<sample>` permalinks resolve to the same place. `check-truth --ui` reads only the corpus and the workspace.
+Both pages were deleted on 2026-11-20 in favour of the workspace. `/sample/<id>` and `/sample/<id>/loupe` now redirect to `/experiments/<eid>/workspace/<id>`, and `/index/<exp>/<sample>` permalinks resolve to the same place. `check-truth --ui` reads only the workspace.
 
 ## Grouping review
 

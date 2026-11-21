@@ -702,9 +702,6 @@ export interface ReanalyzeResponse {
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
 
-// Single-entity fetchers for mention resolution
-
-
 /** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
  *  the experiment-scoped `/api/experiments/:eid/sample-tags`.
  *  `count` is the number of distinct samples carrying this (key, value) pair —

@@ -145,7 +145,6 @@ packages/HimalayaUI/frontend/test/queue/
   rollbackSymmetry.test.ts               # mutator onMutate ↔ restore (layer 5)
   sseEventPayload.contract.test.ts       # applyRemoteToCache (layer 2-4)
   mutatorOnSseWins.test.ts               # SSE-first race per kind
-  hooks.test.tsx                         # useExposureHasPendingPeakOps etc.
   useQueueMutation.test.tsx              # framework wrapper
   replayCoordinator.test.ts              # foreign-event replay
   deferred.test.ts                       # registry mint / clear

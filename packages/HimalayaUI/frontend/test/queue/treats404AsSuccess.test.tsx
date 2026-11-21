@@ -29,6 +29,7 @@ import {
 } from "../../src/lib/queue/mutators/trivial";
 import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
+import { useQueueMutation } from "../../src/lib/queue/useQueueMutation";
 import type { Peak, IndexEntry, Sample } from "../../src/api";
 
 describe("treats404AsSuccess flag — set on idempotent remove mutators", () => {
@@ -126,6 +127,27 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     );
   }
 
+  it("deleteIndex: optimistic removal sticks in the indices cache on 404", async () => {
+    const EXPOSURE_ID = 5;
+    const INDEX: IndexEntry = {
+      id: 10, exposure_id: EXPOSURE_ID, phase: "Pn3m", basis: 0.1, score: 0.9,
+      r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate",
+      kind: "auto", inputs_hash: "h1", peaks: [], predicted_q: [0.1],
+    };
+    const client = makeClient();
+    client.setQueryData(queryKeys.indices(EXPOSURE_ID), [INDEX]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    mockFetch404();
+    const { result } = renderHook(
+      () => useQueueMutation(deleteIndexMutator, { exposureId: EXPOSURE_ID, username: "alice", clientId: "tab-1" }),
+      { wrapper },
+    );
+    act(() => { result.current.mutate({ indexId: 10 }); });
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    expect(client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID))).toEqual([]);
+  });
 
   it("useRemoveSampleTag: optimistic tag removal sticks on 404", async () => {
     const EXPERIMENT_ID = 1;

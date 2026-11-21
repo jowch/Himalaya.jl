@@ -338,7 +338,6 @@ function register_analysis_routes!()
                 result.user_id, result.client_id, result.client_op_id,
                 result.payload_json)
 
-            # Return the freshly-built index in the same shape as GET /api/indices/:id
             rows = Tables.rowtable(DBInterface.execute(db,
                 """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                   status, kind, inputs_hash
@@ -355,11 +354,6 @@ function register_analysis_routes!()
             d = row_to_json(ix)
             d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
-            # Match the shape of GET /api/indices/:id (which sets ngc on the
-            # response). Without this, `createSpeculativeMutator.onSuccess`
-            # writes an IndexEntry-without-`ngc` into the indices cache, and
-            # downstream `index.ngc` reads return undefined for any
-            # speculatively-created index until a refetch.
             d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
         end
@@ -452,7 +446,6 @@ function register_analysis_routes!()
                 post_state = Dict(:assignment =>
                     Dict(:state => ab[:state], :members => ab[:members])))
 
-            # Return the freshly-built index (GET /api/indices/:id shape).
             rows = Tables.rowtable(DBInterface.execute(db,
                 """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                       status, kind, inputs_hash

@@ -76,7 +76,6 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
                 body = Vector{UInt8}(JSON3.write(Dict(:username => bad))))
             @test r.status == 400
         end
-
     end
 end
 

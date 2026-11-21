@@ -3,10 +3,6 @@
  *
  * - deleteIndexMutator       (kind: "delete_index")
  *
- * Deleting an index doesn't change the effective peak set, so it declares
- * `affectsExposurePeaks: () => false` — it doesn't gate the stale-indices
- * banner or the speculative-snap query.
- *
  * The backend emits `speculative_deleted` over SSE, which `applyRemoteToCache`
  * already handles via cache invalidation.
  */
@@ -76,7 +72,6 @@ export const deleteIndexMutator: Mutator<DeleteIndexInput, ExposureOnlyScope, { 
     // backend emits `speculative_deleted` over SSE; applyRemoteToCache
     // invalidates indices for any concurrent reconciliation.
   },
-  affectsExposurePeaks: () => false,
   // 404 = the index is already gone → desired end state.
   treats404AsSuccess: true,
 };

@@ -46,7 +46,4 @@ export const reanalyzeExposureMutator: Mutator<
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
       old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
   },
-  // Marks this op as peak-affecting so the stale-indices alert / speculative-snap
-  // gating treats an in-flight reanalyze the same way as a peak curation.
-  affectsExposurePeaks: () => true,
 };

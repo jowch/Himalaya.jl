@@ -21,7 +21,6 @@ describe("plot views", () => {
     for (const v of ["log", "linear", "loglog"] as const) expect(viewIntensity(v, 0.2, 50)).toBe(50);
   });
 
-
   it("remembers the chosen view and falls back to log for anything unknown", () => {
     const first = renderHook(() => usePlotView());
     expect(first.result.current[0]).toBe("log");

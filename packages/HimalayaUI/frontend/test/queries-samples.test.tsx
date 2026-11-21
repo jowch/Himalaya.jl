@@ -44,7 +44,6 @@ describe("queries — sample mutations (queue-driven)", () => {
     pendingDeferreds.clear();
   });
 
-
   it("useAddSampleTag appends an optimistic placeholder, replaced by server tag", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [

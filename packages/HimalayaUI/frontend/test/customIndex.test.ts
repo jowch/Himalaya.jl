@@ -23,10 +23,6 @@ describe("customIndex physics (Plan D-9)", () => {
     expect(r.find((x) => x.N === 1)!.q).toBeCloseTo(q1, 6);
   });
 
-
-
-
-
   it("latticeForFirstOrderOnPeak puts the first order on a clicked peak", () => {
     const pq = 0.045;
     const a = latticeForFirstOrderOnPeak("Pn3m", pq);

@@ -15,13 +15,12 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
 | App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
-| Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage`, pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
+| Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
-| Render layers | `print/{plot,detector,comb,export}/` (and `print/waterfall/`) | Appearance-authoring render layers (trace-plot engine, detector image, comb/residual, waterfall, the `cleanFigureSvg` figure builder). The `lint:design` appearance guard excludes `print/{plot,detector,comb,export}/` only — `print/waterfall/` is NOT exempt |
+| Render layers | `print/{plot,detector}/` | Appearance-authoring render layers (plot frame and projection, detector image). The `lint:design` appearance guard excludes them |
 | Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage`, `ConfigurationPage`, `GroupingReviewPage`, `ScanFailedPage` (under the single `AppShell`) |
-| Triage workspace | `workspace/` | `WorkspacePage` at `/experiments/:id/workspace/:sampleId?` (outside `AppShell`); it replaced Focus, Loupe and Series, which were deleted |
 | Hooks | `hooks/` | `useFocusTrap`, `useStateFromUrl`, … |
-| Library | `lib/` | URL helpers, plot helpers, comparison helpers, figure export |
+| Library | `lib/` | URL helpers, plot helpers, peak refs, custom index, labels, bridges |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
 | Skeletons | `bones/` | Committed `*.bones.json` + auto-generated `registry.ts` |
 
@@ -46,22 +45,15 @@ Two invisible invariants in `state.ts` (`persist` config, `queries.ts`'s sibling
 - **TanStack Query owns *server* state**: experiments, samples, exposures, peaks, indices, assignment.
 - Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.indices(id)`). Don't mix the two concerns in the same hook.
 
-## Route → store → auto-pick cascade (the exposure-clobber hazard)
-
-`setActiveSample` cascades `activeExposureId: undefined`, so a careless call resets the user's deliberate exposure pick. Two cooperating hooks keep this in check — touching either requires understanding the whole route-hook → Zustand → auto-pick chain:
-
-- **`useSyncActiveSampleFromRoute` calls `setActiveSample` ONLY when the parsed id differs from the stored one** (`useSyncActiveSampleFromRoute.ts:67-73`). Drop the `parsed === activeSampleId` no-op guard and every render re-seeds the sample → clears the exposure → `useAutoPickExposure` re-adopts the representative, discarding an in-session deliberate switch (the FO-NAV-SKELETON / R5 representative-switcher fix).
-- **`useAutoPickExposure` writes only when the rule picks a DIFFERENT, defined exposure** (the effect in `useAutoPickExposure.ts`). Its rule (`resolveActiveExposure`) KEEPS a still-valid `currentId` and is pure, so the page resolves the same value during render — that's what paints a cached sample's trace in the same frame instead of flashing a skeleton through the store→effect seam.
-
 ## Per-tab SSE identity
 
 SSE self-echo filtering uses a per-tab `client_id` minted into `sessionStorage` on first load (see `lib/clientId.ts`). Audit identity (`actor` / `X-Username`) is unchanged. **Two tabs of the same user are distinct subscribers** — edits in one refresh the other. `client_id` lives for the tab session: survives reload, scoped to one tab. See `docs/event-log.md` §"Client side".
 
 ## Imperative renderers in effects
 
-Wrap any function that is both defined inside a component AND used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. The trace plot's overlay renderer follows this pattern.
+Wrap any function that is both defined inside a component AND used as a `useEffect` dependency in `useCallback` with its true deps. The effect then depends on `[theCallback]` alone — no redundant dep list, no eslint-disable.
 
-**Async re-entry guards need a ref, not state.** `useFigureExport` blocks double-invocation with a synchronous `inFlight` ref (`if (inFlight.current) return` before `setPending(true)`), *not* the `pending` state alone — state flips asynchronously, so two clicks in one tick both pass a state-only guard. The ref blocks re-entry; the state drives the UI. Same shape for any async-action hook.
+**Async re-entry guards need a ref, not state.** Block double-invocation with a synchronous `inFlight` ref (`if (inFlight.current) return` before `setPending(true)`), *not* the `pending` state alone — state flips asynchronously, so two clicks in one tick both pass a state-only guard. The ref blocks re-entry; the state drives the UI. Same shape for any async-action hook.
 
 ## Tailwind v4 theming
 
@@ -73,7 +65,7 @@ The Print's recurring patterns live as **closed-look** primitives in `print/ui/`
 
 **Ratchets (2026-11-19).** `npm run lint:ratchet` (`scripts/check-ratchets.mjs`, also in `npm run build`) counts two things per file against `scripts/ratchet-baseline.json` and fails if any count grows:
 
-- **Appearance tokens** (counted per token, not per `className`) in every string or template literal inside a consumer `className=` expression, including `cx(...)` and ternaries. Named tokens count too (`text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border*`, `rounded*`, …); text alignment and wrapping are placement. Exempt: `print/{ui,plot,detector,comb,export}/` and stories. `lint:design` catches bracket values and raw colours; the ratchet stops the named-token count from growing. It does not see styling built outside a `className=` expression.
+- **Appearance tokens** (counted per token, not per `className`) in every string or template literal inside a consumer `className=` expression, including `cx(...)` and ternaries. Named tokens count too (`text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border*`, `rounded*`, …); text alignment and wrapping are placement. Exempt: `print/{ui,plot,detector}/`, `workspace/ui/` and stories. `lint:design` catches bracket values and raw colours; the ratchet stops the named-token count from growing. It does not see styling built outside a `className=` expression.
 - **Comment lines** in HimalayaUI frontend `src/` (TypeScript AST, so trailing and JSX comments count and strings do not) and backend `src/*.jl` (`#`, `#= =#` and docstrings; SQL `"""` strings do not count). HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Exempt: comments that *start* with `physics:`, `eslint-disable… -- <reason>` and `@ts-expect-error`. A reason-less directive and `@ts-ignore` count. The core `Himalaya` package is exempt.
 
 A count that falls must be locked in with `npm run lint:ratchet -- --update` (commit the baseline). `--update` also accepts a rename or split as long as each total does not grow.
@@ -87,7 +79,7 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `lib/comparison/coloring.ts`, `lib/figure-export/**`, the `print/{plot,detector,comb,export}/` render-layer prefixes, `print/main.tsx`). Note `print/waterfall/` is NOT among the exempt prefixes — its appearance (line colour, bead glyphs, axis strokes) lives inside the already-exempt `print/plot/` layer it composes, so a raw SVG colour literal surfacing in `print/waterfall/` must move into `print/plot/` or become a `--color-*` token. Need a colour anywhere else → add a `--color-*` token to `@theme`, then use the utility. Visual reference: Storybook (`npm run storybook`); full system: root `DESIGN.md`.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `print/main.tsx`, plus the excluded `print/{ui,plot,detector}/` and `workspace/ui/` prefixes).
 
 `check-design.mjs` also enforces a **`no-legacy-import` rule** (`scanLegacyImports`) alongside the appearance guard: it fails the build if any `src/print/**` file relatively imports from top-level `src/components/**` or `src/pages/**`. Those legacy dirs are gone post-cutover, so the rule now functions as a regression tripwire against re-introducing the retired tree.
 
@@ -104,24 +96,18 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 - **Optimistic placeholder ids are NEGATIVE.** `Peak.id < 0` means "not yet confirmed by server"; SSE confirmation overwrites with the positive server id. UI code that filters or compares peak ids must handle negatives.
 - **A peak is `(source, id)`.** Auto and manual peak ids come from separate sequences and collide on real data. Compare peaks with `samePeak` and key them with `peakKey` (`lib/peakRef.ts`); plot callbacks pass a `PeakRef`, never a bare id. Test fixtures with both sources should come from `peakList` (`test/fixtures/peaks.ts`), which numbers each source from 1 like the DB.
-- **`useExposureHasPendingPeakOps` gates any UI that reads `peaks(id)` derivatively** while a peak op is in flight (e.g. useSpeculativeSnap). Without it: flicker as optimistic / HTTP / SSE land out of order.
 
 ## Query layer gotchas
 
-- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (`queries.ts:73-78`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["index-entity", id]`, `["exposure-entity", id]`, …) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates.
+- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (see the `-entity` keys in `queryKeys`, `queries.ts`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["exposure-entity", id]`, `["sample-entity", id]`) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates.
 
 
 ## Multi-layer contract testing
 
 Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See `docs/contract-testing.md` for canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
 
-## Samples contact sheet (`SheetTable`)
-
-`SheetTable` renders a plain `<table>` (`role="table"`, body cells `role="cell"`). The data-grid keyboard system (`src/lib/grid/`) was removed in the ingestion-redesign branch (T2.2); keyboard navigation is now owned at the page level.
-
 ## Anti-patterns
 
 - Mint `client_op_id` inside `mutationFn`, not at hook creation time.
-- Don't read `peaks(id)` derivatively during in-flight ops without `useExposureHasPendingPeakOps` gating.
 - Don't assert on Tailwind class strings in tests — use `data-testid` / `data-*` attributes.
 - Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `print/ui/` primitive; `className` is placement-only (see "Design system").

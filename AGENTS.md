@@ -116,7 +116,7 @@ When reviewing a PR (as reviewer, not author):
 - `Tables.rowtable(DBInterface.execute(...))` — materialize rows before query closes
 - SQL NULL → `missing` (not `nothing`): use `ismissing(row.field)` and normalize
 - FK enforcement is ON — use `ON DELETE SET NULL` in DDL for FKs that must survive deletion
-- PKs use `AUTOINCREMENT` on mention-target tables (experiments, samples, exposures, peaks, indices)
+- PKs use `AUTOINCREMENT` on entity tables (experiments, samples, exposures, peaks, indices) so a deleted id is never reused
 - `apply_event!(InTransaction(), ...)` inside `with_idempotency` — never the public `apply_event!(db, req; ...)` from within a queue mutation
 - `persist_analysis!` is transactional, and `scan_and_group!` persists loads/samples/exposures in one write transaction (its geometry fill is a separate, earlier one) — add new writes inside `_persist_analysis_inner!` / that persist transaction
 
@@ -134,9 +134,7 @@ When reviewing a PR (as reviewer, not author):
 ## Load-bearing one-liners
 
 - `analyze_exposure!` synthesizes effective peaks as `auto_peaks − excludes ∪ adds` — touch only with curation-lifecycle tests green
-- `score(index)` = `coverage × consistency` — R² is NOT part of score (UI hard gate at 0.98)
-- The stale-indices reanalyze affordance (a role=`alert`, no dedicated component) is derived from index `inputs_hash` vs exposure `analysis_inputs_hash` mismatch; the `useReanalyzeExposure` path is gated on `useExposureHasPendingPeakOps` so it doesn't flash mid-op
-- `useExposureHasPendingPeakOps` gates any UI reading `peaks(id)` derivatively during in-flight ops
+- `score(index)` = `coverage × consistency` — R² is NOT part of score and gates nothing
 - `MutationCache.getAll()` insertion order is load-bearing for replay-as-rerun
 - Experiment dirs are read-only at runtime
 - `Fm3m` is missing from `indexpeaks` dispatch — known gap, don't fix opportunistically
