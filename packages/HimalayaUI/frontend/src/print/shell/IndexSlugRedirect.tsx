@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import * as api from "../../api";
 import { ResolvingFallback } from "./ResolvingFallback";
-import { STALE_LINK, workspaceHref } from "./SampleRedirect";
+import { LINK_FAILED, STALE_LINK, workspaceHref } from "./SampleRedirect";
 import { showToast } from "../../lib/toast";
 
 export function IndexSlugRedirect(): JSX.Element {
@@ -27,7 +27,7 @@ export function IndexSlugRedirect(): JSX.Element {
         }
       } catch {
         if (!cancelled) {
-          showToast(STALE_LINK, "warning");
+          showToast(LINK_FAILED, "error");
           setTarget("/experiments");
         }
       }
