@@ -14,7 +14,7 @@ interface Props {
 
 export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseAdd, onAdd, onRemove }: Props): JSX.Element | null {
   if (tags.length === 0 && !editable) return null;
-  const last = tags[tags.length - 1];
+  const last = tags.filter((t) => t.state === "confirmed").at(-1);
   return (
     <div className="relative flex flex-wrap items-center gap-1.5 px-3.5 pb-1" data-testid="workspace-tags">
       {tags.map((t) => {

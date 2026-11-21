@@ -447,7 +447,8 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     end
     if kind == "label_removed"
         DBInterface.execute(db,
-            "UPDATE sample_labels SET state = 'removed' WHERE sample_id = ? AND label = ? COLLATE NOCASE",
+            """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'removed', 'user')
+               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'removed'""",
             [Int(entity_id), String(payload.label)])
         return nothing
     end

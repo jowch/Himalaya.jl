@@ -516,8 +516,11 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } }]);
   });
 
-  it("a new tag needs the Create row, and Backspace in the empty picker removes the last tag", () => {
-    state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+  it("a new tag needs the Create row, and Backspace in the empty picker removes the last confirmed tag, never a suggestion", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+    ];
     renderAt("/experiments/1/workspace/10");
     fireEvent.click(screen.getByRole("button", { name: "+ Tag" }));
     const input = within(screen.getByRole("dialog", { name: "Add a tag" })).getByLabelText("Tag name");

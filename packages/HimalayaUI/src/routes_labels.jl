@@ -48,7 +48,9 @@ function inherit_labels!(db, req, loser_id::Int, survivor_id::Int, exp_id::Int)
     for r in Tables.rowtable(DBInterface.execute(db,
             "SELECT label FROM sample_labels WHERE sample_id = ? AND state = 'confirmed' ORDER BY id",
             [loser_id]))
-        add_label!(db, req, survivor_id, String(r.label), exp_id)
+        label = String(r.label)
+        _label_state(db, survivor_id, label) == "removed" && continue
+        add_label!(db, req, survivor_id, label, exp_id)
     end
 end
 

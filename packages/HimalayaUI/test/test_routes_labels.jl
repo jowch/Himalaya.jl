@@ -141,6 +141,19 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
         @test live == Set([(a, "37C", "confirmed"), (a, "retake", "removed"), (b, "buffer", "confirmed")])
     end
 
+    @testset "a removed suggestion is rebuilt from the log as removed" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a,)) = _seed_label_samples(db, 1)
+        DBInterface.execute(db,
+            "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, 'buffer', 'suggested', 'ingest')", [a])
+        with_inproc_routes(db) do call
+            _remove_label(call, a, "buffer")
+        end
+        DBInterface.execute(db, "DELETE FROM sample_labels")
+        HimalayaUI.rebuild_views_from_log!(db, a; entity_type = "sample")
+        @test _label_rows(db) == Set([(a, "buffer", "removed")])
+    end
+
     @testset "adding a label broadcasts one SSE frame carrying the experiment" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a,)) = _seed_label_samples(db, 1)
@@ -161,13 +174,16 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
         @test occursin("\"label\":\"37C\"", only(added))
     end
 
-    @testset "merging a sample carries its labels to the survivor" begin
+    @testset "merging a sample carries its labels to the survivor, except ones removed there" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b)) = _seed_label_samples(db, 2)
         with_inproc_routes(db) do call
             _add_label(call, a, "37C")
             _add_label(call, b, "37c")
             _add_label(call, b, "retake")
+            _add_label(call, b, "hot")
+            _add_label(call, a, "hot")
+            _remove_label(call, a, "hot")
             r = call("POST", "/api/samples/$b/merge"; headers=_LABEL_HEADERS,
                      body=Vector{UInt8}(JSON3.write(Dict(:survivor_id => a))))
             @test r.status == 200
