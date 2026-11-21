@@ -51,6 +51,8 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/scan", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "complete", experiment_id: 17, changed: false }) }));
+  await page.route("**/api/experiments/17/labels", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/loads", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/samples", (route) => {
