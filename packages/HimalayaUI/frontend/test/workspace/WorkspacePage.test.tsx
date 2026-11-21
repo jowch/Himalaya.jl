@@ -552,14 +552,16 @@ describe("WorkspacePage", () => {
     ];
     renderAt("/experiments/1/workspace/10");
     const row = screen.getByTestId("workspace-tags");
-    expect([...row.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-state")])).toEqual([
+    const chips = screen.getByTestId("workspace-tag-chips");
+    expect([...chips.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-state")])).toEqual([
       ["37C", "confirmed"],
       ["buffer", "suggested"],
     ]);
-    const buffer = row.querySelector("[data-tag='buffer']");
+    const buffer = chips.querySelector<HTMLElement>("[data-tag='buffer']")!;
     expect(buffer).toHaveAttribute("data-tag-standard", "true");
-    expect(buffer?.textContent).toBe("Buffer×");
-    expect(row.querySelector("[data-tag='37C']")).not.toHaveAttribute("data-tag-standard");
+    expect(within(buffer).getByText("Buffer")).toBeInTheDocument();
+    expect(within(chips.querySelector<HTMLElement>("[data-tag='37C']")!).queryByText(", suggested")).toBeNull();
+    expect(chips.querySelector("[data-tag='37C']")).not.toHaveAttribute("data-tag-standard");
     fireEvent.click(within(row).getByRole("button", { name: "Confirm tag Buffer" }));
     fireEvent.click(within(row).getByRole("button", { name: "Remove tag 37C" }));
     expect(calls).toEqual([
@@ -608,13 +610,11 @@ describe("WorkspacePage", () => {
     expect(within(list).getByText("A4")).toBeInTheDocument();
   });
 
-  it("keeps the tag row mounted on one line even with no tags and no user, so the plot below never moves", () => {
+  it("keeps the tag row mounted with no tags and no user, so the plot below never moves", () => {
     state.username = undefined;
     renderAt("/experiments/1/workspace/11");
     const row = screen.getByTestId("workspace-tags");
-    expect(row.className).toMatch(/\bh-7\b/);
-    expect(row.className).toMatch(/\bflex-nowrap\b/);
-    expect(screen.getByTestId("workspace-tag-chips").className).toMatch(/\boverflow-hidden\b/);
+    expect(row.querySelector("[data-testid='workspace-tag-chips'] [data-tag]")).toBeNull();
   });
 
   it("offers no tag editing before a user is set", () => {
