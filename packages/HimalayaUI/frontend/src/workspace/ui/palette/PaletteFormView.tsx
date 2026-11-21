@@ -17,6 +17,7 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
   const refs = useRef<(HTMLElement | null)[]>([]);
   const errors = fieldErrors(form.fields, values);
   const field = form.fields[focus]!;
+  const wide = form.fields.length === 1 && field.kind === "text";
   const shownError = tried ? errors[field.id] : undefined;
 
   useEffect(() => {
@@ -80,7 +81,7 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
                 setFocus(i);
                 refs.current[i]?.focus();
               }}
-              className={"inline-flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 " + (on ? "bg-plate " : "bg-paper-sunk ") + ring}
+              className={"inline-flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 " + (wide ? "flex-1 " : "") + (on ? "bg-plate " : "bg-paper-sunk ") + ring}
             >
               <span className="text-xs text-ink-faint">{f.label}</span>
               {f.kind === "text" ? (
@@ -96,11 +97,11 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
                   aria-describedby={bad && on ? errorId : undefined}
                   value={values[f.id] ?? ""}
                   placeholder={f.placeholder}
-                  size={Math.max(3, Math.min(28, (values[f.id] || f.placeholder || "").length + 1))}
+                  size={wide ? 1 : Math.max(3, Math.min(28, (values[f.id] || f.placeholder || "").length + 1))}
                   onChange={(e) => set(f.id, e.target.value)}
                   onFocus={() => setFocus(i)}
                   onKeyDown={onKeyDown}
-                  className="min-w-[2ch] bg-transparent text-lg text-ink placeholder:text-ink-faint focus:outline-none"
+                  className={"min-w-[2ch] bg-transparent text-lg text-ink placeholder:text-ink-faint focus:outline-none" + (wide ? " flex-1" : "")}
                 />
               ) : (
                 <span

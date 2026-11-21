@@ -36,6 +36,9 @@ import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import {
   updateSampleMutator,
 } from "../../src/lib/queue/mutators/trivial";
+import {
+  addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator,
+} from "../../src/lib/queue/mutators/labels";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
@@ -48,6 +51,9 @@ const ASSIGNMENT_KEYS = new Set([
 ]);
 const SAMPLE_KEYS = new Set([
   "id", "experiment_id", "name", "display_name", "notes",
+]);
+const SAMPLE_LABEL_KEYS = new Set([
+  "id", "sample_id", "label", "state", "source",
 ]);
 const INDEX_ENTRY_KEYS = new Set([
   "id", "exposure_id", "phase", "basis", "score", "r_squared",
@@ -429,6 +435,31 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const after = qc.getQueryData<{ id: number; source: string; excluded: boolean }[]>(queryKeys.peaks(5))!;
     expect(after.find(p => p.source === "auto")!.excluded).toBe(true);
     expect(after.find(p => p.source === "manual")!.excluded).toBe(false);
+  });
+
+  it.each([
+    ["addLabel", addLabelMutator, "add_label"],
+    ["removeLabel", removeLabelMutator, "remove_label"],
+    ["restoreLabelSuggestion", restoreLabelSuggestionMutator, "restore_label_suggestion"],
+  ] as const)("%s writes SampleLabel rows with exactly 5 keys, optimistic and confirmed", async (_name, mutator, kind) => {
+    qc.setQueryData(queryKeys.labels(1), [
+      { id: 3, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+    ]);
+    const server = [
+      { id: 3, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+    ];
+    const flat = {
+      kind, clientOpId: `op-${kind}`, payload: {},
+      sampleId: 10, label: "Buffer", experimentId: 1, username: "alice", clientId: "tab-1",
+    };
+    mutator.onMutate(flat, qc);
+    for (const row of qc.getQueryData<object[]>(queryKeys.labels(1))!) assertKeys(row, SAMPLE_LABEL_KEYS, `${kind} optimistic row`);
+    mockFetchOnce(server, 200);
+    await runMutator(qc, mutator, flat);
+    const rows = qc.getQueryData<object[]>(queryKeys.labels(1))!;
+    expect(rows).toEqual(server);
+    for (const row of rows) assertKeys(row, SAMPLE_LABEL_KEYS, `${kind} confirmed row`);
   });
 
 });

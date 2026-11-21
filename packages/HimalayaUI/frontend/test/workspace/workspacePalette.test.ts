@@ -30,6 +30,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     rescan: undefined,
     problems: undefined,
     removeExperiment: undefined,
+    settings: undefined,
     home: noop,
     theme: { current: "system", choose: noop },
     user: { name: "jc", switch: noop },
@@ -129,5 +130,41 @@ describe("workspacePalette", () => {
     expect(recolour).not.toHaveBeenCalled();
     form.submit({ color: "green" });
     expect(recolour).toHaveBeenCalledWith("37C", "green");
+  });
+
+  it("lists the experiment name and description on the Settings page only when the user can edit", () => {
+    const save = vi.fn();
+    expect(workspacePalette(input()).pages.settings).toBeUndefined();
+    const { groups, pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save } }));
+    expect(groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "settings")?.page).toBe("settings");
+    expect(pages.settings!.items.map((i) => [i.label, i.value])).toEqual([
+      ["Name", "Beamtime 11"],
+      ["Description", ""],
+    ]);
+  });
+
+  it("saves a trimmed name only when it changed and refuses an empty one", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save } }));
+    const form = pages.settings!.items[0]!.form!();
+    expect(form.fields[0]!.check!("  ")).toBe("Type a name.");
+    form.submit({ v: " Beamtime 11 " });
+    expect(save).not.toHaveBeenCalled();
+    form.submit({ v: " Beamtime 12 " });
+    expect(save).toHaveBeenCalledWith({ name: "Beamtime 12" });
+  });
+
+  it("trims stray whitespace off a stored name when it is saved unchanged", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11 ", description: "", save } }));
+    pages.settings!.items[0]!.form!().submit({ v: "Beamtime 11 " });
+    expect(save).toHaveBeenCalledWith({ name: "Beamtime 11" });
+  });
+
+  it("clears the description to null when it is emptied", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "B", description: "Lipid screen", save } }));
+    pages.settings!.items[1]!.form!().submit({ v: "  " });
+    expect(save).toHaveBeenCalledWith({ description: null });
   });
 });
