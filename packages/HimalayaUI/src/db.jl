@@ -1124,7 +1124,7 @@ function migrate_sample_calls!(db::SQLite.DB)
         end
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-            [MIGRATION_SAMPLE_CALLS, comparison_now_iso()])
+            [MIGRATION_SAMPLE_CALLS, now_iso()])
     end
     nothing
 end
