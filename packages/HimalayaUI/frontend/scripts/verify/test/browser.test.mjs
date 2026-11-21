@@ -16,6 +16,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <button onclick="setTimeout(() => history.pushState({}, '', '/done'), 800)">Later</button>
   <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
   <button onclick="fetch('/hang')">Hang</button>
+  <button onclick="fetch('/quick')">Quick</button>
   <button onclick="fetch('/api/reject', { method: 'PATCH' })">Rejected</button>
   <button onclick="fetch('/api/reject', { method: 'PATCH' }); fetch('/hang')">StuckReject</button>
   <button onclick="setTimeout(() => { fetch('/api/reject', { method: 'PATCH' }); history.pushState({}, '', '/rejected'); }, 800)">DelayedReject</button>
@@ -76,6 +77,10 @@ before(async () => {
       return;
     }
     if (req.url === "/hang") return;
+    if (req.url === "/quick") {
+      res.end("quick");
+      return;
+    }
     if (req.url === "/broken") {
       res.setHeader("Content-Type", "text/html");
       res.end('<!doctype html><title>Broken</title><img src="/api/missing.png" alt="">');
@@ -253,3 +258,30 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   ({ code, r } = await run("snapshot"));
   assert.equal(code, 1);
 });
+
+test("VERIFY_THROTTLE slows every request the command waits on, and the result says so", { skip, timeout: 60000 }, async () => {
+  const plain = cfg;
+  try {
+    let { code, r } = await run("open", "/");
+    assert.equal(code, 0, JSON.stringify(r));
+    assert.equal(r.throttle, null);
+    ({ code, r } = await run("click", "--role", "button", "--name", "Quick"));
+    const unthrottled = r.settle.ms;
+    cfg = loadConfig({ ...cfgEnv(plain), VERIFY_THROTTLE: "1mbit,600ms" });
+    ({ code, r } = await run("click", "--role", "button", "--name", "Quick"));
+    assert.equal(code, 0, JSON.stringify(r));
+    assert.deepEqual(r.throttle, { mbit: 1, latencyMs: 600 });
+    assert.ok(r.settle.ms >= unthrottled + 300, `settled after ${r.settle.ms} ms throttled, ${unthrottled} ms without`);
+    cfg = plain;
+    ({ code, r } = await run("click", "--role", "button", "--name", "Quick"));
+    assert.equal(code, 0, JSON.stringify(r));
+    assert.equal(r.throttle, null);
+    assert.ok(r.settle.ms < unthrottled + 300, `settled after ${r.settle.ms} ms once unthrottled again, ${unthrottled} ms before`);
+  } finally {
+    cfg = plain;
+  }
+});
+
+function cfgEnv(c) {
+  return { DEMO_UI_PORT: String(c.uiPort), DEMO_API_PORT: String(c.apiPort), VERIFY_CDP_PORT: String(c.cdpPort), VERIFY_STATE_DIR: c.stateDir };
+}

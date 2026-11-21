@@ -37,7 +37,8 @@ export async function prepareUser(page, cfg, { username, onboarding }) {
 export async function withPage(cfg, fn) {
   const session = await connect(cfg);
   try {
-    return await fn(session.page);
+    const result = await fn(session.page);
+    return result && typeof result === "object" && !Array.isArray(result) ? { ...result, throttle: cfg.throttle } : result;
   } finally {
     await session.browser.close().catch(() => undefined);
   }

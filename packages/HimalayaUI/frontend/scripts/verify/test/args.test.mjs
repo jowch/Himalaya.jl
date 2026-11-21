@@ -25,3 +25,13 @@ test("a string option without a value is an error", () => {
 test("a boolean option with a value is an error", () => {
   assert.throws(() => parseArgs(["--exact=yes"], spec), /takes no value/);
 });
+
+test("parseThrottle reads link speed and latency, and refuses anything else", async () => {
+  const { parseThrottle } = await import("../throttle.mjs");
+  assert.equal(parseThrottle(undefined), null);
+  assert.equal(parseThrottle(""), null);
+  assert.deepEqual(parseThrottle("20mbit,30ms"), { mbit: 20, latencyMs: 30 });
+  assert.deepEqual(parseThrottle(" 2.5mbit , 0ms "), { mbit: 2.5, latencyMs: 0 });
+  assert.throws(() => parseThrottle("fast"), /VERIFY_THROTTLE/);
+  assert.throws(() => parseThrottle("0mbit,30ms"), /VERIFY_THROTTLE/);
+});
