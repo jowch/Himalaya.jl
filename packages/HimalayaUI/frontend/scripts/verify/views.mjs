@@ -97,6 +97,16 @@ async function currentWorkspaceFrame(page, frameOrder) {
   return frameFromLabels(labels, frameOrder);
 }
 
+export function openSampleBy(currentUrl, experimentId, sampleId) {
+  let path = null;
+  try {
+    path = new URL(currentUrl).pathname;
+  } catch {
+    path = null;
+  }
+  return path === WORKSPACE_ROUTE(experimentId, sampleId) ? { goto: WORKSPACE_ROUTE(experimentId, sampleId) } : { click: true };
+}
+
 export async function readWorkspace(page, cfg, experimentId, samples) {
   const out = new Map();
   if (!samples.length) return out;
@@ -113,11 +123,16 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
     let kept = null;
     let rail = null;
     if (await row.count()) {
-      const tracker = armSettle(page);
-      await row.click();
-      const settle = await tracker.wait({ timeoutMs: 20000 });
-      if (!settle.settled) throw new Error(`the workspace did not settle on sample ${s.id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-      failedRequests(settle, `the workspace on sample ${s.id}`);
+      const how = openSampleBy(page.url(), experimentId, s.id);
+      if (how.goto) {
+        await settledGoto(page, cfg, how.goto);
+      } else {
+        const tracker = armSettle(page);
+        await row.click();
+        const settle = await tracker.wait({ timeoutMs: 20000 });
+        if (!settle.settled) throw new Error(`the workspace did not settle on sample ${s.id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
+        failedRequests(settle, `the workspace on sample ${s.id}`);
+      }
       frame = await currentWorkspaceFrame(page, s.frameOrder);
       kept = await workspaceKept(page);
       rail = await workspaceRail(page);
