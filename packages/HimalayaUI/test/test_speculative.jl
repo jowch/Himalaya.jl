@@ -385,22 +385,6 @@ end
     p2 = Int(peaks[2].id)
 
     with_inproc_routes(db) do call
-        # Snap endpoint
-        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Lamellar&anchor_peak_id=$p1&anchor_ratio=1")
-        @test r.status == 200
-        snaps = JSON3.read(String(r.body))
-        @test length(snaps) >= 2
-        @test snaps[1].ratio_position == 1
-        @test snaps[1].is_anchor === true
-
-        # Bad phase
-        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Bogus&anchor_peak_id=$p1")
-        @test r.status == 400
-
-        # Missing anchor
-        r = call("GET", "/api/exposures/$e_id/speculative-snap?phase=Lamellar")
-        @test r.status == 400
-
         # Create speculative
         body = Dict(:phase => "Lamellar",
                     :anchor_peak_id => p1, :anchor_ratio => 1,
@@ -431,8 +415,8 @@ end
         r = call("DELETE", "/api/indices/$new_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
-        r2 = call("GET", "/api/indices/$new_id")
-        @test r2.status == 404
+        @test isempty(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM indices WHERE id = ?", [new_id])))
         # Group membership and index_peaks gone
         rs = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM index_group_members WHERE index_id = ?", [new_id]))

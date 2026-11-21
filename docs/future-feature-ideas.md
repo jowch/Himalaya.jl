@@ -295,10 +295,6 @@ across the three surfaces it appears on:
 - **Modal add-row ignores Enter (A1).** In `ManageTagsModal` the `onCommit`
   on the key/value `TagSuggest` fields only updates local state — it never
   calls `handleAdd`; the user must click **Add**. Enter should commit.
-- **`SamplesPage` renders an `editable` `TagList` with no handlers wired
-  (A3).** It passes no `onAddTag`/`onRemoveTag` to `SampleTableRow`, so the
-  edit affordance is a lie on the contact sheet — either wire it or render
-  read-only there.
 
 ### Stale-indices banner
 
@@ -476,35 +472,12 @@ acquisition never wrote down.
 Open gaps surfaced by the greenfield holistic audit (work itself shipped to
 GOLD; these were the deliberately-deferred tail).
 
-### Sample doors are not real links
-
-Every sample door (name, frames, "Index") in `SampleTableRow` is a
-`<button onClick>` (`onOpenLoupe` / `onOpenFocus` → `navigate()`), never an
-`<a href>`. So Cmd-click / middle-click / open-in-new-tab is impossible
-anywhere in the corpus contact sheet — a real cost for a tool whose primary
-workflow is comparing samples side by side. Wants real hrefs on the doors.
-
-### Cross-surface keyboard consistency
-
-Two parallel sample-switchers exist — `[`/`]` on Loupe and `,`/`.` on the
-Focus stepper — neither shown on both surfaces (B4: unify into one set).
-The Samples contact-sheet X/K legend only appears once exposures are
-selected, so a first-timer never discovers the gesture (B5: show a resting
-hint).
-
 ## Frontend infrastructure
 
 ### Code splitting
 
 Vite warns the bundle is >500 kB. Probably split: NavModal +
 OnboardingFlow as lazy chunks.
-
-### Virtualize the samples contact sheet
-
-`SamplesPage` mounts every sample row with no windowing (fine at the
-~139-sample dev corpus, flagged as the highest-leverage perf item at
-~678 thumbnails). Adding `react-virtual` (or similar) is also the
-prerequisite for an accurate `aria-rowcount` on the roving grid.
 
 ### Semantic spacing / density scale
 

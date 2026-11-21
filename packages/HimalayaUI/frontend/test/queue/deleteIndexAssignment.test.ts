@@ -75,15 +75,12 @@ describe("deleteIndexMutator optimistic assignment drop", () => {
 });
 
 /**
- * Cross-language constant pin.
- *
- * `CUSTOM_SNAP_TOL` (speculative.jl) and `landsOn`'s default `relTol`
- * (lib/customIndex.ts) MUST be equal: the modal counts "N of M land" with one
- * and the backend claims peaks with the other, so a drift between them means
- * the commit claims a different set than the user was shown — the exact bug
- * this PR fixes. Both docstrings say MUST; nothing enforced it.
+ * Cross-language constant pin: the workspace claims peaks client-side with
+ * `claimPeaks` (default tol `CUSTOM_SNAP_TOL`) and the backend claims them with
+ * speculative.jl's `CUSTOM_SNAP_TOL`. A drift means the commit claims a
+ * different set than the user was shown.
  */
-describe("CUSTOM_SNAP_TOL ↔ landsOn relTol", () => {
+describe("CUSTOM_SNAP_TOL ↔ claimPeaks tol", () => {
   it("the Julia constant equals the TS default", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
@@ -97,13 +94,15 @@ describe("CUSTOM_SNAP_TOL ↔ landsOn relTol", () => {
 
     const jlTol = jl.match(/^const CUSTOM_SNAP_TOL = ([0-9.]+)/m)?.[1];
     const tsTol = ts.match(/^export const CUSTOM_SNAP_TOL = ([0-9.]+);/m)?.[1];
-    const landsOnDefault = /export function landsOn\([^)]*relTol = CUSTOM_SNAP_TOL\)/s.test(ts);
+    const indexing = fs.readFileSync(
+      path.join(root, "packages/HimalayaUI/frontend/src/workspace/indexing.ts"), "utf8");
+    const claimDefault = /export function claimPeaks\([^)]*tol = CUSTOM_SNAP_TOL\)/s.test(indexing);
 
     // A null here means the constant was renamed or reformatted — fix the
     // regex AND re-check the pairing, don't delete the test.
     expect(jlTol, "CUSTOM_SNAP_TOL not found in speculative.jl").not.toBeUndefined();
     expect(tsTol, "CUSTOM_SNAP_TOL not found in customIndex.ts").not.toBeUndefined();
     expect(Number(jlTol)).toBe(Number(tsTol));
-    expect(landsOnDefault, "landsOn must default relTol to CUSTOM_SNAP_TOL").toBe(true);
+    expect(claimDefault, "claimPeaks must default tol to CUSTOM_SNAP_TOL").toBe(true);
   });
 });

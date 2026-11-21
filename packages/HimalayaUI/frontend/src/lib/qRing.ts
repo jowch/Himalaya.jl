@@ -14,25 +14,3 @@ export const RING_R_MIN = 12;
 /** Radial span from qLo..qHi, mockup parity (12..45). */
 export const RING_R_SPAN = 33;
 
-/** Map a q-value to a normalized ring radius in the 100x100 viewBox. */
-export function qToRadius(q: number, qLo: number, qHi: number): number {
-  if (qHi <= qLo) return RING_R_MIN;
-  const t = (q - qLo) / (qHi - qLo);
-  return RING_R_MIN + t * RING_R_SPAN;
-}
-
-/** The peak q nearest `hoveredQ` within `tol`, else undefined (match-highlight). */
-export function nearestRingQ(
-  hoveredQ: number | undefined,
-  peakQs: number[],
-  tol: number,
-): number | undefined {
-  if (hoveredQ === undefined) return undefined;
-  let best: number | undefined;
-  let bestD = Infinity;
-  for (const q of peakQs) {
-    const d = Math.abs(q - hoveredQ);
-    if (d <= tol && d < bestD) { best = q; bestD = d; }
-  }
-  return best;
-}

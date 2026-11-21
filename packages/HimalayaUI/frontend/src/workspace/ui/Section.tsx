@@ -26,9 +26,9 @@ export function MainSection({ title, hint, children }: { title: string; hint?: R
 
 export function SampleHeading({ name, meta }: { name: string; meta?: ReactNode }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-baseline gap-3 px-3.5 pb-1 pt-2.5">
-      <h2 className="m-0 text-xl font-normal leading-tight text-ink">{name}</h2>
-      {meta && <span className="text-base text-ink-faint">{meta}</span>}
+    <div className="flex min-w-0 items-baseline gap-3 px-3.5 pb-1 pt-2.5">
+      <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink" title={name}>{name}</h2>
+      {meta && <span className="shrink-0 whitespace-nowrap text-base text-ink-faint">{meta}</span>}
     </div>
   );
 }

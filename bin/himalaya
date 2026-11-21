@@ -45,11 +45,12 @@ done
 
 SYSIMAGE="$REPO/build/himalaya.so"
 PROJECT="$REPO/packages/HimalayaUI"
+THREADS="--threads=${JULIA_NUM_THREADS:-4,1}"
 
 if [ -f "$SYSIMAGE" ]; then
-    exec julia --project="$PROJECT" --sysimage="$SYSIMAGE" \
+    exec julia "$THREADS" --project="$PROJECT" --sysimage="$SYSIMAGE" \
                -e 'using HimalayaUI; main(ARGS)' -- "$@"
 else
-    exec julia --project="$PROJECT" \
+    exec julia "$THREADS" --project="$PROJECT" \
                -e 'using HimalayaUI; main(ARGS)' -- "$@"
 fi

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { PLOT_VIEWS, applyView, usePlotView, viewAxes, viewIntensity } from "../../src/workspace/plotView";
+import { PLOT_VIEWS, usePlotView, viewAxes, viewIntensity } from "../../src/workspace/plotView";
 
 describe("plot views", () => {
   beforeEach(() => window.localStorage.clear());
@@ -19,17 +19,6 @@ describe("plot views", () => {
   it("multiplies intensity by q² only in the q²I view", () => {
     expect(viewIntensity("kratky", 0.2, 50)).toBeCloseTo(2);
     for (const v of ["log", "linear", "loglog"] as const) expect(viewIntensity(v, 0.2, 50)).toBe(50);
-  });
-
-  it("transforms a trace's intensity and error together and leaves q alone", () => {
-    const t = { q: [0.1, 0.2], I: [100, 50], sigma: [10, 5] };
-    const k = applyView("kratky", t);
-    expect(k.q).toEqual([0.1, 0.2]);
-    expect(k.I[0]).toBeCloseTo(1);
-    expect(k.I[1]).toBeCloseTo(2);
-    expect(k.sigma[0]).toBeCloseTo(0.1);
-    expect(k.sigma[1]).toBeCloseTo(0.2);
-    expect(applyView("log", t)).toBe(t);
   });
 
   it("remembers the chosen view and falls back to log for anything unknown", () => {

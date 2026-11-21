@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
-  useSamples, useUpdateSample, useAddSampleTag, useRemoveSampleTag, queryKeys,
+  useSamples, useAddSampleTag, useRemoveSampleTag, queryKeys,
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
 
@@ -42,23 +42,6 @@ describe("queries — sample mutations (queue-driven)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     pendingDeferreds.clear();
-  });
-
-  it("useUpdateSample writes the server response into the samples cache on success", async () => {
-    const { client, wrapper } = withClient();
-    client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [
-      { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: "", tags: [] },
-    ]);
-    mockOnce(200, { id: 10, experiment_id: 1, display_name: null, name: "s1",
-                    notes: "updated", tags: [] });
-    const { result } = renderHook(
-      () => useUpdateSample(EXPERIMENT_ID, 10), { wrapper },
-    );
-    act(() => { result.current.mutate({ notes: "updated" }); });
-    await waitFor(() => {
-      const list = client.getQueryData(queryKeys.samples(EXPERIMENT_ID)) as Array<{ notes: string }>;
-      expect(list[0].notes).toBe("updated");
-    });
   });
 
   it("useAddSampleTag appends an optimistic placeholder, replaced by server tag", async () => {
