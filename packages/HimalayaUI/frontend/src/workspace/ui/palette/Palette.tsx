@@ -1,7 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Kbd } from "../Kbd";
 import { Overlay } from "../Overlay";
-import { pageRows, pickable, rootRows, type PaletteGroup, type PaletteItem, type PalettePage, type PaletteRow } from "./model";
+import { useListHighlight } from "../useListHighlight";
+import { pageRows, pickable, rootRows, sections, type PaletteGroup, type PaletteItem, type PalettePage, type PaletteRow } from "./model";
+import { PaletteFooter } from "./PaletteFooter";
 
 interface Level {
   page: string;
@@ -18,34 +20,26 @@ interface Props {
 export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   const [stack, setStack] = useState<Level[]>([]);
   const [query, setQuery] = useState("");
-  const [cursor, setCursor] = useState(0);
   const listId = useId();
-  const list = useRef<HTMLUListElement | null>(null);
+  const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
-  const live = stack.filter((l) => pages[l.page] !== undefined);
-  const page = live.length > 0 ? pages[live[live.length - 1]!.page] : undefined;
+  const top = stack[stack.length - 1];
+  const page = top ? pages[top.page] : undefined;
   const rows = useMemo<PaletteRow[]>(() => (page ? pageRows(page, query) : rootRows(groups, pages, query)), [page, groups, pages, query]);
   const picks = useMemo(() => pickable(rows), [rows]);
-  const at = Math.min(cursor, Math.max(0, picks.length - 1));
   const optionId = (i: number): string => `${listId}-${i}`;
 
-  useEffect(() => {
-    const el = list.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-    el?.scrollIntoView?.({ block: "nearest" });
-  }, [at, rows]);
-  useEffect(() => input.current?.focus(), [live.length]);
-
-  const open = (id: string): void => {
-    setStack([...live, { page: id, query, cursor: at }]);
-    setQuery("");
-    setCursor(0);
-  };
   const back = (): void => {
-    const prev = live[live.length - 1];
+    const prev = stack[stack.length - 1];
     if (!prev) return onClose();
-    setStack(live.slice(0, -1));
+    setStack(stack.slice(0, -1));
     setQuery(prev.query);
-    setCursor(prev.cursor);
+    highlight.setAt(prev.cursor);
+  };
+  const open = (id: string): void => {
+    setStack([...stack, { page: id, query, cursor: highlight.at }]);
+    setQuery("");
+    highlight.setAt(0);
   };
   const choose = (item: PaletteItem | undefined): void => {
     if (!item) return;
@@ -54,29 +48,31 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
     onClose();
     item.run();
   };
-  const step = (d: number, wrap: boolean): void => {
-    const n = picks.length;
-    if (n === 0) return;
-    setCursor(wrap ? (at + d + n) % n : Math.max(0, Math.min(n - 1, at + d)));
-  };
+  const highlight = useListHighlight({ count: picks.length, onCommit: (i) => choose(picks[i]?.item), onEscape: back });
+  const at = highlight.at;
+
+  useEffect(() => {
+    const gone = stack.findIndex((l) => pages[l.page] === undefined);
+    if (gone < 0) return;
+    setStack(stack.slice(0, gone));
+    setQuery(stack[gone]!.query);
+    highlight.setAt(stack[gone]!.cursor);
+  }, [stack, pages, highlight]);
+  useEffect(() => {
+    const el = list.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    el?.scrollIntoView?.({ block: "nearest" });
+  }, [at, rows]);
+  useEffect(() => input.current?.focus(), [stack.length]);
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (highlight.onKeyDown(e)) return;
+    if (e.key === "Backspace" && query === "" && page && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      step(e.key === "ArrowDown" ? 1 : -1, false);
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      step(e.shiftKey ? -1 : 1, true);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      choose(picks[at]?.item);
-    } else if (e.key === "Backspace" && query === "" && page) {
-      e.preventDefault();
-      back();
+      if (!e.repeat) back();
     }
   };
 
-  const crumbs = live.slice(0, page?.arg ? -1 : undefined).map((l) => pages[l.page]!.title);
+  const crumbs = stack.slice(0, page?.arg ? -1 : undefined).flatMap((l) => (pages[l.page] ? [pages[l.page]!.title] : []));
   const field = (
     <input
       ref={input}
@@ -92,16 +88,15 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
       value={query}
       onChange={(e) => {
         setQuery(e.target.value);
-        setCursor(0);
+        highlight.setAt(0);
       }}
       onKeyDown={onKeyDown}
       placeholder={page ? (page.placeholder ?? "Type to filter") : "Type a command or a sample"}
       className="h-full min-w-0 flex-1 bg-transparent text-lg text-ink placeholder:text-ink-faint focus:outline-none"
     />
   );
-  let index = -1;
   return (
-    <Overlay label={page ? page.title : "Commands"} onClose={onClose} closeKeys={[]} onKey={(key) => key === "Escape" && (back(), true)} testId="workspace-palette">
+    <Overlay label={page ? page.title : "Commands"} onClose={onClose} closeKeys={[]} testId="workspace-palette">
       <div className="flex h-12 items-center gap-2 overflow-hidden border-b border-hair px-3" data-testid="workspace-palette-bar">
         {crumbs.map((t, i) => (
           <span key={i} className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-sm bg-paper-sunk px-2 text-base text-ink-soft">
@@ -120,49 +115,45 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
           field
         )}
       </div>
-      <ul ref={list} id={listId} role="listbox" aria-label={page ? page.title : "Matching commands"} className="max-h-[50vh] overflow-y-auto p-1">
-        {rows.map((r, ri) => {
-          if (r.kind === "head") {
-            return (
-              <li key={`h-${ri}`} role="presentation" className="px-2 pb-1 pt-2.5 text-xs text-ink-faint">
-                {r.title}
-              </li>
-            );
-          }
-          const i = ++index;
-          const { item, path } = r;
-          return (
-            <li
-              key={`${path ?? ""}${item.id}`}
-              id={optionId(i)}
-              role="option"
-              aria-selected={i === at}
-              aria-label={`${path ? `${path} › ` : ""}${item.label}${item.hint ? `, ${item.hint}` : ""}`}
-              data-palette-item={item.id}
-              onMouseEnter={() => setCursor(i)}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => choose(item)}
-              className={
-                "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
-                (i === at ? "bg-row-cursor" : "")
-              }
-            >
-              <span className={"truncate " + (item.danger ? "text-error" : "")}>
-                {path && <span className="text-ink-faint">{path} › </span>}
-                {item.label}
-              </span>
-              <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
-              <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page ? "›" : null}</span>
-            </li>
-          );
-        })}
-        {picks.length === 0 && <li className="px-2 py-2 text-xs text-ink-faint">{page?.empty ?? "No match."}</li>}
-      </ul>
-      <div className="flex min-h-8 flex-wrap items-center gap-4 border-t border-hair px-3 text-xs text-ink-faint">
-        <span className="inline-flex items-center gap-1.5"><Kbd>↵</Kbd> {page ? "pick" : "run"}</span>
-        <span className="inline-flex items-center gap-1.5"><Kbd>↑ ↓</Kbd> move</span>
-        <span className="inline-flex items-center gap-1.5"><Kbd>Esc</Kbd> {page ? "back" : "close"}</span>
+      <div ref={list} className="max-h-[50vh] overflow-y-auto p-1">
+        <div id={listId} role="listbox" aria-label={page ? page.title : "Matching commands"}>
+          {sections(rows).map((sec, si) => (
+            <div key={si} role="group" aria-labelledby={sec.title ? `${listId}-g${si}` : undefined} aria-label={sec.title ? undefined : page?.title}>
+              {sec.title && (
+                <div id={`${listId}-g${si}`} role="presentation" className="px-2 pb-1 pt-2.5 text-xs text-ink-faint">
+                  {sec.title}
+                </div>
+              )}
+              {sec.rows.map(({ item, path, index: i }) => (
+                <div
+                  key={`${path ?? ""}${item.id}`}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={i === at}
+                  aria-label={`${path ? `${path} › ` : ""}${item.label}${item.hint ? `, ${item.hint}` : ""}`}
+                  data-palette-item={item.id}
+                  onMouseEnter={() => highlight.setAt(i)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(item)}
+                  className={
+                    "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
+                    (i === at ? "bg-row-cursor" : "")
+                  }
+                >
+                  <span className={"truncate " + (item.danger ? "text-error" : "")}>
+                    {path && <span className="text-ink-faint">{path} › </span>}
+                    {item.label}
+                  </span>
+                  <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
+                  <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page ? "›" : null}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        {picks.length === 0 && <p className="px-2 py-2 text-xs text-ink-faint">{page?.empty ?? "No match."}</p>}
       </div>
+      <PaletteFooter keys={[["↵", page ? "pick" : "run"], ["Tab", "move"], ["Esc", page ? "back" : "close"]]} />
     </Overlay>
   );
 }

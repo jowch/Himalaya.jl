@@ -61,7 +61,7 @@ import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
-import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, storedFit, type CustomDraft } from "./indexing";
+import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
 import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
 import { WorkspaceHeader } from "./ui/WorkspaceHeader";
@@ -78,7 +78,6 @@ import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { LabelRow } from "./ui/LabelRow";
-import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -128,10 +127,6 @@ function helpSections(mod: string): HelpSection[] {
 
 const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 const HELP = helpSections(MOD_KEY);
-
-function latticeParam(phase: string): string {
-  return SYMS[phase]?.param ?? "a";
-}
 
 function exposureRows(e: Exposure): [string, string][] {
   const rows: [string, string][] = [["File", e.filename ?? "—"]];
@@ -612,9 +607,13 @@ export function WorkspacePage(): JSX.Element {
         ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
         : "This sample is not in this experiment.";
 
+  const addReference = (rid: number): void => {
+    setRefs((r) => addCompare(r, rid));
+    if (subRef === undefined) setSubRef(rid);
+    setRefsOn(true);
+  };
   const palette = workspacePalette({
     modKey: MOD_KEY,
-    sampleName: sample?.name,
     canEdit: Boolean(username && sample),
     nextUnreviewed: () => {
       const nid = nextUnreviewed(visible, sampleId, 1);
@@ -623,11 +622,7 @@ export function WorkspacePage(): JSX.Element {
     compare: {
       samples: pickable,
       notes: bufferNotes,
-      pick: (rid) => {
-        setRefs((r) => addCompare(r, rid));
-        if (subRef === undefined) setSubRef(rid);
-        setRefsOn(true);
-      },
+      pick: addReference,
     },
     bridge: {
       samples: bridgePickable,
@@ -773,11 +768,7 @@ export function WorkspacePage(): JSX.Element {
                 <ComparePicker
                   samples={pickable}
                   notes={bufferNotes}
-                  onPick={(rid) => {
-                    setRefs((r) => addCompare(r, rid));
-                    if (subRef === undefined) setSubRef(rid);
-                    setRefsOn(true);
-                  }}
+                  onPick={addReference}
                   onClose={() => setPicking(false)}
                 />
               )}

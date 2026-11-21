@@ -44,7 +44,7 @@ describe("workspacePalette", () => {
     const items = pages.tick!.items;
     expect(items).toHaveLength(12);
     expect(items.map((i) => i.shortcut)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", undefined, undefined, undefined]);
-    expect(items[10]).toMatchObject({ label: "Ia3d 110.0 Å", hint: "Ticked" });
+    expect(items[10]).toMatchObject({ label: "Ia3d, a 110.0 Å", hint: "Ticked" });
     items[11]!.run!();
     expect(tick).toHaveBeenCalledWith(list[11]);
     expect(groups[0]!.items.find((i) => i.id === "tick")?.hint).toBe("12 candidates");
