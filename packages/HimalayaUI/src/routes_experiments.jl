@@ -363,7 +363,7 @@ function register_experiments_routes!()
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM experiments WHERE id = ?", [id]))
+            "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
@@ -377,11 +377,12 @@ function register_experiments_routes!()
         Threads.@spawn with_background_db(bg -> try_backfill_monitors!(bg, id), db)
         if !(force_scan || ingest_running(id) || ingest_has_work(db, id))
             return HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:status => "complete", :experiment_id => id, :changed => false)))
+                JSON3.write(Dict(:status => coalesce(first(rows).ingest_status, "complete"),
+                                 :experiment_id => id, :changed => false)))
         end
         phase = _ingest_phase(db, id)
         _set_ingest_status!(db, id, "scanning")
-        Threads.@spawn run_ingest!(db, id; phase)
+        Threads.@spawn run_ingest!(db, id; phase, force = force_scan)
 
         log_action!(db, req; action = "scan",
             entity_type = "experiment", entity_id = id)

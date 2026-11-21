@@ -141,7 +141,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     counting_time        REAL,
     monitors_read        INTEGER NOT NULL DEFAULT 0,
     analysis_version     TEXT,
-    analysis_error       TEXT
+    analysis_error       TEXT,
+    analysis_trace_stat  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -806,7 +807,7 @@ function migrate_exposures_ingest_state!(db::SQLite.DB)
     _migrated(db, MIGRATION_EXPOSURES_INGEST_STATE) && return nothing
     SQLite.transaction(db) do
         existing = cols_of(db, "exposures")
-        for name in ("analysis_version", "analysis_error")
+        for name in ("analysis_version", "analysis_error", "analysis_trace_stat")
             name in existing || DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN $name TEXT")
         end
         DBInterface.execute(db,

@@ -226,8 +226,11 @@ reads `data_dir`, `analysis_dir` and the patterns from the row, then:
    when the exposure completes and the integration pipeline writes the
    `_tot.dat` afterwards, so a scan can see an exposure before its trace. Such an
    exposure gets `analysis_error = 'no trace'` and is analyzed by the first pass
-   that finds the file. Any other failure is stored in `analysis_error` and the
-   scan moves on; it is not retried until the version changes.
+   that finds the file. Any other failure is stored in `analysis_error`, with the
+   trace file's size and mtime in `analysis_trace_stat`, and the scan moves on.
+   It is retried when that file changes (a half-copied trace that is copied
+   again), when the version changes, or by a forced pass. A trace rewritten
+   after a successful analysis is not picked up.
 6. **Prewarms** thumbnails for the experiment. A failure here never fails the
    scan.
 
@@ -249,21 +252,28 @@ back-fills beam monitors, runs `scan_and_group!`, and ends `complete` (stamping
 `ingest_has_work(db, id)` (`ingest.jl`) says whether a pass would change
 anything: an image (with its metadata file, when the folder has any) that has no
 exposure yet, an exposure whose trace has appeared, one never analyzed, or one
-analyzed by an older version. It costs one directory listing plus a stat per
-exposure still missing its trace.
+analyzed by an older version, or a failed one whose trace file has changed. It
+lists the image, metadata and trace directories once each and stats only
+failed exposures, because the scan route runs it inside the request, under the
+write lock. `scan_directory` and this check enumerate images through the same
+`tif_listing`, so they agree on which exposures exist.
 
 A pass runs:
 
 - **At create**, as above.
 - **When the experiment is opened.** The workspace calls
   `POST /api/experiments/:id/scan` once per opened experiment. With no work
-  the route answers `200 {status: "complete", changed: false}` and sends no
-  frames; otherwise it answers `202` and runs a pass. `{"force": true}` always
-  runs one. The Rescan palette command and the Configuration page's pattern
+  the route answers `200 {status, changed: false}` with the stored
+  `ingest_status` and sends no frames; otherwise it answers `202` and runs a
+  pass. `{"force": true}` always runs one and also retries every failed
+  analysis. The Rescan palette command and the Configuration page's pattern
   edit use the same route.
 - **At server start.** `resume_ingests!` runs a pass for every experiment left
   `scanning` by a restart or crash, and every experiment with work, which
   includes re-analysis after an upgrade that bumps `ANALYSIS_VERSION`.
+
+A pass with an unreachable or empty `data_dir` stops before the analysis step,
+so pending traces wait for the data folder as well as the analysis folder.
 
 There is no timer. Data is copied from the beamline and ingested after the
 beamtime, so checking on open is enough.

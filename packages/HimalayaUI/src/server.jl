@@ -214,7 +214,7 @@ once: a second caller waits, then runs its own pass, which is a cheap no-op when
 nothing changed in between. Returns `:ok` or `:failed`. Streams the ingest SSE frames; `phase`
 is `"rescan"` for every pass after the first.
 """
-function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Nothing} = nothing)
+function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Nothing} = nothing, force::Bool = false)
     lk = _ingest_lock(experiment_id)
     lock(lk)
     try
@@ -224,7 +224,7 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
             broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, extra...)
             try
                 try_backfill_monitors!(db, experiment_id)
-                scan_and_group!(db, experiment_id;
+                scan_and_group!(db, experiment_id; retry_failed = force,
                     on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
                         kind = "ingest_progress", processed = p, total = t, stage = stage, extra...))
                 _set_ingest_status!(db, experiment_id, "complete"; scanned = true)

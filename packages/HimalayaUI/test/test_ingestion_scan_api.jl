@@ -360,55 +360,93 @@ end
         end
     end
 
-    @testset "POST /api/experiments/{id}/scan no-change is idempotent" begin
+    @testset "POST /api/experiments/{id}/scan answers each case of its contract" begin
         db, dir, exp_id = scan_test_db()
-
-        with_test_server(db) do port, base
-            # First scan on empty dir: no files, should return 200 + changed=false
-            # (since scan_and_group! is Phase B and may not be present in test env,
-            #  the route must not crash when the directory has no matching files;
-            #  test the HTTP contract, not the full scan logic)
-            r = HTTP.post("$base/api/experiments/$exp_id/scan";
-                headers = ["X-Username" => "alice"],
-                status_exception = false)
-            # 200 or 202 are both acceptable (implementation may vary)
-            @test r.status in (200, 202)
-            body = JSON3.read(String(r.body))
-            @test haskey(body, :status)
-
-            # 404 for unknown experiment
-            r2 = HTTP.post("$base/api/experiments/999999/scan";
-                headers = ["X-Username" => "alice"],
-                status_exception = false)
-            @test r2.status == 404
+        pending = Channel{String}(256)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
         end
-        SQLite.close(db)
-    end
-
-    @testset "POST /api/experiments/{id}/scan with force=true returns 200/202 (HTTP contract)" begin
-        # Verifies that passing force=true in the JSON body is accepted and the route
-        # returns the expected status. The scan itself runs async so we test the HTTP
-        # contract only (same pattern as the no-change idempotent test above).
-        db, dir, exp_id = scan_test_db()
-        with_test_server(db) do port, base
-            r = HTTP.post("$base/api/experiments/$exp_id/scan";
-                body    = JSON3.write(Dict(:force => true)),
-                headers = ["Content-Type" => "application/json",
-                           "X-Username"   => "alice"],
-                status_exception = false)
-            @test r.status in (200, 202)
-            body_json = JSON3.read(String(r.body))
-            @test haskey(body_json, :status)
-            @test body_json.status == "scanning"
-
-            # force=false (explicit) also works
-            r2 = HTTP.post("$base/api/experiments/$exp_id/scan";
-                body    = JSON3.write(Dict(:force => false)),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r2.status in (200, 202)
+        kinds() = begin
+            out = String[]
+            while isready(pending)
+                frame = take!(pending)
+                lines = filter(l -> startswith(l, "data: "), split(frame, '\n'))
+                isempty(lines) && continue
+                obj = JSON3.read(replace(first(lines), r"^data: " => ""))
+                haskey(obj, :kind) && push!(out, String(obj.kind))
+            end
+            out
         end
-        SQLite.close(db)
+        wait_until(f; timeout = 30) = begin
+            t0 = time()
+            while !f() && time() - t0 < timeout
+                sleep(0.05)
+            end
+            f()
+        end
+        post(body = nothing) = HTTP.post(base_url[] * "/api/experiments/$exp_id/scan";
+            body = body === nothing ? UInt8[] : JSON3.write(body),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            status_exception = false)
+        status_of() = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT ingest_status FROM experiments WHERE id = ?", [exp_id]))).ingest_status
+        base_url = Ref("")
+        try
+            with_test_server(db) do port, base
+                base_url[] = base
+                DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'complete' WHERE id = ?", [exp_id])
+                kinds()
+
+                r = post()
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                @test body.status == "complete"
+                @test body.changed == false
+                sleep(0.5)
+                @test !("ingest_started" in kinds())
+
+                DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
+                r = post()
+                @test r.status == 200
+                @test JSON3.read(String(r.body)).status == "failed"
+                sleep(0.5)
+                @test !("ingest_started" in kinds())
+
+                write(joinpath(dir, "NEW_S0001_0_001.tif"), "fake tif")
+                r = post()
+                @test r.status == 202
+                @test JSON3.read(String(r.body)).status == "scanning"
+                @test wait_until(() -> status_of() == "complete")
+                seen = kinds()
+                @test "ingest_started" in seen
+                @test "ingest_complete" in seen
+
+                r = post()
+                @test r.status == 200
+                sleep(0.5)
+                @test !("ingest_started" in kinds())
+
+                r = post(Dict(:force => true))
+                @test r.status == 202
+                @test JSON3.read(String(r.body)).status == "scanning"
+                @test wait_until(() -> status_of() == "complete")
+                @test "ingest_started" in kinds()
+
+                r = post(Dict(:force => false))
+                @test r.status == 200
+
+                r404 = HTTP.post("$base/api/experiments/999999/scan";
+                    headers = ["X-Username" => "alice"], status_exception = false)
+                @test r404.status == 404
+            end
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            SQLite.close(db)
+        end
     end
 
     @testset "a plain rescan with no new files still backfills missing beam monitors" begin

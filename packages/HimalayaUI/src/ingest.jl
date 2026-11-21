@@ -116,6 +116,7 @@ function scan_and_group!(
     db           ::SQLite.DB,
     experiment_id::Int;
     analyze      ::Bool   = true,
+    retry_failed ::Bool   = false,
     on_progress  ::Union{Function,Nothing} = nothing,
 )
     # Resolve data_dir, analysis_dir, and per-experiment pattern overrides from the row.
@@ -273,7 +274,7 @@ function scan_and_group!(
     # -----------------------------------------------------------------------
     if analyze
         to_analyze = vcat(new_exposure_ids,
-            setdiff(pending_analysis_ids(db, experiment_id), new_exposure_ids))
+            setdiff(pending_analysis_ids(db, experiment_id; retry_failed), new_exposure_ids))
         n_new = length(to_analyze)
         # The "analyzing" segment reports against n_new, its OWN denominator — the
         # segmented bar gives each stage its own track, so stages no longer have to
@@ -332,14 +333,48 @@ end
 
 const NO_TRACE = "no trace"
 
-function _trace_exists(db::SQLite.DB, experiment_id::Int, analysis_dir::AbstractString, filename::AbstractString)
-    resolve_trace_path(analysis_dir, integration_pattern_for(db, experiment_id), filename) !== nothing
+function _file_finder(base::AbstractString, pattern::AbstractString; strip_acquisition::Bool = false)
+    pattern_dir = dirname(pattern)
+    if occursin("{name}", pattern_dir)
+        return function (stem)
+            p = joinpath(base, replace(pattern, "{name}" => stem))
+            isfile(p) ? p : nothing
+        end
+    end
+    dir = joinpath(base, pattern_dir)
+    names = try
+        Set(readdir(dir))
+    catch
+        Set{String}()
+    end
+    leaf = basename(pattern)
+    function (stem)
+        candidate = replace(leaf, "{name}" => stem)
+        candidate in names && return joinpath(dir, candidate)
+        if strip_acquisition
+            stripped = acquisition_stem(stem)
+            if stripped != stem
+                alt = replace(leaf, "{name}" => stripped)
+                alt in names && return joinpath(dir, alt)
+            end
+        end
+        nothing
+    end
+end
+
+_trace_finder(db::SQLite.DB, experiment_id::Int, analysis_dir::AbstractString) =
+    _file_finder(analysis_dir, integration_pattern_for(db, experiment_id); strip_acquisition = true)
+
+function _stat_signature(path::AbstractString)
+    st = stat(path)
+    string(st.size, ":", st.mtime)
 end
 
 function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::AbstractString)
     row = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT filename, experiment_id FROM exposures WHERE id = ?", [exposure_id])))
-    error_text = if !_trace_exists(db, Int(row.experiment_id), analysis_dir, String(row.filename))
+    trace = resolve_trace_path(analysis_dir, integration_pattern_for(db, Int(row.experiment_id)), String(row.filename))
+    error_text = if trace === nothing
         NO_TRACE
     else
         try
@@ -351,26 +386,45 @@ function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::Abstr
         end
     end
     error_text === nothing && return true
+    signature = error_text == NO_TRACE ? nothing : (try _stat_signature(trace) catch; nothing end)
     lock(_DB_WRITE_LOCK) do
-        DBInterface.execute(db, "UPDATE exposures SET analysis_error = ?, analysis_version = ? WHERE id = ?",
-            [first(error_text, 500), error_text == NO_TRACE ? nothing : ANALYSIS_VERSION, exposure_id])
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_error = ?, analysis_version = ?, analysis_trace_stat = ? WHERE id = ?",
+            [first(error_text, 500), error_text == NO_TRACE ? nothing : ANALYSIS_VERSION, signature, exposure_id])
     end
     false
 end
 
-function pending_analysis_ids(db::SQLite.DB, experiment_id::Int)
+"""
+    pending_analysis_ids(db, experiment_id; retry_failed = false) -> Vector{Int}
+
+Exposures a pass should analyze: never analyzed, analyzed by an older
+`ANALYSIS_VERSION`, missing a trace that has since appeared, or failed on a
+trace file whose size or mtime has changed since. `retry_failed` also returns
+every failed exposure whose trace exists. One `readdir` of the trace directory,
+plus a stat per failed exposure.
+"""
+function pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = false)
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
-    analysis_dir = String(exp_row.analysis_dir)
     rows = Tables.rowtable(DBInterface.execute(db, """
-        SELECT id, filename, analysis_error FROM exposures
-         WHERE experiment_id = ?3 AND filename IS NOT NULL
-           AND ((trace_hash IS NULL AND (analysis_error IS NULL OR analysis_error = ?1))
-             OR ((trace_hash IS NOT NULL OR analysis_error != ?1)
-                 AND (analysis_version IS NULL OR analysis_version != ?2)))
-         ORDER BY id""", [NO_TRACE, ANALYSIS_VERSION, experiment_id]))
-    Int[Int(r.id) for r in rows
-        if ismissing(r.analysis_error) || _trace_exists(db, experiment_id, analysis_dir, String(r.filename))]
+        SELECT id, filename, analysis_error, analysis_version, analysis_trace_stat FROM exposures
+         WHERE experiment_id = ?2 AND filename IS NOT NULL
+           AND (trace_hash IS NULL OR analysis_version IS NULL OR analysis_version != ?1)
+         ORDER BY id""", [ANALYSIS_VERSION, experiment_id]))
+    isempty(rows) && return Int[]
+    find_trace = _trace_finder(db, experiment_id, String(exp_row.analysis_dir))
+    function due(r)
+        ismissing(r.analysis_error) && return true
+        trace = find_trace(String(r.filename))
+        r.analysis_error == NO_TRACE && return trace !== nothing
+        coalesce(r.analysis_version, "") != ANALYSIS_VERSION && return true
+        trace === nothing && return false
+        retry_failed && return true
+        signature = try _stat_signature(trace) catch; nothing end
+        signature !== nothing && signature != coalesce(r.analysis_trace_stat, "")
+    end
+    Int[Int(r.id) for r in rows if due(r)]
 end
 
 function _insertable_stems(db::SQLite.DB, experiment_id::Int)
@@ -379,22 +433,18 @@ function _insertable_stems(db::SQLite.DB, experiment_id::Int)
     isempty(rows) && return String[]
     r = first(rows)
     data_dir = String(r.data_dir)
-    isdir(data_dir) || return String[]
-    tif_pre, tif_suf = split(coalesce(r.image_pattern, "{name}.tif"), "{name}"; limit = 2)
-    prp_pattern = coalesce(r.metadata_pattern, "{name}.prp")
-    tif_dir = isempty(dirname(tif_pre)) ? data_dir : joinpath(data_dir, dirname(tif_pre))
-    tif_lead = basename(tif_pre)
-    files, tif_files = try
-        f = Set(readdir(data_dir))
-        (f, tif_dir == data_dir ? f : Set(readdir(tif_dir)))
+    listing = try
+        tif_listing(data_dir, coalesce(r.image_pattern, "{name}.tif"))
     catch
-        return String[]
+        nothing
     end
-    stems = String[f[length(tif_lead)+1:end-length(tif_suf)] for f in tif_files
-                   if startswith(f, tif_lead) && endswith(f, tif_suf) && length(f) > length(tif_lead) + length(tif_suf)]
+    listing === nothing && return String[]
+    _, tif_files, tif_suffix = listing
+    stems = String[f[1:end-length(tif_suffix)] for f in tif_files]
     known = Set(String(x.filename) for x in Tables.rowtable(DBInterface.execute(db,
         "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL", [experiment_id])))
-    has_prp(stem) = replace(prp_pattern, "{name}" => stem) in files
+    find_prp = _file_finder(data_dir, coalesce(r.metadata_pattern, "{name}.prp"))
+    has_prp(stem) = find_prp(stem) !== nothing
     any_prp = any(has_prp, stems)
     String[stem for stem in stems if !(stem in known) && (!any_prp || has_prp(stem))]
 end
@@ -403,10 +453,9 @@ end
     ingest_has_work(db, experiment_id) -> Bool
 
 True when a pass would change something: a tif (with its prp, when the folder
-has prps) that has no exposure row yet, an exposure whose trace has appeared
-since it was last tried, one never analyzed, or one analyzed by an older
-`ANALYSIS_VERSION`. One `readdir` of `data_dir` plus a stat per exposure still
-missing its trace.
+has prps) that has no exposure row yet, or an exposure `pending_analysis_ids`
+returns. A few directory reads plus a stat per failed exposure, so it is cheap
+enough to run inside a request.
 """
 function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
     !isempty(_insertable_stems(db, experiment_id)) || !isempty(pending_analysis_ids(db, experiment_id))

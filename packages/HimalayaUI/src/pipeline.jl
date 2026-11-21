@@ -1168,7 +1168,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         # variant participates in the outer tx so the event row commits with
         # the analysis state — broadcast deferred to after the tx commits.
         DBInterface.execute(db,
-            "UPDATE exposures SET analysis_version = ?, analysis_error = NULL WHERE id = ?",
+            "UPDATE exposures SET analysis_version = ?, analysis_error = NULL, analysis_trace_stat = NULL WHERE id = ?",
             [ANALYSIS_VERSION, exposure_id])
         event_result = apply_event!(InTransaction(), db, event_req;
             kind        = "analyze_run",
