@@ -162,6 +162,8 @@ function cli_analyze(args)
     skipped > 0 && error("$skipped exposure(s) or experiment(s) skipped; see the SKIP lines above")
 end
 
+_fmt(x, spec) = ismissing(x) || x === nothing ? "n/a" : Printf.format(Printf.Format(spec), x)
+
 function cli_show(args)
     s = ArgParseSettings(prog = "himalaya show")
     @add_arg_table! s begin
@@ -192,11 +194,14 @@ function cli_show(args)
         println("\nExposure: $(exp_row.filename)")
         println("  Peaks ($(length(pks))):")
         for pk in pks
-            @printf "    q=%.4f  prom=%.3f  sharp=%.3f  [%s]\n" pk.q pk.prominence pk.sharpness pk.source
+            println("    q=", _fmt(pk.q, "%.4f"), "  prom=", _fmt(pk.prominence, "%.3f"),
+                    "  sharp=", _fmt(pk.sharpness, "%.3f"), "  [", pk.source, "]")
         end
         println("  Indices ($(length(idxs))):")
         for ix in idxs
-            @printf "    %-6s  basis=%.4f  score=%.3f  R²=%.4f  d=%.2f\n" ix.phase ix.basis ix.score ix.r_squared ix.lattice_d
+            println("    ", rpad(ix.phase, 6), "  basis=", _fmt(ix.basis, "%.4f"),
+                    "  score=", _fmt(ix.score, "%.3f"), "  R²=", _fmt(ix.r_squared, "%.4f"),
+                    "  d=", _fmt(ix.lattice_d, "%.2f"))
         end
         active = findfirst(g -> g.active == 1, groups)
         if active !== nothing

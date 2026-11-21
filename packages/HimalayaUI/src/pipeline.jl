@@ -371,7 +371,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 """INSERT OR IGNORE INTO index_peaks
                      (index_id, peak_id, peak_kind, ratio_position, residual)
                    VALUES (?, ?, ?, ?, ?)""",
-                [db_id, peak_id, String(peak_kind), rpos, resid])
+                [db_id, peak_id, String(peak_kind), Int(rpos), resid])
         end
     end
 
