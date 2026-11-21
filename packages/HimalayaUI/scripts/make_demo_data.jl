@@ -700,7 +700,28 @@ function main_large(o)
     o.out
 end
 
+large_tree_strays(dir) = filter(readdir(dir)) do e
+    p = joinpath(dir, e)
+    e == LARGE_MARKER && isfile(p) && !islink(p) && return false
+    is_large_entry(e) && isdir(p) && !islink(p) && return false
+    true
+end
+
+function clean_large(dir)
+    islink(dir) && return (println(stderr, "$dir is a link; leaving it"); false)
+    isdir(dir) || return (ispath(dir) && println(stderr, "$dir is not a folder; leaving it"); false)
+    strays = large_tree_strays(dir)
+    if !isempty(strays)
+        println(stderr, "$dir holds more than large_NN folders and $LARGE_MARKER ",
+                "($(join(first(strays, 3), ", "))); not a large demo tree, leaving it")
+        return false
+    end
+    rm(dir; recursive = true)
+    true
+end
+
 function main(args = ARGS)
+    length(args) == 2 && args[1] == "--clean-large" && return clean_large(args[2])
     o = parse_args(args)
     check_target(o.out, o.large)
     o.large ? main_large(o) : main_curated(o)

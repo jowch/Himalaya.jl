@@ -173,3 +173,57 @@ end
     end
     @test count(c -> "Square" in c, calls) >= 4
 end
+
+@testset "demo-clean deletes a large demo tree and nothing else (#358)" begin
+    function tree(entries...; marker = true)
+        root = mktempdir()
+        for e in entries
+            mkpath(joinpath(root, e, "data"))
+            touch(joinpath(root, e, "TRUTH.csv"))
+        end
+        marker && touch(joinpath(root, DemoGen.LARGE_MARKER))
+        root
+    end
+    quiet(f) = redirect_stderr(f, devnull)
+
+    finished = tree("large_01", "large_02")
+    @test quiet(() -> DemoGen.clean_large(finished))
+    @test !ispath(finished)
+
+    interrupted = tree("large_01"; marker = false)
+    @test quiet(() -> DemoGen.clean_large(interrupted))
+    @test !ispath(interrupted)
+
+    real = tree("large_01")
+    touch(joinpath(real, "notes.txt"))
+    @test !quiet(() -> DemoGen.clean_large(real))
+    @test isdir(joinpath(real, "large_01"))
+
+    misnamed = tree("large_01", "large_x")
+    @test !quiet(() -> DemoGen.clean_large(misnamed))
+    @test isdir(misnamed)
+
+    filelike = tree()
+    touch(joinpath(filelike, "large_03"))
+    @test !quiet(() -> DemoGen.clean_large(filelike))
+    @test isfile(joinpath(filelike, "large_03"))
+
+    hidden = tree("large_01")
+    touch(joinpath(hidden, ".keep"))
+    @test !quiet(() -> DemoGen.clean_large(hidden))
+    @test isdir(hidden)
+
+    target = tree("large_01")
+    link = joinpath(mktempdir(), "link")
+    symlink(target, link)
+    @test !quiet(() -> DemoGen.clean_large(link))
+    @test isdir(joinpath(target, "large_01"))
+
+    linked_entry = tree()
+    symlink(tree("large_01"), joinpath(linked_entry, "large_02"))
+    @test !quiet(() -> DemoGen.clean_large(linked_entry))
+    @test islink(joinpath(linked_entry, "large_02"))
+
+    @test !quiet(() -> DemoGen.clean_large(joinpath(mktempdir(), "missing")))
+    @test !quiet(() -> DemoGen.clean_large(""))
+end

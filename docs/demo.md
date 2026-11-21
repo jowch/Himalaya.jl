@@ -16,7 +16,7 @@ make demo-empty   # same, but on a FRESH empty DB with nothing ingested, so the
                   # "+ New experiment" funnel can be walked from the start; point it
                   # at the absolute path of scratch/demo-experiment
 make demo-data    # (re)generate the synthetic experiment only
-make demo-clean   # delete the generated data and demo DBs
+make demo-clean   # delete the generated data and demo DBs, large demo included
 ```
 
 Overrides: `DEMO_DIR=/tmp/demo make demo` (data location), `DEMO_DB_DIR` (demo DB + logs, default `scratch/demo`), `DEMO_API_PORT` /
@@ -203,6 +203,12 @@ work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
 - A finished run writes `.demo-large-complete`. An interrupted run has none, so
   `make demo-large` regenerates instead of ingesting a partial tree, and the
   generator only writes into an empty folder or an existing large tree.
+- `make demo-clean` also deletes `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. It
+  deletes the large tree only when everything in it is a `large_NN` folder or
+  the `.demo-large-complete` marker, so an interrupted run is cleaned up too.
+  Any other file, a hidden one, or a link makes it leave the folder alone and
+  say why. The check runs in Julia (`--clean-large` in `make_demo_data.jl`), so
+  `make demo-clean` needs the `make setup` environment.
 - Cost, measured with the defaults: about 35 s, 1.4 GB on disk (12,000 `.tif`
   names, 240 distinct files), 3,000 samples and 12,000 exposures. Ingesting all
   ten through `demo_ingest.jl` takes about 3 minutes.

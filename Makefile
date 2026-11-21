@@ -115,3 +115,5 @@ demo-clean:
 	@if [ -f "$(DEMO_DIR)/TRUTH.csv" ]; then rm -rf "$(DEMO_DIR)"; \
 	elif [ -e "$(DEMO_DIR)" ]; then echo "$(DEMO_DIR) has no TRUTH.csv; not a demo tree, leaving it" >&2; fi
 	rm -rf "$(DEMO_DB_DIR)" "$(DEMO_DB_DIR)-empty"
+	julia --project=packages/HimalayaUI --startup-file=no packages/HimalayaUI/scripts/make_demo_data.jl --clean-large "$(DEMO_LARGE_DIR)"
+	rm -rf "$(DEMO_LARGE_DB_DIR)"
