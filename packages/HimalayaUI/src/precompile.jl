@@ -34,7 +34,7 @@ end
 
 function _workload_inproc(method::AbstractString, target::AbstractString, payload::Vector{UInt8})
     Oxygen.internalrequest(HTTP.Request(method, target, _workload_headers(), payload);
-                           serialize = true, catch_errors = true)
+                           middleware = [db_connection_middleware], serialize = true, catch_errors = true)
 end
 
 function _workload_socket(port::Int)
@@ -104,13 +104,16 @@ end
 
 function _save_module_state()
     (db = _DB_REF[],
+     pool = _READER_POOL[],
      subscribers = lock(() -> copy(SSE_SUBSCRIBERS[]), SSE_LOCK),
      op_ids = lock(() -> Set(keys(OP_LOCKS)), OP_LOCKS_MU),
      hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK))
 end
 
 function _restore_module_state!(saved)
+    _close_reader_pool!(_READER_POOL[])
     _DB_REF[] = saved.db
+    _READER_POOL[] = saved.pool
     lock(() -> SSE_SUBSCRIBERS[] = saved.subscribers, SSE_LOCK)
     lock(() -> filter!(kv -> kv.first in saved.op_ids, OP_LOCKS), OP_LOCKS_MU)
     lock(_PEAK_SET_HASH_CACHE_LOCK) do
@@ -143,7 +146,8 @@ function run_route_workload(dir::AbstractString; record = nothing)
         analyze_exposure!(db, exposure, analysis_dir)
 
         Oxygen.resetstate()
-        bind_db!(db)
+        _DB_REF[] = db
+        _READER_POOL[] = _new_reader_pool(db)
         register_routes!()
 
         inproc = _recording(_workload_inproc, record)
@@ -151,7 +155,8 @@ function run_route_workload(dir::AbstractString; record = nothing)
         _workload_requests(inproc, experiment, sample, other, exposure)
         port = find_free_port()
         Oxygen.serve(; host = "127.0.0.1", port, async = true, show_banner = false,
-                     docs = false, metrics = false, parallel = true)
+                     docs = false, metrics = false, parallel = true,
+                     middleware = [db_connection_middleware])
         try
             _wait_for_server(port)
             _workload_requests(_recording(_workload_socket(port), record), experiment, sample, other, exposure)
