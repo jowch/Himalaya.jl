@@ -1,27 +1,3 @@
-/**
- * Assignment-cart mutators (Plan D Task D-3):
- *
- * - addAssignmentPhaseMutator    (kind: "assignment_add")
- * - removeAssignmentPhaseMutator (kind: "assignment_remove")
- * - setSampleCallStateMutator    (kind: "sample_call_set_state")
- *
- * All three write `queryKeys.assignment` (the third for every frame of the sample).
- *
- * Two load-bearing invariants from the queue review:
- *
- *   1. onSuccess writes ONLY queryKeys.assignment — NEVER queryKeys.exposure.
- *      The framework's synthesizeResponseFromSse lifts analysis_inputs_hash
- *      from post_state, which is `undefined` for an assignment frame (the
- *      {assignment} post_state carries no hash). Writing the exposure cache
- *      here would wipe its analysis_inputs_hash with undefined.
- *
- *   2. The rollback snapshots the WHOLE Assignment object, so it is symmetric
- *      across both `members` and `state` mutations — members are existing
- *      positive index ids (no negative-optimistic-id concern).
- *
- * The SSE-confirmation arm lives in applyRemoteToCache (`assignment_*` case),
- * keyed on the DISTINCT `{assignment}` post_state shape.
- */
 import * as api from "../../../api";
 import type {
   Assignment, AssignmentState, AssignmentMutationResponse, AuthOpts, SampleCall, SampleCallMutationResponse,
@@ -48,13 +24,6 @@ function buildAuth(p: { username: string | undefined; clientId: string; clientOp
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
 
-/**
- * Build the SSE-wins synthetic response from an assignment frame's distinct
- * `{assignment:{state,members}}` post_state. Shared by all three mutators —
- * the response shape (an Assignment + queue metadata) is identical regardless
- * of which gesture produced it. Falls back to `undefined` (generic shape) when
- * the frame lacks the {assignment} envelope.
- */
 function synthAssignment(remote: SseEvent, base: QueueResponseMeta): AssignmentMutationResponse | undefined {
   const ps = remote.post_state as AssignmentPostState | undefined;
   if (!ps?.assignment) return undefined;
@@ -67,9 +36,6 @@ function synthAssignment(remote: SseEvent, base: QueueResponseMeta): AssignmentM
   };
 }
 
-// ---------------------------------------------------------------------------
-// addAssignmentPhaseMutator
-// ---------------------------------------------------------------------------
 
 export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, AssignmentMutationResponse> = {
   kind: "assignment_add",
@@ -91,7 +57,6 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
   },
   request: (p) => api.addAssignmentPhase(p.exposureId, p.indexId, buildAuth(p)),
   onSuccess: (p, response, qc) => {
-    // Strip queue metadata; write ONLY the assignment cache (never exposure).
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
     invalidateOtherFrameAssignments(qc, p.exposureId);
@@ -101,9 +66,6 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
   synthesizeFromSse: synthAssignment,
 };
 
-// ---------------------------------------------------------------------------
-// removeAssignmentPhaseMutator
-// ---------------------------------------------------------------------------
 
 export const removeAssignmentPhaseMutator: Mutator<RemovePhaseInput, AssignmentScope, AssignmentMutationResponse> = {
   kind: "assignment_remove",
@@ -128,13 +90,9 @@ export const removeAssignmentPhaseMutator: Mutator<RemovePhaseInput, AssignmentS
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
-  // 404 = the member isn't in the assignment → desired end state.
   treats404AsSuccess: true,
 };
 
-// ---------------------------------------------------------------------------
-// setSampleCallStateMutator
-// ---------------------------------------------------------------------------
 
 type SampleCallScope = {
   sampleId: number;

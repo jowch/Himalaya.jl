@@ -99,12 +99,6 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       { id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
         sharpness: 30.0, source: "auto", excluded: false },
     ]);
-    qc.setQueryData(queryKeys.exposure(5), {
-      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-      status: null, image_path: null, image_version: "",
-      trace_hash: null, analysis_inputs_hash: "h0",
-      tags: [], sources: [],
-    });
     // Post-fix synthesizeResponseFromSse for peak_excluded:
     // {event_id, client_op_id, analysis_inputs_hash, id, q, source, excluded}.
     // intensity/prominence/sharpness intentionally absent — the SSE frame
@@ -134,8 +128,6 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       // Canonical from synth:
       excluded: true,
     });
-    const exp = qc.getQueryData<any>(queryKeys.exposure(5))!;
-    expect(exp.analysis_inputs_hash).toBe("h1");
   });
 
   it("peakUnexclude.onSuccess writes canonical state from synth (SSE-wins)", () => {
@@ -143,12 +135,6 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       { id: 7, exposure_id: 5, q: 0.5, intensity: 1.2, prominence: 0.8,
         sharpness: 30.0, source: "auto", excluded: true },
     ]);
-    qc.setQueryData(queryKeys.exposure(5), {
-      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-      status: null, image_path: null, image_version: "",
-      trace_hash: null, analysis_inputs_hash: "h0",
-      tags: [], sources: [],
-    });
     const sseSynth = {
       event_id: 8,
       client_op_id: "op-pue",
@@ -224,7 +210,6 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       id: 5, experiment_id: 1, name: "old-name",
       notes: "old notes", tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     };
-    qc.setQueryData(queryKeys.sample(5), original);
     qc.setQueryData(queryKeys.samples(1), [original]);
     // SSE payload for update_sample is the diff; if only `name` was patched,
     // `notes` is undefined in the synthesized response.
@@ -241,7 +226,7 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       sseSynth,
       qc,
     );
-    const single = qc.getQueryData<any>(queryKeys.sample(5));
+    const single = qc.getQueryData<any[]>(queryKeys.samples(1))![0];
     // name updated; notes/tags preserved (NOT clobbered to undefined)
     expect(single).toEqual({
       id: 5, experiment_id: 1, name: "new name",

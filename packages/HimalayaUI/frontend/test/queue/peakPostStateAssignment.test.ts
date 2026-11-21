@@ -26,17 +26,10 @@ import { handleRemoteEvent } from "../../src/lib/queue/replayCoordinator";
 import { makeDeferred, pendingDeferreds } from "../../src/lib/queue/deferred";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
 import type { SseEvent } from "../../src/lib/queue/types";
-import type { Assignment, Exposure, PeakAddResponse } from "../../src/api";
+import type { Assignment, PeakAddResponse } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 import { getClientId } from "../../src/lib/clientId";
 import { setToastImpl } from "../../src/lib/toast";
-
-const EXPOSURE: Exposure = {
-  id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-  status: null, image_path: null, image_version: "",
-  trace_hash: null, analysis_inputs_hash: "h0",
-  tags: [], sources: [],
-};
 
 const SEEDED_ASSIGNMENT: Assignment = { exposure_id: 5, state: "indexed", members: [10, 42] };
 
@@ -61,7 +54,6 @@ describe("peak_* frames with the W1 assignment envelope", () => {
   beforeEach(() => {
     pendingDeferreds.clear();
     qc = new QueryClient();
-    qc.setQueryData<Exposure>(queryKeys.exposure(5), EXPOSURE);
     qc.setQueryData(queryKeys.indices(5), []);
     qc.setQueryData<Assignment>(queryKeys.assignment(5), SEEDED_ASSIGNMENT);
     toastCalls = [];
@@ -80,8 +72,6 @@ describe("peak_* frames with the W1 assignment envelope", () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith(
       { queryKey: queryKeys.assignment(5) });
     // Curation post_state still lands as before.
-    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash)
-      .toBe("h-new");
     expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toHaveLength(1);
   });
 
@@ -215,8 +205,6 @@ describe("peak_* frames with the W1 assignment envelope", () => {
       msg: "Pn3m index dropped from the call. Its index no longer fits the peaks.",
       kind: "warning",
     }]);
-    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash)
-      .toBe("h-new");
   });
 
   it("analyze_run frame without the envelope leaves the assignment cache untouched (no toast)", () => {

@@ -65,11 +65,6 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "assignment"] as const,
   sampleCall: (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "call"] as const,
-  // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
-  // collisions with the existing collection keys (e.g., a future
-  // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
-  exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
-  sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
   corpusSampleTags:    ["corpus-sample-tags"] as const,
   // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
   // ["corpus", ...] namespace so corpus add_tag (#159) patches and

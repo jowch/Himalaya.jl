@@ -225,9 +225,8 @@ const SPECS: Spec[] = [
   },
   {
     name: "reanalyzeExposure",
-    keys: [queryKeys.exposure(5), queryKeys.peaks(5), queryKeys.indices(5)],
+    keys: [queryKeys.peaks(5), queryKeys.indices(5)],
     seed: (qc) => {
-      qc.setQueryData(queryKeys.exposure(5), EXPOSURE);
       qc.setQueryData(queryKeys.peaks(5), [PEAK]);
       qc.setQueryData(queryKeys.indices(5), [INDEX]);
     },
@@ -241,10 +240,9 @@ const SPECS: Spec[] = [
   },
   {
     name: "updateSample",
-    keys: [queryKeys.samples(1), queryKeys.sample(10)],
+    keys: [queryKeys.samples(1)],
     seed: (qc) => {
       qc.setQueryData(queryKeys.samples(1), [SAMPLE]);
-      qc.setQueryData(queryKeys.sample(10), SAMPLE);
     },
     run: (qc) => {
       const ctx = updateSampleMutator.onMutate({
@@ -345,10 +343,9 @@ const SPECS: Spec[] = [
   },
   {
     name: "setExposureStatus",
-    keys: [EXP_LIST_KEY as unknown as QueryKey, queryKeys.exposure(5)],
+    keys: [EXP_LIST_KEY as unknown as QueryKey],
     seed: (qc) => {
       qc.setQueryData(EXP_LIST_KEY as unknown as QueryKey, [EXPOSURE]);
-      qc.setQueryData(queryKeys.exposure(5), EXPOSURE);
     },
     run: (qc) => {
       const ctx = setExposureStatusMutator.onMutate({
