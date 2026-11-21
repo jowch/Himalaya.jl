@@ -54,6 +54,8 @@ export function stepExposure(
   return exposures[Math.min(exposures.length - 1, Math.max(0, i + dir))]!.id;
 }
 
+export const DETECTOR_COLOUR = { filter: "url(#detector-lut-magma)" } as const;
+
 export function imageUrl(e: Pick<Exposure, "id" | "image_path" | "image_version">, thumb: boolean): string | null {
   if (e.image_path === null) return null;
   const params = new URLSearchParams();

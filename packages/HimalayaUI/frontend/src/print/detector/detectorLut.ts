@@ -16,7 +16,25 @@
 
 export interface LutStop { t: number; L: number; C: number; h: number } // OKLCH
 
-export type DetectorLutVariant = "neutral" | "warm";
+export type DetectorLutVariant = "neutral" | "warm" | "magma";
+
+export const MAGMA_SRGB_STOPS: readonly (readonly [number, number, number])[] = [
+  [0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99],
+  [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164],
+];
+
+function buildSrgbRamp(stops: readonly (readonly [number, number, number])[]): Uint8ClampedArray {
+  const lut = new Uint8ClampedArray(256 * 3);
+  const n = stops.length - 1;
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 255) * n;
+    const k = Math.min(n - 1, Math.floor(x));
+    const f = x - k;
+    const a = stops[k]!, b = stops[k + 1]!;
+    for (let c = 0; c < 3; c++) lut[i * 3 + c] = Math.round(a[c]! + f * (b[c]! - a[c]!));
+  }
+  return lut;
+}
 
 // Warm-GRAY ink ramp: lightness rises monotonically; chroma is tiny (~0.005–0.009)
 // so it reads as a warm neutral, leaving the colour channel to the rings.
@@ -77,6 +95,7 @@ const cache: Partial<Record<DetectorLutVariant, Uint8ClampedArray>> = {};
 export function buildPrintDetectorLut(variant: DetectorLutVariant = "neutral"): Uint8ClampedArray {
   const hit = cache[variant];
   if (hit) return hit;
+  if (variant === "magma") return (cache.magma = buildSrgbRamp(MAGMA_SRGB_STOPS));
   const lut = new Uint8ClampedArray(256 * 3);
   const stops = stopsFor(variant);
   for (let i = 0; i < 256; i++) {

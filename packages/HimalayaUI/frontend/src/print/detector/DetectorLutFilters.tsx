@@ -3,6 +3,7 @@ import { detectorLutTableValues } from "./detectorLut";
 // Built once at module load from the shared LUT source (buildPrintDetectorLut).
 const NEUTRAL = detectorLutTableValues("neutral");
 const WARM = detectorLutTableValues("warm");
+const MAGMA = detectorLutTableValues("magma");
 
 /**
  * Shared SVG `<filter>` defs for the detector colormap, referenced by
@@ -39,6 +40,13 @@ export function DetectorLutFilters(): JSX.Element {
             <feFuncR type="table" tableValues={WARM.r} />
             <feFuncG type="table" tableValues={WARM.g} />
             <feFuncB type="table" tableValues={WARM.b} />
+          </feComponentTransfer>
+        </filter>
+        <filter id="detector-lut-magma" colorInterpolationFilters="sRGB">
+          <feComponentTransfer>
+            <feFuncR type="table" tableValues={MAGMA.r} />
+            <feFuncG type="table" tableValues={MAGMA.g} />
+            <feFuncB type="table" tableValues={MAGMA.b} />
           </feComponentTransfer>
         </filter>
       </defs>

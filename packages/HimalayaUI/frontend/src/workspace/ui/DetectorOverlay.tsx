@@ -1,5 +1,5 @@
 import type { Exposure } from "../../api";
-import { imageUrl } from "../model";
+import { DETECTOR_COLOUR, imageUrl } from "../model";
 import { Kbd } from "./Kbd";
 import { Overlay } from "./Overlay";
 
@@ -43,6 +43,7 @@ export function DetectorOverlay({ exposures, currentId, onStep, onToggleDrop, on
                 alt=""
                 data-exposure-id={e.id}
                 aria-hidden={shown ? undefined : true}
+                style={DETECTOR_COLOUR}
                 className={"absolute inset-0 h-full w-full object-contain " + (shown ? (dropped ? "opacity-40" : "") : "invisible")}
               />
             );
