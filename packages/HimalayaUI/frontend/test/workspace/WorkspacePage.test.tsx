@@ -779,7 +779,7 @@ describe("WorkspacePage", () => {
     state.peaks = peakList(101, { auto: [0.2], manual: [0.1] });
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    clickPlotAt(0.205);
+    clickPlotAt(0.2);
     const add = within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ });
     expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.2).toFixed(1)} Å`);
     clickPlotAt(0.1);
