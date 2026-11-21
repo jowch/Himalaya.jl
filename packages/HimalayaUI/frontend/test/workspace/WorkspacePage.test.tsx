@@ -1281,6 +1281,30 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
   });
 
+  it("folds Call and Exposure as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt("/experiments/1/workspace/10");
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      const call = within(tools).getByRole("button", { name: /Call/ });
+      const exposure = within(tools).getByRole("button", { name: /Exposure/ });
+      expect(call).toHaveAttribute("aria-expanded", "true");
+      expect(exposure).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).queryByText("File")).toBeNull();
+      fireEvent.click(exposure);
+      expect(exposure).toHaveAttribute("aria-expanded", "true");
+      expect(within(tools).getByRole("button", { name: /Call/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).getByText("File")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
+      expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /Exposure/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /Exposure/ })).toBeInTheDocument();
+      expect(within(tools).queryByText("File")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("puts the indexing plot first in the tools column, above the phase list", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
