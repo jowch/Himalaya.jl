@@ -470,3 +470,27 @@ end
         end
     end
 end
+
+@testset "Route response shapes: sample call (#350)" begin
+    mktempdir() do tmp
+        ctx = _setup_analyzed_exposure(tmp)
+        sid = Int(only(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT sample_id FROM exposures WHERE id = ?", [ctx.exposure_id]))).sample_id)
+        with_inproc_routes(ctx.db) do call
+            r = call("GET", "/api/samples/$sid/call")
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            assert_keys(body, [:sample_id, :state, :phase, :call_phases, :members])
+
+            r = call("POST", "/api/samples/$sid/call/state";
+                body = Vector{UInt8}(JSON3.write(Dict(:state => "form_factor"))),
+                headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            assert_keys(body, [:sample_id, :state, :phase, :call_phases, :members,
+                               :event_id, :view_row_id])
+            @test body.state == "form_factor"
+            @test body.event_id isa Integer
+        end
+    end
+end

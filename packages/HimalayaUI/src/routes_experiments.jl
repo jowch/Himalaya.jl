@@ -622,6 +622,9 @@ function register_experiments_routes!()
                     DBInterface.execute(db, """
                         DELETE FROM sample_bridges WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_calls WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db,
                         "DELETE FROM exposures WHERE experiment_id = ?", [id])
                     DBInterface.execute(db,

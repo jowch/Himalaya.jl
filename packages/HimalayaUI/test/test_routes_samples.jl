@@ -53,7 +53,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 end
 
-@testset "GET /api/samples: per-sample indexing rollup (representative exposure)" begin
+@testset "GET /api/samples: per-sample phase-call rollup" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
@@ -74,10 +74,10 @@ end
     DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [eA1, idPn])
     DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [eA1, idLam])
 
-    # Sample B — FORM FACTOR. Representative exposure declared form_factor.
+    # Sample B — FORM FACTOR. The sample's call is declared form_factor.
     sB = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="B")
     eB = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sB, filename="b1")
-    DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [eB])
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [sB])
 
     # Sample C — UNINDEXED. Representative exposure, no assignment row.
     sC = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="C")
@@ -88,7 +88,8 @@ end
         byname = Dict(String(s.name) => s for s in list)
 
         @test byname["A"].assignment_state == "indexed"
-        @test byname["A"].phase == "Pn3m"        # top-scored member of the SELECTED rep
+        @test byname["A"].phase == "Pn3m"        # top-scored member of the sample's call
+        @test collect(byname["A"].call_phases) == ["Lamellar", "Pn3m"]
         @test byname["B"].assignment_state == "form_factor"
         @test byname["B"].phase === nothing      # form factor carries no phase
         @test byname["C"].assignment_state == "indexed"  # default (no members)
@@ -905,6 +906,7 @@ end
         @test byname["newest_dropped"].representative_exposure_id == newest[2]
         @test byname["selected_dropped"].representative_exposure_id == picked[3]
         @test byname["all_dropped"].representative_exposure_id === nothing
-        @test !haskey(byname["all_dropped"], :assignment_state) || byname["all_dropped"].assignment_state === nothing
+        @test byname["all_dropped"].assignment_state == "indexed"
+        @test byname["all_dropped"].phase === nothing
     end
 end
