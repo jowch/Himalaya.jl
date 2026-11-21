@@ -66,6 +66,19 @@ describe("openLiveStream", () => {
     expect(reconnects).toBe(1);
   });
 
+  it("counts the first open as a reconnect when the page loaded while the server was down", () => {
+    last().failForGood();
+    vi.advanceTimersByTime(1000);
+    last().fire("open");
+    expect(reconnects).toBe(1);
+  });
+
+  it("counts a first open after the browser's own retry as a reconnect", () => {
+    last().fire("error");
+    last().fire("open");
+    expect(reconnects).toBe(1);
+  });
+
   it("caps the wait between attempts at 5 s", () => {
     last().fire("open");
     for (const wait of [1000, 2000, 4000, 5000, 5000]) {

@@ -101,19 +101,43 @@ describe("an edit queued when the page reloads during an outage", () => {
     expect(stored()).toEqual([]);
   });
 
-  it("lands replayed edits in the order they were made", async () => {
+  it("sends replayed edits one at a time, in the order they were made", async () => {
     storeOps("op-1", "op-2", "op-3");
-    const landed: string[] = [];
-    const upAt = Date.now() + 30_000;
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
     const request = vi.fn(async (p: { clientOpId: string }) => {
-      if (Date.now() < upAt) throw new NetworkError("PUT", "/api/x");
-      landed.push(p.clientOpId);
+      if (p.clientOpId === "op-1") await held;
       return { ok: true };
     });
     const { mutator } = mutatorWith(request);
     const done = rehydrate(qc, new Map([["set_exposure_status" as OpKind, mutator]]));
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(request.mock.calls.map((c) => (c[0] as { clientOpId: string }).clientOpId)).toEqual(["op-1"]);
+    release();
     await done;
-    expect(landed).toEqual(["op-1", "op-2", "op-3"]);
+    expect(request.mock.calls.map((c) => (c[0] as { clientOpId: string }).clientOpId)).toEqual(["op-1", "op-2", "op-3"]);
+  });
+
+  it("does not replay an op that is already pending in this page", () => {
+    storeOps("op-a");
+    const request = downFor(60_000);
+    const { mutator } = mutatorWith(request);
+    const mutators = new Map([["set_exposure_status" as OpKind, mutator]]);
+    void rehydrate(qc, mutators);
+    attachPersistence(qc.getMutationCache());
+    void rehydrate(qc, mutators);
+    expect(qc.getMutationCache().getAll().filter((m) => m.state.status === "pending")).toHaveLength(1);
+    expect(mutator.onMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a malformed stored entry and still replays the rest", async () => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([null, {
+      schemaVersion: SCHEMA_VERSION, kind: "set_exposure_status", clientOpId: "op-b",
+      payload: { kind: "set_exposure_status", clientOpId: "op-b", exposureId: 7, status: "rejected" },
+    }]));
+    const { mutator, onSuccess } = mutatorWith(vi.fn(async () => ({ ok: true })));
+    const result = await rehydrate(qc, new Map([["set_exposure_status" as OpKind, mutator]]));
+    expect(result).toEqual({ dropped: 0, replayed: 1, failed: 1 });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 });
