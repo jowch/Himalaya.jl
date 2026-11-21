@@ -11,7 +11,7 @@ export function SubtractToggle({ name, on, onChange }: Props): JSX.Element {
       title={label}
       aria-pressed={pressed}
       onClick={() => onChange(value)}
-      className={"max-w-40 truncate rounded-sm px-2 py-0.5 " + (pressed ? "bg-plate text-ink shadow-sm" : "text-ink-soft hover:text-ink")}
+      className={"max-w-48 truncate rounded-sm px-2 " + (pressed ? "bg-plate text-ink shadow-sm" : "text-ink-soft hover:text-ink")}
     >
       {label}
     </button>
@@ -21,7 +21,7 @@ export function SubtractToggle({ name, on, onChange }: Props): JSX.Element {
       role="group"
       aria-label="Subtraction"
       data-testid="workspace-subtraction-toggle"
-      className="absolute right-3 top-1 z-10 flex items-center gap-0.5 rounded-sm border border-hair bg-paper p-0.5 text-caption"
+      className="flex items-center rounded-sm border border-hair bg-paper text-caption"
     >
       {option(!on, "Raw", false)}
       {option(on, `Minus ${name}`, true)}

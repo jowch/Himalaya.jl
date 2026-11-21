@@ -811,7 +811,6 @@ export function WorkspacePage(): JSX.Element {
 
   const addReference = (rid: number): void => {
     setRefs((r) => addCompare(r, rid));
-    if (subRef === undefined) setSubRef(rid);
     setRefsOn(true);
   };
   const toggleSubtract = (rid: number): void => {
@@ -1007,6 +1006,7 @@ export function WorkspacePage(): JSX.Element {
                 onSubtract={toggleSubtract}
                 onRemove={onRemoveChip}
                 onAdd={() => setPicking(true)}
+                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={(on) => setMinusFor(on ? subRef : undefined)} /> : undefined}
               />
               {picking && (
                 <ComparePicker
@@ -1039,7 +1039,6 @@ export function WorkspacePage(): JSX.Element {
                       ? { onAddPeak: addPeakAt, onClickPeak }
                       : {})}
                 />
-                {difference && subRef !== undefined && <SubtractToggle name={subName} on={minusOn} onChange={(on) => setMinusFor(on ? subRef : undefined)} />}
               </PlotCard>
             </div>
             <MainSection title="Exposures" hint={keptHint}>

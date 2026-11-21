@@ -1301,7 +1301,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
-    fireEvent.click(screen.getByRole("button", { name: "Minus A2" }));
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
     const strip = (): string => screen.getByTestId("workspace-trace").querySelector("[data-role='difference-line'] path")!.getAttribute("d")!;
     const log = strip();
     runFromPalette("plot log-log");
@@ -1312,7 +1312,7 @@ describe("WorkspacePage", () => {
     expect(strip()).not.toBe(loglog);
   });
 
-  it("C opens a picker, Enter adds the sample scaled to the current trace and subtracts it", () => {
+  it("C opens a picker, and Enter adds the sample scaled to the current trace without subtracting it", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -1325,7 +1325,8 @@ describe("WorkspacePage", () => {
     const chip = screen.getByRole("button", { name: "Remove A2" }).parentElement!;
     expect(chip).toHaveTextContent("×0.500");
     expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Minus A2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2" })).not.toHaveAttribute("data-subtracted");
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='11']")?.getAttribute("d")).toMatch(/^M/);
   });
 
@@ -1409,9 +1410,11 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    expect(screen.getByTestId("workspace-subtraction-toggle")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { metaKey: true });
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A2" }), { metaKey: true });
-    expect(screen.getByTestId("workspace-subtraction-toggle")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     runFromPalette("Hide comparisons");
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
@@ -1432,10 +1435,13 @@ describe("WorkspacePage", () => {
     }
     const lines = (): string[] => Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare")!);
     expect(lines()).toEqual(["11", "12"]);
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     expect(lines()).toEqual(["12"]);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Minus A2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toHaveAttribute("data-subtracted");
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
     expect(lines()).toEqual(["11", "12"]);
   });
@@ -1513,7 +1519,9 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     runFromPalette("compare with a sample", "a2");
     runFromPalette("compare with a sample", "a3");
-    expect(screen.getByRole("button", { name: "Minus A2" })).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    runFromPalette("subtract a comparison", "a2");
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
     runFromPalette("subtract a comparison", "a3");
     expect(screen.getByRole("button", { name: "Minus A3" })).toBeInTheDocument();
     runFromPalette("subtract a comparison", "a3");
@@ -1528,7 +1536,7 @@ describe("WorkspacePage", () => {
     runFromPalette("compare with a sample", "a3");
     const plot = (): HTMLElement => screen.getByTestId("workspace-trace");
     const lines = (): string[] => Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare")!);
-    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A3" }), { ctrlKey: true });
     expect(screen.getByRole("button", { name: "Minus A3" })).toHaveAttribute("aria-pressed", "true");
@@ -1556,6 +1564,8 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
     runFromPalette("compare with a sample", "a2");
+    runFromPalette("subtract a comparison", "a2");
+    runFromPalette("show the raw trace");
     runFromPalette("show minus a2");
     expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
     runFromPalette("show the raw trace");
@@ -1569,9 +1579,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
     runFromPalette("compare with a sample", "a2");
-    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
     runFromPalette("Hide comparisons");
-    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }), { ctrlKey: true });
     expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("data-subtracted");
