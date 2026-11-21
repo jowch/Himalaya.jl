@@ -2,7 +2,7 @@ import { parseArgs, UsageError } from "./args.mjs";
 import { loadConfig } from "./config.mjs";
 import { doctor } from "./doctor.mjs";
 import { seed, stop } from "./seed.mjs";
-import { open, click, fill, press, snapshot, screenshot, settle } from "./page.mjs";
+import { open, click, fill, press, snapshot, screenshot, settle, count } from "./page.mjs";
 import { closeBrowser } from "./browser.mjs";
 import { api } from "./api.mjs";
 import { checkTruth, triage } from "./truth.mjs";
@@ -42,6 +42,12 @@ export const COMMANDS = {
     spec: { booleans: ["raw"], strings: ["selector"] },
     run: (cfg, f) => snapshot(cfg, f),
     raw: (r) => r.snapshot,
+  },
+  count: {
+    usage: "count --selector <css>",
+    summary: "Count the elements matching a CSS selector in the open page, right now, with the text of the first 20. Does not wait or settle; poll it to wait for something to appear. Use it for marks the accessibility tree leaves out, such as plot markers.",
+    spec: { strings: ["selector"] },
+    run: (cfg, f) => count(cfg, f),
   },
   screenshot: {
     usage: "screenshot [<file.png>] [--full] [--selector <css>]",

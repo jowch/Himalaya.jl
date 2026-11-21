@@ -108,6 +108,15 @@ async function textOrNull(page, selector) {
   return (await el.count()) ? ((await el.first().textContent()) ?? "").trim() : null;
 }
 
+async function plotMessage(page, timeoutMs = 5000) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const text = await textOrNull(page, "[data-testid='workspace-trace-empty']");
+    if (text !== "" || Date.now() > until) return text;
+    await page.waitForTimeout(100);
+  }
+}
+
 export async function readWorkspace(page, cfg, experimentId, samples) {
   const out = new Map();
   if (!samples.length) return out;
@@ -134,7 +143,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
       frame = await currentWorkspaceFrame(page, s.frameOrder);
       kept = await workspaceKept(page);
       rail = await workspaceRail(page);
-      plot = await textOrNull(page, "[data-testid='workspace-trace-empty']");
+      plot = await plotMessage(page);
       notice = await textOrNull(page, "[data-testid='workspace-ingest-status']");
     }
     out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice });
