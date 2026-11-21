@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { labelOptions } from "../../lib/labels";
+import { useListHighlight } from "./useListHighlight";
 
 interface Props {
   vocabulary: readonly string[];
@@ -13,7 +14,6 @@ type Row = { label: string; create: boolean };
 
 export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose }: Props): JSX.Element {
   const [q, setQ] = useState("");
-  const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   useEffect(() => input.current?.focus(), []);
@@ -28,13 +28,13 @@ export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClos
     const o = labelOptions(vocabulary, q, onSample);
     return [...o.matches.map((label) => ({ label, create: false })), ...(o.create ? [{ label: o.create, create: true }] : [])];
   }, [vocabulary, q, onSample]);
-  useEffect(() => setCursor(0), [q]);
-  const at = Math.min(cursor, Math.max(0, rows.length - 1));
   const pick = (r: Row | undefined): void => {
     if (!r) return;
     onPick(r.label);
     onClose();
   };
+  const highlight = useListHighlight({ count: rows.length, onCommit: (i) => pick(rows[i]), onEscape: onClose, resetKey: q });
+  const at = highlight.at;
   return (
     <div
       ref={root}
@@ -44,22 +44,8 @@ export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClos
       data-testid="workspace-label-picker"
       className="absolute right-0 top-full z-20 mt-1 w-64 rounded-sm border border-hair bg-plate shadow-lg"
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          onClose();
-        } else if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setCursor(Math.max(0, Math.min(rows.length - 1, at + 1)));
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setCursor(Math.max(0, at - 1));
-        } else if (e.key === "Tab") {
-          e.preventDefault();
-          if (rows.length > 0) setCursor((at + (e.shiftKey ? -1 : 1) + rows.length) % rows.length);
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          pick(rows[at]);
-        } else if (e.key === "Backspace" && q === "") {
+        if (highlight.onKeyDown(e)) return;
+        if (e.key === "Backspace" && q === "" && !e.repeat) {
           e.preventDefault();
           onRemoveLast();
         }
@@ -82,7 +68,7 @@ export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClos
               data-label-option={r.create ? "create" : "existing"}
               tabIndex={-1}
               aria-current={i === at ? "true" : undefined}
-              onMouseEnter={() => setCursor(i)}
+              onMouseEnter={() => highlight.setAt(i)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => pick(r)}
               className={"w-full px-3 py-1 text-left text-body " + (i === at ? "bg-row-cursor" : "") + (r.create ? " text-ink-soft" : "")}
