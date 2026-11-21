@@ -231,9 +231,12 @@ export function WorkspacePage(): JSX.Element {
   const darkNotice = traceIsDark(trace.data)
     ? `No counts on the detector: the beam was likely off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
     : undefined;
-  const noTraceMessage = noTrace
-    ? `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`
-    : undefined;
+  const tracePending = problemRows.some((p) => p.problem === "no_trace" && p.exposure_id === exposure?.id);
+  const noTraceMessage = !noTrace
+    ? undefined
+    : tracePending
+      ? "Waiting for this frame's trace."
+      : `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`;
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
