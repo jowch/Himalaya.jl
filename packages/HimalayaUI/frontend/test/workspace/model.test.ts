@@ -79,13 +79,13 @@ describe("nextUnreviewed", () => {
 });
 
 describe("rankCandidates", () => {
-  it("sorts by score, drops unscored candidates, and keeps at most nine", () => {
+  it("sorts by score, drops unscored candidates, and keeps every scored one", () => {
     const ranked = rankCandidates([
       index(1, "Im3m", 0.4), index(2, "Pn3m", null), index(3, "Ia3d", 0.9),
       ...Array.from({ length: 10 }, (_, i) => index(10 + i, "Lamellar", 0.1)),
     ]);
     expect(ranked.map((c) => c.id).slice(0, 2)).toEqual([3, 1]);
-    expect(ranked).toHaveLength(9);
+    expect(ranked).toHaveLength(12);
     expect(ranked.some((c) => c.id === 2)).toBe(false);
   });
 

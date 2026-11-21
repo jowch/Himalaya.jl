@@ -33,7 +33,7 @@ function indicesOf(exposureId: number, n: number) {
   }));
 }
 
-const CANDIDATES: Record<number, number> = { 40: 1, 41: 6, 42: 3, 43: 0, 44: 2, 45: 30 };
+const CANDIDATES: Record<number, number> = { 40: 1, 41: 6, 42: 3, 43: 0, 44: 2, 45: 10 };
 const FRAMES: Record<number, number> = { 44: 7 };
 const NAMES = ["buffer", "37C", "heated twice", "retake", "dilute 1 to 10", "cloudy", "after spin", "second capillary", "check flare", "low counts"];
 const LABELS = [
@@ -134,7 +134,7 @@ async function openSample(page: Page, id: number): Promise<void> {
   await expect(page.locator("[data-testid=workspace-trace]")).toBeVisible();
   await expect(page.locator("[data-testid=workspace-indexing] svg")).toBeVisible();
   if ((await callToggle(page).count()) === 0 || (await callToggle(page).getAttribute("aria-expanded")) === "true") {
-    await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(Math.min(CANDIDATES[id] || 0, 9));
+    await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
     if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this exposure.")).toBeVisible();
   }
   await expect(page.locator("[data-testid=workspace-exposures] > li")).toHaveCount(FRAMES[id] ?? 1);
@@ -219,7 +219,9 @@ test("three comparisons with long names keep the compare bar on one line", async
 });
 
 for (const viewport of VIEWPORTS) {
-  test(`the Call list leads the tools column, with Indexing below it and Exposure at the bottom, at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+  const short = viewport.height <= 860;
+  const order = short ? "Call, then Exposure, with Indexing pinned at the bottom" : "Call, then Indexing, then Exposure";
+  test(`the tools column reads ${order} at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/41");
     await openSample(page, 41);
@@ -227,19 +229,22 @@ for (const viewport of VIEWPORTS) {
       const top = (sel: string) => Math.round(document.querySelector(sel)!.getBoundingClientRect().top);
       return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Exposure]") };
     });
-    expect(tops.call).toBeLessThan(tops.indexing);
-    expect(tops.indexing).toBeLessThan(tops.exposure);
+    const sequence = Object.entries(tops).sort((a, b) => a[1] - b[1]).map(([name]) => name);
+    expect(sequence).toEqual(short ? ["call", "exposure", "indexing"] : ["call", "indexing", "exposure"]);
   });
 }
 
-test("a full Call list (nine candidates) keeps Indexing and Exposure in place, and the column never scrolls", async ({ page }) => {
+test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Exposure in place, and the column never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/experiments/17/workspace/45");
   await openSample(page, 45);
   const before = await measured(page);
+  const middle = page.getByTestId("workspace-tools-middle");
+  expect(await middle.evaluate((m) => m.scrollHeight > m.clientHeight), "the full list overflows its slot").toBe(true);
   const last = page.locator("[data-testid=workspace-candidates] li").last();
   await last.scrollIntoViewIfNeeded();
   await expect(last).toBeInViewport();
+  expect(await middle.evaluate((m) => m.scrollTop), "the list scrolled, not the column").toBeGreaterThan(0);
   const after = await measured(page);
   expect({ indexing: after.indexing, exposure: after.exposure }).toEqual({ indexing: before.indexing, exposure: before.exposure });
   expect(await page.locator("aside").evaluate((a) => a.scrollHeight <= a.clientHeight), "the tools column itself never scrolls").toBe(true);
@@ -280,6 +285,40 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
   await expect(page.locator("aside section[data-section=Exposure]")).toHaveAttribute("data-collapsed", "true");
   await page.keyboard.press("Escape");
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
+});
+
+test("on a short window, folding Call or Exposure and opening a custom index never moves the indexing chart", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  const indexing = async () => (await measured(page)).indexing;
+  const start = await indexing();
+  await exposureToggle(page).click();
+  await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
+  expect(await indexing(), "after opening Exposure").toEqual(start);
+  await page.getByRole("button", { name: /Custom index/ }).click();
+  await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
+  expect(await indexing(), "after opening a custom index from Exposure").toEqual(start);
+  await page.getByRole("button", { name: /Custom index/ }).click();
+  await expect(page.getByTestId("workspace-custom-index")).toHaveCount(0);
+  expect(await indexing(), "after closing it with the same button").toEqual(start);
+  await callToggle(page).click();
+  expect(await indexing(), "after opening Call again").toEqual(start);
+});
+
+test("the indexing chart and the exposure details hold their place while a sample's exposures load", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  const loaded = await measured(page);
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  await page.route(/\/api\/samples\/41\/exposures/, async (r) => { await gate; await r.fallback(); });
+  await page.locator('[data-sample-id="41"]').click();
+  await expect(page.locator("[data-testid=workspace-samples] [aria-current='true']")).toHaveAttribute("data-sample-id", "41");
+  const loading = await layout(page);
+  release();
+  expect({ indexing: loading.indexing, exposure: loading.exposure }).toEqual({ indexing: loaded.indexing, exposure: loaded.exposure });
 });
 
 test("on a short window a number key opens the Call list before making the call", async ({ page }) => {

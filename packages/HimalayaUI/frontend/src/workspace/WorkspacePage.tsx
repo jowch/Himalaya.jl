@@ -132,7 +132,10 @@ function latticeParam(phase: string): string {
   return SYMS[phase]?.param ?? "a";
 }
 
-function exposureRows(e: Exposure): [string, string][] {
+const EXPOSURE_LABELS = ["File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I signal"];
+
+function exposureRows(e: Exposure | undefined): [string, string][] {
+  if (!e) return EXPOSURE_LABELS.map((label) => [label, "—"]);
   const rows: [string, string][] = [["File", e.filename ?? "—"]];
   rows.push(["Kind", e.kind === "averaged" ? "Averaged" : e.kind === "background_subtracted" ? "Subtracted" : "Single"]);
   const i0 = e.incident_monitor;
@@ -652,6 +655,16 @@ export function WorkspacePage(): JSX.Element {
     ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
   ];
 
+  const indexingSection = (
+    <Section
+      title="Indexing"
+      className="shrink-0"
+      aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
+    >
+      <IndexingPlot series={indexSeries} />
+    </Section>
+  );
+
   return (
     <WorkspaceLayout
       theme={theme.theme}
@@ -842,23 +855,16 @@ export function WorkspacePage(): JSX.Element {
               </Section>
             )}
           </div>
+          {!shortWindow && indexingSection}
           <Section
-            title="Indexing"
-            className="shrink-0"
-            aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
+            title="Exposure"
+            aside="← →"
+            className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
+            collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
           >
-            <IndexingPlot series={indexSeries} />
+            <MetaList rows={exposureRows(exposure)} />
           </Section>
-          {exposure && (
-            <Section
-              title="Exposure"
-              aside="← →"
-              className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
-              collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
-            >
-              <MetaList rows={exposureRows(exposure)} />
-            </Section>
-          )}
+          {shortWindow && indexingSection}
         </>
       }
     />
