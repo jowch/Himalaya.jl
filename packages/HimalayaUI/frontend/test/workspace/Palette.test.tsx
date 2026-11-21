@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Palette } from "../../src/workspace/ui/palette/Palette";
-import { DEEP_TITLE, rootRows, type PaletteGroup, type PalettePage } from "../../src/workspace/ui/palette/model";
+import { DEEP_TITLE, cycleOption, rootRows, type PaletteForm, type PaletteGroup, type PalettePage } from "../../src/workspace/ui/palette/model";
 
 const ran: string[] = [];
 const run = (id: string) => () => ran.push(id);
@@ -15,6 +15,12 @@ function setup(): { groups: PaletteGroup[]; pages: Record<string, PalettePage> }
       items: ["B1", "B2", "B3"].map((n) => ({ id: `compare-${n}`, label: n, run: run(`compare ${n}`) })),
     },
     theme: { title: "Theme", arg: "Theme", items: [{ id: "dark", label: "Dark", run: run("dark") }] },
+    label: {
+      title: "Label",
+      arg: "Name",
+      items: [{ id: "retake", label: "retake", run: run("retake") }],
+      extra: (q) => (q ? [{ id: "create", label: `Create “${q}”`, form: () => newLabel(q) }] : []),
+    },
   };
   const groups: PaletteGroup[] = [
     {
@@ -31,10 +37,24 @@ function setup(): { groups: PaletteGroup[]; pages: Record<string, PalettePage> }
         { id: "remove", label: "Remove this experiment", danger: true, typeOnly: true, run: run("remove") },
       ],
     },
-    { title: "App", items: [{ id: "theme", label: "Theme", page: "theme" }] },
+    { title: "App", items: [{ id: "theme", label: "Theme", page: "theme" }, { id: "label", label: "Label", page: "label" }] },
     { title: "Samples", searchOnly: true, items: [{ id: "go-b2", label: "Go to B2", run: run("go B2") }] },
   ];
   return { groups, pages };
+}
+
+const submitted: Record<string, string>[] = [];
+
+function newLabel(name: string): PaletteForm {
+  return {
+    title: "New label",
+    verb: "create",
+    fields: [
+      { id: "name", label: "Name", kind: "text", value: name, check: (v) => (v.trim() ? undefined : "Type a name.") },
+      { id: "color", label: "Colour", kind: "choice", value: "teal", options: ["rose", "teal", "stone"].map((c) => ({ value: c, label: c[0]!.toUpperCase() + c.slice(1) })) },
+    ],
+    submit: (v) => submitted.push({ ...v }),
+  };
 }
 
 function heads(rows: ReturnType<typeof rootRows>): string[] {
@@ -116,7 +136,7 @@ describe("Palette", () => {
     open();
     expect(selected()).toBe("next");
     fireEvent.keyDown(field(), { key: "Tab", shiftKey: true });
-    expect(selected()).toBe("theme");
+    expect(selected()).toBe("label");
     fireEvent.keyDown(field(), { key: "Tab" });
     expect(selected()).toBe("next");
     fireEvent.keyDown(field(), { key: "ArrowUp" });
@@ -148,5 +168,72 @@ describe("Palette", () => {
     open();
     fireEvent.change(field(), { target: { value: "remove" } });
     expect(screen.getByRole("option", { name: "Remove this experiment" }).firstElementChild).toHaveClass("text-error");
+  });
+
+  it("turns a Create row into an inline form: Tab moves between fields, arrows change a choice, Enter submits", () => {
+    const { onClose } = open();
+    submitted.length = 0;
+    fireEvent.click(screen.getByRole("option", { name: "Label" }));
+    fireEvent.change(field(), { target: { value: "dehydrated" } });
+    expect(screen.getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["Create “dehydrated”"]);
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
+    const name = screen.getByRole("textbox", { name: "Name" });
+    expect(name).toHaveFocus();
+    expect(name).toHaveValue("dehydrated");
+    fireEvent.keyDown(name, { key: "Tab" });
+    const colour = screen.getByRole("combobox", { name: "Colour" });
+    expect(colour).toHaveFocus();
+    expect(screen.getByRole("listbox", { name: "Colour" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Teal" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(colour, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: "Stone" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(colour, { key: "Tab" });
+    expect(name).toHaveFocus();
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(submitted).toEqual([{ name: "dehydrated", color: "stone" }]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to submit an invalid field, outlines it and says why, and Esc returns to the list as it was", () => {
+    open();
+    submitted.length = 0;
+    fireEvent.click(screen.getByRole("option", { name: "Label" }));
+    fireEvent.change(field(), { target: { value: "x" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    const name = screen.getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: " " } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(submitted).toEqual([]);
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveAccessibleDescription("Type a name.");
+    fireEvent.keyDown(name, { key: "Escape" });
+    expect(screen.getByRole("combobox", { name: "Name" })).toHaveValue("x");
+  });
+
+  it("Backspace on a choice or an empty text field steps back a field, then out of the form", () => {
+    open();
+    fireEvent.click(screen.getByRole("option", { name: "Label" }));
+    fireEvent.change(field(), { target: { value: "x" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Tab" });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Colour" }), { key: "Backspace" });
+    const name = screen.getByRole("textbox", { name: "Name" });
+    expect(name).toHaveFocus();
+    fireEvent.keyDown(name, { key: "Backspace" });
+    expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
+    fireEvent.change(name, { target: { value: "" } });
+    fireEvent.keyDown(name, { key: "Backspace" });
+    expect(screen.getByRole("dialog", { name: "Label" })).toBeInTheDocument();
+  });
+});
+
+describe("cycleOption", () => {
+  const opts = ["a", "b", "c"].map((v) => ({ value: v, label: v }));
+  it("wraps both ways and starts from an end when the value is not an option", () => {
+    expect(cycleOption(opts, "c", 1)).toBe("a");
+    expect(cycleOption(opts, "a", -1)).toBe("c");
+    expect(cycleOption(opts, "zz", 1)).toBe("a");
+    expect(cycleOption(opts, "zz", -1)).toBe("c");
   });
 });

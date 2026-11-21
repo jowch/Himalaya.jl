@@ -1,13 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Kbd } from "../Kbd";
 import { Overlay } from "../Overlay";
-import { pageRows, pickable, rootRows, type PaletteGroup, type PaletteItem, type PalettePage, type PaletteRow } from "./model";
+import { pageRows, pickable, rootRows, type PaletteForm, type PaletteGroup, type PaletteItem, type PalettePage, type PaletteRow } from "./model";
+import { PaletteFooter } from "./PaletteFooter";
+import { PaletteFormView } from "./PaletteFormView";
 
-interface Level {
-  page: string;
-  query: string;
-  cursor: number;
-}
+type Level = { query: string; cursor: number } & ({ page: string; form?: undefined } | { form: PaletteForm; page?: undefined });
 
 interface Props {
   groups: readonly PaletteGroup[];
@@ -22,8 +20,10 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   const listId = useId();
   const list = useRef<HTMLUListElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
-  const live = stack.filter((l) => pages[l.page] !== undefined);
-  const page = live.length > 0 ? pages[live[live.length - 1]!.page] : undefined;
+  const live = stack.filter((l) => l.form !== undefined || pages[l.page] !== undefined);
+  const top = live[live.length - 1];
+  const form = top?.form;
+  const page = top?.page !== undefined ? pages[top.page] : undefined;
   const rows = useMemo<PaletteRow[]>(() => (page ? pageRows(page, query) : rootRows(groups, pages, query)), [page, groups, pages, query]);
   const picks = useMemo(() => pickable(rows), [rows]);
   const at = Math.min(cursor, Math.max(0, picks.length - 1));
@@ -35,8 +35,8 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   }, [at, rows]);
   useEffect(() => input.current?.focus(), [live.length]);
 
-  const open = (id: string): void => {
-    setStack([...live, { page: id, query, cursor: at }]);
+  const open = (next: { page: string } | { form: PaletteForm }): void => {
+    setStack([...live, { ...next, query, cursor: at }]);
     setQuery("");
     setCursor(0);
   };
@@ -49,7 +49,8 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   };
   const choose = (item: PaletteItem | undefined): void => {
     if (!item) return;
-    if (item.page && pages[item.page]) return open(item.page);
+    if (item.page && pages[item.page]) return open({ page: item.page });
+    if (item.form) return open({ form: item.form() });
     if (!item.run) return;
     onClose();
     item.run();
@@ -76,7 +77,15 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
     }
   };
 
-  const crumbs = live.slice(0, page?.arg ? -1 : undefined).map((l) => pages[l.page]!.title);
+  const crumbs = live.slice(0, page?.arg ? -1 : undefined).flatMap((l) => (l.page !== undefined ? [pages[l.page]!.title] : []));
+  const overlayKey = (key: string): boolean => key === "Escape" && (back(), true);
+  if (form) {
+    return (
+      <Overlay label={form.title} onClose={onClose} closeKeys={[]} onKey={overlayKey} testId="workspace-palette">
+        <PaletteFormView key={live.length} form={form} onBack={back} onDone={onClose} />
+      </Overlay>
+    );
+  }
   const field = (
     <input
       ref={input}
@@ -101,7 +110,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   );
   let index = -1;
   return (
-    <Overlay label={page ? page.title : "Commands"} onClose={onClose} closeKeys={[]} onKey={(key) => key === "Escape" && (back(), true)} testId="workspace-palette">
+    <Overlay label={page ? page.title : "Commands"} onClose={onClose} closeKeys={[]} onKey={overlayKey} testId="workspace-palette">
       <div className="flex h-12 items-center gap-2 overflow-hidden border-b border-hair px-3" data-testid="workspace-palette-bar">
         {crumbs.map((t, i) => (
           <span key={i} className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-sm bg-paper-sunk px-2 text-base text-ink-soft">
@@ -147,22 +156,21 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
                 (i === at ? "bg-row-cursor" : "")
               }
             >
-              <span className={"truncate " + (item.danger ? "text-error" : "")}>
-                {path && <span className="text-ink-faint">{path} › </span>}
-                {item.label}
+              <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
+                {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
+                <span className="truncate">
+                  {path && <span className="text-ink-faint">{path} › </span>}
+                  {item.label}
+                </span>
               </span>
               <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
-              <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page ? "›" : null}</span>
+              <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
             </li>
           );
         })}
         {picks.length === 0 && <li className="px-2 py-2 text-xs text-ink-faint">{page?.empty ?? "No match."}</li>}
       </ul>
-      <div className="flex min-h-8 flex-wrap items-center gap-4 border-t border-hair px-3 text-xs text-ink-faint">
-        <span className="inline-flex items-center gap-1.5"><Kbd>↵</Kbd> {page ? "pick" : "run"}</span>
-        <span className="inline-flex items-center gap-1.5"><Kbd>↑ ↓</Kbd> move</span>
-        <span className="inline-flex items-center gap-1.5"><Kbd>Esc</Kbd> {page ? "back" : "close"}</span>
-      </div>
+      <PaletteFooter keys={[["↵", page ? "pick" : "run"], ["↑ ↓", "move"], ["Esc", page ? "back" : "close"]]} />
     </Overlay>
   );
 }

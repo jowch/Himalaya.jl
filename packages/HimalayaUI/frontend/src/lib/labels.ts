@@ -1,4 +1,4 @@
-import type { SampleLabel, LabelColor, LabelColorEntry } from "../api";
+import { LABEL_COLORS, type SampleLabel, type LabelColor, type LabelColorEntry } from "../api";
 
 export const STANDARD_LABELS = ["Buffer", "Calibrant", "Empty capillary"] as const;
 export const MAX_LABEL_LENGTH = 64;
@@ -128,4 +128,14 @@ export function labelColor(colors: readonly LabelColorEntry[], label: string): L
 
 export function labelColorIsDefault(colors: readonly LabelColorEntry[], label: string): boolean {
   return !colors.some((e) => sameLabel(e.label, label));
+}
+
+export function firstUnusedColor(colors: readonly LabelColorEntry[], labels: readonly string[]): LabelColor {
+  const uses = new Map<LabelColor, number>(LABEL_COLORS.map((c) => [c, 0]));
+  for (const l of labels) {
+    const c = labelColor(colors, l);
+    uses.set(c, (uses.get(c) ?? 0) + 1);
+  }
+  const least = Math.min(...uses.values());
+  return LABEL_COLORS.find((c) => uses.get(c) === least)!;
 }
