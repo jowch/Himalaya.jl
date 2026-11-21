@@ -82,7 +82,7 @@
     "frontend/src/print/shell/KbdLegend.tsx": 10,
     "frontend/src/print/shell/KbdOverlay.tsx": 10,
     "frontend/src/print/shell/NavModal.tsx": 33,
-    "frontend/src/print/shell/OnboardingFlow.tsx": 8,
+    "frontend/src/print/shell/OnboardingFlow.tsx": 7,
     "frontend/src/print/shell/ResolvingFallback.tsx": 3,
     "frontend/src/print/shell/StaleUrlPage.tsx": 3,
     "frontend/src/print/shell/TopNav.tsx": 7,
