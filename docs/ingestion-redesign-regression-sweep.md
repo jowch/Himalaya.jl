@@ -133,7 +133,7 @@ home page). Deferred as a deliberate design decision.
 ## #4 — P3 — Home experiment cards are sparse vs mockup
 
 Cards show only a status dot + name + `data_dir`. The mockup specified a date range,
-counts, and an "N need grouping review" hint. The list endpoint (`useExperiments`)
+counts, and an "N need grouping review" hint (grouping review was deleted 2026-11-21). The list endpoint (`useExperiments`)
 doesn't carry stats — only the detail endpoint does — so counts can't render on the
 gallery without widening the list response. Degraded, not broken.
 
@@ -149,7 +149,7 @@ quotes) and read as an error. Fixed (`019602fc`) by splitting into three honest 
 - "Needs review" filter, nothing flagged → "Nothing needs review" (the all-clear)
 - active filter, no match → the literal `No samples match "<q>"`
 
-Pinned by `packages/HimalayaUI/frontend/test/GroupingReviewPage.empty.test.tsx`.
+The page and this test were deleted with grouping review (2026-11-21, PR 384).
 
 ## #6 — P3 — Copy nits — **fixed**
 

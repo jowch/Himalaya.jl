@@ -65,4 +65,21 @@ describe("ExperimentEntry", () => {
     renderAt({ ...EXPERIMENT, ingest_status: "failed" });
     expect(await screen.findByTestId("where")).toHaveTextContent("/experiments/7/workspace");
   });
+
+  it("shows the not-found page for an experiment that no longer exists", async () => {
+    vi.spyOn(api, "getExperiment").mockRejectedValue(new api.ApiError(404, "experiment not found", null));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/experiments/7"]}>
+          <Routes>
+            <Route path="/experiments/:id" element={<ExperimentEntry />} />
+            <Route path="*" element={<Where />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("Experiment '7' not found.")).toBeInTheDocument();
+    expect(screen.queryByTestId("where")).toBeNull();
+  });
 });

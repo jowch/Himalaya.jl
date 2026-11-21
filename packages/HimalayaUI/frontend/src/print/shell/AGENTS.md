@@ -45,7 +45,7 @@ Any page mounting such a bar MUST claim the lane: call `setCenterLaneOccupied(tr
 
 ## Key routes on `:id` when they hold ephemeral per-id local state
 
-React reuses the same element instance across param changes on a single route, so page-level LOCAL state (undo/redo stacks, view offset/scale, Confirm-chain refs) bleeds from one id into the next unless the route element is keyed on the param. `GroupingReviewRoute` keys `GroupingReviewPage` on the experiment id for this reason. Any new `/foo/:id` route with ephemeral per-visit local state needs the same wrapper. (The global draft slot is intentionally recoverable on return; the key resets only the per-visit state that should never cross an id boundary.)
+React reuses the same element instance across param changes on a single route, so page-level LOCAL state (undo/redo stacks, view offset/scale, Confirm-chain refs) bleeds from one id into the next unless the route element is keyed on the param. Any new `/foo/:id` route with ephemeral per-visit local state needs the same wrapper. (The global draft slot is intentionally recoverable on return; the key resets only the per-visit state that should never cross an id boundary.)
 
 ## OnboardingFlow defers `setUser` until `closeTutorial`
 

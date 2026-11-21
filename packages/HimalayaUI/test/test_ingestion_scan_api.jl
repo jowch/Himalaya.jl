@@ -284,6 +284,17 @@ end
         SQLite.close(db)
     end
 
+    @testset "DELETE /api/experiments/{id} refuses while an ingest runs" begin
+        db, dir, exp_id = scan_test_db()
+        DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [exp_id])
+        with_inproc_routes(db) do call
+            @test call("DELETE", "/api/experiments/$exp_id").status == 409
+            DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
+            @test call("DELETE", "/api/experiments/$exp_id").status == 200
+        end
+        SQLite.close(db)
+    end
+
     @testset "a rescan pass emits rescan-phase ingest frames and a terminal frame" begin
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))

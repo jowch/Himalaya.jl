@@ -34,6 +34,7 @@ const state = {
   rescanError: false,
 };
 const rescans: boolean[] = [];
+const removals: number[] = [];
 const opened: number[] = [];
 
 function recorder(hook: string) {
@@ -53,6 +54,10 @@ vi.mock("../../src/queries", () => ({
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
+  useDeleteExperiment: (experimentId: number) => ({
+    mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
+    reset: () => {}, isPending: false, error: null,
+  }),
   useExposures: () => ({ data: state.exposures }),
   useTrace: () => ({
     data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching,
@@ -210,6 +215,7 @@ beforeEach(() => {
   state.ingest = undefined;
   state.rescanError = false;
   rescans.length = 0;
+  removals.length = 0;
   opened.length = 0;
 });
 
@@ -355,6 +361,50 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("problems-ingest-error")).toHaveTextContent("SystemError: opening file");
   });
 
+  it("opens the problem list from the palette", () => {
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 3, filename: "C_0_001", sample_id: 12, sample_name: "B1", problem: "failed", reason: "bad header" },
+    ] };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "show ingest problems" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("workspace-problems")).toHaveTextContent("bad header");
+  });
+
+  it("forces the rescan after a failed ingest so it runs even with nothing new", () => {
+    state.ingest = { status: "failed", processed: 0, total: 0 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "rescan" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(rescans).toEqual([true]);
+  });
+
+  it("removes the experiment from the palette after a confirmation, then goes home", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "remove this experiment" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const dialog = screen.getByTestId("workspace-remove-experiment");
+    expect(dialog).toHaveTextContent("Remove BL-19?");
+    expect(removals).toEqual([]);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove experiment" }));
+    expect(removals).toEqual([1]);
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments$/);
+  });
+
+  it("offers no remove command while an ingest runs", () => {
+    state.ingest = { status: "analyzing", stage: "analyzing", processed: 1, total: 2 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "remove this experiment" } });
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+  });
+
   it("says the ingest failed when the request to start it fails", () => {
     state.rescanError = true;
     renderAt("/experiments/1/workspace/10");
@@ -382,8 +432,8 @@ describe("WorkspacePage", () => {
     const rows = screen.getAllByTestId("problem-row");
     expect(rows).toHaveLength(3);
     expect(rows[2]).toHaveTextContent("bad header");
-    fireEvent.click(within(rows[0]!).getByRole("button"));
-    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
+    fireEvent.click(within(rows[2]!).getByRole("button"));
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/12");
     expect(screen.queryByTestId("workspace-problems")).toBeNull();
   });
 
@@ -398,7 +448,7 @@ describe("WorkspacePage", () => {
 
   it("says samples are on their way while the first ingest has found none yet", () => {
     state.corpus = [];
-    state.ingest = { status: "scanning", stage: "discovering", processed: 0, total: 0 };
+    state.ingest = { status: "scanning", stage: "discovery", processed: 0, total: 0 };
     renderAt("/experiments/1/workspace");
     expect(screen.getByText("No samples yet. They appear as the ingest reads the data folder.")).toBeInTheDocument();
     expect(screen.queryByText("No samples match.")).toBeNull();

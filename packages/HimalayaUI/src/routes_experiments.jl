@@ -292,10 +292,13 @@ function register_experiments_routes!()
     @delete "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM experiments WHERE id = ?", [id]))
+            "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
+        isequal(first(rows).ingest_status, "scanning") && return HTTP.Response(409,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "the experiment is still ingesting")))
 
 
         # Live schema (db.jl:32-152, confirmed 2026-06-18) keys a DEEP tree of

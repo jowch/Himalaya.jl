@@ -42,6 +42,10 @@ export const queryKeys = {
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
   problems:   (experimentId: number) => ["experiment", experimentId, "problems"] as const,
+  folderPreview: (path: string) => ["folder-preview", path] as const,
+  folderPreviews: ["folder-preview"] as const,
+  manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
+    ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "bridges"] as const,
   labels:     (experimentId: number | undefined) =>
@@ -454,6 +458,19 @@ export function useTriggerScan(experimentId: number) {
     ...inner,
     mutate: (force = false) => inner.mutate(force),
   };
+}
+
+export function useDeleteExperiment(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.deleteExperiment(experimentId, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: queryKeys.experiment(experimentId) });
+      void qc.invalidateQueries({ queryKey: queryKeys.experiments });
+      void qc.invalidateQueries({ queryKey: queryKeys.folderPreviews });
+    },
+  });
 }
 
 export function useCheckForNewFilesOnOpen(experimentId: number): void {

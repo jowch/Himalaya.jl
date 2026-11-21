@@ -181,6 +181,9 @@ export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
 /** Rescan: cheap change-check then additive ingest of new files. Idempotent.
  *  Pass `force = true` to bypass the cheap change-check and always run a full
  *  scan — used when a pattern field edit changes what files are discovered. */
+export const deleteExperiment = (id: number, opts?: AuthOpts) =>
+  request<{ id: number; deleted: boolean }>("DELETE", `/api/experiments/${id}`, undefined, opts);
+
 export const triggerScan = (id: number, opts?: AuthOpts, force = false) =>
   request<Experiment>("POST", `/api/experiments/${id}/scan`, { force }, opts);
 

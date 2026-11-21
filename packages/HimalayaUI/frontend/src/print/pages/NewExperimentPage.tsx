@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../api";
@@ -9,6 +9,7 @@ import { Button } from "../ui/Button";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
 import { KbKey } from "../ui/KbKey";
+import { keyComboLabel } from "../shell/shortcuts";
 import { Kicker } from "../ui/Kicker";
 
 type Patterns = api.SetupPreview["patterns"];
@@ -37,7 +38,7 @@ const count = (n: number): string => n.toLocaleString("en-US");
 
 function initialEdit(s: api.SetupPreview): RowEdit {
   return {
-    include: s.duplicate_of === null && s.exposures > 0,
+    include: s.duplicate_of === null && s.exposures > 0 && s.layout_detected,
     name: s.name,
     data_dir: s.data_dir,
     analysis_dir: s.analysis_dir ?? "",
@@ -106,6 +107,13 @@ function summaryLine(s: api.SetupPreview, sum: Summary, setupFile: string): stri
   return parts.join(" · ");
 }
 
+function manifestQuery(e: RowEdit) {
+  return {
+    queryKey: queryKeys.manifest(e.data_dir, e.patterns, e.setup_file, e.analysis_dir),
+    queryFn: () => api.fetchManifest(e.data_dir, e.patterns, e.setup_file || undefined, e.analysis_dir || undefined),
+  };
+}
+
 function DetailsField({ label, value, onChange, placeholder, testId }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string;
 }): JSX.Element {
@@ -125,12 +133,11 @@ function SetupRow({ setup, edit, onEdit, error }: {
   error: string | undefined;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const edited = layoutEdited(setup, edit);
+  const settled = useDebounced(edit, 300);
+  const edited = layoutEdited(setup, settled);
   const manifest = useQuery({
-    queryKey: ["manifest", edit.data_dir, edit.patterns, edit.setup_file, edit.analysis_dir],
-    queryFn: () => api.fetchManifest(edit.data_dir, edit.patterns,
-      edit.setup_file || undefined, edit.analysis_dir || undefined),
-    enabled: edited && edit.data_dir !== "",
+    ...manifestQuery(settled),
+    enabled: edited && settled.data_dir !== "",
   });
   const sum: Summary = edited && manifest.data
     ? summaryFromManifest(manifest.data, setup.geometry)
@@ -214,7 +221,7 @@ export function NewExperimentPage(): JSX.Element {
   }, [picked]);
 
   const preview = useQuery({
-    queryKey: ["folder-preview", picked],
+    queryKey: queryKeys.folderPreview(picked),
     queryFn: () => api.previewFolder(picked),
     enabled: picked !== "",
     retry: false,
@@ -222,23 +229,35 @@ export function NewExperimentPage(): JSX.Element {
   const setups = useMemo(() => preview.data?.setups ?? [], [preview.data]);
 
   useEffect(() => {
-    setEdits(Object.fromEntries(setups.map((s) => [s.root, initialEdit(s)])));
-    setErrors({});
+    setEdits((cur) => Object.fromEntries(setups.map((s) => {
+      const kept = cur[s.root];
+      if (kept === undefined) return [s.root, initialEdit(s)];
+      return [s.root, s.duplicate_of !== null ? { ...kept, include: false } : kept];
+    })));
+    setErrors((cur) => Object.fromEntries(Object.entries(cur).filter(([root]) => setups.some((s) => s.root === root))));
   }, [setups]);
 
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
   const canSubmit = chosen.length > 0 && !submitting && chosen.every((s) => edits[s.root]!.name.trim() !== "");
+  const inFlight = useRef(false);
 
   const submit = useCallback(async (): Promise<void> => {
-    if (!canSubmit) return;
+    if (!canSubmit || inFlight.current) return;
+    inFlight.current = true;
     setSubmitting(true);
     const created: number[] = [];
     const failed: Record<string, string> = {};
     for (const s of chosen) {
       const e = edits[s.root]!;
-      const manifest = layoutEdited(s, e)
-        ? queryClient.getQueryData<api.ManifestResponse>(["manifest", e.data_dir, e.patterns, e.setup_file, e.analysis_dir])
-        : undefined;
+      let manifest: api.ManifestResponse | undefined;
+      if (layoutEdited(s, e)) {
+        try {
+          manifest = await queryClient.fetchQuery(manifestQuery(e));
+        } catch (err) {
+          failed[s.root] = `Could not read this setup's files: ${err instanceof Error ? err.message : String(err)}`;
+          continue;
+        }
+      }
       const geometry = createGeometry(manifest?.geometry ?? s.geometry, parsedGeometry(e));
       try {
         const exp = await api.createExperiment({
@@ -257,27 +276,34 @@ export function NewExperimentPage(): JSX.Element {
     }
     setErrors(failed);
     setSubmitting(false);
+    inFlight.current = false;
     void queryClient.invalidateQueries({ queryKey: queryKeys.experiments });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.folderPreviews });
     if (Object.keys(failed).length > 0) return;
     navigate(created.length === 1 ? `/experiments/${created[0]}` : "/experiments");
   }, [canSubmit, chosen, edits, navigate, queryClient]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
-      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        void submit();
-      }
+      if (ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
+      if (ev.isComposing || ev.repeat || ev.shiftKey || ev.altKey || !canSubmit) return;
+      const target = ev.target instanceof Element ? ev.target : null;
+      if (target?.closest('[role="dialog"], [data-keys-trap]')) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      void submit();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [submit]);
+  }, [submit, canSubmit]);
 
   const status = picked === ""
     ? "Pick a beamtime folder to add every setup in it, or one setup folder."
     : preview.isError
-      ? "That folder does not exist."
+      ? preview.error instanceof api.ApiError && preview.error.status === 400
+        ? "That folder does not exist."
+        : `Could not read that folder: ${preview.error instanceof Error ? preview.error.message : "unknown error"}`
       : preview.isFetching && setups.length === 0
         ? "Looking for setups…"
         : setups.length === 0
@@ -311,7 +337,7 @@ export function NewExperimentPage(): JSX.Element {
         <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
         <Button variant="accent" data-testid="create-submit" disabled={!canSubmit} onClick={() => { void submit(); }}>
           {chosen.length > 1 ? `Add ${chosen.length} experiments` : "Add experiment"}
-          <KbKey variant="frost" className="ml-2">⌘↵</KbKey>
+          <KbKey variant="frost" className="ml-2">{keyComboLabel("Mod+Enter")}</KbKey>
         </Button>
       </footer>
     </>

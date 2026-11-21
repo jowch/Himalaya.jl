@@ -142,11 +142,100 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/20261103");
     await screen.findAllByTestId("setup-row");
-    await waitFor(() => expect(api.suggestPaths).toHaveBeenCalled());
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: "notes" });
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
     expect(input).toHaveValue("/b/20261103");
+  });
+
+  it("leaves ⌘/Ctrl+Enter to an open dialog such as the palette", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/s1");
+    await screen.findAllByTestId("setup-row");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const field = document.createElement("input");
+    dialog.appendChild(field);
+    document.body.appendChild(dialog);
+    const reached = vi.fn();
+    field.addEventListener("keydown", reached);
+    fireEvent.keyDown(field, { key: "Enter", ctrlKey: true });
+    expect(reached).toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(create).not.toHaveBeenCalled();
+    dialog.remove();
+  });
+
+  it("adds once when ⌘/Ctrl+Enter is pressed twice quickly", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
+    let resolve: (e: api.Experiment) => void = () => {};
+    const create = vi.spyOn(api, "createExperiment").mockImplementation(() => new Promise((r) => { resolve = r; }));
+    renderPage();
+    pick("/b/s1");
+    await screen.findAllByTestId("setup-row");
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    resolve({ id: 11 } as api.Experiment);
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a setup whose layout was not recognised unticked", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({
+      path: "/b", setups: [setup("/b/s1", { layout_detected: false })],
+    });
+    renderPage();
+    pick("/b");
+    const rows = await screen.findAllByTestId("setup-row");
+    expect(within(rows[0]!).getByRole("checkbox")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByTestId("create-submit")).toBeDisabled();
+  });
+
+  it("waits for the recount of an edited setup and sends its geometry", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
+    let answer: (m: api.ManifestResponse) => void = () => {};
+    vi.spyOn(api, "fetchManifest").mockImplementation(() => new Promise((r) => { answer = r; }));
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/s1");
+    await screen.findAllByTestId("setup-row");
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    fireEvent.change(screen.getByTestId("details-setup-file").querySelector("input")!, { target: { value: "/b/s1/other_setup_info.txt" } });
+    fireEvent.click(screen.getByTestId("create-submit"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(create).not.toHaveBeenCalled();
+    answer({ total: 1, matched: { image: 1, metadata: 1, integration: 1 }, unmatched: [],
+      geometry: { ...GEOMETRY, flight_path_m: 0.5, flight_path_m_source: "setup" } });
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0]![0].geometry).toMatchObject({ flight_path_m: 0.5 });
+  });
+
+  it("keeps a typed name when the preview refetches", async () => {
+    const preview = vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><NewExperimentPage /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    pick("/b/s1");
+    await screen.findAllByTestId("setup-row");
+    fireEvent.change(screen.getByTestId("setup-name").querySelector("input")!, { target: { value: "kept" } });
+    preview.mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1", { exposures: 2000 })] });
+    await qc.invalidateQueries();
+    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("2,000 exposures"));
+    expect(screen.getByTestId("setup-name").querySelector("input")).toHaveValue("kept");
+  });
+
+  it("says when a folder cannot be read for another reason", async () => {
+    vi.spyOn(api, "previewFolder").mockRejectedValue(new api.ApiError(500, "disk unplugged", null));
+    renderPage();
+    pick("/b");
+    await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("Could not read that folder: disk unplugged"));
   });
 
   it("leaves out a setup that is already an experiment", async () => {

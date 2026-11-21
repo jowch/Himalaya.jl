@@ -295,22 +295,15 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "ingest_started":
-    case "ingest_progress":
-    case "ingest_failed": {
-      // Broadcast-only progress (spec §9.3): rides the curation channel, carries
-      // a positive experiment_id in the payload (NEVER a sentinel entity_id).
-      // Read experiment_id from the payload, not remote.entity_id. Cache effect
-      // is invalidation-only (the ingestInFlight store write lives in the
-      // separate App.tsx listener — applyRemoteToCache stays pure).
+    case "ingest_progress": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) {
         invalidateIngestFrameCache(qc, expId, false, payload?.stage as string | undefined);
       }
       break;
     }
-    case "ingest_complete": {
-      // Authoritative terminal frame (the 64-slot channel may drop progress
-      // frames at 680-exposure scale; treat complete as the source of truth).
+    case "ingest_complete":
+    case "ingest_failed": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) invalidateIngestFrameCache(qc, expId, true);
       break;

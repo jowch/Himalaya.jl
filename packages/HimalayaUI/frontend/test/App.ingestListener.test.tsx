@@ -31,14 +31,24 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
   });
   afterEach(() => { useAppState.setState({ ingestInFlight: null }); vi.restoreAllMocks(); });
 
-  function mount() {
+  function mount(): QueryClient {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
       </QueryClientProvider>,
     );
+    return qc;
   }
+
+  it("refreshes the experiment and its problems when an ingest fails", () => {
+    const qc = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    FakeES.last!.emit("curation", { kind: "ingest_failed", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7 } });
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(["experiment", 7]));
+    expect(keys).toContain(JSON.stringify(["experiment", 7, "problems"]));
+  });
 
   it("writes ingestInFlight on ingest_progress", () => {
     mount();
@@ -52,7 +62,6 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
   });
 
   it("maps a rescan-phase frame to status=analyzing (the rescanning surface)", () => {
-    // An initial scan (create route) sends no phase → "scanning" → GroupingReviewPage.
     // A rescan (/{id}/scan) tags its frames phase:"rescan" → "analyzing" → the
     // inline ProgressBar, since the experiment's table data is already present.
     mount();

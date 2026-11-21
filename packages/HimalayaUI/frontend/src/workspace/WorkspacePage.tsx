@@ -17,6 +17,7 @@ import {
   useAddLabel,
   useRemoveLabel,
   useProblems,
+  useDeleteExperiment,
   usePeaks,
   useFrameAssignments,
   useRemoveAssignmentPhase,
@@ -65,6 +66,7 @@ import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
 import { ExperimentNotice } from "./ui/ExperimentNotice";
 import { ProblemList } from "./ui/ProblemList";
+import { RemoveExperimentDialog } from "./ui/RemoveExperimentDialog";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
@@ -165,6 +167,8 @@ export function WorkspacePage(): JSX.Element {
   useCheckForNewFilesOnOpen(experimentId);
   const problems = useProblems(experimentId);
   const [problemsOpen, setProblemsOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const removeExperiment = useDeleteExperiment(experimentId);
   const problemRows = problems.data?.exposures ?? [];
   const waitingForTrace = problemRows.filter((p) => p.problem === "no_trace").length;
   const failedAnalyses = problemRows.length - waitingForTrace;
@@ -592,7 +596,8 @@ export function WorkspacePage(): JSX.Element {
       : []),
     ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
-    ...(ingesting ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate() }]),
+    ...(ingesting ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate(ingestFailed || failedAnalyses > 0) }]),
+    ...(ingesting || !username ? [] : [{ id: "remove-experiment", label: "Remove this experiment", run: () => { removeExperiment.reset(); setRemoveOpen(true); } }]),
     ...(problemRows.length > 0 || ingestFailed ? [{ id: "problems", label: "Show ingest problems", run: () => setProblemsOpen(true) }] : []),
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
@@ -609,6 +614,16 @@ export function WorkspacePage(): JSX.Element {
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {removeOpen && (
+            <RemoveExperimentDialog
+              name={experiment.data?.name ?? "this experiment"}
+              samples={samples.length}
+              removing={removeExperiment.isPending}
+              error={removeExperiment.error instanceof Error ? removeExperiment.error.message : null}
+              onRemove={() => removeExperiment.mutate(undefined, { onSuccess: () => navigate("/experiments") })}
+              onClose={() => setRemoveOpen(false)}
+            />
+          )}
           {problemsOpen && (
             <ProblemList
               problems={problems.data}

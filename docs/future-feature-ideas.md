@@ -453,7 +453,7 @@ which is weak (a holder gets reloaded with different specimens at the same
 slots). So this can't be auto-derived reliably; it needs careful design.
 
 Realistic directions, cheapest first: (1) manual merge with good UX
-(`merged_into_id` + the grouping-review merge route already exist); (2)
+(`merged_into_id` exists; the grouping-review merge route was deleted 2026-11-21, so this needs a fresh design); (2)
 *suggested* merges flagged in the grouping-review surface from
 position-coincidence, human-confirmed, never auto-applied (a wrong
 auto-merge fuses distinct specimens — worse than a missed one); (3) capture
