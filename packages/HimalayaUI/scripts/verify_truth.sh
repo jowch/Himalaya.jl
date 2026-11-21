@@ -23,9 +23,27 @@ step() {
 }
 
 trap 'bin/verify stop > /dev/null 2>&1 || true; bin/verify close > /dev/null 2>&1 || true' EXIT
-bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
+bin/verify seed --reset --late-trace > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
 
+step 1-held json bin/verify check-truth --ui --expect fresh
+step 1-late-in-place log bash -c '
+  set -e
+  out=$1
+  sid=$(bin/verify api GET "/api/samples?experiment_id=1" | node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>process.stdout.write(String(JSON.parse(d).body.find(s=>s.name.startsWith(\"MO_lowH2O\")).id)))")
+  bin/verify click --selector "[data-testid=workspace-samples] [data-sample-id=\"$sid\"]" --expect-http "404:/api/exposures/[0-9]+/trace"
+  plot() { bin/verify count --selector "$1" | node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>{const r=JSON.parse(d);process.stdout.write(r.count+\"|\"+(r.texts[0]??\"\"))})"; }
+  before=$(plot "[data-testid=workspace-trace-empty]")
+  echo "before delivery: $before"
+  [[ $before == "1|Waiting for this frame'"'"'s trace." ]] || { echo "the open plot does not say the frame is waiting for its trace"; exit 1; }
+  bin/verify deliver-late
+  bin/verify api POST /api/experiments/1/scan
+  for _ in $(seq 1 60); do
+    empty=$(plot "[data-testid=workspace-trace-empty]"); markers=$(plot "[data-peak-key]")
+    if [[ ${empty%%|*} == 0 && ${markers%%|*} -gt 0 ]]; then echo "after delivery, in place: trace drawn with ${markers%%|*} peak markers"; exit 0; fi
+    sleep 1
+  done
+  echo "after delivery the open workspace still shows: plot message ${empty}, ${markers%%|*} peak markers (no reload)"; exit 1' _ "$OUT"
 step 1-fresh json bin/verify check-truth --ui --expect fresh
 step 2-triage json bin/verify triage
 step 3-triaged json bin/verify check-truth --ui --expect triaged
@@ -42,7 +60,7 @@ step 6-reindex log env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
     stale = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL", [id, "rejected"]))).n
     stale == 0 || error("$stale kept exposures were not re-indexed")'
-step 7-after-reindex json bin/verify check-truth --ui --expect triaged
+step 7-after-reindex json bin/verify check-truth --ui --reload --expect triaged
 step 8-reindex-changed-nothing json node "$HELP" unchanged "$OUT/5-confirmed.json" "$OUT/7-after-reindex.json"
 step 10-custom-index log bash -c '
   set -e

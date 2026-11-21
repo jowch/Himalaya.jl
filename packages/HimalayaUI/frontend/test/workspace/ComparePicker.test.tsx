@@ -21,6 +21,22 @@ describe("ComparePicker", () => {
     expect(onPick).toHaveBeenCalledWith(2);
   });
 
+  it("Tab moves the highlight with wrap and keeps focus in the field, and a held Enter picks once", () => {
+    const onPick = vi.fn();
+    render(<ComparePicker samples={[sample(1, "A"), sample(2, "B")]} onPick={onPick} onClose={() => {}} />);
+    const input = screen.getByLabelText("Find a sample to compare");
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { current: true })).toHaveTextContent("B");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(screen.getByRole("button", { current: true })).toHaveTextContent("A");
+    expect(input).toHaveFocus();
+    expect(screen.getAllByRole("button").every((b) => b.tabIndex === -1)).toBe(true);
+    fireEvent.keyDown(input, { key: "Enter", repeat: true });
+    expect(onPick).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onPick).toHaveBeenCalledWith(1);
+  });
+
   it("reads a row's note as separate from its name", () => {
     render(<ComparePicker samples={[sample(1, "A3")]} notes={new Map([[1, "Buffer"]])} onPick={() => {}} onClose={() => {}} />);
     expect(within(screen.getByRole("dialog")).getByRole("button", { name: "A3, Buffer" })).toBeInTheDocument();

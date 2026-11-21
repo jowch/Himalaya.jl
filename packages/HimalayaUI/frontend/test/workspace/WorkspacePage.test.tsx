@@ -115,19 +115,19 @@ function peak(id: number, q: number, source: "auto" | "manual", excluded = false
 
 function currentView(): string {
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-  const input = screen.getByLabelText("Command or sample");
-  fireEvent.change(input, { target: { value: "current view" } });
-  const option = screen.getAllByRole("option").find((o) => /current view/.test(o.textContent ?? ""));
-  const name = /Plot (.+), current view/.exec(option?.textContent ?? "")?.[1] ?? "";
-  fireEvent.keyDown(input, { key: "Escape" });
+  const row = screen.getByRole("dialog").querySelector("[data-palette-item='view']");
+  const name = row?.children[1]?.textContent ?? "";
+  fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Escape" });
   return name;
 }
 
-function pickView(label: string): void {
+function runFromPalette(...steps: string[]): void {
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-  const input = screen.getByLabelText("Command or sample");
-  fireEvent.change(input, { target: { value: label } });
-  fireEvent.keyDown(input, { key: "Enter" });
+  for (const step of steps) {
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: step } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
 }
 
 function clickPlotAt(q: number, detail = 1): void {
@@ -255,7 +255,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const input = screen.getByLabelText("Command or sample");
     fireEvent.change(input, { target: { value: "switch user" } });
-    expect(screen.getAllByRole("option").some((o) => /Switch user, signed in as jc/.test(o.textContent ?? ""))).toBe(true);
+    expect(screen.getAllByRole("option")[0]).toHaveAccessibleName("Switch user, jc");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(clearUsername).toHaveBeenCalledTimes(1);
   });
@@ -398,6 +398,16 @@ describe("WorkspacePage", () => {
     expect(removals).toEqual([]);
     fireEvent.click(within(dialog).getByRole("button", { name: "Remove experiment" }));
     expect(removals).toEqual([1]);
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments$/);
+  });
+
+  it("lists removing the experiment only once it is typed, and goes back to all experiments from the palette", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("option", { name: "Remove this experiment" })).toBeNull();
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "back to all" } });
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments$/);
   });
 
@@ -738,17 +748,51 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("the palette opens the label picker, which suggests experiment labels and adds the pick on Enter", () => {
-    state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
+  it("the palette's label page lists experiment labels and toggles one on Enter, and creates a new one with a colour", () => {
+    state.labels = [
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+    ];
     renderAt("/experiments/1/workspace/10");
-    pickView("Add label to A1");
-    const picker = screen.getByRole("dialog", { name: "Add a label" });
-    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
-    const input = within(picker).getByLabelText("Label name");
-    fireEvent.change(input, { target: { value: "bufer" } });
+    runFromPalette("label");
+    const page = screen.getByRole("dialog", { name: "Label" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual([
+      "37C, On this sample, Enter removes it",
+      "retake",
+      "Buffer",
+      "Calibrant",
+      "Empty capillary",
+    ]);
+    const input = within(page).getByRole("combobox", { name: "Name" });
+    fireEvent.change(input, { target: { value: "retake" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
-    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "retake" } }]);
+    calls.length = 0;
+    runFromPalette("label", "37c");
+    expect(calls).toEqual([{ hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } }]);
+    calls.length = 0;
+    runFromPalette("label", "dehydrated");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("textbox", { name: "Name" })).toHaveValue("dehydrated");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Tab" });
+    expect(within(form).getByRole("option", { name: "Rose" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(within(form).getByRole("combobox", { name: "Colour" }), { key: "ArrowDown" });
+    fireEvent.keyDown(within(form).getByRole("combobox", { name: "Colour" }), { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([
+      { hook: "setLabelColor", boundTo: 0, arg: { label: "dehydrated", color: "plum" } },
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "dehydrated" } },
+    ]);
+  });
+
+  it("creating a label that already has a colour elsewhere starts on that colour and leaves it alone", () => {
+    state.labelColors = [{ label: "dried", color: "plum" }];
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("label", "Dried");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("combobox", { name: "Colour" })).toHaveTextContent("Plum");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Enter" });
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Dried" } }]);
   });
 
   it("L opens the label picker without typing the L, and Enter confirms a suggestion", () => {
@@ -832,15 +876,21 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
   });
 
-  it("the palette opens a label's colour menu, which can reset a recoloured label to its default", () => {
-    state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" }];
+  it("the palette's label colour page recolours any label of the experiment through a colour form", () => {
+    state.labels = [
+      { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+    ];
     state.labelColors = [{ label: "buffer", color: "stone" }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Set colour of label Buffer");
-    const menu = screen.getByRole("dialog", { name: "Colour of label Buffer" });
-    expect(within(menu).getByRole("radio", { name: "Stone" })).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(within(menu).getByRole("button", { name: "Default colour" }));
-    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
+    runFromPalette("label colour", "retake");
+    const form = screen.getByRole("dialog", { name: "retake" });
+    expect(within(form).getByRole("option", { name: "Violet" })).toHaveAttribute("aria-selected", "true");
+    const colour = within(form).getByRole("combobox", { name: "Colour" });
+    expect(colour).toHaveFocus();
+    fireEvent.click(within(form).getByRole("option", { name: "Green" }));
+    fireEvent.keyDown(colour, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
   });
 
   it("offers no colour menu before a user is set", () => {
@@ -935,15 +985,15 @@ describe("WorkspacePage", () => {
         .join(" ");
     const logTicks = ticks();
     expect(currentView()).toBe("Log");
-    pickView("Plot Linear");
+    runFromPalette("plot linear");
     expect(currentView()).toBe("Linear");
     expect(ticks()).not.toBe(logTicks);
-    pickView("Plot Log-log");
+    runFromPalette("plot log-log");
     expect(currentView()).toBe("Log-log");
-    pickView("Plot q²I");
+    runFromPalette("plot q²I");
     expect(currentView()).toBe("q²I (Kratky)");
     expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
-    pickView("Plot Log");
+    runFromPalette("plot view", "log");
     expect(currentView()).toBe("Log");
     expect(ticks()).toBe(logTicks);
   });
@@ -957,10 +1007,10 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     const strip = (): string => screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!;
     const log = strip();
-    pickView("Plot Log-log");
+    runFromPalette("plot log-log");
     const loglog = strip();
     expect(loglog).not.toBe(log);
-    pickView("Plot q²I");
+    runFromPalette("plot q²I");
     expect(strip()).not.toBe(log);
     expect(strip()).not.toBe(loglog);
   });
@@ -1065,11 +1115,11 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
-    pickView("Hide comparisons");
+    runFromPalette("Hide comparisons");
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
-    pickView("Show comparisons");
+    runFromPalette("Show comparisons");
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
@@ -1192,6 +1242,21 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
   });
 
+  it("typing a sample's exact name and Enter goes there rather than comparing with it", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("A3");
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+    expect(calls).toEqual([]);
+  });
+
+  it("Ctrl+K closes the palette from inside a page", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample");
+    const page = screen.getByRole("combobox", { name: "Sample" });
+    fireEvent.keyDown(page, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("Ctrl+K toggles the palette, and a command runs the same action as its key", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
@@ -1203,34 +1268,35 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
     expect(currentView()).toBe("q²I (Kratky)");
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "plot" } });
-    expect(screen.getByRole("option", { name: /q²I \(Kratky\), current view/ })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Escape" });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "plot view" } });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    expect(screen.getByRole("option", { name: "q²I (Kratky), Current" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "View" }), { key: "Escape" });
+    expect(screen.getByRole("combobox", { name: "Command or sample" })).toHaveValue("plot view");
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("the palette switches the workspace to dark and back, remembers it, and can follow the system again", () => {
+  it("the palette's theme page switches the workspace to dark and back, remembers it, and can follow the system again", () => {
     const { unmount } = renderAt("/experiments/1/workspace/10");
     const root = screen.getByTestId("workspace");
     expect(root).toHaveAttribute("data-workspace-theme", "system");
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "dark theme" } });
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    runFromPalette("theme", "dark");
     expect(root).toHaveAttribute("data-workspace-theme", "dark");
     unmount();
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "dark");
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "light theme" } });
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    runFromPalette("theme");
+    expect(screen.getByRole("option", { name: "Dark, Current" })).toBeInTheDocument();
+    const input = screen.getByRole("combobox", { name: "Theme" });
+    fireEvent.change(input, { target: { value: "light" } });
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "light");
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    runFromPalette("theme", "system");
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
     expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
-    expect(screen.queryByRole("option")).toBeNull();
+    runFromPalette("theme");
+    expect(screen.getByRole("option", { name: "Follow the system, Current" })).toBeInTheDocument();
   });
 
   it("I opens a custom index on the top candidate; arrows nudge the lattice and Enter adds it", () => {
@@ -1636,14 +1702,13 @@ describe("WorkspacePage", () => {
     expect(screen.queryByText(/^minus /)).toBeNull();
   });
 
-  it("the palette opens a bridge picker that leaves out this sample and its bridges, and Enter bridges to the pick", () => {
+  it("the palette's bridge page leaves out this sample and its bridges, and Enter bridges to the pick", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Bridge A1 to a sample");
-    const picker = screen.getByRole("dialog", { name: "Bridge A1 to a sample" });
-    expect(within(picker).queryByText("A1")).toBeNull();
-    expect(within(picker).queryByText("A3")).toBeNull();
-    const input = within(picker).getByLabelText("Find a sample to bridge to");
+    runFromPalette("bridge to a sample");
+    const page = screen.getByRole("dialog", { name: "Bridge to" });
+    expect(within(page).getAllByRole("option").map((o) => o.textContent)).toEqual(["A2", "A4"]);
+    const input = within(page).getByRole("combobox", { name: "Sample" });
     fireEvent.change(input, { target: { value: "a4" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1655,7 +1720,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Take A1 out of its bridges");
+    runFromPalette("out of its bridges");
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 10 } });
     fireEvent.click(screen.getByRole("button", { name: "Remove bridge to A3" }));
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 12 } });
@@ -1676,12 +1741,9 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Hide comparisons");
+    runFromPalette("Hide comparisons");
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
-    pickView("Bridge A1 to a sample");
-    const input = within(screen.getByRole("dialog")).getByLabelText("Find a sample to bridge to");
-    fireEvent.change(input, { target: { value: "a4" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    runFromPalette("bridge to a sample", "a4");
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(1);
   });
 
@@ -1689,16 +1751,16 @@ describe("WorkspacePage", () => {
     const options = (): string[] => {
       fireEvent.keyDown(window, { key: "k", ctrlKey: true });
       fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "bridge" } });
-      const labels = screen.queryAllByRole("option").map((o) => o.textContent ?? "");
+      const ids = screen.queryAllByRole("option").map((o) => o.getAttribute("data-palette-item") ?? "");
       fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-      return labels;
+      return ids.filter((id) => !id.startsWith("bridge-"));
     };
     const first = renderAt("/experiments/1/workspace/11");
     fireEvent.keyDown(window, { key: "b" });
     fireEvent.keyDown(window, { key: "B", shiftKey: true });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls.filter((c) => c.hook === "unbridge")).toHaveLength(0);
-    expect(options()).toEqual(["Bridge A2 to a sample"]);
+    expect(options()).toEqual(["bridge"]);
     first.unmount();
     state.username = undefined;
     renderAt("/experiments/1/workspace/11");
