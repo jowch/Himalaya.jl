@@ -183,6 +183,35 @@ export function scanLegacyImports(relPath, content) {
   return out;
 }
 
+const PX_FONT_RE = /text-\[\d+(?:\.\d+)?px\]/;
+const STRING_RE = /(["'`])((?:(?!\1)[^\\]|\\.)*)\1/g;
+const STYLE_OBJECT_RE = /style=\{\{([^{}]*)\}\}/g;
+
+export function scanUnpairedFontSize(relPath, content) {
+  const out = [];
+  const lines = content.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    STRING_RE.lastIndex = 0;
+    let m;
+    while ((m = STRING_RE.exec(lines[i])) != null) {
+      const cls = m[2];
+      if (PX_FONT_RE.test(cls) && !/(?:^|\s)leading-/.test(cls)) {
+        out.push({ rule: "font-size-needs-line-height", file: relPath, line: i + 1, text: cls.match(PX_FONT_RE)[0] });
+      }
+    }
+  }
+  STYLE_OBJECT_RE.lastIndex = 0;
+  let m;
+  while ((m = STYLE_OBJECT_RE.exec(content)) != null) {
+    const body = m[1];
+    if (/\bfontSize\s*:/.test(body) && !/\blineHeight\s*:/.test(body)) {
+      const at = m.index + m[0].indexOf("fontSize");
+      out.push({ rule: "font-size-needs-line-height", file: relPath, line: content.slice(0, at).split("\n").length, text: "fontSize" });
+    }
+  }
+  return out;
+}
+
 // --- CLI ---------------------------------------------------------------------
 // Pure-absolute: scan every source file, error on ANY violation (no baseline).
 function runCli() {
@@ -193,6 +222,7 @@ function runCli() {
     const content = readFileSync(abs, "utf8");
     all.push(...scanContent(rel, content));
     all.push(...scanLegacyImports(rel, content));
+    all.push(...scanUnpairedFontSize(rel, content));
   }
 
   if (all.length > 0) {
@@ -203,7 +233,10 @@ function runCli() {
     process.stderr.write(
       "Move the appearance utility into src/print/ui/**, or use a named " +
         "scale/role token. Raw color literals belong only in the color-authoring files. " +
-        "src/print/** may not import from src/components/** or src/pages/** (no-legacy-import).\n",
+        "src/print/** may not import from src/components/** or src/pages/** (no-legacy-import). " +
+        "A pixel font size needs a whole-pixel line height on the same element (leading-[Npx] or " +
+        "lineHeight), because body line heights are fixed px and would otherwise be inherited " +
+        "unchanged, growing small text to a 20 px line box (font-size-needs-line-height).\n",
     );
     return 2;
   }

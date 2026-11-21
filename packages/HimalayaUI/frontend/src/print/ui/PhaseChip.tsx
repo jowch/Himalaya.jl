@@ -40,8 +40,8 @@ interface PhaseChipProps
 const base = "inline-flex items-center rounded-sm border";
 
 const sizeClass: Record<PhaseChipSize, string> = {
-  sm: "font-mono text-[11px] font-bold px-2 py-0.5",
-  md: "font-mono text-[13px] font-bold px-1.5 py-0.5",
+  sm: "font-mono text-[11px] leading-[16px] font-bold px-2 py-0.5",
+  md: "font-mono text-[13px] leading-[20px] font-bold px-1.5 py-0.5",
 };
 
 function variantStyle(variant: PhaseChipVariant, color: string): CSSProperties {
