@@ -40,7 +40,7 @@ function Chip({ tag, editable, measure = false, onAdd, onRemove }: ChipProps): J
       data-tag={measure ? undefined : tag.label}
       data-tag-state={measure ? undefined : tag.state}
       data-tag-standard={standard && !measure ? "true" : undefined}
-      className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border pb-0 pl-2.5 pr-1 pt-1 text-caption ${tone} ${fill}`}
+      className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border pt-0.5 pb-[3px] pl-2.5 pr-1 text-caption ${tone} ${fill}`}
     >
       {suggested && editable && onAdd ? (
         <button type="button" onClick={() => onAdd(tag.label)} title="Suggested. Click to confirm" aria-label={`Confirm tag ${name}`}>
@@ -131,7 +131,7 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
             aria-label={`${hidden.length} more ${hidden.length === 1 ? "tag" : "tags"}`}
             onClick={() => setMoreOpen((o) => !o)}
             data-testid="workspace-tags-more"
-            className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-hair-strong px-2.5 pb-0 pt-1 text-caption text-ink-soft hover:text-ink"
+            className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-hair-strong px-2.5 pt-0.5 pb-[3px] text-caption text-ink-soft hover:text-ink"
           >
             +{hidden.length}
           </button>
@@ -148,7 +148,7 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
         <button
           type="button"
           onClick={onOpenAdd}
-          className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-dashed border-hair-strong px-2.5 pb-0 pt-1 text-caption text-ink-soft hover:text-ink"
+          className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-dashed border-hair-strong px-2.5 pt-0.5 pb-[3px] text-caption text-ink-soft hover:text-ink"
         >
           + Tag
         </button>
