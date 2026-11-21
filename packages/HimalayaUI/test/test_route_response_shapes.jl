@@ -427,13 +427,6 @@ end
         end
     end
 
-    # I3.6 (#177): the "Compare-page route shapes" block pinned the response
-    # shapes of the /api/comparisons* routes (create / GET / 409 / delete /
-    # messages / listing). Those routes are retired with the Compare page, so
-    # the contract tests went with them. The kept comparison* tables +
-    # dispatcher branches are exercised by test_events.jl + test_comparisons.jl;
-    # the migrated round-trip is in test_migrate_comparisons_to_series.jl.
-
     @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
         mktempdir() do tmp
             ctx = _setup_for_resolve(tmp)

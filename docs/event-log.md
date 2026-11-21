@@ -67,7 +67,9 @@ keeps explicit no-op guards for them
 so old event logs still fold cleanly, but they write nothing. The
 `/groups` routes that emitted them are gone and the `index_group_members`
 write was removed; confirmation is now carried by `assignment_add` /
-`assignment_remove` writing `assignment_members`.
+`assignment_remove` writing `assignment_members`. The series and comparison
+kinds (`RETIRED_EVENT_KINDS` in `events.jl`, deleted 2026-11-21) get one shared
+guard for the same reason.
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
@@ -330,8 +332,8 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    *all* tabs — there's no originating tab to suppress.
 4. Dispatch on `remote.kind` via `applyRemoteToCache`'s switch
    statement — each event kind has a per-kind cache merge branch
-   (e.g. `peak_added` writes the new peak row, `series_deleted`
-   removes the deleted series' queries). No `entity_type` filter; all event
+   (e.g. `peak_added` writes the new peak row, `sample_bridged`
+   refetches the experiment's bridges). No `entity_type` filter; all event
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
@@ -410,18 +412,6 @@ this doc:
   queue via `task_local_storage()`; `_flush_post_commit_broadcasts!()`
   fires on commit, `_clear_post_commit_broadcasts!()` discards on
   rollback or status ≥ 400.
-
----
-
-## 3b. Series `content_hash` covers the plate only
-
-`compute_series_content_hash` (`series.jl:303-355`) deliberately **excludes**
-the recipe: only `title`, `description`, and the `series_members` rows feed
-the `sha256:`-prefixed hash; `series_samples` (the recipe), `ordering_variable`,
-and `order_rule` do not. So `forked_at_hash` comparisons are **plate-only** — a
-recipe edit after forking does not make the fork look diverged, and
-`series_recipe_updated` events never touch `content_hash`. Only plate-affecting
-edits (title, description, member rows) change the hash.
 
 ---
 

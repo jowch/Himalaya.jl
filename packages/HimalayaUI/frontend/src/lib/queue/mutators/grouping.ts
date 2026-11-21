@@ -27,8 +27,7 @@ function buildAuthOpts(p: {
  *  mutator's onSuccess: the replay coordinator's own-op path resolves the
  *  deferred + aborts the HTTP request and NEVER calls applyRemoteToCache
  *  (replayCoordinator.ts case-1), so the SSE arm alone would not reconcile an
- *  own-op edit — the saveSeries.ts `series_save` precedent invalidates in
- *  onSuccess for exactly this reason. E1's applyRemoteToCache structural arms
+ *  own-op edit, so onSuccess invalidates. E1's applyRemoteToCache structural arms
  *  (E1-owned; E2 verifies in Task 7) cover FOREIGN tabs.
  *
  *  corpusSamples is included to match the foreign arms in applyRemoteToCache

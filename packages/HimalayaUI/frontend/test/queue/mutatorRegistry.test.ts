@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
-import { scopeSeriesMutator } from "../../src/lib/queue/mutators/scopeSeries";
 import {
   addSampleTagMutator,
   removeSampleTagMutator,
@@ -77,20 +76,6 @@ describe("resolveMutator", () => {
         payload: { sampleId: 10, tagId: 7, key: "dose", value: "12" },
       }),
     ).toBe(editCorpusSampleTagMutator);
-  });
-
-  it("dispatches a persisted scoping batch op (add_tag with `tags`) to scopeSeriesMutator", () => {
-    // I3.4 (#174): a scoping op persists across reload (kind add_tag +
-    // clientOpId, mirrored by persistence.ts). Its payload is the batch shape
-    // {key, tags} — no sampleId/value — so it must NOT fall through to
-    // addCorpusSampleTagMutator (which would fire a malformed single-tag POST
-    // with sampleId/value undefined). Peel the batch off FIRST.
-    expect(
-      resolveMutator({
-        kind: "add_tag",
-        payload: { key: "ratio", tags: [{ sampleId: 10, value: "1:1" }] },
-      }),
-    ).toBe(scopeSeriesMutator);
   });
 
   it("returns the canonical mutator for non-dual kinds", () => {

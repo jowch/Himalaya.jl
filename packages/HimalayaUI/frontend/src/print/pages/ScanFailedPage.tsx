@@ -62,7 +62,7 @@ function patternSuffix(pattern: string | undefined): string {
  *    confirm, and an "Open configuration" accent primary with an ↵ chip.
  *
  * Two-stage confirm: first click arms; armed state swaps the button for a
- * Cancel + success Confirm pair — mirrors SeriesScopingPage's confirmingDiscard.
+ * Cancel + success Confirm pair.
  */
 export function ScanFailedPage({
   experimentId,

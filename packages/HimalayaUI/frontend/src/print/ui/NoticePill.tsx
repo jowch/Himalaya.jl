@@ -10,7 +10,7 @@ interface NoticePillProps {
 }
 
 
-/** A compact 10px pill shown in the kick-row of a Series folio card.
+/** A compact 10px pill for a short status notice.
  *
  * Two tones:
  *   - `"new"`   — accent-tinted "+N new match" (recipe found new matching samples).

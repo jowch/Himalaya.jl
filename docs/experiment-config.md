@@ -153,7 +153,7 @@ The resolver recognises two layouts by probing one image stem:
    and `{name}_tot.dat`, using the suffix of the probed file.
 2. **Plain `.dat`.** If `{stem}.dat` exists, the patterns are the defaults.
 
-Every reader of integration files (analysis, the trace route, series traces)
+Every reader of integration files (analysis and the trace route)
 resolves the path through `resolve_trace_path` (`pipeline.jl`). It tries the
 exact name first, then the name with a trailing `_0_001` removed, because older
 experiments migrated by `upgrade-grouping` store the stem with that suffix
@@ -274,8 +274,8 @@ lab-notebook CSV, and the CLI ingested them. That path, including
   way. The funnel leaves it `NULL`.
 - **`integration_pattern_for`** (`config.jl`) reads `[files].integration`
   from that blob when the row's `integration_pattern` column is unset, so
-  legacy experiments keep finding their traces. Analysis, the trace route and
-  series traces resolve the pattern through it.
+  legacy experiments keep finding their traces. Analysis and the trace route
+  resolve the pattern through it.
 - **`_beamline_from_config`** (`routes_experiments.jl`) reads beam centre,
   pixel size and `q_units` from the blob for legacy rows with no typed
   geometry columns set. The samples list (`routes_samples.jl`) also falls back
