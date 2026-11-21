@@ -52,7 +52,16 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test withprp[1].detector == "Pilatus 1M"
         @test withprp[2].id == e4
         @test withprp[2].beam_energy_ev === nothing
+        @test withprp[2].pipe_length_m === nothing
         @test withprp[2].detector === nothing
+
+        write(prp, "Beam energy=1.0 eV\nPipe length=1 mm\nDetector=rewritten\n")
+        write(joinpath(tmp, "missing.prp"), "Beam energy=11000 eV\nDetector=late\n")
+        again = JSON3.read(String(call("GET", "/api/samples/$s2_id/exposures").body))
+        @test again[1].beam_energy_ev ≈ 9000.5
+        @test again[1].detector == "Pilatus 1M"
+        @test again[2].beam_energy_ev ≈ 11000
+        @test again[2].detector == "late"
 
         # Select e2
         r = call("PATCH", "/api/exposures/$e2/select";
@@ -151,4 +160,12 @@ end
             "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'select_exposure'"))).c
         @test n_events == 0
     end
+end
+
+@testset "prp_details: a failed parse is not cached" begin
+    path = joinpath(mktempdir(), "flaky.prp")
+    write(path, "Beam energy=8000 eV\n")
+    @test (@test_logs (:warn, r"could not read") match_mode=:any HimalayaUI.prp_details(path; parse = _ -> error("unreadable")))[:beam_energy_ev] === nothing
+    @test HimalayaUI.prp_details(path)[:beam_energy_ev] ≈ 8000
+    @test HimalayaUI.prp_details(path; parse = _ -> error("not called"))[:beam_energy_ev] ≈ 8000
 end

@@ -1,16 +1,26 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
-function prp_details(path)
-    details = Dict{Symbol,Any}(:beam_energy_ev => nothing, :pipe_length_m => nothing, :detector => nothing)
-    (path isa AbstractString && isfile(path)) || return details
+const PRP_DETAILS = Dict{String,Dict{Symbol,Any}}()
+const PRP_DETAILS_LOCK = ReentrantLock()
+
+function prp_details(path; parse = parse_prp)
+    empty = Dict{Symbol,Any}(:beam_energy_ev => nothing, :pipe_length_m => nothing, :detector => nothing)
+    path isa AbstractString || return empty
+    hit = lock(() -> get(PRP_DETAILS, path, nothing), PRP_DETAILS_LOCK)
+    hit === nothing || return hit
+    isfile(path) || return empty
     prp = try
-        parse_prp(path)
-    catch
-        return details
+        parse(path)
+    catch err
+        @warn "prp_details: could not read" path exception = err
+        return empty
     end
-    details[:beam_energy_ev] = coalesce(prp.beam_energy_ev, nothing)
-    details[:pipe_length_m]  = coalesce(prp.pipe_length_m, nothing)
-    details[:detector]       = coalesce(prp.detector, nothing)
+    details = Dict{Symbol,Any}(
+        :beam_energy_ev => coalesce(prp.beam_energy_ev, nothing),
+        :pipe_length_m  => coalesce(prp.pipe_length_m, nothing),
+        :detector       => coalesce(prp.detector, nothing),
+    )
+    lock(() -> PRP_DETAILS[path] = details, PRP_DETAILS_LOCK)
     details
 end
 
