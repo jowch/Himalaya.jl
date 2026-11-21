@@ -26,7 +26,7 @@ export interface DockStepperProps {
 
 /**
  * Labeled prev/next stepper inside the bottom Dock (§7). Six-ish copies across
- * the Focus / Loupe / Series-builder docks collapsed to one primitive; callers
+ * the old page docks collapsed to one primitive; callers
  * vary the label, axis glyphs, disable conditions, and the readout node, while
  * the `data-testid` contract (`dock-{prev,next}-*`, `dock-*-count`) stays fixed.
  */

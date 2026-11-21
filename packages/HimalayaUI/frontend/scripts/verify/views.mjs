@@ -4,11 +4,6 @@ import { armSettle } from "./settle.mjs";
 import { reachable } from "./http.mjs";
 import { prepareUser, routeUrl } from "./page.mjs";
 
-export const VIEW_ROUTES = {
-  loupe: (id) => `/sample/${id}/loupe`,
-  focus: (id) => `/sample/${id}`,
-};
-
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return null;
@@ -24,39 +19,10 @@ function failedRequests(settle, where) {
   throw new Error(`${where} loaded with failed requests (${list}); the view it shows can't be trusted`);
 }
 
-async function corpusStatuses(page, cfg, experimentId) {
-  const tracker = armSettle(page);
-  await page.goto(routeUrl(cfg, `/experiments/${experimentId}/corpus`), { waitUntil: "domcontentloaded" });
-  const settle = await tracker.wait({ timeoutMs: 20000 });
-  if (!settle.settled) throw new Error(`the corpus did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-  failedRequests(settle, "the corpus");
-  return page.locator("[role='row']").evaluateAll((rows) =>
-    rows
-      .map((row) => ({
-        names: [...row.querySelectorAll("button")].map((b) => (b.textContent ?? "").trim()),
-        status: row.querySelector("[data-testid='status-cell']")?.textContent?.trim() ?? null,
-        kept: (() => {
-          const cell = row.querySelector("[data-testid='kept-cell']");
-          const count = cell?.querySelector("[data-role='kept-count']")?.textContent?.trim();
-          const total = cell?.querySelector("[data-role='kept-total']")?.textContent?.replace(/[^0-9]/g, "");
-          return count && total ? `${count}/${total}` : null;
-        })(),
-      }))
-      .filter((r) => r.status !== null),
-  );
-}
-
 export function frameFromLabels(labels, frameOrder) {
   const numbers = labels.map((l) => /^Frame (\d+)\b/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
   if (numbers.length !== 1) return null;
   return frameOrder[numbers[0] - 1] ?? null;
-}
-
-async function openedFrame(page, cfg, route, frameOrder) {
-  await settledGoto(page, cfg, route);
-  const pressed = page.getByRole("button", { name: /^Frame \d+/, pressed: true });
-  const labels = await pressed.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
-  return frameFromLabels(labels, frameOrder);
 }
 
 export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
@@ -100,6 +66,19 @@ async function readWorkspaceRows(page) {
   );
 }
 
+export function keptFromLabels(labels) {
+  const frames = labels.filter((l) => /^Frame \d+\b/.test(l));
+  if (!frames.length) return null;
+  return `${frames.filter((l) => !/, dropped$/.test(l)).length}/${frames.length}`;
+}
+
+async function workspaceKept(page) {
+  const labels = await page
+    .locator("[data-testid='workspace-exposures'] [aria-label^='Frame ']")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
+  return keptFromLabels(labels);
+}
+
 async function currentWorkspaceFrame(page, frameOrder) {
   const current = page.locator("[data-testid='workspace-exposures'] [aria-current='true']");
   const labels = await current.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
@@ -119,6 +98,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
   for (const s of samples) {
     const row = page.locator(`[data-testid='workspace-samples'] [data-sample-id='${s.id}']`);
     let frame = null;
+    let kept = null;
     if (await row.count()) {
       const tracker = armSettle(page);
       await row.click();
@@ -126,15 +106,16 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
       if (!settle.settled) throw new Error(`the workspace did not settle on sample ${s.id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
       failedRequests(settle, `the workspace on sample ${s.id}`);
       frame = await currentWorkspaceFrame(page, s.frameOrder);
+      kept = await workspaceKept(page);
     }
-    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_reused: start.reuse });
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_reused: start.reuse });
   }
   return out;
 }
 
 export async function readViews(cfg, experimentId, samples) {
   if (!(await reachable(cfg.uiBase, "/"))) {
-    throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the corpus, Loupe, Focus and the workspace in the browser; run `bin/verify seed`");
+    throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the workspace in the browser; run `bin/verify seed`");
   }
   await ensureBrowser(cfg);
   const session = await connect(cfg);
@@ -142,16 +123,7 @@ export async function readViews(cfg, experimentId, samples) {
   try {
     await prepareUser(session.page, cfg, { username: "verify", onboarding: false });
     const workspace = await readWorkspace(session.page, cfg, experimentId, samples);
-    const rows = await corpusStatuses(session.page, cfg, experimentId);
-    for (const s of samples) {
-      const row = rows.filter((r) => r.names.includes(s.name));
-      const views = { corpus_text: row.length === 1 ? row[0].status : null, corpus_kept: row.length === 1 ? row[0].kept : null };
-      for (const [view, route] of Object.entries(VIEW_ROUTES)) {
-        views[view] = await openedFrame(session.page, cfg, route(s.id), s.frameOrder);
-      }
-      Object.assign(views, workspace.get(s.id) ?? {});
-      out.set(s.id, views);
-    }
+    for (const s of samples) out.set(s.id, workspace.get(s.id) ?? {});
   } finally {
     await session.browser.close().catch(() => undefined);
   }

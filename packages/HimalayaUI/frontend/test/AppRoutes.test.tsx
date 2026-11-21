@@ -9,7 +9,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
 import { AppRoutes } from "../src/print/shell/AppRoutes";
 import * as api from "../src/api";
-import type { ResolveSuccess } from "../src/api";
 
 function makeQc() {
   return new QueryClient({
@@ -98,26 +97,6 @@ describe("AppRoutes — I4.4 index cutover redirects", () => {
   it("/index/:experiment (no sample) redirects to /experiments (T3.2)", async () => {
     renderRoutes("/index/lipid");
     expect(await screen.findByText("All experiments")).toBeInTheDocument();
-  });
-
-  it("/index/:experiment/:sample resolves the slug then redirects to /sample/:id", async () => {
-    const body: ResolveSuccess = {
-      experiment_id: 1, experiment_name: "lipid",
-      sample_id: 10, sample_name: "JC001",
-      exposure_id: undefined, exposure_filename: undefined,
-    };
-    vi.spyOn(global, "fetch").mockImplementation(() =>
-      Promise.resolve({
-        ok: true, status: 200, json: () => Promise.resolve(body),
-      } as Response),
-    );
-    renderRoutes("/index/lipid/JC001");
-    // Phase-4 cutover: /sample/:id now serves the greenfield FocusPage. The
-    // single ResolveSuccess fetch mock doesn't satisfy the page's corpus-sample
-    // query, so it renders its `focus-not-found` body — which only mounts on
-    // the Focus route. That the Focus route (not /experiments) was reached is
-    // the assertion this slug-redirect test makes.
-    expect(await screen.findByTestId("focus-not-found")).toBeInTheDocument();
   });
 
   it("/index/:experiment/:sample falls back to /experiments when resolve 404s (T3.2)", async () => {

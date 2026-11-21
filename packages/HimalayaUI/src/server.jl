@@ -34,6 +34,8 @@ const _DB_WRITE_LOCK = ReentrantLock()
 # eliminates the TOCTOU race that an isready/wait combo would introduce).
 const SSE_SUBSCRIBERS = Ref{Vector{Any}}([])
 const SSE_LOCK        = ReentrantLock()
+const SSE_OPENING_FRAME   = "retry: 3000\n\n"
+const SSE_HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
 
 function current_db()
     db = _DB_REF[]
@@ -78,15 +80,14 @@ function register_routes!()
     # Plan A: Oxygen 1.10.x @stream macro — receives an HTTP.Stream directly.
     # This is the cleanest path: no forked HTTP.serve, no response-body callback
     # gymnastics. The handler runs in its own task; we block on take!(pending)
-    # so there's no busy-poll. A per-subscriber heartbeat Timer pushes
-    # ":heartbeat\n\n" every 15 s onto the same channel so reverse proxies
-    # don't drop idle connections. On disconnect the write throws and we prune.
+    # so there's no busy-poll. On disconnect the write throws and we prune.
     @stream "/api/events" function(stream::HTTP.Stream)
         HTTP.setheader(stream, "Content-Type"      => "text/event-stream")
         HTTP.setheader(stream, "Cache-Control"     => "no-cache")
         HTTP.setheader(stream, "Connection"        => "keep-alive")
         HTTP.setheader(stream, "X-Accel-Buffering" => "no")
         startwrite(stream)
+        write(stream, SSE_OPENING_FRAME)
 
         pending = Channel{String}(64)
         sub = (pending = pending,)
@@ -101,7 +102,7 @@ function register_routes!()
         # Timer task — a slow client must not be able to leak heartbeat
         # tasks at one-per-15s.
         heartbeat = Timer(15; interval = 15) do _
-            _try_put!(pending, ":heartbeat\n\n")
+            _try_put!(pending, SSE_HEARTBEAT_FRAME)
         end
 
         try
@@ -130,6 +131,7 @@ function register_routes!()
     register_picker_routes!()
     register_resolve_routes!()
     register_grouping_routes!()
+    register_bridge_routes!()
     register_fs_routes!()
 end
 
@@ -320,6 +322,35 @@ function rearm_rescan_schedulers!(db::SQLite.DB)
     nothing
 end
 
+function try_backfill_monitors!(db::SQLite.DB, experiment_id::Int)
+    try
+        backfill_monitors!(db, experiment_id)
+    catch err
+        @warn "beam monitor backfill failed" experiment_id = experiment_id exception = err
+        0
+    end
+end
+
+function backfill_all_monitors!(db::SQLite.DB)
+    ids = Tables.rowtable(DBInterface.execute(db,
+        "SELECT DISTINCT experiment_id FROM exposures
+          WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
+    for r in ids
+        try_backfill_monitors!(db, Int(r.experiment_id))
+    end
+    nothing
+end
+
+function start_background!(db::SQLite.DB)
+    start_gc_timer!(db)
+    rearm_rescan_schedulers!(db)
+    Threads.@spawn try
+        backfill_all_monitors!(db)
+    catch err
+        @warn "boot beam monitor backfill failed" exception = err
+    end
+end
+
 function arm_for_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
                        interval = get(RESCAN_TIER_INTERVALS, tier, nothing),
                        first_tick_seconds = interval)
@@ -386,11 +417,7 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
 
     # Change detection: injected seam (test) or the real cheap_change_check. Both
     # take (db, experiment_id) and resolve data_dir themselves.
-    try
-        backfill_monitors!(db, experiment_id)
-    catch err
-        @warn "beam monitor backfill failed" experiment_id = experiment_id exception = err
-    end
+    try_backfill_monitors!(db, experiment_id)
     changed = try
         cheap_check_fn !== nothing ? cheap_check_fn(db, experiment_id) :
                                      cheap_change_check(db, experiment_id)
@@ -448,12 +475,15 @@ function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
     nothing
 end
 
-function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+function boot!(db::SQLite.DB)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
-    start_gc_timer!(db)
-    rearm_rescan_schedulers!(db)   # 6c-2: timers are in-memory; re-arm on boot
+    start_background!(db)
+end
+
+function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+    boot!(db)
     # parallel = true wraps each request in `Threads.@spawn`, dispatching
     # handlers across the default thread pool. Without it, every handler
     # runs cooperatively on HTTP.jl's single interactive thread — even with
@@ -477,9 +507,7 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
-    Oxygen.resetstate()
-    bind_db!(db)
-    register_routes!()
+    boot!(db)
     # Match production's threading model so the test suite exercises the
     # same scheduling as `serve`. Any test that depends on single-threaded
     # request ordering is a bug.

@@ -1,18 +1,16 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { renderWithProviders } from "./test-utils";
 import { NavModal } from "../src/print/shell/NavModal";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 
-/**
- * NavModal calls useNavigate (M1: commitSample is a door into /sample/:id), so
- * it needs Router context. In production it is a global overlay in CorpusShell,
- * a sibling of the routed content — mirror that here: NavModal beside a tiny
- * Routes whose /sample/:id stub lets a navigation be observed.
- */
+function Landed(): JSX.Element {
+  return <div data-testid="focus-stub">{useLocation().pathname}</div>;
+}
+
 function renderModal() {
   return renderWithProviders(
     <MemoryRouter initialEntries={["/samples"]}>
@@ -20,8 +18,8 @@ function renderModal() {
       <Routes>
         <Route path="/samples" element={<div data-testid="route-samples" />} />
         <Route
-          path="/sample/:sampleId"
-          element={<div data-testid="focus-stub" />}
+          path="/experiments/:id/workspace/:sampleId"
+          element={<Landed />}
         />
       </Routes>
     </MemoryRouter>,
@@ -164,10 +162,7 @@ describe("<NavModal>", () => {
     });
   });
 
-  // M1 on-ramp: committing a sample is the third door into the indexing
-  // workspace (beside the contact-sheet status cell and the loupe link). Before
-  // this NavModal only wrote the store and left the URL put. cubic_run03 = id 10.
-  it("navigates to the focus workspace when a sample is committed", async () => {
+  it("opens the committed sample in the workspace", async () => {
     const user = userEvent.setup();
     useAppState.setState({
       navModalOpen: true,
@@ -178,7 +173,7 @@ describe("<NavModal>", () => {
     await screen.findByText("cubic_run03");
 
     await user.keyboard("{Enter}");
-    expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+    expect(await screen.findByTestId("focus-stub")).toHaveTextContent("/experiments/1/workspace/10");
   });
 
   it("Backspace on empty input at sample step pops the experiment chip", async () => {
@@ -297,7 +292,7 @@ describe("<NavModal>", () => {
       expect(screen.queryByTestId("nav-samples-group-label")).toBeNull();
     });
 
-    it("Enter on a highlighted sample hit navigates to /sample/:id and closes", async () => {
+    it("Enter on a highlighted sample hit opens it in the workspace and closes", async () => {
       const user = userEvent.setup();
       useAppState.setState({ navModalOpen: true, navModalStep: "experiment" });
       renderModal();
@@ -313,7 +308,7 @@ describe("<NavModal>", () => {
         expect(useAppState.getState().activeSampleId).toBe(10);
         expect(useAppState.getState().activeExperimentId).toBe(1);
       });
-      expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+      expect(await screen.findByTestId("focus-stub")).toHaveTextContent("/experiments/1/workspace/10");
     });
 
     it("clicking a sample hit commits like Enter would", async () => {
@@ -329,7 +324,7 @@ describe("<NavModal>", () => {
         expect(useAppState.getState().activeSampleId).toBe(11);
         expect(useAppState.getState().activeExperimentId).toBe(1);
       });
-      expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+      expect(await screen.findByTestId("focus-stub")).toHaveTextContent("/experiments/1/workspace/11");
     });
 
     it("one flat highlight order spans both groups, experiments first", async () => {
@@ -359,7 +354,7 @@ describe("<NavModal>", () => {
         expect(useAppState.getState().activeSampleId).toBe(30);
         expect(useAppState.getState().activeExperimentId).toBe(2);
       });
-      expect(await screen.findByTestId("focus-stub")).toBeInTheDocument();
+      expect(await screen.findByTestId("focus-stub")).toHaveTextContent("/experiments/2/workspace/30");
     });
 
     it("caps the group at 8 and discloses the remainder honestly", async () => {

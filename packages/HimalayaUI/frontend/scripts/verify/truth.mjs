@@ -45,13 +45,11 @@ function statusMatches(shown, confirmed) {
   return confirmed.some((c) => (shown.status === "form_factor" ? c.call === "none" : c.call.split("+").includes(shown.call)));
 }
 
-const VIEW_NAMES = { loupe: "Loupe", focus: "Focus", workspace: "the workspace" };
+const VIEW_NAMES = { workspace: "the workspace" };
 
 export function unreadViews(app) {
   if (!app.views) return [];
   const unread = [];
-  if (app.frames.length && !app.views.loupe) unread.push("loupe");
-  if (app.frames.some(isKept) && !app.views.focus) unread.push("focus");
   if (app.frames.some(isKept) && !app.views.workspace) unread.push("workspace");
   return unread;
 }
@@ -81,8 +79,8 @@ function sampleInvariants(app, frames) {
 
 export const INVARIANTS = {
   status_matches_assignment: "A sample with no confirmed call (no assignment on a kept frame) is shown as unreviewed; a sample with one is shown with that call.",
-  representative_kept: "The frame the sample status describes (corpus_api) or Loupe, Focus or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
-  views_agree: "The sample status (corpus_api), Loupe, Focus and the workspace describe the same frame of a sample (needs --ui).",
+  representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
+  views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
 };
 
@@ -163,14 +161,10 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
     const shown = one ? { ...shownStatus(one.shown), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
     const unread = one ? unreadViews(one) : [];
     if (one && one.views) {
-      shown.corpus_text = one.corpusText;
-      const read = statusFromText(one.corpusText);
-      const expected = one.frames.length ? shown.status : "no_exposures";
-      if (read !== expected) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${expected}; check-truth is misreading the app`);
       shown.workspace_text = one.workspaceText ?? null;
-      shown.corpus_kept = one.corpusKept ?? null;
-      const keptCount = `${one.frames.filter(isKept).length}/${one.frames.length}`;
-      if (one.corpusKept !== keptCount) problems.push(`the corpus Kept column reads "${one.corpusKept ?? "nothing"}" but the app has ${keptCount} frames kept`);
+      shown.workspace_kept = one.workspaceKept ?? null;
+      const keptCount = one.frames.length ? `${one.frames.filter(isKept).length}/${one.frames.length}` : null;
+      if (one.workspaceKept !== keptCount) problems.push(`the workspace's frame cards show ${one.workspaceKept ?? "nothing"} kept but the app has ${keptCount ?? "no frames"}`);
       for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Frame N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
@@ -292,10 +286,9 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
-      const { corpus_text: corpusText = null, corpus_kept: corpusKept = null, workspace_text: workspaceText = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
-      s.views = { loupe: frames.loupe ?? null, focus: frames.focus ?? null, workspace: frames.workspace ?? null };
-      s.corpusText = corpusText;
-      s.corpusKept = corpusKept;
+      const { workspace_text: workspaceText = null, workspace_kept: workspaceKept = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
+      s.views = { workspace: frames.workspace ?? null };
+      s.workspaceKept = workspaceKept;
       s.workspaceText = workspaceText;
     }
   }

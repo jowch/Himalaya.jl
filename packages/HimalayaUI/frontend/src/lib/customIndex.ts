@@ -4,7 +4,11 @@
 // backend stores (the q₁ slope), and snap-to-peaks helpers. Mirrors the mockup
 // `SYMS` / `customRefls` / `snapValues`.
 
+import phaseRatioIndices from "./phaseRatioIndices.json";
+
 const TWO_PI = 2 * Math.PI;
+
+export const CUSTOM_SNAP_TOL = 0.022;
 
 // "square" is the 2D square lattice. Its q-law is q = 2π√N / a with
 // N = h²+k² — algebraically identical to the cubic case (N = h²+k²+l²), so it
@@ -37,14 +41,14 @@ export interface SymmetrySpec {
 // envelope. `def` is the initial slider value (used by stories); it stays inside
 // the envelope.
 export const SYMS: Record<string, SymmetrySpec> = {
-  Pn3m:      { kind: "cubic",    Ms: [2, 3, 4, 6, 8, 9],      param: "a", def: 197, min: 10, max: 500 },
-  Im3m:      { kind: "cubic",    Ms: [2, 4, 6, 8, 10, 12],    param: "a", def: 252, min: 10, max: 700 },
-  Ia3d:      { kind: "cubic",    Ms: [6, 8, 14, 16, 20, 22],  param: "a", def: 218, min: 10, max: 650 },
-  Fm3m:      { kind: "cubic",    Ms: [3, 4, 8, 11, 12],       param: "a", def: 200, min: 10, max: 500 },
-  Fd3m:      { kind: "cubic",    Ms: [3, 8, 11, 12, 16, 19, 24, 27, 32, 35, 36], param: "a", def: 250, min: 10, max: 600 },
-  Lamellar:  { kind: "lamellar", Ms: [1, 2, 3, 4, 5],         param: "d", def: 60,  min: 10, max: 1000 },
-  Hexagonal: { kind: "hex",      Ms: [1, 3, 4, 7, 9, 12],     param: "a", def: 70,  min: 10, max: 500 },
-  Square:    { kind: "square",   Ms: [1, 2, 4, 5, 8, 9, 10, 13, 16, 17, 18, 20], param: "a", def: 80, min: 10, max: 500 },
+  Pn3m:      { kind: "cubic",    Ms: phaseRatioIndices.Pn3m,      param: "a", def: 197, min: 10, max: 500 },
+  Im3m:      { kind: "cubic",    Ms: phaseRatioIndices.Im3m,    param: "a", def: 252, min: 10, max: 700 },
+  Ia3d:      { kind: "cubic",    Ms: phaseRatioIndices.Ia3d,  param: "a", def: 218, min: 10, max: 650 },
+  Fm3m:      { kind: "cubic",    Ms: phaseRatioIndices.Fm3m,       param: "a", def: 200, min: 10, max: 500 },
+  Fd3m:      { kind: "cubic",    Ms: phaseRatioIndices.Fd3m, param: "a", def: 250, min: 10, max: 600 },
+  Lamellar:  { kind: "lamellar", Ms: phaseRatioIndices.Lamellar,         param: "d", def: 60,  min: 10, max: 1000 },
+  Hexagonal: { kind: "hex",      Ms: phaseRatioIndices.Hexagonal,     param: "a", def: 70,  min: 10, max: 500 },
+  Square:    { kind: "square",   Ms: phaseRatioIndices.Square, param: "a", def: 80, min: 10, max: 500 },
 };
 
 /**
@@ -102,7 +106,7 @@ export function basisFor(sym: string, val: number): number {
 }
 
 /** How many predicted orders land on an observed peak (within relTol). */
-export function landsOn(sym: string, val: number, peakQs: number[], relTol = 0.022): number {
+export function landsOn(sym: string, val: number, peakQs: number[], relTol = CUSTOM_SNAP_TOL): number {
   let lands = 0;
   for (const rf of customRefls(sym, val)) {
     if (peakQs.some((pq) => Math.abs(pq - rf.q) / rf.q < relTol)) lands++;

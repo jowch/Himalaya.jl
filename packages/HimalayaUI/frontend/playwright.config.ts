@@ -7,19 +7,16 @@ export default defineConfig({
   // page.route mocks); run with `npm run e2e:live` instead.
   testIgnore: ["**/live/**"],
   timeout: 15_000,
+  forbidOnly: !!process.env["CI"],
+  retries: 0,
+  reporter: process.env["CI"] ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: "http://127.0.0.1:5173",
     browserName: "chromium",
     headless: true,
-    // Clipboard permissions are scoped per-spec via `test.use({ permissions })`
-    // in the spec file (currently only `e2e/figure-export.spec.ts`) so prompts
-    // don't silently apply to specs that didn't opt in.
   },
   webServer: {
-    // `--host 127.0.0.1` is load-bearing: default `npm run dev` binds Vite to
-    // `localhost` (sometimes IPv6 ::1) and Playwright's 127.0.0.1 probe times
-    // out for 60s. Always bind explicitly here.
-    command: "npm run dev -- --host 127.0.0.1",
+    command: "vite build && vite preview --host 127.0.0.1 --port 5173 --strictPort",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: !process.env["CI"],
     stdout: "pipe",

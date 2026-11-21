@@ -14,7 +14,23 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": { target: `http://127.0.0.1:${apiPort}`, changeOrigin: false },
+      "/api": {
+        target: `http://127.0.0.1:${apiPort}`,
+        changeOrigin: false,
+        configure: (proxy) => {
+          proxy.on("error", (_err, _req, res) => {
+            if (res && "writeHead" in res && !res.headersSent) {
+              res.writeHead(502, { "Content-Type": "text/plain" });
+              res.end("backend unreachable");
+            }
+          });
+          proxy.on("proxyRes", (upstream, _req, res) => {
+            upstream.on("close", () => {
+              if (!res.writableEnded) res.destroy();
+            });
+          });
+        },
+      },
     },
     // Don't HMR-track e2e specs or Playwright artifacts. Without this, a
     // spec edit during a live Playwright run triggers a page reload that

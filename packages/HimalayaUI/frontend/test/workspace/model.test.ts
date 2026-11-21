@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { sampleStatus, nextUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { peakList } from "../fixtures/peaks";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
   return { id, experiment_id: 1, name: `S${id}`, notes: null, tags: [], q_units: "A^-1", ...over };
@@ -40,6 +41,20 @@ describe("sampleStatus", () => {
   });
 });
 
+describe("firstUnreviewed", () => {
+  it("opens on the first unreviewed sample", () => {
+    expect(firstUnreviewed([sample(1, { assignment_state: "indexed", phase: "Pn3m" }), sample(2), sample(3)])?.id).toBe(2);
+  });
+
+  it("falls back to the first sample when everything is reviewed", () => {
+    expect(firstUnreviewed([sample(1, { assignment_state: "form_factor" }), sample(2, { assignment_state: "form_factor" })])?.id).toBe(1);
+  });
+
+  it("is undefined for an empty experiment", () => {
+    expect(firstUnreviewed([])).toBeUndefined();
+  });
+});
+
 describe("nextUnreviewed", () => {
   const list = [
     sample(1, { assignment_state: "indexed", phase: "Pn3m" }),
@@ -73,6 +88,12 @@ describe("rankCandidates", () => {
     expect(ranked).toHaveLength(9);
     expect(ranked.some((c) => c.id === 2)).toBe(false);
   });
+
+  it("keeps a custom index, which has no score, and lists it first", () => {
+    const custom = { ...index(5, "Hexagonal", null), kind: "speculative" as const };
+    const ranked = rankCandidates([index(1, "Im3m", 0.4), custom, index(3, "Ia3d", 0.9)]);
+    expect(ranked.map((c) => c.id)).toEqual([5, 3, 1]);
+  });
 });
 
 describe("stepExposure", () => {
@@ -96,19 +117,16 @@ describe("imageUrl", () => {
 });
 
 describe("peakClick", () => {
-  const peaks = [
-    { id: 1, source: "auto", excluded: false },
-    { id: 2, source: "auto", excluded: true },
-    { id: 3, source: "manual", excluded: false },
-  ];
+  const peaks = peakList(7, { auto: [0.1, { q: 0.2, excluded: true }], manual: [0.15, 0.25] });
   it("disables an active auto peak and restores a disabled one", () => {
-    expect(peakClick(peaks, 1)).toEqual({ kind: "exclude", excluded: true });
-    expect(peakClick(peaks, 2)).toEqual({ kind: "exclude", excluded: false });
+    expect(peakClick(peaks, { id: 1, source: "auto" })).toEqual({ kind: "exclude", excluded: true });
+    expect(peakClick(peaks, { id: 2, source: "auto" })).toEqual({ kind: "exclude", excluded: false });
   });
-  it("removes a manual peak", () => {
-    expect(peakClick(peaks, 3)).toEqual({ kind: "remove" });
+  it("removes a manual peak that shares its id with an auto peak", () => {
+    expect(peakClick(peaks, { id: 1, source: "manual" })).toEqual({ kind: "remove" });
+    expect(peakClick(peaks, { id: 2, source: "manual" })).toEqual({ kind: "remove" });
   });
   it("ignores an unknown peak", () => {
-    expect(peakClick(peaks, 9)).toBeNull();
+    expect(peakClick(peaks, { id: 3, source: "auto" })).toBeNull();
   });
 });

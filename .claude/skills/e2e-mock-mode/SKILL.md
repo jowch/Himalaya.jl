@@ -1,75 +1,21 @@
 ---
 name: e2e-mock-mode
-description: Run the Playwright E2E suite cleanly without the live Julia backend on :8080 leaking past route mocks. Detects port 8080, prompts the user before stopping, runs E2E with the documented Vite host binding, restores port state. Use when smoke tests appear flaky/failing — usually it's the live backend leaking through.
+description: Run the mocked Playwright E2E suite (npm run e2e) locally or in a cloud session, and read its failures. Use when a mocked spec fails or you need to run a subset.
 disable-model-invocation: true
 ---
 
 # e2e-mock-mode
 
-Playwright route mocks like `**/api/samples/10/exposures` don't match URLs with query strings (e.g. `?exclude_rejected=true`), so the request leaks through Vite's `/api` proxy to the live Julia backend on `:8080`. When the backend is up, mocked tests can silently consume real data and fail in confusing ways. This skill makes that interaction explicit.
+The mocked suite needs no backend and no server started by hand. `npm run e2e` builds the bundle and serves it with `vite preview` on `127.0.0.1:5173`, or reuses whatever already answers there outside CI. Every spec takes `test` from `e2e/fixtures.ts`, which answers any `/api` request the spec did not mock with a 501 and fails the test. A backend running on :8080 can't leak into the results, so there's no need to stop it.
 
 ## Procedure
 
-1. **Detect the conflict.**
-   ```bash
-   julia_pid=$(lsof -ti:8080 2>/dev/null | head -1)
-   vite_pid=$(lsof -ti:5173 2>/dev/null | head -1)
-   ```
-   If `julia_pid` is set, the backend is running and will leak past route mocks.
+1. From `packages/HimalayaUI/frontend/`, run `npx playwright test --trace off`. For a subset, add `--grep "<name>"` or a spec file.
+2. In a cloud session the project's Playwright build has no matching browser. Run with a throwaway config that sets `launchOptions.executablePath: "/opt/pw-browsers/chromium"` (see `e2e/AGENTS.md`).
+3. If :5173 is held by something that doesn't serve the app, free it with `lsof -ti:5173 | xargs kill -9`. Don't kill the demo or a dev server the user is using; Playwright reuses those.
+4. Report pass/fail counts and the reason for each failure.
 
-2. **Surface the problem and ask before stopping.** Do NOT stop the backend without user confirmation — they may have it up intentionally for live preview / curl / Inspect-page work.
-   ```
-   Live Julia backend running on :8080 (PID <julia_pid>). Playwright route mocks don't match URLs with query strings, so this will leak past them and 3 smoke tests will fail with confusing data-active assertion errors.
+## Reading failures
 
-   Stop the Julia backend for this E2E run? [y/N]
-   ```
-
-3. **If user agrees, stop the backend.**
-   ```bash
-   kill "$julia_pid" 2>/dev/null
-   sleep 1
-   lsof -ti:8080 2>/dev/null && echo "still running" || echo "stopped"
-   ```
-   Remember the PID so you can offer to restart it after.
-
-4. **Make sure Vite is bound to 127.0.0.1, not localhost.** `playwright.config.ts` expects `127.0.0.1:5173`. If Vite is already running on `:5173`, leave it (Playwright reuses). If not, start it bound correctly:
-   ```bash
-   nohup npm run dev -- --host 127.0.0.1 > /tmp/vite-e2e.log 2>&1 &
-   ```
-   from `packages/HimalayaUI/frontend/`.
-
-5. **Run the E2E suite.**
-   ```bash
-   cd packages/HimalayaUI/frontend
-   node_modules/.bin/playwright test
-   ```
-   Or a subset if the user named one: `--grep "<name>"` or a specific file.
-
-6. **Report results.** Pass/fail counts, plus any specific failure reasons.
-
-7. **Offer to restart the backend** if it was stopped:
-   ```
-   E2E run complete (X passed, Y failed). Restart Julia backend on :8080? [y/N]
-   ```
-   If yes, run the documented serve command from CLAUDE.md:
-   ```bash
-   julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
-     serve --port 8080
-   ```
-   `serve` reads the central DB via `HIMALAYA_DB_PATH` (or the default); it takes no experiment-dir argument.
-
-## Args
-
-- `--grep "<name>"` — pass through to Playwright to run a single test
-- `<file>` — pass through to run a single spec file (e.g. `e2e/smoke.spec.ts`)
-- `--keep-backend` — skip steps 2/3, run anyway (user takes responsibility for the leak)
-
-## Why user-only (`disable-model-invocation: true`)
-
-Stopping the Julia backend can disrupt other work the user is doing — manual preview testing, curl-based debugging, an open browser session. Always confirm before killing it.
-
-## Gotchas
-
-- **Port reuse:** Playwright's `webServer` config has `reuseExistingServer: !process.env.CI`. If Vite is already running, Playwright reuses it. If your Vite was started with `npm run dev` (default `--host`), it binds to `localhost` (potentially `::1` IPv6) and Playwright's `127.0.0.1` checks fail with a 60-second timeout. Always use `--host 127.0.0.1` when starting Vite for E2E.
-- **Test count:** 11 mocked spec files (corpus-culling, figure-export, loupe-tags, multiplayer-replay-rerun, new-series-creation, permalinks, qlink, series-builder, series-folio, series-scoping, smoke). All should pass when the backend is stopped. If specs still fail with the backend down, that's a real bug, not the leak.
-- **The leak is asymmetric:** read-only routes leak through and return real data. Mutations (POST/PATCH) might 404 or silently succeed against the wrong sample. Don't trust E2E mutation assertions when the backend is up.
+- `every /api request the page makes must be answered by a mock` lists the unmocked requests. Mock each with data the page would really get, not an empty body that leaves the page in an error state.
+- A handler that should let a request through calls `route.fallback()`, which hands it to the catch-all. Never `route.continue()`: that sends the request to the real proxy.

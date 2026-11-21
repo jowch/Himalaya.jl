@@ -3,12 +3,6 @@
 // aria-keyshortcuts all derive from this registry. Gesture handling lives in
 // the interaction system (useKeyboardLayer / usePageActions / core.ts).
 // Design: print/shell/AGENTS.md §"Keyboard shortcut registry"
-//
-// Rev-2 axes (2026-06-21): ↑/↓ = sample nav, ←/→ = detail nav (frame on
-// Corpus/Loupe, candidate on Focus — same id, page-interpreted handler).
-// SUPERSEDES the "Locked decisions (Jonathan 2026-06-13)" comment ([ ] sample,
-// ←→ exposure, ↑↓ candidate) — that model has been retired by the ingestion
-// redesign shell unification (M2, T2.1).
 
 export type ShortcutId =
   | "prevSample"
@@ -18,7 +12,6 @@ export type ShortcutId =
   | "prevDetail"
   | "nextDetail"
   | "openFocus"
-  | "openLoupe"
   | "toggleSelect"
   | "extendPrev"
   | "extendNext"
@@ -29,11 +22,7 @@ export type ShortcutId =
   | "dismiss"
   | "undo"
   | "redo"
-  | "reorderUp"
-  | "reorderDown"
-  | "addSample"
   | "confirm"
-  | "addPeak"
   | "find";
 
 export type ShortcutGroup = "Navigate" | "Screen" | "Edit" | "General";
@@ -58,8 +47,7 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   nextFlagged: { id: "nextFlagged", keys: ["Shift+ArrowDown"], label: "Next flagged", group: "Navigate" },
   prevDetail: { id: "prevDetail", keys: ["ArrowLeft"], label: "Previous detail", group: "Navigate" },
   nextDetail: { id: "nextDetail", keys: ["ArrowRight"], label: "Next detail", group: "Navigate" },
-  openFocus: { id: "openFocus", keys: ["Enter"], label: "Open Focus workspace", group: "Navigate" },
-  openLoupe: { id: "openLoupe", keys: ["l"], label: "Open Loupe", group: "Navigate" },
+  openFocus: { id: "openFocus", keys: ["Enter"], label: "Open in the workspace", group: "Navigate" },
   // Select — multi-select verbs.
   toggleSelect: { id: "toggleSelect", keys: [" "], label: "Toggle selection", group: "Navigate" },
   extendPrev: { id: "extendPrev", keys: ["Shift+ArrowLeft"], label: "Extend selection left", group: "Navigate" },
@@ -73,16 +61,10 @@ export const SHORTCUTS: Record<ShortcutId, ShortcutDef> = {
   // no separate Keep verb.
   drop: { id: "drop", keys: ["x"], label: "Drop", group: "Screen" },
   representative: { id: "representative", keys: ["r"], label: "Set representative", group: "Screen" },
-  // Edit — undoable mutations + list reorder.
+  // Edit — undoable mutations.
   undo: { id: "undo", keys: ["Mod+z"], label: "Undo", group: "Edit" },
   redo: { id: "redo", keys: ["Mod+Shift+z"], label: "Redo", group: "Edit" },
-  reorderUp: { id: "reorderUp", keys: ["Alt+ArrowUp"], label: "Move up", group: "Edit" },
-  reorderDown: { id: "reorderDown", keys: ["Alt+ArrowDown"], label: "Move down", group: "Edit" },
-  // Surface-local in-surface verbs (Series A / ⌘Enter, Focus P) — kept out of
-  // OVERLAY_IDS (the overlay lists only the global/navigation keymap).
-  addSample: { id: "addSample", keys: ["a"], label: "Add a sample", group: "Edit" },
-  confirm: { id: "confirm", keys: ["Mod+Enter"], label: "Confirm / build", group: "Edit" },
-  addPeak: { id: "addPeak", keys: ["p"], label: "Toggle add-peak mode", group: "Edit" },
+  confirm: { id: "confirm", keys: ["Mod+Enter"], label: "Confirm", group: "Edit" },
 };
 
 const GLYPH: Record<string, string> = {

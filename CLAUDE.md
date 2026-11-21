@@ -65,12 +65,17 @@ scratch/                            # gitignored — exploratory scripts and tra
 ## Running tests
 
 ```bash
-# First-time setup (also run after `git worktree add`). `make setup` runs the same
+# First-time setup (also run after `git worktree add`). `make dev-setup` runs the same
 # steps (with `npm ci`) and undoes Pkg.develop's rewrite of HimalayaUI/Project.toml:
 # HimalayaUI must `develop` the local core BEFORE instantiating — Manifest.toml is
 # gitignored and there is no [sources], so a bare instantiate resolves Himalaya from
 # the REGISTRY (different physics from this checkout). `[compat] Himalaya = "0.6"`
 # makes that fail loudly instead of silently; `develop` is the fix, not a workaround.
+# For development use `make dev-setup`: it first writes packages/HimalayaUI/LocalPreferences.toml
+# (gitignored) with `precompile_workload = false`, so a src/ edit recompiles in ~5 s, not
+# ~100 s. `make setup` is the deploy path and keeps the route warm-up. Delete that file (or
+# set it to true) to build the warm-up in dev, e.g. to time a cold start. The manual steps
+# below don't write it. See packages/HimalayaUI/src/AGENTS.md.
 (cd packages/HimalayaUI/frontend && npm install)
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
@@ -88,7 +93,7 @@ GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("Himala
 # HimalayaUI frontend — from packages/HimalayaUI/frontend/
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
-npm run e2e           # Playwright E2E (mocked; auto-starts Vite)
+npm run e2e           # Playwright E2E (mocked; builds and serves the bundle; runs in CI)
 npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # lint:design + lint:ratchet + eslint + tsc --noEmit + vite build (must pass before PR)
 ```
@@ -118,7 +123,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md).
 
-**No lab data handy (or in a cloud session)?** `make setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
+**No lab data handy (or in a cloud session)?** `make dev-setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
 
 **Verifying a change in the real app:** use the `verify-himalaya` skill. `bin/verify doctor`, `bin/verify seed`, then drive the browser (`open`, `snapshot`, `click`, `press`, `screenshot`) and run `bin/verify check-truth` against the demo's `TRUTH.csv`. Its Feature Map (`.claude/skills/verify-himalaya/references/features/README.md`) says how to reach and drive each feature. CLI tests: `npm run test:verify` in `packages/HimalayaUI/frontend`.
 
@@ -149,6 +154,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 ## Current state
 
 - **Greenfield cutover MERGED to `main` (PR #281, merge-commit `dcac451`, 2026-06-15):** "The Print" is the sole app. The real app lives in `packages/HimalayaUI/frontend/src/print/App.tsx` (`PrintApp`); `index.html → src/print/main.tsx` is the single entry (mounts `#app`); the legacy `src/App.tsx`/`src/main.tsx`/`print.html` were deleted. `npm run build` emits `dist/index.html` containing the real app. The `worktree-greenfield-ui-rebuild` branch has been deleted. Follow-ups on `main`: #282 (dropped the dead `/api/comparisons` frontend client) and #283 (beam-center calibration).
+- **Three-pane workspace replaces Focus, Loupe and Series (2026-11-20):** triage happens at `/experiments/:id/workspace/:sampleId` (`src/workspace/`). The Focus, Loupe and Series pages, their components and their tests were deleted; `/sample/:id`, `/sample/:id/loupe` and `/index/:exp/:sample` redirect to the workspace. The experiments home, ingest funnel, configuration and grouping review remain. **The corpus page was deleted 2026-11-21:** opening an experiment (`/experiments/:id`, `ExperimentEntry`) goes straight to the workspace on the first unreviewed sample; Rescan, Configure and Review grouping are ⌘K palette commands, and a notice above the sample list flags grouping checks and rescans. Some of the history below describes the deleted pages.
 - Core Himalaya: `v0.5.3` on `main` — v2 peak-finding (persistence + sharpness + kneedle).
 - HimalayaUI — Plans 1–8 + Focus/Index workspace + Inspect page + Series (folio/scoping/builder) + experiment-config system + skeleton loading + multiplayer + instrumentation foundation + mutation queue + slug permalinks + figure export + functional-redesign sweep (M1–M3) + component-library extraction (enforced design system) complete:
   - **Backend:** transactional SQLite pipeline, HTTP ingest funnel (`/api/fs/*` → `POST /api/experiments` → `scan_and_group!`), FK enforcement, REST API (Oxygen.jl), CLI (`analyze`, `show`, `serve`, `upgrade-grouping`), TIFF→PNG image route with Q0f31-aware lognormalize, env-driven deployment.

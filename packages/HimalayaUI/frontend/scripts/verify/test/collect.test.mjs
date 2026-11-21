@@ -152,8 +152,8 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
   const views = async (_cfg, experimentId, samples) => {
     asked.push({ experimentId, samples });
     return new Map([
-      [10, { corpus_text: "Pn3m", corpus_kept: "2/2", loupe: "MO_H2O_S2", focus: "MO_H2O_S1", workspace: "MO_H2O_S1", workspace_text: "Pn3m" }],
-      [11, { corpus_text: "Pn3m", corpus_kept: "1/1", loupe: "MO_PEG5_S3", focus: "MO_PEG5_S3", workspace: "MO_PEG5_S3", workspace_text: "Pn3m" }],
+      [10, { workspace_kept: "2/2", workspace: "MO_H2O_S2", workspace_text: "Pn3m" }],
+      [11, { workspace_kept: "1/1", workspace: "MO_PEG5_S3", workspace_text: "Pn3m" }],
     ]);
   };
   try {
@@ -163,8 +163,8 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     assert.equal(r.ok, false);
     assert.deepEqual(r.summary.invariants_failed, ["representative_kept", "views_agree"]);
     assert.equal(r.invariants.views_agree.checked, true);
-    assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus_api: "MO_H2O_S1", loupe: "MO_H2O_S2", focus: "MO_H2O_S1", workspace: "MO_H2O_S1" }]);
-    assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["loupe"]);
+    assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus_api: "MO_H2O_S1", workspace: "MO_H2O_S2" }]);
+    assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["workspace"]);
   } finally {
     await stub.close();
   }
@@ -177,8 +177,8 @@ test("check-truth --ui fails when the workspace list, read in place after a writ
   const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
   const views = async () =>
     new Map([
-      [10, { corpus_text: "Pn3m", loupe: "MO_H2O_S1", focus: "MO_H2O_S1", workspace: "MO_H2O_S1", workspace_text: "Unreviewed", workspace_reused: true }],
-      [11, { corpus_text: "Pn3m", loupe: "MO_PEG5_S3", focus: "MO_PEG5_S3", workspace: "MO_PEG5_S3", workspace_text: "Pn3m", workspace_reused: true }],
+      [10, { workspace: "MO_H2O_S1", workspace_text: "Unreviewed", workspace_reused: true }],
+      [11, { workspace: "MO_PEG5_S3", workspace_text: "Pn3m", workspace_reused: true }],
     ]);
   try {
     const r = await checkTruth(cfg, { ui: true }, { views });

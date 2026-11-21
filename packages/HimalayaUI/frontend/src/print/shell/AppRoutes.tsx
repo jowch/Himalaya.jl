@@ -6,14 +6,13 @@ import { useInteraction } from "../interaction/registry";
 import { core } from "../interaction/core";
 import { TopNav } from "./TopNav";
 import { ExperimentShell } from "./ExperimentShell";
-import { LoupePage } from "../pages/LoupePage";
-import { FocusPage } from "../pages/FocusPage";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
-import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
+import { ExperimentEntry } from "./ExperimentEntry";
 import { ConfigurationPage } from "../pages/ConfigurationPage";
 import { GroupingReviewPage } from "../pages/GroupingReviewPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
+import { SampleRedirect } from "./SampleRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
@@ -29,14 +28,10 @@ function GroupingReviewRoute(): JSX.Element {
   return (
     <GroupingReviewPage
       // Remount per experiment so ephemeral selection/cursor state can't carry a
-      // stale multi-selection across an experiment switch (mirrors SeriesBuilderRoute).
+      // stale multi-selection across an experiment switch.
       key={experimentId}
       experimentId={experimentId}
-      // Absolute target: `/grouping` is a top-level takeover route (not nested
-      // under the experiment shell), so a relative `../corpus` resolves to bare
-      // `/corpus` (a 404). Confirm-groups and Back both land on this
-      // experiment's corpus.
-      onBack={() => navigate(`/experiments/${experimentId}/corpus`)}
+      onBack={() => navigate(`/experiments/${experimentId}`)}
     />
   );
 }
@@ -102,69 +97,29 @@ function AppShell(): JSX.Element {
   );
 }
 
-/**
- * AppRoutes — the single hoisted top-level <Routes> table, plus the shared
- * root effects (global shortcuts).
- *
- * T3.2 (App Shell Unification): one layout route, <AppShell>, hosts every
- * surface — the corpus pages, the experiment tree, Focus/Loupe, AND
- * the `*` stale catch-all (PageBody). The legacy shell trio was
- * deleted in T3.2. Pre-shell redirects (`/`, `/index*`,
- * `/compare*`, `/samples`) sit outside the layout route so no chrome mounts
- * under them and races the redirect.
- *
- * Focus/Loupe stay flat at `/sample/:id` and `/sample/:id/loupe` — NO resolver,
- * NO experiment-scoped nesting (a resolver would always flash a loading screen).
- * The chrome reads the experiment from the loaded sample's experiment_id.
- */
 export function AppRoutes(): JSX.Element {
-  // R0a (#221): the theme-class effect is gone. "The Print" is the single
-  // identity defined statically in styles.css `@theme`; there is no
-  // `theme-light` class to toggle on <html>.
-
   return (
     <Routes>
-      {/* T3.2: single AppShell wraps every surface. */}
       <Route element={<AppShell />}>
-        {/* T3.2: flat loupe route — /sample/:sampleId/loupe (matches gotoSample + loupeHref). */}
-        <Route path="/sample/:sampleId/loupe" element={<LoupePage />} />
-        {/* I4.1 (#178): focus workspace. I4.4 (#181) redirects /index* here. */}
-        <Route path="/sample/:sampleId" element={<FocusPage />} />
         <Route path="/series/*" element={<Navigate to="/experiments" replace />} />
-        {/* I1.7 (#163): Inspect retired. Old /inspect* deep-links land on
-            /experiments (the new home). Splat covers /inspect, /inspect/:exp,
-            /inspect/:exp/:sample. */}
         <Route path="/inspect/*" element={<Navigate to="/experiments" replace />} />
-        {/* Ingestion redesign: experiments tree (E1). ExperimentShell owns its
-            own header/tabs per spec §3.2 (page content, not a separate chrome). */}
         <Route path="/experiments" element={<ExperimentsHomePage />} />
         <Route path="/experiments/new" element={<NewExperimentPage />} />
-        {/* T4.0: draft Configuration — first-run mode, no :id yet. */}
         <Route path="/experiments/new/config" element={<ConfigurationPage />} />
-        {/* The combined scan + grouping-review surface (p1-grouping) is a
-            TAKEOVER: it owns its full header, so it mounts OUTSIDE ExperimentShell
-            (no redundant experiment header). Declared before the layout route. */}
         <Route path="/experiments/:id/grouping" element={<GroupingReviewRoute />} />
         <Route path="/experiments/:id" element={<ExperimentShell />}>
-          <Route index element={<Navigate to="corpus" replace />} />
-          <Route path="corpus" element={<ExperimentCorpusPage />} />
+          <Route index element={<ExperimentEntry />} />
+          <Route path="corpus" element={<Navigate to=".." replace />} />
           <Route path="config" element={<ConfigurationPage />} />
         </Route>
-        {/* The `*` stale catch-all mounts PageBody which runs the URL→stale
-            classifier and renders StaleUrlPage or ResolvingFallback. */}
         <Route path="*" element={<PageBody />} />
       </Route>
-      {/* Pre-shell redirects — sit OUTSIDE the layout route so no chrome
-          mounts under them and races the redirect. */}
-      {/* I4.4 (#181): Index retired. Bare `/` and the sampleless legacy Index
-          URLs land on the experiments home; a slug-bearing `/index/:exp/:sample`
-          resolves to the focus workspace via IndexSlugRedirect. */}
       <Route path="/experiments/:id/workspace/:sampleId?" element={<WorkspacePage />} />
+      <Route path="/sample/:sampleId/*" element={<SampleRedirect />} />
       <Route path="/" element={<Navigate to="/experiments" replace />} />
       <Route path="/index" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
-      {/* T3.2: /samples redirects to /experiments (SamplesPage retired from /samples). */}
       <Route path="/samples" element={<Navigate to="/experiments" replace />} />
       <Route path="/experiments/:eid/compare/*" element={<Navigate to="/experiments" replace />} />
       <Route path="/compare/all/*" element={<Navigate to="/experiments" replace />} />

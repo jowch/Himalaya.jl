@@ -147,11 +147,11 @@ const baseProps = {
 };
 
 describe("<SampleTableRow> nav seams", () => {
-  it("forwards onOpenLoupe to the SpecCell name button", () => {
-    const onOpenLoupe = vi.fn();
-    render(<SampleTableRow {...baseProps} onOpenLoupe={onOpenLoupe} />);
+  it("forwards onOpenSample to the SpecCell name button", () => {
+    const onOpenSample = vi.fn();
+    render(<SampleTableRow {...baseProps} onOpenSample={onOpenSample} />);
     fireEvent.click(screen.getByRole("button", { name: /POPC/ }));
-    expect(onOpenLoupe).toHaveBeenCalled();
+    expect(onOpenSample).toHaveBeenCalled();
   });
 
   it("forwards onActivateExposure to the gallery on thumb double-click", () => {
@@ -177,16 +177,16 @@ describe("<SampleTableRow> nav seams", () => {
         phase={null}
       />,
     );
-    // A clear terminal status instead of the "Not indexed" invitation.
+    // A clear terminal status instead of the "Unreviewed" invitation.
     expect(screen.getByText("No exposures")).toBeInTheDocument();
-    expect(screen.queryByText("Not indexed")).toBeNull();
+    expect(screen.queryByText("Unreviewed")).toBeNull();
   });
 
   it("total 0 WITHOUT noExposures (exposures still loading) does NOT show 'No exposures' — no false empty signal", () => {
     render(
       <SampleTableRow {...baseProps} exposures={[]} kept={0} total={0} phase={null} />,
     );
-    // Status cell reads "Not indexed" (sample isn't confirmed empty yet).
+    // Status cell reads "Unreviewed" (sample isn't confirmed empty yet).
     expect(screen.queryByText("No exposures")).toBeNull();
   });
 });

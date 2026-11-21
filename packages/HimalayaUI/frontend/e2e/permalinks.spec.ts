@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 // Spec §8.2 — Playwright mocked. /api/* is intercepted so this runs without a
 // backend.
@@ -47,6 +47,10 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ id: 17, name: "lipid", path: "", data_dir: "",
         analysis_dir: "", manifest_path: null, created_at: "", q_units: null }) }));
+  await page.route("**/api/experiments/17/bridges", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/experiments/17/loads", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/samples", (route) => {
     route.fulfill({
       status: 200, contentType: "application/json",
@@ -60,11 +64,11 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples/42/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/samples/42/messages", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/events", (r) =>
+    r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
 });
 
-test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to the focus workspace", async ({ page }) => {
+test("legacy /index/<exp>/<sample> deep-link resolves the slug and opens the workspace", async ({ page }) => {
   await seedSession(page);
   await page.route(RESOLVE_RE, (route) => {
     route.fulfill({
@@ -77,9 +81,9 @@ test("legacy /index/<exp>/<sample> deep-link resolves the slug and redirects to 
     });
   });
   await page.goto("/index/lipid/JC001");
-  // IndexSlugRedirect resolves the slug → /sample/42 (the focus workspace).
-  await expect(page).toHaveURL(/\/sample\/42$/);
-  await expect(page.getByTestId("focus-workspace")).toBeVisible();
+  await expect(page).toHaveURL(/\/experiments\/17\/workspace\/42$/);
+  await expect(page.getByTestId("workspace")).toBeVisible();
+  await expect(page.locator("[data-testid='workspace-samples'] [aria-current='true']")).toHaveText(/JC001/);
 });
 
 test("legacy /index deep-link whose slug 404s falls back to the experiments home", async ({ page }) => {

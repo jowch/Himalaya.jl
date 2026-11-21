@@ -14,16 +14,12 @@ import type { ShortcutId } from "./shortcuts";
  * surface.
  */
 
-// The ids rendered in the overlay: the global + navigation + screen vocabulary.
-// Surface-local in-surface verb keys (Focus P, Series A/⌘Enter) are NOT
-// included per spec §4.1 — the overlay lists only the global/navigation keymap.
 const OVERLAY_IDS: ShortcutId[] = [
   "prevSample",
   "nextSample",
   "prevDetail",
   "nextDetail",
   "openFocus",
-  "openLoupe",
   "drop",
   "representative",
   "dismiss",

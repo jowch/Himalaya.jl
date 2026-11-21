@@ -130,6 +130,13 @@ export class ApiError extends Error {
   }
 }
 
+export class NetworkError extends Error {
+  constructor(public method: string, public path: string, public override cause?: unknown) {
+    super(`${method} ${path} could not reach the server`);
+    this.name = "NetworkError";
+  }
+}
+
 export interface AuthOpts {
   username?: string;
   clientId?: string;
@@ -148,10 +155,17 @@ export async function request<T>(
   if (opts?.clientId) headers["X-Client-Id"] = opts.clientId;
   if (opts?.clientOpId) headers["X-Client-Op-Id"] = opts.clientOpId;
 
+  new Headers(headers);
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
 
-  const res = await fetch(path, init);
+  let res: Response;
+  try {
+    res = await fetch(path, init);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new NetworkError(method, path, e);
+  }
   if (res.status === 204) return undefined as T;
 
   const text = await res.text();
@@ -373,6 +387,20 @@ export const dismissGroupingFlag = (sampleId: number, body: DismissGroupingFlagB
 export const undoDismissGroupingFlag = (sampleId: number, opts?: AuthOpts): Promise<void> =>
   request<void>("POST", `/api/samples/${sampleId}/dismiss-flag/undo`, {}, opts);
 
+export interface SampleBridge {
+  sample_id: number;
+  group_id: number;
+}
+
+export const listBridges = (experimentId: number): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("GET", `/api/experiments/${experimentId}/bridges`);
+
+export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("POST", `/api/samples/${sampleId}/bridge`, { to_sample_id: toSampleId }, opts);
+
+export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
+
 // Exposures
 export interface ExposureTag {
   id: number;
@@ -486,7 +514,7 @@ export interface PeakAddResponse extends Peak {
 }
 
 /**
- * Backend response for PATCH /api/peaks/:id. The peak fields are inlined; the
+ * Backend response for PATCH /api/peaks/auto/:id. The peak fields are inlined; the
  * event metadata fields are nullable for the no-op case where excluded did
  * not actually change.
  */
@@ -497,7 +525,7 @@ export interface PeakUpdatedResponse extends Peak {
 }
 
 /**
- * Backend response for DELETE /api/peaks/:id. Carries the post-state hash so
+ * Backend response for DELETE /api/peaks/manual/:id. Carries the post-state hash so
  * the client can mark the exposure cache fresh inline with the optimistic
  * delete and avoid a transient stale-indices alert flash before the SSE frame
  * arrives.
@@ -512,11 +540,11 @@ export const listPeaks = (exposure_id: number) =>
   request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
 export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
   request<PeakAddResponse>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
-export const removePeak = (peak_id: number, opts?: AuthOpts) =>
-  request<PeakRemoveResponse>("DELETE", `/api/peaks/${peak_id}`, undefined, opts);
-export const setPeakExcluded = (peak_id: number, excluded: boolean, opts?: AuthOpts) =>
+export const removeManualPeak = (peak_id: number, opts?: AuthOpts) =>
+  request<PeakRemoveResponse>("DELETE", `/api/peaks/manual/${peak_id}`, undefined, opts);
+export const setAutoPeakExcluded = (peak_id: number, excluded: boolean, opts?: AuthOpts) =>
   request<PeakUpdatedResponse>(
-    "PATCH", `/api/peaks/${peak_id}`, { excluded }, opts);
+    "PATCH", `/api/peaks/auto/${peak_id}`, { excluded }, opts);
 
 // Indices
 export interface IndexPeakRef {
@@ -601,14 +629,6 @@ export type CustomIndexResponse = IndexEntry & {
   event_id: number;
   view_row_id: number | null;
 };
-// `ratios` = the NORMALIZED ratios the modal DREW (each reflection's q over the
-// first's). The backend bounds its snap to these; without them it scans the full
-// core ratio series and claims reflections the user never saw (that series is
-// longer than SYMS.Ms for 5 of 8 phases). Sent as ratios rather than a count:
-// the two series are hand-maintained in different languages and have drifted
-// twice (the core carried a √11 at Hexagonal position 6 until #304, and
-// RADICANDS.Pn3m sat 5 entries short). They line up today, but only
-// incidentally — a count is correct only until the next divergence.
 export const createCustomIndex = (
   exposure_id: number, phase: string, basis: number, ratios: number[], opts?: AuthOpts,
 ) => request<CustomIndexResponse>(
@@ -680,7 +700,6 @@ export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
 
 // Single-entity fetchers for mention resolution
-export const getPeak     = (id: number) => request<Peak>("GET", `/api/peaks/${id}`);
 export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indices/${id}`);
 export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
 export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);

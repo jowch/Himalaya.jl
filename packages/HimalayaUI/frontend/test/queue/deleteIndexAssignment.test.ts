@@ -96,12 +96,14 @@ describe("CUSTOM_SNAP_TOL ↔ landsOn relTol", () => {
       path.join(root, "packages/HimalayaUI/frontend/src/lib/customIndex.ts"), "utf8");
 
     const jlTol = jl.match(/^const CUSTOM_SNAP_TOL = ([0-9.]+)/m)?.[1];
-    const tsTol = ts.match(/export function landsOn\([^)]*relTol = ([0-9.]+)/s)?.[1];
+    const tsTol = ts.match(/^export const CUSTOM_SNAP_TOL = ([0-9.]+);/m)?.[1];
+    const landsOnDefault = /export function landsOn\([^)]*relTol = CUSTOM_SNAP_TOL\)/s.test(ts);
 
     // A null here means the constant was renamed or reformatted — fix the
     // regex AND re-check the pairing, don't delete the test.
     expect(jlTol, "CUSTOM_SNAP_TOL not found in speculative.jl").not.toBeUndefined();
-    expect(tsTol, "landsOn relTol default not found in customIndex.ts").not.toBeUndefined();
+    expect(tsTol, "CUSTOM_SNAP_TOL not found in customIndex.ts").not.toBeUndefined();
     expect(Number(jlTol)).toBe(Number(tsTol));
+    expect(landsOnDefault, "landsOn must default relTol to CUSTOM_SNAP_TOL").toBe(true);
   });
 });

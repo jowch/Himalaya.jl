@@ -500,8 +500,8 @@ function register_experiments_routes!()
         # (cheap_change_check, scan_and_group!) resolve the experiment's data_dir from
         # the row themselves, and return gracefully on an empty directory.
         Threads.@spawn begin
+            try_backfill_monitors!(db, id)
             try
-                backfill_monitors!(db, id)
                 changed = force_scan || cheap_change_check(db, id)
                 if changed
                     scan_and_group!(db, id;
@@ -630,6 +630,9 @@ function register_experiments_routes!()
                     # IN-subqueries still resolve the ids.
                     DBInterface.execute(db, """
                         DELETE FROM series_samples WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_bridges WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         UPDATE series_members SET exposure_id = NULL WHERE exposure_id IN

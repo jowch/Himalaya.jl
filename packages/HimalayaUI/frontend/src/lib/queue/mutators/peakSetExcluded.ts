@@ -47,7 +47,7 @@ function makeMutator(
         },
       };
     },
-    request: (p) => api.setPeakExcluded(p.peakId, excluded, buildAuthOpts(p)),
+    request: (p) => api.setAutoPeakExcluded(p.peakId, excluded, buildAuthOpts(p)),
     onSuccess: (p, response, qc) => {
       const peaksKey = queryKeys.peaks(p.exposureId);
       // Strip event metadata + queue plumbing fields. Merge (not replace) so

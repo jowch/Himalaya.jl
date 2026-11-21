@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
 import { useMutationState } from "@tanstack/react-query";
 import { useFloatingDock } from "./floatingDock";
+import { useConnection } from "../../lib/connection";
 
 const SHOW_THRESHOLD_MS = 500;
 const STUCK_THRESHOLD_MS = 30000;
+const OFFLINE_THRESHOLD_MS = 5000;
+
+function changes(n: number): string {
+  return n === 1 ? "1 change" : `${n} changes`;
+}
 
 /**
  * InfrastructureBanner — persistent status strip for long-pending mutations.
  *
  * Hidden when no mutation has been pending for >500ms (avoids flicker on
- * fast successes). Upgrades to a "stuck" state with a Refresh button after
- * any pending mutation has been in-flight >30s.
+ * fast successes). After 30s pending it counts the changes not saved yet.
+ * When the live stream has been down for 5s it says the connection is lost,
+ * pending edits or not; queued edits keep retrying until the server answers.
  */
 export function InfrastructureBanner(): JSX.Element | null {
   const [, setTick] = useState(0);
@@ -20,35 +27,32 @@ export function InfrastructureBanner(): JSX.Element | null {
   // paint over the banner. Step aside to the bottom-right corner (free) while
   // the lane is occupied; otherwise stay centred where the banner reads best.
   const centerLaneOccupied = useFloatingDock((s) => s.centerLaneOccupied);
+  const streamDownSince = useConnection((s) => s.streamDownSince);
 
   const pendingSubmittedAts = useMutationState({
     filters: { status: "pending" },
     select: (m) => m.state.submittedAt,
   });
 
-  // Re-tick once a second so time-since-submit comparisons update without
-  // depending on mutation cache events. Gated on whether any mutation is
-  // pending — the steady-state idle case (no pending writes) doesn't need
-  // a wakeup every second. Effect only re-runs when crossing the empty
-  // boundary, not on every count change.
-  const hasPending = pendingSubmittedAts.length > 0;
+  const needsTick = pendingSubmittedAts.length > 0 || streamDownSince !== null;
   useEffect(() => {
-    if (!hasPending) return;
+    if (!needsTick) return;
     const handle = window.setInterval(() => setTick((t) => t + 1), 1000);
     return () => window.clearInterval(handle);
-  }, [hasPending]);
+  }, [needsTick]);
 
   const now = Date.now();
   const visible = pendingSubmittedAts.filter(
     (t) => typeof t === "number" && now - t > SHOW_THRESHOLD_MS,
   );
+  const offline =
+    streamDownSince !== null && now - streamDownSince > OFFLINE_THRESHOLD_MS;
 
-  if (visible.length === 0) return null;
+  if (visible.length === 0 && !offline) return null;
 
   const stuck = visible.some((t) => now - t > STUCK_THRESHOLD_MS);
-
-  const stateAttr = stuck ? "stuck" : "showing";
-  // Severity is conveyed by the leading icon + word below, not an edge hue.
+  const stateAttr = offline ? "offline" : stuck ? "stuck" : "showing";
+  const pending = pendingSubmittedAts.length;
 
   return (
     <div
@@ -64,22 +68,24 @@ export function InfrastructureBanner(): JSX.Element | null {
         "rounded-md border border-hair bg-plate text-ink px-4 py-2 shadow-lg text-body"
       }
     >
-      {stuck ? (
+      {offline || stuck ? (
         <>
-          <span aria-label="Error" className="flex-shrink-0 font-bold text-error">
+          <span aria-label={offline ? "Offline" : "Not saved"} className="flex-shrink-0 font-bold text-warning">
             {"✕"}
           </span>
-          <span>
-            <span className="font-semibold">Error.</span> Couldn&rsquo;t save. Try
-            refreshing.
-          </span>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="rounded-md border border-error px-2 py-0.5 text-ink hover:bg-paper-sunk"
-          >
-            Refresh
-          </button>
+          {offline ? (
+            <span>
+              <span className="font-semibold">Connection lost.</span> Retrying&hellip;
+              {pending > 0
+                ? ` ${changes(pending)} will save when it\u2019s back.`
+                : null}
+            </span>
+          ) : (
+            <span>
+              <span className="font-semibold">{changes(pending)} not saved yet.</span>{" "}
+              Still trying.
+            </span>
+          )}
         </>
       ) : (
         <>

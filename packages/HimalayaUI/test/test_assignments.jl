@@ -478,10 +478,7 @@ end
     end
 end
 
-# The normalized ratios the modal draws for Pn3m (SYMS.Ms = [2,3,4,6,8,9], and
-# Pn3m IS a clean positional prefix of the core series — Hexagonal is the one
-# that isn't, pinned separately below).
-_pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6]
+_pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)
 
 @testset "insert_custom_index! claims the peaks the modal showed landing" begin
     # The modal counts a reflection as landing at CUSTOM_SNAP_TOL (customIndex.ts
@@ -632,33 +629,6 @@ end
     end
 end
 
-@testset "seriesRatio RADICANDS mirrors phaseratios exactly" begin
-    # `RADICANDS` is position-indexed by `ratio_position`, so it must match
-    # phaseratios(P) in BOTH value and length — a wrong value mislabels a peak,
-    # a short list renders a claimed order with a blank label. Both had drifted
-    # by hand: Hexagonal carried the √11 removed in #304, and Pn3m stopped at 11
-    # of 16 entries. Parsed from the real file so this can't rot into a comment.
-    ts_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "seriesRatio.ts")
-    @test isfile(ts_path)
-    ts = read(ts_path, String)
-
-    body = match(r"(?:export )?const RADICANDS[^=]*=\s*\{(.*?)\n\};"s, ts)
-    @test body !== nothing
-    entries = Dict{String, Vector{Int}}()
-    for m in eachmatch(r"(\w+):\s*\[([^\]]*)\]", body.captures[1])
-        entries[m.captures[1]] =
-            [parse(Int, strip(x)) for x in split(m.captures[2], ",") if !isempty(strip(x))]
-    end
-    @test length(entries) == 8   # all eight phases, or the regex drifted
-
-    for (name, radicands) in sort(collect(entries))
-        P = HimalayaUI.resolve_phase(name)
-        @test P !== nothing
-        # phaseratios stores √N (and Lamellar stores n, whose radicand is n²).
-        @test radicands == round.(Int, Himalaya.phaseratios(P) .^ 2)
-    end
-end
-
 @testset "every reflection the modal draws maps to a backend ratio position" begin
     # The alignment half of the modal↔backend contract (the tolerance half is
     # pinned from the TS side in deleteIndexAssignment.test.ts). `drawn_ratios`
@@ -672,12 +642,13 @@ end
     @test isfile(ts_path)
     ts = read(ts_path, String)
 
-    # SYMS entries look like:  Pn3m: { kind: "cubic", Ms: [2, 3, 4, 6, 8, 9], …
+    json_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "phaseRatioIndices.json")
+    indices = JSON3.read(read(json_path, String))
     entries = Dict{String, Tuple{String, Vector{Int}}}()
-    for m in eachmatch(r"(\w+):\s*\{\s*kind:\s*\"(\w+)\",\s*Ms:\s*\[([^\]]*)\]", ts)
-        name, kind, ms_s = m.captures[1], m.captures[2], m.captures[3]
-        ms = [parse(Int, strip(x)) for x in split(ms_s, ",") if !isempty(strip(x))]
-        entries[name] = (kind, ms)
+    for m in eachmatch(r"(\w+):\s*\{\s*kind:\s*\"(\w+)\",\s*Ms:\s*phaseRatioIndices\.(\w+)", ts)
+        name, kind, key = m.captures[1], m.captures[2], m.captures[3]
+        @test key == name
+        entries[name] = (kind, Int.(indices[Symbol(key)]))
     end
     # All eight canonical phases, or the regex drifted from the source.
     @test length(entries) == 8
@@ -709,7 +680,7 @@ end
     # again. The loop is the contract — these are the Hexagonal-specific teeth.
     hex_backend = Himalaya.phaseratios(Himalaya.Hexagonal; normalize = true)
     hex_ms      = entries["Hexagonal"][2]
-    @test hex_ms == [1, 3, 4, 7, 9, 12]
+    @test hex_ms == [1, 3, 4, 7, 9, 12, 13, 16, 19, 21, 25, 27, 28]
     @test !(11 in round.(Int, hex_backend .^ 2))      # #304: the √11 is gone…
     @test !(11 in [h^2 + h*k + k^2 for h in -12:12, k in -12:12])  # …because it cannot exist
     @test round.(Int, hex_backend[1:length(hex_ms)] .^ 2) == hex_ms
@@ -741,7 +712,7 @@ end
         end
 
         nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis;
-                                             drawn_ratios = ratios[1:6])
+                                             drawn_ratios = ratios)
         @test Int(Tables.rowtable(DBInterface.execute(db,
             "SELECT basis_locked FROM indices WHERE id = ?", [nid]))[1].basis_locked) == 1
         @test Tables.rowtable(DBInterface.execute(db,

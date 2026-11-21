@@ -133,10 +133,8 @@ If you add a *new* test directory at the same level (e.g. an
 
 | Spec | What it covers |
 |---|---|
-| `peak-add-no-stale-banner.spec.ts` | Synchronous reanalyze closes the stale-banner window |
 | `post-pr37.spec.ts` | Multiple bug fixes from PR #37 review (queue ordering, custom group reset) |
 | `sample-tag-add-and-delete.spec.ts` | Tag CRUD round-trip via SSE |
-| `speculative-create.spec.ts` | Speculative index create + delete |
 
 Add new specs as `<feature>.spec.ts`. Keep one feature per file — the
 serial worker means each spec adds linearly to wall-clock.

@@ -1,6 +1,6 @@
 import type { Exposure, SampleTag } from "../../api";
 import type { GalleryExposure } from "../components/ThumbnailGallery";
-import type { MetaEntry, Tag } from "../ui";
+import type { Tag } from "../ui";
 import { representativeExposure } from "../../lib/exposure";
 
 /** Loupe-local tag view-model: the ui `Tag` ({key, value?}) plus the backend
@@ -10,11 +10,6 @@ import { representativeExposure } from "../../lib/exposure";
 export interface LoupeTag extends Tag {
   id: number;
   source: string;
-}
-
-export function defaultExposureId(exposures: Exposure[]): number | undefined {
-  const newest = exposures.reduce<Exposure | undefined>((best, e) => (best && best.id > e.id ? best : e), undefined);
-  return (representativeExposure(exposures) ?? newest)?.id;
 }
 
 /**
@@ -46,42 +41,6 @@ export function toGalleryExposures(exposures: Exposure[]): GalleryExposure[] {
     representative: e.id === representative,
     rejected: e.status === "rejected",
   }));
-}
-
-/**
- * The rejection reason of a dropped frame, read from the `rejection_reason`
- * exposure-tag convention (key `"rejection_reason"`, `source = "manual"` — the
- * legacy Inspect page wrote these via POST /api/exposures/:id/tags). DISPLAY-ONLY here:
- * PATCH /api/exposures/:id/status accepts no reason field, so the loupe's drop
- * verb cannot set one without composing a second mutation — out of scope for
- * this surface. Multiple reason tags join with "; ". `undefined` when absent.
- */
-export function rejectionReason(exposure: Exposure): string | undefined {
-  const reasons = exposure.tags
-    .filter((t) => t.key === "rejection_reason" && t.value.trim() !== "")
-    .map((t) => t.value);
-  return reasons.length > 0 ? reasons.join("; ") : undefined;
-}
-
-/**
- * "This exposure" metadata rows. The mockup's `integration`/`collected` rows
- * are OMITTED, not stubbed: the exposures API carries neither field (the #256
- * stub rows showed an eternal "—" on every frame — controls-don't-lie says a
- * row whose data source doesn't exist yet isn't shown). Reinstate them when
- * the backend actually serves the values. The legacy signal-meter row is
- * intentionally dropped too — the greenfield LoupeSidePanel has no signal
- * block. A dropped frame carrying a rejection_reason tag gets a quiet
- * `reason` row (show the reasoning; display-only, see `rejectionReason`).
- */
-export function toMetaEntries(active: Exposure, exposures: Exposure[]): MetaEntry[] {
-  const idx = exposures.findIndex((e) => e.id === active.id);
-  const position = idx >= 0 ? `${idx + 1} of ${exposures.length}` : "—";
-  const entries: MetaEntry[] = [{ key: "frame", value: position }];
-  if (active.status === "rejected") {
-    const reason = rejectionReason(active);
-    if (reason !== undefined) entries.push({ key: "reason", value: reason });
-  }
-  return entries;
 }
 
 /** SampleTag[] → LoupeTag[]; omit empty value (exactOptionalPropertyTypes).

@@ -272,8 +272,15 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "set_exposure_status": {
+      const status = payload?.status as Exposure["status"];
       qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
-        old ? { ...old, status: payload?.status as Exposure["status"] } : old);
+        old ? { ...old, status } : old);
+      qc.setQueriesData<Exposure[]>(
+        { predicate: (q) => q.queryKey[0] === "sample" && q.queryKey[2] === "exposures" },
+        (list) => list?.some((e) => e.id === id)
+          ? list.map((e) => (e.id === id ? { ...e, status } : e))
+          : list,
+      );
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
@@ -419,6 +426,12 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       if (dest !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(dest) });
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
+      break;
+    }
+    case "sample_bridged":
+    case "sample_unbridged": {
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
       break;
     }
     case "sample_created":

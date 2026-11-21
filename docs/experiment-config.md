@@ -181,9 +181,9 @@ scanned metadata files and the setup files it finds by walking up from
 `setup_file`. A rescan never
 re-derives geometry that create committed or that the user edited.
 
-The Focus page draws beam-centred q-rings only when `energy_kev`,
-`flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` are all
-set. Otherwise it falls back to a centred, decorative overlay.
+Beam-centred q-rings on the detector image need `energy_kev`,
+`flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` all set.
+No view draws them since the Focus page was deleted (2026-11-20).
 
 ## Scan and grouping
 
@@ -257,9 +257,9 @@ does not remove their exposures.
 
 Himalaya never creates, modifies or deletes a file inside an experiment
 directory while resolving, previewing, scanning, analyzing or serving. The
-funnel probes only read, and thumbnails are cached next to the DB
-(`<db_dir>/cache/thumb-128/`), not next to the images. No code path writes
-into an experiment directory.
+funnel probes only read, and thumbnails and full images are cached next to
+the DB (`<db_dir>/cache/thumb-128/`, `<db_dir>/cache/full-1536/`), not next
+to the images. No code path writes into an experiment directory.
 
 This rule is kept by code review. No test checks it for the scan path.
 

@@ -14,13 +14,9 @@ hits in this codebase.
 
 | Call site | Skeleton name |
 |---|---|
-| `LoupePage` | `loupe` |
-| `SeriesFolioPage` | `folio` |
-| `SeriesScopingPage` | `scoping` |
-| `FocusPage` | `focus` |
-| `SamplesPage` | `contact-sheet` |
-| `SeriesBuilderPage` | `series-builder` |
 | `NavModal` | `nav-experiments` / `nav-samples` |
+
+The workspace (`src/workspace/`) does not use boneyard. `contact-sheet.bones.json` is a capture of the corpus layout with no call site today.
 
 Skeletons are now gated at the page level (`src/print/pages/`); the
 earlier card-level wrappers (`PlotCard`, `PhasePanel`, `ChatCard`,
@@ -36,7 +32,7 @@ when no bones exist for `name`), and a layout `className`.
 ## Rule 1: gate on `query.isLoading`, not `query.isPending`
 
 ```tsx
-<Skeleton name="focus" loading={isLoading} fixture={FOCUS_FIXTURE} fallback={…}>
+<Skeleton name="nav-samples" loading={isLoading} fixture={NAV_SAMPLES_FIXTURE} fallback={…}>
   {/* page content */}
 </Skeleton>
 ```
@@ -68,8 +64,8 @@ skeleton on disabled queries.
 
 ```tsx
 <Skeleton
-  name="focus"
-  fixture={FOCUS_FIXTURE}
+  name="nav-samples"
+  fixture={NAV_SAMPLES_FIXTURE}
   …
 />
 ```
@@ -80,8 +76,7 @@ geometry per element, and emits `*.bones.json`. The skeleton drawn at
 runtime mirrors that geometry.
 
 Pass a real page composite with mock props and no-op handlers — live
-fixtures are module-level consts (e.g. `FOCUS_FIXTURE`, `LOUPE_FIXTURE`
-in `src/print/pages/`). Don't pass raw
+fixtures are module-level consts next to the call site. Don't pass raw
 data shapes (mock objects, arrays) — there's no rendering pipeline at
 capture time that would turn those into a DOM tree.
 
@@ -90,7 +85,7 @@ capture time that would turn those into a DOM tree.
 ## Rule 3: always set `fallback`
 
 ```tsx
-<Skeleton name="loupe" fallback={<div className="p-8 text-sm italic text-ink-soft">Loading sample…</div>} …>
+<Skeleton name="nav-samples" fallback={<div className="p-8 text-sm italic text-ink-soft">Loading samples…</div>} …>
 ```
 
 Without bones for `name` (e.g. on first dev-server boot, or in prod before
