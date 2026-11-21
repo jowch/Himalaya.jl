@@ -27,7 +27,7 @@ function makeSamples(n: number): object[] {
   }));
 }
 
-function makeLoads(sampleCount: number, withFlag = false): object[] {
+function makeLoads(sampleCount: number): object[] {
   const samples = Array.from({ length: sampleCount }, (_, i) => ({
     sample_id: 100 + i,
     name: `Sample ${i + 1}`,
@@ -35,9 +35,6 @@ function makeLoads(sampleCount: number, withFlag = false): object[] {
     grouping_source: "auto_position",
     name_source: "auto",
     merged_into_id: null,
-    flag: withFlag && i === 0
-      ? { kind: "merge", merge_with_sample_id: 101, merge_with_label: "Sample 2" }
-      : null,
     exposures: [
       {
         id: 200 + i,
@@ -75,11 +72,12 @@ async function seedState(page: Page): Promise<void> {
 
 async function mockExperiment(
   page: Page,
-  opts: { id: number; ingest_status: string; samples: number; withFlag?: boolean },
+  opts: { id: number; ingest_status: string; samples: number; problems?: object },
 ): Promise<void> {
   const exp = makeExperiment(opts.ingest_status);
   const samples = makeSamples(opts.samples);
-  const loads = makeLoads(opts.samples, opts.withFlag ?? false);
+  const loads = makeLoads(opts.samples);
+  const problems = opts.problems ?? { ingest_error: null, exposures: [] };
 
   await page.route("**/api/users", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
@@ -89,8 +87,8 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exp) }));
   await page.route(`**/api/experiments/${opts.id}/samples`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
-  await page.route(`**/api/experiments/${opts.id}/loads`, (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(loads) }));
+  await page.route(`**/api/experiments/${opts.id}/problems`, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(problems) }));
   await page.route((url) => url.pathname === "/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
   for (const sample of loads.flatMap((l) => (l as { samples: { sample_id: number; exposures: { id: number; filename: string }[] }[] }).samples)) {
@@ -101,23 +99,13 @@ async function mockExperiment(
     await page.route(`**/api/samples/${sample.sample_id}/exposures`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exposures) }));
   }
-  await page.route(/\/api\/fs\/manifest\?/, (r) =>
-    r.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify({
-        total: 2, matched: { image: 0, metadata: 0, integration: 0 },
-        unmatched: [
-          { file: "HA_01_001.tif", miss: "image" },
-          { file: "HA_01_002.tif", miss: "image" },
-        ],
-      }),
-    }));
   await page.route("**/api/sample-tags", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/events*", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route(`**/api/experiments/${opts.id}/bridges`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/tag-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route(`**/api/experiments/${opts.id}/scan`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "complete", experiment_id: opts.id, changed: false }) }));
   await page.route(`**/api/experiments/${opts.id}/labels`, (r) =>
@@ -157,21 +145,39 @@ test("an old corpus link opens the workspace", async ({ page }) => {
   await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
 });
 
-test("flagged grouping shows a notice in the sample pane that opens the review", async ({ page }) => {
-  await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 3, withFlag: true });
+test("problem exposures show in the sample pane and open their sample", async ({ page }) => {
+  await mockExperiment(page, {
+    id: 7, ingest_status: "complete", samples: 3,
+    problems: {
+      ingest_error: null,
+      exposures: [
+        { exposure_id: 201, filename: "sample_2", sample_id: 101, sample_name: "Sample 2", problem: "no_trace", reason: "no trace" },
+        { exposure_id: 202, filename: "sample_3", sample_id: 102, sample_name: "Sample 3", problem: "failed", reason: "could not read the trace header" },
+      ],
+    },
+  });
   await page.goto("/experiments/7");
   const notice = page.getByTestId("workspace-notice");
-  await expect(notice).toContainText("1 sample needs a grouping check.");
-  await notice.getByRole("button", { name: "Review" }).click();
-  await expect(page).toHaveURL(/\/experiments\/7\/grouping/);
+  await expect(notice).toContainText("1 exposure waiting for a trace · 1 analysis failed");
+  await notice.getByRole("button", { name: "Details" }).click();
+  const problems = page.getByTestId("workspace-problems");
+  await expect(problems).toContainText("could not read the trace header");
+  await problems.getByRole("button", { name: /sample_3/ }).click();
+  await expect(page).toHaveURL(/\/experiments\/7\/workspace\/102/);
+  await expect(page.getByRole("heading", { level: 2, name: "Sample 3" })).toBeVisible();
 });
 
-test("a failed scan shows what did not parse instead of the workspace", async ({ page }) => {
-  await mockExperiment(page, { id: 7, ingest_status: "failed", samples: 0 });
+test("a failed ingest opens the workspace and says why", async ({ page }) => {
+  await mockExperiment(page, {
+    id: 7, ingest_status: "failed", samples: 0,
+    problems: { ingest_error: "SystemError: opening the data folder", exposures: [] },
+  });
   await page.goto("/experiments/7");
-  await expect(page.getByRole("button", { name: /Open Configuration/i })).toBeVisible();
-  await expect(page.getByLabel("Unmatched files")).toContainText("HA_01_002.tif");
-  await expect(page).toHaveURL(/\/experiments\/7$/);
+  await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
+  const notice = page.getByTestId("workspace-notice");
+  await expect(notice).toContainText("The last ingest failed.");
+  await notice.getByRole("button", { name: "Details" }).click();
+  await expect(page.getByTestId("problems-ingest-error")).toContainText("SystemError: opening the data folder");
 });
 
 test("a live rescan SSE frame shows its progress in the workspace", async ({ page }) => {
@@ -182,8 +188,8 @@ test("a live rescan SSE frame shows its progress in the workspace", async ({ pag
       contentType: "text/event-stream",
       body:
         'event: curation\n' +
-        'data: {"kind":"ingest_progress","payload":{"experiment_id":7,"processed":5,"total":10,"phase":"rescan"}}\n\n',
+        'data: {"kind":"ingest_progress","payload":{"experiment_id":7,"processed":5,"total":10,"stage":"analyzing","phase":"rescan"}}\n\n',
     }));
   await page.goto("/experiments/7");
-  await expect(page.getByTestId("workspace-rescan")).toHaveText("Rescanning: 5 / 10");
+  await expect(page.getByTestId("workspace-ingest-status")).toHaveText("Analyzing 5 of 10");
 });

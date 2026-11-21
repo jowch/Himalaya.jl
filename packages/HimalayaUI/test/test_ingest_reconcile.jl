@@ -207,4 +207,59 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         @test first(_rows(db, "SELECT ingest_status FROM experiments WHERE id = ?", [id])).ingest_status == "complete"
         @test _n(db, "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND trace_hash IS NOT NULL", [id]) == 1
     end
+
+    @testset "the problems route lists exposures without a trace and failed analyses" begin
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9, dat = false)
+        _recon_exposure!(data, ana, "A_S0002_0_001"; t = _T0 + Second(30), h = 58.9, dat = false)
+        write(joinpath(ana, "A_S0002_0_001.dat"), "not a trace\n")
+        _recon_exposure!(data, ana, "A_S0003_0_001"; t = _T0 + Second(60), h = 58.9)
+        db, id = _recon_db(dir, data, ana)
+        HimalayaUI.scan_and_group!(db, id)
+        with_inproc_routes(db) do call
+            r = call("GET", "/api/experiments/$id/problems")
+            @test r.status == 200
+            body = HimalayaUI.JSON3.read(r.body)
+            @test body.ingest_error === nothing
+            @test [(String(p.filename), String(p.problem)) for p in body.exposures] ==
+                  [("A_S0001_0_001", "no_trace"), ("A_S0002_0_001", "failed")]
+            @test all(p -> p.sample_id !== nothing && !isempty(p.reason), body.exposures)
+            @test call("GET", "/api/experiments/999999/problems").status == 404
+        end
+    end
+
+    @testset "a failed ingest pass keeps its error until a pass succeeds" begin
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)
+        db, id = _recon_db(dir, data, ana)
+        DBInterface.execute(db, "UPDATE experiments SET image_pattern = 'broken.tif' WHERE id = ?", [id])
+        @test HimalayaUI.run_ingest!(db, id) === :failed
+        row = first(_rows(db, "SELECT ingest_status, ingest_error FROM experiments WHERE id = ?", [id]))
+        @test row.ingest_status == "failed"
+        @test !ismissing(row.ingest_error) && !isempty(row.ingest_error)
+        with_inproc_routes(db) do call
+            body = HimalayaUI.JSON3.read(call("GET", "/api/experiments/$id/problems").body)
+            @test body.ingest_error == row.ingest_error
+        end
+        DBInterface.execute(db, "UPDATE experiments SET image_pattern = NULL WHERE id = ?", [id])
+        @test HimalayaUI.run_ingest!(db, id) === :ok
+        HimalayaUI.wait_prewarm(id)
+        row = first(_rows(db, "SELECT ingest_status, ingest_error FROM experiments WHERE id = ?", [id]))
+        @test row.ingest_status == "complete"
+        @test ismissing(row.ingest_error)
+    end
+
+    @testset "opening a database from before ingest_error adds the column" begin
+        path = joinpath(mktempdir(), "old.db")
+        db = HimalayaUI.open_db(path)
+        DBInterface.execute(db, "ALTER TABLE experiments DROP COLUMN ingest_error")
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPERIMENTS_INGEST_ERROR])
+        DBInterface.close!(db)
+        db = HimalayaUI.open_db(path)
+        cols = [r.name for r in _rows(db, "PRAGMA table_info(experiments)", [])]
+        @test "ingest_error" in cols
+        DBInterface.close!(db)
+        db = HimalayaUI.open_db(path)
+        @test count(==("ingest_error"), [r.name for r in _rows(db, "PRAGMA table_info(experiments)", [])]) == 1
+    end
 end

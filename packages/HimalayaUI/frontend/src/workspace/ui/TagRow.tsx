@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { SampleLabel } from "../../api";
-import { displayTag, standardTag } from "../../lib/labels";
+import type { SampleLabel, TagColor, TagColorEntry } from "../../api";
+import { defaultTagColor, displayTag, sameLabel, standardTag, tagColor, tagColorIsDefault } from "../../lib/labels";
+import { TagColorMenu } from "./TagColorMenu";
 import { TagPicker } from "./TagPicker";
+import { TAG_SWATCH } from "./tagSwatches";
 
 interface Props {
   tags: readonly SampleLabel[];
@@ -12,6 +14,11 @@ interface Props {
   onCloseAdd: () => void;
   onAdd: (label: string) => void;
   onRemove: (label: string) => void;
+  colors: readonly TagColorEntry[];
+  coloring: string | undefined;
+  onOpenColor: (label: string) => void;
+  onCloseColor: () => void;
+  onSetColor: (label: string, color: TagColor | null) => void;
 }
 
 const GAP = 6;
@@ -20,26 +27,33 @@ const MORE_WIDTH = 44;
 interface ChipProps {
   tag: SampleLabel;
   editable: boolean;
+  color: TagColor;
   measure?: boolean;
   onAdd?: (label: string) => void;
   onRemove?: (label: string) => void;
+  onOpenColor?: (label: string) => void;
 }
 
-function Chip({ tag, editable, measure = false, onAdd, onRemove }: ChipProps): JSX.Element {
+function Chip({ tag, editable, color, measure = false, onAdd, onRemove, onOpenColor }: ChipProps): JSX.Element {
   const suggested = tag.state === "suggested";
   const standard = standardTag(tag.label) !== undefined;
   const name = displayTag(tag.label);
-  const tone = standard ? "text-tag-std-ink" : "text-tag-ink";
-  const fill = suggested
-    ? "border-dashed border-current bg-transparent"
-    : standard
-      ? "border-transparent bg-tag-std-wash"
-      : "border-transparent bg-tag-wash";
+  const tone = TAG_SWATCH[color].ink;
+  const fill = suggested ? "border-dashed border-current bg-transparent" : `border-transparent ${TAG_SWATCH[color].wash}`;
   return (
     <span
       data-tag={measure ? undefined : tag.label}
       data-tag-state={measure ? undefined : tag.state}
       data-tag-standard={standard && !measure ? "true" : undefined}
+      data-tag-color={measure ? undefined : color}
+      onContextMenu={
+        editable && onOpenColor
+          ? (e) => {
+              e.preventDefault();
+              onOpenColor(tag.label);
+            }
+          : undefined
+      }
       className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border pt-0.5 pb-[3px] pl-2.5 pr-1 text-caption ${tone} ${fill}`}
     >
       {suggested && editable && onAdd ? (
@@ -77,7 +91,21 @@ function fitCount(widths: readonly number[], room: number): number {
   return widths.length;
 }
 
-export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseAdd, onAdd, onRemove }: Props): JSX.Element {
+export function TagRow({
+  tags,
+  vocabulary,
+  editable,
+  adding,
+  onOpenAdd,
+  onCloseAdd,
+  onAdd,
+  onRemove,
+  colors,
+  coloring,
+  onOpenColor,
+  onCloseColor,
+  onSetColor,
+}: Props): JSX.Element {
   const last = tags.filter((t) => t.state === "confirmed").at(-1);
   const box = useRef<HTMLDivElement | null>(null);
   const ruler = useRef<HTMLDivElement | null>(null);
@@ -102,6 +130,48 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
   }, [tags, editable]);
 
   const hidden = tags.slice(shown);
+  const colored = coloring === undefined ? undefined : tags.find((t) => sameLabel(t.label, coloring));
+  const [menuLeft, setMenuLeft] = useState(14);
+  const opener = useRef<HTMLElement | null>(null);
+  const restoreFocus = useRef(false);
+  const addButton = useRef<HTMLButtonElement | null>(null);
+  const chipFor = (label: string): HTMLElement | null =>
+    box.current?.querySelector<HTMLElement>(`[data-tag="${CSS.escape(label)}"]`) ?? null;
+  useLayoutEffect(() => {
+    if (!colored) return;
+    const at = chipFor(colored.label) ?? moreButton.current;
+    setMenuLeft(at ? at.offsetLeft : 14);
+  }, [colored, shown]);
+  useLayoutEffect(() => {
+    if (coloring === undefined) return;
+    const active = document.activeElement;
+    opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+  }, [coloring]);
+  useEffect(() => {
+    if (coloring !== undefined) return;
+    const back = opener.current;
+    opener.current = null;
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+    const safe = back && back.isConnected && !back.closest("[data-tag]") ? back : null;
+    (safe ?? addButton.current ?? moreButton.current)?.focus();
+  }, [coloring]);
+  const closeColor = (restore: boolean): void => {
+    restoreFocus.current = restore;
+    onCloseColor();
+  };
+  const openColor = (label: string): void => {
+    setMoreOpen(false);
+    onOpenColor(label);
+  };
+  const chipProps = (t: SampleLabel) => ({
+    tag: t,
+    editable,
+    color: tagColor(colors, t.label),
+    onAdd,
+    onRemove,
+    onOpenColor: openColor,
+  });
   useEffect(() => {
     if (hidden.length === 0) setMoreOpen(false);
   }, [hidden.length]);
@@ -121,7 +191,7 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
     <div className="relative flex h-7 flex-nowrap items-center gap-1.5 px-3.5" data-testid="workspace-tags">
       <div ref={box} className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden" data-testid="workspace-tag-chips">
         {tags.slice(0, shown).map((t) => (
-          <Chip key={t.id} tag={t} editable={editable} onAdd={onAdd} onRemove={onRemove} />
+          <Chip key={t.id} {...chipProps(t)} />
         ))}
         {hidden.length > 0 && (
           <button
@@ -140,13 +210,14 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
       <div aria-hidden="true" className="pointer-events-none invisible absolute inset-0 overflow-hidden">
         <div ref={ruler} className="absolute left-0 top-0 flex w-max gap-1.5" data-testid="workspace-tag-ruler">
           {tags.map((t) => (
-            <Chip key={t.id} tag={t} editable={editable} measure />
+            <Chip key={t.id} tag={t} editable={editable} color={tagColor(colors, t.label)} measure />
           ))}
         </div>
       </div>
       {editable && (
         <button
           type="button"
+          ref={addButton}
           onClick={onOpenAdd}
           className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-dashed border-hair-strong px-2.5 pt-0.5 pb-[3px] text-caption text-ink-soft hover:text-ink"
         >
@@ -171,9 +242,19 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
           }}
         >
           {hidden.map((t) => (
-            <Chip key={t.id} tag={t} editable={editable} onAdd={onAdd} onRemove={onRemove} />
+            <Chip key={t.id} {...chipProps(t)} />
           ))}
         </div>
+      )}
+      {colored && editable && (
+        <TagColorMenu
+          name={displayTag(colored.label)}
+          current={tagColor(colors, colored.label)}
+          isDefault={tagColorIsDefault(colors, colored.label)}
+          left={menuLeft}
+          onPick={(c) => onSetColor(colored.label, c === defaultTagColor(colored.label) ? null : c)}
+          onClose={closeColor}
+        />
       )}
       {adding && editable && (
         <TagPicker

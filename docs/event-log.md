@@ -50,6 +50,7 @@ round-trip test in `test_events.jl`.
 | `assignment_set_state` | Legacy, no longer emitted. Replays as before and also upserts the frame's sample into `sample_calls` (entity_type=`exposure`, payload `{state}`) |
 | `label_added` | UPSERT `sample_labels` → `state='confirmed'`, unique per sample ignoring case; confirms a suggestion and brings back a removed label (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `label_removed` | UPSERT `sample_labels` → `state='removed'`; the row stays so a rescan never suggests the label again (entity_type=`sample`, payload `{label, experiment_id}`) |
+| `tag_color_set` | UPSERT `tag_colors` (unique per label ignoring case) to the colour, or DELETE the row when `color` is null so the tag falls back to its default (blue for a built-in, violet otherwise). One colour per tag name for the whole app (entity_type=`tag`, entity_id=0 `TAG_COLOR_ENTITY_ID`, payload `{label, color}`) |
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 

@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./shell/AppRoutes";
 import { OnboardingFlow } from "./shell/OnboardingFlow";
@@ -17,6 +18,8 @@ import { openLiveStream } from "../lib/liveStream";
 import { useConnection } from "../lib/connection";
 import { createReconnectRefresh } from "../lib/queue/reconnectRefresh";
 import { useAppState } from "../state";
+import { forgetExperiment } from "../queries";
+import { getClientId } from "../lib/clientId";
 import type { SseEvent } from "../lib/queue/types";
 
 /**
@@ -30,6 +33,10 @@ export function PrintApp(): JSX.Element {
   const mc = qc.getMutationCache();
   const setIngestProgress = useAppState((s) => s.setIngestProgress);
   const clearIngestProgress = useAppState((s) => s.clearIngestProgress);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const here = useRef({ navigate, pathname: location.pathname });
+  here.current = { navigate, pathname: location.pathname };
 
   // Expose minimal test helpers on `window.__himalayaTest` in DEV only.
   // Production bundles tree-shake this out (Vite + DEV gate).
@@ -41,6 +48,17 @@ export function PrintApp(): JSX.Element {
     const onCuration = (e: MessageEvent) => {
       try {
         const parsed = JSON.parse((e as MessageEvent).data as string) as SseEvent;
+        if (parsed.kind === "experiment_deleted") {
+          const expId = parsed.entity_id;
+          const { navigate: go, pathname } = here.current;
+          const open = pathname === `/experiments/${expId}` || pathname.startsWith(`/experiments/${expId}/`);
+          if (open && parsed.client_id !== getClientId()) {
+            go("/experiments", { replace: true });
+            showToast("This experiment was removed in another window.");
+          }
+          forgetExperiment(qc, expId);
+          return;
+        }
         // Ingest progress is broadcast-only (spec §9.3): never an own-op. Handle
         // it HERE and RETURN — do NOT feed it to handleRemoteEvent, whose queue
         // reconciliation would roll back + re-run every pending edit on each
@@ -56,16 +74,10 @@ export function PrintApp(): JSX.Element {
           const expId = p?.experiment_id;
           if (expId !== undefined) {
             if (parsed.kind === "ingest_started" || parsed.kind === "ingest_progress") {
-              // The backend tags a rescan's frames phase:"rescan" (the /{id}/scan
-              // route) → "analyzing" → the inline ProgressBar, since the
-              // experiment's table data is already present. An initial scan (the
-              // create route) sends no phase → "scanning" → GroupingReviewPage.
               setIngestProgress(expId, {
                 processed: p?.processed ?? 0,
                 total: p?.total ?? 0,
                 status: p?.phase === "rescan" ? "analyzing" : "scanning",
-                // `stage` names the bar SEGMENT; `phase` above selects the
-                // surface. Distinct fields on purpose (lib/ingestStages.ts).
                 stage: p?.stage,
               });
             } else {
@@ -76,7 +88,7 @@ export function PrintApp(): JSX.Element {
             // Delegate cache invalidation to the shared helper (defined in
             // applyRemoteToCache.ts) — the single source of truth for which
             // query keys the ingest frames affect.
-            invalidateIngestFrameCache(qc, expId, parsed.kind === "ingest_complete", p?.stage);
+            invalidateIngestFrameCache(qc, expId, parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed", p?.stage);
           }
           return; // do NOT run the queue reconciler for a broadcast-only frame
         }

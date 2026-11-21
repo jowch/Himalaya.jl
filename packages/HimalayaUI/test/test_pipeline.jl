@@ -628,6 +628,30 @@ let
         end
     end
 
+    @testset "_resolve_experiment finds an experiment by a symlinked or slash-ended spelling of its folder" begin
+        root = mktempdir()
+        real = mkpath(joinpath(root, "beamtime"))
+        link = joinpath(root, "link")
+        symlink(real, link)
+        db = open_db(joinpath(root, "himalaya.db"))
+        id = HimalayaUI.create_experiment!(db; name = "Linked", path = realpath(real),
+            data_dir = realpath(real), analysis_dir = realpath(real))
+        @test Int(HimalayaUI._resolve_experiment(db, link).id) == id
+        @test Int(HimalayaUI._resolve_experiment(db, link * "/").id) == id
+        @test Int(HimalayaUI._resolve_experiment(db, realpath(real) * "/").id) == id
+    end
+
+    @testset "_resolve_experiment still finds an older experiment stored under its symlinked spelling" begin
+        root = mktempdir()
+        real = mkpath(joinpath(root, "beamtime"))
+        link = joinpath(root, "link")
+        symlink(real, link)
+        db = open_db(joinpath(root, "himalaya.db"))
+        id = HimalayaUI.create_experiment!(db; name = "Old", path = link,
+            data_dir = link, analysis_dir = link)
+        @test Int(HimalayaUI._resolve_experiment(db, link).id) == id
+    end
+
     @testset "_resolve_experiment looks up by name" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
@@ -26,12 +26,9 @@ import {
   setSampleCallStateMutator,
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
-import {
-  moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
-  splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
-} from "./lib/queue/mutators/grouping";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
+import { setTagColorMutator } from "./lib/queue/mutators/tagColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -45,12 +42,16 @@ export const queryKeys = {
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
+  problems:   (experimentId: number) => ["experiment", experimentId, "problems"] as const,
+  folderPreview: (path: string) => ["folder-preview", path] as const,
+  folderPreviews: ["folder-preview"] as const,
+  tagColors:  () => ["tag-colors"] as const,
+  manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
+    ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "bridges"] as const,
   labels:     (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "labels"] as const,
-  loads:      (id: number | undefined) =>
-    ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "exposures"] as const,
   trace:      (exposureId: number | undefined) =>
@@ -99,18 +100,14 @@ export function useExperiment(id: number) {
   });
 }
 
-/** The Load ▸ Sample ▸ Exposures roll-up (grouping-review + Configuration
- *  acquisition timeline read off this; spec §9.2/§9.6). Gated id>0 like
- *  useExperiment so a zero/undefined experiment never hits /loads.
- *
- *  `refetchWhileScanning` is the robust floor for live-unfold: during an initial
- *  scan, the SSE `ingest_progress`/`ingest_complete` frames invalidate this query
- *  — but React Query ABSORBS an invalidation that lands while a fetch is already
- *  in flight (the frame burst overlaps the first, empty, mid-scan fetch), and
- *  `staleTime` then keeps that empty result "fresh", so nothing re-fetches until a
- *  manual reload. Polling while the scan is live (mirrors useExperiment's ingest
- *  self-heal) picks up the committed loads regardless of the invalidation race;
- *  it stops the moment the caller's `scanning` flag clears. */
+export function useProblems(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.problems(experimentId),
+    queryFn: () => api.listProblems(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
 export function useBridges(experimentId: number) {
   return useQuery({
     queryKey: queryKeys.bridges(experimentId),
@@ -147,13 +144,13 @@ export function useRemoveLabel(experimentId: number) {
   return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useLoads(id: number, refetchWhileScanning = false) {
-  return useQuery({
-    queryKey: queryKeys.loads(id),
-    queryFn: () => api.listLoads(id),
-    enabled: id > 0,
-    refetchInterval: refetchWhileScanning ? 2000 : false,
-  });
+export function useTagColors() {
+  return useQuery({ queryKey: queryKeys.tagColors(), queryFn: () => api.listTagColors() });
+}
+
+export function useSetTagColor() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(setTagColorMutator, { username, clientId: CLIENT_ID });
 }
 
 export function useSamples(experimentId: number) {
@@ -451,44 +448,6 @@ export function useCorpusSampleTags() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Structural-edit hooks (spec §9.6) — one hook per experiment, not per row.
-// Entity ids (sampleId / exposureId) ride in the mutate() input, NOT the scope.
-// This lets Task 14 instantiate each hook once and dispatch to any row.
-// ---------------------------------------------------------------------------
-
-export function useRenameSample(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(renameSampleMutator, { experimentId, username, clientId: CLIENT_ID });
-}
-
-export function useMoveExposure(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(moveExposureMutator, { experimentId, username, clientId: CLIENT_ID });
-}
-
-// merge: scope = experiment + identity ONLY; the caller passes { loserId, survivorId }
-// as the mutate() input (MergeSamplesInput, decided in Task 5) — no `as never`.
-export function useMergeSamples(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(mergeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
-}
-
-export function useSplitSample(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(splitSampleMutator, { experimentId, username, clientId: CLIENT_ID });
-}
-
-export function useDismissGroupingFlag(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(dismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
-}
-
-export function useUndoDismissGroupingFlag(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(undoDismissGroupingFlagMutator, { experimentId, username, clientId: CLIENT_ID });
-}
-
 /** Trigger a rescan of a single experiment (cheap change-check then additive
  *  ingest of new files). Plain TanStack mutation — not a queue mutator because
  *  the scan is idempotent and emits its own SSE progress frames. Invalidates
@@ -512,6 +471,21 @@ export function useTriggerScan(experimentId: number) {
   };
 }
 
+export function useDeleteExperiment(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.deleteExperiment(experimentId, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: () => forgetExperiment(qc, experimentId),
+  });
+}
+
+export function forgetExperiment(qc: QueryClient, experimentId: number): void {
+  qc.removeQueries({ queryKey: queryKeys.experiment(experimentId) });
+  void qc.invalidateQueries({ queryKey: queryKeys.experiments });
+  void qc.invalidateQueries({ queryKey: queryKeys.folderPreviews });
+}
+
 export function useCheckForNewFilesOnOpen(experimentId: number): void {
   const username = useAppState((s) => s.username);
   const qc = useQueryClient();
@@ -524,22 +498,5 @@ export function useCheckForNewFilesOnOpen(experimentId: number): void {
   useEffect(() => {
     if (experimentId > 0) mutate();
   }, [experimentId, mutate]);
-}
-
-/** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
- *  read hooks for experiments). Wraps E1's `updateExperiment(id, patch)` fetcher;
- *  this is a plain TanStack mutation (not a queue mutator — geometry override is
- *  not part of the structural-edit event log) that invalidates the experiment
- *  detail on success so the provenance chips re-render. */
-export function useUpdateExperiment(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (patch: api.ExperimentPatch) =>
-      api.updateExperiment(experimentId, patch, buildAuthOpts(username, CLIENT_ID)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
-    },
-  });
 }
 

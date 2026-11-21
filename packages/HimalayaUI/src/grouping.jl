@@ -373,152 +373,6 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    group_into_samples(metas::Vector{ExposureMeta}) -> GroupingResult
-
-Run the full §5 backbone on the flat list of per-exposure metadata:
-  1. Time-gap segment into loads (`_segment_loads_with_flag`).
-  2. Within each load, cluster by position (`_cluster_slots`).
-  3. Build the `GroupedLoad`/`GroupedSample`/`GroupedExposure` tree with
-     auto-names (`<label> (SNNPMM)`).
-
-The segmentation fallback (`:unimodal_fallback`) is surfaced both as a
-human-readable discrepancy string and onto each affected load's `flag`.
-"""
-# ---------------------------------------------------------------------------
-# Read-time sample-flag derivation (spec §8.8 / §9.1)
-#
-# PURE: takes the get_loads_rollup rows (Phase D), returns a Dict keyed by
-# sample_id. NO DB, never a stored column. Phase D's get_loads_rollup calls this
-# over the rows it reads and suppresses any flag with a non-undone
-# grouping_flag_dismissed event before serializing (spec §9.2/§9.3).
-# ---------------------------------------------------------------------------
-
-"A cross-load merge suggestion: this sample's filename label recurs in another load."
-struct MergeFlag
-    merge_with_sample_id ::Int
-    merge_with_label     ::String
-end
-
-"An intra-sample split suggestion: the sample spans a position jump beyond local jitter."
-struct SplitFlag
-    split_at_index ::Int        # 1-based exposure index where the jump occurs
-    jump_from      ::Float64    # position just before the jump
-    jump_to        ::Float64    # position at the jump
-end
-
-"""One flag per sample, serialized by Phase D to the §8.8 `GroupingFlag` JSON union."""
-const GroupingFlag = Union{MergeFlag, SplitFlag}
-
-"""
-    derive_sample_flags(load_rows; min_slot_separation_mm = 1.0) -> Dict{Int, GroupingFlag}
-
-PURE read-time derivation of per-sample merge/split suggestions over the
-`get_loads_rollup` rows (spec §8.8). No DB access; returns a Dict keyed by
-`sample_id`, with a sample **absent** from the Dict meaning "no flag" (the
-contract's JSON `null`).
-
-`load_rows` is the `get_loads_rollup` shape (verified 2026-06-18):
-`Vector` of loads `(load_id, load_index, …, samples)`; each sample
-`(sample_id, name, slot_index, …, exposures)`; each exposure
-`(id, filename, horizontal_position, timestamp)` (the §8.8 leaf).
-
-Two suggestion kinds (a sample gets at most one; **split wins** if both apply):
-
-1. **Split** — within one sample, a consecutive `horizontal_position` gap
-   exceeding `min_slot_separation_mm` marks a genuine slot boundary (split
-   candidate). Gaps at or below it are stage jitter (no split).
-
-   Physical rationale: SAXS samples sit in quartz capillaries (0.5–2 mm
-   diameter) and the X-ray beam passes through exactly one at a time, so
-   adjacent slots are physically ≥ ~1 mm apart. Stage repeatability when
-   returning to the *same* slot is ~0.1–0.3 mm in real SSRL data. The 1 mm
-   threshold sits AT the minimum slot pitch — a within-sample gap below it
-   cannot be a real slot boundary, only stage jitter. Validated on real SSRL
-   data: per-sample max gaps cluster at ≤ ~0.86 mm (jitter) while genuine slot
-   crossings are ≥ 11 mm, with nothing in between, so 1 mm separates them
-   cleanly. (The earlier 0.5 mm default sat *below* the slot pitch and flagged
-   jitter — ~97% of its flags on real data were false positives.) These are
-   human-review suggestions; nothing auto-changes.
-
-2. **Merge** — a sample's filename label (via `_label_from_stem` over its
-   exposures' `filename`s) recurs as the label of a sample in *another* load. The
-   grouper never auto-merges cross-load (spec §5), so this is surfaced as a
-   suggestion pointing at the other sample (`merge_with_sample_id` +
-   `merge_with_label`). When a label recurs in more than two loads, each flagged
-   sample points at the *first other* sample sharing that label (lowest
-   `sample_id`); the UI walks the chain.
-"""
-function derive_sample_flags(load_rows;
-        min_slot_separation_mm::Float64 = 1.0)::Dict{Int, GroupingFlag}
-    flags = Dict{Int, GroupingFlag}()
-
-    # =====================================================================
-    # 1. SPLIT suggestions — per sample: any consecutive position gap above
-    #    min_slot_separation_mm is a genuine slot boundary; anything at or
-    #    below is stage return jitter. Single absolute physical threshold —
-    #    no median computation, no regime switching.
-    #
-    #    Physical basis: SAXS capillary slots are ≥ ~1 mm apart; stage
-    #    repeatability (returning to the same slot) is ~0.1–0.3 mm. The 1 mm
-    #    default sits AT the slot pitch; sub-mm gaps are jitter, not boundaries.
-    # =====================================================================
-    for ld in load_rows
-        for sm in ld.samples
-            xs = sm.exposures
-            length(xs) < 2 && continue
-            for i in 2:length(xs)
-                p_prev = xs[i-1].horizontal_position
-                p_curr = xs[i].horizontal_position
-                # Skip unless BOTH positions are real numbers. `isa Real` catches
-                # `nothing` AND SQLite NULL (`missing`) in one guard — a bare
-                # `=== nothing` would let `missing` through and Float64(missing) throws.
-                (p_prev isa Real && p_curr isa Real) || continue
-                if abs(Float64(p_curr) - Float64(p_prev)) > min_slot_separation_mm
-                    flags[Int(sm.sample_id)] = SplitFlag(
-                        i, Float64(p_prev), Float64(p_curr))
-                    break  # first jump only; the UI resolves one split at a time
-                end
-            end
-        end
-    end
-
-    # =====================================================================
-    # 2. MERGE suggestions — a sample's filename label recurs in another load.
-    #    Compute each sample's label once, group sample_ids by (label), and flag
-    #    every member of a multi-load group. Split takes precedence (skip if the
-    #    sample already has a split flag).
-    # =====================================================================
-    # label -> Vector of (sample_id, load_id), in stable iteration order.
-    by_label = Dict{String, Vector{Tuple{Int, Int}}}()
-    for ld in load_rows
-        for sm in ld.samples
-            isempty(sm.exposures) && continue
-            label = _label_from_stem(first(sm.exposures).filename)
-            push!(get!(by_label, label, Tuple{Int, Int}[]),
-                  (Int(sm.sample_id), Int(ld.load_id)))
-        end
-    end
-
-    for (label, members) in by_label
-        # Recurrence requires the label to appear in >1 distinct load.
-        distinct_loads = unique(last.(members))
-        length(distinct_loads) < 2 && continue
-        for (sid, lid) in members
-            haskey(flags, sid) && continue  # split wins
-            # Point at the first OTHER sample sharing this label (lowest sample_id
-            # for determinism). `members` only contains labels recurring across ≥2
-            # loads, so in practice the other sample is in a different load, but the
-            # selection itself is not load-restricted — any other same-label sample.
-            others = sort([s for (s, l) in members if s != sid])
-            isempty(others) && continue
-            flags[sid] = MergeFlag(first(others), label)
-        end
-    end
-
-    return flags
-end
-
-"""
     _assign_sessions(start_times; session_gap_hours = 3.0) -> Vector{Int}
 
 Group time-ordered loads into macro-sessions (spec §5): a gap > `session_gap_hours`
@@ -548,6 +402,18 @@ _monitors(prp) = (
     counting_time_s    = prp === nothing ? missing : get(prp, :counting_time_s, missing),
 )
 
+"""
+    group_into_samples(metas::Vector{ExposureMeta}) -> GroupingResult
+
+Run the full §5 backbone on the flat list of per-exposure metadata:
+  1. Time-gap segment into loads (`_segment_loads_with_flag`).
+  2. Within each load, cluster by position (`_cluster_slots`).
+  3. Build the `GroupedLoad`/`GroupedSample`/`GroupedExposure` tree with
+     auto-names (`<label> (SNNPMM)`).
+
+The segmentation fallback (`:unimodal_fallback`) is surfaced both as a
+human-readable discrepancy string and onto each affected load's `flag`.
+"""
 function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
     isempty(metas) && return GroupingResult(GroupedLoad[], String[])
 

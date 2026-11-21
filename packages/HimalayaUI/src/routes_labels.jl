@@ -44,16 +44,6 @@ function remove_label!(db, req, sample_id::Int, label::String, exp_id::Int)
     _emit_label_event!(db, req, "label_removed", sample_id, label, exp_id)
 end
 
-function inherit_labels!(db, req, loser_id::Int, survivor_id::Int, exp_id::Int)
-    for r in Tables.rowtable(DBInterface.execute(db,
-            "SELECT label FROM sample_labels WHERE sample_id = ? AND state = 'confirmed' ORDER BY id",
-            [loser_id]))
-        label = String(r.label)
-        _label_state(db, survivor_id, label) == "removed" && continue
-        add_label!(db, req, survivor_id, label, exp_id)
-    end
-end
-
 function _live_sample_experiment(db, sample_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT experiment_id FROM samples WHERE id = ? AND merged_into_id IS NULL", [sample_id]))

@@ -1,16 +1,13 @@
 import { useEffect } from "react";
-import { Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Outlet } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useInteraction } from "../interaction/registry";
 import { core } from "../interaction/core";
 import { TopNav } from "./TopNav";
-import { ExperimentShell } from "./ExperimentShell";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
 import { ExperimentEntry } from "./ExperimentEntry";
-import { ConfigurationPage } from "../pages/ConfigurationPage";
-import { GroupingReviewPage } from "../pages/GroupingReviewPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
 import { SampleRedirect } from "./SampleRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
@@ -19,22 +16,6 @@ import { useStateFromUrl } from "../../hooks/useStateFromUrl";
 import { InteractionDock } from "../interaction/InteractionDock";
 import { useKeyboardLayer } from "../interaction/useKeyboardLayer";
 import { WorkspacePage } from "../../workspace/WorkspacePage";
-
-/** Thin wrapper that reads :id from the route and passes it to GroupingReviewPage. */
-function GroupingReviewRoute(): JSX.Element {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const experimentId = id ? Number(id) : 0;
-  return (
-    <GroupingReviewPage
-      // Remount per experiment so ephemeral selection/cursor state can't carry a
-      // stale multi-selection across an experiment switch.
-      key={experimentId}
-      experimentId={experimentId}
-      onBack={() => navigate(`/experiments/${experimentId}`)}
-    />
-  );
-}
 
 /**
  * PageBody — the `*` catch-all body. The URL→stale classifier
@@ -104,13 +85,11 @@ export function AppRoutes(): JSX.Element {
         <Route path="/inspect/*" element={<Navigate to="/experiments" replace />} />
         <Route path="/experiments" element={<ExperimentsHomePage />} />
         <Route path="/experiments/new" element={<NewExperimentPage />} />
-        <Route path="/experiments/new/config" element={<ConfigurationPage />} />
-        <Route path="/experiments/:id/grouping" element={<GroupingReviewRoute />} />
-        <Route path="/experiments/:id" element={<ExperimentShell />}>
-          <Route index element={<ExperimentEntry />} />
-          <Route path="corpus" element={<Navigate to=".." replace />} />
-          <Route path="config" element={<ConfigurationPage />} />
-        </Route>
+        <Route path="/experiments/new/config" element={<Navigate to="/experiments/new" replace />} />
+        <Route path="/experiments/:id" element={<ExperimentEntry />} />
+        {["corpus", "config", "grouping"].map((retired) => (
+          <Route key={retired} path={`/experiments/:id/${retired}`} element={<ExperimentEntry />} />
+        ))}
         <Route path="*" element={<PageBody />} />
       </Route>
       <Route path="/experiments/:id/workspace/:sampleId?" element={<WorkspacePage />} />

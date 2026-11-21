@@ -30,7 +30,6 @@ const EXP = (over: Partial<api.Experiment>): api.Experiment => ({
   last_scanned_at: null, ingest_status: "complete",
   image_pattern: null, metadata_pattern: null, integration_pattern: null,
   stats: { loads: 13, samples: 170, exposures: 682, sessions: 3, span_hours: 6.5, started_at: "2026-04-01T10:00:00" },
-  review_count: 0,
   ...over,
 });
 
@@ -76,27 +75,27 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     expect(screen.getByText("13")).toBeInTheDocument();
   });
 
-  it("shows 'up to date' chip when complete and no review_count", async () => {
+  it("shows 'up to date' chip when complete", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([
-      EXP({ ingest_status: "complete", review_count: 0 }),
+      EXP({ ingest_status: "complete" }),
     ]);
     renderPage();
     await screen.findByTestId("experiment-card-7");
     expect(screen.getByText("up to date")).toBeInTheDocument();
   });
 
-  it("shows 'N to review' warning chip when review_count > 0", async () => {
+  it("shows a warning chip when the last ingest failed", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([
-      EXP({ ingest_status: "complete", review_count: 4 }),
+      EXP({ ingest_status: "failed" }),
     ]);
     renderPage();
     await screen.findByTestId("experiment-card-7");
-    expect(screen.getByText("4 to review")).toBeInTheDocument();
+    expect(screen.getByText("last ingest failed")).toBeInTheDocument();
   });
 
   it("shows 'scanning…' chip when ingest_status is scanning", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([
-      EXP({ ingest_status: "scanning", review_count: 0 }),
+      EXP({ ingest_status: "scanning" }),
     ]);
     renderPage();
     await screen.findByTestId("experiment-card-7");

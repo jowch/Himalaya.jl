@@ -83,7 +83,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
             </li>
           );
         })}
-        {samples.length === 0 && <li className="px-3 py-2 text-caption">No samples match.</li>}
+        {samples.length === 0 && filter.trim() !== "" && <li className="px-3 py-2 text-caption">No samples match.</li>}
       </ul>
     </>
   );

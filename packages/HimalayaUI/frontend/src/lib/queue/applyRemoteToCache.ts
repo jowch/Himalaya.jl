@@ -84,10 +84,13 @@ export function invalidateIngestFrameCache(
   // App.tsx forwards `stage` for all four ingest kinds, this file's own
   // ingest_complete arm passes none.
   if (isComplete || stage !== INGEST_DISCOVERY_STAGE) {
-    qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
+    qc.invalidateQueries({ queryKey: queryKeys.experimentCorpusSamples(expId) });
   }
-  if (isComplete) qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
+  if (isComplete) {
+    qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
+    qc.invalidateQueries({ queryKey: queryKeys.problems(expId) });
+  }
 }
 
 /**
@@ -292,42 +295,17 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "ingest_started":
-    case "ingest_progress":
-    case "ingest_failed": {
-      // Broadcast-only progress (spec §9.3): rides the curation channel, carries
-      // a positive experiment_id in the payload (NEVER a sentinel entity_id).
-      // Read experiment_id from the payload, not remote.entity_id. Cache effect
-      // is invalidation-only (the ingestInFlight store write lives in the
-      // separate App.tsx listener — applyRemoteToCache stays pure).
+    case "ingest_progress": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) {
         invalidateIngestFrameCache(qc, expId, false, payload?.stage as string | undefined);
       }
       break;
     }
-    case "ingest_complete": {
-      // Authoritative terminal frame (the 64-slot channel may drop progress
-      // frames at 680-exposure scale; treat complete as the source of truth).
+    case "ingest_complete":
+    case "ingest_failed": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) invalidateIngestFrameCache(qc, expId, true);
-      break;
-    }
-    case "sample_renamed": {
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-      const expId = payload?.experiment_id as number | undefined;
-      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
-      break;
-    }
-    case "exposure_moved": {
-      // One exposure left from_sample_id for sample_id (the destination).
-      // Invalidate both sides' exposure lists + the loads roll-up (which
-      // re-derives the grouping view).
-      const dest = payload?.sample_id as number | undefined;
-      const from = payload?.from_sample_id as number | undefined;
-      if (from !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(from) });
-      if (dest !== undefined) qc.invalidateQueries({ queryKey: queryKeys.exposures(dest) });
-      const expId = payload?.experiment_id as number | undefined;
-      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
       break;
     }
     case "sample_bridged":
@@ -336,26 +314,13 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
       break;
     }
+    case "tag_color_set":
+      qc.invalidateQueries({ queryKey: queryKeys.tagColors() });
+      break;
     case "label_added":
     case "label_removed": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.labels(expId) });
-      break;
-    }
-    case "sample_created":
-    case "sample_split":
-    case "grouping_flag_dismissed": {
-      // Orchestrations that create sample rows / change grouping whose new ids
-      // aren't worth a surgical splice. Refetch
-      // the loads roll-up + both sample listings. MUST be before `default:` so
-      // entity_id (a sample id) never poisons peaks(id)/indices(id). There is
-      // NO sample_merged event — merging is grouping_flag_dismissed + the move.
-      const expId = payload?.experiment_id as number | undefined;
-      if (expId !== undefined) {
-        qc.invalidateQueries({ queryKey: queryKeys.loads(expId) });
-        qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });
-      }
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     default: {

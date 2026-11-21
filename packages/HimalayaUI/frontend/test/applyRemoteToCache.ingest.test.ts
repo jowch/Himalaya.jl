@@ -19,25 +19,35 @@ function ingestFrame(kind: string, experiment_id: number, extra: Record<string, 
 }
 
 describe("ingest_* cache arms (Phase E1)", () => {
-  it("ingest_progress invalidates the experiment loads + samples, never peaks/indices", () => {
+  it("ingest_progress invalidates the experiment samples and the workspace sample list, never peaks/indices", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
     applyRemoteToCache(ingestFrame("ingest_progress", 7, { processed: 100, total: 680 }), qc);
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
-    expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.samples(7)));
     // the default arm's peaks/indices invalidation must NOT fire
     expect(keys).not.toContain(JSON.stringify(queryKeys.peaks(7)));
     expect(keys).not.toContain(JSON.stringify(queryKeys.indices(7)));
   });
 
-  it("ingest_complete invalidates loads + samples + the experiment detail", () => {
+  it("ingest_complete invalidates the sample lists, the experiment detail and its problems", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
     applyRemoteToCache(ingestFrame("ingest_complete", 7), qc);
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.experiment(7)));
-    expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.problems(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
+  });
+
+  it("ingest_failed invalidates the experiment detail and its problems, so Details shows the error", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyRemoteToCache(ingestFrame("ingest_failed", 7), qc);
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(queryKeys.experiment(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.problems(7)));
   });
 
   it("ingest_started / ingest_failed do not throw and do not poison peaks/indices", () => {
@@ -51,7 +61,7 @@ describe("ingest_* cache arms (Phase E1)", () => {
 });
 
 describe("ingest_progress stage gating", () => {
-  it("SKIPS the loads/samples refetch during discovery", () => {
+  it("SKIPS the sample refetch during discovery", () => {
     // Nothing is committed during discovery — scan_and_group! inserts every
     // load/sample/exposure in ONE transaction that has not opened yet — so these
     // refetches can only return the same empty result, once per progress frame,
@@ -63,7 +73,7 @@ describe("ingest_progress stage gating", () => {
       qc,
     );
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
-    expect(keys).not.toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).not.toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
     expect(keys).not.toContain(JSON.stringify(queryKeys.samples(7)));
   });
 
@@ -75,7 +85,7 @@ describe("ingest_progress stage gating", () => {
       qc,
     );
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
-    expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.samples(7)));
   });
 
@@ -86,7 +96,7 @@ describe("ingest_progress stage gating", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     applyRemoteToCache(ingestFrame("ingest_progress", 7, { processed: 1, total: 2 }), qc);
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
-    expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.samples(7)));
   });
 
@@ -100,7 +110,7 @@ describe("ingest_progress stage gating", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     invalidateIngestFrameCache(qc, 7, true, "discovery");
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
-    expect(keys).toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.samples(7)));
     expect(keys).toContain(JSON.stringify(queryKeys.experiment(7)));
   });
@@ -110,7 +120,7 @@ describe("ingest_progress stage gating", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     invalidateIngestFrameCache(qc, 7, false, "discovery");
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
-    expect(keys).not.toContain(JSON.stringify(queryKeys.loads(7)));
+    expect(keys).not.toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
     expect(keys).not.toContain(JSON.stringify(queryKeys.samples(7)));
   });
 });

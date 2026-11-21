@@ -118,9 +118,6 @@ function register_samples_routes!()
                 push!(fields, k); push!(vals, v)
             end
         end
-        # A user rename stamps provenance (matching routes_grouping rename) so the
-        # name_source column that derive_sample_flags + the gallery key off stays
-        # trustworthy — otherwise an auto-named sample renamed here still reads 'auto'.
         if :name in fields
             push!(fields, :name_source); push!(vals, "user")
         end

@@ -174,46 +174,6 @@ end
         SQLite.close(db)
     end
 
-    @testset "GET /api/experiments/{id}/loads returns Load▸Sample▸Exposure roll-up" begin
-        db, dir, exp_id = scan_test_db()
-        lid1 = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 8)
-        lid2 = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 2, frame_count = 4)
-        sid1 = HimalayaUI.create_sample!(db; experiment_id = exp_id,
-            name = "HA85 (S01P01)", load_id = lid1, slot_index = 1)
-        sid2 = HimalayaUI.create_sample!(db; experiment_id = exp_id,
-            name = "HA85 (S02P01)", load_id = lid2, slot_index = 1)
-        xid1 = HimalayaUI.create_exposure!(db; experiment_id = exp_id,
-            sample_id = sid1, filename = "f1.tif", horizontal_position = 12.4, frame_no = 1)
-        xid2 = HimalayaUI.create_exposure!(db; experiment_id = exp_id,
-            sample_id = sid1, filename = "f2.tif", horizontal_position = 12.4, frame_no = 2)
-        xid3 = HimalayaUI.create_exposure!(db; experiment_id = exp_id,
-            sample_id = sid2, filename = "f3.tif", horizontal_position = 39.5, frame_no = 1)
-
-        with_test_server(db) do port, base
-            r = HTTP.get("$base/api/experiments/$exp_id/loads")
-            @test r.status == 200
-            loads = JSON3.read(String(r.body))
-            @test length(loads) == 2
-
-            l1 = first(filter(l -> l.load_index == 1, loads))
-            @test length(l1.samples) == 1
-            @test l1.samples[1].name == "HA85 (S01P01)"
-            @test length(l1.samples[1].exposures) == 2
-            exps = l1.samples[1].exposures
-            filenames = [e.filename for e in exps]
-            @test "f1.tif" in filenames && "f2.tif" in filenames
-
-            l2 = first(filter(l -> l.load_index == 2, loads))
-            @test length(l2.samples) == 1
-            @test length(l2.samples[1].exposures) == 1
-
-            # 404 for unknown experiment
-            r2 = HTTP.get("$base/api/experiments/999999/loads"; status_exception = false)
-            @test r2.status == 404
-        end
-        SQLite.close(db)
-    end
-
     @testset "PATCH /api/experiments/{id} writes geometry overrides, marks source=user" begin
         db, dir, exp_id = scan_test_db()
 
@@ -320,6 +280,46 @@ end
                 headers = ["X-Username" => "alice"],
                 status_exception = false)
             @test r3.status == 404
+        end
+        SQLite.close(db)
+    end
+
+    @testset "DELETE /api/experiments/{id} refuses while an ingest runs" begin
+        db, dir, exp_id = scan_test_db()
+        DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [exp_id])
+        with_inproc_routes(db) do call
+            @test call("DELETE", "/api/experiments/$exp_id").status == 409
+            DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
+            @test call("DELETE", "/api/experiments/$exp_id").status == 200
+        end
+        SQLite.close(db)
+    end
+
+    @testset "DELETE /api/experiments/{id} tells other clients the experiment is gone" begin
+        db, dir, exp_id = scan_test_db()
+        pending = Channel{String}(64)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        try
+            with_inproc_routes(db) do call
+                @test call("DELETE", "/api/experiments/$exp_id").status == 200
+            end
+            frames = String[]
+            while isready(pending)
+                push!(frames, take!(pending))
+            end
+            objs = [JSON3.read(replace(first(filter(l -> startswith(l, "data: "), split(f, '\n'))), r"^data: " => "")) for f in frames]
+            deleted = filter(o -> o.kind == "experiment_deleted", objs)
+            @test length(deleted) == 1
+            @test only(deleted).entity_type == "experiment"
+            @test only(deleted).entity_id == exp_id
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
         end
         SQLite.close(db)
     end
