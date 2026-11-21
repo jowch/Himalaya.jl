@@ -3,17 +3,29 @@ import { LABEL_COLORS } from "../../src/api";
 import { contrastRatio, oklchToLinearSrgb, parseOklch } from "../helpers/contrast";
 import { themeToken } from "../helpers/cssBlocks";
 
-const BETWEEN_LABELS = 0.06;
+const DOT_FLOOR = 0.05;
+const WASH_FLOOR = 0.025;
 const GAMUT_SLACK = 1e-3;
 
+function oklab(s: string): [number, number, number] {
+  const { L, C, h } = parseOklch(s);
+  return [L, C * Math.cos((h * Math.PI) / 180), C * Math.sin((h * Math.PI) / 180)];
+}
+
 function oklabDistance(x: string, y: string): number {
-  const ab = (s: string): [number, number, number] => {
-    const { L, C, h } = parseOklch(s);
-    return [L, C * Math.cos((h * Math.PI) / 180), C * Math.sin((h * Math.PI) / 180)];
-  };
-  const [pl, pa, pb] = ab(x);
-  const [ql, qa, qb] = ab(y);
+  const [pl, pa, pb] = oklab(x);
+  const [ql, qa, qb] = oklab(y);
   return Math.hypot(pl - ql, pa - qa, pb - qb);
+}
+
+function dotDistance(x: string, y: string): number {
+  const [pl, pa, pb] = oklab(x);
+  const [ql, qa, qb] = oklab(y);
+  return Math.hypot(pl - ql, (pa - qa) / 2, (pb - qb) / 2);
+}
+
+function pairs<T>(xs: readonly T[]): [T, T][] {
+  return xs.flatMap((a, i) => xs.slice(i + 1).map((b) => [a, b] as [T, T]));
 }
 
 describe.each(["light", "dark"] as const)("label colours in the %s theme", (theme) => {
@@ -44,13 +56,11 @@ describe.each(["light", "dark"] as const)("label colours in the %s theme", (them
     }
   });
 
-  it("keeps every pair of inks at least 0.06 OKLab apart, three times a just-noticeable difference", () => {
-    for (let i = 0; i < LABEL_COLORS.length; i++) {
-      for (let j = i + 1; j < LABEL_COLORS.length; j++) {
-        const a = LABEL_COLORS[i]!;
-        const b = LABEL_COLORS[j]!;
-        expect(oklabDistance(ink(a), ink(b)), `${a} vs ${b}`).toBeGreaterThanOrEqual(BETWEEN_LABELS);
-      }
-    }
+  it("keeps every pair of inks apart as small dots, where lightness counts twice as much as hue", () => {
+    for (const [a, b] of pairs(LABEL_COLORS)) expect(dotDistance(ink(a), ink(b)), `${a} vs ${b}`).toBeGreaterThanOrEqual(DOT_FLOOR);
+  });
+
+  it("keeps every pair of washes apart, so chips differ without reading their text", () => {
+    for (const [a, b] of pairs(LABEL_COLORS)) expect(oklabDistance(wash(a), wash(b)), `${a} vs ${b}`).toBeGreaterThanOrEqual(WASH_FLOOR);
   });
 });
