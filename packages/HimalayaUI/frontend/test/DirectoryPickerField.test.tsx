@@ -11,7 +11,6 @@ describe("DirectoryPickerField (Phase E1)", () => {
         value="/Volumes/data/ssrl/2026_04/1"
         onChange={onChange}
         suggestions={["/Volumes/data/ssrl/2026_04/1p7m", "/Volumes/data/ssrl/2026_04/10x"]}
-        validation={null}
       />,
     );
     // Input puts data-testid on its WRAPPER; onKeyDown (via ...rest) lands on
@@ -28,7 +27,6 @@ describe("DirectoryPickerField (Phase E1)", () => {
         value="/Volumes/data/ssrl/2026_04/1"
         onChange={onChange}
         suggestions={["/a/one", "/a/two"]}
-        validation={null}
       />,
     );
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
@@ -48,7 +46,6 @@ describe("DirectoryPickerField (Phase E1)", () => {
         value="/Volumes/data/ssrl/2026_04/1"
         onChange={() => {}}
         suggestions={["/Volumes/data/ssrl/2026_04/1p7m"]}
-        validation={null}
       />,
     );
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
@@ -68,7 +65,6 @@ describe("DirectoryPickerField (Phase E1)", () => {
         value="/Users/me/projects/himalaya-devdata/mi"
         onChange={onChange}
         suggestions={["/Users/me/projects/himalaya-devdata/mini-1p7m"]}
-        validation={null}
       />,
     );
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
@@ -82,27 +78,5 @@ describe("DirectoryPickerField (Phase E1)", () => {
     // … and selecting it completes the FULL path into the field.
     fireEvent.click(opt);
     expect(onChange).toHaveBeenCalledWith("/Users/me/projects/himalaya-devdata/mini-1p7m");
-  });
-
-  it("renders a positive validation line", () => {
-    render(
-      <DirectoryPickerField
-        value="/d" onChange={() => {}} suggestions={[]}
-        validation={{ ok: true, matched: 682, scanned: 700, message: null }}
-      />,
-    );
-    expect(screen.getByTestId("dirpicker-validation")).toHaveTextContent("682");
-  });
-
-  it("renders a failure validation line with the message", () => {
-    render(
-      <DirectoryPickerField
-        value="/d" onChange={() => {}} suggestions={[]}
-        validation={{ ok: false, matched: 0, scanned: 0, message: "No exposures found" }}
-      />,
-    );
-    const line = screen.getByTestId("dirpicker-validation");
-    expect(line).toHaveAttribute("data-ok", "false");
-    expect(line).toHaveTextContent("No exposures found");
   });
 });

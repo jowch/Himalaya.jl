@@ -516,7 +516,7 @@ discipline and the canonical paired test files.
 | `lib/queue/mutatorRegistry.ts` | Discovery / lookup of mutators by kind |
 | `lib/queue/optimisticId.ts` | Negative-id minting helper |
 | `lib/queue/peakQTol.ts` | Tolerance for matching peak rows by q value |
-| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / assignment / grouping / bridges / trivial / reanalyze) |
+| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / assignment / bridges / trivial / reanalyze) |
 | `lib/clientId.ts` | Per-tab UUID (sessionStorage) |
 | `lib/clientOpId.ts` | Per-mutation UUID (`crypto.randomUUID` per call) |
 | `print/shell/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |

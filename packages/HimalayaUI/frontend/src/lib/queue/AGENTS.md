@@ -32,7 +32,6 @@ lib/queue/
     ├── indexGroup.ts
     ├── assignment.ts
     ├── bridges.ts
-    ├── grouping.ts
     ├── labels.ts
     └── trivial.ts
 

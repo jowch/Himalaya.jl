@@ -257,38 +257,6 @@ end
 end
 
 if isdefined(@__MODULE__, :with_test_server)
-    @testset "moving a called frame into a form-factor sample makes that sample indexed" begin
-        mktempdir() do dir
-            fx = _call_fixture(dir)
-            e1, _ = fx.eids
-            dest = HimalayaUI.create_sample!(fx.db; experiment_id = fx.exp_id, name = "T")
-            HimalayaUI.create_exposure!(fx.db; experiment_id = fx.exp_id, sample_id = dest)
-            _index!(fx.db, 10, e1, "Pn3m", 0.5)
-            with_inproc_routes(fx.db) do call
-                _post(call, "/api/exposures/$e1/assignment/members", Dict(:index_id => 10))
-                _post(call, "/api/samples/$dest/call/state", Dict(:state => "form_factor"))
-                @test _post(call, "/api/exposures/$e1/move", Dict(:sample_id => dest)).status == 200
-                @test HimalayaUI.sample_call_state(fx.db, dest) == "indexed"
-                @test _json(call("GET", "/api/samples/$dest/call")).phase == "Pn3m"
-            end
-        end
-    end
-
-    @testset "merging a called sample into a form-factor sample makes the survivor indexed" begin
-        mktempdir() do dir
-            fx = _call_fixture(dir)
-            e1, _ = fx.eids
-            dest = HimalayaUI.create_sample!(fx.db; experiment_id = fx.exp_id, name = "T")
-            HimalayaUI.create_exposure!(fx.db; experiment_id = fx.exp_id, sample_id = dest)
-            _index!(fx.db, 10, e1, "Pn3m", 0.5)
-            with_inproc_routes(fx.db) do call
-                _post(call, "/api/exposures/$e1/assignment/members", Dict(:index_id => 10))
-                _post(call, "/api/samples/$dest/call/state", Dict(:state => "form_factor"))
-                @test _post(call, "/api/samples/$(fx.s_id)/merge", Dict(:survivor_id => dest)).status == 200
-                @test HimalayaUI.sample_call_state(fx.db, dest) == "indexed"
-            end
-        end
-    end
 
     @testset "deleting the experiment leaves no sample call rows behind" begin
         mktempdir() do dir

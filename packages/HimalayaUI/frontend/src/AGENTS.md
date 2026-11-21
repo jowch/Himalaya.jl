@@ -18,7 +18,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector}/` | Appearance-authoring render layers (plot frame and projection, detector image). The `lint:design` appearance guard excludes them |
-| Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage`, `ConfigurationPage`, `GroupingReviewPage`, `ScanFailedPage` (under the single `AppShell`) |
+| Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage` (under the single `AppShell`) |
 | Hooks | `hooks/` | `useFocusTrap`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, peak refs, custom index, labels, bridges |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |

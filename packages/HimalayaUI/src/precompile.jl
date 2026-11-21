@@ -60,6 +60,7 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "GET", "/api/experiments")
     _workload_call(send, "GET", "/api/experiments/$experiment")
     _workload_call(send, "GET", "/api/experiments/$experiment/bridges")
+    _workload_call(send, "GET", "/api/experiments/$experiment/problems")
     _workload_call(send, "GET", "/api/samples")
     _workload_call(send, "GET", "/api/samples?experiment_id=$experiment")
     _workload_call(send, "GET", "/api/samples/$sample/exposures")

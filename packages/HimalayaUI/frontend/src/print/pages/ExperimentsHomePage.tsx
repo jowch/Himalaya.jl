@@ -13,16 +13,11 @@ import type { Experiment } from "../../api";
 
 // ─── State chip ─────────────────────────────────────────────────────────────
 
-/** Derive the status chip tone + label for a gallery card. Priority:
- *  1. scanning/analyzing → "scanning…" (accent tone)
- *  2. review_count > 0   → "N to review" (warning/amber tone)
- *  3. otherwise          → "up to date" (success/sage tone) */
 function stateChip(e: Experiment): { tone: NoticePillTone; label: string } {
   if (e.ingest_status === "scanning" || e.ingest_status === "analyzing") {
     return { tone: "scanning", label: "scanning…" };
   }
-  const rc = e.review_count ?? 0;
-  if (rc > 0) return { tone: "warning", label: `${rc} to review` };
+  if (e.ingest_status === "failed") return { tone: "warning", label: "last ingest failed" };
   return { tone: "success", label: "up to date" };
 }
 
