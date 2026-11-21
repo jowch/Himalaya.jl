@@ -224,7 +224,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Label colour",
       arg: "Label",
       placeholder: "Pick a label",
-      items: p.labels.known.map((l) => ({
+      items: [...p.labels.known].sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name)).map((l) => ({
         id: `colour-${l.label}`,
         label: l.name,
         swatch: LABEL_SWATCH[l.color].solid,

@@ -49,7 +49,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -212,7 +212,7 @@ export function WorkspacePage(): JSX.Element {
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
   const [recentLabels, setRecentLabels] = useState(() => recentRank(RECENT_LABELS));
   const vocabulary = useMemo(
-    () => byRecent(labelVocabulary(labelList), (t) => t.toLowerCase(), recentLabels),
+    () => byRecent(labelVocabulary(labelList), labelKey, recentLabels),
     [labelList, recentLabels],
   );
   const addLabel = useAddLabel(experimentId);
@@ -583,7 +583,7 @@ export function WorkspacePage(): JSX.Element {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
       (added ? addLabel : removeLabel).mutate({ sampleId: sid, label: tag });
       if (added) {
-        recordRecent(RECENT_LABELS, tag.toLowerCase());
+        recordRecent(RECENT_LABELS, labelKey(tag));
         setRecentLabels(recentRank(RECENT_LABELS));
       }
       const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";

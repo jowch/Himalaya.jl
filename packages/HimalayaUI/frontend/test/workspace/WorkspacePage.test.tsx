@@ -1199,6 +1199,25 @@ describe("WorkspacePage", () => {
     expect(JSON.parse(localStorage.getItem("himalaya-ui:recent:label")!)).toEqual(["calibrant"]);
   });
 
+  it("a recent label the experiment does not use is never listed or attached, and the palette's Label page shares the recent order", () => {
+    localStorage.setItem("himalaya-ui:recent:label", JSON.stringify(["ghost", "dried"]));
+    state.labels = [
+      { id: 1, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 12, label: "37C", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 12, label: "dried", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "l" });
+    const picker = screen.getByTestId("workspace-label-picker");
+    expect([...picker.querySelectorAll("[data-label-option='existing']")].map((b) => b.textContent)).toEqual(["dried", "37C", "Buffer", "Calibrant", "Empty capillary"]);
+    fireEvent.keyDown(within(picker).getByLabelText("Label name"), { key: "Escape" });
+    runFromPalette("label");
+    const names = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(names.findIndex((n) => n.startsWith("dried"))).toBeLessThan(names.findIndex((n) => n.startsWith("37C")));
+    expect(names.some((n) => n.toLowerCase().includes("ghost"))).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   it("L does nothing before a user is set", () => {
     state.username = undefined;
     renderAt("/experiments/1/workspace/10");

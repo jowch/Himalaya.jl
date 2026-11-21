@@ -4,7 +4,7 @@ export const STANDARD_LABELS = ["Buffer", "Calibrant", "Empty capillary"] as con
 export const MAX_LABEL_LENGTH = 64;
 
 const fold = (s: string): string => s.trim().toLowerCase();
-const labelKey = (s: string): string => s.trim().replace(/[A-Z]+/g, (m) => m.toLowerCase());
+export const labelKey = (s: string): string => s.trim().replace(/[A-Z]+/g, (m) => m.toLowerCase());
 
 export function sameLabel(a: string, b: string): boolean {
   return labelKey(a) === labelKey(b);
