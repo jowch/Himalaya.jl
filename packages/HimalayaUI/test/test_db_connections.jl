@@ -1,4 +1,4 @@
-using Test, HTTP, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables, JSON3
 import HimalayaUI
 using HimalayaUI: open_db, bind_db!, current_db, db_connection_middleware
 
@@ -98,12 +98,16 @@ end
     end
 end
 
-@testset "the event stream and in-memory databases keep the singleton" begin
+@testset "the event stream keeps the singleton without the write lock, and in-memory databases keep the singleton" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "test.db"))
         bind_db!(db)
         try
-            @test _through_middleware(current_db, "GET", "/api/events") === db
+            conn, held = _through_middleware("GET", "/api/events") do
+                (current_db(), islocked(HimalayaUI._DB_WRITE_LOCK))
+            end
+            @test conn === db
+            @test !held
         finally
             HimalayaUI.unbind_db!()
             DBInterface.close!(db)
@@ -190,6 +194,41 @@ end
             @test isempty(Tables.rowtable(DBInterface.execute(db, "SELECT 1 FROM users")))
         finally
             HimalayaUI.unbind_db!()
+            DBInterface.close!(db)
+        end
+    end
+end
+
+@testset "a write answers while a browser holds the event stream open" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir=tmp, analysis_dir=tmp)
+        s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+        e_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
+        try
+            with_test_server(db) do port, base
+                opened = Channel{Any}(1)
+                stream = @async try
+                    HTTP.open("GET", "$base/api/events"; readtimeout = 30) do io
+                        startread(io)
+                        put!(opened, io)
+                        while !eof(io)
+                            readavailable(io)
+                        end
+                    end
+                catch
+                end
+                @test timedwait(() -> isready(opened), 10.0) === :ok
+                write = @async HTTP.patch("$base/api/exposures/$e_id/status";
+                    body = JSON3.write(Dict(:status => "rejected")),
+                    headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                    readtimeout = 20, retry = false)
+                @test timedwait(() -> istaskdone(write), 15.0) === :ok
+                istaskdone(write) && @test fetch(write).status == 200
+                isready(opened) && close(take!(opened).stream)
+                timedwait(() -> istaskdone(stream), 10.0)
+            end
+        finally
             DBInterface.close!(db)
         end
     end
