@@ -14,7 +14,7 @@ export interface IndexSeries {
   r2: number | null;
 }
 
-const MARGINS = { top: 8, right: 8, bottom: 22, left: 34 };
+const MARGINS = { top: 8, right: 8, bottom: 28, left: 34 };
 const HEIGHT = 190;
 
 export function IndexingPlot({ series }: { series: readonly IndexSeries[] }): JSX.Element {
@@ -53,7 +53,7 @@ export function IndexingPlot({ series }: { series: readonly IndexSeries[] }): JS
                   {t.toFixed(2)}
                 </text>
               ))}
-              <text x={dims.plotWidth / 2} y={dims.plotHeight + MARGINS.bottom - 1} textAnchor="middle" className="fill-ink-faint text-caption">
+              <text x={dims.plotWidth / 2} y={dims.plotHeight + MARGINS.bottom - 2} textAnchor="middle" className="fill-ink-faint text-caption">
                 q / q₁
               </text>
               <g clipPath={`url(#${clipId})`}>

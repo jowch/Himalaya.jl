@@ -457,6 +457,8 @@ export function WorkspacePage(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
 
+  const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
+  const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
   const emptyMessage = !Number.isInteger(experimentId)
@@ -562,7 +564,7 @@ export function WorkspacePage(): JSX.Element {
                 )}
               </PlotCard>
             </div>
-            <MainSection title="Exposures">
+            <MainSection title="Exposures" hint={keptHint}>
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
             </MainSection>
           </>

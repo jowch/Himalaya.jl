@@ -230,6 +230,22 @@ describe("WorkspacePage", () => {
     expect(calls[1]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
   });
 
+  it("every exposure card has its own Drop button, which drops that frame and shows it", () => {
+    renderAt("/experiments/1/workspace/10");
+    const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
+    fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 1");
+  });
+
+  it("a dropped card offers Restore and the header counts the kept frames", () => {
+    state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    expect(within(within(strip).getAllByRole("listitem")[0]!).getByRole("button", { name: "Restore" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 kept")).toBeInTheDocument();
+  });
+
   it("refuses a phase call on a dropped frame and says why", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
