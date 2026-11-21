@@ -20,6 +20,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/experiments/17", (r) => r.fulfill(json(experiment)));
   await page.route("**/api/samples", (r) => r.fulfill(json(SAMPLES)));
   await page.route("**/api/users", (r) => r.fulfill(json([])));
+  await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
   await page.route("**/api/samples/*/exposures*", (r) => r.fulfill(json([])));
   await page.route("**/api/events", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
