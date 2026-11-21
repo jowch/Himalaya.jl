@@ -22,7 +22,7 @@ step() {
   fi
 }
 
-trap 'bin/verify stop > /dev/null 2>&1 || true' EXIT
+trap 'bin/verify stop > /dev/null 2>&1 || true; bin/verify close > /dev/null 2>&1 || true' EXIT
 bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
 

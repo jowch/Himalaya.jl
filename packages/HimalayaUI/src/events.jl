@@ -291,6 +291,14 @@ events emitted from `analyze_exposure!`.
 """
 _system_request() = HTTP.Request("INTERNAL", "/_system", Pair{String,String}[], UInt8[])
 
+const RETIRED_EVENT_KINDS = (
+    "comparison_created", "comparison_deleted", "comparison_pinned",
+    "comparison_submitted", "comparison_unpinned",
+    "series_created", "series_deleted", "series_pinned", "series_plate_committed",
+    "series_recipe_updated", "series_unpinned",
+    "post_message",
+)
+
 """
 Dispatcher that updates materialized views based on event kind.
 Currently a no-op for most events; populated as routes migrate to apply_event!.
@@ -302,14 +310,6 @@ see during `rebuild_views_from_log!`. This eliminates the Symbol-key vs
 String-key footgun: `JSON3.Object` supports both `obj.q` and `obj[:q]` /
 `obj["q"]`. Branch code accesses fields uniformly via `payload.q` style.
 """
-const RETIRED_EVENT_KINDS = (
-    "comparison_created", "comparison_deleted", "comparison_pinned",
-    "comparison_submitted", "comparison_unpinned",
-    "series_created", "series_deleted", "series_pinned", "series_plate_committed",
-    "series_recipe_updated", "series_unpinned",
-    "post_message",
-)
-
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # R4.2 dispatcher branches — one per view-producing curation kind.
     # All writes happen inside the transaction opened by apply_event!.
@@ -380,6 +380,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             """INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')
                ON CONFLICT(exposure_id) DO UPDATE SET state = 'indexed'""",
             [Int(entity_id)])
+        _set_exposure_sample_state!(db, Int(entity_id), "indexed")
         DBInterface.execute(db,
             """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
                VALUES (?, ?)""",
@@ -404,6 +405,12 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             DBInterface.execute(db,
                 "DELETE FROM assignment_members WHERE exposure_id = ?", [Int(entity_id)])
         end
+        _set_exposure_sample_state!(db, Int(entity_id), state)
+        return nothing
+    end
+
+    if kind == "sample_call_set_state"
+        _set_sample_call_state!(db, Int(entity_id), String(payload.state))
         return nothing
     end
 
@@ -413,6 +420,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         DBInterface.execute(db,
             "UPDATE exposures SET sample_id = ? WHERE id = ?",
             [Int(payload.sample_id), Int(entity_id)])
+        _index_sample_if_called!(db, Int(entity_id))
         return nothing
     end
 
@@ -672,6 +680,8 @@ the property test asserts the round-trip.
 """
 function rebuild_views_from_log!(db::SQLite.DB, entity_id::Integer;
                                   entity_type::String = "exposure")
+    entity_type == "exposure" && return _rebuild_exposure_with_call!(db, Int(entity_id))
+    entity_type == "sample" && return _rebuild_sample_with_call!(db, Int(entity_id))
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT id, action, entity_id, payload
            FROM user_actions

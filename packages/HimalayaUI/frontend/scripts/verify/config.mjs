@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseThrottle } from "./throttle.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(here, "../../../../..");
@@ -19,6 +20,7 @@ export function loadConfig(env = process.env) {
     apiPort,
     uiPort,
     cdpPort,
+    throttle: parseThrottle(env.VERIFY_THROTTLE),
     apiBase: `http://127.0.0.1:${apiPort}`,
     uiBase: `http://127.0.0.1:${uiPort}`,
     cdpBase: `http://127.0.0.1:${cdpPort}`,

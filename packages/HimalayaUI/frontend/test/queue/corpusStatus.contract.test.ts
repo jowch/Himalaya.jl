@@ -4,7 +4,7 @@ import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
-  setAssignmentStateMutator,
+  setSampleCallStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
 import { selectExposureMutator, setExposureStatusMutator } from "../../src/lib/queue/mutators/trivial";
 import type { SseEvent } from "../../src/lib/queue/types";
@@ -31,7 +31,7 @@ describe("corpus sample status follows the calls that derive it", () => {
     it.each([
       ["assignment_add", () => addAssignmentPhaseMutator.onSuccess({ ...scope, indexId: 42 }, assignmentRow as never, qc)],
       ["assignment_remove", () => removeAssignmentPhaseMutator.onSuccess({ ...scope, indexId: 42 }, assignmentRow as never, qc)],
-      ["assignment_set_state", () => setAssignmentStateMutator.onSuccess({ ...scope, state: "form_factor" }, assignmentRow as never, qc)],
+      ["sample_call_set_state", () => setSampleCallStateMutator.onSuccess({ ...scope, state: "form_factor" }, { sample_id: 1, state: "form_factor", members: [] } as never, qc)],
       ["select_exposure", () => selectExposureMutator.onSuccess(scope as never, { id: 5, selected: true }, qc)],
       ["set_exposure_status", () => setExposureStatusMutator.onSuccess({ ...scope, status: "rejected" } as never, { id: 5, status: "rejected" }, qc)],
     ])("%s invalidates the corpus samples", (_kind, run) => {
@@ -46,8 +46,8 @@ describe("corpus sample status follows the calls that derive it", () => {
         post_state: { assignment: { state: "indexed", members: [42] } } },
       { id: 9, kind: "assignment_remove", entity_type: "exposure", entity_id: 5, payload: { index_id: 42 },
         post_state: { assignment: { state: "indexed", members: [] } } },
-      { id: 9, kind: "assignment_set_state", entity_type: "exposure", entity_id: 5, payload: { state: "form_factor" },
-        post_state: { assignment: { state: "form_factor", members: [] } } },
+      { id: 9, kind: "sample_call_set_state", entity_type: "sample", entity_id: 1, payload: { state: "form_factor" },
+        post_state: { call: { state: "form_factor", members: [] } } },
       { id: 9, kind: "select_exposure", entity_type: "exposure", entity_id: 5, payload: { sample_id: 1 } },
       { id: 9, kind: "set_exposure_status", entity_type: "exposure", entity_id: 5, payload: { status: "rejected" } },
     ];

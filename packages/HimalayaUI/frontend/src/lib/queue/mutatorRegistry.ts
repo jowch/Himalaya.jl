@@ -23,7 +23,7 @@ import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
-  setAssignmentStateMutator,
+  setSampleCallStateMutator,
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
@@ -105,8 +105,8 @@ export function resolveMutator(
       return addAssignmentPhaseMutator;
     case "assignment_remove":
       return removeAssignmentPhaseMutator;
-    case "assignment_set_state":
-      return setAssignmentStateMutator;
+    case "sample_call_set_state":
+      return setSampleCallStateMutator;
     case "custom_index_commit":
       return customIndexMutator;
     case "move_exposure": return moveExposureMutator;
@@ -148,7 +148,7 @@ export function resolveMutatorForEvent(
     case "analyze_run":         return reanalyzeExposureMutator;
     case "assignment_add":         return addAssignmentPhaseMutator;
     case "assignment_remove":      return removeAssignmentPhaseMutator;
-    case "assignment_set_state":   return setAssignmentStateMutator;
+    case "sample_call_set_state":  return setSampleCallStateMutator;
     // custom_index_commit has no own event kind — its route emits
     // speculative_created + assignment_add, both resolved above. Nothing to add.
     case "update_sample":       return updateSampleMutator;

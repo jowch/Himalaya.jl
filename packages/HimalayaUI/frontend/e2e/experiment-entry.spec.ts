@@ -125,6 +125,10 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==", "base64") }));
   await page.route(/\/api\/exposures\/(\d+)\/(peaks|indices)$/, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route(/\/api\/samples\/(\d+)\/call$/, (r) => {
+    const id = Number(/samples\/(\d+)\//.exec(r.request().url())![1]);
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sample_id: id, state: "null", phase: null, call_phases: [], members: [] }) });
+  });
   await page.route(/\/api\/exposures\/(\d+)\/assignment$/, (r) => {
     const id = Number(/exposures\/(\d+)\//.exec(r.request().url())![1]);
     return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ exposure_id: id, state: "null", members: [] }) });
