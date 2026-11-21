@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./shell/AppRoutes";
 import { OnboardingFlow } from "./shell/OnboardingFlow";
 import { NavModal } from "./shell/NavModal";
-import { KbdOverlay } from "./shell/KbdOverlay";
 import { ToastContainer, LiveRegion } from "./ui";
 import { InfrastructureBanner } from "./shell/InfrastructureBanner";
 import { DetectorLutFilters } from "./detector";
@@ -128,7 +127,6 @@ export function PrintApp(): JSX.Element {
           stay mounted app-wide so the `/` + ⌘K shortcuts and StaleUrlPage
           recovery can open it from any surface. */}
       <NavModal />
-      <KbdOverlay />
       <ToastContainer />
       <LiveRegion />
       <InfrastructureBanner />

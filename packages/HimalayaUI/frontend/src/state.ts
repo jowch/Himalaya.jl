@@ -85,7 +85,6 @@ export interface AppState {
   ingestInFlight: Record<number, IngestProgress> | null;
   navModalOpen: boolean;
   navModalStep: NavModalStep;
-  helpOverlayOpen: boolean;
 
 
 
@@ -111,8 +110,6 @@ export interface AppState {
   setTutorialSeen: (seen: boolean) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
-  openHelpOverlay: () => void;
-  closeHelpOverlay: () => void;
   setNavModalStep: (step: NavModalStep) => void;
   clearUsername: () => void;
 
@@ -146,7 +143,6 @@ export const useAppState = create<AppState>()(
         ingestInFlight: null,
         navModalOpen: false,
         navModalStep: "experiment",
-        helpOverlayOpen: false,
 
         // Permalink URL handling — ephemeral, default empty.
         staleUrlContext: null,
@@ -193,8 +189,6 @@ export const useAppState = create<AppState>()(
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
         closeNavModal: () => set({ navModalOpen: false }),
-        openHelpOverlay: () => set({ helpOverlayOpen: true }),
-        closeHelpOverlay: () => set({ helpOverlayOpen: false }),
         setNavModalStep: (navModalStep) => set({ navModalStep }),
         clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
 
