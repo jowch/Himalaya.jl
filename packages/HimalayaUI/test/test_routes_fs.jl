@@ -474,3 +474,63 @@ end
         end
     end
 end
+
+@testset "the layout vote samples stems across a large folder" begin
+    mktempdir() do tmp
+        root = joinpath(tmp, "setup1")
+        stems = ["S$(lpad(i, 3, '0'))" for i in 1:30]
+        _fs_make_ssrl_setup(root; stems, traced = String[])
+        flat = joinpath(root, "analysis", "flat"); mkpath(flat)
+        for s in stems[1:5]
+            touch(joinpath(flat, "$(s)_0_001.dat"))
+        end
+        for s in stems[6:end]
+            touch(joinpath(root, "analysis", "automatic_analysis", "tot_files", "$(s)_tot.dat"))
+        end
+        r = HimalayaUI.resolve_experiment_layout(root)
+        @test r.analysis_dir == joinpath(root, "analysis", "automatic_analysis", "tot_files")
+        @test r.integration_pattern == "{name}_tot.dat"
+    end
+end
+
+@testset "a setup copied before any trace was written still gets the SSRL layout" begin
+    mktempdir() do tmp
+        root = joinpath(tmp, "setup1")
+        _fs_make_ssrl_setup(root; stems = ["HA_1_001_S1", "HA_1_002_S2"], traced = String[])
+        touch(joinpath(root, "data", "._HA_1_001_S1_0_001.tif"))
+        r = HimalayaUI.resolve_experiment_layout(root)
+        @test r.analysis_dir == joinpath(root, "analysis", "automatic_analysis", "tot_files")
+        @test r.image_pattern == "{name}_0_001.tif"
+        @test r.metadata_pattern == "{name}_0_001.prp"
+        @test r.integration_pattern == "{name}_tot.dat"
+    end
+end
+
+@testset "a stray image at the top of a beamtime folder does not hide its setups" begin
+    mktempdir() do tmp
+        day = joinpath(tmp, "20261103")
+        _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1"])
+        _fs_make_ssrl_setup(joinpath(day, "setup2"); stems = ["HA_1_001_S1"])
+        touch(joinpath(day, "stray.tif"))
+        @test HimalayaUI.setup_roots(day) == [joinpath(day, "setup1"), joinpath(day, "setup2")]
+    end
+end
+
+@testset "a duplicate is found through a trailing slash or a symlink" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        day = joinpath(mktempdir(), "20261103")
+        root = _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1"])
+        HimalayaUI.create_experiment!(db; name = "first", path = joinpath(root, "data"),
+            data_dir = joinpath(root, "data"), analysis_dir = root)
+        link = joinpath(mktempdir(), "linked"); symlink(root, link)
+        @test HimalayaUI.experiment_using_dir(db, joinpath(root, "data") * "/").name == "first"
+        @test HimalayaUI.experiment_using_dir(db, joinpath(link, "data")).name == "first"
+        with_inproc_routes(db) do call
+            resp = call("POST", "/api/experiments";
+                headers = ["Content-Type" => "application/json"],
+                body = Vector{UInt8}(JSON3.write(Dict("data_dir" => joinpath(link, "data") * "/", "name" => "again"))))
+            @test resp.status == 409
+        end
+    end
+end

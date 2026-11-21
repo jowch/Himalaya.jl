@@ -237,11 +237,29 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         row = first(_rows(db, "SELECT ingest_status, ingest_error FROM experiments WHERE id = ?", [id]))
         @test row.ingest_status == "failed"
         @test !ismissing(row.ingest_error) && !isempty(row.ingest_error)
+        with_inproc_routes(db) do call
+            body = HimalayaUI.JSON3.read(call("GET", "/api/experiments/$id/problems").body)
+            @test body.ingest_error == row.ingest_error
+        end
         DBInterface.execute(db, "UPDATE experiments SET image_pattern = NULL WHERE id = ?", [id])
         @test HimalayaUI.run_ingest!(db, id) === :ok
         HimalayaUI.wait_prewarm(id)
         row = first(_rows(db, "SELECT ingest_status, ingest_error FROM experiments WHERE id = ?", [id]))
         @test row.ingest_status == "complete"
         @test ismissing(row.ingest_error)
+    end
+
+    @testset "opening a database from before ingest_error adds the column" begin
+        path = joinpath(mktempdir(), "old.db")
+        db = HimalayaUI.open_db(path)
+        DBInterface.execute(db, "ALTER TABLE experiments DROP COLUMN ingest_error")
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPERIMENTS_INGEST_ERROR])
+        DBInterface.close!(db)
+        db = HimalayaUI.open_db(path)
+        cols = [r.name for r in _rows(db, "PRAGMA table_info(experiments)", [])]
+        @test "ingest_error" in cols
+        DBInterface.close!(db)
+        db = HimalayaUI.open_db(path)
+        @test count(==("ingest_error"), [r.name for r in _rows(db, "PRAGMA table_info(experiments)", [])]) == 1
     end
 end

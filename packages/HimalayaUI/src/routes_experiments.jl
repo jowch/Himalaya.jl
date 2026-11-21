@@ -96,16 +96,12 @@ function register_experiments_routes!()
             JSON3.write(Dict(:error => "path does not exist or is not a directory",
                              :path  => data_dir)))
 
-        # One experiment per directory: an experiment IS its data_dir (ingest
-        # everything in it), so a second experiment on the same dir would be a
-        # duplicate. Reject (the UI also validates this up front).
-        existing_dir = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM experiments WHERE data_dir = ?", [data_dir]))
-        isempty(existing_dir) || return HTTP.Response(409,
+        existing = experiment_using_dir(db, data_dir)
+        existing === nothing || return HTTP.Response(409,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "an experiment already uses this directory",
                              :path  => data_dir,
-                             :experiment_id => Int(first(existing_dir).id))))
+                             :experiment_id => existing.id)))
 
         # Derive defaults.
         name_val  = get(body, :name, get(body, "name", nothing))

@@ -37,26 +37,44 @@ function _layout_for_stem(stem::AbstractString, candidates::Vector{String})
     return nothing
 end
 
+_is_tif(f) = endswith(f, ".tif") && !startswith(f, ".")
+
+function _structural_ssrl_layout(stems, analysis_root)
+    tot = joinpath(analysis_root, "automatic_analysis", "tot_files")
+    isdir(tot) || return nothing
+    suffixes = String[m.match for m in (match(r"_0_\d+$", s) for s in stems) if m !== nothing]
+    isempty(suffixes) && return nothing
+    counts = Dict{String,Int}()
+    for x in suffixes; counts[x] = get(counts, x, 0) + 1; end
+    suffix = first(sort!(collect(keys(counts)); by = x -> (-counts[x], x)))
+    return (; dir = tot,
+              image_pattern       = "{name}$(suffix).tif",
+              metadata_pattern    = "{name}$(suffix).prp",
+              integration_pattern = "{name}_tot.dat")
+end
+
 function _detect_integration_layout(data_dir::AbstractString, analysis_root::AbstractString)
     isdir(analysis_root) || return nothing
-    tifs = sort!([f for f in _listdir(data_dir) if endswith(f, ".tif")])
+    tifs = sort!([f for f in _listdir(data_dir) if _is_tif(f)])
     isempty(tifs) && return nothing
     n = length(tifs)
     picks = unique(round.(Int, range(1, n; length = min(n, LAYOUT_PROBE_STEMS))))
+    stems = [tifs[i][1:end-length(".tif")] for i in picks]
     candidates = String[analysis_root]
     append!(candidates, _subdirs(analysis_root))
     append!(candidates, _subdirs(joinpath(analysis_root, "automatic_analysis")))
     votes = Dict{Any,Int}()
     order = Any[]
-    for i in picks
-        layout = _layout_for_stem(tifs[i][1:end-length(".tif")], candidates)
+    for stem in stems
+        layout = _layout_for_stem(stem, candidates)
         layout === nothing && continue
         haskey(votes, layout) || push!(order, layout)
         votes[layout] = get(votes, layout, 0) + 1
     end
-    isempty(order) && return nothing
-    best = maximum(values(votes))
-    return first(l for l in order if votes[l] == best)
+    isempty(order) && return _structural_ssrl_layout(stems, analysis_root)
+    rank(l) = (votes[l], l.integration_pattern == "{name}_tot.dat")
+    best = maximum(rank, order)
+    return first(l for l in order if rank(l) == best)
 end
 
 """
@@ -229,7 +247,7 @@ function fs_manifest(data_dir::AbstractString;
               matched_files = names[1:min(12, length(names))])
 end
 
-_has_tifs(dir::AbstractString) = any(f -> endswith(f, ".tif"), _listdir(dir))
+_has_tifs(dir::AbstractString) = any(_is_tif, _listdir(dir))
 
 """
     setup_roots(path) -> Vector{String}
@@ -237,9 +255,24 @@ _has_tifs(dir::AbstractString) = any(f -> endswith(f, ".tif"), _listdir(dir))
 The setup folders `path` holds: `path` itself when its data folder has images,
 else each immediate subfolder that does (the `<date>/setup1`, `setup2`, … layout).
 """
+_setup_data_dir(root) = isdir(joinpath(root, "data")) ? joinpath(root, "data") : String(root)
+
 function setup_roots(path::AbstractString)
-    _has_tifs(resolve_experiment_layout(path).data_dir) && return [String(path)]
-    String[d for d in sort!(_subdirs(path)) if _has_tifs(resolve_experiment_layout(d).data_dir)]
+    isdir(joinpath(path, "data")) && _has_tifs(joinpath(path, "data")) && return [String(path)]
+    subs = String[d for d in sort!(_subdirs(path)) if _has_tifs(_setup_data_dir(d))]
+    !isempty(subs) && return subs
+    _has_tifs(path) ? [String(path)] : String[]
+end
+
+_canonical_dir(p) = (q = rstrip(String(p), '/'); isempty(q) ? "/" : (ispath(q) ? realpath(q) : q))
+
+function experiment_using_dir(db, dir)
+    target = _canonical_dir(dir)
+    for r in Tables.rowtable(DBInterface.execute(db, "SELECT id, name, data_dir FROM experiments"))
+        ismissing(r.data_dir) && continue
+        _canonical_dir(r.data_dir) == target && return (; id = Int(r.id), name = String(r.name))
+    end
+    nothing
 end
 
 _trim_slash(p) = rstrip(p, '/')
@@ -258,8 +291,7 @@ function _setup_preview(db, path, root)
     m = fs_manifest(r.data_dir; image_pattern = pats.image, metadata_pattern = pats.metadata,
         integration_pattern = pats.integration, analysis_dir = r.analysis_dir,
         setup_file = r.setup_file)
-    dup = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, name FROM experiments WHERE data_dir = ? LIMIT 1", [r.data_dir]))
+    dup = experiment_using_dir(db, r.data_dir)
     Dict(:root => root,
          :name => _setup_name(path, root),
          :data_dir => r.data_dir,
@@ -274,8 +306,7 @@ function _setup_preview(db, path, root)
          :without_trace => m.without_trace,
          :geometry => m.geometry,
          :discrepancies => m.discrepancies,
-         :duplicate_of => isempty(dup) ? nothing :
-             Dict(:id => Int(first(dup).id), :name => String(first(dup).name)))
+         :duplicate_of => dup === nothing ? nothing : Dict(:id => dup.id, :name => dup.name))
 end
 
 """
