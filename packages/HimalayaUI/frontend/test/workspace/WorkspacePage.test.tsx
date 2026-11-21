@@ -396,6 +396,21 @@ describe("WorkspacePage", () => {
     expect(screen.queryAllByRole("option")).toHaveLength(0);
   });
 
+  it("says samples are on their way while the first ingest has found none yet", () => {
+    state.corpus = [];
+    state.ingest = { status: "scanning", stage: "discovering", processed: 0, total: 0 };
+    renderAt("/experiments/1/workspace");
+    expect(screen.getByText("No samples yet. They appear as the ingest reads the data folder.")).toBeInTheDocument();
+    expect(screen.queryByText("No samples match.")).toBeNull();
+  });
+
+  it("says no samples match only when a filter is typed", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByText("No samples match.")).toBeNull();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter samples" }), { target: { value: "zzz" } });
+    expect(screen.getByText("No samples match.")).toBeInTheDocument();
+  });
+
   it("checks this experiment's folder for new files when it opens", () => {
     renderAt("/experiments/1/workspace/10");
     expect(opened.length).toBeGreaterThan(0);

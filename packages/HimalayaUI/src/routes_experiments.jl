@@ -84,9 +84,6 @@ function register_experiments_routes!()
         db   = current_db()
         body = json(req)
 
-        # Required: the data directory. The funnel resolver (/api/fs/resolve) sends
-        # an explicit `data_dir` (+ `analysis_dir`, `name`) that the user confirmed
-        # in Configuration; older callers send `path`. Prefer the explicit field.
         path_val = get(body, :data_dir, get(body, "data_dir",
                        get(body, :path, get(body, "path", nothing))))
         path_val === nothing && return HTTP.Response(400,

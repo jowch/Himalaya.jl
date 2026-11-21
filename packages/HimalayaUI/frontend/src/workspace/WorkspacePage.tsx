@@ -564,7 +564,7 @@ export function WorkspacePage(): JSX.Element {
     : corpus.isLoading
       ? "Loading samples…"
       : samples.length === 0
-        ? "No samples in this experiment."
+        ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
         : "This sample is not in this experiment.";
 
   const commands: Command[] = [
