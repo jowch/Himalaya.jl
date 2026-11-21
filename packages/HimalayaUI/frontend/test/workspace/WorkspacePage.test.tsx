@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, Trace } from "../../src/api";
+import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import { peakList } from "../fixtures/peaks";
 
@@ -18,6 +19,7 @@ const state = {
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
   traceError: false,
+  traceErr: null as Error | null,
   traceFetching: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
@@ -42,7 +44,7 @@ vi.mock("../../src/queries", () => ({
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
+  useTrace: () => ({ data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
   usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
@@ -168,6 +170,7 @@ beforeEach(() => {
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.trace = undefined;
   state.traceError = false;
+  state.traceErr = null;
   state.traceFetching = false;
   state.peaks = [];
   state.compareTraces = new Map();
@@ -383,23 +386,47 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it.each([-0.1, -0.0045, 0])("says the beam was likely off when the shown frame's I₀ reads %s beside a 1.5 V frame", (i0) => {
-    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: i0 })];
+  it("says the detector recorded nothing when the shown frame's trace is dark, and adds I₀'s sign as support", () => {
+    state.trace = makeTrace(0.001);
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: -0.1 })];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent(`Beam likely off: I₀ reads ${i0} V.`);
-    fireEvent.click(within(screen.getByTestId("workspace-exposures")).getByRole("button", { name: "Frame 1" }));
+    expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent(
+      "No counts on the detector: the beam was likely off or the shutter closed. I₀ also reads below zero.",
+    );
+  });
+
+  it("says the detector recorded nothing on a dark trace even when I₀ looks fine", () => {
+    state.trace = makeTrace(0.001);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: 1.5 })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-plot-notice").textContent).toBe(
+      "No counts on the detector: the beam was likely off or the shutter closed.",
+    );
+  });
+
+  it("never calls a frame with counts beam-off, whatever I₀ reads", () => {
+    state.trace = makeTrace(20);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    renderAt("/experiments/1/workspace/10");
     expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
   });
 
-  it.each([0.09, 1.2])("says nothing about a real beam reading %s V", (i0) => {
-    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: i0 })];
+  it("says a frame has no integrated trace instead of offering a retry, with I₀'s sign as a hint", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
+    expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent(
+      "No integrated trace for this frame. I₀ reads below zero, so the beam was likely off.",
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
-  it("says nothing about the beam when I₀ is unknown", () => {
+  it("says a frame has no integrated trace without guessing when I₀ is unknown", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
     renderAt("/experiments/1/workspace/10");
-    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
   });
 
   it("opens on the representative frame", () => {

@@ -74,14 +74,22 @@ export function peakClick(
   return p.source === "auto" ? { kind: "exclude", excluded: !p.excluded } : { kind: "remove" };
 }
 
-// physics: I₀ is the upstream ion chamber. With the shutter closed its electrometer
-// physics: reads a negative offset, about -0.07 to -0.12 V across ~100k real SSRL
-// physics: frames, never 0. A beam at low chamber gain reads only ~0.08 V, so the
-// physics: magnitude can't separate the two; the sign can. No frame reads between
-// physics: -0.07 and +0.08 V, and the signed cutoff sits in that gap with margin.
-export const BEAM_OFF_I0_VOLTS = 0.04;
+// physics: a _tot.dat holds raw detector counts per pixel. A beam-off frame records
+// physics: only the dark floor, so its median is ~0, while even a dim real frame keeps
+// physics: ~10 counts. The detector decides; the ion chamber can't, because a frame
+// physics: with a negative I₀ can still hold real scattering.
+export const DARK_MEDIAN_COUNTS = 1;
 
-export function beamLikelyOff(frame: { incident_monitor: number | null } | undefined): boolean {
+export function traceIsDark(trace: { I: readonly number[] } | undefined): boolean {
+  if (!trace || trace.I.length === 0) return false;
+  const sorted = [...trace.I].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]! < DARK_MEDIAN_COUNTS;
+}
+
+// physics: with the shutter closed the ion chamber's electrometer reads a negative
+// physics: offset, so I₀ at or below zero supports a beam-off reading but never
+// physics: decides it alone.
+export function i0BelowZero(frame: { incident_monitor: number | null } | undefined): boolean {
   const i0 = frame?.incident_monitor;
-  return i0 != null && i0 < BEAM_OFF_I0_VOLTS;
+  return i0 != null && i0 <= 0;
 }
