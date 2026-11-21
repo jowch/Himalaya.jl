@@ -1,66 +1,23 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Filesystem probes for the ingest funnel (spec §6.1). Read-only — no DB
-# writes, no with_idempotency, no apply_event!, no SSE, no client_op_id,
-# no pendingDeferreds participation. Queue-orthogonal by design.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Structural experiment-layout resolver (funnel resolution, 2026-06-21).
-# Given an experiment ROOT directory, auto-discover sensible defaults the user
-# then corrects in Configuration before Approve. PURELY STRUCTURAL —
-# everything is inferred from the directory tree:
-#   name         = basename(root)
-#   data_dir     = the root or an immediate subdir holding the most .tif (raw images)
-#   analysis_dir = the dir (under a non-data subtree) holding the most .dat (integration)
-#   setup_file   = setup_info_*.txt found by a bounded tree walk (geometry source);
-#                  it lives under analysis/, SEPARATE from the integration analysis_dir.
-# Bounded for SMB latency: the data_dir subtree (the big one) is never walked;
-# only sibling subdirs are walked, depth-capped.
-# ─────────────────────────────────────────────────────────────────────────────
-
 _setup_infos(dir::AbstractString)::Vector{String} =
     isdir(dir) ?
         String[joinpath(dir, f) for f in (try readdir(dir) catch; String[] end)
                if startswith(f, "setup_info_") && endswith(f, ".txt")] :
         String[]
 
-# Bounded discovery of WHERE integration sidecars live AND which pattern names
-# them. SSRL data nests integration under an analysis subtree, one `_tot.dat` per
-# exposure: `analysis/automatic_analysis/tot_files/{base}_tot.dat`
-# (`{base}` = the sample stem with its `_0_NNN` frame suffix stripped). So the
-# scan's flat `sidecar(analysis_dir, stem, dat_pattern)` only finds them when
-# analysis_dir points at the real `.dat` dir AND the patterns match the convention.
-#
-# Probe one sample data stem against shallow candidate dirs (analysis, its
-# immediate subdirs, and the immediate subdirs of `analysis/automatic_analysis`):
-#   1. SSRL: `{base}_tot.dat` → patterns key off the frame suffix.
-#   2. Plain `.dat` (e.g. sastool): `{stem}.dat` → default `{name}` patterns.
-# Returns `(; dir, image_pattern, metadata_pattern, integration_pattern)` or
-# `nothing` (caller falls back to root/analysis with default patterns).
-# SMB-bounded: one `readdir(data_dir)` (as validate/manifest already do) for a
-# sample stem, then a handful of `isdir`/`isfile` stats — NO deep walk.
-function _detect_integration_layout(data_dir::AbstractString, analysis_root::AbstractString)
-    isdir(analysis_root) || return nothing
-    sample_tif = nothing
-    for f in (try readdir(data_dir) catch; String[] end)
-        if endswith(f, ".tif"); sample_tif = f; break; end
-    end
-    sample_tif === nothing && return nothing
-    stem = sample_tif[1:end-length(".tif")]
-    # Frame suffix (e.g. "_0_001") if present; `{base}` is the stem without it.
+_listdir(dir::AbstractString) = try readdir(dir) catch; String[] end
+
+_subdirs(d::AbstractString) = isdir(d) ?
+    String[joinpath(d, x) for x in _listdir(d) if !startswith(x, ".") && isdir(joinpath(d, x))] :
+    String[]
+
+const LAYOUT_PROBE_STEMS = 9
+
+function _layout_for_stem(stem::AbstractString, candidates::Vector{String})
     m = match(r"_0_\d+$", stem)
     suffix = m === nothing ? "" : m.match
     base   = m === nothing ? stem : stem[1:end - length(suffix)]
-
-    subdirs(d) = isdir(d) ?
-        String[joinpath(d, x) for x in (try readdir(d) catch; String[] end)
-               if isdir(joinpath(d, x))] : String[]
-    candidates = String[analysis_root]
-    append!(candidates, subdirs(analysis_root))
-    append!(candidates, subdirs(joinpath(analysis_root, "automatic_analysis")))
-
     for d in candidates
         if isfile(joinpath(d, base * "_tot.dat"))
             return (; dir = d,
@@ -80,28 +37,34 @@ function _detect_integration_layout(data_dir::AbstractString, analysis_root::Abs
     return nothing
 end
 
+function _detect_integration_layout(data_dir::AbstractString, analysis_root::AbstractString)
+    isdir(analysis_root) || return nothing
+    tifs = sort!([f for f in _listdir(data_dir) if endswith(f, ".tif")])
+    isempty(tifs) && return nothing
+    n = length(tifs)
+    picks = unique(round.(Int, range(1, n; length = min(n, LAYOUT_PROBE_STEMS))))
+    candidates = String[analysis_root]
+    append!(candidates, _subdirs(analysis_root))
+    append!(candidates, _subdirs(joinpath(analysis_root, "automatic_analysis")))
+    votes = Dict{Any,Int}()
+    order = Any[]
+    for i in picks
+        layout = _layout_for_stem(tifs[i][1:end-length(".tif")], candidates)
+        layout === nothing && continue
+        haskey(votes, layout) || push!(order, layout)
+        votes[layout] = get(votes, layout, 0) + 1
+    end
+    isempty(order) && return nothing
+    best = maximum(values(votes))
+    return first(l for l in order if votes[l] == best)
+end
+
 """
     resolve_experiment_layout(root) -> NamedTuple
 
-Structural auto-discovery for the ingest funnel. Returns
-`(; name, data_dir, analysis_dir, setup_file, setup_ambiguous)`. All values are
-DEFAULTS the user corrects in Configuration — so this stays CHEAP (a handful of
-shallow `isdir`/`readdir` calls, NEVER a deep walk and NEVER a full read of the
-huge raw-image directory), because it runs interactively over slow SMB.
-
-Heuristics (name-based, with a correctable safety net):
-- `name`         = `basename(root)`.
-- `data_dir`     = `root/data` if it exists, else `root` (raw images usually
-                   live in a `data` subdir; the user corrects if not).
-- `analysis_dir` = the directory that actually holds the integration `.dat`
-                   sidecars, discovered by probing a sample stem against the
-                   analysis subtree (e.g. `analysis/automatic_analysis/sastool`);
-                   falls back to `root/analysis`, else `nothing`. The user can
-                   still correct it in Configuration.
-- `setup_file`   = the latest `setup_info_*.txt` found at the TOP of `root` or
-                   `root/analysis` (where it actually lives — NOT next to the
-                   integration files). This is the geometry source, so it is
-                   resolved precisely; `setup_ambiguous` flags none/multiple.
+Structural defaults for one setup folder: `(; name, data_dir, analysis_dir,
+setup_file, setup_ambiguous, image_pattern, metadata_pattern, integration_pattern)`.
+Only shallow reads, because the folder is usually on SMB.
 """
 function resolve_experiment_layout(root::AbstractString)
     root = String(root)
@@ -111,10 +74,6 @@ function resolve_experiment_layout(root::AbstractString)
     data_dir = isdir(data_candidate) ? data_candidate : root
 
     analysis_candidate = joinpath(root, "analysis")
-    # Discover the directory that actually holds the integration `.dat` files
-    # (often nested, e.g. analysis/automatic_analysis/tot_files) AND the file
-    # patterns that name them, so the scan finds them. Fall back to root/analysis
-    # with default `{name}` patterns when nothing is discovered.
     detected = _detect_integration_layout(data_dir, analysis_candidate)
     analysis_dir = detected !== nothing ? detected.dir :
                    (isdir(analysis_candidate) ? analysis_candidate : nothing)
@@ -122,24 +81,208 @@ function resolve_experiment_layout(root::AbstractString)
     metadata_pattern    = detected !== nothing ? detected.metadata_pattern    : nothing
     integration_pattern = detected !== nothing ? detected.integration_pattern : nothing
 
-    # setup_info lives at the top of root or root/analysis — two shallow reads.
     setup_files = sort!(vcat(_setup_infos(root), _setup_infos(analysis_candidate)))
-    setup_file = isempty(setup_files) ? nothing : last(setup_files)  # latest by name
+    setup_file = isempty(setup_files) ? nothing : last(setup_files)
     setup_ambiguous = isempty(setup_files) || length(unique(dirname.(setup_files))) > 1
 
     return (; name, data_dir, analysis_dir, setup_file, setup_ambiguous,
               image_pattern, metadata_pattern, integration_pattern)
 end
 
+function _pattern_stems(filelist, pat)
+    occursin("{name}", pat) || return Set{String}()
+    pre, post = split(pat, "{name}"; limit = 2)
+    out = Set{String}()
+    for f in filelist
+        (startswith(f, pre) && endswith(f, post) &&
+            length(f) > length(pre) + length(post)) || continue
+        push!(out, f[nextind(f, lastindex(pre)):prevind(f, lastindex(f) - length(post) + 1)])
+    end
+    out
+end
+
+_is_near_ext(lext, patext) = lext == patext ||
+    (startswith(lext, patext) && length(lext) == length(patext) + 1)
+
+function _near_sidecar(filelist, pat, stem)
+    occursin("{name}", pat) || return nothing
+    pre, post = split(pat, "{name}"; limit = 2)
+    pdot = findlast('.', post)
+    pdot === nothing && return nothing
+    patext = lowercase(post[pdot:end])
+    target = pre * stem * post[1:prevind(post, pdot)]
+    for f in filelist
+        (startswith(f, target) && length(f) > length(target)) || continue
+        _is_near_ext(lowercase(f[nextind(f, lastindex(target)):end]), patext) && return f
+    end
+    nothing
+end
+
+function _near_images(files, image_pattern)
+    out = Dict{String,String}[]
+    occursin("{name}", image_pattern) || return out
+    ipre, ipost = split(image_pattern, "{name}"; limit = 2)
+    pdot = findlast('.', ipost)
+    pdot === nothing && return out
+    patext = lowercase(ipost[pdot:end])
+    patmid = ipost[1:prevind(ipost, pdot)]
+    for f in files
+        (startswith(f, ipre) && !endswith(f, ipost)) || continue
+        rest = f[nextind(f, lastindex(ipre)):end]
+        fdot = findlast('.', rest)
+        fdot === nothing && continue
+        fmid = rest[1:prevind(rest, fdot)]
+        _is_near_ext(lowercase(rest[fdot:end]), patext) || continue
+        endswith(fmid, patmid) || continue
+        stem = chop(fmid; tail = length(patmid))
+        isempty(stem) && continue
+        push!(out, Dict("file" => stem, "miss" => "image", "near" => f))
+    end
+    out
+end
+
+const _GEOMETRY_MISSING = (energy_kev = nothing, energy_kev_source = "default",
+    flight_path_m = nothing, flight_path_m_source = "default",
+    beam_center_x = nothing, beam_center_x_source = "default",
+    beam_center_y = nothing, beam_center_y_source = "default",
+    pixel_size_um = nothing, pixel_size_um_source = "default")
+
+const GEOMETRY_PRP_SAMPLE = 50
+
+function _preview_geometry(data_dir, metadata_pattern, meta_stems, setup_file)
+    prp_paths = if occursin("{name}", metadata_pattern)
+        pre, post = split(metadata_pattern, "{name}"; limit = 2)
+        sample = collect(Iterators.take(sort!(collect(meta_stems)), GEOMETRY_PRP_SAMPLE))
+        String[joinpath(data_dir, pre * s * post) for s in sample]
+    else
+        String[]
+    end
+    setup_files = if setup_file !== nothing && isfile(setup_file)
+        [setup_file]
+    else
+        ad = let a = joinpath(data_dir, "analysis"); isdir(a) ? a : data_dir end
+        _setup_infos(ad)
+    end
+    geo, disc = try
+        derive_geometry(prp_paths, setup_files)
+    catch e
+        @warn "preview: derive_geometry failed" data_dir exception = e
+        (_GEOMETRY_MISSING, [])
+    end
+    _nm(x) = ismissing(x) ? nothing : x
+    gd = Dict(
+        :energy_kev            => _nm(geo.energy_kev),
+        :energy_kev_source     => geo.energy_kev_source,
+        :flight_path_m         => _nm(geo.flight_path_m),
+        :flight_path_m_source  => geo.flight_path_m_source,
+        :beam_center_x         => _nm(geo.beam_center_x),
+        :beam_center_x_source  => geo.beam_center_x_source,
+        :beam_center_y         => _nm(geo.beam_center_y),
+        :beam_center_y_source  => geo.beam_center_y_source,
+        :pixel_size_um         => _nm(geo.pixel_size_um),
+        :pixel_size_um_source  => geo.pixel_size_um_source,
+    )
+    (gd, [Dict(:field => d.field, :message => d.message) for d in disc])
+end
+
+"""
+    fs_manifest(data_dir; image_pattern, metadata_pattern, integration_pattern,
+                analysis_dir, setup_file) -> NamedTuple
+
+Read-only match of the three patterns against `data_dir` (integration against
+`analysis_dir` when given) plus the geometry the scan would derive.
+"""
+function fs_manifest(data_dir::AbstractString;
+        image_pattern::AbstractString = "{name}.tif",
+        metadata_pattern::AbstractString = "{name}.prp",
+        integration_pattern::AbstractString = "{name}.dat",
+        analysis_dir::Union{AbstractString,Nothing} = nothing,
+        setup_file::Union{AbstractString,Nothing} = nothing)
+    files = filter(!startswith("."), _listdir(data_dir))
+    integ_files = (analysis_dir !== nothing && isdir(analysis_dir)) ?
+        filter(!startswith("."), _listdir(analysis_dir)) : files
+    img   = _pattern_stems(files, image_pattern)
+    meta  = _pattern_stems(files, metadata_pattern)
+    integ = _pattern_stems(integ_files, integration_pattern)
+    unmatched = Dict{String,String}[]
+    for s in img,
+        (label, set, flist, pat) in (("metadata", meta, files, metadata_pattern),
+                                     ("integration", integ, integ_files, integration_pattern))
+        s in set && continue
+        near = _near_sidecar(flist, pat, s)
+        push!(unmatched, near === nothing ?
+            Dict("file" => s, "miss" => label) :
+            Dict("file" => s, "miss" => label, "near" => near))
+    end
+    append!(unmatched, _near_images(files, image_pattern))
+    geometry, discrepancies = _preview_geometry(data_dir, metadata_pattern, intersect(meta, img), setup_file)
+    img_pre, img_post = occursin("{name}", image_pattern) ?
+        split(image_pattern, "{name}"; limit = 2) : ("", "")
+    names = sort!([img_pre * s * img_post for s in img])
+    return (; total = length(files),
+              image = length(img),
+              metadata = length(meta),
+              integration = length(integ),
+              without_metadata = length(setdiff(img, meta)),
+              without_trace = length(setdiff(img, integ)),
+              unmatched, geometry, discrepancies,
+              matched_files = names[1:min(12, length(names))])
+end
+
+_has_tifs(dir::AbstractString) = any(f -> endswith(f, ".tif"), _listdir(dir))
+
+"""
+    setup_roots(path) -> Vector{String}
+
+The setup folders `path` holds: `path` itself when its data folder has images,
+else each immediate subfolder that does (the `<date>/setup1`, `setup2`, … layout).
+"""
+function setup_roots(path::AbstractString)
+    _has_tifs(resolve_experiment_layout(path).data_dir) && return [String(path)]
+    String[d for d in sort!(_subdirs(path)) if _has_tifs(resolve_experiment_layout(d).data_dir)]
+end
+
+_trim_slash(p) = rstrip(p, '/')
+
+function _setup_name(path, root)
+    parent = _trim_slash(path) == _trim_slash(root) ? dirname(_trim_slash(root)) : _trim_slash(path)
+    pname = basename(parent)
+    isempty(pname) ? basename(_trim_slash(root)) : "$(pname)/$(basename(_trim_slash(root)))"
+end
+
+function _setup_preview(db, path, root)
+    r = resolve_experiment_layout(root)
+    pats = (image       = something(r.image_pattern, "{name}.tif"),
+            metadata    = something(r.metadata_pattern, "{name}.prp"),
+            integration = something(r.integration_pattern, "{name}.dat"))
+    m = fs_manifest(r.data_dir; image_pattern = pats.image, metadata_pattern = pats.metadata,
+        integration_pattern = pats.integration, analysis_dir = r.analysis_dir,
+        setup_file = r.setup_file)
+    dup = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, name FROM experiments WHERE data_dir = ? LIMIT 1", [r.data_dir]))
+    Dict(:root => root,
+         :name => _setup_name(path, root),
+         :data_dir => r.data_dir,
+         :analysis_dir => r.analysis_dir,
+         :setup_file => r.setup_file,
+         :setup_ambiguous => r.setup_ambiguous,
+         :layout_detected => r.integration_pattern !== nothing,
+         :patterns => Dict(:image => pats.image, :metadata => pats.metadata,
+                           :integration => pats.integration),
+         :exposures => m.image,
+         :without_metadata => m.without_metadata,
+         :without_trace => m.without_trace,
+         :geometry => m.geometry,
+         :discrepancies => m.discrepancies,
+         :duplicate_of => isempty(dup) ? nothing :
+             Dict(:id => Int(first(dup).id), :name => String(first(dup).name)))
+end
+
 """
     register_fs_routes!()
 
-Filesystem probes for the ingest funnel (spec §6.1). Read-only, no DB writes.
-- GET /api/fs/suggest?prefix=  → directory autocomplete for the picker.
-- GET /api/fs/validate?path=   → cheap picker gate (exists + not-already-an-experiment).
-- GET /api/fs/manifest?path=&{image,metadata,integration}_pattern=  → phase-1 file manifest.
-
-`validate` and `manifest` are added in Tasks 1.4 / 1.5.
+Read-only filesystem probes for the New-experiment screen: `suggest`, `resolve`,
+`validate`, `manifest`, and `preview` (every setup under a picked folder).
 """
 function register_fs_routes!()
     @get "/api/fs/suggest" function(req::HTTP.Request)
@@ -172,6 +315,14 @@ function register_fs_routes!()
                    :metadata_pattern => r.metadata_pattern,
                    :integration_pattern => r.integration_pattern))
     end
+    @get "/api/fs/preview" function(req::HTTP.Request)
+        q    = HTTP.queryparams(HTTP.URI(req.target))
+        path = get(q, "path", "")
+        isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
+        db = current_db()
+        _json(200, Dict(:path => path,
+                        :setups => [_setup_preview(db, path, root) for root in setup_roots(path)]))
+    end
     @get "/api/fs/validate" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
         path = get(q, "path", "")
@@ -185,179 +336,25 @@ function register_fs_routes!()
             return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
                                :message => "an experiment already uses this directory"))
         end
-        scanned = count(!startswith("."), readdir(path))   # cheap; rich count is /manifest
+        scanned = count(!startswith("."), readdir(path))
         _json(200, Dict(:ok => true, :matched => scanned, :scanned => scanned, :message => nothing))
     end
     @get "/api/fs/manifest" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
         path = get(q, "path", "")
         isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
-        pats = (image       = get(q, "image_pattern", "{name}.tif"),
-                metadata    = get(q, "metadata_pattern", "{name}.prp"),
-                integration = get(q, "integration_pattern", "{name}.dat"))
-        files = filter(!startswith("."), readdir(path))
-        # Integration (.dat) lives in the ANALYSIS subtree, not data_dir — the real
-        # scan pairs it via `sidecar(analysis_dir, stem, dat_pattern)` (grouping.jl
-        # `scan_directory`). Mirror that here so the preview's integration count is
-        # truthful: match `integration_pattern` against `analysis_dir` when supplied.
-        # Absent → fall back to data_dir (backward-compatible with older callers/tests).
-        analysis_dir_q = get(q, "analysis_dir", "")
-        integ_files = (!isempty(analysis_dir_q) && isdir(analysis_dir_q)) ?
-            filter(!startswith("."), readdir(analysis_dir_q)) : files
-        function stems(filelist, pat)
-            occursin("{name}", pat) || return Set{String}()
-            pre, post = split(pat, "{name}"; limit = 2)
-            out = Set{String}()
-            for f in filelist
-                (startswith(f, pre) && endswith(f, post) &&
-                    length(f) > length(pre) + length(post)) || continue
-                push!(out, f[nextind(f, lastindex(pre)):prevind(f, lastindex(f) - length(post) + 1)])
-            end
-            out
-        end
-        img  = stems(files, pats.image)
-        meta = stems(files, pats.metadata)
-        integ = stems(integ_files, pats.integration)
-        # near = same extension bar case (.PRP), or exactly one extra trailing char
-        # (.prp ⊂ .prpx). One char keeps the common typo bucket but rejects unrelated
-        # longer extensions. Shared by the metadata/integration sidecar search below
-        # and the standalone image-file pass further down.
-        is_near_ext(lext, patext) = lext == patext ||
-            (startswith(lext, patext) && length(lext) == length(patext) + 1)
-        # near_sidecar: given a KNOWN stem missing its exact sidecar, find an on-disk
-        # file = pre*stem*mid*<near-ext> (e.g. RY_S1780.PRP for `{name}.prp`). The
-        # exact match would already be in the matched set, so any hit here is a real
-        # near-miss. Returns the offending filename or nothing.
-        function near_sidecar(filelist, pat, stem)
-            occursin("{name}", pat) || return nothing
-            pre, post = split(pat, "{name}"; limit = 2)
-            pdot = findlast('.', post)
-            pdot === nothing && return nothing
-            patext = lowercase(post[pdot:end])
-            patmid = post[1:prevind(post, pdot)]
-            target = pre * stem * patmid                 # everything up to the extension
-            for f in filelist
-                (startswith(f, target) && length(f) > length(target)) || continue
-                if is_near_ext(lowercase(f[nextind(f, lastindex(target)):end]), patext)
-                    return f
-                end
-            end
-            nothing
-        end
-        unmatched = Dict{String,String}[]
-        for s in img,
-            (label, set, flist, pat) in (("metadata", meta, files, pats.metadata),
-                                         ("integration", integ, integ_files, pats.integration))
-            s in set && continue
-            near = near_sidecar(flist, pat, s)
-            push!(unmatched, near === nothing ?
-                Dict("file" => s, "miss" => label) :
-                Dict("file" => s, "miss" => label, "near" => near))
-        end
-        # Near-miss image extensions: a file matching the image prefix + the right
-        # middle but a wrong extension/case (.tiff vs .tif, .TIF vs .tif) never enters
-        # `img`, so the sidecar loop above can't see it. A leading cause of a
-        # half-failed scan, so the diagnostic surface must (§5.5). `file` = would-be
-        # stem, `near` = the offending on-disk filename.
-        # ponytail: extension/case near-miss only; doesn't catch a typo'd stem middle.
-        if occursin("{name}", pats.image)
-            ipre, ipost = split(pats.image, "{name}"; limit = 2)
-            pdot = findlast('.', ipost)
-            if pdot !== nothing
-                patext = lowercase(ipost[pdot:end])              # ".tif"
-                patmid = ipost[1:prevind(ipost, pdot)]           # "" or "_0_001"
-                for f in files
-                    (startswith(f, ipre) && !endswith(f, ipost)) || continue
-                    rest = f[nextind(f, lastindex(ipre)):end]
-                    fdot = findlast('.', rest)
-                    fdot === nothing && continue
-                    fext = lowercase(rest[fdot:end])
-                    fmid = rest[1:prevind(rest, fdot)]           # stem + any middle
-                    is_near_ext(fext, patext) || continue        # .TIF/.tiff, not .tiffany
-                    endswith(fmid, patmid) || continue
-                    stem = chop(fmid; tail = length(patmid))     # drop the pattern middle
-                    isempty(stem) && continue
-                    push!(unmatched, Dict("file" => stem, "miss" => "image", "near" => f))
-                end
-            end
-        end
-
-        # ── Geometry preview (read-only) ──
-        # `path` is the data_dir (the frontend passes the resolved/edited data_dir).
-        # `setup_file` (optional) is the geometry source resolved by /api/fs/resolve;
-        # when supplied we use it directly (it lives under analysis/, NOT next to the
-        # integration files). Absent → fall back to the old data_dir/analysis scan so
-        # older callers/tests keep working.
-        data_dir       = path
-        setup_file_q   = get(q, "setup_file", "")
-
-        # Reconstruct matched metadata filenames from stems (same pre/post split).
-        _nm(x) = ismissing(x) ? nothing : x
-        geo_missing = (energy_kev = nothing, energy_kev_source = "default",
-                       flight_path_m = nothing, flight_path_m_source = "default",
-                       beam_center_x = nothing, beam_center_x_source = "default",
-                       beam_center_y = nothing, beam_center_y_source = "default",
-                       pixel_size_um = nothing, pixel_size_um_source = "default")
-
-        geo_dict, disc_list = let
-            prp_paths = if occursin("{name}", pats.metadata)
-                meta_pre, meta_post = split(pats.metadata, "{name}"; limit = 2)
-                # Geometry is CONSTANT per run, so sample up to 50 PRPs — keeps the
-                # preview fast over SMB (a full run is thousands of files, and each
-                # would be an isfile + read round-trip). The first 50 suffice.
-                sample = collect(Iterators.take(meta, 50))
-                [joinpath(data_dir, meta_pre * s * meta_post) for s in sample
-                    if isfile(joinpath(data_dir, meta_pre * s * meta_post))]
-            else
-                String[]
-            end
-            setup_files = if !isempty(setup_file_q) && isfile(setup_file_q)
-                [setup_file_q]
-            else
-                # Fallback (no explicit setup_file): old data_dir/analysis scan.
-                ad = let a = joinpath(data_dir, "analysis"); isdir(a) ? a : data_dir end
-                isdir(ad) ?
-                    [joinpath(ad, f) for f in readdir(ad)
-                        if startswith(f, "setup_info_") && endswith(f, ".txt")] :
-                    String[]
-            end
-            # ponytail: if prp_paths grows to thousands, consider sampling ~100
-            # representative files for geometry preview (geometry is constant per run).
-            geo_result, disc_result = try
-                derive_geometry(prp_paths, setup_files)
-            catch e
-                @warn "manifest: derive_geometry failed" path exception=e
-                (geo_missing, [])
-            end
-            gd = Dict(
-                :energy_kev            => _nm(geo_result.energy_kev),
-                :energy_kev_source     => geo_result.energy_kev_source,
-                :flight_path_m         => _nm(geo_result.flight_path_m),
-                :flight_path_m_source  => geo_result.flight_path_m_source,
-                :beam_center_x         => _nm(geo_result.beam_center_x),
-                :beam_center_x_source  => geo_result.beam_center_x_source,
-                :beam_center_y         => _nm(geo_result.beam_center_y),
-                :beam_center_y_source  => geo_result.beam_center_y_source,
-                :pixel_size_um         => _nm(geo_result.pixel_size_um),
-                :pixel_size_um_source  => geo_result.pixel_size_um_source,
-            )
-            dd = [Dict(:field => d.field, :message => d.message) for d in disc_result]
-            (gd, dd)
-        end
-
-        # ── matched_files: capped sample of image filenames (for "latest files" card) ──
-        matched_files = let
-            img_pre, img_post = occursin("{name}", pats.image) ?
-                split(pats.image, "{name}"; limit = 2) : ("", "")
-            names = sort!([img_pre * s * img_post for s in img])
-            names[1:min(12, length(names))]
-        end
-
-        _json(200, Dict(:total => length(files),
-                   :matched => Dict(:image => length(img), :metadata => length(meta), :integration => length(integ)),
-                   :unmatched => unmatched,
-                   :geometry => geo_dict,
-                   :discrepancies => disc_list,
-                   :matched_files => matched_files))
+        opt(k) = (v = get(q, k, ""); isempty(v) ? nothing : v)
+        m = fs_manifest(path;
+            image_pattern       = get(q, "image_pattern", "{name}.tif"),
+            metadata_pattern    = get(q, "metadata_pattern", "{name}.prp"),
+            integration_pattern = get(q, "integration_pattern", "{name}.dat"),
+            analysis_dir = opt("analysis_dir"),
+            setup_file   = opt("setup_file"))
+        _json(200, Dict(:total => m.total,
+                   :matched => Dict(:image => m.image, :metadata => m.metadata, :integration => m.integration),
+                   :unmatched => m.unmatched,
+                   :geometry => m.geometry,
+                   :discrepancies => m.discrepancies,
+                   :matched_files => m.matched_files))
     end
 end
