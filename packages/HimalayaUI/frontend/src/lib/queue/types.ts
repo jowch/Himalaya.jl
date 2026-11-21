@@ -33,7 +33,6 @@ export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
   | "speculative_created" | "speculative_deleted"
   | "set_exposure_status" | "select_exposure"
-  | "add_tag" | "remove_tag" | "edit_tag"
   | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
@@ -46,8 +45,9 @@ export type OpKind =
   // resolveMutator (outbound).
   | "custom_index_commit"
   | "bridge_samples" | "unbridge_sample"
-  | "add_label" | "remove_label"
-  | "set_tag_color";
+  | "add_label" | "remove_label" | "restore_label_suggestion"
+  | "set_tag_color"
+  | "patch_experiment";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

@@ -34,7 +34,7 @@ const FULL_EXPOSURE: Exposure = {
   id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
   status: null, image_path: null, image_version: "",
   trace_hash: null, analysis_inputs_hash: "h0",
-  tags: [], sources: [],
+  sources: [],
 };
 
 describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)", () => {
@@ -309,7 +309,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   it("sample_call_set_state synthesizes the sample's call from {call} post_state", () => {
-    const synth = resolveMutatorForEvent("sample_call_set_state", "sample")!.synthesizeFromSse?.(
+    const synth = resolveMutatorForEvent("sample_call_set_state")!.synthesizeFromSse?.(
       remoteForeignEvent({
         id: 7, kind: "sample_call_set_state", entity_type: "sample", entity_id: 1, payload: {},
         post_state: { call: { state: "null", members: [] } },
@@ -429,12 +429,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   // -------------------------------------------------------------------------
-  // Sample/message events
+  // Sample events
   // -------------------------------------------------------------------------
 
   it("update_sample spreads payload onto the cached samples list", () => {
     const sample: Sample = {
-      id: 10, experiment_id: 1, name: "old", notes: "n", tags: [],
+      id: 10, experiment_id: 1, name: "old", notes: "n",
     };
     qc.setQueryData<Sample[]>(queryKeys.samples(1), [sample]);
     // Mirrors routes_samples.jl PATCH: payload is the patched fields directly.
@@ -446,7 +446,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     const after = qc.getQueryData<Sample[]>(queryKeys.samples(1))![0]!;
     expect(after.name).toBe("new");
     expect(after.notes).toBe("n");  // unpatched fields preserved
-    expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
   });
 
   it("update_sample invalidates the corpus samples list the workspace reads", () => {
@@ -462,52 +461,21 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual([queryKeys.corpusSamples]);
   });
 
-  it("add_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
-    const invalidated: unknown[] = [];
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated.push(arg.queryKey); return Promise.resolve();
-    }) as typeof qc.invalidateQueries;
-    // Mirrors routes_samples.jl POST: payload always includes experiment_id.
-    const evt: SseEvent = {
-      id: 99, kind: "add_tag", entity_type: "sample", entity_id: 10,
-      payload: { key: "k", value: "v", tag_id: 50, experiment_id: 1 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual([
-      queryKeys.samples(1), queryKeys.corpusSamples,
-      queryKeys.corpusSampleTags,
-    ]);
-  });
-
-  it("add_tag (exposure) invalidates the sample's exposures list (uses sample_id)", () => {
-    let invalidated: unknown = null;
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
-    }) as typeof qc.invalidateQueries;
-    // Mirrors routes_exposures.jl POST: payload includes sample_id.
-    const evt: SseEvent = {
-      id: 99, kind: "add_tag", entity_type: "exposure", entity_id: 5,
-      payload: { key: "k", value: "v", tag_id: 60, sample_id: 1 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.exposures(1));
-  });
-
-  it("remove_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
-    const invalidated: unknown[] = [];
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated.push(arg.queryKey); return Promise.resolve();
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "remove_tag", entity_type: "sample", entity_id: 10,
-      payload: { tag_id: 50, experiment_id: 1 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual([
-      queryKeys.samples(1), queryKeys.corpusSamples,
-      queryKeys.corpusSampleTags,
-    ]);
-  });
+  it.each(["label_added", "label_removed", "label_suggestion_restored"])(
+    "%s invalidates only that experiment's labels",
+    (kind) => {
+      const invalidated: unknown[] = [];
+      qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+        invalidated.push(arg.queryKey); return Promise.resolve();
+      }) as typeof qc.invalidateQueries;
+      const evt: SseEvent = {
+        id: 99, kind, entity_type: "sample", entity_id: 10,
+        payload: { label: "Buffer", experiment_id: 1 },
+      };
+      applyRemoteToCache(evt, qc);
+      expect(invalidated).toEqual([queryKeys.labels(1)]);
+    },
+  );
 
   it("delete_index falls through to default (invalidates peaks+indices)", () => {
     // `delete_index` is the OpKind for the user gesture that hits the
@@ -533,18 +501,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     ]);
   });
 
-  it("remove_tag (exposure) invalidates the sample's exposures list", () => {
-    let invalidated: unknown = null;
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated = arg.queryKey; return Promise.resolve();
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "remove_tag", entity_type: "exposure", entity_id: 5,
-      payload: { tag_id: 60, sample_id: 1 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toEqual(queryKeys.exposures(1));
-  });
 });
 
 describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
@@ -560,13 +516,11 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   // minimally-shaped SseEvent.
   const cases: Array<{ kind: string; entity_type: string; entity_id: number; payload: object }> = [
     { kind: "peak_added",           entity_type: "exposure",   entity_id: 5,  payload: { peak_curation_id: 99, q: 0.123 } },
-    { kind: "add_tag",              entity_type: "sample",     entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
-    { kind: "add_tag",              entity_type: "exposure",   entity_id: 5,  payload: { tag_id: 7, key: "tag", value: "v" } },
     { kind: "peak_excluded",        entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
     { kind: "peak_unexcluded",      entity_type: "exposure",   entity_id: 5,  payload: { auto_peak_id: 1, q: 0.1 } },
   ];
   it.each(cases)("$kind/$entity_type resolves and synthesizes", ({ kind, entity_type, entity_id, payload }) => {
-    const mutator = resolveMutatorForEvent(kind, entity_type);
+    const mutator = resolveMutatorForEvent(kind);
     expect(mutator).toBeDefined();
     const synth = mutator!.synthesizeFromSse?.(
       evt(kind, entity_type, entity_id, payload),
@@ -581,7 +535,7 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   it.each([
     "assignment_add", "assignment_remove",
   ])("%s synthesizes an Assignment from {assignment} post_state", (kind) => {
-    const mutator = resolveMutatorForEvent(kind, "exposure");
+    const mutator = resolveMutatorForEvent(kind);
     expect(mutator).toBeDefined();
     const synth = mutator!.synthesizeFromSse?.(
       remoteForeignEvent({
@@ -606,29 +560,30 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   // Camp (b) breaks down into two rationales:
   //
   //   (b.i)  Forward-scaffolded — mutator exists but no UI gesture queues it
-  //          today (set_exposure_status, update_sample, select_exposure,
-  //          remove_tag ×2). When a future plan wires the gesture, add
+  //          today (set_exposure_status, update_sample, select_exposure).
+  //          When a future plan wires the gesture, add
   //          synthesizeFromSse to the owning mutator.
   //   (b.ii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
-  const noSynth: Array<{ kind: string; entity_type: string }> = [
+  const noSynth: Array<{ kind: string }> = [
     // (b.i) forward-scaffolded
-    { kind: "set_exposure_status", entity_type: "exposure"           },
-    { kind: "update_sample",       entity_type: "sample"             },
-    { kind: "select_exposure",     entity_type: "exposure"           },
-    { kind: "remove_tag",          entity_type: "sample"             },
-    { kind: "remove_tag",          entity_type: "exposure"           },
+    { kind: "set_exposure_status" },
+    { kind: "update_sample" },
+    { kind: "select_exposure" },
     // (b.ii) looksFull-handled or hash-only effects
-    { kind: "analyze_run",         entity_type: "exposure"           },
-    { kind: "peak_removed",        entity_type: "exposure"           },
-    { kind: "speculative_created", entity_type: "exposure"           },
-    { kind: "speculative_deleted", entity_type: "exposure"           },
+    { kind: "analyze_run" },
+    { kind: "peak_removed" },
+    { kind: "speculative_created" },
+    { kind: "speculative_deleted" },
+    { kind: "label_added" },
+    { kind: "label_removed" },
+    { kind: "label_suggestion_restored" },
   ];
   it.each(noSynth)(
-    "$kind/$entity_type stays on the generic fallback (no mutator.synthesizeFromSse)",
-    ({ kind, entity_type }) => {
-      const mutator = resolveMutatorForEvent(kind, entity_type);
+    "$kind stays on the generic fallback (no mutator.synthesizeFromSse)",
+    ({ kind }) => {
+      const mutator = resolveMutatorForEvent(kind);
       expect(mutator).toBeDefined();
       expect(mutator!.synthesizeFromSse).toBeUndefined();
     },

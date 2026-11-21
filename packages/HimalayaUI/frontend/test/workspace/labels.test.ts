@@ -5,16 +5,17 @@ import {
   bufferRole,
   buffersFirst,
   applyRemoveLabel,
-  applyTagColor,
-  defaultTagColor,
-  cleanTag,
-  displayTag,
+  applyLabelColor,
+  defaultLabelColor,
+  firstUnusedColor,
+  cleanLabel,
+  displayLabel,
   labelsFor,
   sampleMatchesFilter,
-  tagColor,
-  tagColorIsDefault,
-  tagOptions,
-  tagVocabulary,
+  labelColor,
+  labelColorIsDefault,
+  labelOptions,
+  labelVocabulary,
 } from "../../src/lib/labels";
 
 function label(id: number, sample_id: number, text: string, state: SampleLabel["state"] = "confirmed"): SampleLabel {
@@ -24,17 +25,17 @@ function label(id: number, sample_id: number, text: string, state: SampleLabel["
 describe("tag vocabulary", () => {
   it("lists tags used in the experiment, most used first, then the standard tags not yet used", () => {
     const list = [label(1, 1, "37C"), label(2, 2, "retake"), label(3, 3, "37c"), label(4, 4, "Buffer")];
-    expect(tagVocabulary(list)).toEqual(["37C", "Buffer", "retake", "Calibrant", "Empty capillary"]);
+    expect(labelVocabulary(list)).toEqual(["37C", "Buffer", "retake", "Calibrant", "Empty capillary"]);
   });
 
   it("shows a built-in tag capitalized however it was typed", () => {
-    expect(tagVocabulary([label(1, 1, "buffer"), label(2, 2, "EMPTY capillary")])).toEqual(["Buffer", "Empty capillary", "Calibrant"]);
-    expect(displayTag("calibrant")).toBe("Calibrant");
-    expect(displayTag("37C")).toBe("37C");
+    expect(labelVocabulary([label(1, 1, "buffer"), label(2, 2, "EMPTY capillary")])).toEqual(["Buffer", "Empty capillary", "Calibrant"]);
+    expect(displayLabel("calibrant")).toBe("Calibrant");
+    expect(displayLabel("37C")).toBe("37C");
   });
 
   it("leaves suggestions out of the vocabulary", () => {
-    expect(tagVocabulary([label(1, 1, "odd", "suggested")])).toEqual(["Buffer", "Calibrant", "Empty capillary"]);
+    expect(labelVocabulary([label(1, 1, "odd", "suggested")])).toEqual(["Buffer", "Calibrant", "Empty capillary"]);
   });
 });
 
@@ -42,31 +43,31 @@ describe("tag options", () => {
   const vocab = ["37C", "retake", "buffer", "calibrant", "empty capillary"];
 
   it("offers every tag the sample lacks when nothing is typed", () => {
-    expect(tagOptions(vocab, "", ["retake"])).toEqual({ matches: ["37C", "buffer", "calibrant", "empty capillary"], create: undefined });
+    expect(labelOptions(vocab, "", ["retake"])).toEqual({ matches: ["37C", "buffer", "calibrant", "empty capillary"], create: undefined });
   });
 
   it("puts prefix matches first and offers no Create row for a known tag", () => {
-    expect(tagOptions(vocab, "Buf", [])).toEqual({ matches: ["buffer"], create: "Buf" });
-    expect(tagOptions(vocab, "BUFFER", [])).toEqual({ matches: ["buffer"], create: undefined });
+    expect(labelOptions(vocab, "Buf", [])).toEqual({ matches: ["buffer"], create: "Buf" });
+    expect(labelOptions(vocab, "BUFFER", [])).toEqual({ matches: ["buffer"], create: undefined });
   });
 
   it("offers buffer for a misspelling, ahead of creating the misspelling", () => {
-    const o = tagOptions(vocab, "bufer", []);
+    const o = labelOptions(vocab, "bufer", []);
     expect(o.matches[0]).toBe("buffer");
     expect(o.create).toBe("bufer");
-    expect(tagOptions(vocab, "calbrant", []).matches).toEqual(["calibrant"]);
+    expect(labelOptions(vocab, "calbrant", []).matches).toEqual(["calibrant"]);
   });
 
   it("matches inside a tag and ignores tags already on the sample", () => {
-    expect(tagOptions(vocab, "capill", []).matches).toEqual(["empty capillary"]);
-    expect(tagOptions(vocab, "buffer", ["Buffer"])).toEqual({ matches: [], create: undefined });
+    expect(labelOptions(vocab, "capill", []).matches).toEqual(["empty capillary"]);
+    expect(labelOptions(vocab, "buffer", ["Buffer"])).toEqual({ matches: [], create: undefined });
   });
 
   it("offers no Create row for text that cannot be a tag", () => {
-    expect(tagOptions(vocab, "   ", []).create).toBeUndefined();
-    expect(tagOptions(vocab, "x".repeat(65), []).create).toBeUndefined();
-    expect(cleanTag("  hot  ")).toBe("hot");
-    expect(cleanTag("a\nb")).toBeUndefined();
+    expect(labelOptions(vocab, "   ", []).create).toBeUndefined();
+    expect(labelOptions(vocab, "x".repeat(65), []).create).toBeUndefined();
+    expect(cleanLabel("  hot  ")).toBe("hot");
+    expect(cleanLabel("a\nb")).toBeUndefined();
   });
 });
 
@@ -96,23 +97,23 @@ describe("sample filter", () => {
 
 describe("tag colours", () => {
   it("built-ins default to blue and other tags to violet, and a stored colour wins without case", () => {
-    expect(tagColor([], "BUFFER")).toBe("blue");
-    expect(tagColor([], "37C")).toBe("violet");
-    expect(tagColor([{ label: "buffer", color: "stone" }], "Buffer")).toBe("stone");
-    expect(tagColorIsDefault([{ label: "37c", color: "teal" }], "37C")).toBe(false);
-    expect(tagColorIsDefault([], "37C")).toBe(true);
+    expect(labelColor([], "BUFFER")).toBe("blue");
+    expect(labelColor([], "37C")).toBe("violet");
+    expect(labelColor([{ label: "buffer", color: "stone" }], "Buffer")).toBe("stone");
+    expect(labelColorIsDefault([{ label: "37c", color: "teal" }], "37C")).toBe(false);
+    expect(labelColorIsDefault([], "37C")).toBe(true);
   });
 
   it("matches names ignoring ASCII case only, as the database does", () => {
-    expect(tagColor([{ label: "abc", color: "rose" }], "ABC")).toBe("rose");
-    expect(tagColor([{ label: "über", color: "rose" }], "Über")).toBe("violet");
-    expect(defaultTagColor("Buffer")).toBe("blue");
+    expect(labelColor([{ label: "abc", color: "rose" }], "ABC")).toBe("rose");
+    expect(labelColor([{ label: "über", color: "rose" }], "Über")).toBe("violet");
+    expect(defaultLabelColor("Buffer")).toBe("blue");
   });
 
   it("setting replaces the entry for that name and null removes it", () => {
     const list = [{ label: "37C", color: "teal" as const }];
-    expect(applyTagColor(list, " 37c ", "rose")).toEqual([{ label: "37c", color: "rose" }]);
-    expect(applyTagColor(list, "37c", null)).toEqual([]);
+    expect(applyLabelColor(list, " 37c ", "rose")).toEqual([{ label: "37c", color: "rose" }]);
+    expect(applyLabelColor(list, "37c", null)).toEqual([]);
   });
 });
 
@@ -132,5 +133,17 @@ describe("buffers first", () => {
 
   it("says whether a sample's Buffer tag is confirmed or only suggested", () => {
     expect([1, 2, 4].map((id) => bufferRole(labels, id))).toEqual([undefined, "suggested", "confirmed"]);
+  });
+});
+
+describe("firstUnusedColor", () => {
+  it("picks the first colour no label uses, counting defaults", () => {
+    expect(firstUnusedColor([], ["Buffer", "retake"])).toBe("rose");
+    expect(firstUnusedColor([{ label: "retake", color: "rose" }], ["Buffer", "retake", "37C"])).toBe("plum");
+  });
+
+  it("picks the least used colour once all eight are taken", () => {
+    const colors = (["rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone"] as const).map((color, i) => ({ label: `l${i}`, color }));
+    expect(firstUnusedColor([...colors, { label: "x", color: "rose" }], [...colors.map((c) => c.label), "x"])).toBe("plum");
   });
 });

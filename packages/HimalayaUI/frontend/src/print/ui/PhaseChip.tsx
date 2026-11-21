@@ -29,7 +29,7 @@ interface PhaseChipProps
   /** "tint": phase-tinted fill + phase-colored text (default, the M-6 look).
    *  "solid": phase-colored fill + paper text (emphasis / dense rows). */
   variant?: PhaseChipVariant;
-  /** "sm" = 11px mono (contact sheet, inline rows). "md" = 13px (candidate
+  /** "sm" = 12px (contact sheet, inline rows). "md" = 13px (candidate
    *  rows, builder). Default "sm". */
   size?: PhaseChipSize;
   /** PLACEMENT ONLY — margin / width / grid-or-flex position. Appearance
@@ -40,8 +40,8 @@ interface PhaseChipProps
 const base = "inline-flex items-center rounded-sm border";
 
 const sizeClass: Record<PhaseChipSize, string> = {
-  sm: "font-mono text-[11px] leading-[16px] font-bold px-2 py-0.5",
-  md: "font-mono text-[13px] leading-[20px] font-bold px-1.5 py-0.5",
+  sm: "text-xs font-semibold px-2 py-0.5",
+  md: "text-base font-semibold px-1.5 py-0.5",
 };
 
 function variantStyle(variant: PhaseChipVariant, color: string): CSSProperties {

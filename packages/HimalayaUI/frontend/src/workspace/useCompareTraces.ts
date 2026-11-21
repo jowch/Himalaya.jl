@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import * as api from "../api";
 import type { Trace } from "../api";
-import { queryKeys } from "../queries";
+import { queryKeys, retryUnlessMissing } from "../queries";
 import { representativeExposure } from "../lib/exposure";
 
 function dataOf(results: readonly { data?: Trace | undefined }[]): (Trace | undefined)[] {
@@ -22,6 +22,7 @@ export function useCompareTraces(sampleIds: readonly number[]): Map<number, Trac
       queryKey: queryKeys.trace(eid),
       queryFn: () => api.getTrace(eid as number),
       enabled: eid !== undefined,
+      retry: retryUnlessMissing,
     })),
     combine: dataOf,
   });

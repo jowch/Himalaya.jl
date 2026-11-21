@@ -35,10 +35,10 @@ import {
 import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import {
   updateSampleMutator,
-  addSampleTagMutator,
-  addCorpusSampleTagMutator,
-  addExposureTagMutator,
 } from "../../src/lib/queue/mutators/trivial";
+import {
+  addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator,
+} from "../../src/lib/queue/mutators/labels";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
@@ -50,10 +50,11 @@ const ASSIGNMENT_KEYS = new Set([
   "exposure_id", "state", "members",
 ]);
 const SAMPLE_KEYS = new Set([
-  "id", "experiment_id", "name", "display_name", "notes", "tags",
+  "id", "experiment_id", "name", "display_name", "notes",
 ]);
-const SAMPLE_TAG_KEYS = new Set(["id", "key", "value", "source"]);
-const EXPOSURE_TAG_KEYS = new Set(["id", "key", "value", "source"]);
+const SAMPLE_LABEL_KEYS = new Set([
+  "id", "sample_id", "label", "state", "source",
+]);
 const INDEX_ENTRY_KEYS = new Set([
   "id", "exposure_id", "phase", "basis", "score", "r_squared",
   "lattice_d", "ngc", "status", "kind", "inputs_hash",
@@ -362,13 +363,12 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
   });
 
   // -------------------------------------------------------------------------
-  // Sample / message / tag mutators
+  // Sample mutators
   // -------------------------------------------------------------------------
 
-  it("updateSample preserves tags via field-merge (deep-scan Bug #2)", async () => {
+  it("updateSample merges only the patched fields (deep-scan Bug #2)", async () => {
     const initialSample = {
       id: 10, experiment_id: 1, display_name: "D1", name: "old", notes: "n",
-      tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
     };
     qc.setQueryData(queryKeys.samples(1), [initialSample]);
     mockFetchOnce({
@@ -382,87 +382,9 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       display_name: "new",
       payload: { sampleId: 10 },
     });
-    const row = qc.getQueryData<{ tags: unknown[] }[]>(queryKeys.samples(1))![0];
+    const row = qc.getQueryData<{ notes: string }[]>(queryKeys.samples(1))![0];
     assertKeys(row!, SAMPLE_KEYS, "updateSample list cache row");
-    expect(row!.tags).toHaveLength(1);
-  });
-
-  it("addSampleTag inserts a SampleTag with exactly 4 keys (no sample_id leak)", async () => {
-    // The route emits {id, sample_id, key, value, source} (routes_samples.jl:85-87)
-    // but the SampleTag type has only {id, key, value, source}. If the mutator
-    // spreads the response wholesale, the cached tag pollutes with sample_id.
-    const initialSample = {
-      id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null, tags: [],
-    };
-    qc.setQueryData(queryKeys.samples(1), [initialSample]);
-    mockFetchOnce({
-      id: 50, sample_id: 10, key: "color", value: "red", source: "manual",
-    }, 201);
-    await runMutator(qc, addSampleTagMutator, {
-      kind: "add_tag",
-      clientOpId: "op-shape-10",
-      sampleId: 10, experimentId: 1, username: "alice", clientId: "tab-1",
-      key: "color", value: "red",
-      payload: { key: "color", value: "red" },
-    });
-    const list = qc.getQueryData<{ tags: unknown[] }[]>(queryKeys.samples(1));
-    const tag = list![0]!.tags[0];
-    assertKeys(tag, SAMPLE_TAG_KEYS, "addSampleTag cache row");
-  });
-
-  it("addCorpusSampleTag inserts a SampleTag with exactly 4 keys into the corpus cache", async () => {
-    // Corpus contact sheet path: the op carries no experimentId; the mutator
-    // patches queryKeys.corpusSamples, not queryKeys.samples(experimentId).
-    const initialSample = {
-      id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null,
-      q_units: "nm^-1", tags: [],
-    };
-    qc.setQueryData(queryKeys.corpusSamples, [initialSample]);
-    mockFetchOnce({
-      id: 50, sample_id: 10, key: "color", value: "red", source: "manual",
-    }, 201);
-    await runMutator(qc, addCorpusSampleTagMutator, {
-      kind: "add_tag",
-      clientOpId: "op-corpus-shape-1",
-      sampleId: 10, username: "alice", clientId: "tab-1",
-      key: "color", value: "red",
-      payload: { key: "color", value: "red" },
-    });
-    const list = qc.getQueryData<{ tags: unknown[]; q_units: string }[]>(
-      queryKeys.corpusSamples);
-    const tag = list![0]!.tags[0];
-    assertKeys(tag, SAMPLE_TAG_KEYS, "addCorpusSampleTag cache row");
-    // The onSuccess spread ({ ...s }) copies q_units forward untouched —
-    // the mutator never reconstructs the CorpusSample row.
-    expect(list![0]!.q_units).toBe("nm^-1");
-  });
-
-  it("addExposureTag inserts an ExposureTag with exactly 4 keys (no exposure_id leak)", async () => {
-    // The route emits {id, exposure_id, key, value, source}; ExposureTag is
-    // only {id, key, value, source}.
-    const initialExposure = {
-      id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-      status: null, image_path: null, trace_hash: null,
-      analysis_inputs_hash: "h0", tags: [], sources: [], image_version: "",
-    };
-    qc.setQueryData(
-      ["sample", 1, "exposures"] as const,
-      [initialExposure],
-    );
-    mockFetchOnce({
-      id: 60, exposure_id: 5, key: "noisy", value: "yes", source: "manual",
-    }, 201);
-    await runMutator(qc, addExposureTagMutator, {
-      kind: "add_tag",
-      clientOpId: "op-shape-11",
-      sampleId: 1, exposureId: 5, username: "alice", clientId: "tab-1",
-      key: "noisy", value: "yes",
-      payload: { key: "noisy", value: "yes" },
-    });
-    const list = qc.getQueryData<{ tags: unknown[] }[]>(
-      ["sample", 1, "exposures"] as const);
-    const tag = list![0]!.tags[0];
-    assertKeys(tag, EXPOSURE_TAG_KEYS, "addExposureTag cache row");
+    expect(row!.notes).toBe("n");
   });
 
   // -------------------------------------------------------------------------
@@ -513,6 +435,31 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     const after = qc.getQueryData<{ id: number; source: string; excluded: boolean }[]>(queryKeys.peaks(5))!;
     expect(after.find(p => p.source === "auto")!.excluded).toBe(true);
     expect(after.find(p => p.source === "manual")!.excluded).toBe(false);
+  });
+
+  it.each([
+    ["addLabel", addLabelMutator, "add_label"],
+    ["removeLabel", removeLabelMutator, "remove_label"],
+    ["restoreLabelSuggestion", restoreLabelSuggestionMutator, "restore_label_suggestion"],
+  ] as const)("%s writes SampleLabel rows with exactly 5 keys, optimistic and confirmed", async (_name, mutator, kind) => {
+    qc.setQueryData(queryKeys.labels(1), [
+      { id: 3, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+    ]);
+    const server = [
+      { id: 3, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+    ];
+    const flat = {
+      kind, clientOpId: `op-${kind}`, payload: {},
+      sampleId: 10, label: "Buffer", experimentId: 1, username: "alice", clientId: "tab-1",
+    };
+    mutator.onMutate(flat, qc);
+    for (const row of qc.getQueryData<object[]>(queryKeys.labels(1))!) assertKeys(row, SAMPLE_LABEL_KEYS, `${kind} optimistic row`);
+    mockFetchOnce(server, 200);
+    await runMutator(qc, mutator, flat);
+    const rows = qc.getQueryData<object[]>(queryKeys.labels(1))!;
+    expect(rows).toEqual(server);
+    for (const row of rows) assertKeys(row, SAMPLE_LABEL_KEYS, `${kind} confirmed row`);
   });
 
 });

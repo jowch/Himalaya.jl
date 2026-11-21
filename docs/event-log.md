@@ -50,7 +50,8 @@ round-trip test in `test_events.jl`.
 | `assignment_set_state` | Legacy, no longer emitted. Replays as before and also upserts the frame's sample into `sample_calls` (entity_type=`exposure`, payload `{state}`) |
 | `label_added` | UPSERT `sample_labels` → `state='confirmed'`, unique per sample ignoring case; confirms a suggestion and brings back a removed label (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `label_removed` | UPSERT `sample_labels` → `state='removed'`; the row stays so a rescan never suggests the label again (entity_type=`sample`, payload `{label, experiment_id}`) |
-| `tag_color_set` | UPSERT `tag_colors` (unique per label ignoring case) to the colour, or DELETE the row when `color` is null so the tag falls back to its default (blue for a built-in, violet otherwise). One colour per tag name for the whole app (entity_type=`tag`, entity_id=0 `TAG_COLOR_ENTITY_ID`, payload `{label, color}`) |
+| `label_suggestion_restored` | UPSERT `sample_labels` → `state='suggested', source='ingest'`; undo of confirming or dismissing a suggestion. The route skips it when the sample has no such label or it is already suggested. It cannot tell a former suggestion from a label a user typed (`label_added` sets `source='user'`), so the caller must only send it for a row it saw as suggested; the workspace's undo is the only caller (entity_type=`sample`, payload `{label, experiment_id}`) |
+| `tag_color_set` | UPSERT `label_colors` (unique per label ignoring case) to the colour, or DELETE the row when `color` is null so the label falls back to its default (blue for a built-in, violet otherwise). One colour per label name for the whole app (entity_type=`tag`, entity_id=0 `LABEL_COLOR_ENTITY_ID`, payload `{label, color}`). The kind and entity_type keep the old "tag" name because log rows are history; the table was `tag_colors` before `migrate_label_colors!` renamed it. |
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
@@ -64,7 +65,11 @@ pass and once on open (the `label_suggestions_v1` migration). They have no
 row, so a user's confirm or remove always wins.
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
-`peak_removed`, `speculative_created`, `speculative_deleted`. Using
+`peak_removed`, `speculative_created`, `speculative_deleted`, and
+`experiment_updated` (entity_type=`experiment`, payload: the patched fields,
+e.g. `{name}` or `{description: null}`; `PATCH /api/experiments/{id}` writes the
+row itself and the frontend merges the payload into the experiment caches).
+Using
 `apply_event!` (with `entity_type='exposure'`) keeps these visible to
 `idx_events_by_exposure` so per-exposure folds find them; the dispatcher
 returns `nothing` for these kinds.
@@ -76,16 +81,18 @@ keeps explicit no-op guards for them
 so old event logs still fold cleanly, but they write nothing. The
 `/groups` routes that emitted them are gone and the `index_group_members`
 write was removed; confirmation is now carried by `assignment_add` /
-`assignment_remove` writing `assignment_members`. The series, comparison
-and sample chat kinds (`RETIRED_EVENT_KINDS` in `events.jl`, deleted 2026-11-21)
-get one shared guard for the same reason.
+`assignment_remove` writing `assignment_members`. The series, comparison,
+sample chat and legacy tag kinds (`add_tag`, `remove_tag`, `edit_tag`;
+`RETIRED_EVENT_KINDS` in `events.jl`, deleted 2026-11-21) get one shared
+guard for the same reason. Their `user_actions` rows stay in the log, and
+`open_db` drops their tables (`RETIRED_TABLES` in `db.jl`).
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_exposure_status`, `select_exposure`, `add_tag`, `remove_tag`,
-`edit_tag`, `update_sample`, `analyze`, `scan`, `experiment_created`. The
-dispatcher carries explicit no-op `return nothing` guards for the
-view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
+`set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
+`scan`, `experiment_created`. The dispatcher carries explicit no-op
+`return nothing` guards for the view-less kinds (`set_exposure_status`,
+`select_exposure`, …).
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —

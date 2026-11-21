@@ -15,7 +15,7 @@ export function RemoveExperimentDialog({ name, samples, removing, error, onRemov
       <div className="flex flex-col gap-3 px-5 py-4 text-body">
         <h2 className="text-label text-ink">Remove {name}?</h2>
         <p className="text-ink-soft">
-          Its {samples.toLocaleString("en-US")} {samples === 1 ? "sample" : "samples"} and their phase calls, peaks, tags
+          Its {samples.toLocaleString("en-US")} {samples === 1 ? "sample" : "samples"} and their phase calls, peaks, labels
           and bridges are deleted from Himalaya. The files in the data folder are not touched, so you can add the
           folder again from New experiment.
         </p>

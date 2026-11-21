@@ -1,8 +1,7 @@
 /**
  * `treats404AsSuccess` contract.
  *
- * Idempotent removes (peakRemove, deleteIndex,
- * removeSampleTag, removeExposureTag) treat HTTP 404 as a no-op success:
+ * Idempotent removes (peakRemove, deleteIndex) treat HTTP 404 as a no-op success:
  * the optimistic effect already reflects "row gone", and a 404 means the
  * server has it gone too — restoring would re-insert a phantom row visible
  * until the next refetch.
@@ -19,18 +18,15 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "../test-utils";
 import {
-  useRemovePeak, useRemoveSampleTag,
+  useRemovePeak,
   queryKeys,
 } from "../../src/queries";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
 import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
-import {
-  removeSampleTagMutator, removeExposureTagMutator,
-} from "../../src/lib/queue/mutators/trivial";
 import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 import { useQueueMutation } from "../../src/lib/queue/useQueueMutation";
-import type { Peak, IndexEntry, Sample } from "../../src/api";
+import type { Peak, IndexEntry } from "../../src/api";
 
 describe("treats404AsSuccess flag — set on idempotent remove mutators", () => {
   it("peakRemove", () => {
@@ -38,12 +34,6 @@ describe("treats404AsSuccess flag — set on idempotent remove mutators", () => 
   });
   it("deleteIndex", () => {
     expect(deleteIndexMutator.treats404AsSuccess).toBe(true);
-  });
-  it("removeSampleTag", () => {
-    expect(removeSampleTagMutator.treats404AsSuccess).toBe(true);
-  });
-  it("removeExposureTag", () => {
-    expect(removeExposureTagMutator.treats404AsSuccess).toBe(true);
   });
 });
 
@@ -109,8 +99,7 @@ describe("treats404AsSuccess framework branch — useRemovePeak under HTTP 404",
 
 // The framework branch is mutator-shape-agnostic in principle, but a regression
 // dependent on rollback-context shape, response type, or cache topology would
-// only be caught by exercising more than one mutator. Two extra cases — across
-// distinct cache shapes (indices, samples-with-nested-tags) — pin this.
+// only be caught by exercising more than one mutator.
 describe("treats404AsSuccess framework branch — coverage across mutator shapes", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -149,26 +138,4 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     expect(client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID))).toEqual([]);
   });
 
-  it("useRemoveSampleTag: optimistic tag removal sticks on 404", async () => {
-    const EXPERIMENT_ID = 1;
-    const SAMPLE_ID = 10;
-    const SAMPLE: Sample = {
-      id: SAMPLE_ID, experiment_id: EXPERIMENT_ID, name: "n",
-      notes: null,
-      tags: [{ id: 99, key: "buffer", value: "PBS", source: "manual" }],
-    };
-    const client = makeClient();
-    client.setQueryData(queryKeys.samples(EXPERIMENT_ID), [SAMPLE]);
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    mockFetch404();
-    const { result } = renderHook(
-      () => useRemoveSampleTag(EXPERIMENT_ID, SAMPLE_ID), { wrapper },
-    );
-    act(() => { result.current.mutate(99); });
-    await waitFor(() => expect(result.current.isPending).toBe(false));
-    const sample = client.getQueryData<Sample[]>(queryKeys.samples(EXPERIMENT_ID))?.[0];
-    expect(sample?.tags).toEqual([]);
-  });
 });
