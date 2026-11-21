@@ -374,7 +374,7 @@ function register_experiments_routes!()
             Dict{String,Any}()
         end
         force_scan = get(req_body, :force, get(req_body, "force", false)) === true
-        Threads.@spawn try_backfill_monitors!(db, id)
+        Threads.@spawn with_background_db(bg -> try_backfill_monitors!(bg, id), db)
         if !(force_scan || ingest_running(id) || ingest_has_work(db, id))
             return HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:status => "complete", :experiment_id => id, :changed => false)))
@@ -464,27 +464,12 @@ function register_experiments_routes!()
                     DBInterface.execute(db, """
                         DELETE FROM sample_messages WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
-                    # Cross-feature tables OUTSIDE the core tree (db.jl:700-1060) that
-                    # reference this experiment's samples/exposures. FK enforcement is
-                    # OFF here, so their declared ON DELETE actions do NOT fire —
-                    # replicate each by hand so no orphan rows remain:
-                    #   series_samples.sample_id   -> samples   ON DELETE CASCADE  (delete row)
-                    #   series_members.exposure_id -> exposures ON DELETE SET NULL (null the ref)
-                    #   comparison_members.exposure_id -> exposures ON DELETE SET NULL (null the ref)
-                    # Must run BEFORE the samples/exposures deletes below so the
-                    # IN-subqueries still resolve the ids.
-                    DBInterface.execute(db, """
-                        DELETE FROM series_samples WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         DELETE FROM sample_bridges WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
-                        UPDATE series_members SET exposure_id = NULL WHERE exposure_id IN
-                          (SELECT id FROM exposures WHERE experiment_id = ?)""", [id])
-                    DBInterface.execute(db, """
-                        UPDATE comparison_members SET exposure_id = NULL WHERE exposure_id IN
-                          (SELECT id FROM exposures WHERE experiment_id = ?)""", [id])
+                        DELETE FROM sample_calls WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db,
                         "DELETE FROM exposures WHERE experiment_id = ?", [id])
                     DBInterface.execute(db,

@@ -60,9 +60,6 @@ describe("useStateFromUrl", () => {
   });
 
   it("I3.6: a stray /compare path is now a stale unknown_path (no resolve)", () => {
-    // /compare* is redirected to /series at the router; if the parser ever sees
-    // it, it is classified stale rather than triggering a resolve fetch. (The
-    // old `activePage='compare'` outcome is gone with the dual-nav model, #182.)
     history.replaceState(null, "", "/compare/all");
     const fetchSpy = vi.spyOn(global, "fetch");
     renderHook(() => useStateFromUrl(), { wrapper });

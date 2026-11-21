@@ -47,7 +47,10 @@ round-trip test in `test_events.jl`.
 | `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (the route stamps `undoes_event_id` onto the `user_actions` row when resolvable — see Atomicity note) |
 | `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
-| `assignment_set_state` | UPSERT `assignments.state`; clears `assignment_members` when state ≠ `indexed` (entity_type=`exposure`, payload `{state}`) |
+| `sample_call_set_state` | UPSERT `sample_calls.state`; clears `assignment_members` on every frame of the sample when state ≠ `indexed` (entity_type=`sample`, payload `{state}`) |
+| `assignment_set_state` | Legacy, no longer emitted. Replays as before and also upserts the frame's sample into `sample_calls` (entity_type=`exposure`, payload `{state}`) |
+
+`assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
 `peak_removed`, `speculative_created`, `speculative_deleted`. Using
@@ -62,7 +65,9 @@ keeps explicit no-op guards for them
 so old event logs still fold cleanly, but they write nothing. The
 `/groups` routes that emitted them are gone and the `index_group_members`
 write was removed; confirmation is now carried by `assignment_add` /
-`assignment_remove` writing `assignment_members`.
+`assignment_remove` writing `assignment_members`. The series and comparison
+kinds (`RETIRED_EVENT_KINDS` in `events.jl`, deleted 2026-11-21) get one shared
+guard for the same reason.
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
@@ -84,6 +89,37 @@ so old logs fold cleanly and no migration is needed.
 `_maybe_broadcast_event!`, with a dispatcher no-op `return nothing` guard
 and the §3a no-op suppression rule (suppress both frame and durable row
 when both skip flags are true).
+
+### Phase calls belong to the sample (#350)
+
+A sample's phase call is one sample-level record. Its state (`indexed`,
+`form_factor`, `null`) lives in `sample_calls`. Its members are the union of
+`assignment_members` across all of the sample's frames, kept or dropped. Each
+member stays keyed by the frame its index lives on, so the per-frame
+`assignment_add` / `assignment_remove` contract is unchanged. Dropping a frame
+never clears the call. `GET /api/samples` reports `phase` (the top-scored
+member) and `call_phases` (every phase in the call) from the sample, not from
+the representative frame. `GET /api/samples/{id}/call` returns the whole call,
+and `POST /api/samples/{id}/call/state` sets the state.
+
+`migrate_sample_calls!` (`sample_calls_v1`, run by `open_db`) moves existing
+calls. Per sample it considers only frames that still carry a call (members,
+or a non-indexed state). Among those it keeps the frame the user edited last
+(the newest `assignment_*` event), else the representative frame, else the
+lowest id. Members on the other frames are removed: the old UI never showed
+them together, so the union would surface stale picks. The kept frame's state
+becomes the sample's state. The migration writes these changes as logged
+events (`assignment_remove` per dropped member, then one
+`sample_call_set_state`, with no user), folded through the dispatcher, so the
+log still reproduces the view.
+
+`rebuild_views_from_log!` folds across entities for calls. For an exposure it
+folds that exposure's events, its sample's `sample_call_set_state` events
+(clearing only this exposure's members) and the sample state set by sibling
+frames' `assignment_add` / `assignment_set_state`, all in id order. For a
+sample it folds the sample's events and every call event on its frames.
+`exposure_moved` marks the destination sample `indexed` when the moved frame
+carries members. Deleting an experiment deletes its `sample_calls` rows.
 
 ### Payload contract
 
@@ -294,8 +330,8 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    *all* tabs — there's no originating tab to suppress.
 4. Dispatch on `remote.kind` via `applyRemoteToCache`'s switch
    statement — each event kind has a per-kind cache merge branch
-   (e.g. `peak_added` writes the new peak row, `series_deleted`
-   removes the deleted series' queries). No `entity_type` filter; all event
+   (e.g. `peak_added` writes the new peak row, `sample_bridged`
+   refetches the experiment's bridges). No `entity_type` filter; all event
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
@@ -374,18 +410,6 @@ this doc:
   queue via `task_local_storage()`; `_flush_post_commit_broadcasts!()`
   fires on commit, `_clear_post_commit_broadcasts!()` discards on
   rollback or status ≥ 400.
-
----
-
-## 3b. Series `content_hash` covers the plate only
-
-`compute_series_content_hash` (`series.jl:303-355`) deliberately **excludes**
-the recipe: only `title`, `description`, and the `series_members` rows feed
-the `sha256:`-prefixed hash; `series_samples` (the recipe), `ordering_variable`,
-and `order_rule` do not. So `forked_at_hash` comparisons are **plate-only** — a
-recipe edit after forking does not make the fork look diverged, and
-`series_recipe_updated` events never touch `content_hash`. Only plate-affecting
-edits (title, description, member rows) change the hash.
 
 ---
 

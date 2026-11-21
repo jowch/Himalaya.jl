@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { newClientOpId } from "../clientOpId";
 import { showToast } from "../toast";
-import { ConflictError } from "../../api";
 import { makeDeferred, clearDeferred } from "./deferred";
 import {
   isValidationError,
@@ -122,12 +121,6 @@ export function useQueueMutation<TInput, TScope, TResponse>(
         if (mutator.treats404AsSuccess && is404Error(err)) return;
         context?.restore?.();
         if (isValidationError(err)) {
-          // ConflictError (409, content_hash drift) is caught here solely to
-          // suppress the generic error toast — there is no conflict modal
-          // (multiplayer is last-write-wins; conflict UI was cancelled).
-          // The same pattern applies to any future typed-throw that has its
-          // own bespoke error surface; gate via instanceof.
-          if (err instanceof ConflictError) return;
           showToast(buildValidationMessage(mutator.kind, err), "error");
         } else if (isServerError(err) && !ownErrorSurface.has(_payload.clientOpId)) {
           showToast(buildServerErrorMessage(mutator.kind), "error");

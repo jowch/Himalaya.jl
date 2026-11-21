@@ -156,9 +156,6 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const base: QueueResponseMeta = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
-    // Only curation-frame post_state carries analysis_inputs_hash; a
-    // series-commit post_state (a Series projection) has none, so the
-    // cast-then-optional-chain correctly yields undefined there.
     analysis_inputs_hash: (remote.post_state as CurationPostState | undefined)
       ?.analysis_inputs_hash,
   };

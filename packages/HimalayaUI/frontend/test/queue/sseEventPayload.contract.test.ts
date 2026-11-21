@@ -301,18 +301,29 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))!.members).toEqual([10]);
   });
 
-  it("assignment_set_state patches state + clears members from post_state", () => {
+  it("sample_call_set_state writes the call to every frame of the sample", () => {
+    qc.setQueryData(queryKeys.exposures(1), [{ id: 5 }, { id: 6 }]);
     qc.setQueryData<Assignment>(queryKeys.assignment(5),
-      { exposure_id: 5, state: "indexed", members: [10] });
+      { exposure_id: 5, state: "form_factor", members: [] });
     const evt: SseEvent = {
-      id: 99, kind: "assignment_set_state", entity_type: "exposure", entity_id: 5,
-      payload: { state: "form_factor" },
-      post_state: { assignment: { state: "form_factor", members: [] } },
+      id: 99, kind: "sample_call_set_state", entity_type: "sample", entity_id: 1,
+      payload: { state: "indexed" },
+      post_state: { call: { state: "indexed", members: [{ index_id: 10, exposure_id: 6, phase: "Pn3m" }] } },
     };
     applyRemoteToCache(evt, qc);
-    const a = qc.getQueryData<Assignment>(queryKeys.assignment(5))!;
-    expect(a.state).toBe("form_factor");
-    expect(a.members).toEqual([]);
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual({ exposure_id: 5, state: "indexed", members: [] });
+    expect(qc.getQueryData<Assignment>(queryKeys.assignment(6))).toEqual({ exposure_id: 6, state: "indexed", members: [10] });
+  });
+
+  it("sample_call_set_state synthesizes the sample's call from {call} post_state", () => {
+    const synth = resolveMutatorForEvent("sample_call_set_state", "sample")!.synthesizeFromSse?.(
+      remoteForeignEvent({
+        id: 7, kind: "sample_call_set_state", entity_type: "sample", entity_id: 1, payload: {},
+        post_state: { call: { state: "null", members: [] } },
+      }),
+      { event_id: 7, client_op_id: "x", analysis_inputs_hash: undefined },
+    ) as { sample_id: number; state: string } | undefined;
+    expect(synth).toMatchObject({ sample_id: 1, state: "null" });
   });
 
   it("assignment frame carries NO top-level `indices` key (distinct post_state)", () => {
@@ -430,11 +441,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     };
     applyRemoteToCache(evt, qc);
     expect(invalidated).toContainEqual(queryKeys.exposures(1));
-    // indexing_exposure_id derives from selection; the builder's Confirm
-    // resolves its plate through the picker projection (BU-RECIPENOOP), so a
-    // foreign re-selection must refresh it or Confirm commits the PREVIOUS
-    // representative exposure.
-    expect(invalidated).toContainEqual(queryKeys.corpusPickerSamples);
   });
 
   // -------------------------------------------------------------------------
@@ -477,16 +483,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!).toHaveLength(1);
   });
 
-  it("add_tag (sample) invalidates the experiment + corpus samples lists AND the scoping caches", () => {
+  it("add_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
       invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     // Mirrors routes_samples.jl POST: payload always includes experiment_id.
-    // A sample tag lives in four cached projections — the per-experiment list,
-    // the corpus contact-sheet list, and (I3.4 #174) the corpus tag proposal +
-    // picker projection the /series/new scoping surface reads — so all four
-    // keys must invalidate on a foreign tag write.
     const evt: SseEvent = {
       id: 99, kind: "add_tag", entity_type: "sample", entity_id: 10,
       payload: { key: "k", value: "v", tag_id: 50, experiment_id: 1 },
@@ -494,7 +496,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     applyRemoteToCache(evt, qc);
     expect(invalidated).toEqual([
       queryKeys.samples(1), queryKeys.corpusSamples,
-      queryKeys.corpusSampleTags, queryKeys.corpusPickerSamples,
+      queryKeys.corpusSampleTags,
     ]);
   });
 
@@ -512,13 +514,11 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual(queryKeys.exposures(1));
   });
 
-  it("remove_tag (sample) invalidates the experiment + corpus samples lists AND the scoping caches", () => {
+  it("remove_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
       invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
-    // remove_tag shares the add_tag(sample) branch, so it fans out to the same
-    // four keys (I3.4 #174 added the two corpus-scoping caches).
     const evt: SseEvent = {
       id: 99, kind: "remove_tag", entity_type: "sample", entity_id: 10,
       payload: { tag_id: 50, experiment_id: 1 },
@@ -526,7 +526,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     applyRemoteToCache(evt, qc);
     expect(invalidated).toEqual([
       queryKeys.samples(1), queryKeys.corpusSamples,
-      queryKeys.corpusSampleTags, queryKeys.corpusPickerSamples,
+      queryKeys.corpusSampleTags,
     ]);
   });
 
@@ -615,7 +615,7 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   // not from payload — so they need a post_state-bearing frame (the generic
   // `cases` factory above only carries payload). All three share synthAssignment.
   it.each([
-    "assignment_add", "assignment_remove", "assignment_set_state",
+    "assignment_add", "assignment_remove",
   ])("%s synthesizes an Assignment from {assignment} post_state", (kind) => {
     const mutator = resolveMutatorForEvent(kind, "exposure");
     expect(mutator).toBeDefined();

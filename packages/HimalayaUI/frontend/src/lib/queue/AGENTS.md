@@ -16,6 +16,7 @@ lib/queue/
 ├── queueMeta.ts          # per-mutation metadata
 ├── replacePlaceholder.ts # swap optimistic placeholder ids for real ids
 ├── assignmentDropped.ts  # dropped-assignment handling
+├── sampleCall.ts         # writes a sample's call to every frame's assignment cache
 ├── optimisticId.ts       # Negative placeholder ids
 ├── peakQTol.ts           # q-value tolerance helper
 ├── deferred.ts           # Deferred promise utility
@@ -31,11 +32,6 @@ lib/queue/
     ├── customIndex.ts
     ├── indexGroup.ts
     ├── assignment.ts
-    ├── scopeSeries.ts
-    ├── createSeries.ts
-    ├── saveSeries.ts
-    ├── deleteSeries.ts
-    ├── commitSeriesPlate.ts
     └── trivial.ts
 
 # Note: clientOpId.ts (idempotency-key minting) and clientId.ts (per-tab SSE

@@ -4,18 +4,6 @@ import type { User } from "../../api";
 import { useAppState } from "../../state";
 import { Button, ModalShell, Kicker } from "../ui";
 
-/**
- * OnboardingFlow — shown when no username is in persisted state.
- *
- * Step 1 (name):
- *   - Drop-down of existing users; "+ New user…" opens a name input.
- *   - Picking an existing user short-circuits the tutorial.
- *
- * Step 2 (tutorial):
- *   - Four slides introducing the three workflow stages (triage, index,
- *     series) and the active-set interaction. Shown only to brand-new users
- *     whose `tutorialSeen` flag is still false.
- */
 const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
   {
     title: "From a directory to a corpus",
@@ -38,12 +26,6 @@ const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
       "image sits alongside, linked by q, so a trace peak and its ring light up " +
       "together: a crisp ring is real signal, a blob or streak is an artifact. The " +
       "phase call is the output.",
-  },
-  {
-    title: "Series: the point",
-    body:
-      "Build a cross-sample series from the Series tab to compare traces across " +
-      "conditions. The earlier stages prepare it; the series is what you came for.",
   },
 ];
 

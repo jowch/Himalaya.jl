@@ -32,9 +32,7 @@ function count_curation(db::SQLite.DB)
      assignments           = n("assignments"),
      assignment_members    = n("assignment_members"),
      exposure_tags         = n("exposure_tags"),
-     exposure_sources      = n("exposure_sources"),
-     series_members        = n("series_members"),
-     comparison_members    = n("comparison_members"))
+     exposure_sources      = n("exposure_sources"))
 end
 
 # ---------------------------------------------------------------------------
@@ -464,7 +462,7 @@ end
         end
     end
 
-    @testset "count_curation returns the twelve named tables" begin
+    @testset "count_curation returns the ten named tables" begin
         path, info = build_legacy_db(mktempdir())
         with_migration_db(path) do db
             # drop the collision non-survivor so the migration preflight passes
@@ -476,8 +474,7 @@ end
             c = count_curation(db)
             @test propertynames(c) == (:auto_peaks, :peak_curations, :indices,
                 :index_peaks, :index_group_members, :index_groups, :assignments,
-                :assignment_members, :exposure_tags, :exposure_sources,
-                :series_members, :comparison_members)
+                :assignment_members, :exposure_tags, :exposure_sources)
             @test all(v -> v isa Integer && v >= 0, values(c))
         end
     end
