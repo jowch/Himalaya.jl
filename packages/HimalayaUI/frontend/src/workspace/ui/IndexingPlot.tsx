@@ -75,7 +75,7 @@ export function IndexingPlot({ series }: { series: readonly IndexSeries[] }): JS
           );
         }}
       />
-      <div className="mt-1.5 min-h-[3.2em] text-xs text-ink-faint">
+      <div className="mt-1.5 h-[4.2em] overflow-y-auto text-xs text-ink-faint" data-testid="workspace-indexing-legend">
         {series.map((s) => (
           <p key={s.key} className="m-0 flex flex-wrap gap-x-2" data-testid="workspace-indexing-fit">
             <span style={{ color: s.color }}>{s.phase}</span>{" "}

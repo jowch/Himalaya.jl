@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
-export function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }): JSX.Element {
+export function Section({ title, aside, className, children }: { title: string; aside?: ReactNode; className?: string; children: ReactNode }): JSX.Element {
   return (
-    <section className="flex flex-col px-3.5 py-3">
+    <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")}>
       <header className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
         {aside && <span className="text-xs text-ink-faint">{aside}</span>}

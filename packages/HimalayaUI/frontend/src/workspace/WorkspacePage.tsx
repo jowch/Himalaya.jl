@@ -63,6 +63,7 @@ import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
+import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
@@ -120,11 +121,11 @@ function latticeParam(phase: string): string {
 function exposureRows(e: Exposure): [string, string][] {
   const rows: [string, string][] = [["File", e.filename ?? "—"]];
   if (e.kind !== "file") rows.push(["Kind", e.kind === "averaged" ? "Averaged" : "Subtracted"]);
-  if (e.exposure_time != null) rows.push(["Exposure", `${e.exposure_time.toFixed(1)} s`]);
   const i0 = e.incident_monitor;
   const i2 = e.transmitted_counts;
-  if (i0 != null) rows.push(["I₀", i0.toLocaleString("en-US", { maximumSignificantDigits: 4 })]);
-  if (i2 != null) rows.push(["I signal", Math.round(i2).toLocaleString("en-US")]);
+  rows.push(["Exposure", e.exposure_time != null ? `${e.exposure_time.toFixed(1)} s` : "—"]);
+  rows.push(["I₀", i0 != null ? i0.toLocaleString("en-US", { maximumSignificantDigits: 4 }) : "—"]);
+  rows.push(["I signal", i2 != null ? Math.round(i2).toLocaleString("en-US") : "—"]);
   return rows;
 }
 
@@ -686,6 +687,12 @@ export function WorkspacePage(): JSX.Element {
       }
       tools={
         <>
+          <Section
+            title="Indexing"
+            aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
+          >
+            <IndexingPlot series={indexSeries} />
+          </Section>
           {draft && draftBounds ? (
             <Section title="Custom index">
               <CustomIndexPanel
@@ -714,11 +721,8 @@ export function WorkspacePage(): JSX.Element {
               />
             </Section>
           )}
-          <Section title="Indexing">
-            <IndexingPlot series={indexSeries} />
-          </Section>
           {exposure && (
-            <Section title="Exposure" aside="← →">
+            <Section title="Exposure" aside="← →" className="mt-auto">
               <MetaList rows={exposureRows(exposure)} />
             </Section>
           )}
