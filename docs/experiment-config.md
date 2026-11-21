@@ -283,13 +283,27 @@ back-fills beam monitors, runs `scan_and_group!`, suggests role tags, and ends
 `complete` (stamping `last_scanned_at`) or `failed`. Every pass after the first
 sends `phase: "rescan"`.
 
-Role tags come from `suggest_labels!` (`label_suggestions.jl`). A sample whose
-name has a word such as `buffer`, `blank`, `hepes`, `agbeh` or `empty` gets a
-*suggested* Buffer, Calibrant or Empty capillary tag (source `ingest`). A sample
-that already has any role tag, suggested or confirmed, is left alone, so a
-rescan never brings back a suggestion the user removed or changed. A suggestion
+Role tags come from `suggest_labels!` (`label_suggestions.jl`, word lists in
+`ROLE_WORDS` and `SOLVENT_WORDS`). The name is split into words, each also tried
+without trailing digits:
+
+- `agbe`, `agbeh`, `behenate`, `calibrant` or `lab6` suggests Calibrant;
+- `empty`, `emptycap` or `emptycapillary` suggests Empty capillary;
+- `buffer`, `buf` or `blank` suggests Buffer;
+- `hepes`, `pbs` or `tris` suggests Buffer only when every other word is a
+  code (`S01`, `2`) or another buffer word, so `HEPES_S01` is a buffer and
+  `MO_HEPES_S01` or `DOPC_in_PBS` is not.
+
+The tag is *suggested*, with source `ingest`. A sample that already has any role
+tag, suggested, confirmed or removed, is left alone, so a rescan never brings
+back a suggestion the user removed or changed. The step runs at the end of every
+pass, after `scan_and_group!`. If it fails, the pass still ends `complete` and
+the failure is only logged. Experiments ingested before suggestions existed get
+them once, when the database is opened (`label_suggestions_v1`). A suggestion
 never picks a subtraction buffer by itself. It only puts tagged buffers first in
-the compare picker, where confirmed buffers come before suggested ones.
+the compare picker, where confirmed buffers come before suggested ones. Ranking
+buffers by their traces (no peaks, a flat trace, a low floor) is not built yet
+(#368).
 
 `ingest_has_work(db, id)` (`ingest.jl`) says whether a pass would change
 anything: an image (with its metadata file, when the folder has any) that has no

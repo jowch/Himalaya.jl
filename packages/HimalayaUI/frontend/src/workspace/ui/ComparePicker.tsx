@@ -19,7 +19,7 @@ export function ComparePicker({
   notes,
 }: Props): JSX.Element {
   const [q, setQ] = useState("");
-  const [cursor, setCursor] = useState(0);
+  const [cursorId, setCursorId] = useState<number | undefined>(undefined);
   const input = useRef<HTMLInputElement | null>(null);
   const root = useRef<HTMLDivElement | null>(null);
   useEffect(() => input.current?.focus(), []);
@@ -34,7 +34,9 @@ export function ComparePicker({
     const f = q.trim().toLowerCase();
     return f ? samples.filter((s) => s.name.toLowerCase().includes(f)) : samples;
   }, [samples, q]);
-  useEffect(() => setCursor(0), [q]);
+  useEffect(() => setCursorId(undefined), [q]);
+  const cursor = Math.max(0, shown.findIndex((s) => s.id === cursorId));
+  const moveTo = (i: number): void => setCursorId(shown[i]?.id);
   const pick = (s: CorpusSample | undefined): void => {
     if (!s) return;
     onPick(s.id);
@@ -54,10 +56,10 @@ export function ComparePicker({
           onClose();
         } else if (e.key === "ArrowDown") {
           e.preventDefault();
-          setCursor((c) => Math.max(0, Math.min(shown.length - 1, c + 1)));
+          moveTo(Math.max(0, Math.min(shown.length - 1, cursor + 1)));
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          setCursor((c) => Math.max(0, c - 1));
+          moveTo(Math.max(0, cursor - 1));
         } else if (e.key === "Enter") {
           e.preventDefault();
           pick(shown[cursor]);
@@ -79,8 +81,9 @@ export function ComparePicker({
             <button
               type="button"
               data-sample-id={s.id}
+              aria-label={notes?.get(s.id) ? `${s.name}, ${notes.get(s.id)}` : undefined}
               aria-current={i === cursor ? "true" : undefined}
-              onMouseEnter={() => setCursor(i)}
+              onMouseEnter={() => setCursorId(s.id)}
               onClick={() => pick(s)}
               className={"flex w-full items-baseline gap-2 px-3 py-1 text-left text-body " + (i === cursor ? "bg-row-cursor" : "")}
             >
