@@ -380,14 +380,10 @@ wipe). Without these rows the Focus comb, detector rings and assignment cart all
 render a fully-fitted custom index as claiming nothing.
 
 `drawn_ratios` bounds the scan to the reflections the MODAL DREW, as NORMALIZED
-ratios. The frontend's `SYMS[sym].Ms` (`lib/customIndex.ts`) is shorter than the
-core ratio series for five of eight phases (Pn3m 6 vs 16, Im3m 6 vs 10, Ia3d 6
-vs 8, Lamellar 5 vs 11, Hexagonal 6 vs 13); scanning the full series would claim
-reflections the user was never shown and let the rail's "explains N peaks"
-exceed the modal's "N of M land" for the same fit. A ratio set rather than a
-count — the two series are maintained in different languages and have drifted
-before; see `compute_snap`. `nothing` scans the whole series: correct only for a
-caller with no truncated display of its own.
+ratios, so the backend never claims a reflection the user was not shown. The
+frontend reads its reflection indices from `lib/phaseRatioIndices.json`, which
+`test_speculative.jl` checks against `phaseratios` (#342). `nothing` scans the
+whole series.
 
 The bound survives reanalysis without being persisted: the claims it produces
 are frozen into `speculative_peak_intents`, and `_persist_analysis_inner!` skips

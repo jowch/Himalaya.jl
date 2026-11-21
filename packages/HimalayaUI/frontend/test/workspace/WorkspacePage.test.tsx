@@ -693,8 +693,8 @@ describe("WorkspacePage", () => {
     state.indices = [{ ...index(2, "Pn3m", 0.9), lattice_d: a }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 6");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2 of 6 on peaks");
+    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 9");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2 of 9 on peaks");
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });
