@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 
 export type AppTheme = "system" | "light" | "dark";
 
@@ -59,13 +59,11 @@ export function effectiveTheme(theme: AppTheme, prefersDark: boolean): "light" |
   return theme;
 }
 
-export function useAppTheme(): { theme: AppTheme; isDark: boolean; toggle: () => void; followSystem: () => void } {
+export function useAppTheme(): { theme: AppTheme; isDark: boolean; choose: (next: AppTheme) => void } {
   const theme = useSyncExternalStore(subscribe, readTheme);
   const prefersDark = useSyncExternalStore(subscribe, systemDark);
   const isDark = effectiveTheme(theme, prefersDark) === "dark";
-  const toggle = useCallback(() => writeTheme(isDark ? "light" : "dark"), [isDark]);
-  const followSystem = useCallback(() => writeTheme("system"), []);
-  return { theme, isDark, toggle, followSystem };
+  return { theme, isDark, choose: writeTheme };
 }
 
 export function useDocumentTheme(): void {

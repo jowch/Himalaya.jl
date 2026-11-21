@@ -14,6 +14,7 @@
 #   DEMO_API_PORT  backend port                   [8080]
 #   DEMO_UI_PORT   Vite port                      [5173]
 #   DEMO_UI_MODE   dev (Vite dev server) or build (vite build, then vite preview) [dev]
+#   DEMO_DATA_FLAGS extra make_demo_data.jl flags when generating, e.g. --late-trace []
 # Vite stays in the foreground; Ctrl-C stops both servers.
 set -euo pipefail
 
@@ -45,7 +46,7 @@ if (( large )); then
   fi
 elif [[ ! -f "$DEMO_DIR/TRUTH.csv" ]]; then
   echo "No demo data at $DEMO_DIR; generating it (make demo-data)."
-  $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR"
+  $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR" ${DEMO_DATA_FLAGS:-}
 elif grep -q ',false,' "$DEMO_DIR/TRUTH.csv"; then
   echo "$DEMO_DIR was generated with --no-images (empty TIFFs); run make demo-data to regenerate it." >&2
   exit 1

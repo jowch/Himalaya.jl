@@ -3,7 +3,7 @@ import { act, render } from "@testing-library/react";
 import { useDocumentTheme, useAppTheme } from "../src/lib/theme";
 
 const KEY = "himalaya-ui:theme";
-let toggle: () => void = () => {};
+let choose: (next: "system" | "light" | "dark") => void = () => {};
 
 function App({ withWorkspace }: { withWorkspace: boolean }): JSX.Element {
   useDocumentTheme();
@@ -12,7 +12,7 @@ function App({ withWorkspace }: { withWorkspace: boolean }): JSX.Element {
 
 function Workspace(): JSX.Element {
   const theme = useAppTheme();
-  toggle = theme.toggle;
+  choose = theme.choose;
   return <div data-testid="ws" data-theme={theme.theme} />;
 }
 
@@ -35,7 +35,7 @@ describe("the theme picked in the workspace", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(document.documentElement).toHaveClass("dark");
     rerender(<App withWorkspace />);
-    act(() => toggle());
+    act(() => choose("light"));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
     expect(document.documentElement).not.toHaveClass("dark");
   });
@@ -51,7 +51,7 @@ describe("the theme picked in the workspace", () => {
     act(() => pickInAnotherTab("dark"));
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(getByTestId("ws")).toHaveAttribute("data-theme", "dark");
-    act(() => toggle());
+    act(() => choose("light"));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
     expect(getByTestId("ws")).toHaveAttribute("data-theme", "light");
   });

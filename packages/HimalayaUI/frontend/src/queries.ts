@@ -19,6 +19,7 @@ import {
   setSampleCallStateMutator,
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
+import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
@@ -331,6 +332,102 @@ export function useCommitCustomIndex(exposureId: number) {
   };
 }
 
+
+export interface EditReads {
+  peaks: (exposureId: number) => Promise<api.Peak[]>;
+  indices: (exposureId: number) => Promise<api.IndexEntry[]>;
+  knownIndices: (exposureId: number) => Promise<api.IndexEntry[]>;
+  assignment: (exposureId: number) => Promise<api.Assignment>;
+  labels: () => Promise<api.SampleLabel[]>;
+  bridges: () => Promise<api.SampleBridge[]>;
+}
+
+export interface EditOps {
+  addPhase: (exposureId: number, indexId: number) => void;
+  removePhase: (exposureId: number, indexId: number) => void;
+  setCallState: (sampleId: number, state: api.AssignmentState) => void;
+  setStatus: (sampleId: number, exposureId: number, status: api.Exposure["status"]) => void;
+  addPeak: (exposureId: number, q: number) => void;
+  removePeak: (exposureId: number, peakId: number) => void;
+  setPeakExcluded: (exposureId: number, peakId: number, excluded: boolean) => void;
+  commitCustom: (exposureId: number, phase: string, basis: number, ratios: number[]) => void;
+  deleteIndex: (exposureId: number, indexId: number) => void;
+  addLabel: (sampleId: number, label: string) => void;
+  removeLabel: (sampleId: number, label: string) => void;
+  setLabelColor: (label: string, color: api.LabelColor | null) => void;
+  bridge: (sampleId: number, toSampleId: number) => void;
+  unbridge: (sampleId: number) => void;
+  read: EditReads;
+  whenSaved: () => Promise<void>;
+  saving: () => boolean;
+}
+
+function queueBusy(qc: QueryClient): boolean {
+  return qc.getMutationCache().getAll().some((m) => m.state.status === "pending" && m.options.scope?.id === "queue");
+}
+
+function whenQueueIdle(qc: QueryClient): Promise<void> {
+  if (!queueBusy(qc)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const stop = qc.getMutationCache().subscribe(() => {
+      if (queueBusy(qc)) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
+export function useEditOps(experimentId: number): EditOps {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  const who = { username, clientId: CLIENT_ID };
+  const add = useQueueMutation(addAssignmentPhaseMutator, { ...who, exposureId: 0 });
+  const remove = useQueueMutation(removeAssignmentPhaseMutator, { ...who, exposureId: 0 });
+  const callState = useQueueMutation(setSampleCallStateMutator, { ...who, sampleId: 0 });
+  const status = useQueueMutation(setExposureStatusMutator, { ...who, sampleId: 0 });
+  const addPeak = useQueueMutation(peakAddMutator, { ...who, exposureId: 0 });
+  const removePeak = useQueueMutation(peakRemoveMutator, { ...who, exposureId: 0 });
+  const exclude = useQueueMutation(peakExcludeMutator, { ...who, exposureId: 0 });
+  const unexclude = useQueueMutation(peakUnexcludeMutator, { ...who, exposureId: 0 });
+  const custom = useQueueMutation(customIndexMutator, { ...who, exposureId: 0 });
+  const deleteIndex = useQueueMutation(deleteIndexMutator, { ...who, exposureId: 0 });
+  const labelScope = { ...who, experimentId };
+  const addLabel = useQueueMutation(addLabelMutator, labelScope);
+  const removeLabel = useQueueMutation(removeLabelMutator, labelScope);
+  const labelColor = useQueueMutation(setLabelColorMutator, who);
+  const bridge = useQueueMutation(bridgeSamplesMutator, labelScope);
+  const unbridge = useQueueMutation(unbridgeSampleMutator, labelScope);
+  const fresh = <T,>(queryKey: readonly unknown[], queryFn: () => Promise<T>): Promise<T> =>
+    qc.fetchQuery({ queryKey, queryFn, staleTime: 0 });
+  return {
+    addPhase: (exposureId, indexId) => add.mutateIn({ ...who, exposureId }, { indexId }),
+    removePhase: (exposureId, indexId) => remove.mutateIn({ ...who, exposureId }, { indexId }),
+    setCallState: (sampleId, state) => callState.mutateIn({ ...who, sampleId }, { state }),
+    setStatus: (sampleId, exposureId, next) => status.mutateIn({ ...who, sampleId }, { exposureId, status: next }),
+    addPeak: (exposureId, q) => addPeak.mutateIn({ ...who, exposureId }, { q }),
+    removePeak: (exposureId, peakId) => removePeak.mutateIn({ ...who, exposureId }, { peakId }),
+    setPeakExcluded: (exposureId, peakId, excluded) =>
+      (excluded ? exclude : unexclude).mutateIn({ ...who, exposureId }, { peakId }),
+    commitCustom: (exposureId, phase, basis, ratios) => custom.mutateIn({ ...who, exposureId }, { phase, basis, ratios }),
+    deleteIndex: (exposureId, indexId) => deleteIndex.mutateIn({ ...who, exposureId }, { indexId }),
+    addLabel: (sampleId, label) => addLabel.mutate({ sampleId, label }),
+    removeLabel: (sampleId, label) => removeLabel.mutate({ sampleId, label }),
+    setLabelColor: (label, color) => labelColor.mutate({ label, color }),
+    bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
+    unbridge: (sampleId) => unbridge.mutate({ sampleId }),
+    read: {
+      peaks: (exposureId) => fresh(queryKeys.peaks(exposureId), () => api.listPeaks(exposureId)),
+      indices: (exposureId) => fresh(queryKeys.indices(exposureId), () => api.listIndices(exposureId)),
+      knownIndices: (exposureId) =>
+        qc.ensureQueryData({ queryKey: queryKeys.indices(exposureId), queryFn: () => api.listIndices(exposureId) }),
+      assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
+      labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
+      bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+    },
+    whenSaved: () => whenQueueIdle(qc),
+    saving: () => queueBusy(qc),
+  };
+}
 
 export function useSetExposureStatus(sampleId: number) {
   const username = useAppState((s) => s.username);

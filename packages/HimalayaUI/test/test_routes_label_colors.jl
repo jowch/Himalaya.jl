@@ -41,6 +41,19 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
         end
     end
 
+    @testset "the eight colours match the frontend's list, in order" begin
+        api = read(joinpath(@__DIR__, "..", "frontend", "src", "api.ts"), String)
+        m = match(r"export const LABEL_COLORS = \[([^\]]*)\]", api)
+        @test m !== nothing
+        @test Tuple(String(x.captures[1]) for x in eachmatch(r"\"([a-z]+)\"", m.captures[1])) == HimalayaUI.LABEL_COLORS
+        for c in HimalayaUI.LABEL_COLORS
+            db = open_prepared_clone(mktempdir())
+            with_inproc_routes(db) do call
+                @test _set_color(call, "37C", c).status == 200
+            end
+        end
+    end
+
     @testset "invalid requests are refused" begin
         db = open_prepared_clone(mktempdir())
         with_inproc_routes(db) do call
