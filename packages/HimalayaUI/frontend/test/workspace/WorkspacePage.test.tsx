@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, SampleLabel, Trace } from "../../src/api";
+import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
@@ -21,10 +22,12 @@ const state = {
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
   traceError: false,
+  traceErr: null as Error | null,
   traceFetching: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
+  labels: [] as SampleLabel[],
   loads: [] as { samples: { flag: object | null }[] }[],
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
@@ -46,7 +49,7 @@ vi.mock("../../src/queries", () => ({
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
   useTrace: () => ({
-    data: state.trace, isError: state.traceError, isFetching: state.traceFetching,
+    data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching,
     fetchStatus: state.traceFetching ? "fetching" : "idle", refetch: traceRefetch,
   }),
   usePeaks: () => ({ data: state.peaks, fetchStatus: "idle" }),
@@ -60,6 +63,9 @@ vi.mock("../../src/queries", () => ({
   useBridges: () => ({ data: state.bridges }),
   useBridgeSamples: recorder("bridge"),
   useUnbridgeSample: recorder("unbridge"),
+  useLabels: () => ({ data: state.labels }),
+  useAddLabel: recorder("addLabel"),
+  useRemoveLabel: recorder("removeLabel"),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
@@ -188,10 +194,12 @@ beforeEach(() => {
   state.frameAssignments = new Map();
   state.trace = undefined;
   state.traceError = false;
+  state.traceErr = null;
   state.traceFetching = false;
   state.peaks = [];
   state.compareTraces = new Map();
   state.bridges = [];
+  state.labels = [];
   state.loads = [];
   state.ingest = undefined;
   state.rescanError = false;
@@ -418,6 +426,49 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
+  it("says the detector recorded nothing when the shown frame's trace is dark, and adds I₀'s sign as support", () => {
+    state.trace = makeTrace(0.001);
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: -0.1 })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent(
+      "No counts on the detector: the beam was likely off or the shutter closed. I₀ also reads below zero.",
+    );
+  });
+
+  it("says the detector recorded nothing on a dark trace even when I₀ looks fine", () => {
+    state.trace = makeTrace(0.001);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: 1.5 })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-plot-notice").textContent).toBe(
+      "No counts on the detector: the beam was likely off or the shutter closed.",
+    );
+  });
+
+  it("never calls a frame with counts beam-off, whatever I₀ reads", () => {
+    state.trace = makeTrace(20);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
+  });
+
+  it("says a frame has no integrated trace instead of offering a retry, with I₀'s sign as a hint", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent(
+      "No integrated trace for this frame. I₀ reads below zero, so the beam was likely off.",
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("says a frame has no integrated trace without guessing when I₀ is unknown", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
+  });
+
   it("opens on the representative frame", () => {
     renderAt("/experiments/1/workspace/10");
     expect(currentFrame()).toBe("Frame 2");
@@ -537,6 +588,88 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "x" });
     fireEvent.keyDown(window, { key: "1" });
     expect(calls).toEqual([]);
+  });
+
+  it("shows the sample's tags under its heading, with suggestions dashed and confirmed by a click", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const row = screen.getByTestId("workspace-tags");
+    const chips = screen.getByTestId("workspace-tag-chips");
+    expect([...chips.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-state")])).toEqual([
+      ["37C", "confirmed"],
+      ["buffer", "suggested"],
+    ]);
+    const buffer = chips.querySelector<HTMLElement>("[data-tag='buffer']")!;
+    expect(buffer).toHaveAttribute("data-tag-standard", "true");
+    expect(within(buffer).getByText("Buffer")).toBeInTheDocument();
+    expect(within(chips.querySelector<HTMLElement>("[data-tag='37C']")!).queryByText(", suggested")).toBeNull();
+    expect(chips.querySelector("[data-tag='37C']")).not.toHaveAttribute("data-tag-standard");
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm tag Buffer" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Remove tag 37C" }));
+    expect(calls).toEqual([
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } },
+      { hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } },
+    ]);
+  });
+
+  it("the palette opens the tag picker, which suggests experiment tags and adds the pick on Enter", () => {
+    state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    pickView("Add tag to A1");
+    const picker = screen.getByRole("dialog", { name: "Add a tag" });
+    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
+    const input = within(picker).getByLabelText("Tag name");
+    fireEvent.change(input, { target: { value: "bufer" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByRole("dialog", { name: "Add a tag" })).toBeNull();
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+  });
+
+  it("a new tag needs the Create row, and Backspace in the empty picker removes the last confirmed tag, never a suggestion", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "+ Tag" }));
+    const input = within(screen.getByRole("dialog", { name: "Add a tag" })).getByLabelText("Tag name");
+    fireEvent.keyDown(input, { key: "Backspace" });
+    fireEvent.change(input, { target: { value: "heated" } });
+    expect(screen.getByRole("button", { name: "Create “heated”" })).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(calls).toEqual([
+      { hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } },
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "heated" } },
+    ]);
+  });
+
+  it("the sample filter matches tags as well as names", () => {
+    state.labels = [{ id: 1, sample_id: 13, label: "empty capillary", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.change(screen.getByLabelText("Filter samples"), { target: { value: "capill" } });
+    const list = screen.getByTestId("workspace-samples");
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+    expect(within(list).getByText("A4")).toBeInTheDocument();
+  });
+
+  it("keeps the tag row mounted with no tags and no user, so the plot below never moves", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/11");
+    const row = screen.getByTestId("workspace-tags");
+    expect(row.querySelector("[data-testid='workspace-tag-chips'] [data-tag]")).toBeNull();
+  });
+
+  it("offers no tag editing before a user is set", () => {
+    state.username = undefined;
+    state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    const row = screen.getByTestId("workspace-tags");
+    expect(within(row).queryAllByRole("button")).toHaveLength(0);
+    expect(row.querySelector("[data-tag='37C']")).not.toBeNull();
   });
 
   it("filters the sample list by name", () => {
@@ -1010,8 +1143,12 @@ describe("WorkspacePage", () => {
 
   it("the Custom index button in the indexing section opens a custom index", () => {
     renderAt("/experiments/1/workspace/10");
-    fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
+    const button = screen.getByRole("button", { name: /Custom index/ });
+    expect(button).toHaveTextContent("Custom index I");
+    fireEvent.click(button);
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveTextContent("Custom index Esc");
   });
 
   it("disables the Custom index button before a user is set", () => {
@@ -1025,6 +1162,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
     const text = section.textContent ?? "";
+    expect(text).toContain("KindSingle");
     expect(text).toContain("Exposure—");
     expect(text).toContain("I₀—");
     expect(text).toContain("I signal—");

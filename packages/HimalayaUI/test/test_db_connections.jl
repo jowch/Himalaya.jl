@@ -234,6 +234,50 @@ end
     end
 end
 
+@testset "the event stream keeps draining while every request thread runs CPU-bound work" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        try
+            with_test_server(db) do port, base
+                received = Ref("")
+                opened = Channel{Any}(1)
+                stream = @async try
+                    HTTP.open("GET", "$base/api/events"; readtimeout = 30) do io
+                        startread(io)
+                        put!(opened, io)
+                        while !eof(io)
+                            received[] *= String(readavailable(io))
+                        end
+                    end
+                catch
+                end
+                @test timedwait(() -> isready(opened), 10.0) === :ok
+                @test timedwait(() -> !isempty(HimalayaUI.SSE_SUBSCRIBERS[]), 10.0) === :ok
+
+                busy_until = time() + 4.0
+                spin() = while time() < busy_until
+                    GC.safepoint()
+                end
+                busy = [Threads.@spawn(:default, spin()) for _ in 1:2Threads.nthreads(:default)]
+                frames = 200
+                for i in 1:frames
+                    HimalayaUI._fanout_frame!("event: probe\ndata: $i\n\n")
+                    sleep(0.005)
+                end
+                foreach(wait, busy)
+
+                @test timedwait(() -> count("event: probe", received[]) >= frames, 10.0) === :ok
+                @test count("event: probe", received[]) == frames
+                @test length(HimalayaUI.SSE_SUBSCRIBERS[]) == 1
+                isready(opened) && close(take!(opened).stream)
+                timedwait(() -> istaskdone(stream), 10.0)
+            end
+        finally
+            DBInterface.close!(db)
+        end
+    end
+end
+
 @testset "a reader left mid-query by one GET still sees later commits in the next" begin
     mktempdir() do tmp
         db = open_db(joinpath(tmp, "test.db"))

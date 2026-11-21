@@ -1054,11 +1054,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # analysis state durable but without the matching `analyze_run` user_actions
     # row. Same shape as #34 Bug 3 (which bracketed inputs_hash markers into
     # persist_analysis!'s tx) and #39 (which bracketed diff_update + trace_hash
-    # into a single tx); now all four sit in one outer tx. Route callers that
-    # already wrap in `with_idempotency` see this as a SAVEPOINT inside their
-    # outer tx — the explicit `defer_broadcast=true` they pass keeps the
-    # broadcast contract unchanged. CLI / `POST /api/experiments/{id}/analyze`
-    # callers (no enclosing tx) get all-or-nothing atomicity. `findpeaks`
+    # into a single tx); now all four sit in one outer tx. `findpeaks`
     # itself is pure compute and stays outside the tx to keep the critical
     # section short.
     #

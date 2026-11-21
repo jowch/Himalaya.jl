@@ -5,10 +5,6 @@ export const KNOWN_PHASES = [
 
 export type KnownPhase = typeof KNOWN_PHASES[number];
 
-export const CUBIC_PHASES: ReadonlySet<string> = new Set([
-  "Pn3m", "Im3m", "Ia3d", "Fm3m", "Fd3m",
-]);
-
 export const PHASE_PALETTE: Readonly<Record<KnownPhase, string>> = {
   Pn3m:      "oklch(0.520 0.100 200)",
   Im3m:      "oklch(0.480 0.140 258)",

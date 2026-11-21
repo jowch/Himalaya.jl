@@ -19,7 +19,7 @@ export function CustomIndexButton({ open, disabled, onClick }: Props): JSX.Eleme
         (open ? "border-accent bg-accent-wash text-ink" : "border-dashed border-hair-strong text-ink-soft hover:text-ink")
       }
     >
-      Custom index <Kbd>I</Kbd>
+      Custom index <Kbd>{open ? "Esc" : "I"}</Kbd>
     </button>
   );
 }

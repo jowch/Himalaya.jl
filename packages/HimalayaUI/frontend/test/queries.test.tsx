@@ -82,6 +82,4 @@ describe("queries", () => {
 
   // useAddPeak / useRemovePeak / useSetPeakExcluded migrated to the queue
   // framework (M2.2) — see test/queries-peaks.test.tsx for the new coverage.
-  // useReanalyzeExposure migrated to the queue framework (M2.5) — see
-  // test/queries-reanalyze.test.tsx for the new coverage.
 });

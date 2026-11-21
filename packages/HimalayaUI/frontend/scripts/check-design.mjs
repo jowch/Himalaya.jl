@@ -29,25 +29,18 @@ const SRC_DIR = join(HERE, "..", "src");
 // `relPath` (POSIX-normalized, relative to src/) against the shared color-authoring allowlist.
 //
 // Color-authoring allowlist: the files where color is legitimately authored (palette tables,
-// computed coloring, figure-export presets, the canvas/detector layers that paint pixels, the
+// computed coloring, the canvas/detector layers that paint pixels, the
 // app entry that seeds CSS vars). Rule #3 (arbitrary-value color UTILITIES that need a runtime
 // color) already exempts them; rule #5 (raw color literals anywhere) MUST exempt the same set —
 // otherwise the palette layer can never be clean, since authoring a palette necessarily writes
 // oklch()/rgba() literals. (Rules #1/#2/#4 take NO allowlist.)
 const COLOR_AUTHORING_ALLOWLIST = new Set([
   "phases.ts",
-  "lib/comparison/coloring.ts",
-  // MemberHeatmapLayer/CrossTraceTrackingLayer author phase color; they now live under
-  // src/print/export/ and are covered by that prefix's isExcluded() exemption — no entry needed.
-  // print/main.tsx authors the configureBoneyard oklch skeleton defaults (the sole entry).
   "print/main.tsx",
 ]);
-// figure-export/** is allowlisted by prefix (the whole export palette dir).
-const COLOR_AUTHORING_ALLOW_PREFIXES = ["lib/figure-export/"];
 
 function colorAuthoringAllowed(relPath) {
-  if (COLOR_AUTHORING_ALLOWLIST.has(relPath)) return true;
-  return COLOR_AUTHORING_ALLOW_PREFIXES.some((p) => relPath.startsWith(p));
+  return COLOR_AUTHORING_ALLOWLIST.has(relPath);
 }
 
 const COLOR_LITERAL = "(?:oklch|oklab|hsla?|rgba?)\\(|#[0-9a-fA-F]{3,8}\\b";
@@ -131,18 +124,12 @@ function relToSrc(absPath) {
   return relative(SRC_DIR, absPath).split(sep).join("/");
 }
 
-// src/print/ui/**, src/print/plot/**, src/print/detector/**, src/print/comb/**,
-// and src/print/export/** are excluded (appearance authored — primitives, the
-// trace-plot engine, the detector rendering layer, the comb/residual rendering
-// layer, and the deliberately un-branded export renderer).
 function isExcluded(relPath) {
   return (
     relPath.startsWith("print/ui/") ||
     relPath.startsWith("workspace/ui/") ||
     relPath.startsWith("print/plot/") ||
-    relPath.startsWith("print/detector/") ||
-    relPath.startsWith("print/comb/") ||
-    relPath.startsWith("print/export/")   // CleanFigure: deliberately un-branded export idiom (Arial + literal hex)
+    relPath.startsWith("print/detector/")
   );
 }
 

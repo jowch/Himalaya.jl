@@ -11,7 +11,7 @@
  * negative placeholder into the assignment cache. onMutate is a no-op; onSuccess
  * writes the real IndexEntry into the indices cache and INVALIDATES
  * queryKeys.assignment on the fresh id (the next read picks up the canonical
- * cart with the new member). affectsExposurePeaks stays false.
+ * cart with the new member).
  */
 import * as api from "../../../api";
 import type { IndexEntry, AuthOpts } from "../../../api";
@@ -63,5 +63,4 @@ export const customIndexMutator: Mutator<CustomIndexInput, CustomIndexScope, api
     // the next read reflects the new member (never splice a placeholder).
     qc.invalidateQueries({ queryKey: queryKeys.assignment(p.exposureId) });
   },
-  affectsExposurePeaks: () => false,
 };

@@ -432,37 +432,6 @@ function register_experiments_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
-    @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        # Verify the experiment exists before iterating its samples.
-        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
-            "SELECT 1 FROM experiments WHERE id = ?", [id])))
-        exists || return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
-
-        samples   = get_samples(db, id)
-        analyzed  = 0
-        skipped   = String[]
-        for sm in samples
-            for ex in get_exposures(db, Int(sm.id))
-                try
-                    analyze_exposure!(db, Int(ex.id))
-                    analyzed += 1
-                catch e
-                    push!(skipped, "$(sm.name)/$(ex.filename): $(sprint(showerror, e))")
-                end
-            end
-        end
-
-        log_action!(db, req; action = "analyze",
-            entity_type = "experiment", entity_id = id,
-            note = "analyzed=$analyzed skipped=$(length(skipped))")
-
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
-    end
-
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
@@ -618,6 +587,9 @@ function register_experiments_routes!()
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         DELETE FROM sample_bridges WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_labels WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         DELETE FROM sample_calls WHERE sample_id IN

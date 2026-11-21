@@ -75,12 +75,12 @@ export function IndexingPlot({ series }: { series: readonly IndexSeries[] }): JS
           );
         }}
       />
-      <div className="mt-1.5 h-[4.2em] overflow-y-auto text-xs text-ink-faint" data-testid="workspace-indexing-legend">
+      <div className="mt-1.5 h-[3lh] overflow-y-auto text-xs text-ink-faint" data-testid="workspace-indexing-legend">
         {series.map((s) => (
-          <p key={s.key} className="m-0 flex flex-wrap gap-x-2" data-testid="workspace-indexing-fit">
-            <span style={{ color: s.color }}>{s.phase}</span>{" "}
-            {s.lattice !== null && <span>{`${s.param ?? "a"} = ${s.lattice.toFixed(1)} Å`}</span>}{" "}
-            {s.r2 !== null && <span>{`R² ${s.r2.toFixed(4)}`}</span>}{" "}
+          <p key={s.key} className="m-0 truncate" data-testid="workspace-indexing-fit">
+            <span className="mr-1" style={{ color: s.color }}>{s.phase}</span>{" "}
+            {s.lattice !== null && <span className="mr-1">{`${s.param ?? "a"} = ${s.lattice.toFixed(1)} Å`}</span>}{" "}
+            {s.r2 !== null && <span className="mr-1">{`R² ${s.r2.toFixed(4)}`}</span>}{" "}
             <span>{`${s.fit.landed}/${s.fit.points.length} on peaks`}</span>
           </p>
         ))}

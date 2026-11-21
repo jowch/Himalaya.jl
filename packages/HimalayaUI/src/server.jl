@@ -114,10 +114,13 @@ function register_routes!()
             _try_put!(pending, SSE_HEARTBEAT_FRAME)
         end
 
+        drain = Threads.@spawn :interactive for frame in pending
+            write(stream, frame)
+        end
         try
-            for frame in pending
-                write(stream, frame)
-            end
+            wait(drain)
+        catch err
+            err isa TaskFailedException ? throw(err.task.exception) : rethrow()
         finally
             close(heartbeat)
             lock(SSE_LOCK) do
@@ -139,6 +142,7 @@ function register_routes!()
     register_resolve_routes!()
     register_grouping_routes!()
     register_bridge_routes!()
+    register_label_routes!()
     register_fs_routes!()
 end
 

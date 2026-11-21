@@ -7,8 +7,8 @@
  * score logic, so we snapshot the prior cache for rollback and let SSE
  * invalidation (in `applyRemoteToCache`) + `onSuccess` produce the final state.
  *
- * The backend POST returns the freshly-built index (same shape as
- * GET /api/indices/:id). On success we splice it into the indices cache.
+ * The backend POST returns the freshly-built index; on success we splice it
+ * into the indices cache.
  */
 import * as api from "../../../api";
 import type { IndexEntry, AuthOpts } from "../../../api";
@@ -74,5 +74,4 @@ export const createSpeculativeMutator: Mutator<
       qc.invalidateQueries({ queryKey: indicesKey });
     }
   },
-  affectsExposurePeaks: () => false,
 };
