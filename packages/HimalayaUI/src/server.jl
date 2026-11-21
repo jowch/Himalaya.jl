@@ -38,6 +38,8 @@ const SSE_OPENING_FRAME   = "retry: 3000\n\n"
 const SSE_HEARTBEAT_FRAME = "event: heartbeat\ndata: {}\n\n"
 
 function current_db()
+    reader = _scoped_reader()
+    reader === nothing || return reader
     db = _DB_REF[]
     db === nothing && error("no DB bound; call serve(db; ...) or start_test_server!")
     db
@@ -45,6 +47,13 @@ end
 
 function bind_db!(db::SQLite.DB)
     _DB_REF[] = db
+    _reset_reader_pool!(db)
+    nothing
+end
+
+function unbind_db!()
+    _DB_REF[] = nothing
+    _reset_reader_pool!(nothing)
     nothing
 end
 
@@ -275,7 +284,9 @@ function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
             lk = _rescan_lock(experiment_id)
             trylock(lk) || return  # scan already in flight; skip this tick
             try
-                _rescan_tick!(db, experiment_id; cheap_check_fn = cheap_check_fn)
+                with_background_db(db) do bg
+                    _rescan_tick!(bg, experiment_id; cheap_check_fn = cheap_check_fn)
+                end
             catch err
                 @warn "rescan tick failed" experiment_id = experiment_id exception = err
             finally
@@ -345,7 +356,7 @@ function start_background!(db::SQLite.DB)
     start_gc_timer!(db)
     rearm_rescan_schedulers!(db)
     Threads.@spawn try
-        backfill_all_monitors!(db)
+        with_background_db(backfill_all_monitors!, db)
     catch err
         @warn "boot beam monitor backfill failed" exception = err
     end
@@ -489,21 +500,15 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     # runs cooperatively on HTTP.jl's single interactive thread — even with
     # JULIA_NUM_THREADS > 1 — so concurrent requests serialize. See #115.
     #
-    # All routes still share one `_DB_REF` connection. Writes serialize at
+    # Writes share one `_DB_REF` connection. Writes serialize at
     # the Julia level via `_DB_WRITE_LOCK` (above) — every `SQLite.transaction`
     # site on the singleton (`with_idempotency`, default `apply_event!`,
     # `persist_analysis!`, `analyze_exposure!`, the `gc_idempotent_responses!`
     # DELETE) acquires it. This closes the `SQLite.transaction` TOCTOU race
     # (#122 Race 1: loud 500s + silent savepoint nesting) and the
     # writer-vs-writer `db.stmt_wrappers` Dict race (#122 Race 2).
-    #
-    # Residual: reader-vs-writer `stmt_wrappers` mutation remains possible
-    # because reads don't take the lock (and shouldn't — WAL is the whole
-    # point of #115). Empirically rare; surfaces as intermittent test flakes
-    # or sporadic 500s. The real fix is per-request reader connections;
-    # tracked as a follow-up to #122.
     Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false,
-                 parallel = true)
+                 parallel = true, middleware = [db_connection_middleware])
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
@@ -513,7 +518,7 @@ function start_test_server!(db::SQLite.DB, port::Int)
     # request ordering is a bug.
     Oxygen.serve(; host = "127.0.0.1", port, async = true,
                  show_banner = false, docs = false, metrics = false,
-                 parallel = true)
+                 parallel = true, middleware = [db_connection_middleware])
     _wait_for_server(port)
 end
 
@@ -522,7 +527,7 @@ function stop_test_server!()
     stop_all_rescan_timers!()
     Oxygen.terminate()
     Oxygen.resetstate()
-    _DB_REF[] = nothing
+    unbind_db!()
     SSE_SUBSCRIBERS[] = []
     empty!(OP_LOCKS)
     nothing
@@ -535,7 +540,7 @@ function find_free_port()
     Int(port)
 end
 
-function _wait_for_server(port::Int; timeout_s = 5.0)
+function _wait_for_server(port::Int; timeout_s = 60.0)
     deadline = time() + timeout_s
     while time() < deadline
         try
