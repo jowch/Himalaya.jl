@@ -133,8 +133,12 @@ end
                                "X-Username"   => "alice"])
                 @test r.status == 200
             end
-            kinds = _frame_kinds(_drain_frames(pending))
-            @test "set_exposure_status" in kinds
+            frames = _drain_frames(pending)
+            @test "set_exposure_status" in _frame_kinds(frames)
+            frame = only(filter(f -> occursin("\"set_exposure_status\"", f), frames))
+            payload = JSON3.read(match(r"data: (.*)", frame).captures[1]).payload
+            @test payload.status == "accepted"
+            @test payload.sample_id == s_id
         end
     end
 

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
+import { renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { CorpusSample, Exposure } from "../../src/api";
 
 vi.mock("../../src/api", () => ({
@@ -12,55 +14,93 @@ vi.mock("../../src/api", () => ({
 
 import * as api from "../../src/api";
 import { queryKeys } from "../../src/queries";
-import { neighbourSamples, prefetchSample } from "../../src/workspace/prefetch";
+import { neighbourSamples, PREFETCH_DWELL_MS, usePrefetchNeighbours, type PrefetchTarget } from "../../src/workspace/prefetch";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
-  return { id, experiment_id: 1, name: `S${id}`, notes: null, tags: [], q_units: "A^-1", ...over };
+  return { id, experiment_id: 1, name: `S${id}`, notes: null, tags: [], q_units: "A^-1", representative_exposure_id: id * 10 + 1, ...over };
 }
 
-function exposure(id: number, over: Partial<Exposure> = {}): Exposure {
+function exposure(id: number, sampleId: number): Exposure {
   return {
-    id, sample_id: 1, filename: `f${id}.tif`, kind: "file", selected: false, status: null,
-    image_path: "x.tif", image_version: "v1", tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
+    id, sample_id: sampleId, filename: `f${id}.tif`, kind: "file", selected: false, status: null, exposure_time: 1,
+    image_path: "x.tif", image_version: "v1", tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null,
   };
 }
 
-const requested: string[] = [];
+const framesOf = (sampleId: number): Exposure[] => [1, 2, 3].map((n) => exposure(sampleId * 10 + n, sampleId));
+const full = (id: number): string => `/api/exposures/${id}/image?v=v1`;
+const thumb = (id: number): string => `/api/exposures/${id}/image?thumb=1&v=v1`;
+
+const images: FakeImage[] = [];
+const requested = (): string[] => images.map((i) => i.requested);
 
 class FakeImage {
-  fetchPriority = "auto";
   decoding = "auto";
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  requested = "";
+  current = "";
+  constructor() {
+    images.push(this);
+  }
   set src(url: string) {
-    requested.push(url);
+    if (url) this.requested = url;
+    this.current = url;
+  }
+  get src(): string {
+    return this.current;
   }
 }
 
+async function loadAll(): Promise<void> {
+  for (let round = 0; round < 20; round++) {
+    const pending = images.filter((i) => i.current && i.onload);
+    if (pending.length === 0) return;
+    for (const img of pending) {
+      const done = img.onload!;
+      img.onload = null;
+      done();
+    }
+    await vi.advanceTimersByTimeAsync(0);
+  }
+}
+
+const list = [
+  sample(1, { assignment_state: "indexed", phase: "Pn3m" }),
+  sample(2),
+  sample(3),
+  sample(4, { assignment_state: "indexed", phase: "Im3m" }),
+  sample(5),
+];
+
+function target(currentId: number, over: Partial<PrefetchTarget> = {}): PrefetchTarget {
+  return { samples: list, currentId, exposures: framesOf(currentId), shownId: currentId * 10 + 1, settled: true, ...over };
+}
+
+function setup(initial: PrefetchTarget, qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children);
+  const hook = renderHook((t: PrefetchTarget) => usePrefetchNeighbours(t), { initialProps: initial, wrapper });
+  return { qc, wrapper, ...hook };
+}
+
 beforeEach(() => {
-  requested.length = 0;
+  vi.useFakeTimers();
+  images.length = 0;
   vi.stubGlobal("Image", FakeImage);
-  vi.mocked(api.listExposures).mockResolvedValue([exposure(11), exposure(12, { status: "rejected" })]);
-  vi.mocked(api.getTrace).mockResolvedValue({ q: [1, 2], I: [3, 4], sigma: [0, 0], frames: [] } as never);
+  vi.mocked(api.listExposures).mockImplementation(async (id) => framesOf(id));
+  vi.mocked(api.getTrace).mockResolvedValue({ q: [1, 2], I: [3, 4], sigma: [0, 0] } as never);
   vi.mocked(api.listPeaks).mockResolvedValue([]);
   vi.mocked(api.listIndices).mockResolvedValue([]);
-  vi.mocked(api.getAssignment).mockResolvedValue({ exposure_id: 12, state: "null", members: [] });
+  vi.mocked(api.getAssignment).mockImplementation(async (id) => ({ exposure_id: id, state: "null", members: [] }));
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe("neighbourSamples", () => {
-  const list = [
-    sample(1, { assignment_state: "indexed", phase: "Pn3m" }),
-    sample(2),
-    sample(3, { assignment_state: "indexed", phase: "Im3m" }),
-    sample(4, { assignment_state: "form_factor" }),
-    sample(5),
-  ];
-
   it("returns the previous, the next and the next unreviewed sample", () => {
     expect(neighbourSamples(list, 3).map((s) => s.id)).toEqual([2, 4, 5]);
   });
@@ -78,51 +118,111 @@ describe("neighbourSamples", () => {
   });
 });
 
-describe("prefetchSample", () => {
-  it("fills the caches the workspace reads, without waiting for the exposure list to pick the frame", async () => {
-    const qc = new QueryClient();
-    let releaseExposures: () => void = () => {};
-    vi.mocked(api.listExposures).mockReturnValue(
-      new Promise((resolve) => {
-        releaseExposures = () => resolve([exposure(11)]);
-      }),
-    );
-    const done = prefetchSample(qc, sample(1, { representative_exposure_id: 11 }), { fullImages: false });
-    await Promise.resolve();
-    expect(api.getTrace).toHaveBeenCalledWith(11);
-    expect(api.listPeaks).toHaveBeenCalledWith(11);
-    expect(api.listIndices).toHaveBeenCalledWith(11);
-    expect(api.getAssignment).toHaveBeenCalledWith(11);
-    releaseExposures();
-    await done;
-    expect(qc.getQueryData(queryKeys.exposures(1))).toEqual([exposure(11)]);
-    expect(qc.getQueryData(queryKeys.trace(11))).toBeDefined();
-    expect(qc.getQueryData(queryKeys.assignment(11))).toBeDefined();
-  });
-
-  it("preloads every frame's thumbnail, and full images only when asked", async () => {
-    const qc = new QueryClient();
-    await prefetchSample(qc, sample(1, { representative_exposure_id: 11 }), { fullImages: false });
-    expect(requested).toEqual(["/api/exposures/11/image?thumb=1&v=v1", "/api/exposures/12/image?thumb=1&v=v1"]);
-
-    requested.length = 0;
-    await prefetchSample(new QueryClient(), sample(1, { representative_exposure_id: 11 }), { fullImages: true });
-    expect(requested).toContain("/api/exposures/11/image?v=v1");
-    expect(requested).toContain("/api/exposures/12/image?v=v1");
-  });
-
-  it("does not refetch data that is already cached and fresh", async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
-    await prefetchSample(qc, sample(1, { representative_exposure_id: 11 }), { fullImages: false });
-    await prefetchSample(qc, sample(1, { representative_exposure_id: 11 }), { fullImages: false });
-    expect(api.listExposures).toHaveBeenCalledTimes(1);
-    expect(api.getTrace).toHaveBeenCalledTimes(1);
-  });
-
-  it("still caches the exposure list for a sample with no kept frame", async () => {
-    const qc = new QueryClient();
-    await prefetchSample(qc, sample(1, { representative_exposure_id: null }), { fullImages: false });
+describe("usePrefetchNeighbours", () => {
+  it("does nothing until the open sample's own data has settled", async () => {
+    const { rerender } = setup(target(3, { settled: false }));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.listExposures).not.toHaveBeenCalled();
     expect(api.getTrace).not.toHaveBeenCalled();
-    expect(qc.getQueryData(queryKeys.exposures(1))).toHaveLength(2);
+    expect(images).toHaveLength(0);
+
+    rerender(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    expect(api.listExposures).toHaveBeenCalled();
+  });
+
+  it("waits for the user to stay on a sample before fetching anything", async () => {
+    setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS - 10);
+    expect(api.listExposures).not.toHaveBeenCalled();
+    expect(images).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(api.listExposures).toHaveBeenCalled();
+  });
+
+  it("loads the shown frame's full image and the neighbours' data first, then the other frames one at a time", async () => {
+    const { qc } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+
+    expect(requested()[0]).toBe(full(31));
+    expect(requested()).not.toContain(full(32));
+    expect(vi.mocked(api.listExposures).mock.calls.map((c) => c[0]).sort()).toEqual([2, 4, 5]);
+    expect(vi.mocked(api.getTrace).mock.calls.map((c) => c[0]).sort()).toEqual([21, 41, 51]);
+    expect(qc.getQueryData(queryKeys.trace(41))).toBeDefined();
+    expect(qc.getQueryData(queryKeys.assignment(51))).toBeDefined();
+    expect(requested()).toEqual(expect.arrayContaining([thumb(21), thumb(22), thumb(43), thumb(53)]));
+
+    const before32 = requested().length;
+    await loadAll();
+    const after = requested().slice(before32);
+    expect(after.slice(0, 2)).toEqual([full(32), full(33)]);
+    expect(after.slice(2).sort()).toEqual([full(21), full(41), full(51)]);
+    expect(requested()).not.toContain(thumb(31));
+    expect(requested()).not.toContain(full(22));
+  });
+
+  it("starts the next frame only after the previous one has loaded", async () => {
+    setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    for (const img of images.filter((i) => i.requested !== full(31))) img.onload?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requested()).not.toContain(full(32));
+    images.find((i) => i.requested === full(31))!.onload!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requested()).toContain(full(32));
+    expect(requested()).not.toContain(full(33));
+  });
+
+  it("skips a sample the user passes through quickly", async () => {
+    const { rerender } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS - 50);
+    rerender(target(4));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    expect(api.listExposures).not.toHaveBeenCalledWith(2, expect.anything());
+    expect(requested()).not.toContain(full(31));
+    expect(requested()[0]).toBe(full(41));
+  });
+
+  it("cancels in-flight images and unobserved queries on a move, but not a query the next sample now reads", async () => {
+    const signals = new Map<number, AbortSignal>();
+    vi.mocked(api.getTrace).mockImplementation((id, opts) => {
+      signals.set(id, opts!.signal!);
+      return new Promise(() => {});
+    });
+    const { qc, wrapper, rerender } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    const shown = images.find((i) => i.requested === full(31))!;
+    expect(shown.current).toBe(full(31));
+
+    renderHook(() => useQuery({ queryKey: queryKeys.trace(41), queryFn: () => new Promise(() => {}) }), { wrapper });
+    rerender(target(4));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(shown.current).toBe("");
+    expect(signals.get(21)!.aborted).toBe(true);
+    expect(signals.get(51)!.aborted).toBe(true);
+    expect(signals.get(41)!.aborted).toBe(false);
+    expect(qc.getQueryState(queryKeys.trace(41))?.fetchStatus).toBe("fetching");
+  });
+
+  it("keeps loading when the user steps to another frame of the same sample", async () => {
+    const { rerender } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    const shown = images.find((i) => i.requested === full(31))!;
+    const calls = vi.mocked(api.getTrace).mock.calls.length;
+    rerender(target(3, { shownId: 32 }));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    expect(shown.current).toBe(full(31));
+    expect(api.getTrace).toHaveBeenCalledTimes(calls);
+  });
+
+  it("does not restart when the sample list is refetched with the same neighbours", async () => {
+    const { rerender } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    const count = images.length;
+    rerender(target(3, { samples: list.map((s) => ({ ...s })), exposures: framesOf(3) }));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    expect(images).toHaveLength(count);
+    expect(api.listExposures).toHaveBeenCalledTimes(3);
   });
 });
