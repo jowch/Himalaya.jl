@@ -182,155 +182,95 @@ function stop_gc_timer!()
     nothing
 end
 
-const RESCAN_TIER_INTERVALS = Dict("fast" => 3600.0, "daily" => 86400.0)
+const INGEST_LOCKS = Dict{Int, ReentrantLock}()
+const INGEST_LOCKS_MU = ReentrantLock()
 
-const RESCAN_TIMERS = Dict{Int, @NamedTuple{timer::Timer, first_tick::Float64, interval::Float64}}()
-const RESCAN_TIMERS_MU = ReentrantLock()
-
-# Per-experiment reentrancy guard (spec §9.4: protect with an explicit
-# ReentrantLock, not the DB_WRITE_LOCK which carries write-ordering semantics).
-# Keyed by experiment_id. A timer tick attempts trylock; if already locked, the
-# tick is skipped (a scan is already in flight).
-const RESCAN_LOCKS = Dict{Int, ReentrantLock}()
-const RESCAN_LOCKS_MU = ReentrantLock()
-
-"""
-    _rescan_lock(experiment_id) -> ReentrantLock
-
-Return the per-experiment reentrancy lock, creating it on first access.
-"""
-function _rescan_lock(experiment_id::Int)
-    lock(RESCAN_LOCKS_MU) do
-        get!(RESCAN_LOCKS, experiment_id, ReentrantLock())
-    end
+_ingest_lock(experiment_id::Int) = lock(INGEST_LOCKS_MU) do
+    get!(INGEST_LOCKS, experiment_id, ReentrantLock())
 end
 
-"""
-    stop_rescan_scheduler!(experiment_id)
+ingest_running(experiment_id::Int) = islocked(_ingest_lock(experiment_id))
 
-Stop and remove the rescan Timer for `experiment_id`. No-op if no timer is
-registered. Called before `DELETE /api/experiments/{id}` so the timer callback
-cannot fire against a non-existent row.
-"""
-function stop_rescan_scheduler!(experiment_id::Int)
-    lock(RESCAN_TIMERS_MU) do
-        t = get(RESCAN_TIMERS, experiment_id, nothing)
-        if t !== nothing
-            close(t.timer)
-            delete!(RESCAN_TIMERS, experiment_id)
-        end
-    end
-    nothing
-end
-
-function rescan_interval(experiment_id::Int)
-    lock(RESCAN_TIMERS_MU) do
-        t = get(RESCAN_TIMERS, experiment_id, nothing)
-        t === nothing ? nothing : t.interval
-    end
-end
-
-"""
-    stop_all_rescan_timers!()
-
-Close all per-experiment rescan timers. Called on server shutdown (mirror
-`stop_gc_timer!`).
-"""
-function stop_all_rescan_timers!()
-    lock(RESCAN_TIMERS_MU) do
-        for (_, t) in RESCAN_TIMERS
-            try; close(t.timer); catch; end
-        end
-        empty!(RESCAN_TIMERS)
-    end
-    nothing
-end
-
-"""
-    start_rescan_scheduler!(db, experiment_id; tick_interval_seconds, cheap_check_fn)
-
-Arm a per-experiment rescan Timer. On each tick the libuv timer thread does the
-MINIMUM possible work — it only `@spawn`s the tick body. EVERYTHING that touches
-the per-experiment `ReentrantLock` (both `trylock` AND `unlock`) runs INSIDE the
-spawned task:
-
-1. `@spawn` the body so the libuv timer thread is never blocked.
-2. The spawned body `trylock`s the per-experiment lock; if already held (a scan
-   is in flight) it returns immediately, skipping this tick.
-3. With the lock held, it calls `_rescan_tick!`, then `unlock`s in a `finally`.
-
-CRITICAL (Julia `ReentrantLock` is task-owned): the `trylock` and the matching
-`unlock` MUST execute on the SAME task. If `trylock` ran on the timer thread and
-`unlock` ran on the `@spawn`'d task, the unlock would throw "unlock from wrong
-thread", the lock would never release, and every later tick would be silently
-skipped. That is why both calls are inside the `@spawn` block below.
-
-`cheap_check_fn` is an optional change-detection seam that defaults to the real
-`cheap_change_check` (Phase B). Task 8's backoff test injects a stub here to drive
-the tier transitions deterministically without filesystem fixtures; the production
-path passes nothing and the real cheap-check runs. There is no `scan_fn` seam —
-the tick calls `scan_and_group!` directly (a no-op on a directory with no matching
-triplets, so the test's empty temp dir needs no stub).
-
-Idempotent: calling twice closes the previous timer before installing a new one.
-"""
-function start_rescan_scheduler!(db::SQLite.DB, experiment_id::Int;
-                                  tick_interval_seconds::Real = RESCAN_TIER_INTERVALS["fast"],
-                                  first_tick_seconds::Real = tick_interval_seconds,
-                                  cheap_check_fn = nothing)
-    source = _poolable(db.file) ? String(db.file) : db
-    timer = Timer(first_tick_seconds; interval = tick_interval_seconds) do _
-        # Do NOTHING that touches the per-experiment lock on the timer thread.
-        # Spawn first, then trylock/unlock both on the spawned task (same-task
-        # ownership — see docstring).
-        Threads.@spawn begin
-            lk = _rescan_lock(experiment_id)
-            trylock(lk) || return  # scan already in flight; skip this tick
-            try
-                with_background_db(source) do bg
-                    _rescan_tick!(bg, experiment_id; cheap_check_fn = cheap_check_fn)
-                end
-            catch err
-                @warn "rescan tick failed" experiment_id = experiment_id exception = err
-            finally
-                unlock(lk)
+function _set_ingest_status!(db::SQLite.DB, experiment_id::Int, status::AbstractString; scanned::Bool = false)
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            if scanned
+                DBInterface.execute(db,
+                    "UPDATE experiments SET ingest_status = ?, last_scanned_at = ? WHERE id = ?",
+                    [status, format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"), experiment_id])
+            else
+                DBInterface.execute(db, "UPDATE experiments SET ingest_status = ? WHERE id = ?",
+                    [status, experiment_id])
             end
         end
     end
-
-    lock(RESCAN_TIMERS_MU) do
-        old = get(RESCAN_TIMERS, experiment_id, nothing)
-        old === nothing || close(old.timer)
-        RESCAN_TIMERS[experiment_id] = (timer = timer, first_tick = Float64(first_tick_seconds),
-                                        interval = Float64(tick_interval_seconds))
-    end
-    nothing
 end
 
 """
-    rearm_rescan_schedulers!(db)
+    run_ingest!(db, experiment_id; phase=nothing) -> Symbol
 
-Re-arm the per-experiment rescan timers on server boot (6c-2). The registry
-(`RESCAN_TIMERS`) is in-memory, so a restart drops every scheduler; without this
-an already-ingested experiment would never auto-rescan again until someone
-triggers a manual scan. Each experiment whose ingest has completed resumes at
-its persisted `last_scan_tier`; a `stopped` experiment stays unarmed.
-Per-experiment failures are logged, never fatal (one bad row must not abort boot).
+Bring one experiment up to date with its folder: back-fill beam monitors, then
+`scan_and_group!`, which inserts new exposures and analyzes every exposure that
+is new, never analyzed, whose trace has since appeared, or whose analysis is from
+an older `ANALYSIS_VERSION`. Every trigger (create, Rescan, opening the
+experiment, boot) goes through here, so one experiment never has two passes at
+once: a second caller waits, then runs its own pass, which is a cheap no-op when
+nothing changed in between. Returns `:ok` or `:failed`. Streams the ingest SSE frames; `phase`
+is `"rescan"` for every pass after the first.
 """
-function rearm_rescan_schedulers!(db::SQLite.DB)
-    rows = try
-        Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, last_scan_tier FROM experiments WHERE ingest_status = 'complete'"))
-    catch err
-        @warn "rearm_rescan_schedulers!: query failed" exception = err
-        return nothing
+function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Nothing} = nothing, force::Bool = false)
+    lk = _ingest_lock(experiment_id)
+    lock(lk)
+    try
+        with_background_db(db) do db
+            extra = phase === nothing ? (;) : (; phase)
+            _set_ingest_status!(db, experiment_id, "scanning")
+            broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, extra...)
+            try
+                try_backfill_monitors!(db, experiment_id)
+                scan_and_group!(db, experiment_id; retry_failed = force,
+                    on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
+                        kind = "ingest_progress", processed = p, total = t, stage = stage, extra...))
+                _set_ingest_status!(db, experiment_id, "complete"; scanned = true)
+                broadcast_progress!(experiment_id; kind = "ingest_complete", processed = 0, total = 0)
+                :ok
+            catch err
+                @warn "ingest failed" experiment_id exception = err
+                _set_ingest_status!(db, experiment_id, "failed")
+                broadcast_progress!(experiment_id; kind = "ingest_failed",
+                    processed = 0, total = 0, error = sprint(showerror, err))
+                :failed
+            end
+        end
+    finally
+        unlock(lk)
     end
+end
+
+function _ingest_phase(db::SQLite.DB, experiment_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT last_scanned_at FROM experiments WHERE id = ?", [experiment_id]))
+    (isempty(rows) || ismissing(first(rows).last_scanned_at)) ? nothing : "rescan"
+end
+
+"""
+    resume_ingests!(db)
+
+Finish whatever a restart or an upgrade left undone: every experiment still
+marked `scanning`, or with work by `ingest_has_work` (new files, traces that
+have appeared, exposures never analyzed or analyzed by an older version), gets
+one `run_ingest!` pass. Called from `start_background!` on a spawned task.
+"""
+function resume_ingests!(db::SQLite.DB)
+    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, ingest_status FROM experiments ORDER BY id"))
     for r in rows
+        id = Int(r.id)
         try
-            arm_for_tier!(db, Int(r.id), coalesce(r.last_scan_tier, "fast");
-                first_tick_seconds = RESCAN_TIER_INTERVALS["fast"])
+            stuck = coalesce(r.ingest_status, "") == "scanning"
+            (stuck || ingest_has_work(db, id)) || continue
+            run_ingest!(db, id; phase = _ingest_phase(db, id))
         catch err
-            @warn "rearm_rescan_schedulers!: failed to arm" experiment_id = Int(r.id) exception = err
+            @warn "resume_ingests!: experiment skipped" experiment_id = id exception = err
         end
     end
     nothing
@@ -355,145 +295,23 @@ function backfill_all_monitors!(db::SQLite.DB)
     nothing
 end
 
-function start_background!(db::SQLite.DB)
+function start_background!(db::SQLite.DB; resume::Bool = true)
     start_gc_timer!(db)
-    rearm_rescan_schedulers!(db)
     Threads.@spawn try
-        with_background_db(backfill_all_monitors!, db)
+        with_background_db(db) do bg
+            backfill_all_monitors!(bg)
+            resume && resume_ingests!(bg)
+        end
     catch err
-        @warn "boot beam monitor backfill failed" exception = err
+        @warn "boot background work failed" exception = err
     end
 end
 
-function arm_for_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
-                       interval = get(RESCAN_TIER_INTERVALS, tier, nothing),
-                       first_tick_seconds = interval)
-    interval === nothing ? stop_rescan_scheduler!(experiment_id) :
-        start_rescan_scheduler!(db, experiment_id; tick_interval_seconds = interval,
-            first_tick_seconds = min(first_tick_seconds, interval))
-end
-
-function set_rescan_tier!(db::SQLite.DB, experiment_id::Int, tier::AbstractString;
-                          interval = get(RESCAN_TIER_INTERVALS, tier, nothing))
-    lock(_DB_WRITE_LOCK) do
-        SQLite.transaction(db) do
-            DBInterface.execute(db, """
-                UPDATE experiments
-                   SET last_scan_tier         = ?,
-                       consecutive_empty_ticks = 0
-                 WHERE id = ?
-            """, [tier, experiment_id])
-        end
-    end
-    arm_for_tier!(db, experiment_id, tier; interval = interval)
-end
-
-"""
-    _rescan_tick!(db, experiment_id; cheap_check_fn=nothing, kwargs...)
-
-One tick of the per-experiment rescan scheduler. Called from the `@spawn`'d
-body inside the Timer callback so the libuv timer thread is never blocked.
-
-Change detection runs `cheap_check_fn(db, experiment_id)` when a seam is injected
-(Task 8's backoff test), otherwise the real `cheap_change_check(db, experiment_id)`
-(Phase B). On a detected change it runs `scan_and_group!(db, experiment_id)`. Both
-Phase B functions resolve the experiment's `data_dir` from the row themselves, so
-this tick threads no path.
-
-Steps:
-1. Read `(last_scan_tier, consecutive_empty_ticks)`; if the experiment is gone, return.
-2. Determine `changed::Bool`.
-3. If changed: run the scan, reset `consecutive_empty_ticks`, re-arm at the `fast` tier.
-4. If not changed: increment the counter; advance fast→daily at `ticks_before_daily`,
-   daily→stopped at `ticks_before_stop`, resetting the counter on each transition.
-5. Persist `last_scan_tier` + `consecutive_empty_ticks` so restarts don't reset
-   quiet experiments to the fast tier.
-
-kwargs (tunable thresholds — defaults match spec §9.4; exposed for testing):
-- `fast_interval`: seconds between fast-tier ticks (default `RESCAN_TIER_INTERVALS["fast"]`, 1 h)
-- `daily_interval`: seconds between daily-tier ticks (default `RESCAN_TIER_INTERVALS["daily"]`, 24 h)
-- `ticks_before_daily`: consecutive empty fast ticks before advancing to daily (default 6)
-- `ticks_before_stop`: consecutive empty daily ticks before stopping (default 3)
-"""
-function _rescan_tick!(db::SQLite.DB, experiment_id::Int;
-                        cheap_check_fn = nothing,
-                        fast_interval::Real    = RESCAN_TIER_INTERVALS["fast"],
-                        daily_interval::Real   = RESCAN_TIER_INTERVALS["daily"],
-                        ticks_before_daily::Int = 6,
-                        ticks_before_stop::Int  = 3)
-
-    # Single existence + state read. Empty ⇒ experiment deleted between timer arm
-    # and tick (the DELETE route stops the timer first, so this is belt-and-suspenders).
-    row = Tables.rowtable(DBInterface.execute(db,
-        "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id = ?",
-        [experiment_id]))
-    isempty(row) && return
-
-    # Change detection: injected seam (test) or the real cheap_change_check. Both
-    # take (db, experiment_id) and resolve data_dir themselves.
-    try_backfill_monitors!(db, experiment_id)
-    changed = try
-        cheap_check_fn !== nothing ? cheap_check_fn(db, experiment_id) :
-                                     cheap_change_check(db, experiment_id)
-    catch err
-        @warn "cheap change-check failed" experiment_id = experiment_id exception = err
-        false
-    end
-
-    if changed
-        # Drive the corpus "analyzing" surface: phase="rescan" so the frontend maps
-        # these frames to the inline ProgressBar (not the initial-scan GroupingReviewPage).
-        # A terminal frame (complete/failed) MUST follow ingest_started or the surface
-        # would stick — the frontend clears ingestInFlight only on a terminal frame.
-        broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, phase = "rescan")
-        try
-            # 3-arg on_progress: `stage` names the bar segment, `phase` selects the
-            # surface. THIRD call site of this lambda shape (the two in
-            # routes_experiments.jl are the others) -- keep them in step, an arity
-            # mismatch here MethodErrors on the first discovered file and the catch
-            # below buries it in a @warn + ingest_failed.
-            scan_and_group!(db, experiment_id;
-                on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
-                    kind = "ingest_progress", processed = p, total = t,
-                    phase = "rescan", stage = stage))
-            broadcast_progress!(experiment_id; kind = "ingest_complete", processed = 0, total = 0)
-        catch err
-            @warn "scan failed during rescan tick" experiment_id = experiment_id exception = err
-            broadcast_progress!(experiment_id; kind = "ingest_failed",
-                processed = 0, total = 0, error = sprint(showerror, err))
-        end
-        set_rescan_tier!(db, experiment_id, "fast"; interval = fast_interval)
-        return
-    end
-
-    # No change — increment tick counter and check backoff thresholds.
-    tier      = String(row[1].last_scan_tier)
-    new_ticks = Int(row[1].consecutive_empty_ticks) + 1
-
-    if tier == "fast" && new_ticks >= ticks_before_daily
-        set_rescan_tier!(db, experiment_id, "daily"; interval = daily_interval)
-    elseif tier == "daily" && new_ticks >= ticks_before_stop
-        set_rescan_tier!(db, experiment_id, "stopped")
-    else
-        # Stay in current tier, just increment the counter
-        lock(_DB_WRITE_LOCK) do
-            SQLite.transaction(db) do
-                DBInterface.execute(db, """
-                    UPDATE experiments
-                       SET consecutive_empty_ticks = ?
-                     WHERE id = ?
-                """, [new_ticks, experiment_id])
-            end
-        end
-    end
-    nothing
-end
-
-function boot!(db::SQLite.DB)
+function boot!(db::SQLite.DB; resume::Bool = true)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
-    start_background!(db)
+    start_background!(db; resume)
 end
 
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
@@ -512,7 +330,7 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
-    boot!(db)
+    boot!(db; resume = false)
     # Match production's threading model so the test suite exercises the
     # same scheduling as `serve`. Any test that depends on single-threaded
     # request ordering is a bug.
@@ -524,7 +342,6 @@ end
 
 function stop_test_server!()
     stop_gc_timer!()
-    stop_all_rescan_timers!()
     Oxygen.terminate()
     Oxygen.resetstate()
     unbind_db!()

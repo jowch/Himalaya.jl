@@ -23,6 +23,19 @@ struct ExposureMeta
     prp          ::Union{NamedTuple, Nothing}  # parse_prp result; nothing if no .prp
 end
 
+function tif_listing(data_dir::AbstractString, tif_pattern::AbstractString)
+    tif_parts = split(tif_pattern, "{name}"; limit=2)
+    length(tif_parts) == 2 || error("tif_pattern must contain {{name}}: $tif_pattern")
+    tif_prefix_literal = String(tif_parts[1])
+    tif_suffix = String(tif_parts[2])
+    scan_subdir = dirname(tif_prefix_literal)
+    tif_scan_dir = isempty(scan_subdir) ? String(data_dir) : joinpath(data_dir, scan_subdir)
+    isdir(tif_scan_dir) || return nothing
+    tif_files = sort!(filter(f -> startswith(f, tif_prefix_literal) && endswith(f, tif_suffix),
+                             readdir(tif_scan_dir)))
+    (tif_scan_dir, tif_files, tif_suffix)
+end
+
 """
     scan_directory(data_dir, analysis_dir;
                    tif_pattern = "{name}.tif",
@@ -46,24 +59,9 @@ function scan_directory(
     sidecar(base, stem, pattern) =
         (p = joinpath(base, replace(pattern, "{name}" => stem)); isfile(p) ? p : nothing)
 
-    # Derive the literal TIF suffix from the pattern (e.g. "{name}.tif" → ".tif").
-    tif_parts = split(tif_pattern, "{name}"; limit=2)
-    length(tif_parts) == 2 || error("tif_pattern must contain {{name}}: $tif_pattern")
-    tif_prefix_literal = String(tif_parts[1])  # e.g. "" for "{name}.tif"
-    tif_suffix = String(tif_parts[2])           # e.g. ".tif"
-
-    # Enumerate all files in data_dir that match the TIF pattern (exact suffix).
-    scan_subdir = dirname(tif_prefix_literal)
-    tif_scan_dir = isempty(scan_subdir) ? String(data_dir) : joinpath(data_dir, scan_subdir)
-
-    if !isdir(tif_scan_dir)
-        return ExposureMeta[]
-    end
-
-    tif_files = filter(readdir(tif_scan_dir)) do f
-        startswith(f, tif_prefix_literal) && endswith(f, tif_suffix)
-    end
-    sort!(tif_files)
+    listing = tif_listing(data_dir, tif_pattern)
+    listing === nothing && return ExposureMeta[]
+    tif_scan_dir, tif_files, tif_suffix = listing
 
     # Strip the TIF suffix to get stems, then pair each stem with its sidecars.
     #

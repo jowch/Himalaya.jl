@@ -29,6 +29,7 @@ import {
   useTrace,
   useUnbridgeSample,
   useTriggerScan,
+  useCheckForNewFilesOnOpen,
 } from "../queries";
 import { useScanState } from "../hooks/useScanState";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
@@ -160,6 +161,7 @@ export function WorkspacePage(): JSX.Element {
   const scan = useScanState(experimentId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   const triggerScan = useTriggerScan(experimentId);
+  useCheckForNewFilesOnOpen(experimentId);
   const loads = useLoads(experimentId);
   const flagged = useMemo(
     () => (loads.data ?? []).flatMap((l) => l.samples).filter((s) => s.flag !== null).length,
