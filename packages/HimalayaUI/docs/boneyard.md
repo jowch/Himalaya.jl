@@ -45,7 +45,7 @@ isPending  = data === undefined        // also true for disabled queries
 ```
 
 A query becomes "disabled" when its selection key is `undefined` (e.g.
-`useExposure(undefined)` while no exposure is selected). Disabled queries
+`useTrace(undefined)` while no exposure is selected). Disabled queries
 have `data === undefined` and `isPending === true` forever, but they
 shouldn't render a skeleton — there's no fetch happening. Background
 refetches over already-cached data also have `isPending === false` (data

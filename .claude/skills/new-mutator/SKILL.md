@@ -37,7 +37,7 @@ packages/HimalayaUI/src/routes_peaks.jl                                 ← with
 packages/HimalayaUI/src/idempotency.jl                                  ← with_idempotency contract
 ```
 
-If the new mutator has a placeholder-id (peak/message/tag insertions), `peakAdd.ts` is the template. If it's a state flip (excluded/select/status), `peakSetExcluded.ts` or `setExposureStatusMutator` in `trivial.ts`. If it bundles related ops on the same scope, `indexGroup.ts`.
+If the new mutator has a placeholder-id (peak or label insertions), `peakAdd.ts` is the template. If it's a state flip (excluded/select/status), `peakSetExcluded.ts` or `setExposureStatusMutator` in `trivial.ts`. If it bundles related ops on the same scope, `indexGroup.ts`.
 
 ### 2. Decide the kind name and OpKind addition
 
@@ -64,11 +64,10 @@ Required fields:
 - `onMutate(payload, qc): RollbackContext` — write optimistic effect, snapshot prior cache, return `{restore}` closure
 - `request(payload, signal): Promise<TResponse>` — call `api.<route>(...)` with `authOpts(payload.username, payload.clientId, payload.clientOpId)`
 - `onSuccess(payload, response, qc)` — replace placeholders with server-assigned ids, write `analysis_inputs_hash` if peak-affecting
-- `affectsExposurePeaks?: () => boolean` — `true` for peak/reanalyze ops; gates `useExposureHasPendingPeakOps`. Default false; only set to true if `useSpeculativeSnap` should suspend during this op.
 
 **Cross-cutting invariants** (regression-tested; don't violate):
-- **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/optimisticId.ts` — shared monotonic counter across mutators, no collisions.
-- **Q-tolerance comparisons** use `peakQTol(q)` from `lib/peakQTol.ts` (mirrors Julia's `MAX(1e-6, |q|*0.001)`). Never use bare `< 1e-6`.
+- **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/queue/optimisticId.ts` — shared monotonic counter across mutators, no collisions.
+- **Q-tolerance comparisons** use `peakQTol(q)` from `lib/queue/peakQTol.ts` (mirrors Julia's `MAX(1e-6, |q|*0.001)`). Never use bare `< 1e-6`.
 - **Snapshot prior cache value before any setQueryData.** The restore closure must be self-contained.
 - **Don't blanket-invalidate in onSuccess.** SSE post_state via applyRemoteToCache handles cross-tab. Only invalidate if SSE coverage is genuinely missing for this kind.
 
@@ -153,4 +152,3 @@ All tests green; build clean (TS strict + `exactOptionalPropertyTypes`).
 - ❌ Broadcasting inside the with_idempotency closure. Defer via `_enqueue_post_commit_broadcast!` or use `defer_broadcast=true`.
 - ❌ Using `< 1e-6` for q comparisons. Use `peakQTol(q)`.
 - ❌ Module-local optimistic-id counter. Use `nextOptimisticId()` from the shared util.
-- ❌ Setting `affectsExposurePeaks: () => true` for tag/message/status ops. Only peak ops + reanalyze affect the peak set.

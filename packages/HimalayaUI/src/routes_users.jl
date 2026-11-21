@@ -56,19 +56,4 @@ function register_users_routes!()
             JSON3.write(Dict(:id => uid, :username => username,
                              :first_name => first_name, :last_name => last_name)))
     end
-
-    @get "/api/users/{username}/actions" function(req::HTTP.Request, username::String)
-        db = current_db()
-        urows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM users WHERE username = ?", [username]))
-        isempty(urows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "user not found")))
-
-        uid  = Int(urows[1].id)
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, timestamp, action, entity_type, entity_id, note
-             FROM user_actions WHERE user_id = ? ORDER BY id DESC", [uid]))
-        rows_to_json(rows)
-    end
 end

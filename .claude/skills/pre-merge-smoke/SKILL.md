@@ -15,7 +15,7 @@ Before merging any PR that touches:
 - `lib/queue/mutators/*` (mutator additions or refactors)
 - `routes_peaks.jl`, `routes_analysis.jl`, or any route emitting `apply_event!`
 - `applyRemoteToCache.ts` (SSE-driven cache merge)
-- `CustomIndexModal.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
+- `workspace/ui/CustomIndexPanel.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
 - `App.tsx` SSE wiring or `attachPersistence`/`rehydrate` calls
 
 For non-queue PRs, a clean unit + integration test run is enough; this skill is overkill.
@@ -46,32 +46,27 @@ Open the preview at `http://127.0.0.1:8080` (backend serves frontend from `front
 
 ### 3. Walk each smoke step
 
-Use the `preview_*` browser tools to exercise each scenario. Report pass/fail per step with a concise note.
+Drive the browser with `bin/verify` (`snapshot`, `click`, `press`, `screenshot`; see the verify-himalaya skill), and use a short Playwright script for the steps that need a second tab or a patched `fetch`. Report pass/fail per step with a concise note.
 
 **Step 1 — Peak exclude is instant + no flicker**
 - Navigate to an exposure with auto peaks.
-- Alt-click a peak (or whatever exclude UX is current — verify with `preview_snapshot`).
+- Click a peak on the workspace plot (a click disables or re-enables it; confirm with `bin/verify snapshot`).
 - Assert: peak's `data-excluded` flips within one frame; no banner appears; indices update without observable round-trip.
 
 **Step 2 — Two-tab cross-tab sync**
-- Open the same exposure in a second tab (use `tabs_create_mcp`).
+- Open the same sample in a second tab.
 - In tab A, exclude a different peak.
-- In tab B (within ~1s), assert the same peak shows excluded without manual refresh. Use `preview_snapshot` or poll `data-excluded`.
+- In tab B (within ~1s), assert the same peak shows excluded without manual refresh. Poll `data-excluded`.
 
 **Step 3 — Validation toast on network failure**
-- Use `preview_eval` to inject `window._origFetch = fetch; window.fetch = () => Promise.reject(new TypeError('offline'))` (or use DevTools network throttling if available).
+- Inject `window._origFetch = fetch; window.fetch = () => Promise.reject(new TypeError('offline'))` (or use DevTools network throttling if available).
 - Trigger a curation. Assert: validation toast appears OR infrastructure banner appears (depending on classification — 4xx vs network).
-- Restore fetch: `preview_eval` `window.fetch = window._origFetch`.
+- Restore fetch: `window.fetch = window._origFetch`.
 
 **Step 4 — sessionStorage rehydrate on reload**
 - Trigger a curation that takes long enough to inspect (use a slow network throttle).
-- Reload the tab mid-flight via `preview_eval` `location.reload()`.
+- Reload the tab mid-flight.
 - Assert: after reload, the queue rehydrates and the op replays via HTTP. Cache settles to the correct state. No duplicate row in `peak_curations` (verify via SQL if SQLite MCP is available, or via the peaks list count).
-
-**Step 5 — Speculative builder during pending peak op**
-- Open the speculative builder modal.
-- Trigger a peak op while the modal is open (e.g. via the trace).
-- Assert: modal shows "updating to latest…" subtext; snap suggestions are gated; after the peak op settles, snap suggestions populate.
 
 ### 4. Telemetry checks (optional, query-based)
 
@@ -124,7 +119,7 @@ If all steps pass: "All N smoke steps pass; OK to merge."
 
 - Stop the backend: `kill %1` (or whichever job number).
 - Close any browser tabs the skill opened.
-- Reset any `window.fetch` overrides via `preview_eval`.
+- Reset any `window.fetch` overrides.
 
 ## Fallback triggers
 
