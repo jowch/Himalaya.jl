@@ -176,6 +176,9 @@ export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
 export const deleteExperiment = (id: number, opts?: AuthOpts) =>
   request<{ id: number; deleted: boolean }>("DELETE", `/api/experiments/${id}`, undefined, opts);
 
+export const patchExperiment = (id: number, patch: { name?: string; description?: string | null }, opts?: AuthOpts) =>
+  request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
+
 export const triggerScan = (id: number, opts?: AuthOpts, force = false) =>
   request<Experiment>("POST", `/api/experiments/${id}/scan`, { force }, opts);
 
@@ -298,18 +301,21 @@ export const addLabel = (sampleId: number, label: string, opts?: AuthOpts): Prom
 export const removeLabel = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
   request<SampleLabel[]>("DELETE", `/api/samples/${sampleId}/labels?label=${encodeURIComponent(label)}`, undefined, opts);
 
-export const TAG_COLORS = ["violet", "blue", "teal", "rose", "stone"] as const;
-export type TagColor = (typeof TAG_COLORS)[number];
+export const restoreLabelSuggestion = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("POST", `/api/samples/${sampleId}/labels/suggested`, { label }, opts);
 
-export interface TagColorEntry {
+export const LABEL_COLORS = ["rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone"] as const;
+export type LabelColor = (typeof LABEL_COLORS)[number];
+
+export interface LabelColorEntry {
   label: string;
-  color: TagColor;
+  color: LabelColor;
 }
 
-export const listTagColors = (): Promise<TagColorEntry[]> => request<TagColorEntry[]>("GET", "/api/tag-colors");
+export const listLabelColors = (): Promise<LabelColorEntry[]> => request<LabelColorEntry[]>("GET", "/api/label-colors");
 
-export const setTagColor = (label: string, color: TagColor | null, opts?: AuthOpts): Promise<TagColorEntry[]> =>
-  request<TagColorEntry[]>("PUT", "/api/tag-colors", { label, color }, opts);
+export const setLabelColor = (label: string, color: LabelColor | null, opts?: AuthOpts): Promise<LabelColorEntry[]> =>
+  request<LabelColorEntry[]>("PUT", "/api/label-colors", { label, color }, opts);
 
 // Exposures
 export interface Exposure {

@@ -431,6 +431,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # exhaustiveness so the rebuild_views_from_log! property test treats
     # them as known kinds rather than silently falling through.
     kind == "update_sample" && return nothing
+    kind == "experiment_updated" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 
@@ -452,13 +453,20 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             [Int(entity_id), String(payload.label)])
         return nothing
     end
+    if kind == "label_suggestion_restored"
+        DBInterface.execute(db,
+            """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'suggested', 'ingest')
+               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'suggested', source = 'ingest'""",
+            [Int(entity_id), String(payload.label)])
+        return nothing
+    end
     if kind == "tag_color_set"
         color = get(payload, :color, nothing)
         if color === nothing
-            DBInterface.execute(db, "DELETE FROM tag_colors WHERE label = ? COLLATE NOCASE", [String(payload.label)])
+            DBInterface.execute(db, "DELETE FROM label_colors WHERE label = ? COLLATE NOCASE", [String(payload.label)])
         else
             DBInterface.execute(db,
-                """INSERT INTO tag_colors (label, color) VALUES (?, ?)
+                """INSERT INTO label_colors (label, color) VALUES (?, ?)
                    ON CONFLICT(label COLLATE NOCASE) DO UPDATE SET color = excluded.color""",
                 [String(payload.label), String(color)])
         end

@@ -17,7 +17,7 @@ describe("DirectoryPickerField (Phase E1)", () => {
     // the inner <input>. Fire on the inner input so the handler runs.
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
     fireEvent.keyDown(input, { key: "Tab" });
-    expect(onChange).toHaveBeenCalledWith("/Volumes/data/ssrl/2026_04/1p7m");
+    expect(onChange).toHaveBeenCalledWith("/Volumes/data/ssrl/2026_04/1p7m/");
   });
 
   it("arrow-down moves the active suggestion, Enter completes it", () => {
@@ -30,9 +30,34 @@ describe("DirectoryPickerField (Phase E1)", () => {
       />,
     );
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(input, { key: "ArrowDown" }); // moves to index 1
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onChange).toHaveBeenCalledWith("/a/two");
+    expect(onChange).toHaveBeenCalledWith("/a/two/");
+  });
+
+  it("highlights no suggestion until the user moves into the list", () => {
+    render(<DirectoryPickerField value="/a/o" onChange={() => {}} suggestions={["/a/one", "/a/two"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    expect(screen.getAllByRole("option").filter((o) => o.getAttribute("aria-selected") === "true")).toHaveLength(0);
+  });
+
+  it("Enter with no suggestion highlighted submits the typed folder instead of completing a subfolder", () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/beamtime/setup1" onChange={onChange} onSubmit={onSubmit} suggestions={["/beamtime/setup1/analysis", "/beamtime/setup1/data"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Enter submits when there are no suggestions at all", () => {
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/beamtime/setup1/data" onChange={() => {}} onSubmit={onSubmit} suggestions={[]} />);
+    fireEvent.keyDown(screen.getByTestId("dirpicker-input").querySelector("input")!, { key: "Enter" });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it("opening the suggestion popover keeps focus in the input, not the dialog panel", () => {
@@ -77,6 +102,46 @@ describe("DirectoryPickerField (Phase E1)", () => {
     expect(opt).toHaveAttribute("title", "/Users/me/projects/himalaya-devdata/mini-1p7m");
     // … and selecting it completes the FULL path into the field.
     fireEvent.click(opt);
-    expect(onChange).toHaveBeenCalledWith("/Users/me/projects/himalaya-devdata/mini-1p7m");
+    expect(onChange).toHaveBeenCalledWith("/Users/me/projects/himalaya-devdata/mini-1p7m/");
+  });
+
+  it("Shift+Enter with nothing highlighted neither completes nor submits", () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/a/o" onChange={onChange} onSubmit={onSubmit} suggestions={["/a/one", "/a/two"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    const errors: unknown[] = [];
+    const onError = (e: ErrorEvent): void => {
+      errors.push(e.error);
+      e.preventDefault();
+    };
+    window.addEventListener("error", onError);
+    try {
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      fireEvent.keyDown(input, { key: "Enter", altKey: true });
+    } catch (e) {
+      errors.push(e);
+    } finally {
+      window.removeEventListener("error", onError);
+    }
+    expect(errors).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("Tab leaves the field when the typed folder is complete and the list only holds its subfolders", () => {
+    const onChange = vi.fn();
+    render(<DirectoryPickerField value="/b/day1/setup2" onChange={onChange} suggestions={["/b/day1/setup2/analysis", "/b/day1/setup2/data"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Enter that confirms an IME composition does not submit", () => {
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/a/o" onChange={() => {}} onSubmit={onSubmit} suggestions={[]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

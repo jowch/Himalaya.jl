@@ -461,6 +461,22 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual([queryKeys.corpusSamples]);
   });
 
+  it.each(["label_added", "label_removed", "label_suggestion_restored"])(
+    "%s invalidates only that experiment's labels",
+    (kind) => {
+      const invalidated: unknown[] = [];
+      qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+        invalidated.push(arg.queryKey); return Promise.resolve();
+      }) as typeof qc.invalidateQueries;
+      const evt: SseEvent = {
+        id: 99, kind, entity_type: "sample", entity_id: 10,
+        payload: { label: "Buffer", experiment_id: 1 },
+      };
+      applyRemoteToCache(evt, qc);
+      expect(invalidated).toEqual([queryKeys.labels(1)]);
+    },
+  );
+
   it("delete_index falls through to default (invalidates peaks+indices)", () => {
     // `delete_index` is the OpKind for the user gesture that hits the
     // DELETE /api/indices/:id route — the backend emits `speculative_deleted`
@@ -560,6 +576,9 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     { kind: "peak_removed" },
     { kind: "speculative_created" },
     { kind: "speculative_deleted" },
+    { kind: "label_added" },
+    { kind: "label_removed" },
+    { kind: "label_suggestion_restored" },
   ];
   it.each(noSynth)(
     "$kind stays on the generic fallback (no mutator.synthesizeFromSse)",

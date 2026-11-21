@@ -75,3 +75,16 @@ describe("buildPrintDetectorLut('warm') — the optional beauty ramp", () => {
     expect(warmSpread).toBeGreaterThan(neutralSpread + 20);
   });
 });
+
+test("the magma ramp runs from near-black through purple and orange to pale yellow, like the approved mock-up", () => {
+  const lut = buildPrintDetectorLut("magma");
+  const at = (i: number) => [lut[i * 3], lut[i * 3 + 1], lut[i * 3 + 2]];
+  expect(at(0)).toEqual([0, 0, 4]);
+  expect(at(255)).toEqual([252, 255, 164]);
+  const [r, g, b] = at(110);
+  expect(r).toBeGreaterThan(g);
+  expect(b).toBeGreaterThan(g);
+  const [r2, g2, b2] = at(200);
+  expect(r2).toBeGreaterThan(g2);
+  expect(g2).toBeGreaterThan(b2);
+});

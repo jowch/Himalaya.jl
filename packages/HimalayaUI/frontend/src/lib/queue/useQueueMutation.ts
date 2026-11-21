@@ -36,8 +36,9 @@ export interface MutateCallbacks<TResponse = unknown> {
   onError?: (error: unknown) => void;
 }
 
-export interface UseQueueMutationResult<TInput, TResponse = unknown> {
+export interface UseQueueMutationResult<TInput, TResponse = unknown, TScope = unknown> {
   mutate: (input: TInput, callbacks?: MutateCallbacks<TResponse>) => void;
+  mutateIn: (scope: TScope, input: TInput) => void;
   isPending: boolean;
   isSuccess: boolean;
   /** Last successful response, or undefined if no mutation has succeeded yet. */
@@ -140,7 +141,7 @@ export function queueMutationOptions<TResponse, TPayload extends QueuePayload = 
 export function useQueueMutation<TInput, TScope, TResponse>(
   mutator: Mutator<TInput, TScope, TResponse>,
   scope: TScope,
-): UseQueueMutationResult<TInput, TResponse> {
+): UseQueueMutationResult<TInput, TResponse, TScope> {
   const qc = useQueryClient();
 
   type Payload = FlatPayload<TInput, TScope>;
@@ -149,7 +150,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
     queueMutationOptions<TResponse, Payload & QueuePayload>(mutator, qc) as UseMutationOptions<TResponse, unknown, Payload, RollbackContext>,
   );
 
-  const mutate = (input: TInput, callbacks?: MutateCallbacks<TResponse>): void => {
+  const send = (callScope: TScope, input: TInput, callbacks?: MutateCallbacks<TResponse>): void => {
     // The single cast at the framework layer: useMutation flat-spreads
     // {kind, clientOpId, ...scope, ...input} into the variables, but TS
     // can't statically prove that the resulting object satisfies the
@@ -158,7 +159,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
     const payload = {
       kind: mutator.kind,
       clientOpId: newClientOpId(),
-      ...scope,
+      ...callScope,
       ...(input as object),
     } as unknown as Payload;
     if (callbacks?.onError) ownErrorSurface.add(payload.clientOpId);
@@ -175,7 +176,8 @@ export function useQueueMutation<TInput, TScope, TResponse>(
   };
 
   return {
-    mutate,
+    mutate: (input, callbacks) => send(scope, input, callbacks),
+    mutateIn: (callScope, input) => send(callScope, input),
     isPending: mutation.isPending,
     isSuccess: mutation.isSuccess,
     data: mutation.data ?? undefined,
