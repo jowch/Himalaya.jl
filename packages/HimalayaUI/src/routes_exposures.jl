@@ -1,5 +1,19 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
+function prp_details(path)
+    details = Dict{Symbol,Any}(:beam_energy_ev => nothing, :pipe_length_m => nothing, :detector => nothing)
+    (path isa AbstractString && isfile(path)) || return details
+    prp = try
+        parse_prp(path)
+    catch
+        return details
+    end
+    details[:beam_energy_ev] = coalesce(prp.beam_energy_ev, nothing)
+    details[:pipe_length_m]  = coalesce(prp.pipe_length_m, nothing)
+    details[:detector]       = coalesce(prp.detector, nothing)
+    details
+end
+
 function register_exposures_routes!()
     @get "/api/samples/{id}/exposures" function(req::HTTP.Request, id::Int)
         db = current_db()
@@ -16,6 +30,7 @@ function register_exposures_routes!()
             d[:tags]          = rows_to_json(tags)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
+            merge!(d, prp_details(e.prp_path))
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],

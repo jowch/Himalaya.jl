@@ -15,6 +15,13 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot",
         exposure_time=15.0, transmitted_counts=7365.0, incident_monitor=1.5007, counting_time=15.8)
     e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="other")
+    prp = joinpath(tmp, "with_prp.prp")
+    write(prp, "Time this file was written: 26 Apr 2026 18:20:27\nBeam energy=9000.5 eV\nPipe length=1700 mm\nDetector=Pilatus 1M\n")
+    s2_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2")
+    e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id, filename="with_prp",
+        prp_path=prp, timestamp="2026-04-26T18:20:27")
+    e4 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id, filename="prp_gone",
+        prp_path=joinpath(tmp, "missing.prp"))
 
     with_inproc_routes(db) do call
         # List
@@ -31,6 +38,21 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].counting_time ≈ 15.8
         @test list[1].exposure_time ≈ 15.0
         @test list[2].transmitted_counts === nothing
+        @test list[1].beam_energy_ev === nothing
+        @test list[1].pipe_length_m === nothing
+        @test list[1].detector === nothing
+
+        r = call("GET", "/api/samples/$s2_id/exposures")
+        @test r.status == 200
+        withprp = JSON3.read(String(r.body))
+        @test withprp[1].id == e3
+        @test withprp[1].timestamp == "2026-04-26T18:20:27"
+        @test withprp[1].beam_energy_ev ≈ 9000.5
+        @test withprp[1].pipe_length_m ≈ 1.7
+        @test withprp[1].detector == "Pilatus 1M"
+        @test withprp[2].id == e4
+        @test withprp[2].beam_energy_ev === nothing
+        @test withprp[2].detector === nothing
 
         # Select e2
         r = call("PATCH", "/api/exposures/$e2/select";
