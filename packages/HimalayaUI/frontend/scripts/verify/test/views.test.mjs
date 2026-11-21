@@ -51,10 +51,10 @@ test("the workspace is read in place when the shared tab is already on it", () =
   assert.deepEqual(workspaceStart("http://elsewhere:9000/experiments/1/workspace/7", ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
 });
 
-test("a sample that is already open is reopened by URL, so the frame read is the one it opens on, not the one the user stepped to", () => {
+test("a sample that is already open is reopened by switching away and back, so the frame read is the one it opens on, not the one the user stepped to", () => {
   const ui = "http://127.0.0.1:5173";
-  assert.deepEqual(openSampleBy(`${ui}/experiments/1/workspace/7?exposure=71`, 1, 7), { goto: "/experiments/1/workspace/7" });
-  assert.deepEqual(openSampleBy(`${ui}/experiments/1/workspace/7`, 1, 7), { goto: "/experiments/1/workspace/7" });
+  assert.deepEqual(openSampleBy(`${ui}/experiments/1/workspace/7?exposure=71`, 1, 7), { reopen: true });
+  assert.deepEqual(openSampleBy(`${ui}/experiments/1/workspace/7`, 1, 7), { reopen: true });
   assert.deepEqual(openSampleBy(`${ui}/experiments/1/workspace/7`, 1, 8), { click: true });
   assert.deepEqual(openSampleBy(`${ui}/experiments/2/workspace/7`, 1, 7), { click: true });
   assert.deepEqual(openSampleBy("about:blank", 1, 7), { click: true });
