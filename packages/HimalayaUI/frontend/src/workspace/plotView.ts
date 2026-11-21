@@ -5,16 +5,14 @@ export type PlotView = "log" | "linear" | "loglog" | "kratky";
 
 export interface PlotViewOption {
   view: PlotView;
-  label: string;
   name: string;
-  title: string;
 }
 
 export const PLOT_VIEWS: readonly PlotViewOption[] = [
-  { view: "log", label: "Log", name: "Log", title: "Log intensity against q" },
-  { view: "linear", label: "Linear", name: "Linear", title: "Linear intensity against q" },
-  { view: "loglog", label: "Log-log", name: "Log-log", title: "Log intensity against log q" },
-  { view: "kratky", label: "q²I", name: "q²I (Kratky)", title: "q² × intensity against q (Kratky)" },
+  { view: "log", name: "Log" },
+  { view: "linear", name: "Linear" },
+  { view: "loglog", name: "Log-log" },
+  { view: "kratky", name: "q²I (Kratky)" },
 ];
 
 const KEY = "himalaya-ui:workspace-plot-view";
@@ -44,8 +42,8 @@ export function applyView<T extends { q: number[]; I: number[]; sigma: number[] 
   };
 }
 
-export function viewLabel(view: PlotView): string {
-  return view === "kratky" ? "q²·I (a.u.)" : "intensity (a.u.)";
+export function viewLabel(view: PlotView): string | null {
+  return view === "kratky" ? "q²·I" : null;
 }
 
 export function nextView(view: PlotView, dir: 1 | -1): PlotView {
