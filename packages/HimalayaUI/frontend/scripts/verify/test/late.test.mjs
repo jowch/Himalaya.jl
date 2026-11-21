@@ -148,7 +148,38 @@ test("check-truth --ui tells the reader every held frame, since a neighbour's pr
   try {
     await checkTruth(cfg, { ui: true }, { views: async (_c, _e, samples) => { asked.push(...samples); return new Map(); } });
     assert.deepEqual(asked.map((s) => s.heldIds), [[2], [2]]);
+    const read = (plot, notice) => async () => new Map([
+      [10, { workspace: "A_S1", workspace_kept: "1/1", workspace_text: "Unreviewed", workspace_rail: { ticked: [], candidates: [], form_factor: false }, workspace_plot: null, workspace_notice: notice }],
+      [11, { workspace: "B_S2", workspace_kept: "1/1", workspace_text: "Unreviewed", workspace_rail: { ticked: [], candidates: [], form_factor: false }, workspace_plot: plot, workspace_notice: notice }],
+    ]);
+    const good = await checkTruth(cfg, { ui: true }, { views: read("Waiting for this frame's trace.", "1 exposure waiting for a trace") });
+    assert.equal(good.invariants.plot_matches_trace.ok, true);
+    assert.equal(good.traces.notice_ok, true);
+    const stale = await checkTruth(cfg, { ui: true }, { views: read("No integrated trace for this frame.", null) });
+    assert.equal(stale.ok, false);
+    assert.deepEqual(stale.invariants.plot_matches_trace.violations, [{ sample: "B", frame: "B_S2", plot: "No integrated trace for this frame.", expected: "Waiting for this frame's trace." }]);
+    assert.equal(stale.traces.notice_ok, false);
   } finally {
     await stub.close();
   }
+});
+
+test("plotMismatch: a held frame's plot says it is waiting, any other frame shows its trace", async () => {
+  const { plotMismatch, WAITING_PLOT } = await import("../truth.mjs");
+  const held = new Set(["B_S2"]);
+  assert.equal(plotMismatch("B_S2", WAITING_PLOT, held), null);
+  assert.deepEqual(plotMismatch("B_S2", "No integrated trace for this frame.", held), { frame: "B_S2", plot: "No integrated trace for this frame.", expected: WAITING_PLOT });
+  assert.equal(plotMismatch("A_S1", null, held), null);
+  assert.deepEqual(plotMismatch("A_S1", "No integrated trace for this frame.", held), { frame: "A_S1", plot: "No integrated trace for this frame.", expected: "the trace" });
+  assert.equal(plotMismatch(null, null, held), null);
+});
+
+test("compareTraces checks the workspace notice when it was read", () => {
+  assert.equal(compareTraces(["A_S1", "A_S2"], [waiting("A_S1"), waiting("A_S2")], "2 exposures waiting for a trace").ok, true);
+  assert.equal(compareTraces([], [], null).ok, true);
+  const stale = compareTraces([], [], "1 exposure waiting for a trace");
+  assert.equal(stale.ok, false);
+  assert.equal(stale.notice, "1 exposure waiting for a trace");
+  assert.equal(compareTraces(["A_S1"], [waiting("A_S1")], null).ok, false);
+  assert.equal(compareTraces(["A_S1"], [waiting("A_S1")], undefined).ok, true);
 });

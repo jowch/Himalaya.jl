@@ -103,6 +103,11 @@ async function currentWorkspaceFrame(page, frameOrder) {
   return frameFromLabels(labels, frameOrder);
 }
 
+async function textOrNull(page, selector) {
+  const el = page.locator(selector);
+  return (await el.count()) ? ((await el.first().textContent()) ?? "").trim() : null;
+}
+
 export async function readWorkspace(page, cfg, experimentId, samples) {
   const out = new Map();
   if (!samples.length) return out;
@@ -118,6 +123,8 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
     let frame = null;
     let kept = null;
     let rail = null;
+    let plot = null;
+    let notice = null;
     if (await row.count()) {
       const tracker = armSettle(page);
       await row.click();
@@ -127,8 +134,10 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
       frame = await currentWorkspaceFrame(page, s.frameOrder);
       kept = await workspaceKept(page);
       rail = await workspaceRail(page);
+      plot = await textOrNull(page, "[data-testid='workspace-trace-empty']");
+      notice = await textOrNull(page, "[data-testid='workspace-ingest-status']");
     }
-    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse });
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice });
   }
   return out;
 }
