@@ -166,10 +166,16 @@ export function WorkspacePage(): JSX.Element {
   const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
 
   const trace = useTrace(exposure?.id);
-  usePrefetchNeighbours(visible, sample, trace.isSuccess);
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
+  usePrefetchNeighbours({
+    samples: visible,
+    currentId: sample?.id,
+    exposures: exposureList,
+    shownId: exposure?.id,
+    settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
+  });
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
   const assigned = useMemo(() => new Set(assignment.data?.members ?? []), [assignment.data]);
   const [hoverId, setHoverId] = useState<number | undefined>(undefined);

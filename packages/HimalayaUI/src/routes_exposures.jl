@@ -115,10 +115,11 @@ function register_exposures_routes!()
         end
 
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM exposures WHERE id = ?", [id]))
+            "SELECT id, sample_id FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "exposure not found")))
+        sample_id = rows[1].sample_id
 
         return with_idempotency(db, req) do
             DBInterface.execute(db,
@@ -127,7 +128,7 @@ function register_exposures_routes!()
             result = apply_event!(InTransaction(), db, req;
                 kind = "set_exposure_status",
                 entity_type = "exposure", entity_id = id,
-                payload = Dict(:status => status))
+                payload = Dict(:status => status, :sample_id => sample_id))
             _enqueue_broadcast_from_result!(result, "set_exposure_status", "exposure", id)
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
