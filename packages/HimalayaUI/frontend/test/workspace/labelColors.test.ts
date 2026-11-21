@@ -6,6 +6,15 @@ import { themeToken } from "../helpers/cssBlocks";
 
 const FROM_OTHERS = 0.06;
 const BETWEEN_LABELS = 0.047;
+const HUE_PLANE = 0.025;
+const CHROMATIC = 0.04;
+
+function huePlaneDistance(x: string, y: string): number {
+  const p = parseOklch(x);
+  const q = parseOklch(y);
+  const rad = Math.PI / 180;
+  return Math.hypot(p.C * Math.cos(p.h * rad) - q.C * Math.cos(q.h * rad), p.C * Math.sin(p.h * rad) - q.C * Math.sin(q.h * rad));
+}
 
 function oklabDistance(x: string, y: string): number {
   const ab = (s: string): [number, number, number] => {
@@ -34,13 +43,24 @@ describe.each(["light", "dark"] as const)("label colours in the %s theme", (them
     }
   });
 
+  const others = [
+    ...KNOWN_PHASES.map((p) => [p, themeToken(theme, phaseToken(p).replace("--color-", ""))] as const),
+    ...["accent", "success", "warning", "error"].map((n) => [n, themeToken(theme, n)] as const),
+  ];
+
   it("keeps every ink at least 0.06 OKLab from each phase colour and status colour", () => {
-    const others = [
-      ...KNOWN_PHASES.map((p) => [p, themeToken(theme, phaseToken(p).replace("--color-", ""))] as const),
-      ...["accent", "success", "warning", "error"].map((n) => [n, themeToken(theme, n)] as const),
-    ];
     for (const c of LABEL_COLORS) {
       for (const [name, value] of others) expect(oklabDistance(ink(c), value), `${c} vs ${name}`).toBeGreaterThanOrEqual(FROM_OTHERS);
+    }
+  });
+
+  it("keeps every chromatic ink off the hue of each chromatic phase and status colour, whatever the lightness", () => {
+    for (const c of LABEL_COLORS) {
+      if (parseOklch(ink(c)).C < CHROMATIC) continue;
+      for (const [name, value] of others) {
+        if (parseOklch(value).C < CHROMATIC) continue;
+        expect(huePlaneDistance(ink(c), value), `${c} vs ${name}`).toBeGreaterThanOrEqual(HUE_PLANE);
+      }
     }
   });
 
