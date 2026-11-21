@@ -270,8 +270,7 @@ describe("handleRemoteEvent", () => {
     expect(peaks.find(p => p.q === 0.5)?.excluded).toBe(false);
   });
 
-  it("applyRemoteToCache for analyze_run with post_state writes the indices array and updates exposure.analysis_inputs_hash", () => {
-    qc.setQueryData(["exposure-entity", 42], { id: 42, analysis_inputs_hash: "old-hash" });
+  it("applyRemoteToCache for analyze_run with post_state writes the indices array", () => {
     qc.setQueryData(["exposure", 42, "indices"], [{ id: 1 }]);
     handleRemoteEvent({
       id: 200,
@@ -282,11 +281,9 @@ describe("handleRemoteEvent", () => {
       post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5 }, { id: 6 }] },
     }, qc, qc.getMutationCache());
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5 }, { id: 6 }]);
-    expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
   });
 
-  it("own-op SSE (matching deferred) applies post_state to indices and exposure caches", async () => {
-    qc.setQueryData(["exposure-entity", 42], { id: 42, analysis_inputs_hash: "old-hash" });
+  it("own-op SSE (matching deferred) applies post_state to the indices cache", async () => {
     qc.setQueryData(["exposure", 42, "indices"], [{ id: 1, inputs_hash: "old-hash" }]);
     const d = makeDeferred<{ id?: number }>("own-op-with-postState");
     handleRemoteEvent({
@@ -299,14 +296,11 @@ describe("handleRemoteEvent", () => {
       post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5, inputs_hash: "new-hash" }] },
     }, qc, qc.getMutationCache());
     await d.promise;
-    // Without this propagation the indices stay frozen at "old-hash" and the
-    // stale-indices alert sticks until a hard refetch.
+    // Without this propagation the indices stay frozen at "old-hash".
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
-    expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
   });
 
-  it("self-echo SSE (own client_id, no deferred) still applies post_state to indices/exposure", () => {
-    qc.setQueryData(["exposure-entity", 42], { id: 42, analysis_inputs_hash: "old-hash" });
+  it("self-echo SSE (own client_id, no deferred) still applies post_state to indices", () => {
     qc.setQueryData(["exposure", 42, "indices"], [{ id: 1, inputs_hash: "old-hash" }]);
     const ourClientId = (() => {
       const k = "himalaya.client_id";
@@ -325,11 +319,9 @@ describe("handleRemoteEvent", () => {
       post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5, inputs_hash: "new-hash" }] },
     }, qc, qc.getMutationCache());
     // Self-echo guard short-circuits the per-kind body (mutator already wrote
-    // peaks + exposure hash), but post_state must still propagate to indices —
-    // mutator onSuccess paths don't write indices, so without this the banner
-    // sticks. Regression for "stale banner persists after own peak add."
+    // peaks), but post_state must still propagate to indices — mutator
+    // onSuccess paths don't write indices.
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
-    expect((qc.getQueryData(["exposure-entity", 42]) as any).analysis_inputs_hash).toBe("new-hash");
   });
 
   it("synthesizeResponseFromSse for peak_added produces a properly-shaped Peak (id, source, exposure_id)", async () => {

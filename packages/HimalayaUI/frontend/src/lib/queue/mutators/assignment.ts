@@ -9,11 +9,7 @@
  *
  * Two load-bearing invariants from the queue review:
  *
- *   1. onSuccess writes ONLY queryKeys.assignment — NEVER queryKeys.exposure.
- *      The framework's synthesizeResponseFromSse lifts analysis_inputs_hash
- *      from post_state, which is `undefined` for an assignment frame (the
- *      {assignment} post_state carries no hash). Writing the exposure cache
- *      here would wipe its analysis_inputs_hash with undefined.
+ *   1. onSuccess writes ONLY queryKeys.assignment.
  *
  *   2. The rollback snapshots the WHOLE Assignment object, so it is symmetric
  *      across both `members` and `state` mutations — members are existing

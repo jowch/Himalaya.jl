@@ -99,7 +99,7 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 ## Query layer gotchas
 
-- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (see the `-entity` keys in `queryKeys`, `queries.ts`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["exposure-entity", id]`, `["sample-entity", id]`) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates.
+- **`queryKeys` namespace isolation — a single-entity key must NOT share a collection prefix.** Collection keys live under `["exposure", id, …]` (`"peaks"`, `"indices"`, `"assignment"`, `"trace"`), and an `invalidateQueries(["exposure", id])` prefix-matches all of them. There are no single-entity keys today; if one comes back, give it its own root (e.g. `["exposure-entity", id]`) so a collection invalidation cannot blast it, and add a reader in the same PR.
 
 
 ## Multi-layer contract testing

@@ -3,11 +3,10 @@
  * event kinds depending on the boolean target, so we ship two mutators with
  * the same payload + cache logic and route between them at the hook layer
  * based on `excluded`. Optimistically flips the peak's `excluded` field;
- * onSuccess writes the server peak (authoritative) and updates the exposure
- * `analysis_inputs_hash` so the stale-indices alert does not flash.
+ * onSuccess writes the server peak (authoritative).
  */
 import * as api from "../../../api";
-import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api";
+import type { Peak, PeakUpdatedResponse, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, OpKind, RollbackContext } from "../types";
@@ -55,15 +54,13 @@ function makeMutator(
       // sharpness — preserve those fields from the optimistic row. HTTP-wins
       // responses include the full Peak shape, so merge is equivalent to
       // replace there.
-      const { meta, payload: peakFields } = stripQueueMetadata(response);
+      const { payload: peakFields } = stripQueueMetadata(response);
       qc.setQueryData<Peak[]>(peaksKey, (old) =>
         (old ?? []).map((pk) =>
           pk.id === peakFields.id && pk.source === "auto"
             ? ({ ...pk, ...peakFields } as Peak) : pk,
         ),
       );
-      qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-        old ? { ...old, analysis_inputs_hash: meta.analysis_inputs_hash ?? null } : old);
     },
     synthesizeFromSse: (remote, base) => {
       const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};

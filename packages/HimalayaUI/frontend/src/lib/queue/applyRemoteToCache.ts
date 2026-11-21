@@ -33,12 +33,11 @@ function writeAssignmentFromPostState(
 }
 
 /**
- * Write `post_state.indices` and `post_state.analysis_inputs_hash` into the
- * local cache without applying any per-kind body. Used by the foreign-event
- * path (via `applyRemoteToCache`) AND by the own-op confirmation paths in
- * `replayCoordinator` — own ops need post_state propagation too, otherwise
- * the indices cache stays frozen at the pre-mutation `inputs_hash` and the
- * stale-indices alert sticks until a hard refetch.
+ * Write `post_state.indices` into the local cache without applying any
+ * per-kind body. Used by the foreign-event path (via `applyRemoteToCache`)
+ * AND by the own-op confirmation paths in `replayCoordinator` — own ops need
+ * post_state propagation too, otherwise the indices cache stays frozen at the
+ * pre-mutation `inputs_hash` until a hard refetch.
  *
  * F-WIPE W2: this is ALSO where the W1 assignment envelope on peak_* frames
  * is consumed, deliberately. Every curation frame is processed by exactly
@@ -64,10 +63,6 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!Array.isArray(ps.indices)) return;
   const id = remote.entity_id;
   qc.setQueryData(queryKeys.indices(id), ps.indices);
-  qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
-    old
-      ? { ...old, analysis_inputs_hash: ps.analysis_inputs_hash }
-      : old);
   // F-WIPE W2: every reanalyzing frame (peak_* AND analyze_run) carries the
   // re-attached assignment inside the curation post_state (same {state,
   // members} envelope as the assignment_* frames), plus assignment_dropped
@@ -271,8 +266,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "set_exposure_status": {
       const status = payload?.status as Exposure["status"];
-      qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
-        old ? { ...old, status } : old);
       qc.setQueriesData<Exposure[]>(
         { predicate: (q) => q.queryKey[0] === "sample" && q.queryKey[2] === "exposures" },
         (list) => list?.some((e) => e.id === id)
@@ -304,8 +297,12 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "update_sample": {
-      qc.setQueryData(queryKeys.sample(id), (old: Sample | undefined) =>
-        old ? { ...old, ...(payload ?? {}) } : old);
+      qc.setQueriesData<Sample[]>(
+        { predicate: (q) => q.queryKey[0] === "experiment" && q.queryKey[2] === "samples" },
+        (list) => list?.some((s) => s.id === id)
+          ? list.map((s) => (s.id === id ? { ...s, ...(payload ?? {}) } : s))
+          : list,
+      );
       break;
     }
     case "select_exposure": {
@@ -340,14 +337,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "sample_renamed": {
-      // Single-entity, payload-derivable: splice the renamed label into the
-      // sample cache + refresh the corpus/experiment listings. entity_id is the
-      // sample id; the new label rides payload.name.
-      const newName = payload?.name as string | undefined;
-      if (newName !== undefined) {
-        qc.setQueryData<Sample>(queryKeys.sample(id), (old) =>
-          old ? { ...old, name: newName } : old);
-      }
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.samples(expId) });

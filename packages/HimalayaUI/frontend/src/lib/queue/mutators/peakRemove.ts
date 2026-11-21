@@ -1,12 +1,9 @@
 /**
  * peak_removed mutator (M2.2). Optimistically removes the peak from the cache
- * and restores on rollback. The DELETE route returns 200 with
- * `{event_id, view_row_id, analysis_inputs_hash}`; onSuccess writes the new
- * hash onto the exposure cache so the stale-indices alert doesn't flash
- * between the optimistic delete and the SSE `post_state` arrival.
+ * and restores on rollback. Indices arrive via the SSE `post_state`.
  */
 import * as api from "../../../api";
-import type { Peak, PeakRemoveResponse, Exposure, AuthOpts } from "../../../api";
+import type { Peak, PeakRemoveResponse, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -60,13 +57,7 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
     };
   },
   request: (p) => api.removeManualPeak(p.peakId, buildAuthOpts(p)),
-  onSuccess: (p, response, qc) => {
-    // The peak is already removed optimistically. Write the new hash onto the
-    // exposure cache so the stale-indices alert doesn't flash before the SSE
-    // post_state arrives.
-    qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-      old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
-  },
+  onSuccess: () => {},
   // 404 = "already gone" → desired end state. Without this, a 5xx-then-retry
   // can land a 404 on a peak the first attempt already deleted, and rollback
   // re-inserts a phantom row visible until the next refetch.
