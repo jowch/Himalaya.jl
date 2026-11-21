@@ -40,11 +40,6 @@ describe("parseLocation", () => {
     });
   });
 
-  // I3.6 (#177): Compare is retired. /compare* (both the global /compare/all
-  // root and the experiment-scoped /experiments/:eid/compare root, incl.
-  // /new, /:id, /:id/edit) is redirected to /series at the router layer, so
-  // parseLocation never legitimately sees it; the parse arm is gone and any
-  // /compare path now falls through to `stale`.
   it("/compare (legacy list) → stale", () => {
     expect(parseLocation("/compare", "")).toEqual({ kind: "stale", raw: "/compare" });
   });

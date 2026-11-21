@@ -1,7 +1,7 @@
 using Test, SQLite, DBInterface, Tables, Logging
 using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sample!,
                   create_exposure!, get_experiment, get_samples, get_exposures,
-                  migrate_r2_split_peaks!, migrate_series!
+                  migrate_r2_split_peaks!
 
 @testset "db schema" begin
     db = SQLite.DB()  # in-memory
@@ -323,28 +323,9 @@ end
 end
 
 @testset "open_db heals corrupted _migrate_old_* FK references on populated tables" begin
-    # Real prod DB at /tmp/himalaya-dev.db exhibited 6 tables with FKs that
-    # referenced the dead `_migrate_old_<entity>` temp-table name from a
-    # prior `migrate_pk_to_autoincrement!` run. The previous fix function
-    # only handled `auto_peaks`/`peak_curations`; the populated tables
-    # (`sample_messages`, `sample_tags`, `exposure_tags`, `exposure_sources`,
-    # `index_groups`, `index_group_members`) silently kept the dead refs
-    # and any subsequent INSERT on a table with such an FK trips
-    # SQLiteException("no such table: main._migrate_old_*"). Caught only by
-    # running the actual server (smoke checklist), not by tests using
-    # freshly-built DBs.
-    #
-    # This regression test simulates the post-corruption state directly:
-    # builds a DB whose `sample_messages` references `_migrate_old_samples`,
-    # then runs `open_db` and asserts (a) the FK is rewritten back to
-    # `samples`, (b) an INSERT succeeds without 500.
     mktempdir() do tmp
         db_path = joinpath(tmp, "corrupted.db")
         db = SQLite.DB(db_path)
-        # Build a minimal corrupted state: samples + sample_messages with
-        # a dead FK reference. Mirrors what migrate_pk_to_autoincrement!
-        # leaves behind on a DB whose ALTER TABLE RENAME tracking corrupted
-        # references inside the rename transaction.
         DBInterface.execute(db, """
             CREATE TABLE samples (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -358,37 +339,28 @@ end
                 first_name TEXT, last_name TEXT
             )""")
         DBInterface.execute(db, """
-            CREATE TABLE sample_messages (
-                id         INTEGER PRIMARY KEY,
-                sample_id  INTEGER REFERENCES "_migrate_old_samples"(id),
-                author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                body       TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            CREATE TABLE sample_bridges (
+                sample_id INTEGER PRIMARY KEY REFERENCES "_migrate_old_samples"(id) ON DELETE CASCADE,
+                group_id  INTEGER NOT NULL
             )""")
         DBInterface.execute(db, "INSERT INTO samples (label) VALUES ('S1')")
         SQLite.close(db)
 
-        # Pre-condition: corrupted reference present.
         verify = SQLite.DB(db_path)
         broken_before = Tables.rowtable(DBInterface.execute(verify,
             "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
         @test length(broken_before) == 1
         SQLite.close(verify)
 
-        # Heal via open_db (calls migrate_schema! which calls the fix helper).
         healed = HimalayaUI.open_db(db_path)
         broken_after = Tables.rowtable(DBInterface.execute(healed,
             "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
         @test isempty(broken_after)
 
-        # The healed DB must accept an INSERT into sample_messages — the
-        # operation that would 500 on the corrupted DB.
-        u_id = HimalayaUI.get_or_create_user!(healed, "alice")
         DBInterface.execute(healed,
-            "INSERT INTO sample_messages (sample_id, author_id, body) VALUES (?, ?, ?)",
-            [1, u_id, "smoke-regression"])
+            "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, ?)", [1, 1])
         @test first(Tables.rowtable(DBInterface.execute(healed,
-            "SELECT COUNT(*) AS c FROM sample_messages"))).c == 1
+            "SELECT COUNT(*) AS c FROM sample_bridges"))).c == 1
     end
 end
 
@@ -761,414 +733,6 @@ end
     end
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Compare page (Plan §Phase 1, Task 1.1): comparisons / comparison_members /
-# comparison_messages schema. (compare retired; see git history)
-# ─────────────────────────────────────────────────────────────────────────────
-
-@testset "Compare schema: tables and indexes exist after open_db" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        tables = Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
-            "SELECT name FROM sqlite_master WHERE type='table'"))])
-        @test "comparisons" in tables
-        @test "comparison_members" in tables
-        @test "comparison_messages" in tables
-
-        indexes = Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
-            "SELECT name FROM sqlite_master WHERE type='index'"))])
-        @test "idx_comparisons_forked_from" in indexes
-        @test "idx_comparison_members_by_comparison" in indexes
-        @test "idx_comparison_messages_comparison" in indexes
-    end
-end
-
-@testset "Compare schema: comparisons has expected columns" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        cols = Set(String[String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
-            "PRAGMA table_info(comparisons)"))])
-        for c in ("id", "title", "description", "content_hash",
-                  "created_by", "created_at", "updated_at",
-                  "forked_from_id", "forked_at_hash")
-            @test c in cols
-        end
-        # comparisons.id must use AUTOINCREMENT (mention-target rule).
-        sql = first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql
-        @test occursin("AUTOINCREMENT", String(sql))
-    end
-end
-
-@testset "Compare schema: comparison_members columns and JSON CHECKs" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        cols = Set(String[String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
-            "PRAGMA table_info(comparison_members)"))])
-        for c in ("id", "comparison_id", "exposure_id", "display_order",
-                  "band_height", "y_offset", "normalization", "color_override",
-                  "label_override", "q_window_min", "q_window_max",
-                  "peak_display", "snapshot", "created_by", "created_at")
-            @test c in cols
-        end
-        # Plain INTEGER PRIMARY KEY (not AUTOINCREMENT — members are not @-mentioned).
-        sql = String(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparison_members'"))).sql)
-        @test !occursin("AUTOINCREMENT", sql)
-        # snapshot CHECK (json_valid(...))
-        @test occursin("json_valid(snapshot)", sql)
-        @test occursin("json_valid(peak_display)", sql)
-    end
-end
-
-@testset "Compare schema: comparison_messages plain PK" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        sql = String(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparison_messages'"))).sql)
-        @test !occursin("AUTOINCREMENT", sql)
-        cols = Set(String[String(c.name) for c in Tables.rowtable(DBInterface.execute(db,
-            "PRAGMA table_info(comparison_messages)"))])
-        for c in ("id", "comparison_id", "author_id", "body", "created_at")
-            @test c in cols
-        end
-    end
-end
-
-@testset "Compare schema: idempotent — second open_db is a no-op" begin
-    mktempdir() do tmp
-        path = joinpath(tmp, "h.db")
-        db1 = HimalayaUI.open_db(path)
-        SQLite.close(db1)
-        # Second open must not error and must not duplicate the schema.
-        db2 = HimalayaUI.open_db(path)
-        tables = [String(r.name) for r in Tables.rowtable(DBInterface.execute(db2,
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='comparisons'"))]
-        @test length(tables) == 1
-        SQLite.close(db2)
-    end
-end
-
-@testset "Compare schema: comparisons.id AUTOINCREMENT does not reuse freed ids" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('a', 'h1', '2026-01-01', '2026-01-01')""")
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('b', 'h2', '2026-01-01', '2026-01-01')""")
-        first_max = first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT MAX(id) AS m FROM comparisons"))).m
-        DBInterface.execute(db, "DELETE FROM comparisons")
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('c', 'h3', '2026-01-01', '2026-01-01')""")
-        new_id = first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparisons"))).id
-        @test Int(new_id) > Int(first_max)  # AUTOINCREMENT didn't reuse
-    end
-end
-
-@testset "Compare schema: FK on comparison_members.comparison_id rejects orphans" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-            INSERT INTO comparison_members
-              (comparison_id, display_order, snapshot, created_at)
-            VALUES (9999, 0, '{}', '2026-01-01')""")
-    end
-end
-
-@testset "Compare schema: ON DELETE SET NULL on comparison_members.exposure_id" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
-        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('t', 'h', '2026-01-01', '2026-01-01')""")
-        cmp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparisons"))).id)
-        DBInterface.execute(db, """
-            INSERT INTO comparison_members
-              (comparison_id, exposure_id, display_order, snapshot, created_at)
-            VALUES (?, ?, 0, '{}', '2026-01-01')""", [cmp_id, e_id])
-        DBInterface.execute(db, "DELETE FROM exposures WHERE id = ?", [e_id])
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT exposure_id FROM comparison_members WHERE comparison_id = ?", [cmp_id]))
-        @test length(rows) == 1
-        @test ismissing(rows[1].exposure_id)
-    end
-end
-
-@testset "Compare schema: ON DELETE CASCADE on comparison_members.comparison_id" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('t', 'h', '2026-01-01', '2026-01-01')""")
-        cmp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparisons"))).id)
-        DBInterface.execute(db, """
-            INSERT INTO comparison_members
-              (comparison_id, display_order, snapshot, created_at)
-            VALUES (?, 0, '{}', '2026-01-01')""", [cmp_id])
-        DBInterface.execute(db, """
-            INSERT INTO comparison_messages (comparison_id, body)
-            VALUES (?, 'hi')""", [cmp_id])
-        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [cmp_id])
-        @test isempty(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparison_members WHERE comparison_id = ?", [cmp_id])))
-        @test isempty(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparison_messages WHERE comparison_id = ?", [cmp_id])))
-    end
-end
-
-@testset "Compare schema: ON DELETE SET NULL on forked_from_id" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('parent', 'hp', '2026-01-01', '2026-01-01')""")
-        parent_id = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparisons"))).id)
-        DBInterface.execute(db, """
-            INSERT INTO comparisons
-              (title, content_hash, created_at, updated_at, forked_from_id, forked_at_hash)
-            VALUES ('fork', 'hf', '2026-01-01', '2026-01-01', ?, ?)""",
-            [parent_id, "hp"])
-        fork_id = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM comparisons WHERE forked_from_id = ?", [parent_id]))).id)
-        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [parent_id])
-        # Fork survives, forked_from_id is now NULL, forked_at_hash preserved.
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT forked_from_id, forked_at_hash FROM comparisons WHERE id = ?", [fork_id]))
-        @test length(rows) == 1
-        @test ismissing(rows[1].forked_from_id)
-        @test String(rows[1].forked_at_hash) == "hp"
-    end
-end
-
-# Issue #67 — eliminate empty-string-in-NOT-NULL placeholder pattern.
-# After PR #66 patched the symptom (NULLIF in the dispatcher COALESCE),
-# this set of tests pins the structural fix: the four columns the route's
-# mint-the-id INSERT used to seed with '' (`title`, `content_hash`,
-# `created_at`, `updated_at`) are now nullable, so the route can use a
-# clean NULL placeholder (`INSERT INTO comparisons DEFAULT VALUES`) and
-# the dispatcher's plain `COALESCE(col, ?)` Just Works.
-
-# Build a comparisons schema with the OLD strict NOT NULL columns so the
-# `migrate_compare_relax_nullability!` heal path can be exercised. Mirrors
-# the migrate_compare! shape pre-#67 (the four mint-the-id columns are
-# `TEXT NOT NULL` rather than nullable).
-function _build_legacy_strict_compare_db(path::String)
-    db = SQLite.DB(path)
-    DBInterface.execute(db, "PRAGMA foreign_keys = ON")
-    DBInterface.execute(db, """
-        CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT)
-    """)
-    DBInterface.execute(db, """
-        CREATE TABLE comparisons (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            title           TEXT NOT NULL,
-            description     TEXT,
-            content_hash    TEXT NOT NULL,
-            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            created_at      TEXT NOT NULL,
-            updated_at      TEXT NOT NULL,
-            forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
-            forked_at_hash  TEXT
-        )
-    """)
-    DBInterface.execute(db, """
-        CREATE TABLE comparison_members (
-            id              INTEGER PRIMARY KEY,
-            comparison_id   INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
-            exposure_id     INTEGER,
-            display_order   INTEGER NOT NULL,
-            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
-            created_at      TEXT    NOT NULL
-        )
-    """)
-    DBInterface.execute(db, """
-        CREATE TABLE comparison_pins (
-            user_id        INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
-            comparison_id  INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
-            pinned_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, comparison_id)
-        )
-    """)
-    db
-end
-
-@testset "Compare schema: comparisons NOT NULL columns relaxed (#67)" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        sql = String(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
-        # All four mint-the-id placeholder columns must NOT carry NOT NULL on
-        # a fresh DB. The route's `INSERT … DEFAULT VALUES` depends on this.
-        for col in ("title", "content_hash", "created_at", "updated_at")
-            @test !occursin(Regex("\\b$col\\s+TEXT\\s+NOT\\s+NULL\\b", "i"), sql)
-        end
-    end
-end
-
-@testset "Compare schema: relaxed schema accepts INSERT DEFAULT VALUES (#67)" begin
-    mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "h.db"))
-        # Proves the route can use a clean NULL placeholder. If this fires
-        # `NOT NULL constraint failed`, the relax migration didn't run.
-        DBInterface.execute(db, "INSERT INTO comparisons DEFAULT VALUES")
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, title, content_hash, created_at, updated_at FROM comparisons"))
-        @test length(rows) == 1
-        @test rows[1].id isa Integer
-        @test ismissing(rows[1].title)
-        @test ismissing(rows[1].content_hash)
-        @test ismissing(rows[1].created_at)
-        @test ismissing(rows[1].updated_at)
-    end
-end
-
-@testset "migrate_compare_relax_nullability!: legacy NOT NULL schema rebuilds (#67)" begin
-    mktempdir() do tmp
-        path = joinpath(tmp, "legacy.db")
-        db = _build_legacy_strict_compare_db(path)
-        # Seed: a row with the #54-bug `created_at = ''` plus a normal row.
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('broken', 'h1', '', '')""")
-        DBInterface.execute(db, """
-            INSERT INTO comparisons (title, content_hash, created_at, updated_at)
-            VALUES ('normal', 'h2', '2026-05-01T00:00:00', '2026-05-01T00:00:00')""")
-        broken_id = 1
-        normal_id = 2
-        # FK-related rows in BOTH comparison_members AND comparison_pins so
-        # the heal walks both referrers (review suggestion #2 on PR #72 —
-        # second referrer matters because _fix_fk_references_after_autoincrement_migration!
-        # had a prod incident where only the first referrer was rebuilt).
-        DBInterface.execute(db, """
-            INSERT INTO comparison_members
-              (comparison_id, display_order, snapshot, created_at)
-            VALUES (?, 0, '{}', '2026-05-01T00:00:00')""",
-            [broken_id])
-        DBInterface.execute(db, """
-            INSERT INTO users (id, username) VALUES (1, 'alice')""")
-        DBInterface.execute(db, """
-            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
-            VALUES (1, ?, '2026-05-01T00:00:00')""", [broken_id])
-
-        HimalayaUI.migrate_compare_relax_nullability!(db)
-
-        # Schema is relaxed
-        sql = String(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
-        for col in ("title", "content_hash", "created_at", "updated_at")
-            @test !occursin(Regex("\\b$col\\s+TEXT\\s+NOT\\s+NULL\\b", "i"), sql)
-        end
-
-        # Existing rows survive
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, title, created_at FROM comparisons ORDER BY id"))
-        @test length(rows) == 2
-        @test String(rows[1].title) == "broken"
-        @test String(rows[2].title) == "normal"
-        @test String(rows[2].created_at) == "2026-05-01T00:00:00"
-
-        # Issue body's edge case: the stale '' created_at gets healed.
-        # Format MUST match the fresh-row format (`yyyy-mm-ddTHH:MM:SS.sssZ`
-        # from `comparison_now_iso()`) so ComparisonSidebar's lexical sort
-        # on `updated_at` keeps healed and fresh rows in monotonic order
-        # (review suggestion #1 on PR #72: SQLite's CURRENT_TIMESTAMP uses
-        # `YYYY-MM-DD HH:MM:SS` and space < T, so it would lexically precede
-        # fresh rows of the same instant).
-        @test rows[1].created_at != ""
-        @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", String(rows[1].created_at))
-        @test endswith(String(rows[1].created_at), "Z")
-
-        # FK from comparison_members still resolves (heal worked).
-        DBInterface.execute(db, """
-            INSERT INTO comparison_members
-              (comparison_id, display_order, snapshot, created_at)
-            VALUES (?, 1, '{}', '2026-05-01T00:00:00')""", [broken_id])
-        # FK from comparison_pins (the SECOND referrer) also resolves —
-        # this is the suggestion #2 coverage: prove the heal walked both
-        # referrers, not just the first one.
-        DBInterface.execute(db, """
-            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
-            VALUES (1, ?, '2026-05-02T00:00:00')""", [normal_id])
-        # And the orphan-rejection path: inserting a member pointing at a
-        # nonexistent comparison must still 19=>SQLITE_CONSTRAINT.
-        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-            INSERT INTO comparison_members
-              (comparison_id, display_order, snapshot, created_at)
-            VALUES (9999, 0, '{}', '2026-05-01T00:00:00')""")
-        # Same orphan rejection on comparison_pins (proves the FK
-        # constraint, not just the column, survived the heal).
-        @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-            INSERT INTO comparison_pins (user_id, comparison_id, pinned_at)
-            VALUES (1, 9999, '2026-05-01T00:00:00')""")
-
-        # ON DELETE CASCADE still fires for BOTH referrers: deleting a
-        # comparison drops its members AND its pins (proves the FK action
-        # survived the rebuild for both edges).
-        m_before = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS n FROM comparison_members WHERE comparison_id = ?",
-            [broken_id]))).n)
-        p_before = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS n FROM comparison_pins WHERE comparison_id = ?",
-            [broken_id]))).n)
-        @test m_before > 0
-        @test p_before > 0
-        DBInterface.execute(db, "DELETE FROM comparisons WHERE id = ?", [broken_id])
-        m_after = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS n FROM comparison_members WHERE comparison_id = ?",
-            [broken_id]))).n)
-        p_after = Int(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS n FROM comparison_pins WHERE comparison_id = ?",
-            [broken_id]))).n)
-        @test m_after == 0
-        @test p_after == 0
-
-        # Now the route's clean placeholder works
-        DBInterface.execute(db, "INSERT INTO comparisons DEFAULT VALUES")
-
-        SQLite.close(db)
-    end
-end
-
-@testset "migrate_compare_relax_nullability! is idempotent (#67)" begin
-    mktempdir() do tmp
-        path = joinpath(tmp, "legacy.db")
-        db = _build_legacy_strict_compare_db(path)
-        HimalayaUI.migrate_compare_relax_nullability!(db)
-        sql_first = String(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
-        # Second call must not change the schema.
-        HimalayaUI.migrate_compare_relax_nullability!(db)
-        sql_second = String(first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
-        @test sql_first == sql_second
-        # Third call from within open_db (which always runs migrate_schema!)
-        # must not re-fire the relax rebuild — the bigger guarantee. The
-        # rebuilt `comparisons` SQL is preserved verbatim as a prefix, so
-        # `sql_first` (minus its closing paren) still leads `sql_third`.
-        # `migrate_compare_view_choices!` then additively ALTER-appends the
-        # three view-choice columns before the closing paren — that is an
-        # additive ALTER, not a table rebuild.
-        SQLite.close(db)
-        db2 = HimalayaUI.open_db(path)
-        sql_third = String(first(Tables.rowtable(DBInterface.execute(db2,
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))).sql)
-        @test startswith(sql_third, sql_first[1:end-1])
-        @test occursin("view_grouping_mode", sql_third)
-        SQLite.close(db2)
-    end
-end
-
 @testset "no INSERT in routes_*.jl uses empty-string placeholder pattern (#67 guardrail)" begin
     src_dir = joinpath(dirname(@__FILE__), "..", "src")
     routes = filter(f -> startswith(basename(f), "routes_") && endswith(f, ".jl"),
@@ -1481,178 +1045,98 @@ end
     end
 end
 
-@testset "migrate_compare_view_choices!" begin
+@testset "open_db drops the retired series, comparison and sample chat tables, keeping their log rows" begin
     mktempdir() do tmp
-        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
-        # All three view-choice columns must exist on a freshly opened DB.
-        cols = Set(r.name for r in
-            Tables.rowtable(DBInterface.execute(db,
-                "PRAGMA table_info(comparisons)")))
-        @test "view_grouping_mode" in cols
-        @test "view_show_peak_ticks" in cols
-        @test "view_show_peak_labels" in cols
-
-        # Each is nullable (default NULL).
-        DBInterface.execute(db,
-            "INSERT INTO comparisons (id, title) VALUES (1, 'x')")
-        row = Tables.rowtable(DBInterface.execute(db,
-            "SELECT view_grouping_mode, view_show_peak_ticks, view_show_peak_labels
-             FROM comparisons WHERE id = 1"))[1]
-        @test ismissing(row.view_grouping_mode)
-        @test ismissing(row.view_show_peak_ticks)
-        @test ismissing(row.view_show_peak_labels)
-        close(db)
-    end
-end
-
-@testset "migrate_compare_view_choices! is idempotent" begin
-    mktempdir() do tmp
-        # Open once → migration runs.
-        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
-        close(db)
-        # Open again → migration runs again; must not throw.
-        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
-        cols = Set(r.name for r in
-            Tables.rowtable(DBInterface.execute(db,
-                "PRAGMA table_info(comparisons)")))
-        @test "view_grouping_mode" in cols
-        close(db)
-    end
-end
-
-@testset "migrate_series! creates series + schema_migrations" begin
-    db = SQLite.DB()  # in-memory
-    create_schema!(db)
-    migrate_series!(db)
-
-    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "SELECT name FROM sqlite_master WHERE type='table'")))
-    @test "series" in tables
-    @test "schema_migrations" in tables
-
-    cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "PRAGMA table_info(series)")))
-    # comparison columns + view-choice columns + recipe columns
-    for c in ("id", "title", "description", "content_hash", "created_by",
-              "created_at", "updated_at", "forked_from_id", "forked_at_hash",
-              "view_grouping_mode", "view_show_peak_ticks", "view_show_peak_labels",
-              "ordering_variable", "order_rule", "state")
-        @test c in cols
-    end
-
-    # schema_migrations ships empty — #171 writes the marker row, not #164.
-    @test only(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM schema_migrations"))).n == 0
-
-    # order_rule / state CHECK constraints reject bad values.
-    DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")  # defaults pass CHECK
-    @test_throws SQLite.SQLiteException DBInterface.execute(db,
-        "INSERT INTO series (order_rule) VALUES ('sideways')")
-    @test_throws SQLite.SQLiteException DBInterface.execute(db,
-        "INSERT INTO series (state) VALUES ('archived')")
-
-    # Idempotent re-run.
-    migrate_series!(db)
-    @test "series" in Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "SELECT name FROM sqlite_master WHERE type='table'")))
-end
-
-@testset "migrate_schema! installs series tables on a legacy DB" begin
-    db = SQLite.DB()
-    create_schema!(db)
-    migrate_schema!(db)  # migrate_series! is registered in the sequence
-
-    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "SELECT name FROM sqlite_master WHERE type='table'")))
-    @test "series" in tables
-    @test "schema_migrations" in tables
-
-    # The comparison* tables are untouched by this change.
-    for c in ("comparisons", "comparison_members", "comparison_messages",
-              "comparison_pins")
-        @test c in tables
-    end
-
-    migrate_schema!(db)  # second run is idempotent
-end
-
-@testset "migrate_series! creates the four series child tables" begin
-    db = SQLite.DB()
-    create_schema!(db)
-    migrate_series!(db)
-
-    tables = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "SELECT name FROM sqlite_master WHERE type='table'")))
-    for t in ("series_members", "series_samples", "series_messages", "series_pins")
-        @test t in tables
-    end
-
-    # series_samples CHECK constraints on pinned / excluded.
-    DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
-    DBInterface.execute(db, """
-        INSERT INTO series_samples (series_id, sample_id, position)
-        VALUES (1, 1, 0)""")  # defaults: pinned=0, excluded=0 — pass CHECK
-    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-        INSERT INTO series_samples (series_id, sample_id, position, pinned)
-        VALUES (1, 1, 1, 2)""")
-    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-        INSERT INTO series_samples (series_id, sample_id, position, excluded)
-        VALUES (1, 1, 2, 9)""")
-
-    # UNIQUE(series_id, position) — position 0 is already taken above.
-    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-        INSERT INTO series_samples (series_id, sample_id, position)
-        VALUES (1, 1, 0)""")
-
-    # series_members.snapshot must be valid JSON.
-    @test_throws SQLite.SQLiteException DBInterface.execute(db, """
-        INSERT INTO series_members (series_id, display_order, snapshot, created_at)
-        VALUES (1, 0, 'not-json', '2026-05-17T00:00:00.000Z')""")
-
-    migrate_series!(db)  # idempotent re-run
-end
-
-@testset "series child tables cascade-delete with the series" begin
-    mktempdir() do dir
-        db = HimalayaUI.open_db(joinpath(dir, "h.db"))  # FK enforcement ON
-        exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
-        samp_id = create_sample!(db; experiment_id=exp_id, name="s1")
-
-        DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
-        sid = only(Tables.rowtable(DBInterface.execute(db,
-            "SELECT last_insert_rowid() AS id"))).id
-
-        DBInterface.execute(db, """
-            INSERT INTO series_samples (series_id, sample_id, position)
-            VALUES (?, ?, 0)""", [sid, samp_id])
-        DBInterface.execute(db, """
-            INSERT INTO series_members (series_id, display_order, snapshot, created_at)
-            VALUES (?, 0, '{}', '2026-05-17T00:00:00.000Z')""", [sid])
-        DBInterface.execute(db, """
-            INSERT INTO series_messages (series_id, body) VALUES (?, 'hi')""", [sid])
-
-        # series_pins.user_id FK requires a real user row (CASCADE, not SET NULL).
-        user_id = HimalayaUI.get_or_create_user!(db, "alice")
-        DBInterface.execute(db, """
-            INSERT INTO series_pins (user_id, series_id, pinned_at)
-            VALUES (?, ?, '2026-05-17T00:00:00.000Z')""", [user_id, sid])
-
-        # series_messages.created_at uses DATETIME DEFAULT CURRENT_TIMESTAMP —
-        # the space-separated `YYYY-MM-DD HH:MM:SS` form, never the ISO
-        # `…THH:MM:SS.sssZ` form series.created_at carries (issue #76 caveat,
-        # documented on migrate_series!; locked here so a future column-type
-        # change is caught).
-        msg_ts = String(only(Tables.rowtable(DBInterface.execute(db,
-            "SELECT created_at FROM series_messages WHERE series_id = ?",
-            [sid]))).created_at)
-        @test occursin(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", msg_ts)
-
-        DBInterface.execute(db, "DELETE FROM series WHERE id = ?", [sid])
-
-        for t in ("series_samples", "series_members", "series_messages", "series_pins")
-            n = only(Tables.rowtable(DBInterface.execute(db,
-                "SELECT COUNT(*) AS n FROM $t WHERE series_id = ?", [sid]))).n
-            @test n == 0
+        path = joinpath(tmp, "legacy.db")
+        db = HimalayaUI.open_db(path)
+        exp_id = create_experiment!(db; name = "E", path = tmp,
+            data_dir = joinpath(tmp, "data"), analysis_dir = joinpath(tmp, "analysis"))
+        s_id = create_sample!(db; experiment_id = exp_id, name = "S")
+        e_id = create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "F")
+        u_id = Int(DBInterface.lastrowid(DBInterface.execute(db,
+            "INSERT INTO users (username) VALUES ('alice')")))
+        for stmt in (
+            """CREATE TABLE comparisons (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT,
+                   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                   forked_from_id INTEGER REFERENCES comparisons(id) ON DELETE SET NULL)""",
+            """CREATE TABLE comparison_members (id INTEGER PRIMARY KEY,
+                   comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+                   exposure_id INTEGER REFERENCES exposures(id) ON DELETE SET NULL)""",
+            """CREATE TABLE comparison_messages (id INTEGER PRIMARY KEY,
+                   comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+                   body TEXT NOT NULL)""",
+            """CREATE TABLE comparison_pins (
+                   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
+                   PRIMARY KEY (user_id, comparison_id))""",
+            """CREATE TABLE series (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT,
+                   forked_from_id INTEGER REFERENCES series(id) ON DELETE SET NULL)""",
+            """CREATE TABLE series_members (id INTEGER PRIMARY KEY,
+                   series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+                   exposure_id INTEGER REFERENCES exposures(id) ON DELETE SET NULL)""",
+            """CREATE TABLE series_samples (id INTEGER PRIMARY KEY,
+                   series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+                   sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+                   position INTEGER NOT NULL)""",
+            """CREATE TABLE series_messages (id INTEGER PRIMARY KEY,
+                   series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+                   body TEXT NOT NULL)""",
+            """CREATE TABLE series_pins (
+                   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+                   PRIMARY KEY (user_id, series_id))""",
+            """CREATE TABLE sample_messages (id INTEGER PRIMARY KEY,
+                   sample_id INTEGER REFERENCES samples(id),
+                   author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                   body TEXT NOT NULL)""",
+        )
+            DBInterface.execute(db, stmt)
         end
+        DBInterface.execute(db, "INSERT INTO comparisons (id, title, created_by) VALUES (1, 'c', ?)", [u_id])
+        DBInterface.execute(db, "INSERT INTO comparisons (id, title, forked_from_id) VALUES (2, 'fork', 1)")
+        DBInterface.execute(db, "INSERT INTO comparison_members (comparison_id, exposure_id) VALUES (1, ?)", [e_id])
+        DBInterface.execute(db, "INSERT INTO comparison_messages (comparison_id, body) VALUES (1, 'hi')")
+        DBInterface.execute(db, "INSERT INTO comparison_pins (user_id, comparison_id) VALUES (?, 1)", [u_id])
+        DBInterface.execute(db, "INSERT INTO series (id, title) VALUES (1, 's')")
+        DBInterface.execute(db, "INSERT INTO series (id, title, forked_from_id) VALUES (2, 'fork', 1)")
+        DBInterface.execute(db, "INSERT INTO series_members (series_id, exposure_id) VALUES (1, ?)", [e_id])
+        DBInterface.execute(db, "INSERT INTO series_samples (series_id, sample_id, position) VALUES (1, ?, 0)", [s_id])
+        DBInterface.execute(db, "INSERT INTO series_messages (series_id, body) VALUES (1, 'hi')")
+        DBInterface.execute(db, "INSERT INTO series_pins (user_id, series_id) VALUES (?, 1)", [u_id])
+        DBInterface.execute(db, "INSERT INTO sample_messages (sample_id, author_id, body) VALUES (?, ?, 'hi')", [s_id, u_id])
+        DBInterface.execute(db,
+            """INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload)
+               VALUES (?, 'series_created', 'series', 1, '{}')""", [u_id])
+        close(db)
+
+        db = HimalayaUI.open_db(path)
+        tables = Set(String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type = 'table'")))
+        for t in HimalayaUI.RETIRED_TABLES
+            @test t ∉ tables
+        end
+        @test isempty(Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_check")))
+        @test length(get_exposures(db, s_id)) == 1
+        @test length(get_samples(db, exp_id)) == 1
+        @test only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'series_created'"))).n == 1
+        close(db)
+
+        db = HimalayaUI.open_db(path)
+        @test "series" ∉ Set(String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type = 'table'")))
+        close(db)
+    end
+end
+
+@testset "a fresh DB has schema_migrations and none of the retired tables" begin
+    db = SQLite.DB()
+    create_schema!(db)
+    migrate_schema!(db)
+    tables = Set(String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type = 'table'")))
+    @test "schema_migrations" in tables
+    for t in HimalayaUI.RETIRED_TABLES
+        @test t ∉ tables
     end
 end

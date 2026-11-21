@@ -62,7 +62,6 @@ describe("App smoke", () => {
         { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null, tags: [] },
       ],
       "/api/samples/10/exposures": [],
-      "/api/samples/10/messages": [],
       // Cold-mount root redirect path: useStateFromUrl falls through to
       // resolve-by-id when the TanStack cache is cold (test env never
       // hydrates synchronously). Without this, the redirect 404s and

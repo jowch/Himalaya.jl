@@ -101,7 +101,6 @@ export function AppRoutes(): JSX.Element {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/series/*" element={<Navigate to="/experiments" replace />} />
         <Route path="/inspect/*" element={<Navigate to="/experiments" replace />} />
         <Route path="/experiments" element={<ExperimentsHomePage />} />
         <Route path="/experiments/new" element={<NewExperimentPage />} />
@@ -121,8 +120,6 @@ export function AppRoutes(): JSX.Element {
       <Route path="/index/:experiment" element={<Navigate to="/experiments" replace />} />
       <Route path="/index/:experiment/:sample" element={<IndexSlugRedirect />} />
       <Route path="/samples" element={<Navigate to="/experiments" replace />} />
-      <Route path="/experiments/:eid/compare/*" element={<Navigate to="/experiments" replace />} />
-      <Route path="/compare/all/*" element={<Navigate to="/experiments" replace />} />
     </Routes>
   );
 }

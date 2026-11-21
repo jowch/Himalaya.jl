@@ -363,30 +363,6 @@ end
     # shape pinned here now lives on GET /assignment ({state, members}) in
     # test_assignments.jl.
 
-    @testset "GET /api/samples/:id/messages → SampleMessage[]" begin
-        mktempdir() do tmp
-            db     = open_prepared_clone(tmp)
-            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            with_inproc_routes(db) do call
-                # Post one to have something to read.
-                call("POST", "/api/samples/$s_id/messages";
-                    body = Vector{UInt8}(JSON3.write(Dict(:body => "hello"))),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                r = call("GET", "/api/samples/$s_id/messages")
-                @test r.status == 200
-                msgs = JSON3.read(String(r.body))
-                @test !isempty(msgs)
-                expected = [:id, :sample_id, :author_id, :author, :body, :created_at]
-                for m in msgs
-                    assert_keys(m, expected)
-                end
-            end
-        end
-    end
-
     @testset "POST /api/samples/:id/tags → SampleTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
             db     = open_prepared_clone(tmp)
@@ -426,13 +402,6 @@ end
             end
         end
     end
-
-    # I3.6 (#177): the "Compare-page route shapes" block pinned the response
-    # shapes of the /api/comparisons* routes (create / GET / 409 / delete /
-    # messages / listing). Those routes are retired with the Compare page, so
-    # the contract tests went with them. The kept comparison* tables +
-    # dispatcher branches are exercised by test_events.jl + test_comparisons.jl;
-    # the migrated round-trip is in test_migrate_comparisons_to_series.jl.
 
     @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
         mktempdir() do tmp

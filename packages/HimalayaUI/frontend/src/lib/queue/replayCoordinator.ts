@@ -126,19 +126,11 @@ export function handleRemoteEvent(
  *
  * Dispatch: lookup by (event_kind, entity_type) via resolveMutatorForEvent,
  * then ask the mutator to build its shape. Falls back to a generic
- * `{...base, ...payload}` in two cases:
- *
- *   (a) Forward-scaffolded kinds — set_exposure_status, update_sample,
- *       select_exposure, remove_tag. These emit SSE today but their UI
- *       gesture doesn't queue through this pipeline (yet); when a future
- *       plan wires that gesture, add `synthesizeFromSse` to the matching
- *       mutator and the fallback stops handling them.
- *
- *   (b) Active mutators whose SSE payload already matches the cache row
- *       shape — post_message (sample). The SSE frame carries
- *       `{id, body, author_id, author, created_at, sample_id}` which IS the
- *       cache row shape; no shape massaging needed, so the generic
- *       `{...base, ...payload}` suffices without a per-mutator synth.
+ * `{...base, ...payload}` for forward-scaffolded kinds (set_exposure_status,
+ * update_sample, select_exposure, remove_tag). These emit SSE today but their
+ * UI gesture doesn't queue through this pipeline (yet); when a future plan
+ * wires that gesture, add `synthesizeFromSse` to the matching mutator and the
+ * fallback stops handling them.
  *
  * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
  * resolved with this synth (see handleRemoteEvent). That ordering keeps the
@@ -156,9 +148,6 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const base: QueueResponseMeta = {
     event_id: remote.id,
     client_op_id: remote.client_op_id,
-    // Only curation-frame post_state carries analysis_inputs_hash; a
-    // series-commit post_state (a Series projection) has none, so the
-    // cast-then-optional-chain correctly yields undefined there.
     analysis_inputs_hash: (remote.post_state as CurationPostState | undefined)
       ?.analysis_inputs_hash,
   };
