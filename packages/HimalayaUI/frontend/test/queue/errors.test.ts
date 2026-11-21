@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isValidationError, isInfrastructureError, buildValidationMessage } from "../../src/lib/queue/errors";
+import { NetworkError } from "../../src/api";
+import { isValidationError, isInfrastructureError, isUnreachableError, buildValidationMessage } from "../../src/lib/queue/errors";
 
 describe("error classification", () => {
   it("isValidationError matches a 4xx Response error", () => {
@@ -38,5 +39,16 @@ describe("error classification", () => {
     expect(buildValidationMessage("add_tag", new Error("missing key"))).toMatch(/tag/i);
     // Unknown kind falls back to a generic message.
     expect(buildValidationMessage("update_sample" as any, new Error("oops"))).toBeTruthy();
+  });
+
+  it("isUnreachableError covers a refused connection and a gateway with no backend, not a server bug", () => {
+    expect(isUnreachableError(new NetworkError("PUT", "/api/x"))).toBe(true);
+    expect(isUnreachableError(new TypeError("Cannot read properties of undefined"))).toBe(false);
+    for (const status of [502, 503, 504]) {
+      expect(isUnreachableError(Object.assign(new Error(String(status)), { status }))).toBe(true);
+    }
+    expect(isUnreachableError(Object.assign(new Error("500"), { status: 500 }))).toBe(false);
+    expect(isUnreachableError(Object.assign(new Error("400"), { status: 400 }))).toBe(false);
+    expect(isUnreachableError(new DOMException("aborted", "AbortError"))).toBe(false);
   });
 });

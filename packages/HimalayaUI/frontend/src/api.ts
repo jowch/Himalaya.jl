@@ -130,6 +130,13 @@ export class ApiError extends Error {
   }
 }
 
+export class NetworkError extends Error {
+  constructor(public method: string, public path: string, public override cause?: unknown) {
+    super(`${method} ${path} could not reach the server`);
+    this.name = "NetworkError";
+  }
+}
+
 export interface AuthOpts {
   username?: string;
   clientId?: string;
@@ -148,10 +155,17 @@ export async function request<T>(
   if (opts?.clientId) headers["X-Client-Id"] = opts.clientId;
   if (opts?.clientOpId) headers["X-Client-Op-Id"] = opts.clientOpId;
 
+  new Headers(headers);
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
 
-  const res = await fetch(path, init);
+  let res: Response;
+  try {
+    res = await fetch(path, init);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new NetworkError(method, path, e);
+  }
   if (res.status === 204) return undefined as T;
 
   const text = await res.text();
