@@ -128,7 +128,7 @@
     "frontend/src/print/plot/interaction.ts": 17,
     "frontend/src/print/plot/projection.ts": 17,
     "frontend/src/print/shell/AppRoutes.tsx": 26,
-    "frontend/src/print/shell/ExperimentShell.tsx": 49,
+    "frontend/src/print/shell/ExperimentShell.tsx": 29,
     "frontend/src/print/shell/InfrastructureBanner.tsx": 12,
     "frontend/src/print/shell/KbdLegend.tsx": 10,
     "frontend/src/print/shell/KbdOverlay.tsx": 10,

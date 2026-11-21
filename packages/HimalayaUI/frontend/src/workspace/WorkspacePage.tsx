@@ -158,6 +158,8 @@ export function WorkspacePage(): JSX.Element {
       : inFlight && inFlight.total > 0
         ? `Rescanning: ${inFlight.processed} / ${inFlight.total}`
         : "Rescanning…";
+  const rescanFailed = scan.failed || triggerScan.isError;
+  const showFailure = useCallback(() => navigate(`/experiments/${experimentId}`), [navigate, experimentId]);
   const reviewGrouping = useCallback(() => navigate(`/experiments/${experimentId}/grouping`), [navigate, experimentId]);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
@@ -178,6 +180,11 @@ export function WorkspacePage(): JSX.Element {
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
   );
+  useEffect(() => {
+    if (requested !== undefined || sampleId === undefined) return;
+    const qs = search.toString();
+    navigate(`/experiments/${experimentId}/workspace/${sampleId}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [requested, sampleId, search, navigate, experimentId]);
 
   const exposures = useExposures(sampleId);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
@@ -582,7 +589,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice rescan={rescanText} flagged={flagged} onReview={reviewGrouping} />} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice rescan={rescanText} failed={rescanFailed} flagged={flagged} onReview={reviewGrouping} onFailure={showFailure} />} />}
       main={
         sample ? (
           <>

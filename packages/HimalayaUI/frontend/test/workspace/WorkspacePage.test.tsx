@@ -24,6 +24,7 @@ const state = {
   bridges: [] as SampleBridge[],
   loads: [] as { samples: { flag: object | null }[] }[],
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
+  rescanError: false,
 };
 const rescans: boolean[] = [];
 
@@ -39,7 +40,7 @@ vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useLoads: () => ({ data: state.loads }),
-  useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force) }),
+  useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
   useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
   usePeaks: () => ({ data: state.peaks }),
@@ -173,6 +174,7 @@ beforeEach(() => {
   state.bridges = [];
   state.loads = [];
   state.ingest = undefined;
+  state.rescanError = false;
   rescans.length = 0;
 });
 
@@ -281,6 +283,29 @@ describe("WorkspacePage", () => {
   it("opens an experiment without a sample on its first unreviewed sample", () => {
     renderAt("/experiments/1/workspace");
     expect(screen.getByRole("heading", { level: 2, name: "A2" })).toBeInTheDocument();
+  });
+
+  it("puts the landing sample in the URL, so calling its phase does not move on", () => {
+    const { rerender } = renderAt("/experiments/1/workspace");
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m" } : s));
+    rerender(page("/experiments/1/workspace"));
+    expect(screen.getByRole("heading", { level: 2, name: "A2" })).toBeInTheDocument();
+  });
+
+  it("says when the last rescan failed, and Details opens the failure", () => {
+    state.ingest = { status: "failed", processed: 0, total: 0 };
+    renderAt("/experiments/1/workspace/10");
+    const failed = screen.getByTestId("workspace-rescan-failed");
+    expect(failed).toHaveTextContent("The last rescan failed.");
+    fireEvent.click(within(failed).getByRole("button", { name: "Details" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments\/1$/);
+  });
+
+  it("says the rescan failed when the request to start it fails", () => {
+    state.rescanError = true;
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-rescan-failed")).toBeInTheDocument();
   });
 
   it("shows nothing above the list while grouping is settled and no rescan runs", () => {
