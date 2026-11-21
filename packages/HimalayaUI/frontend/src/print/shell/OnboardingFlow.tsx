@@ -52,6 +52,8 @@ export function OnboardingFlow(): JSX.Element | null {
   const tutorialSeen  = useAppState((s) => s.tutorialSeen);
   const setUser       = useAppState((s) => s.setUser);
   const setTutorialSeen = useAppState((s) => s.setTutorialSeen);
+  const tutorialPendingFor = useAppState((s) => s.tutorialPendingFor);
+  const setTutorialPendingFor = useAppState((s) => s.setTutorialPendingFor);
 
   const [phase, setPhase] = useState<Phase>("name");
   const [users, setUsers] = useState<User[]>([]);
@@ -75,7 +77,8 @@ export function OnboardingFlow(): JSX.Element | null {
       try {
         const list = await api.listUsers();
         setUsers(list);
-        setSelection(list.length === 0 ? "__new__" : list[0]!.username);
+        const resume = list.find((u) => u.username === useAppState.getState().tutorialPendingFor);
+        setSelection((resume ?? list[0])?.username ?? "__new__");
       } catch (e) {
         setError(`Failed to load users: ${(e as Error).message}`);
       }
@@ -104,7 +107,8 @@ export function OnboardingFlow(): JSX.Element | null {
         ...(created.first_name ? { firstName: created.first_name } : {}),
         ...(created.last_name  ? { lastName:  created.last_name  } : {}),
       };
-      if (!tutorialSeen) {
+      if ((isNew && !tutorialSeen) || created.username === tutorialPendingFor) {
+        setTutorialPendingFor(created.username);
         setPending(next);
         setPhase("tutorial");
       } else {
@@ -117,6 +121,7 @@ export function OnboardingFlow(): JSX.Element | null {
 
   const closeTutorial = (): void => {
     setTutorialSeen(true);
+    setTutorialPendingFor(undefined);
     if (pending !== null) setUser(pending);
     setPending(null);
     setPhase("name");
@@ -297,7 +302,9 @@ function TutorialStep({
   const slide = TUTORIAL_SLIDES[slideIdx]!;
   const isLast = slideIdx === TUTORIAL_SLIDES.length - 1;
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => root.current?.focus(), []);
+  useEffect(() => {
+    if (!root.current?.contains(document.activeElement)) root.current?.focus();
+  }, [slideIdx]);
   return (
     <div
       ref={root}

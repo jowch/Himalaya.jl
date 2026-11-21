@@ -59,6 +59,7 @@ export interface AppState {
   activeSampleId: number | undefined;
   activeExposureId: number | undefined;
   tutorialSeen: boolean;
+  tutorialPendingFor: string | undefined;
 
   // ephemeral (not persisted to localStorage)
   hoveredIndexId: number | undefined;
@@ -109,6 +110,7 @@ export interface AppState {
   setIngestProgress: (experimentId: number, progress: IngestProgress) => void;
   clearIngestProgress: (experimentId: number) => void;
   setTutorialSeen: (seen: boolean) => void;
+  setTutorialPendingFor: (handle: string | undefined) => void;
   openNavModal: (step?: NavModalStep) => void;
   closeNavModal: () => void;
   openHelpOverlay: () => void;
@@ -138,6 +140,7 @@ export const useAppState = create<AppState>()(
         activeSampleId: undefined,
         activeExposureId: undefined,
         tutorialSeen: false,
+        tutorialPendingFor: undefined,
 
         hoveredIndexId: undefined,
         hoveredPeakId: undefined,
@@ -190,6 +193,7 @@ export const useAppState = create<AppState>()(
             return { ingestInFlight: Object.keys(next).length === 0 ? null : next };
           }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
+        setTutorialPendingFor: (tutorialPendingFor) => set({ tutorialPendingFor }),
         openNavModal: (step) =>
           set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
         closeNavModal: () => set({ navModalOpen: false }),
@@ -239,6 +243,7 @@ export const useAppState = create<AppState>()(
         activeSampleId: s.activeSampleId,
         activeExposureId: s.activeExposureId,
         tutorialSeen: s.tutorialSeen,
+        tutorialPendingFor: s.tutorialPendingFor,
       }),
       // I5.2 (#183): runs BEFORE `merge` on rehydrate (zustand v4 order is
       // migrate → merge). Returns persisted DATA only — `merge`
