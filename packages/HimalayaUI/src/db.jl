@@ -139,7 +139,9 @@ CREATE TABLE IF NOT EXISTS exposures (
     transmitted_counts   REAL,
     incident_monitor     REAL,
     counting_time        REAL,
-    monitors_read        INTEGER NOT NULL DEFAULT 0
+    monitors_read        INTEGER NOT NULL DEFAULT 0,
+    analysis_version     TEXT,
+    analysis_error       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (

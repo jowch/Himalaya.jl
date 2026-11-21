@@ -46,22 +46,11 @@ end
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "JC_D01_1_S2449_tot.dat"))
 
-    config_blob = """
-    [experiment]
-    name = "PatternTest"
-    [layout]
-    data_dir = "data"
-    analysis_dir = "analysis/automatic_analysis"
-    exposure_type = "simple"
-    [files]
-    integration = "{name}_tot.dat"
-    image = "{name}_0_001.tiff"
-    """
 
     db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir,
-        config=config_blob)
+        integration_pattern="{name}_tot.dat")
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="JC_D01_1_S2449")
 
@@ -83,22 +72,11 @@ end
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(analysis_dir, "JC_D01_1_S2449_tot.dat"))   # acquisition-stem name
 
-    config_blob = """
-    [experiment]
-    name = "MigratedTrace"
-    [layout]
-    data_dir = "data"
-    analysis_dir = "analysis/automatic_analysis"
-    exposure_type = "simple"
-    [files]
-    integration = "{name}_tot.dat"
-    image = "{name}_0_001.tiff"
-    """
     db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
-        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir, config=config_blob)
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir, integration_pattern="{name}_tot.dat")
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    # Full per-frame stem (what regroup_experiment! rewrites filename to).
+    # Full per-frame stem.
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id,
         filename="JC_D01_1_S2449_0_001", transmitted_counts=7000.0, exposure_time=15.0, counting_time=15.8)
     e2_id  = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id,

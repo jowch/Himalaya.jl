@@ -66,15 +66,6 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body4.q_units == "A-1"                # ...yet q_units still defaults
         @test body4.q_units_source == "default"
 
-        # Malformed config blob must not 500 the route — should fall back to default.
-        # This guards against TOML.parse exceptions taking down GET /api/experiments.
-        DBInterface.execute(db,
-            "UPDATE experiments SET config = ? WHERE id = ?",
-            ["[beamline\nq_units = \"x", exp_id])  # unbalanced bracket → invalid TOML
-        r4 = call("GET", "/api/experiments/$exp_id")
-        @test r4.status == 200
-        body4 = JSON3.read(String(r4.body))
-        @test body4.q_units == "A-1"
         r5 = call("GET", "/api/experiments")
         @test r5.status == 200
 
@@ -154,54 +145,25 @@ end
     end
 end
 
-@testset "experiment route surfaces beam center + pixel size" begin
+@testset "a legacy config blob is neither read nor sent" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)
     exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data", analysis_dir="analysis")
-
-    DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?", [
-        """
-        [beamline]
-        beam_center_x = 420.791
-        beam_center_y = 838.83
-        pixel_size_um = 172
-        """, exp_id])
+    DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
+        ["[beamline]\nbeam_center_x = 420.791\nq_units = \"nm-1\"\n", exp_id])
 
     with_inproc_routes(db) do call
         body = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
-        @test body.beam_center_x == 420.791
-        @test body.beam_center_y == 838.83
-        @test body.pixel_size_um == 172.0   # bare int coerced to Float64
-
-        # Garbage numeric value must not 500 — on the single route OR the list
-        # route (the spec's primary protected case: one bad config in a loop
-        # must not break the whole list).
-        DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
-            ["[beamline]\nbeam_center_x = \"oops\"\n", exp_id])
-        r = call("GET", "/api/experiments/$exp_id")
-        @test r.status == 200
-        @test JSON3.read(String(r.body)).beam_center_x === nothing
-
-        rl = call("GET", "/api/experiments")
-        @test rl.status == 200
-        @test JSON3.read(String(rl.body))[1].beam_center_x === nothing
-
-        # A non-string q_units must not 500 the list route either (the shim's
-        # ::String contract is upheld by coercing to the default).
-        DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
-            ["[beamline]\nq_units = 5\n", exp_id])
-        rq = call("GET", "/api/experiments")
-        @test rq.status == 200
-        @test JSON3.read(String(rq.body))[1].q_units == "A-1"
+        @test body.beam_center_x === nothing
+        @test body.q_units == "A-1"
+        @test !haskey(body, :config)
+        @test call("GET", "/api/experiments").status == 200
     end
 end
 
 @testset "typed q_units is honored even with no other geometry (6e)" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)
-    # A geometry-less experiment whose ONLY typed value is q_units (config blob
-    # left NULL). Pre-6e, has_typed checked only beam_center_x / energy_kev, so
-    # this fell to the blob and reported the default "A-1", masking the override.
     exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data",
         analysis_dir="analysis", q_units="nm^-1", q_units_source="user")
 
@@ -209,11 +171,6 @@ end
         body = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
         @test body.q_units == "nm^-1"
         @test body.q_units_source == "user"
-        # A stale blob value must NOT override the typed column.
-        DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
-            ["[beamline]\nq_units = \"A-1\"\n", exp_id])
-        body2 = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
-        @test body2.q_units == "nm^-1"
     end
 end
 

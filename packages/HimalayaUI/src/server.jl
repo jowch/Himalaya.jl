@@ -203,12 +203,13 @@ Bring one experiment up to date with its folder: back-fill beam monitors, then
 is new, never analyzed, whose trace has since appeared, or whose analysis is from
 an older `ANALYSIS_VERSION`. Every trigger (create, Rescan, opening the
 experiment, boot) goes through here, so one experiment never has two passes at
-once: a second caller returns `:busy`. Streams the ingest SSE frames; `phase`
+once: a second caller waits, then runs its own pass, which is a cheap no-op when
+nothing changed in between. Returns `:ok` or `:failed`. Streams the ingest SSE frames; `phase`
 is `"rescan"` for every pass after the first.
 """
 function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Nothing} = nothing)
     lk = _ingest_lock(experiment_id)
-    trylock(lk) || return :busy
+    lock(lk)
     try
         extra = phase === nothing ? (;) : (; phase)
         _set_ingest_status!(db, experiment_id, "scanning")
@@ -281,21 +282,21 @@ function backfill_all_monitors!(db::SQLite.DB)
     nothing
 end
 
-function start_background!(db::SQLite.DB)
+function start_background!(db::SQLite.DB; resume::Bool = true)
     start_gc_timer!(db)
     Threads.@spawn try
         backfill_all_monitors!(db)
-        resume_ingests!(db)
+        resume && resume_ingests!(db)
     catch err
         @warn "boot background work failed" exception = err
     end
 end
 
-function boot!(db::SQLite.DB)
+function boot!(db::SQLite.DB; resume::Bool = true)
     Oxygen.resetstate()
     bind_db!(db)
     register_routes!()
-    start_background!(db)
+    start_background!(db; resume)
 end
 
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
@@ -323,7 +324,7 @@ function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
-    boot!(db)
+    boot!(db; resume = false)
     # Match production's threading model so the test suite exercises the
     # same scheduling as `serve`. Any test that depends on single-threaded
     # request ordering is a bug.

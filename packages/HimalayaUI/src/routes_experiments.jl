@@ -28,46 +28,6 @@ _flag_json(f::SplitFlag) = Dict(:kind => "split",
     :split_at_index => f.split_at_index, :jump_from => f.jump_from, :jump_to => f.jump_to)
 
 """
-    _beamline_from_config(cfg_text) -> NamedTuple
-
-Extract the render-only `[beamline]` fields from an experiment's stored config
-TOML: `q_units` (String, default "A-1") and `beam_center_x`, `beam_center_y`,
-`pixel_size_um` (each `Float64` or `nothing`). A bare integer in the TOML is
-coerced to `Float64` to match the REAL-column behaviour of energy_kev.
-
-Defensive by design: a non-string, empty, malformed, or non-numeric value all
-fall back to the all-default tuple — one experiment's bad config must never 500
-a list endpoint. The numeric coercion lives INSIDE the try so a value like
-`beam_center_x = "oops"` throws into the fallback rather than out of the route.
-"""
-function _beamline_from_config(cfg_text)
-    default = (q_units = "A-1", beam_center_x = nothing,
-               beam_center_y = nothing, pixel_size_um = nothing)
-    if cfg_text isa AbstractString && !isempty(cfg_text)
-        try
-            bl = get(TOML.parse(cfg_text), "beamline", Dict())
-            num(k) = (v = get(bl, k, nothing); v === nothing ? nothing : Float64(v))
-            # Guard the q_units String contract: a non-string TOML value (e.g.
-            # `q_units = 5`) would otherwise satisfy the NamedTuple but throw at
-            # the shim's `::String` annotation — OUTSIDE this try — and 500 the
-            # samples list route. Coerce to the default here so the docstring's
-            # "never 500 a list endpoint" holds for q_units too.
-            qu = get(bl, "q_units", "A-1")
-            return (q_units       = qu isa AbstractString ? qu : "A-1",
-                    beam_center_x = num("beam_center_x"),
-                    beam_center_y = num("beam_center_y"),
-                    pixel_size_um = num("pixel_size_um"))
-        catch
-            return default
-        end
-    end
-    return default
-end
-
-# Back-compat shim: routes_samples.jl still calls this for its per-sample q_units.
-_q_units_from_config(cfg_text)::String = _beamline_from_config(cfg_text).q_units
-
-"""
     _experiment_stats(db, exp_id) -> NamedTuple
 
 Cheap roll-up of counts for the shared experiment header stat ledger and the
@@ -117,43 +77,11 @@ end
 """
     _experiment_row_to_json(row, db) -> Dict
 
-Serialize an experiments row to the wire format. Reads typed geometry columns
-from Phase A directly (no TOML overlay). Falls back to `_beamline_from_config`
-for legacy rows that still have their geometry only in the TOML `config` blob
-(experiments ingested before Phase A).
+Serialize an experiments row to the wire format.
 """
 function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} = nothing)
     d = row_to_json(row)
-    # Prefer typed columns (Phase A); fall back to the TOML blob ONLY for legacy
-    # rows that carry NO typed geometry at all. Checking every typed field (not
-    # just beam_center_x / energy_kev) means a q_units-only override — e.g. a
-    # Configuration PATCH on a geometry-less experiment — is honored instead of
-    # being masked by the blob's default "A-1".
-    has_typed = !isnothing(get(d, :beam_center_x, nothing)) ||
-                !isnothing(get(d, :beam_center_y, nothing)) ||
-                !isnothing(get(d, :flight_path_m, nothing)) ||
-                !isnothing(get(d, :pixel_size_um, nothing)) ||
-                !isnothing(get(d, :energy_kev, nothing)) ||
-                !isnothing(get(d, :q_units, nothing))
-    if !has_typed
-        bl = _beamline_from_config(get(d, :config, nothing))
-        d[:q_units]              = bl.q_units
-        d[:beam_center_x]        = bl.beam_center_x
-        d[:beam_center_y]        = bl.beam_center_y
-        d[:pixel_size_um]        = bl.pixel_size_um
-        # energy_kev / flight_path_m are real columns even pre-Phase-A
-        # (live create_experiment! writes them); surface their VALUE keys too so
-        # the wire shape is identical to the typed path (a legacy row simply
-        # reports whatever those columns hold — possibly nothing — never absent).
-        d[:energy_kev]           = get(d, :energy_kev, nothing)
-        d[:flight_path_m]        = get(d, :flight_path_m, nothing)
-        d[:beam_center_x_source] = "default"
-        d[:beam_center_y_source] = "default"
-        d[:pixel_size_um_source] = "default"
-        d[:energy_kev_source]    = "default"
-        d[:flight_path_m_source] = "default"
-        d[:q_units_source]       = "default"
-    end
+    delete!(d, :config)
     # q_units is a unit convention, never derived from the data files (geometry.jl
     # `derive_geometry` produces no q_units). Default it to the SAXS convention
     # "A-1" whenever the column is unset — including the typed path above, where a

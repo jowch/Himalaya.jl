@@ -113,6 +113,26 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         @test _n(db, "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'analyze_run'") == 2
     end
 
+    @testset "a failed analysis is kept until the analysis version changes" begin
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9, dat = false)
+        write(joinpath(ana, "A_S0001_0_001.dat"), "not a trace\n")
+        db, id = _recon_db(dir, data, ana)
+        HimalayaUI.scan_and_group!(db, id)
+        bad = first(_rows(db, "SELECT analysis_error, analysis_version FROM exposures WHERE experiment_id = ?", [id]))
+        @test !ismissing(bad.analysis_error) && bad.analysis_error != HimalayaUI.NO_TRACE
+        @test bad.analysis_version == HimalayaUI.ANALYSIS_VERSION
+        @test !HimalayaUI.ingest_has_work(db, id)
+
+        cp(_RECON_DAT, joinpath(ana, "A_S0001_0_001.dat"); force = true)
+        DBInterface.execute(db, "UPDATE exposures SET analysis_version = 'old' WHERE experiment_id = ?", [id])
+        @test HimalayaUI.ingest_has_work(db, id)
+        HimalayaUI.scan_and_group!(db, id)
+        ok = first(_rows(db, "SELECT trace_hash, analysis_error FROM exposures WHERE experiment_id = ?", [id]))
+        @test !ismissing(ok.trace_hash)
+        @test ismissing(ok.analysis_error)
+    end
+
     @testset "boot resumes an ingest that a restart interrupted" begin
         dir, data, ana = _recon_tree()
         _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)

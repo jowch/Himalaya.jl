@@ -458,8 +458,7 @@ end
 # the acquisition stem with the frame suffix dropped (e.g. HA_5_010_S1965_tot.dat),
 # shared across that acquisition's per-frame exposures (filename HA_5_010_S1965_0_001).
 # analyze_exposure! must fall back to the frame-suffix-stripped name when the exact
-# per-frame `{filename}_tot.dat` is absent. (Production migration relies on this so
-# fresh-ingested exposures get analyzed; see ingest.jl regroup_experiment!.)
+# per-frame `{filename}_tot.dat` is absent.
 # ──────────────────────────────────────────────────────────────────────────────
 @testset "analyze_exposure! resolves the per-acquisition _tot.dat (frame-suffix fallback)" begin
     tmp = mktempdir()
@@ -471,7 +470,7 @@ end
     db = open_db(joinpath(tmp, "h.db"))
     seeded = seed_experiment!(db, tmp; name = "E", analysis_dir = analysis_dir,
         stems  = ["HA_5_010_S1965_0_001"],            # per-frame full stem = exposures.filename
-        config = "[files]\nintegration = \"{name}_tot.dat\"\n")
+        integration_pattern = "{name}_tot.dat")
     eid = seeded.exposure_ids[1]
 
     analyze_exposure!(db, eid, analysis_dir)

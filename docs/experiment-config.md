@@ -102,8 +102,8 @@ without writing anything. `path` is the `data_dir`. It returns:
 
 The row is created with `ingest_status = 'scanning'` and the route answers
 `202 {id, status: "scanning", name, data_dir}`. The first scan then runs on a
-spawned task. It ends with `ingest_status` set to `complete` (and the rescan
-scheduler armed) or `failed`. Progress goes out on the SSE `curation`
+spawned task through `run_ingest!` (see [Rescans](#rescans)). It ends with
+`ingest_status` set to `complete` or `failed`. Progress goes out on the SSE `curation`
 frame with a `kind` of `ingest_started`, `ingest_progress` (with a `stage` of
 `discovery`, `analyzing` or `thumbnails`), and then `ingest_complete` or
 `ingest_failed`. Frames from a rescan also carry `phase: "rescan"`.
@@ -122,8 +122,9 @@ All of these are columns on the `experiments` row.
 | `q_units` | `PATCH` only | Yes: its source becomes `user`. Reported as `A-1` with source `default` while `NULL` |
 
 `path` mirrors `data_dir` for new experiments. `manifest_path`, `config` and
-`experiment_type` are legacy columns that the funnel leaves `NULL` (see
-[Legacy](#legacy-experimenttoml-and-the-config-blob)).
+`experiment_type` are legacy columns that nothing reads (see
+[Legacy](#legacy-experimenttoml)). `last_scan_tier` and
+`consecutive_empty_ticks` belonged to the deleted rescan timer and are unused.
 
 The Configuration page in later-edit mode (`/experiments/:id/config`) edits
 these through `PATCH /api/experiments/:id`. A body with no patchable field is a
@@ -155,8 +156,8 @@ The resolver recognises two layouts by probing one image stem:
 Every reader of integration files (analysis, the trace route, series traces)
 resolves the path through `resolve_trace_path` (`pipeline.jl`). It tries the
 exact name first, then the name with a trailing `_<rep>_<frame>` removed,
-because older experiments migrated by `upgrade-grouping` store the full
-per-frame stem while the total integration is named by the acquisition stem.
+because exposures store the full per-frame stem while the total integration is
+named by the acquisition stem.
 
 ## Geometry
 
@@ -186,14 +187,16 @@ No view draws them since the Focus page was deleted (2026-11-20).
 
 ## Scan and grouping
 
-`scan_and_group!(db, experiment_id)` is the ingest path. (The only other code that
-inserts exposures is `regroup_experiment!`, behind `himalaya upgrade-grouping`.) It reads
-`data_dir`, `analysis_dir` and the patterns from the row, then:
+`scan_and_group!(db, experiment_id)` is the only code that inserts exposures. It
+reads `data_dir`, `analysis_dir` and the patterns from the row, then:
 
 1. **Discovers** exposures with `scan_directory` (`grouping.jl`): one per image
    in `data_dir`, with its metadata file parsed (`parse_prp`, `prp.jl`) and its
    integration file located. If no file matches the image pattern, it returns
-   `status = :empty` and writes nothing.
+   `status = :empty` and writes nothing. When the folder has any metadata files,
+   an image whose metadata file has not appeared yet is left for a later pass
+   instead of being grouped without a position or time. A folder with no
+   metadata files at all is still ingested.
 2. **Fills geometry** that is still unset (see above).
 3. **Groups** exposures with `group_into_samples`: it splits them into loads at
    large time gaps, and clusters each load into slots by horizontal position.
@@ -204,18 +207,26 @@ inserts exposures is `regroup_experiment!`, behind `himalaya upgrade-grouping`.)
    are insert-only: loads are deduplicated on `(experiment_id, load_index)`,
    samples on `(experiment_id, load_id, slot_index)`, and exposures on
    `(experiment_id, filename)`. A rescan of an unchanged directory is a no-op,
-   and new files only add rows. Existing samples and exposures are never
+   and new files only add rows. A load or sample is created only when it gains
+   at least one new exposure, so no pass leaves an empty sample behind. Existing samples and exposures are never
    rewritten, so renames, rejections, peak curation and phase calls survive.
    The one exception is the beam monitors (`transmitted_counts` from
    `I_signal`, `incident_monitor` from `I_0`, `counting_time`).
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
-   still marked `monitors_read = 0`, on every Rescan request and scheduler tick,
-   before the change check, so a finished beamtime ingested before the monitors
+   still marked `monitors_read = 0`, on every scan request and at the start of
+   every pass, so a finished beamtime ingested before the monitors
    were parsed picks them up with no new files. Each file is read once, and a
    stored value is never overwritten.
-5. **Analyzes** each new exposure with `analyze_exposure!`, outside the write
-   transaction, so an analysis failure cannot roll back the ingest. A failure
-   is logged and the scan moves on.
+5. **Analyzes**, outside the write transaction, every exposure that is new,
+   never analyzed, whose integration file has appeared since it was last
+   tried, or whose stored `analysis_version` is older than `ANALYSIS_VERSION`
+   (`pipeline.jl`: the core Himalaya version plus a local counter, bumped when
+   the analysis changes). At SSRL BL 4-2 the image and metadata file are written
+   when the exposure completes and the integration pipeline writes the
+   `_tot.dat` afterwards, so a scan can see an exposure before its trace. Such an
+   exposure gets `analysis_error = 'no trace'` and is analyzed by the first pass
+   that finds the file. Any other failure is stored in `analysis_error` and the
+   scan moves on; it is not retried until the version changes.
 6. **Prewarms** thumbnails for the experiment. A failure here never fails the
    scan.
 
@@ -227,27 +238,34 @@ one load, and a split suggestion when positions inside one sample jump.
 
 ## Rescans
 
-There are three ways a scan runs again after create:
+Every pass goes through `run_ingest!` (`server.jl`), which holds a per-experiment
+lock, so one experiment never has two passes at once; a second caller waits and
+then runs its own, usually empty, pass. It sets `ingest_status` to `scanning`,
+back-fills beam monitors, runs `scan_and_group!`, and ends `complete` (stamping
+`last_scanned_at`) or `failed`. Every pass after the first sends
+`phase: "rescan"`.
 
-- **`POST /api/experiments/:id/scan`** returns `202` and scans in the
-  background. With `{"force": true}` it always scans. Otherwise it first runs
-  `cheap_change_check`, which compares the number of files in `data_dir` ending
-  in the image pattern's suffix with the number of exposure rows, and scans only
-  if there are more files. When a scan ran, it puts the scheduler back on
-  hourly checks.
-- **The rescan scheduler** (`server.jl`) runs the same check on a timer: hourly,
-  then daily after 6 quiet hourly checks, then stopped after 3 quiet daily
-  checks. A detected change puts it back on hourly, even if that scan then
-  fails. The tier and the count of quiet checks are stored on the experiment
-  row (`last_scan_tier`, `consecutive_empty_ticks`). The scheduler is armed
-  after a successful first scan, and on server start every experiment whose
-  ingest is `complete` resumes at its stored tier, so a stopped experiment stays
-  stopped until a manual scan finds new files. Time since the last check is not
-  stored, so after a restart the first check comes within an hour, then the
-  tier's interval applies.
-- **A pattern edit.** `PATCH` with a pattern field stores it, and the
-  Configuration page then calls the scan route with `force: true` so the new
-  pattern applies straight away.
+`ingest_has_work(db, id)` (`ingest.jl`) says whether a pass would change
+anything: an image (with its metadata file, when the folder has any) that has no
+exposure yet, an exposure whose trace has appeared, one never analyzed, or one
+analyzed by an older version. It costs one directory listing plus a stat per
+exposure still missing its trace.
+
+A pass runs:
+
+- **At create**, as above.
+- **When the experiment is opened.** The workspace calls
+  `POST /api/experiments/:id/scan` once per opened experiment. With no work
+  the route answers `200 {status: "complete", changed: false}` and sends no
+  frames; otherwise it answers `202` and runs a pass. `{"force": true}` always
+  runs one. The Rescan palette command and the Configuration page's pattern
+  edit use the same route.
+- **At server start.** `resume_ingests!` runs a pass for every experiment left
+  `scanning` by a restart or crash, and every experiment with work, which
+  includes re-analysis after an upgrade that bumps `ANALYSIS_VERSION`.
+
+There is no timer. Data is copied from the beamline and ingested after the
+beamtime, so checking on open is enough.
 
 Rescans are additive. A pattern change that stops matching some existing files
 does not remove their exposures.
@@ -262,30 +280,13 @@ to the images. No code path writes into an experiment directory.
 
 This rule is kept by code review. No test checks it for the scan path.
 
-## Legacy: experiment.toml and the config blob
+## Legacy: experiment.toml
 
 Before the funnel, each experiment directory carried an `experiment.toml` and a
-lab-notebook CSV, and the CLI ingested them. That path, including
-`himalaya init`, `himalaya reingest`, `POST /api/experiments/:id/reingest` and
-`cli_init_with_db!`, has been deleted. What remains:
-
-- **`experiments.config`** holds the TOML text for experiments created that
-  way. The funnel leaves it `NULL`.
-- **`integration_pattern_for`** (`config.jl`) reads `[files].integration`
-  from that blob when the row's `integration_pattern` column is unset, so
-  legacy experiments keep finding their traces. Analysis, the trace route and
-  series traces resolve the pattern through it.
-- **`_beamline_from_config`** (`routes_experiments.jl`) reads beam centre,
-  pixel size and `q_units` from the blob for legacy rows with no typed
-  geometry columns set. The samples list (`routes_samples.jl`) also falls back
-  to the blob for `q_units` whenever the column is `NULL`.
-- **`himalaya upgrade-grouping`** retrofits a legacy experiment's samples and
-  exposures to the current grouping while keeping its curation. It is a
-  dry run unless `--apply` is passed.
-
-Nothing reads an `experiment.toml` file. The commands that wrote one
-(`himalaya config new/list`, `himalaya migrate-toml`) and the built-in
-`configs/simple.toml` template have been deleted.
+lab-notebook CSV, and the CLI ingested them. That path, the `upgrade-grouping`
+command that retrofitted those experiments to the current grouping, and every
+reader of the TOML text kept in `experiments.config` have been deleted. The
+column is left in place and never read or sent.
 
 ## CLI reference
 
@@ -302,21 +303,16 @@ himalaya show [-e <experiment>] -s <sample>
 himalaya serve [--port N] [--host H]
     Start the web server. Creates an empty DB if none exists, so a new user
     can create the first experiment through the funnel.
-
-himalaya upgrade-grouping [--apply] [-e <experiment>]
-    Retrofit legacy experiments to the current auto-grouping. Dry run by
-    default.
 ```
 
 `-e` takes an id, a name or a path. When it is left out, `analyze` and `show`
-use the only registered experiment and fail with a list if there are several,
-and `upgrade-grouping` runs on every experiment.
+use the only registered experiment and fail with a list if there are several.
 
 ## Further reading
 
 - [packages/HimalayaUI/src/routes_fs.jl](../packages/HimalayaUI/src/routes_fs.jl): the funnel probes
 - [packages/HimalayaUI/src/routes_experiments.jl](../packages/HimalayaUI/src/routes_experiments.jl): create, `PATCH`, scan
-- [packages/HimalayaUI/src/ingest.jl](../packages/HimalayaUI/src/ingest.jl): `scan_and_group!`, `cheap_change_check`, `regroup_experiment!`
+- [packages/HimalayaUI/src/ingest.jl](../packages/HimalayaUI/src/ingest.jl): `scan_and_group!`, `ingest_has_work`, `pending_analysis_ids`
 - [packages/HimalayaUI/src/grouping.jl](../packages/HimalayaUI/src/grouping.jl): discovery, loads, slots, sample names, flags
 - [packages/HimalayaUI/src/geometry.jl](../packages/HimalayaUI/src/geometry.jl): geometry derivation
 - [packages/HimalayaUI/src/config.jl](../packages/HimalayaUI/src/config.jl): `integration_pattern_for`
