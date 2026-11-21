@@ -51,7 +51,7 @@ test.beforeEach(async ({ page }) => {
   const experiment = { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "", manifest_path: null, created_at: "", q_units: null };
   await page.route("**/api/experiments", (r) => r.fulfill(json([experiment])));
   await page.route("**/api/experiments/17", (r) => r.fulfill(json(experiment)));
-  await page.route("**/api/samples", (r) => r.fulfill(json(SAMPLES)));
+  await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(SAMPLES)));
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/loads", (r) => r.fulfill(json([])));

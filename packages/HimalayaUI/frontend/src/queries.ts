@@ -63,17 +63,13 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "assignment"] as const,
   sampleCall: (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "call"] as const,
-  // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
-  // collisions with the existing collection keys (e.g., a future
-  // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
-  exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
-  sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
   corpusSampleTags:    ["corpus-sample-tags"] as const,
   // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
   // ["corpus", ...] namespace so corpus add_tag (#159) patches and
   // invalidations never collide with the per-experiment
   // ["experiment", id, "samples"] entries that `samples` produces.
   corpusSamples: ["corpus", "samples"] as const,
+  experimentCorpusSamples: (experimentId: number) => ["corpus", "samples", experimentId] as const,
 };
 
 export function useExperiments() {
@@ -168,17 +164,19 @@ export function useSamples(experimentId: number) {
   });
 }
 
-/**
- * Corpus-wide sample list — every sample across all experiments, each with
- * its tags and a q_units from the owning experiment's config. Backs the
- * Phase 1 contact sheet (#160) and sample loupe (#161). Distinct from the
- * per-experiment useSamples(experimentId): no parameter, so no `enabled`
- * gate — the fetch runs unconditionally.
- */
-export function useCorpusSamples() {
+export function useCorpusSamples({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.corpusSamples,
     queryFn: () => api.listCorpusSamples(),
+    enabled,
+  });
+}
+
+export function useExperimentCorpusSamples(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.experimentCorpusSamples(experimentId),
+    queryFn: () => api.listCorpusSamples(experimentId),
+    enabled: Number.isInteger(experimentId) && experimentId > 0,
   });
 }
 

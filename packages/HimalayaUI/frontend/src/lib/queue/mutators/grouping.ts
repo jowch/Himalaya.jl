@@ -115,13 +115,6 @@ export const renameSampleMutator: Mutator<RenameSampleInput, RenameSampleScope, 
       }
       return loads;
     });
-    // Mirror the foreign arm's surgical patch (applyRemoteToCache sample_renamed):
-    // update the sample-entity cache so the originating tab's sample-detail page
-    // converges without waiting for the background refetch.
-    if (newName !== undefined) {
-      qc.setQueryData<api.Sample>(queryKeys.sample(p.sampleId), (old) =>
-        old ? { ...old, name: newName } : old);
-    }
     invalidateLoads(qc, p.experimentId);
   },
 };

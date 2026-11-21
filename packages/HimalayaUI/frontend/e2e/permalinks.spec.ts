@@ -62,7 +62,7 @@ test.beforeEach(async ({ page }) => {
     });
   });
   // Corpus list — the focus workspace learns the sample's experiment from here.
-  await page.route("**/api/samples", (r) =>
+  await page.route((url) => url.pathname === "/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([SAMPLE]) }));
   await page.route("**/api/users", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));

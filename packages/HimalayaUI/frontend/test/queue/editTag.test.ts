@@ -46,6 +46,24 @@ describe("editCorpusSampleTagMutator", () => {
     expect(tags.find((t: any) => t.id === 3).value).toBe("10");
   });
 
+  it("patches every cached corpus list, including one experiment's, and restores them all", () => {
+    const qc = new QueryClient();
+    const row = { id: 1, tags: [{ id: 7, key: "dose", value: "10", source: "manual" }] };
+    qc.setQueryData(queryKeys.corpusSamples, [row]);
+    qc.setQueryData(queryKeys.experimentCorpusSamples(4), [row]);
+
+    const ctx = editCorpusSampleTagMutator.onMutate(
+      { sampleId: 1, tagId: 7, key: "dose", value: "12" } as any,
+      qc,
+    );
+    expect((qc.getQueryData(queryKeys.experimentCorpusSamples(4)) as any)[0].tags[0].value).toBe("12");
+    expect((qc.getQueryData(queryKeys.corpusSamples) as any)[0].tags[0].value).toBe("12");
+
+    ctx.restore();
+    expect((qc.getQueryData(queryKeys.experimentCorpusSamples(4)) as any)[0].tags[0].value).toBe("10");
+    expect((qc.getQueryData(queryKeys.corpusSamples) as any)[0].tags[0].value).toBe("10");
+  });
+
   it("onMutate returns a restore closure that reverts the optimistic change", () => {
     const qc = new QueryClient();
     const original = [

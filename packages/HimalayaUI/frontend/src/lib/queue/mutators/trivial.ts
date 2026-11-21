@@ -45,9 +45,7 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
   kind: "update_sample",
   onMutate: (p, qc): RollbackContext => {
     const samplesKey = queryKeys.samples(p.experimentId);
-    const sampleKey = queryKeys.sample(p.sampleId);
     const prevList = qc.getQueryData<Sample[]>(samplesKey);
-    const prevSingle = qc.getQueryData<Sample>(sampleKey);
     const patch = patchOf(p);
 
     if (prevList) {
@@ -55,13 +53,9 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
         s.id === p.sampleId ? { ...s, ...patch } : s,
       ));
     }
-    if (prevSingle && prevSingle.id === p.sampleId) {
-      qc.setQueryData<Sample>(sampleKey, { ...prevSingle, ...patch });
-    }
     return {
       restore: () => {
         if (prevList !== undefined) qc.setQueryData(samplesKey, prevList);
-        if (prevSingle !== undefined) qc.setQueryData(sampleKey, prevSingle);
       },
     };
   },
@@ -79,7 +73,6 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     // unpatched fields are `undefined` on the response. Skip undefined
     // fields below so they don't clobber existing values.
     const samplesKey = queryKeys.samples(p.experimentId);
-    const sampleKey = queryKeys.sample(p.sampleId);
     const patch: Partial<Sample> = {};
     if (response.name !== undefined) patch.name = response.name;
     if (response.notes !== undefined) patch.notes = response.notes;
@@ -87,10 +80,6 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     if (list) {
       qc.setQueryData<Sample[]>(samplesKey, list.map((s) =>
         s.id === p.sampleId ? { ...s, ...patch } : s));
-    }
-    const prevSingle = qc.getQueryData<Sample>(sampleKey);
-    if (prevSingle && prevSingle.id === p.sampleId) {
-      qc.setQueryData<Sample>(sampleKey, { ...prevSingle, ...patch });
     }
   },
 };
@@ -293,17 +282,20 @@ export const removeExposureTagMutator: Mutator<RemoveExposureTagInput, RemoveExp
 // ---------------------------------------------------------------------------
 // add_tag / remove_tag (corpus sample) — #159
 // ---------------------------------------------------------------------------
-// The corpus contact sheet reads queryKeys.corpusSamples (a CorpusSample[]),
-// not the per-experiment queryKeys.samples(experimentId). These mutators are
-// separate from addSampleTagMutator/removeSampleTagMutator so the existing
-// experiment-scoped path is untouched. The op scope carries `sampleId` only —
-// no `experimentId` and no `exposureId` — which is how the tri-scope
-// `resolveMutator` discriminator routes such an op here (it tests exposure
-// first, then experiment, then falls through to corpus). They define no
-// `synthesizeFromSse`: the own-op
-// SSE-wins response shape is produced by addSampleTagMutator.synthesizeFromSse
-// via resolveMutatorForEvent (shared SampleTag shape) — see the comment in
-// mutatorRegistry.ts.
+
+function patchCorpusLists(
+  qc: QueryClient,
+  patch: (list: CorpusSample[]) => CorpusSample[],
+): RollbackContext {
+  const filters = { queryKey: queryKeys.corpusSamples };
+  const prev = qc.getQueriesData<CorpusSample[]>(filters);
+  qc.setQueriesData<CorpusSample[]>(filters, (list) => (list ? patch(list) : list));
+  return {
+    restore: () => {
+      for (const [key, data] of prev) qc.setQueryData(key, data);
+    },
+  };
+}
 
 export type AddCorpusSampleTagInput = { key: string; value: string };
 type AddCorpusSampleTagScope = BaseScope & { sampleId: number };
@@ -313,23 +305,14 @@ export const addCorpusSampleTagMutator: Mutator<
 > = {
   kind: "add_tag",
   onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.corpusSamples;
-    const prev = qc.getQueryData<CorpusSample[]>(key);
     const placeholderId = nextOptimisticId();
-    if (prev) {
-      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
-        s.id === p.sampleId
-          ? { ...s, tags: [...s.tags, {
-              id: placeholderId, key: p.key, value: p.value, source: "manual",
-            }] }
-          : s,
-      ));
-    }
-    return {
-      restore: () => {
-        if (prev !== undefined) qc.setQueryData(key, prev);
-      },
-    };
+    return patchCorpusLists(qc, (list) => list.map((s) =>
+      s.id === p.sampleId
+        ? { ...s, tags: [...s.tags, {
+            id: placeholderId, key: p.key, value: p.value, source: "manual",
+          }] }
+        : s,
+    ));
   },
   request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
@@ -339,9 +322,7 @@ export const addCorpusSampleTagMutator: Mutator<
       id: response.id, key: response.key, value: response.value,
       source: response.source,
     };
-    const key = queryKeys.corpusSamples;
-    qc.setQueryData<CorpusSample[]>(key, (list) => {
-      if (!list) return list;
+    patchCorpusLists(qc, (list) => {
       return list.map((s) =>
         s.id !== p.sampleId
           ? s
@@ -366,20 +347,11 @@ export const removeCorpusSampleTagMutator: Mutator<
 > = {
   kind: "remove_tag",
   onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.corpusSamples;
-    const prev = qc.getQueryData<CorpusSample[]>(key);
-    if (prev) {
-      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
-        s.id === p.sampleId
-          ? { ...s, tags: s.tags.filter((t) => t.id !== p.tagId) }
-          : s,
-      ));
-    }
-    return {
-      restore: () => {
-        if (prev !== undefined) qc.setQueryData(key, prev);
-      },
-    };
+    return patchCorpusLists(qc, (list) => list.map((s) =>
+      s.id === p.sampleId
+        ? { ...s, tags: s.tags.filter((t) => t.id !== p.tagId) }
+        : s,
+    ));
   },
   request: (p) => api.removeSampleTag(p.sampleId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
@@ -399,21 +371,12 @@ export const editCorpusSampleTagMutator: Mutator<
 > = {
   kind: "edit_tag",
   onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.corpusSamples;
-    const prev = qc.getQueryData<CorpusSample[]>(key);
-    if (prev) {
-      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
-        s.id === p.sampleId
-          ? { ...s, tags: s.tags.map((t) =>
-              t.id === p.tagId ? { ...t, key: p.key, value: p.value } : t) }
-          : s,
-      ));
-    }
-    return {
-      restore: () => {
-        if (prev !== undefined) qc.setQueryData(key, prev);
-      },
-    };
+    return patchCorpusLists(qc, (list) => list.map((s) =>
+      s.id === p.sampleId
+        ? { ...s, tags: s.tags.map((t) =>
+            t.id === p.tagId ? { ...t, key: p.key, value: p.value } : t) }
+        : s,
+    ));
   },
   request: (p) => api.editSampleTag(p.sampleId, p.tagId, { key: p.key, value: p.value }, buildAuthOpts(p)),
   // id is stable across the edit, so the optimistic row already matches the
@@ -454,17 +417,7 @@ export const setExposureStatusMutator: Mutator<
         e.id === p.exposureId ? { ...e, status: p.status } : e,
       ),
     );
-    const exposureKey = queryKeys.exposure(p.exposureId);
-    const prevSingle = qc.getQueryData<Exposure>(exposureKey);
-    if (prevSingle && prevSingle.id === p.exposureId) {
-      qc.setQueryData<Exposure>(exposureKey, { ...prevSingle, status: p.status });
-    }
-    return {
-      restore: () => {
-        restoreExposures();
-        if (prevSingle !== undefined) qc.setQueryData(exposureKey, prevSingle);
-      },
-    };
+    return { restore: restoreExposures };
   },
   request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
   onSuccess: (_p, _r, qc) => {

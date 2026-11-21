@@ -13,8 +13,7 @@ This is the load-bearing reference for the Plan 7 architecture in
    the affected exposure.
 
 Read this before touching `events.jl`, `hash.jl`, the `apply_event!` call
-sites in `routes_*.jl`, the SSE handler in `server.jl`, or the
-stale-indices reanalyze affordance in the frontend.
+sites in `routes_*.jl`, or the SSE handler in `server.jl`.
 
 ---
 
