@@ -68,6 +68,8 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "indices"] as const,
   assignment: (exposureId: number | undefined) =>
     ["exposure", exposureId ?? "none", "assignment"] as const,
+  sampleCall: (sampleId: number | undefined) =>
+    ["sample", sampleId ?? "none", "call"] as const,
   messages:   (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
@@ -420,6 +422,23 @@ export function useAssignment(exposureId: number | undefined) {
   });
 }
 
+export function useSampleCall(sampleId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.sampleCall(sampleId),
+    queryFn: () => api.getSampleCall(sampleId as number),
+    enabled: sampleId !== undefined,
+  });
+}
+
+export function useFrameAssignments(exposureIds: number[]) {
+  return useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: queryKeys.assignment(id),
+      queryFn: () => api.getAssignment(id),
+    })),
+  });
+}
+
 export function useAddAssignmentPhase(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
@@ -436,6 +455,19 @@ export function useRemoveAssignmentPhase(exposureId: number) {
     { exposureId, username, clientId: CLIENT_ID },
   );
   return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
+}
+
+export function useRemoveFramePhase() {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    removeAssignmentPhaseMutator,
+    { exposureId: 0, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (exposureId: number, indexId: number) =>
+      inner.mutate({ exposureId, indexId }),
+  };
 }
 
 export function useSetSampleCallState(sampleId: number) {

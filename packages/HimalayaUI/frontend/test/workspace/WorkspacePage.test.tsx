@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import { peakList } from "../fixtures/peaks";
 
@@ -15,6 +15,8 @@ const state = {
   exposures: [] as Exposure[],
   indices: [] as IndexEntry[],
   assignment: undefined as Assignment | undefined,
+  sampleCall: undefined as SampleCall | undefined,
+  frameAssignments: new Map<number, Assignment>(),
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
   traceError: false,
@@ -46,6 +48,11 @@ vi.mock("../../src/queries", () => ({
   usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
+  useSampleCall: () => ({ data: state.sampleCall }),
+  useFrameAssignments: (ids: number[]) => ids.map((id) => ({ data: state.frameAssignments.get(id) })),
+  useRemoveFramePhase: () => ({
+    mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
+  }),
   useBridges: () => ({ data: state.bridges }),
   useBridgeSamples: recorder("bridge"),
   useUnbridgeSample: recorder("unbridge"),
@@ -165,6 +172,8 @@ beforeEach(() => {
   state.exposures = [exposure(100), exposure(101, { selected: true })];
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+  state.sampleCall = undefined;
+  state.frameAssignments = new Map();
   state.trace = undefined;
   state.traceError = false;
   state.traceFetching = false;
@@ -442,6 +451,35 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "2" });
     expect(calls).toEqual([]);
     expect(screen.getByText("This frame is dropped. Restore it to call a phase.")).toBeInTheDocument();
+  });
+
+  it("ticks a phase called on another frame and unticks it there, even when that frame is dropped", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.assignment = { exposure_id: 100, state: "indexed", members: [] };
+    state.sampleCall = {
+      sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
+      members: [{ index_id: 7, exposure_id: 101, phase: "Pn3m" }],
+    };
+    renderAt("/experiments/1/workspace/10");
+    expect(currentFrame()).toBe("Frame 1");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[0]).toHaveTextContent("Pn3m");
+    expect(rows[0]).toHaveAttribute("aria-pressed", "true");
+    expect(rows[1]).toHaveAttribute("aria-pressed", "false");
+    fireEvent.keyDown(window, { key: "1" });
+    expect(calls).toEqual([{ hook: "removeFrame", boundTo: 101, arg: 7 }]);
+  });
+
+  it("stops ticking a phase once its member on the other frame is gone from that frame's cache", () => {
+    state.assignment = { exposure_id: 101, state: "indexed", members: [] };
+    state.sampleCall = {
+      sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
+      members: [{ index_id: 7, exposure_id: 100, phase: "Pn3m" }],
+    };
+    state.frameAssignments = new Map([[100, { exposure_id: 100, state: "indexed", members: [] }]]);
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[0]).toHaveAttribute("aria-pressed", "false");
   });
 
   it("ignores shortcuts while typing in the filter", () => {

@@ -371,12 +371,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             """INSERT INTO assignments (exposure_id, state) VALUES (?, 'indexed')
                ON CONFLICT(exposure_id) DO UPDATE SET state = 'indexed'""",
             [Int(entity_id)])
-        DBInterface.execute(db,
-            """INSERT INTO sample_calls (sample_id, state)
-               SELECT sample_id, 'indexed' FROM exposures
-                WHERE id = ? AND sample_id IS NOT NULL
-               ON CONFLICT(sample_id) DO UPDATE SET state = 'indexed'""",
-            [Int(entity_id)])
+        _set_exposure_sample_state!(db, Int(entity_id), "indexed")
         DBInterface.execute(db,
             """INSERT OR IGNORE INTO assignment_members (exposure_id, index_id)
                VALUES (?, ?)""",
@@ -401,27 +396,12 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             DBInterface.execute(db,
                 "DELETE FROM assignment_members WHERE exposure_id = ?", [Int(entity_id)])
         end
-        DBInterface.execute(db,
-            """INSERT INTO sample_calls (sample_id, state)
-               SELECT sample_id, ? FROM exposures
-                WHERE id = ? AND sample_id IS NOT NULL
-               ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state""",
-            [state, Int(entity_id)])
+        _set_exposure_sample_state!(db, Int(entity_id), state)
         return nothing
     end
 
     if kind == "sample_call_set_state"
-        state = String(payload.state)
-        DBInterface.execute(db,
-            """INSERT INTO sample_calls (sample_id, state) VALUES (?, ?)
-               ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state""",
-            [Int(entity_id), state])
-        if state != "indexed"
-            DBInterface.execute(db,
-                """DELETE FROM assignment_members
-                    WHERE exposure_id IN (SELECT id FROM exposures WHERE sample_id = ?)""",
-                [Int(entity_id)])
-        end
+        _set_sample_call_state!(db, Int(entity_id), String(payload.state))
         return nothing
     end
 
@@ -431,6 +411,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         DBInterface.execute(db,
             "UPDATE exposures SET sample_id = ? WHERE id = ?",
             [Int(payload.sample_id), Int(entity_id)])
+        _index_sample_if_called!(db, Int(entity_id))
         return nothing
     end
 
@@ -1284,6 +1265,8 @@ the property test asserts the round-trip.
 """
 function rebuild_views_from_log!(db::SQLite.DB, entity_id::Integer;
                                   entity_type::String = "exposure")
+    entity_type == "exposure" && return _rebuild_exposure_with_call!(db, Int(entity_id))
+    entity_type == "sample" && return _rebuild_sample_with_call!(db, Int(entity_id))
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT id, action, entity_id, payload
            FROM user_actions

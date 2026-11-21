@@ -47,6 +47,22 @@ export function sampleCall(frames) {
   return phases.length ? normalizeCall(phases) : null;
 }
 
+export function railMismatch(rail, call) {
+  if (!rail) return null;
+  const ticked = normalizeCall(rail.ticked);
+  if (call === "none") return rail.form_factor && ticked === "none" ? null : { rail: rail.form_factor ? `form_factor+${ticked}` : ticked, call };
+  const offered = new Set(rail.candidates);
+  const expected = call === null ? "none" : normalizeCall(call.split("+").filter((p) => offered.has(p)));
+  return !rail.form_factor && ticked === expected ? null : { rail: rail.form_factor ? "form_factor" : ticked, call: call ?? "unreviewed", expected };
+}
+
+function railViolation(app, kept, call) {
+  if (!app.views || !kept.length) return null;
+  if (!app.workspaceRail) return [{ rail: null, call: call ?? "unreviewed" }];
+  const bad = railMismatch(app.workspaceRail, call);
+  return bad ? [bad] : null;
+}
+
 function statusMatches(shown, call) {
   if (call === null) return shown.status === "unreviewed";
   if (shown.status === "form_factor") return call === "none";
@@ -78,6 +94,7 @@ function sampleInvariants(app, frames) {
   return {
     workspace_status_matches: app.views && workspaceRead !== shown.status ? [{ shown: shownLabel(shown), workspace: app.workspaceText ?? null }] : null,
     status_matches_assignment: statusMatches(shown, confirmed) ? null : [{ shown: shownLabel(shown), confirmed }],
+    rail_matches_call: railViolation(app, kept, confirmed),
     representative_kept: onDropped.length ? onDropped : null,
     views_agree: allRead && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
   };
@@ -85,13 +102,14 @@ function sampleInvariants(app, frames) {
 
 export const INVARIANTS = {
   status_matches_assignment: "A sample's confirmed call is the phases assigned on any of its frames, kept or dropped, or the sample's form-factor state. A sample with none is shown as unreviewed; a sample with one is shown with that call.",
+  rail_matches_call: "The workspace's Call list ticks exactly the sample's called phases that the opened frame offers as candidates, and marks form factor only for a form-factor call (needs --ui).",
   representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
   views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
 };
 
-const NEEDS_VIEWS = new Set(["representative_kept", "views_agree", "workspace_status_matches"]);
-const NEEDS_UI = new Set(["views_agree", "workspace_status_matches"]);
+const NEEDS_VIEWS = new Set(["representative_kept", "views_agree", "workspace_status_matches", "rail_matches_call"]);
+const NEEDS_UI = new Set(["views_agree", "workspace_status_matches", "rail_matches_call"]);
 
 function rollupInvariants(perSample, ui) {
   const out = {};
@@ -292,10 +310,11 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
-      const { workspace_text: workspaceText = null, workspace_kept: workspaceKept = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
+      const { workspace_text: workspaceText = null, workspace_kept: workspaceKept = null, workspace_rail: workspaceRail = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
       s.views = { workspace: frames.workspace ?? null };
       s.workspaceKept = workspaceKept;
       s.workspaceText = workspaceText;
+      s.workspaceRail = workspaceRail;
     }
   }
   for (const s of app) delete s.frameOrder;

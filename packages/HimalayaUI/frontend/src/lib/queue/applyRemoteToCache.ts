@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
-import { writeSampleCall, invalidateOtherFrameAssignments } from "./sampleCall";
+import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
 import type {
   Peak, Exposure, Sample, SampleMessage,
   Series, Assignment,
@@ -245,6 +245,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const ps = remote.post_state as SampleCallPostState | undefined;
       if (ps?.call) writeSampleCall(qc, id, ps.call);
       else qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "exposure" && q.queryKey[2] === "assignment" });
+      invalidateSampleCalls(qc);
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
@@ -264,6 +265,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       }
       if (remote.kind === "assignment_add") invalidateOtherFrameAssignments(qc, id);
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      invalidateSampleCalls(qc);
       break;
     }
     case "speculative_created": {

@@ -265,7 +265,7 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
     # `confirmed_index` is null for BOTH a form_factor and a null member, so the
     # explicit state is what tells them apart, and `confirmed_phases` lets
     # coexistence reads/rows/strip cells self-decode without a second round-trip
-    # to /assignment. Default to "indexed" when no assignments row exists.
+    # to /assignment. Default to "indexed" when no sample_calls row exists.
     sample_rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT sample_id FROM exposures WHERE id = ?", [eid]))
     assignment_state = (isempty(sample_rows) || ismissing(sample_rows[1].sample_id)) ?

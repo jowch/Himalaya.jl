@@ -32,7 +32,7 @@ import { authOpts } from "../../authOpts";
 import type {
   Mutator, RollbackContext, SseEvent, QueueResponseMeta, AssignmentPostState, SampleCallPostState,
 } from "../types";
-import { sampleFrameIds, writeSampleCall, invalidateOtherFrameAssignments } from "../sampleCall";
+import { sampleFrameIds, writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "../sampleCall";
 import { stripQueueMetadata } from "../queueMeta";
 
 type AssignmentScope = {
@@ -42,7 +42,7 @@ type AssignmentScope = {
 };
 
 export type AddPhaseInput = { indexId: number };
-export type RemovePhaseInput = { indexId: number };
+export type RemovePhaseInput = { indexId: number; exposureId?: number };
 export type SetStateInput = { state: AssignmentState };
 
 function buildAuth(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
@@ -97,6 +97,7 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
     invalidateOtherFrameAssignments(qc, p.exposureId);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
   affectsExposurePeaks: () => false,
@@ -126,6 +127,7 @@ export const removeAssignmentPhaseMutator: Mutator<RemovePhaseInput, AssignmentS
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
   affectsExposurePeaks: () => false,
@@ -176,6 +178,7 @@ export const setSampleCallStateMutator: Mutator<SetStateInput, SampleCallScope, 
     const { payload: call } = stripQueueMetadata(response);
     writeSampleCall(qc, p.sampleId, call as SampleCall);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthSampleCall,
   affectsExposurePeaks: () => false,

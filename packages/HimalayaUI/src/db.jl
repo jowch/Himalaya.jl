@@ -548,6 +548,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_hex_sqrt11!(db)
 
     migrate_sample_bridges!(db)
+    migrate_sample_calls!(db)
 end
 
 function migrate_sample_bridges!(db::SQLite.DB)
@@ -1682,41 +1683,54 @@ function migrate_sample_calls!(db::SQLite.DB)
                  GROUP BY entity_id"""))
             last_event[Int(r.eid)] = Int(r.last)
         end
-        has_call = Set{Int}()
+        members = Dict{Int, Vector{Int}}()
         for r in Tables.rowtable(DBInterface.execute(db,
-                "SELECT exposure_id AS eid FROM assignments
-                 UNION SELECT exposure_id AS eid FROM assignment_members"))
-            push!(has_call, Int(r.eid))
+                "SELECT exposure_id AS eid, index_id AS iid FROM assignment_members ORDER BY index_id"))
+            push!(get!(members, Int(r.eid), Int[]), Int(r.iid))
         end
+        states = Dict{Int, String}()
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id AS eid, state FROM assignments"))
+            states[Int(r.eid)] = String(r.state)
+        end
+        carries(i) = haskey(members, i) || get(states, i, "indexed") != "indexed"
         by_sample = Dict{Int, Vector{NamedTuple}}()
         for e in Tables.rowtable(DBInterface.execute(db,
                 "SELECT id, sample_id, selected, status FROM exposures
                   WHERE sample_id IS NOT NULL ORDER BY id"))
             push!(get!(by_sample, Int(e.sample_id), NamedTuple[]), e)
         end
-        for (sid, exps) in by_sample
-            ids = [Int(e.id) for e in exps]
-            any(in(has_call), ids) || any(in(keys(last_event)), ids) || continue
-            edited = [i for i in ids if haskey(last_event, i)]
+        for sid in sort!(collect(keys(by_sample)))
+            exps = by_sample[sid]
+            candidates = [Int(e.id) for e in exps if carries(Int(e.id))]
+            isempty(candidates) && continue
+            edited = [i for i in candidates if haskey(last_event, i)]
             rep = representative_exposure_id(exps)
             keep = !isempty(edited) ? argmax(i -> last_event[i], edited) :
-                   (rep !== nothing && rep in has_call) ? rep :
-                   minimum(i for i in ids if i in has_call)
-            st = Tables.rowtable(DBInterface.execute(db,
-                "SELECT state FROM assignments WHERE exposure_id = ?", [keep]))
-            state = isempty(st) ? "indexed" : String(st[1].state)
-            DBInterface.execute(db,
-                "INSERT INTO sample_calls (sample_id, state) VALUES (?, ?)
-                 ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state", [sid, state])
-            others = [i for i in ids if i != keep]
-            isempty(others) || DBInterface.execute(db,
-                "DELETE FROM assignment_members WHERE exposure_id IN ($(join(fill("?", length(others)), ",")))",
-                others)
+                   (rep !== nothing && rep in candidates) ? rep : minimum(candidates)
+            for i in candidates, ix in get(members, i, Int[])
+                i == keep && get(states, i, "indexed") == "indexed" && continue
+                _log_migration_event!(db, "assignment_remove", "exposure", i, Dict(:index_id => ix))
+            end
+            _log_migration_event!(db, "sample_call_set_state", "sample", sid,
+                                  Dict(:state => get(states, keep, "indexed")))
         end
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_SAMPLE_CALLS, comparison_now_iso()])
     end
+    nothing
+end
+
+function _log_migration_event!(db::SQLite.DB, kind::String, entity_type::String,
+                               entity_id::Int, payload::Dict)
+    payload_json = JSON3.write(payload)
+    res = DBInterface.execute(db,
+        """INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload)
+           VALUES (NULL, ?, ?, ?, ?)""",
+        [kind, entity_type, entity_id, payload_json])
+    update_view_for_event!(db, kind, entity_id, JSON3.read(payload_json),
+                           Int(DBInterface.lastrowid(res)))
     nothing
 end
 

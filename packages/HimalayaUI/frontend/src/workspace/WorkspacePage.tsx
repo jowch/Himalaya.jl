@@ -14,7 +14,10 @@ import {
   useIndices,
   useLoads,
   usePeaks,
+  useFrameAssignments,
   useRemoveAssignmentPhase,
+  useRemoveFramePhase,
+  useSampleCall,
   useSetSampleCallState,
   useRemovePeak,
   useSetExposureStatus,
@@ -196,11 +199,29 @@ export function WorkspacePage(): JSX.Element {
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
-  const assigned = useMemo(() => new Set(assignment.data?.members ?? []), [assignment.data]);
+  const sampleCall = useSampleCall(sampleId);
+  const otherFrames = useMemo(
+    () => [...new Set((sampleCall.data?.members ?? []).map((m) => m.exposure_id))].filter((id) => id !== exposure?.id),
+    [sampleCall.data, exposure?.id],
+  );
+  const otherAssignments = useFrameAssignments(otherFrames);
+  const otherMembers = useMemo(() => {
+    const live = new Map(otherFrames.map((id, i) => [id, otherAssignments[i]?.data?.members]));
+    return (sampleCall.data?.members ?? []).filter(
+      (m) => m.exposure_id !== exposure?.id && (live.get(m.exposure_id) ?? [m.index_id]).includes(m.index_id),
+    );
+  }, [sampleCall.data, otherFrames, otherAssignments, exposure?.id]);
+  const assigned = useMemo(() => {
+    const here = new Set(assignment.data?.members ?? []);
+    const phases = new Set(otherMembers.map((m) => m.phase));
+    for (const c of candidates) if (phases.has(c.phase)) here.add(c.id);
+    return here;
+  }, [assignment.data, otherMembers, candidates]);
   const [hoverId, setHoverId] = useState<number | undefined>(undefined);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
+  const removeFramePhase = useRemoveFramePhase();
   const setCallState = useSetSampleCallState(sampleId ?? 0);
   const isFormFactor = assignment.data?.state === "form_factor";
   const setStatus = useSetExposureStatus(sampleId ?? 0);
@@ -252,14 +273,20 @@ export function WorkspacePage(): JSX.Element {
 
   const toggleCandidate = useCallback(
     (ix: IndexEntry) => {
-      if (!exposure || exposure.status === "rejected") return;
-      if (assigned.has(ix.id)) {
+      if (!exposure) return;
+      if (assignment.data?.members.includes(ix.id)) {
         removePhase.mutate(ix.id);
         return;
       }
+      const elsewhere = otherMembers.filter((m) => m.phase === ix.phase);
+      if (elsewhere.length > 0) {
+        for (const m of elsewhere) removeFramePhase.mutate(m.exposure_id, m.index_id);
+        return;
+      }
+      if (exposure.status === "rejected") return;
       addPhase.mutate(ix.id);
     },
-    [exposure, assigned, addPhase, removePhase],
+    [exposure, assignment.data, otherMembers, addPhase, removePhase, removeFramePhase],
   );
 
   const toggleFormFactor = useCallback(() => {

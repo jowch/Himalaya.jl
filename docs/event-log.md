@@ -100,13 +100,24 @@ member) and `call_phases` (every phase in the call) from the sample, not from
 the representative frame. `GET /api/samples/{id}/call` returns the whole call,
 and `POST /api/samples/{id}/call/state` sets the state.
 
-`migrate_sample_calls!` (`sample_calls_v1`) moves existing calls. Per sample,
-it keeps the call on the frame the user edited last (the newest
-`assignment_*` event). A sample with no such event keeps its representative
-frame's call, else the lowest-id frame with one. Members on the sample's other
-frames are deleted: the old UI never showed them together, so the union would
-surface stale picks. The event log still holds them. The kept frame's state
-becomes the sample's state.
+`migrate_sample_calls!` (`sample_calls_v1`, run by `open_db`) moves existing
+calls. Per sample it considers only frames that still carry a call (members,
+or a non-indexed state). Among those it keeps the frame the user edited last
+(the newest `assignment_*` event), else the representative frame, else the
+lowest id. Members on the other frames are removed: the old UI never showed
+them together, so the union would surface stale picks. The kept frame's state
+becomes the sample's state. The migration writes these changes as logged
+events (`assignment_remove` per dropped member, then one
+`sample_call_set_state`, with no user), folded through the dispatcher, so the
+log still reproduces the view.
+
+`rebuild_views_from_log!` folds across entities for calls. For an exposure it
+folds that exposure's events, its sample's `sample_call_set_state` events
+(clearing only this exposure's members) and the sample state set by sibling
+frames' `assignment_add` / `assignment_set_state`, all in id order. For a
+sample it folds the sample's events and every call event on its frames.
+`exposure_moved` marks the destination sample `indexed` when the moved frame
+carries members. Deleting an experiment deletes its `sample_calls` rows.
 
 ### Payload contract
 

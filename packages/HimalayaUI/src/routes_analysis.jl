@@ -211,7 +211,7 @@ function register_analysis_routes!()
     # POST/DELETE /api/exposures/{id}/assignment/members are the assignment-
     # native targets that the Plan D frontend calls directly (the legacy
     # /groups/{id}/members dual-write stays live until D-10). They mirror the
-    # /assignment/state route shape: with_idempotency + apply_event!(InTransaction())
+    # /samples/{id}/call/state route shape: with_idempotency + apply_event!(InTransaction())
     # + _assignment_body response, and carry the DISTINCT post_state
     # {assignment:{state,members}} (NO top-level `indices` key) so the
     # frontend's applyPostStateOnly/CurationPostState guard bails harmlessly.
