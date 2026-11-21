@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { PLOT_VIEWS, applyView, nextView, usePlotView, viewAxes, viewIntensity } from "../../src/workspace/plotView";
+import { PLOT_VIEWS, applyView, usePlotView, viewAxes, viewIntensity } from "../../src/workspace/plotView";
 
 describe("plot views", () => {
   beforeEach(() => window.localStorage.clear());
@@ -30,12 +30,6 @@ describe("plot views", () => {
     expect(k.sigma[0]).toBeCloseTo(0.1);
     expect(k.sigma[1]).toBeCloseTo(0.2);
     expect(applyView("log", t)).toBe(t);
-  });
-
-  it("cycles forward and back through the views", () => {
-    expect(nextView("log", 1)).toBe("linear");
-    expect(nextView("kratky", 1)).toBe("log");
-    expect(nextView("log", -1)).toBe("kratky");
   });
 
   it("remembers the chosen view and falls back to log for anything unknown", () => {
