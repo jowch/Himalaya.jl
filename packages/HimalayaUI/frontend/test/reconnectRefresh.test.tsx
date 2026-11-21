@@ -36,7 +36,7 @@ describe("refresh after the live-update stream reconnects", () => {
   it("runs one refresh for several reconnects that happen while an edit is pending", async () => {
     vi.spyOn(api, "listPeaks").mockResolvedValue([peak(7), peak(8)]);
     let finishRemove!: (r: PeakRemoveResponse) => void;
-    vi.spyOn(api, "removePeak").mockImplementation(() => new Promise((resolve) => { finishRemove = resolve; }));
+    vi.spyOn(api, "removeManualPeak").mockImplementation(() => new Promise((resolve) => { finishRemove = resolve; }));
     const qc = makeClient();
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -66,7 +66,7 @@ describe("refresh after the live-update stream reconnects", () => {
   it("waits for every pending edit to settle, not just the first one", async () => {
     vi.spyOn(api, "listPeaks").mockResolvedValue([peak(7), peak(8)]);
     const finish: ((r: PeakRemoveResponse) => void)[] = [];
-    vi.spyOn(api, "removePeak").mockImplementation(() => new Promise((resolve) => { finish.push(resolve); }));
+    vi.spyOn(api, "removeManualPeak").mockImplementation(() => new Promise((resolve) => { finish.push(resolve); }));
     const qc = makeClient();
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
@@ -75,7 +75,7 @@ describe("refresh after the live-update stream reconnects", () => {
     await waitFor(() => expect(result.current.peaks.data).toBeDefined());
     act(() => result.current.remove.mutate(7));
     act(() => result.current.remove.mutate(8));
-    await waitFor(() => expect(finish).toHaveLength(2));
+    await waitFor(() => expect(finish).toHaveLength(1));
 
     const invalidate = vi.spyOn(qc, "invalidateQueries");
     const fromRefresh = () => invalidate.mock.calls.filter(([f]) => typeof f?.predicate === "function" && f.queryKey === undefined);
@@ -83,7 +83,8 @@ describe("refresh after the live-update stream reconnects", () => {
     await act(async () => {
       finish[0]!({ event_id: 1, view_row_id: 7, analysis_inputs_hash: "h" } as PeakRemoveResponse);
     });
-    await waitFor(() => expect(qc.getMutationCache().getAll().filter((m) => m.state.status === "success")).toHaveLength(1));
+    await waitFor(() => expect(finish).toHaveLength(2));
+    expect(qc.getMutationCache().getAll().filter((m) => m.state.status === "success")).toHaveLength(1);
     expect(fromRefresh()).toHaveLength(0);
     await act(async () => {
       finish[1]!({ event_id: 2, view_row_id: 8, analysis_inputs_hash: "h2" } as PeakRemoveResponse);
