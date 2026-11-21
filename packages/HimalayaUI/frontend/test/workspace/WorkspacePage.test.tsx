@@ -863,6 +863,15 @@ describe("WorkspacePage", () => {
       expect(ops()).toEqual([["addLabel", 10, "Buffer"]]);
     });
 
+    it("undoes a label added from the palette", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("label", "Calibrant");
+      state.labels = [{ id: 1, sample_id: 10, label: "Calibrant", state: "confirmed", source: "user" }];
+      await undo();
+      expect(ops()).toEqual([["removeLabel", 10, "Calibrant"]]);
+      expect(toasts.at(-1)).toBe("Undone: added the label Calibrant on A1");
+    });
+
     it("refuses to undo confirming a suggested label instead of deleting it", async () => {
       state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "suggested", source: "suggested" }];
       renderAt("/experiments/1/workspace/10");
@@ -1010,17 +1019,51 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("the palette opens the label picker, which suggests experiment labels and adds the pick on Enter", () => {
-    state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
+  it("the palette's label page lists experiment labels and toggles one on Enter, and creates a new one with a colour", () => {
+    state.labels = [
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+    ];
     renderAt("/experiments/1/workspace/10");
     runFromPalette("label");
-    const picker = screen.getByRole("dialog", { name: "Add a label" });
-    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
-    const input = within(picker).getByLabelText("Label name");
-    fireEvent.change(input, { target: { value: "bufer" } });
+    const page = screen.getByRole("dialog", { name: "Label" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual([
+      "37C, On this sample, Enter removes it",
+      "retake",
+      "Buffer",
+      "Calibrant",
+      "Empty capillary",
+    ]);
+    const input = within(page).getByRole("combobox", { name: "Name" });
+    fireEvent.change(input, { target: { value: "retake" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
-    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "retake" } }]);
+    calls.length = 0;
+    runFromPalette("label", "37c");
+    expect(calls).toEqual([{ hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } }]);
+    calls.length = 0;
+    runFromPalette("label", "dehydrated");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("textbox", { name: "Name" })).toHaveValue("dehydrated");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Tab" });
+    expect(within(form).getByRole("option", { name: "Rose" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(within(form).getByRole("combobox", { name: "Colour" }), { key: "ArrowDown" });
+    fireEvent.keyDown(within(form).getByRole("combobox", { name: "Colour" }), { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([
+      { hook: "setLabelColor", boundTo: 0, arg: { label: "dehydrated", color: "plum" } },
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "dehydrated" } },
+    ]);
+  });
+
+  it("creating a label that already has a colour elsewhere starts on that colour and leaves it alone", () => {
+    state.labelColors = [{ label: "dried", color: "plum" }];
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("label", "Dried");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("combobox", { name: "Colour" })).toHaveTextContent("Plum");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Enter" });
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Dried" } }]);
   });
 
   it("L opens the label picker without typing the L, and Enter confirms a suggestion", () => {
@@ -1104,15 +1147,21 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
   });
 
-  it("the palette opens a label's colour menu, which can reset a recoloured label to its default", () => {
-    state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" }];
+  it("the palette's label colour page recolours any label of the experiment through a colour form", () => {
+    state.labels = [
+      { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+    ];
     state.labelColors = [{ label: "buffer", color: "stone" }];
     renderAt("/experiments/1/workspace/10");
-    runFromPalette("label colour", "buffer");
-    const menu = screen.getByRole("dialog", { name: "Colour of label Buffer" });
-    expect(within(menu).getByRole("radio", { name: "Stone" })).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(within(menu).getByRole("button", { name: "Default colour" }));
-    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
+    runFromPalette("label colour", "retake");
+    const form = screen.getByRole("dialog", { name: "retake" });
+    expect(within(form).getByRole("option", { name: "Violet" })).toHaveAttribute("aria-selected", "true");
+    const colour = within(form).getByRole("combobox", { name: "Colour" });
+    expect(colour).toHaveFocus();
+    fireEvent.click(within(form).getByRole("option", { name: "Green" }));
+    fireEvent.keyDown(colour, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
   });
 
   it("offers no colour menu before a user is set", () => {

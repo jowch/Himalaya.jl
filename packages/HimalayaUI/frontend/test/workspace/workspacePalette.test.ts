@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IndexEntry } from "../../src/api";
-import { workspacePalette, type WorkspacePaletteInput } from "../../src/workspace/palette";
+import { workspacePalette, type PaletteLabel, type WorkspacePaletteInput } from "../../src/workspace/palette";
 import { PLOT_VIEWS } from "../../src/workspace/plotView";
 
 function candidate(id: number, lattice: number): IndexEntry {
   return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
+}
+
+function known(label: string, over: Partial<PaletteLabel> = {}): PaletteLabel {
+  return { label, name: label, color: "violet", uses: 1, onSample: undefined, ...over };
 }
 
 function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput {
@@ -17,7 +21,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     compare: { samples: [], notes: new Map(), pick: noop },
     bridge: { samples: [], pick: noop, bridged: false, leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
-    labels: { open: noop, onSample: [], recolour: noop },
+    labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
     formFactor: { on: false, toggle: noop },
     views: { options: PLOT_VIEWS, current: "log", set: noop },
@@ -53,11 +57,12 @@ describe("workspacePalette", () => {
 
   it("offers no editing pages or commands before a user is set", () => {
     const { pages, groups } = workspacePalette(
-      input({ canEdit: false, candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() }, labels: { open: vi.fn(), onSample: [{ label: "x", name: "x" }], recolour: vi.fn() } }),
+      input({ canEdit: false, candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() }, labels: { known: [known("x")], colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour: vi.fn() } }),
     );
     expect(Object.keys(pages).sort()).toEqual(["compare", "theme", "view"]);
+    expect(groups.flatMap((g) => g.items.map((i) => i.id))).not.toContain("colours");
     const ids = groups.flatMap((g) => g.items.map((i) => i.id));
-    for (const id of ["label", "bridge", "tick", "form-factor", "colours"]) expect(ids).not.toContain(id);
+    for (const id of ["label", "bridge", "tick", "form-factor"]) expect(ids).not.toContain(id);
   });
 
   it("names the current view and theme on their rows and pages", () => {
@@ -84,5 +89,45 @@ describe("workspacePalette", () => {
     expect(app.find((i) => i.id === "redo")).toMatchObject({ label: "Redo: ticked Pn3m on A1", typeOnly: true });
     undo.run?.();
     expect(run).toHaveBeenCalledWith("undo");
+  });
+
+  it("offers Create for a typed name the experiment does not have yet, which opens a name and colour form", () => {
+    const create = vi.fn();
+    const { pages } = workspacePalette(input({ labels: { known: [known("retake"), known("Buffer")], colorFor: () => "teal", toggle: vi.fn(), create, recolour: vi.fn() } }));
+    expect(pages.label!.extra!("RETAKE")).toEqual([]);
+    expect(pages.label!.extra!("")).toEqual([]);
+    const [row] = pages.label!.extra!("dehydrated");
+    expect(row!.label).toBe("Create “dehydrated”");
+    const form = row!.form!();
+    expect(form.fields.map((f) => [f.label, f.value])).toEqual([["Name", "dehydrated"], ["Colour", "teal"]]);
+    expect(form.fields[1]!.options).toHaveLength(8);
+    const name = form.fields[0]!;
+    expect(name.check!("")).toBe("Type a name.");
+    expect(name.check!("Retake")).toBe("That label exists. Pick it from the list.");
+    expect(name.check!("dehydrated")).toBeUndefined();
+    form.submit({ name: "  dehydrated ", color: "ochre" });
+    expect(create).toHaveBeenCalledWith("dehydrated", "ochre");
+  });
+
+  it("labels rows say whether the label is on this sample, and Enter toggles it", () => {
+    const toggle = vi.fn();
+    const on = known("37C", { onSample: "confirmed" });
+    const { pages } = workspacePalette(input({ labels: { known: [on, known("Buffer", { onSample: "suggested" }), known("x")], colorFor: () => "plum", toggle, create: vi.fn(), recolour: vi.fn() } }));
+    expect(pages.label!.items.map((i) => i.hint)).toEqual(["On this sample, Enter removes it", "Suggested, Enter confirms it", undefined]);
+    pages.label!.items[0]!.run!();
+    expect(toggle).toHaveBeenCalledWith(on);
+  });
+
+  it("recolours a label through a one-field form that starts on its colour and writes only a change", () => {
+    const recolour = vi.fn();
+    const { pages } = workspacePalette(input({ labels: { known: [known("37C", { color: "rose", uses: 3 })], colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour } }));
+    const row = pages.colours!.items[0]!;
+    expect(row.hint).toBe("3 samples");
+    const form = row.form!();
+    expect(form.fields.map((f) => f.value)).toEqual(["rose"]);
+    form.submit({ color: "rose" });
+    expect(recolour).not.toHaveBeenCalled();
+    form.submit({ color: "green" });
+    expect(recolour).toHaveBeenCalledWith("37C", "green");
   });
 });

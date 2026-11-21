@@ -298,7 +298,7 @@ export const addLabel = (sampleId: number, label: string, opts?: AuthOpts): Prom
 export const removeLabel = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
   request<SampleLabel[]>("DELETE", `/api/samples/${sampleId}/labels?label=${encodeURIComponent(label)}`, undefined, opts);
 
-export const LABEL_COLORS = ["violet", "blue", "teal", "rose", "stone"] as const;
+export const LABEL_COLORS = ["rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone"] as const;
 export type LabelColor = (typeof LABEL_COLORS)[number];
 
 export interface LabelColorEntry {
