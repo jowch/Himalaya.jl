@@ -22,7 +22,7 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
                  "HEPES_S01", "PBS_2", "buf_3",
                  "MO_H2O_S2401", "vesicles_ULV_S2412", "JC001", "tristearin", "pbsx",
                  "MO_HEPES_S01", "DOPC_in_PBS", "lipid_10mM_Tris"]
-        (exp_id, ids) = _seed_named_samples(db, names)
+        (exp_id, ids) = _seed_named_samples(db, [HimalayaUI._auto_name(n, 3, i) for (i, n) in enumerate(names)])
         HimalayaUI.suggest_labels_for_experiment!(db, exp_id)
         got = Dict(names[findfirst(==(sid), ids)] => label for (sid, label, _, _) in _rows(db))
         @test got == Dict(
