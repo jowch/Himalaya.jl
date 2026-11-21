@@ -1,5 +1,5 @@
 import { scaleLinear } from "d3-scale";
-import { axisTicks, makeAxis, type ScaleType } from "../print/plot/projection";
+import type { ScaleType } from "../print/plot/projection";
 import { formatTicks } from "../lib/plot/formatAxis";
 
 export interface Series {
@@ -18,11 +18,15 @@ function usable(v: number): boolean {
   return Number.isFinite(v) && v > 0;
 }
 
+function finite(v: number): boolean {
+  return Number.isFinite(v);
+}
+
 function edgeValue(series: Series, at: number, log: boolean): number | null {
   for (let i = 1; i < series.q.length; i++) {
     const q0 = series.q[i - 1]!;
     const q1 = series.q[i]!;
-    if ((q0 - at) * (q1 - at) > 0) continue;
+    if (!finite(q0) || !finite(q1) || (q0 - at) * (q1 - at) > 0) continue;
     const a = series.I[i - 1]!;
     const b = series.I[i]!;
     if (!usable(a) || !usable(b) || q1 === q0) return null;
@@ -69,8 +73,12 @@ function labelled(values: number[]): AxisTick[] {
 }
 
 export function linearTicks(domain: [number, number], count: number): AxisTick[] {
-  return labelled(scaleLinear().domain(domain).ticks(count));
+  const values = scaleLinear().domain(domain).ticks(count);
+  if (values.every((v) => Number.isInteger(v))) return values.map((value) => ({ value, label: value.toFixed(0) }));
+  return labelled(values);
 }
+
+const MANTISSAS = [[1, 2, 5], [1, 2, 3, 4, 5, 6, 7, 8, 9]] as const;
 
 export function logTicks(domain: [number, number], count: number, decades: boolean): AxisTick[] {
   const lo = Math.min(domain[0], domain[1]);
@@ -84,7 +92,17 @@ export function logTicks(domain: [number, number], count: number, decades: boole
       return exps.filter((_, i) => i % stride === 0).map((e) => ({ value: 10 ** e, label: decadeLabel(e) }));
     }
   }
-  return labelled(axisTicks(makeAxis([lo, hi], [0, 1], "log"), count).filter((t) => t.kind !== "minor").map((t) => t.value));
+  for (const set of MANTISSAS) {
+    const values: number[] = [];
+    for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) {
+      for (const m of set) {
+        const v = Number((m * 10 ** e).toPrecision(12));
+        if (v >= lo && v <= hi) values.push(v);
+      }
+    }
+    if (values.length >= 3) return labelled(values.length > count + 3 ? values.filter((_, i) => i % Math.ceil(values.length / (count + 1)) === 0) : values);
+  }
+  return linearTicks([lo, hi], count);
 }
 
 export function ticksFor(domain: [number, number], type: ScaleType, count: number, decades: boolean): AxisTick[] {

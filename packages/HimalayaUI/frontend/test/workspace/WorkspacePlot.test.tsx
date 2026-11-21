@@ -183,4 +183,52 @@ describe("WorkspacePlot", () => {
     fireEvent.pointerLeave(frame);
     expect(screen.getByTestId("workspace-trace").querySelector('[data-role="q-readout"]')).toBeNull();
   });
+
+  const kpeaks = [
+    { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+    { id: 2, exposure_id: 1, q: 0.15, intensity: 8, prominence: null, sharpness: null, source: "manual" as const, excluded: true },
+    { id: 3, exposure_id: 1, q: 0.3, intensity: 8, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+  ];
+
+  it("lets the keyboard reach and toggle every peak in the window", () => {
+    const onClickPeak = vi.fn();
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={onClickPeak} />);
+    const auto = screen.getByRole("button", { name: "Auto peak at q = 0.1000 Å⁻¹" });
+    const manual = screen.getByRole("button", { name: "Manual peak at q = 0.1500 Å⁻¹, off" });
+    expect(auto.getAttribute("tabindex")).toBe("0");
+    expect(screen.queryByRole("button", { name: /0\.3000/ })).toBeNull();
+    fireEvent.keyDown(auto, { key: "Enter" });
+    fireEvent.keyDown(manual, { key: " " });
+    expect(onClickPeak.mock.calls).toEqual([[1], [2]]);
+  });
+
+  it("does not hit a peak drawn outside the window, and adds peaks only inside the plot area", () => {
+    const onClickPeak = vi.fn();
+    const onAddPeak = vi.fn();
+    const edge = [{ ...kpeaks[0]!, id: 7, q: 0.0995 }];
+    render(<WorkspacePlot trace={trace} peaks={edge} combs={[]} xDomain={[0.1, 0.2]} onXDomain={() => {}} onClickPeak={onClickPeak} onAddPeak={onAddPeak} />);
+    const svg = screen.getByTestId("workspace-trace");
+    fireEvent.click(svg, { clientX: PLOT_MARGINS.left + 1, clientY: 100 });
+    expect(onClickPeak).not.toHaveBeenCalled();
+    expect(onAddPeak).toHaveBeenCalledTimes(1);
+    fireEvent.click(svg, { clientX: PLOT_MARGINS.left + 200, clientY: 5 });
+    expect(onAddPeak).toHaveBeenCalledTimes(1);
+    fireEvent.click(svg, { clientX: PLOT_MARGINS.left + 200, clientY: PLOT_HEIGHT - 5 });
+    expect(onAddPeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("end-anchors an x label at the right edge only", () => {
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} xDomain={[0.1, 0.2]} />);
+    const texts = Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-bottom"] text'));
+    expect(texts.at(-1)!.getAttribute("text-anchor")).toBe("end");
+    expect(texts[0]!.getAttribute("text-anchor")).toBeNull();
+  });
+
+  it("ignores pointer moves below the plot area", () => {
+    if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} />);
+    const frame = screen.getByTestId("workspace-trace").parentElement!;
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + 100, clientY: PLOT_HEIGHT - 3 });
+    expect(screen.getByTestId("workspace-trace").querySelector('[data-role="q-readout"]')).toBeNull();
+  });
 });

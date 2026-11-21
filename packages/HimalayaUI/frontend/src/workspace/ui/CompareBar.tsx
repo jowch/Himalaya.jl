@@ -39,6 +39,7 @@ export function CompareBar({ chips, subtractId, hidden, onSubtract, onRemove, on
             <button
               type="button"
               aria-pressed={sub}
+              {...(hidden ? { "aria-label": `${c.name}, hidden` } : {})}
               title={sub ? "Stop subtracting" : "Subtract from the current trace"}
               onClick={() => onSubtract(c.id)}
               className="text-ink"

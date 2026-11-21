@@ -461,6 +461,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "r" });
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "r" });
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();

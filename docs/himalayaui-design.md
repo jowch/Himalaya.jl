@@ -219,62 +219,41 @@ These are the concrete choices in the current build. They are not
 
 ### 2.4 Trace plot
 
-- A bespoke d3 trace-plot engine at the core (`print/plot/TracePlot.tsx`,
-  built on `d3-scale`/`d3-shape`; axis formatting is hand-rolled, not
-  `d3-format`). React owns the SVG
-  tree directly — trace path, overlay marks (cursor, ticks, peak triangles)
-  and axes are all declarative React elements, so there is no imperative
-  `replaceChildren` to fight on each render. Observable Plot was fully
-  retired (2026-06-13); `@observablehq/plot` is no longer a dependency.
-- **X axis label**: `q (Å⁻¹)` (`print/plot/Axis.tsx`) with a hand-rolled tick
-  formatter (`lib/plot/formatAxis.ts`) that uses plain decimal or scientific
-  notation — never SI-prefix abbreviations, which would render e.g. 0.040 as
-  the nonsensical "40 m" (milli-).
-- **Wheel scroll** zooms around the cursor; **double-click** resets to
-  full range. The visible q-range is shared with the numeric inputs in the
-  plot card's title strip (the controlled `xDomain` / `setXDomain` state on
-  `TracePlate`; there is no discrete `QRange` component).
-- **Click empty plot space** adds a manual peak at the exact clicked q.
-  **Click within ~10 pixels of an existing peak triangle** removes it.
-  No q-snap — the user zooms in for precision.
-- **Cursor crosshair** (solid vertical rule + follow-dot in `--color-ink-soft`)
-  only appears inside the plot interior, gated by the plot's margin
-  constants. Neutral gray so it doesn't compete with the phase-coloured
-  ticks.
-- **Peak markers** (down-triangles) sit ~30% above the trace line, not
-  on it, so they don't get visually swallowed by the curve. Predicted-q
-  ticks that match a peak terminate ~7px above the triangle so the two
-  markers don't visually fuse.
-- **Predicted-q ticks** render in two places:
-  - A **track row** above the plot (`TRACK_Y_TOP`–`TRACK_Y_BOTTOM` band
-    inside the bumped `MARGIN_TOP`) carries the persistent phase-colour
-    swatches at 55% opacity. This is where colour lives by default.
-  - **Plot vlines** inside the data area are neutral gray
-    (`--color-ink-soft`) at 35% opacity by default — they show *where* an
-    index would land without competing with the trace data.
-  - On hover, the hovered index's ticks go solid full-opacity in *both*
-    places (track and plot), and any other indices fade to gray 30% in
-    both places. The track row doubles as a legend-by-position.
-
-**Cross-panel q-hover is one-way keyed.** `TracePlot` emits `onHoverQ`
-keyed on its *internal* `hoverId` (set by the frame hit-test and per-glyph
-focus), **not** on the incoming `hoveredQ` prop. This asymmetry is the only
-thing preventing an infinite feedback loop when two panels wire their hover
-states together (TracePlot↔TracePlot in the waterfall, or TracePlot↔comb):
-an external hover resolves to an `externalHotId` for display but never
-round-trips back out. Any new panel that joins the q-link chain must
-preserve this — emit on internal state, never re-emit the incoming prop
-(`print/plot/TracePlot.tsx:152-161`).
+- The workspace plot (`workspace/ui/WorkspacePlot.tsx`) follows the approved
+  mock-up and design specimen. It is plain declarative SVG on `PlotFrame`
+  (`print/plot/PlotFrame.tsx`) and the `makeAxis` projection
+  (`print/plot/projection.ts`, backed by `d3-scale`). The old `TracePlot`
+  engine was deleted with Focus and Loupe.
+- **Views**: Log, Linear, Log-log and q²I (`workspace/plotView.ts`), cycled
+  with `L`/`Shift+L` or picked in the palette. q²I is a display transform
+  only; peak finding always runs on the measured I.
+- **Y fit** (`workspace/plotScale.ts` `fitYDomain`): the y axis fits the
+  visible q window, using the in-window values of the trace and each
+  comparison plus the values interpolated at the two window edges (in log
+  space on a log axis). Padding is 6% below and 9.6% above. A window with
+  fewer than two values falls back to the whole trace.
+- **Ticks**: decade labels (10ⁿ) when three or more decades are in view;
+  otherwise 1-2-5 or 1-9 mantissas so at least three labels show, and linear
+  ticks inside very narrow windows. Linear ticks print plain integers.
+  `q (Å⁻¹)` sits inside the plot at the bottom right.
+- **Wheel scroll** zooms around the cursor. There is no double-click reset.
+- **Click** inside the plot area adds a manual peak at the exact q; a click
+  within `PEAK_HIT_PX` of a drawn peak triangle toggles or removes it. Only
+  peaks inside the window are drawn or hit.
+- **Peak markers** are triangles in a row above the plot (diamonds for
+  manual peaks, outlines when off). Each is a `role="button"` tab stop that
+  Enter or Space toggles, so peaks can be edited without a mouse.
+- **Predicted-q combs** show only for the hovered candidate or the open
+  custom index.
 
 **The `PlotFrame` wheel handler is imperative on purpose.** React's
 synthetic `onWheel` is passive and cannot `preventDefault()`, so `PlotFrame`
 binds wheel via `addEventListener("wheel", …, { passive: false })` in a
 `useEffect` (`print/plot/PlotFrame.tsx:75-86`). Moving it to a JSX `onWheel`
 prop silently breaks zoom in Chrome/Firefox — the scroll passes through to
-the page. Its companion is the `stateRef` pattern: `TracePlot` writes
-projection + peaks + interaction into a ref on every render
-(`TracePlot.tsx:139,269-277`) so the imperative event closures read fresh
-values without re-binding.
+the page. Its companion is a geometry ref: `WorkspacePlot` writes the
+projection into a ref on every render so the imperative event closures read
+fresh values without re-binding.
 
 **Detector overlay: beam-center y-flip + null-calibration fallback.** The
 beam-center y is flipped (`1 − y/h`) because the detector/PONI origin is
@@ -285,19 +264,6 @@ it and every ring is misplaced on real samples
 (centered beam, the old 100-unit viewBox radius fractions) so composites and
 stories render without real geometry wired (`:63-83`).
 
-**Peak markers carry two functional edge-case guards, not cosmetic clamps**
-(`print/plot/marks/PlotPeaks.tsx`):
-  - **FO-CLIPMARK** — a peak whose intensity maps above the plot ceiling has
-    its apex clamped *down* so the whole glyph stays inside the plot body and
-    clickable; without it the click lands in the dead top margin
-    (`plotPy < 0` is ignored) and the peak becomes un-disable-able. The
-    q-line still drops to the true q (`:119-128`).
-  - **FO-ZOOMEDIT** — a peak whose q falls outside the current zoom window is
-    clipped to invisibility, so its `role="button"`/`tabIndex` are stripped:
-    a clipped-invisible tab stop would break keyboard parity (pointer can't
-    reach it either). Off-window is detected from the projection's own domain
-    since d3 scales don't clamp (`:149-158`, applied at `:168`).
-
 **Why bespoke d3 rather than Observable Plot.** The decisive reason was
 *inverted projection ownership*: Plot owned the q→pixel mapping, so every
 interactive layer had to reverse-engineer the projection back out of Plot's
@@ -306,61 +272,20 @@ rendered DOM (`plotEl.scale('x')`), forcing a ~420-line imperative bridge
 (`print/plot/projection.ts` — `makeProjection`/`makeAxis`, backed by
 `d3-scale`), so every layer reads the same scale declaratively.
 
-**The comb / residual panel is a separate SVG subsystem, not part of
-`<TracePlot>`.** It lives in `print/comb/` (`CombScaffold`, `CombChart`,
-`ResidualChart`; `CombsPanel` in `print/components/`) and rides the shared
-q-link spine (predicted-q, `phaseColor`) but is never feature-gated into
-`TracePlot` — an explicit boundary. Within it:
-
-- **`CombChart` and `ResidualChart` are siblings, not one component with a
-  `view` prop.** They share only the log-q x-projection and the rowed
-  scaffold; their glyph geometry (teeth/carets/rings vs zero-line/band/scatter)
-  is entirely different, so a unified `view`-prop component would violate
-  one-responsibility.
-- **Both are fixed to log-q**, with no per-panel log/linear toggle and *no*
-  coupling to the hero trace's log/linear state. The comb is a ratio diagram
-  (teeth at √N multiples of q₁): even in log, crowded in linear.
-- **The hovered-q "hot" highlight uses a wider stem + larger ringed cap in
-  the row's own phase colour — never the terracotta accent.** This diverges
-  from the old mockup CSS (`.tooth.hot { stroke: var(--accent) }`): the
-  accent is reserved for the active assignment, not hover.
-- **`ResidualChart` uses a fixed symmetric y-domain (±`RESID_DOMAIN` = ±3%)**,
-  not auto-scaled per row, with a tolerance band at ±`RESID_BAND` = ±2.2%.
-  Display tiers: within band → filled dot; outside band but within domain →
-  hollow dot; beyond domain → clamped to the edge.
-- **`CombLegend` legends the trace-plot peak-glyph vocabulary** (auto
-  triangle / manual diamond / predicted-absent caret / excluded), *not* the
-  comb's intrinsic tooth/caret/ring vocabulary — even though `CombsPanel`
-  places it below `CombChart`. The two vocabularies deliberately differ.
-
-**The series waterfall composes N single-trace `TracePlot`s** (one per
-member), not one shared coordinate space. This per-member partitioning is the
-deliberate replacement for the legacy `computeYBands`/`computeReference`/
-`applyNormalization` machinery in `lib/comparison/` (those files still exist
-but `src/print/` imports none of them). The vertical **`PhaseStrip`
-companion** (`orientation="vertical"`) and the waterfall stack share the same
-low→high `display_order`; pixel alignment between them is the *plate's*
-responsibility — `WaterfallChart` does not embed the strip.
-
 **Why cross-sample / cross-experiment overlay is physically valid.** The
 q-axis is in *absolute* Å⁻¹ (a real reciprocal-space coordinate, not a
 detector-relative or per-sample-normalised axis), so traces from different
 samples — or different experiments / beamtimes — share one x-axis and can be
 overlaid and compared directly. This is the load-bearing assumption behind
-the waterfall, behind the Series folio's "cross-experiment" filter
-(`lib/series/folioFilter.ts`, `series.jl` `spans_experiments`), and behind
-the deferred cross-experiment comparison feature.
+the workspace comparisons and the deferred cross-experiment comparison
+feature.
 
 ### 2.5 Animation
 
-Three primitives, all 120–140ms ease:
+Two primitives, both 120–140ms ease:
 
 - `.anim-pal-in` — backdrop / overlay fade (opacity 0 → 1).
 - `.anim-pal-scale` — popover entry: `translateY(-6px) scale(0.98)` → none.
-- `.anim-overlay … overlay-fade-in` — one-shot fade-in for newly mounted
-  SVG overlay nodes (peak triangles, ticks). We use a CSS animation rather
-  than transitions because the overlay rebuilds on every render — there is
-  no element-to-element transition to fire.
 
 The CSS transitions on `*` (color/background/border/opacity, 120ms ease-out)
 soften ambient theme/hover changes without us having to opt-in per element.

@@ -14,6 +14,11 @@ function fixture(name: string): { q: number[]; I: number[]; sigma: number[] } {
   return { q: rows.map((r) => r[0]!), I: rows.map((r) => r[1]!), sigma: rows.map((r) => r[2]!) };
 }
 
+const DECADE = /^10[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+$/;
+const spanDecades = (I: number[]): number => {
+  const pos = I.filter((v) => v > 0);
+  return Math.log10(Math.max(...pos) / Math.min(...pos));
+};
 const plotHeight = PLOT_HEIGHT - PLOT_MARGINS.top - PLOT_MARGINS.bottom;
 const VIEWS: PlotView[] = ["log", "linear", "loglog", "kratky"];
 const WINDOWS: ([number, number] | null)[] = [null, [0.0075, 0.0085], [0.02, 0.05], [0.08, 0.15], [0.12, 0.16]];
@@ -44,11 +49,22 @@ describe("WorkspacePlot on real SSRL traces", () => {
           const line = ys('[data-role="trace-line"] path');
           expect(Math.min(...line), `${view} ${w}`).toBeGreaterThan(0);
           expect(Math.max(...line), `${view} ${w}`).toBeLessThan(plotHeight);
+          expect(Math.max(...line) - Math.min(...line), `${view} ${w} fills the plot`).toBeGreaterThan(plotHeight * 0.6);
+          const left = labels("axis-left");
+          const decades = left.filter((l) => DECADE.test(l));
+          expect(decades.length === 0 || decades.length === left.length, `${view} ${w} ${left.join("|")}`).toBe(true);
+          if ((view === "log" || view === "loglog") && w === null && spanDecades(t.I) >= 3) expect(decades.length, `${view} full range`).toBe(left.length);
           unmount();
         }
       }
     });
   }
+
+  it("gives a high-q log zoom inside one decade at least three labels", () => {
+    const t = fixture("example");
+    render(<WorkspacePlot trace={t} peaks={[]} combs={[]} view="log" xDomain={[0.12, 0.16]} />);
+    expect(labels("axis-left").length).toBeGreaterThanOrEqual(3);
+  });
 
   it("keeps a stronger comparison inside the plot in q²I", () => {
     const main = fixture("form-factor");

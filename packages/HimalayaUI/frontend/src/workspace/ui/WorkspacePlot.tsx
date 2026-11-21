@@ -117,15 +117,20 @@ export function WorkspacePlot({
   const yDomain = fitYDomain({ q: trace.q, I }, shownCompares, shownX, yType);
   const yLabel = viewLabel(view);
 
+  const lowX = Math.min(...shownX);
+  const highX = Math.max(...shownX);
+  const shownPeaks = peaks.filter((p) => p.q >= lowX && p.q <= highX);
+
   const onClickPx = (px: number, py: number): void => {
     const g = geometry.current;
     const p = plotX(px);
-    if (!g || p === null || py > g.dims.margins.top + g.dims.plotHeight) return;
+    const top = g ? g.dims.margins.top : 0;
+    if (!g || p === null || py < top - 12 || py > top + g.dims.plotHeight) return;
     const q = g.x.invert(p);
     if (!Number.isFinite(q) || q <= 0) return;
-    const hit = hitTestPeaks([...peaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX);
+    const hit = hitTestPeaks([...shownPeaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX);
     if (hit && onClickPeak) onClickPeak(hit.id);
-    else if (!hit && onAddPeak) onAddPeak(q);
+    else if (!hit && onAddPeak && py >= top) onAddPeak(q);
   };
 
   const onPointerMovePx = (px: number, py: number): void => {
@@ -144,7 +149,7 @@ export function WorkspacePlot({
       height={height}
       margins={PLOT_MARGINS}
       data-testid="workspace-trace"
-      svgRole="img"
+      svgRole={onClickPeak ? "group" : "img"}
       svgLabel="Integration trace: intensity against q"
       onPointerMovePx={onPointerMovePx}
       onPointerLeave={() => setHoverQ(null)}
@@ -155,7 +160,7 @@ export function WorkspacePlot({
         geometry.current = { x, dims, xDomain: shownX, xExtent, xType };
         const xTicks = ticksFor(shownX, xType, Math.max(3, Math.floor(dims.plotWidth / 90)), false);
         const yTicks = ticksFor(yDomain, yType, 5, true);
-        const inX = (q: number): boolean => q >= Math.min(...shownX) && q <= Math.max(...shownX);
+        const inX = (q: number): boolean => q >= lowX && q <= highX;
         return (
           <>
             <defs>
@@ -230,7 +235,7 @@ export function WorkspacePlot({
               </g>
             </g>
             <g data-role="peak-glyph">
-              {peaks.filter((p) => inX(p.q)).map((p) => (
+              {shownPeaks.map((p) => (
                 <polygon
                   key={p.id}
                   data-peak-id={p.id}
@@ -238,6 +243,20 @@ export function WorkspacePlot({
                   points={peakPoints(x.to(p.q), p.source === "manual")}
                   fill={p.excluded ? "none" : "var(--color-ink)"}
                   stroke={p.excluded ? "var(--color-ink-faint)" : "none"}
+                  {...(onClickPeak
+                    ? {
+                        role: "button",
+                        tabIndex: 0,
+                        "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
+                        className: "cursor-pointer outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
+                        onKeyDown: (ev: React.KeyboardEvent) => {
+                          if (ev.key !== "Enter" && ev.key !== " ") return;
+                          ev.preventDefault();
+                          ev.stopPropagation();
+                          onClickPeak(p.id);
+                        },
+                      }
+                    : {})}
                 />
               ))}
             </g>
