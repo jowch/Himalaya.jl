@@ -54,21 +54,21 @@ const EXPERIMENTS: api.Experiment[] = [
 ];
 
 const SAMPLES_EXP1: api.Sample[] = [
-  { id: 10, experiment_id: 1, name: "cubic_run03", notes: null, tags: [] },
-  { id: 11, experiment_id: 1, name: "hex_run01",   notes: null, tags: [] },
+  { id: 10, experiment_id: 1, name: "cubic_run03", notes: null },
+  { id: 11, experiment_id: 1, name: "hex_run01",   notes: null },
 ];
 
 const SAMPLES_EXP2: api.Sample[] = [
-  { id: 20, experiment_id: 2, name: "lamellar_A",  notes: null, tags: [] },
+  { id: 20, experiment_id: 2, name: "lamellar_A",  notes: null },
 ];
 
 // Corpus-wide sample list (SA-F4): the experiment step matches sample names
 // across ALL experiments through this, not just the committed one.
 const CORPUS: api.CorpusSample[] = [
-  { id: 10, experiment_id: 1, name: "cubic_run03", notes: null, tags: [], q_units: "A-1" },
-  { id: 11, experiment_id: 1, name: "hex_run01",   notes: null, tags: [], q_units: "A-1" },
-  { id: 20, experiment_id: 2, name: "lamellar_A",  notes: null, tags: [], q_units: "A-1" },
-  { id: 30, experiment_id: 2, name: "aps_calib",   notes: null, tags: [], q_units: "A-1" },
+  { id: 10, experiment_id: 1, name: "cubic_run03", notes: null, q_units: "A-1" },
+  { id: 11, experiment_id: 1, name: "hex_run01",   notes: null, q_units: "A-1" },
+  { id: 20, experiment_id: 2, name: "lamellar_A",  notes: null, q_units: "A-1" },
+  { id: 30, experiment_id: 2, name: "aps_calib",   notes: null, q_units: "A-1" },
 ];
 
 function resetStore(): void {
@@ -370,7 +370,6 @@ describe("<NavModal>", () => {
         experiment_id: 1,
         name: `bulk_${String(i + 1).padStart(2, "0")}`,
         notes: null,
-        tags: [],
         q_units: "A-1",
       }));
       vi.spyOn(api, "listCorpusSamples").mockResolvedValue(many);

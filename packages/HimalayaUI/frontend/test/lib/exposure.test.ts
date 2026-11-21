@@ -7,7 +7,7 @@ type Case = { case: string; frames: Pick<Exposure, "id" | "selected" | "status">
 
 function exposures(c: Case): Exposure[] {
   return c.frames.map((f) => ({
-    ...f, sample_id: 1, filename: `f${f.id}`, kind: "file", image_path: null, tags: [],
+    ...f, sample_id: 1, filename: `f${f.id}`, kind: "file", image_path: null,
   }) as unknown as Exposure);
 }
 

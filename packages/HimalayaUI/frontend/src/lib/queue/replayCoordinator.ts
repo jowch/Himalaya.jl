@@ -111,10 +111,10 @@ export function handleRemoteEvent(
  * frame; analysis_inputs_hash from post_state if present; remaining
  * fields come from the owning mutator's synthesizeFromSse method.
  *
- * Dispatch: lookup by (event_kind, entity_type) via resolveMutatorForEvent,
+ * Dispatch: lookup by event_kind via resolveMutatorForEvent,
  * then ask the mutator to build its shape. Falls back to a generic
  * `{...base, ...payload}` for forward-scaffolded kinds (set_exposure_status,
- * update_sample, select_exposure, remove_tag). These emit SSE today but their
+ * update_sample, select_exposure). These emit SSE today but their
  * UI gesture doesn't queue through this pipeline (yet); when a future plan
  * wires that gesture, add `synthesizeFromSse` to the matching mutator and the
  * fallback stops handling them.
@@ -138,7 +138,7 @@ function synthesizeResponseFromSse(remote: SseEvent): unknown {
     analysis_inputs_hash: (remote.post_state as CurationPostState | undefined)
       ?.analysis_inputs_hash,
   };
-  const mutator = resolveMutatorForEvent(remote.kind, remote.entity_type);
+  const mutator = resolveMutatorForEvent(remote.kind);
   const synth = mutator?.synthesizeFromSse?.(remote, base);
   if (synth !== undefined) return synth;
   const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};

@@ -11,9 +11,6 @@
  *   - updateSample: SSE payload is the diff (only patched fields). Old code
  *     destructively spread `name/notes/label` from response, clobbering
  *     unpatched fields to undefined. Fixed by skipping undefined fields.
- *   - addSampleTag / addExposureTag: SSE uses `tag_id`; HTTP uses `id`.
- *     Old synth produced a tag with `id: undefined, source: undefined`.
- *     Fixed by adding kind-aware synthesis for `add_tag`.
  *   - peakSetExcluded (peak_excluded / peak_unexcluded): SSE payload is
  *     `{q, auto_peak_id}` — no `id`. Old fallback produced a response with
  *     `id: undefined`, so onSuccess's `pk.id === peakOnly.id` matched no row
@@ -27,8 +24,6 @@ import { QueryClient } from "@tanstack/react-query";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import {
   updateSampleMutator,
-  addSampleTagMutator,
-  addCorpusSampleTagMutator,
 } from "../../src/lib/queue/mutators/trivial";
 import {
   peakExcludeMutator,
@@ -159,56 +154,10 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     });
   });
 
-  it("corpus add_tag SSE-wins: addSampleTagMutator synth feeds the corpus onSuccess", () => {
-    // Own corpus add_tag confirmed by SSE before HTTP returns.
-    // synthesizeResponseFromSse picks the synth via
-    // resolveMutatorForEvent("add_tag","sample") -> addSampleTagMutator,
-    // but the pending mutation is the CORPUS mutator, so ITS onSuccess
-    // consumes that synth. Pin this cross-mutator handoff.
-    const sample = {
-      id: 10, experiment_id: 1, name: "D1", notes: null,
-      q_units: "nm^-1",
-      tags: [{ id: -1, key: "lipid", value: "DOPC", source: "manual" }],
-    };
-    qc.setQueryData(queryKeys.corpusSamples, [sample]);
-
-    // The SSE frame the server broadcasts for this tag.
-    const remote = {
-      id: 77, kind: "add_tag", entity_type: "sample", entity_id: 10,
-      client_op_id: "op-corpus-1",
-      payload: { tag_id: 500, key: "lipid", value: "DOPC", experiment_id: 1 },
-    } as any;
-    const base = {
-      event_id: 77, client_op_id: "op-corpus-1",
-      analysis_inputs_hash: undefined,
-    };
-    // synthesizeResponseFromSse routes through addSampleTagMutator's synth.
-    const synth = addSampleTagMutator.synthesizeFromSse!(remote, base as any);
-    expect(synth).toMatchObject({
-      id: 500, key: "lipid", value: "DOPC", source: "manual",
-    });
-
-    // The pending mutation is the corpus mutator — its onSuccess runs.
-    addCorpusSampleTagMutator.onSuccess(
-      { sampleId: 10, key: "lipid", value: "DOPC",
-        username: "u", clientId: "c", clientOpId: "op-corpus-1" } as any,
-      synth as any,
-      qc,
-    );
-
-    const list = qc.getQueryData<any[]>(queryKeys.corpusSamples);
-    // The optimistic placeholder (id: -1) is replaced by the canonical row.
-    expect(list![0].tags).toEqual([
-      { id: 500, key: "lipid", value: "DOPC", source: "manual" },
-    ]);
-    // q_units preserved — the mutator never reconstructs the CorpusSample row.
-    expect(list![0].q_units).toBe("nm^-1");
-  });
-
   it("updateSample.onSuccess skips undefined fields (SSE-wins diff payload)", () => {
     const original = {
       id: 5, experiment_id: 1, name: "old-name",
-      notes: "old notes", tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
+      notes: "old notes",
     };
     qc.setQueryData(queryKeys.samples(1), [original]);
     // SSE payload for update_sample is the diff; if only `name` was patched,
@@ -227,17 +176,15 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
       qc,
     );
     const single = qc.getQueryData<any[]>(queryKeys.samples(1))![0];
-    // name updated; notes/tags preserved (NOT clobbered to undefined)
+    // name updated; notes preserved (NOT clobbered to undefined)
     expect(single).toEqual({
       id: 5, experiment_id: 1, name: "new name",
       notes: "old notes",
-      tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });
     const list = qc.getQueryData<any[]>(queryKeys.samples(1));
     expect(list![0]).toEqual({
       id: 5, experiment_id: 1, name: "new name",
       notes: "old notes",
-      tags: [{ id: 100, key: "k", value: "v", source: "manual" }],
     });
   });
 });

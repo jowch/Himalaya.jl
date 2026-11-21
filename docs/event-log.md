@@ -76,16 +76,18 @@ keeps explicit no-op guards for them
 so old event logs still fold cleanly, but they write nothing. The
 `/groups` routes that emitted them are gone and the `index_group_members`
 write was removed; confirmation is now carried by `assignment_add` /
-`assignment_remove` writing `assignment_members`. The series, comparison
-and sample chat kinds (`RETIRED_EVENT_KINDS` in `events.jl`, deleted 2026-11-21)
-get one shared guard for the same reason.
+`assignment_remove` writing `assignment_members`. The series, comparison,
+sample chat and legacy tag kinds (`add_tag`, `remove_tag`, `edit_tag`;
+`RETIRED_EVENT_KINDS` in `events.jl`, deleted 2026-11-21) get one shared
+guard for the same reason. Their `user_actions` rows stay in the log, and
+`open_db` drops their tables (`RETIRED_TABLES` in `db.jl`).
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_exposure_status`, `select_exposure`, `add_tag`, `remove_tag`,
-`edit_tag`, `update_sample`, `analyze`, `scan`, `experiment_created`. The
-dispatcher carries explicit no-op `return nothing` guards for the
-view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
+`set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
+`scan`, `experiment_created`. The dispatcher carries explicit no-op
+`return nothing` guards for the view-less kinds (`set_exposure_status`,
+`select_exposure`, …).
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —

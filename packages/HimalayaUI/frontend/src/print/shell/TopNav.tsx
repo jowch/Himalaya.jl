@@ -44,8 +44,8 @@ export function TopNav(): JSX.Element {
             data-testid={`topnav-tab-${it.id}`}
             aria-current={isActive ? "page" : undefined}
             className={
-              "px-2.5 py-1.5 rounded text-xs font-semibold uppercase tracking-wide no-underline " +
-              (isActive ? "text-ink bg-paper-sunk" : "text-ink-soft")
+              "px-2.5 py-1.5 rounded text-base no-underline " +
+              (isActive ? "font-semibold text-ink bg-paper-sunk" : "text-ink-soft")
             }
           >
             <span
