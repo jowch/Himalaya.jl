@@ -645,12 +645,15 @@ end
     @test isfile(ts_path)
     ts = read(ts_path, String)
 
-    # SYMS entries look like:  Pn3m: { kind: "cubic", Ms: [2, 3, 4, 6, 8, 9], …
+    # SYMS entries look like:  Pn3m: { kind: "cubic", Ms: phaseRatioIndices.Pn3m, …
+    # and the indices themselves live in phaseRatioIndices.json (#342).
+    json_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "phaseRatioIndices.json")
+    indices = JSON3.read(read(json_path, String))
     entries = Dict{String, Tuple{String, Vector{Int}}}()
-    for m in eachmatch(r"(\w+):\s*\{\s*kind:\s*\"(\w+)\",\s*Ms:\s*\[([^\]]*)\]", ts)
-        name, kind, ms_s = m.captures[1], m.captures[2], m.captures[3]
-        ms = [parse(Int, strip(x)) for x in split(ms_s, ",") if !isempty(strip(x))]
-        entries[name] = (kind, ms)
+    for m in eachmatch(r"(\w+):\s*\{\s*kind:\s*\"(\w+)\",\s*Ms:\s*phaseRatioIndices\.(\w+)", ts)
+        name, kind, key = m.captures[1], m.captures[2], m.captures[3]
+        @test key == name
+        entries[name] = (kind, Int.(indices[Symbol(key)]))
     end
     # All eight canonical phases, or the regex drifted from the source.
     @test length(entries) == 8
@@ -682,7 +685,7 @@ end
     # again. The loop is the contract — these are the Hexagonal-specific teeth.
     hex_backend = Himalaya.phaseratios(Himalaya.Hexagonal; normalize = true)
     hex_ms      = entries["Hexagonal"][2]
-    @test hex_ms == [1, 3, 4, 7, 9, 12]
+    @test hex_ms == [1, 3, 4, 7, 9, 12, 13, 16, 19, 21, 25, 27, 28]
     @test !(11 in round.(Int, hex_backend .^ 2))      # #304: the √11 is gone…
     @test !(11 in [h^2 + h*k + k^2 for h in -12:12, k in -12:12])  # …because it cannot exist
     @test round.(Int, hex_backend[1:length(hex_ms)] .^ 2) == hex_ms
