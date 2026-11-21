@@ -94,6 +94,10 @@ export function storedFit(ix: Pick<IndexEntry, "predicted_q" | "peaks" | "basis"
 
 export const CUSTOM_PHASES = Object.keys(SYMS);
 
+export function latticeParam(phase: string): string {
+  return SYMS[phase]?.param ?? "a";
+}
+
 export interface CustomDraft {
   phase: string;
   lattice: number;
