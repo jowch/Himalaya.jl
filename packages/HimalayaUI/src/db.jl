@@ -10,6 +10,8 @@ const MIGRATION_SPECULATIVE_PEAK_DURABILITY = "speculative_peak_durability"
 # Sentinel marker name for the Hexagonal √11 removal (#304).
 const MIGRATION_HEX_SQRT11 = "hex_sqrt11_removal_v1"
 
+const MIGRATION_RATIO_POSITION_INT = "index_peaks_ratio_position_int_v1"
+
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
@@ -539,6 +541,7 @@ function migrate_schema!(db::SQLite.DB)
     # after migrate_speculative_peak_durability! (needs speculative_peak_intents).
     migrate_hex_sqrt11!(db)
 
+    migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
 end
 
@@ -1546,10 +1549,10 @@ Three steps, sentinel-gated, in one transaction:
 1. DELETE Hexagonal `index_peaks`. That table is DERIVED — `persist_analysis!`
    wipes it for every kind and rebuilds (auto from `indexpeaks`, speculative from
    `speculative_peak_intents`), so renumbering it would be pointless work. It is
-   also not safely renumberable in SQL: auto rows store `ratio_position` as a
-   serialized `UInt8` BLOB (`findnz` on the `SparseVector{_,UInt8}` in
-   `src/index.jl`), so `ratio_position > 6` is a BLOB-vs-INTEGER affinity
-   comparison that matches every blob row. Until the next analyze the index reads
+   also not safely renumberable in SQL: auto rows written before #308 store
+   `ratio_position` as a serialized `UInt8` BLOB (healed later by
+   `migrate_index_peaks_ratio_int!`), so `ratio_position > 6` is a BLOB-vs-INTEGER
+   affinity comparison that matches every blob row. Until the next analyze the index reads
    as claiming nothing — an already-supported state, and honest.
 2. Renumber `speculative_peak_intents`, the only DURABLE `ratio_position` store
    (analyze reads it and never rewrites it). `p == 6` claimed the √11 that never
@@ -1660,6 +1663,36 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_HEX_SQRT11, comparison_now_iso()])
     end
+    nothing
+end
+
+function migrate_index_peaks_ratio_int!(db::SQLite.DB)
+    _migrated(db, MIGRATION_RATIO_POSITION_INT) && return nothing
+    unknown = SQLite.transaction(db) do
+        rows = Tables.rowtable(DBInterface.execute(db, """
+            SELECT rowid AS rid,
+                   hex(substr(ratio_position, 1, 3)) AS magic,
+                   hex(substr(ratio_position, -1)) AS last
+              FROM index_peaks
+             WHERE typeof(ratio_position) = 'blob'"""))
+        unknown = 0
+        for r in rows
+            if r.magic == "374A4C"
+                DBInterface.execute(db,
+                    "UPDATE index_peaks SET ratio_position = ? WHERE rowid = ?",
+                    [parse(Int, r.last; base = 16), r.rid])
+            else
+                unknown += 1
+            end
+        end
+        if unknown == 0
+            DBInterface.execute(db,
+                "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                [MIGRATION_RATIO_POSITION_INT, comparison_now_iso()])
+        end
+        unknown
+    end
+    unknown > 0 && @warn "migrate_index_peaks_ratio_int!: left index_peaks.ratio_position blobs it could not decode" count = unknown
     nothing
 end
 
@@ -2670,6 +2703,7 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # from inside the migration transaction references a dropped table.
     SQLite.finalize_statements!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    DBInterface.execute(db, "PRAGMA busy_timeout = 5000")
 
     # WAL lets concurrent readers proceed alongside one writer — load-bearing
     # for parallel request handling (#115). The default rollback journal

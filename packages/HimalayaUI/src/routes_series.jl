@@ -354,16 +354,15 @@ function register_series_routes!()
 
     @get "/api/users/me/series-pins" function(req::HTTP.Request)
         db = current_db()
-        user_id = get_user_id_for_request(db, req)
-        if user_id === nothing
-            return _json_error(401, "X-Username header required")
-        end
+        username = get_username(req)
+        username === nothing && return _json_error(401, "X-Username header required")
         # Most-recently-pinned first.
         rows = Tables.rowtable(DBInterface.execute(db, """
-            SELECT series_id FROM series_pins
-            WHERE user_id = ?
-            ORDER BY pinned_at DESC, series_id DESC
-        """, [user_id]))
+            SELECT p.series_id FROM series_pins p
+            JOIN users u ON u.id = p.user_id
+            WHERE u.username = ?
+            ORDER BY p.pinned_at DESC, p.series_id DESC
+        """, [username]))
         ids = Int[Int(r.series_id) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(ids))
     end
