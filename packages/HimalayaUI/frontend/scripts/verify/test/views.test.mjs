@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frameFromLabels, statusFromText, workspaceStart } from "../views.mjs";
+import { frameFromLabels, keptFromLabels, statusFromText, workspaceStart } from "../views.mjs";
 import { tracked } from "../settle.mjs";
 
 test("the pressed thumbnail's frame number maps to the exposure list order", () => {
@@ -12,7 +12,14 @@ test("the pressed thumbnail's frame number maps to the exposure list order", () 
   assert.equal(frameFromLabels(["Frame 9"], order), null);
 });
 
-test("corpus status text maps onto the StatusCell states", () => {
+test("the workspace's frame cards give kept / total", () => {
+  assert.equal(keptFromLabels(["Frame 1", "Frame 2, dropped", "Frame 3"]), "2/3");
+  assert.equal(keptFromLabels(["Frame 1, dropped"]), "0/1");
+  assert.equal(keptFromLabels(["Drop", "Restore"]), null);
+  assert.equal(keptFromLabels([]), null);
+});
+
+test("status text maps onto the sample states", () => {
   assert.equal(statusFromText("Not indexed"), "unreviewed");
   assert.equal(statusFromText("Unreviewed"), "unreviewed");
   assert.equal(statusFromText("Index →"), "unreviewed");

@@ -161,14 +161,10 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
     const shown = one ? { ...shownStatus(one.shown), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
     const unread = one ? unreadViews(one) : [];
     if (one && one.views) {
-      shown.corpus_text = one.corpusText;
-      const read = statusFromText(one.corpusText);
-      const expected = one.frames.length ? shown.status : "no_exposures";
-      if (read !== expected) problems.push(`the corpus reads "${one.corpusText ?? "nothing"}" but GET /api/samples says ${expected}; check-truth is misreading the app`);
       shown.workspace_text = one.workspaceText ?? null;
-      shown.corpus_kept = one.corpusKept ?? null;
-      const keptCount = `${one.frames.filter(isKept).length}/${one.frames.length}`;
-      if (one.corpusKept !== keptCount) problems.push(`the corpus Kept column reads "${one.corpusKept ?? "nothing"}" but the app has ${keptCount} frames kept`);
+      shown.workspace_kept = one.workspaceKept ?? null;
+      const keptCount = one.frames.length ? `${one.frames.filter(isKept).length}/${one.frames.length}` : null;
+      if (one.workspaceKept !== keptCount) problems.push(`the workspace's frame cards show ${one.workspaceKept ?? "nothing"} kept but the app has ${keptCount ?? "no frames"}`);
       for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Frame N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
@@ -290,10 +286,9 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
-      const { corpus_text: corpusText = null, corpus_kept: corpusKept = null, workspace_text: workspaceText = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
+      const { workspace_text: workspaceText = null, workspace_kept: workspaceKept = null, workspace_reused: _reused, ...frames } = opened.get(s.id) ?? {};
       s.views = { workspace: frames.workspace ?? null };
-      s.corpusText = corpusText;
-      s.corpusKept = corpusKept;
+      s.workspaceKept = workspaceKept;
       s.workspaceText = workspaceText;
     }
   }
