@@ -2774,6 +2774,7 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # from inside the migration transaction references a dropped table.
     SQLite.finalize_statements!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    DBInterface.execute(db, "PRAGMA busy_timeout = 5000")
 
     # WAL lets concurrent readers proceed alongside one writer — load-bearing
     # for parallel request handling (#115). The default rollback journal
