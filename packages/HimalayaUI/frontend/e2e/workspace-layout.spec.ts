@@ -195,3 +195,24 @@ test("three comparisons with long names keep the compare bar on one line", async
   expect(after.compareBar).toEqual(before.compareBar);
   expect(after.plot[0]).toEqual(before.plot[0]);
 });
+
+for (const viewport of VIEWPORTS) {
+  test(`every frame's Drop or Restore button stays inside its frame card at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.route(/\/api\/samples\/44\/exposures/, (r) => r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify(Array.from({ length: 7 }, (_, f) => ({ ...exposureOf(44, true, f, f === 6), status: f % 2 === 0 ? "rejected" : null }))),
+    }));
+    await page.goto("/experiments/17/workspace/44");
+    const frames = page.locator("[data-testid=workspace-exposures] > li");
+    await expect(frames).toHaveCount(7);
+    for (let i = 0; i < 7; i++) {
+      await frames.nth(i).hover();
+      const button = frames.nth(i).getByRole("button", { name: /^(Drop|Restore)/ });
+      await expect(button).toBeVisible();
+      const [card, b] = await Promise.all([frames.nth(i).boundingBox(), button.boundingBox()]);
+      expect(b!.x + b!.width, `frame ${i + 1} button right edge`).toBeLessThanOrEqual(card!.x + card!.width + 0.5);
+      expect(b!.x, `frame ${i + 1} button left edge`).toBeGreaterThanOrEqual(card!.x - 0.5);
+    }
+  });
+}
