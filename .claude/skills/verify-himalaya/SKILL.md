@@ -84,7 +84,7 @@ Attach to every PR that touches something a user can see:
   - `--no-settle` skips it; the result says `httpChecked: false`, and a later `wait-settle` only sees requests that start after it connects.
   - A 5xx fails the command even if the app retries it to success. That is deliberate: a 5xx is a server bug, not a normal answer.
 - On a name collision the CLI refuses rather than guessing. Use `--exact` (for example `--name Im3m --exact` against "Im3m, in assignment"), `--within aside` or `--nth`.
-- Ports: `DEMO_API_PORT`, `DEMO_UI_PORT` and `VERIFY_CDP_PORT` move everything, including `seed`. Mocked Playwright (`npm run e2e`) also wants :5173, so `bin/verify stop` before running it.
+- Ports: `DEMO_API_PORT`, `DEMO_UI_PORT` and `VERIFY_CDP_PORT` move everything, including `seed`. Mocked Playwright (`npm run e2e`) uses its own port (:5191) and build folder, so the demo can keep running.
 - The browser runs with the back/forward cache off. With it on, each page left by a full navigation stayed cached with its `/api/events` stream open, and the sixth `open` hung on Chromium's six-connections-per-host limit. In-app navigation (clicks, keys) never hit this.
 - In cloud sessions the frontend's Playwright has no matching browser, so the CLI falls back to the preinstalled `/opt/pw-browsers/chromium-*`. Set `VERIFY_CHROMIUM` to force a binary.
 

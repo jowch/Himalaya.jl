@@ -40,7 +40,7 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 - **Imperative render functions in effects:** wrap in `useCallback`, depend on `[theCallback]` alone. No redundant dep lists.
 - **Focus-gated numeric-input pattern.** A numeric input whose value can change from external events (SSE, sibling controls) should sync the external value into its draft only while it is *not* focused — otherwise an incoming update clobbers what the user is typing. (No single named component owns this; enforce the pattern wherever it applies.)
 - **E2E selectors:** `data-testid`, `role`, `data-*` only. Never assert on Tailwind class strings.
-- **Playwright port:** the mocked suite builds and serves its own bundle on `127.0.0.1:5191`, not `localhost`, and never reuses a running server. Live Julia backend on :8080 leaks past route mocks for URLs with query strings — be wary.
+- **Playwright port:** the mocked suite builds and serves its own bundle on `127.0.0.1:5191`, not `localhost`, builds into `dist-e2e/`, and never reuses a running server. `e2e/fixtures.ts` fails any unmocked `/api` request, so a live backend can't leak in.
 
 ### Worktree-specific
 

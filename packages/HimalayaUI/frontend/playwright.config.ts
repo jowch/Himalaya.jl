@@ -18,7 +18,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: `vite build && vite preview --host 127.0.0.1 --port ${E2E_PORT} --strictPort`,
+    command: `vite build --outDir dist-e2e && vite preview --outDir dist-e2e --host 127.0.0.1 --port ${E2E_PORT} --strictPort`,
     url: `http://127.0.0.1:${E2E_PORT}`,
     reuseExistingServer: false,
     stdout: "pipe",
