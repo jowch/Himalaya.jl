@@ -349,6 +349,7 @@ export interface EditOps {
   addPeak: (exposureId: number, q: number) => void;
   removeManualPeakNear: (exposureId: number, q: number) => void;
   setPeakExcluded: (exposureId: number, peakId: number, excluded: boolean) => void;
+  tickCustomIndex: (exposureId: number, phase: string, basis: number, ticked: boolean) => void;
 }
 
 export function useEditOps(): EditOps {
@@ -384,6 +385,18 @@ export function useEditOps(): EditOps {
     },
     setPeakExcluded: (exposureId, peakId, excluded) =>
       (excluded ? exclude : unexclude).mutate(at({ peakId }, { exposureId })),
+    tickCustomIndex: (exposureId, phase, basis, ticked) => {
+      void qc
+        .ensureQueryData({ queryKey: queryKeys.indices(exposureId), queryFn: () => api.listIndices(exposureId) })
+        .then((indices) => {
+          const hit = indices.find(
+            (ix) => ix.kind === "speculative" && ix.id > 0 && ix.phase === phase && Math.abs(ix.basis - basis) <= 1e-9 * Math.abs(basis),
+          );
+          if (!hit) return;
+          if (ticked) add.mutate(at({ indexId: hit.id }, { exposureId }));
+          else remove.mutate({ exposureId, indexId: hit.id });
+        });
+    },
   };
 }
 

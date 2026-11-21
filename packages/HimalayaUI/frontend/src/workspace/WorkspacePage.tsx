@@ -33,7 +33,10 @@ import {
   useUnbridgeSample,
   useTriggerScan,
   useCheckForNewFilesOnOpen,
+  useEditOps,
 } from "../queries";
+import { useUndoHistory, type UndoEntry } from "./undo";
+import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
@@ -118,6 +121,8 @@ function helpSections(mod: string): HelpSection[] {
       title: "Anywhere",
       rows: [
         { keys: [mod, "K"], what: "Commands and go to a sample" },
+        { keys: [mod, "Z"], what: "Undo the last call, drop or peak edit, even on another sample" },
+        { keys: [mod, "⇧", "Z"], what: "Redo it" },
         { keys: ["?"], what: "This list" },
       ],
     },
@@ -277,6 +282,12 @@ export function WorkspacePage(): JSX.Element {
   const addPeak = useAddPeak(exposure?.id ?? 0);
   const removePeak = useRemovePeak(exposure?.id ?? 0);
   const setExcluded = useSetPeakExcluded(exposure?.id ?? 0);
+  const ops = useEditOps();
+  const history = useUndoHistory(experimentId);
+  const frameName = useCallback(
+    (eid: number) => `frame ${exposureList.findIndex((e) => e.id === eid) + 1} of ${sample?.name ?? "this sample"}`,
+    [exposureList, sample?.name],
+  );
 
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
   const [view, setView] = usePlotView();
@@ -305,11 +316,39 @@ export function WorkspacePage(): JSX.Element {
   const onClickPeak = useCallback(
     (ref: PeakRef) => {
       const action = peakClick(peaks.data ?? [], ref);
-      if (!action) return;
-      if (action.kind === "remove") removePeak.mutate(ref.id);
-      else setExcluded.mutate({ peakId: ref.id, excluded: action.excluded });
+      if (!action || !exposure || sampleId === undefined) return;
+      const eid = exposure.id;
+      if (action.kind === "remove") {
+        const q = (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q;
+        removePeak.mutate(ref.id);
+        if (q !== undefined) {
+          history.record({
+            label: `removed peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid,
+            undo: () => ops.addPeak(eid, q), redo: () => ops.removeManualPeakNear(eid, q),
+          });
+        }
+        return;
+      }
+      setExcluded.mutate({ peakId: ref.id, excluded: action.excluded });
+      history.record({
+        label: `${action.excluded ? "turned off" : "turned on"} a peak on ${frameName(eid)}`, sampleId, exposureId: eid,
+        undo: () => ops.setPeakExcluded(eid, ref.id, !action.excluded), redo: () => ops.setPeakExcluded(eid, ref.id, action.excluded),
+      });
     },
-    [peaks.data, removePeak, setExcluded],
+    [peaks.data, removePeak, setExcluded, exposure, sampleId, history, ops, frameName],
+  );
+
+  const addPeakAt = useCallback(
+    (q: number) => {
+      if (!exposure || sampleId === undefined) return;
+      const eid = exposure.id;
+      addPeak.mutate(q);
+      history.record({
+        label: `added a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid,
+        undo: () => ops.removeManualPeakNear(eid, q), redo: () => ops.addPeak(eid, q),
+      });
+    },
+    [exposure, sampleId, addPeak, history, ops, frameName],
   );
 
   const removeCompare = useCallback((rid: number) => {
@@ -319,33 +358,74 @@ export function WorkspacePage(): JSX.Element {
 
   const toggleCandidate = useCallback(
     (ix: IndexEntry) => {
-      if (!exposure) return;
+      if (!exposure || sampleId === undefined) return;
+      const eid = exposure.id;
+      const where = sample?.name ?? "this sample";
       if (assignment.data?.members.includes(ix.id)) {
         removePhase.mutate(ix.id);
+        history.record({
+          label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
+          undo: () => ops.addPhase(eid, ix.id), redo: () => ops.removePhase(eid, ix.id),
+        });
         return;
       }
       const elsewhere = otherMembers.filter((m) => m.phase === ix.phase);
       if (elsewhere.length > 0) {
         for (const m of elsewhere) removeFramePhase.mutate(m.exposure_id, m.index_id);
+        history.record({
+          label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
+          undo: () => elsewhere.forEach((m) => ops.addPhase(m.exposure_id, m.index_id)),
+          redo: () => elsewhere.forEach((m) => ops.removePhase(m.exposure_id, m.index_id)),
+        });
         return;
       }
       if (exposure.status === "rejected") return;
       addPhase.mutate(ix.id);
+      const wasFormFactor = isFormFactor;
+      history.record({
+        label: `ticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
+        undo: () => {
+          ops.removePhase(eid, ix.id);
+          if (wasFormFactor) ops.setCallState(sampleId, "form_factor");
+        },
+        redo: () => ops.addPhase(eid, ix.id),
+      });
     },
-    [exposure, assignment.data, otherMembers, addPhase, removePhase, removeFramePhase],
+    [exposure, sampleId, sample?.name, assignment.data, otherMembers, isFormFactor, addPhase, removePhase, removeFramePhase, history, ops],
   );
 
   const toggleFormFactor = useCallback(() => {
-    if (!exposure || exposure.status === "rejected") return;
-    setCallState.mutate(isFormFactor ? "null" : "form_factor");
-  }, [exposure, isFormFactor, setCallState]);
+    if (!exposure || exposure.status === "rejected" || sampleId === undefined) return;
+    const on = !isFormFactor;
+    const eid = exposure.id;
+    const ticked = on
+      ? [...(assignment.data?.members ?? []).map((indexId) => ({ exposure_id: eid, index_id: indexId })), ...otherMembers]
+      : [];
+    setCallState.mutate(on ? "form_factor" : "null");
+    history.record({
+      label: `${on ? "marked" : "cleared"} no phase on ${sample?.name ?? "this sample"}`, sampleId, exposureId: eid,
+      undo: () => {
+        ops.setCallState(sampleId, on ? "null" : "form_factor");
+        for (const m of ticked) ops.addPhase(m.exposure_id, m.index_id);
+      },
+      redo: () => ops.setCallState(sampleId, on ? "form_factor" : "null"),
+    });
+  }, [exposure, sampleId, sample?.name, isFormFactor, assignment.data, otherMembers, setCallState, history, ops]);
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
       setExposureId(e.id);
-      setStatus.mutate({ exposureId: e.id, status: e.status === "rejected" ? null : "rejected" });
+      const prev = e.status;
+      const next = prev === "rejected" ? null : "rejected";
+      setStatus.mutate({ exposureId: e.id, status: next });
+      if (sampleId === undefined) return;
+      const sid = sampleId;
+      history.record({
+        label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId: sid, exposureId: e.id,
+        undo: () => ops.setStatus(sid, e.id, prev), redo: () => ops.setStatus(sid, e.id, next),
+      });
     },
-    [setStatus],
+    [setStatus, sampleId, history, ops, frameName],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -446,7 +526,13 @@ export function WorkspacePage(): JSX.Element {
     if (c.ratios.length === 0) return;
     commitCustom.mutate(c.phase, c.basis, c.ratios);
     setDraft(null);
-  }, [draft, exposure, canCall, commitCustom]);
+    if (sampleId === undefined) return;
+    const eid = exposure.id;
+    history.record({
+      label: `added a custom ${c.phase} index on ${sample?.name ?? "this sample"}`, sampleId, exposureId: eid,
+      undo: () => ops.tickCustomIndex(eid, c.phase, c.basis, false), redo: () => ops.tickCustomIndex(eid, c.phase, c.basis, true),
+    });
+  }, [draft, exposure, canCall, commitCustom, sampleId, sample?.name, history, ops]);
   const snapDraft = useCallback(
     (q: number) => {
       if (!draft) return;
@@ -485,6 +571,25 @@ export function WorkspacePage(): JSX.Element {
     });
   }, [draft, draftFit, xExtent, candidates, hoverId, assigned]);
 
+  const applyHistory = useCallback(
+    (dir: "undo" | "redo") => {
+      if (!username) return;
+      const entry: UndoEntry | undefined = dir === "undo" ? history.undo() : history.redo();
+      if (!entry) {
+        showToast(dir === "undo" ? "Nothing to undo." : "Nothing to redo.");
+        return;
+      }
+      if (entry.sampleId !== sampleId) {
+        const qs = entry.exposureId === undefined ? "" : `?exposure=${entry.exposureId}`;
+        navigate(`/experiments/${experimentId}/workspace/${entry.sampleId}${qs}`, { replace: true });
+      } else if (entry.exposureId !== undefined) {
+        setExposureId(entry.exposureId);
+      }
+      showToast(`${dir === "undo" ? "Undone" : "Redone"}: ${entry.label}`);
+    },
+    [username, history, sampleId, navigate, experimentId],
+  );
+
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
       if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key === "0" && !isTyping(ev.target) && !inOverlay(ev.target)) {
@@ -500,6 +605,13 @@ export function WorkspacePage(): JSX.Element {
         setTagging(false);
         setColoringTag(undefined);
         setPaletteOpen((o) => !o);
+        return;
+      }
+      const lower = ev.key.toLowerCase();
+      const redoY = ev.ctrlKey && !ev.metaKey && !ev.shiftKey && lower === "y";
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (lower === "z" || redoY) && !isTyping(ev.target) && !inOverlay(ev.target)) {
+        ev.preventDefault();
+        applyHistory(redoY || ev.shiftKey ? "redo" : "undo");
         return;
       }
       if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -595,7 +707,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, applyHistory]);
 
   const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
@@ -620,6 +732,8 @@ export function WorkspacePage(): JSX.Element {
       },
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
+    ...(username && history.nextUndo ? [{ id: "undo", label: `Undo: ${history.nextUndo.label}`, shortcut: `${MOD_KEY} Z`, run: () => applyHistory("undo") }] : []),
+    ...(username && history.nextRedo ? [{ id: "redo", label: `Redo: ${history.nextRedo.label}`, shortcut: `${MOD_KEY} ⇧ Z`, run: () => applyHistory("redo") }] : []),
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
     ...(username && sample
       ? [
@@ -770,7 +884,7 @@ export function WorkspacePage(): JSX.Element {
                   {...(draft
                     ? { onAddPeak: snapDraft, onClickPeak: snapDraftToPeak }
                     : canEditPeaks
-                      ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak }
+                      ? { onAddPeak: addPeakAt, onClickPeak }
                       : {})}
                 />
                 {difference && xExtent && subRef !== undefined && (

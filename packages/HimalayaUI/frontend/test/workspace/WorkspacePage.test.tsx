@@ -46,7 +46,23 @@ function recorder(hook: string) {
   });
 }
 
+const toasts: string[] = [];
+vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
+
+const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
+const editOps = {
+  addPhase: editOp("addPhase"),
+  removePhase: editOp("removePhase"),
+  setCallState: editOp("setCallState"),
+  setStatus: editOp("setStatus"),
+  addPeak: editOp("addPeak"),
+  removeManualPeakNear: editOp("removeManualPeakNear"),
+  setPeakExcluded: editOp("setPeakExcluded"),
+  tickCustomIndex: editOp("tickCustomIndex"),
+};
+
 vi.mock("../../src/queries", () => ({
+  useEditOps: () => editOps,
   useExperimentCorpusSamples: (experimentId: number) => {
     corpusRequests.push(experimentId);
     return { data: state.corpus, isLoading: false };
@@ -192,6 +208,7 @@ afterEach(() => {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
+  toasts.length = 0;
   prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
@@ -611,6 +628,96 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
     expect(currentFrame()).toBe("Frame 1");
+  });
+
+  describe("undo and redo", () => {
+    const ops = () => calls.filter((c) => c.hook.startsWith("op:")).map((c) => [c.hook.slice(3), ...(c.arg as unknown[])]);
+
+    it("Ctrl+Z after 0 clears no phase and ticks every phase it wiped, on this frame and others", () => {
+      state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+      state.sampleCall = {
+        sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m", "Im3m"],
+        members: [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }, { index_id: 7, exposure_id: 100, phase: "Im3m" }],
+      };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "0" });
+      expect(calls[0]).toEqual({ hook: "state", boundTo: 10, arg: "form_factor" });
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      expect(ops()).toEqual([["setCallState", 10, "null"], ["addPhase", 101, 2], ["addPhase", 100, 7]]);
+      expect(toasts.at(-1)).toBe("Undone: marked no phase on A1");
+    });
+
+    it("Ctrl+Shift+Z redoes what was undone", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      fireEvent.keyDown(window, { key: "Z", ctrlKey: true, shiftKey: true });
+      expect(ops()).toEqual([["addPhase", 101, 2], ["removePhase", 101, 2]]);
+      expect(toasts.at(-1)).toBe("Redone: unticked Pn3m on A1");
+    });
+
+    it("undoes a drop by restoring the frame", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "z", metaKey: true });
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("goes back to the sample the undone edit was made on", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "ArrowDown" });
+      expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/10");
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+    });
+
+    it("undoes peak edits made on the plot", () => {
+      state.trace = makeTrace(1);
+      state.peaks = peakList(101, { auto: [0.1, 0.12], manual: [0.2] });
+      renderAt("/experiments/1/workspace/10");
+      clickPlotAt(0.1);
+      clickPlotAt(0.2);
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      expect(ops()).toEqual([["addPeak", 101, 0.2], ["setPeakExcluded", 101, 1, false]]);
+    });
+
+    it("leaves Ctrl+Z to a text field being typed in", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      const filter = screen.getByRole("searchbox", { name: "Filter samples" });
+      filter.focus();
+      fireEvent.keyDown(filter, { key: "z", ctrlKey: true });
+      expect(ops()).toEqual([]);
+    });
+
+    it("says so when there is nothing to undo", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
+    it("does not undo before a user is set", () => {
+      const { rerender } = renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      state.username = undefined;
+      rerender(page("/experiments/1/workspace/10"));
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      expect(ops()).toEqual([]);
+    });
+
+    it("lists the next undo in the command palette", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "undo" } });
+      fireEvent.click(screen.getByRole("option", { name: /Undo: dropped frame 2 of A1/ }));
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+    });
   });
 
   it("a dropped card offers Restore and the header counts the kept frames", () => {
