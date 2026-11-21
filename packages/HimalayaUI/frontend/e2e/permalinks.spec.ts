@@ -14,7 +14,7 @@ const RESOLVE_RE = /\/api\/resolve\?/;
 
 const SAMPLE = {
   id: 42, experiment_id: 17, display_name: "D1", name: "JC001",
-  notes: null, tags: [], q_units: "A-1",
+  notes: null, q_units: "A-1",
 };
 
 async function seedSession(page: Page): Promise<void> {

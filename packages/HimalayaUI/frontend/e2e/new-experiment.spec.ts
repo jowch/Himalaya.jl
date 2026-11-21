@@ -29,7 +29,6 @@ async function mockFunnel(page: Page, created: unknown[]): Promise<void> {
   });
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/events*", (r) => r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
-  await page.route("**/api/sample-tags", (r) => r.fulfill(json([])));
   await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
   await page.route(/\/api\/fs\/suggest\?/, (r) => {
     const prefix = new URL(r.request().url()).searchParams.get("prefix") ?? "";

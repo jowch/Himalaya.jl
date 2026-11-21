@@ -24,13 +24,13 @@ describe("ingestion api types (Phase E1)", () => {
 
   it("Sample has a single non-null `name` label and no `display_name`", () => {
     const s: Sample = {
-      id: 1, experiment_id: 1, name: "HA85 (S01P15)", notes: null, tags: [],
+      id: 1, experiment_id: 1, name: "HA85 (S01P15)", notes: null,
     };
     expect(s.name).toBe("HA85 (S01P15)");
     // @ts-expect-error display_name is removed from Sample
     expect(s.display_name).toBeUndefined();
     // @ts-expect-error name is non-null after the collapse — null is not assignable
-    const _nn: Sample = { id: 2, experiment_id: 1, name: null, notes: null, tags: [] };
+    const _nn: Sample = { id: 2, experiment_id: 1, name: null, notes: null };
     void _nn;
   });
 });

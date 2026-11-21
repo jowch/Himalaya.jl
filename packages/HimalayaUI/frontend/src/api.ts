@@ -40,19 +40,11 @@ export interface Experiment {
   stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null };
 }
 
-export interface SampleTag {
-  id: number;
-  key: string;
-  value: string;
-  source: string;
-}
-
 export interface Sample {
   id: number;
   experiment_id: number;
   name: string;            // non-null after the collapse (was `string | null` + `display_name`)
   notes: string | null;
-  tags: SampleTag[];
 }
 
 // Corpus samples carry q_units (resolved from the owning experiment's
@@ -272,12 +264,6 @@ export const listCorpusSamples = (experimentId?: number): Promise<CorpusSample[]
   request<CorpusSample[]>("GET", experimentId === undefined ? "/api/samples" : `/api/samples?experiment_id=${experimentId}`);
 export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
-export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>
-  request<SampleTag>("POST", `/api/samples/${id}/tags`, { key, value }, opts);
-export const removeSampleTag = (id: number, tag_id: number, opts?: AuthOpts) =>
-  request<void>("DELETE", `/api/samples/${id}/tags/${tag_id}`, undefined, opts);
-export const editSampleTag = (id: number, tag_id: number, patch: { key?: string; value?: string }, opts?: AuthOpts) =>
-  request<SampleTag>("PATCH", `/api/samples/${id}/tags/${tag_id}`, patch, opts);
 
 export interface SampleBridge {
   sample_id: number;
@@ -326,13 +312,6 @@ export const setLabelColor = (label: string, color: LabelColor | null, opts?: Au
   request<LabelColorEntry[]>("PUT", "/api/label-colors", { label, color }, opts);
 
 // Exposures
-export interface ExposureTag {
-  id: number;
-  key: string;
-  value: string;
-  source: string;
-}
-
 export interface Exposure {
   id: number;
   sample_id: number;
@@ -348,7 +327,6 @@ export interface Exposure {
    * cache key changes when the image content actually changes.
    */
   image_version: string;
-  tags: ExposureTag[];
   sources: unknown[];
   trace_hash: string | null;
   analysis_inputs_hash: string | null;
@@ -375,16 +353,6 @@ export const setExposureStatus = (
 export const selectExposure = (id: number, opts?: AuthOpts) =>
   request<{ id: number; selected: boolean }>(
     "PATCH", `/api/exposures/${id}/select`, {}, opts);
-
-export const addExposureTag = (
-  id: number, key: string, value: string, opts?: AuthOpts,
-) => request<ExposureTag>(
-  "POST", `/api/exposures/${id}/tags`, { key, value }, opts);
-
-export const removeExposureTag = (
-  id: number, tag_id: number, opts?: AuthOpts,
-) => request<void>(
-  "DELETE", `/api/exposures/${id}/tags/${tag_id}`, undefined, opts);
 
 // Trace
 export interface TraceMonitors {
@@ -597,42 +565,6 @@ export interface ReanalyzeResponse {
 }
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
-
-/** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
- *  the experiment-scoped `/api/experiments/:eid/sample-tags`.
- *  `count` is the number of distinct samples carrying this (key, value) pair —
- *  used by the Manage-tags modal to rank suggestions by frequency.
- *  proposeOrdering (scoping) ignores this field and ranks by distinct-value
- *  count instead. */
-export interface SampleTagPair {
-  key: string;
-  value: string;
-  count?: number;
-}
-
-
-// ─── Corpus scoping reads (I0.2 / I0.3 corpus siblings; I3.4 consumer) ──────
-/** Corpus-wide distinct (key,value) tag pairs — GET /api/sample-tags. Reuses
- *  the existing SampleTagPair shape (same {key,value} contract). */
-export const getCorpusSampleTags = (): Promise<SampleTagPair[]> =>
-  request<SampleTagPair[]>("GET", "/api/sample-tags");
-
-
-// ─── Series scoping batch write (I2.6 route, source='scoping') ──────────────
-export interface BatchSampleTagEntry { sample_id: number; value: string }
-export interface BatchSampleTagResult {
-  id: number; sample_id: number; key: string; value: string; source: string;
-}
-/** Batch sample-tag insert — POST /api/samples/tags/batch. One `key`, N
- *  {sample_id,value}, one `source`. Used by scoping with source='scoping'. */
-export const batchSampleTags = (
-  key: string,
-  tags: BatchSampleTagEntry[],
-  source: string,
-  opts?: AuthOpts,
-): Promise<BatchSampleTagResult[]> =>
-  request<BatchSampleTagResult[]>(
-    "POST", "/api/samples/tags/batch", { key, tags, source }, opts);
 
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 

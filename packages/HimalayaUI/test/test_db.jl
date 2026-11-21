@@ -10,8 +10,8 @@ using HimalayaUI: create_schema!, migrate_schema!, create_experiment!, create_sa
     tables = Set(r[1] for r in DBInterface.execute(db,
         "SELECT name FROM sqlite_master WHERE type='table'"))
 
-    for t in ["users", "experiments", "samples", "sample_tags",
-              "exposures", "exposure_sources", "exposure_tags",
+    for t in ["users", "experiments", "samples",
+              "exposures", "exposure_sources",
               "indices", "index_peaks",
               "auto_peaks", "peak_curations",
               "index_groups", "index_group_members", "user_actions"]
@@ -941,87 +941,6 @@ end
     end
 end
 
-@testset "migrate_sample_tags_unique_key!" begin
-    @testset "clean DB: index exists" begin
-        mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
-            try
-                rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT name FROM sqlite_master WHERE type='index' AND name='sample_tags_unique_key'"))
-                @test length(rows) == 1
-            finally
-                close(db)
-            end
-        end
-    end
-
-    @testset "idempotent re-run: no-op" begin
-        mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
-            try
-                HimalayaUI.migrate_sample_tags_unique_key!(db)
-                rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT name FROM sqlite_master WHERE type='index' AND name='sample_tags_unique_key'"))
-                @test length(rows) == 1
-            finally
-                close(db)
-            end
-        end
-    end
-
-    @testset "synthetic duplicates: oldest wins, rest deleted, warn, index created" begin
-        mktempdir() do tmp
-            db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
-            try
-                # Drop the index so we can synthesize duplicates and re-run.
-                DBInterface.execute(db, "DROP INDEX IF EXISTS sample_tags_unique_key")
-
-                eid = let res = DBInterface.execute(db,
-                          "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e','/p','/d','/a')")
-                    Int(DBInterface.lastrowid(res))
-                end
-                sid = let res = DBInterface.execute(db,
-                          "INSERT INTO samples (experiment_id, name) VALUES (?, 'S1')", [eid])
-                    Int(DBInterface.lastrowid(res))
-                end
-                # A manual dose row, then an identical scoping twin (the bug).
-                DBInterface.execute(db,
-                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'dose', '10', 'manual')", [sid])
-                keep = Int(DBInterface.lastrowid(DBInterface.execute(db, "SELECT last_insert_rowid()")))
-                DBInterface.execute(db,
-                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'dose', '10', 'scoping')", [sid])
-                # A distinct key (temp) must be left untouched.
-                DBInterface.execute(db,
-                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'temp', '25', 'manual')", [sid])
-
-                @test_logs (:warn, r"Removed duplicate sample tag"i) min_level=Logging.Warn match_mode=:any begin
-                    HimalayaUI.migrate_sample_tags_unique_key!(db)
-                end
-
-                # Exactly one dose row survives: the oldest (manual) wins.
-                dose = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id, source FROM sample_tags WHERE sample_id = ? AND key = 'dose'", [sid]))
-                @test length(dose) == 1
-                @test dose[1].id == keep
-                @test String(dose[1].source) == "manual"
-                # The distinct key is preserved.
-                temp = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT COUNT(*) AS c FROM sample_tags WHERE sample_id = ? AND key = 'temp'", [sid]))
-                @test temp[1].c == 1
-
-                # Index back in place; a fresh duplicate insert is now rejected.
-                idx = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT name FROM sqlite_master WHERE type='index' AND name='sample_tags_unique_key'"))
-                @test length(idx) == 1
-                @test_throws Exception DBInterface.execute(db,
-                    "INSERT INTO sample_tags (sample_id, key, value, source) VALUES (?, 'dose', '99', 'manual')", [sid])
-            finally
-                close(db)
-            end
-        end
-    end
-end
-
 @testset "open_db chmods owned DB file to 0664" begin
     # SQLite creates files at 0644 (hardcoded in os_unix.c, ignores umask).
     # open_db chmods to 0664 so other curators in the shared group can
@@ -1125,6 +1044,47 @@ end
         db = HimalayaUI.open_db(path)
         @test "series" ∉ Set(String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
             "SELECT name FROM sqlite_master WHERE type = 'table'")))
+        close(db)
+    end
+end
+
+@testset "open_db drops the legacy tag tables, and their old log rows still replay" begin
+    mktempdir() do tmp
+        path = joinpath(tmp, "legacy.db")
+        db = HimalayaUI.open_db(path)
+        exp_id = create_experiment!(db; name = "E", path = tmp,
+            data_dir = joinpath(tmp, "data"), analysis_dir = joinpath(tmp, "analysis"))
+        s_id = create_sample!(db; experiment_id = exp_id, name = "S")
+        e_id = create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "F")
+        DBInterface.execute(db, """CREATE TABLE IF NOT EXISTS sample_tags (id INTEGER PRIMARY KEY,
+            sample_id INTEGER REFERENCES samples(id), key TEXT NOT NULL, value TEXT NOT NULL,
+            source TEXT DEFAULT 'manual')""")
+        DBInterface.execute(db, """CREATE TABLE IF NOT EXISTS exposure_tags (id INTEGER PRIMARY KEY,
+            exposure_id INTEGER REFERENCES exposures(id), key TEXT NOT NULL, value TEXT NOT NULL,
+            source TEXT DEFAULT 'manual')""")
+        DBInterface.execute(db, "INSERT INTO sample_tags (sample_id, key, value) VALUES (?, 'k', 'v')", [s_id])
+        DBInterface.execute(db,
+            "INSERT INTO exposure_tags (exposure_id, key, value) VALUES (?, 'rejection_reason', 'r')", [e_id])
+        for (kind, ent, eid) in (("add_tag", "sample", s_id), ("add_tag", "exposure", e_id),
+                                 ("edit_tag", "exposure", e_id), ("remove_tag", "exposure", e_id))
+            DBInterface.execute(db,
+                """INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload)
+                   VALUES (NULL, ?, ?, ?, '{"key":"rejection_reason","value":"r"}')""",
+                [kind, ent, eid])
+        end
+        close(db)
+
+        db = HimalayaUI.open_db(path)
+        tables = Set(String(r.name) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT name FROM sqlite_master WHERE type = 'table'")))
+        @test "sample_tags" ∉ tables
+        @test "exposure_tags" ∉ tables
+        @test isempty(Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_check")))
+        @test only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM user_actions WHERE action LIKE '%_tag'"))).n == 4
+        @test_nowarn HimalayaUI.rebuild_views_from_log!(db, e_id)
+        @test_nowarn HimalayaUI.rebuild_views_from_log!(db, s_id; entity_type = "sample")
+        @test length(get_exposures(db, s_id)) == 1
         close(db)
     end
 end
