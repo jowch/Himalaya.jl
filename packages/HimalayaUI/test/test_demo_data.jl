@@ -218,6 +218,10 @@ end
     symlink(target, link)
     @test !quiet(() -> DemoGen.clean_large(link))
     @test isdir(joinpath(target, "large_01"))
+    for spelled in (link * "/", link * "/.", link * "//")
+        @test !quiet(() -> DemoGen.clean_large(spelled))
+        @test isdir(joinpath(target, "large_01"))
+    end
 
     linked_entry = tree()
     symlink(tree("large_01"), joinpath(linked_entry, "large_02"))
@@ -226,4 +230,30 @@ end
 
     @test !quiet(() -> DemoGen.clean_large(joinpath(mktempdir(), "missing")))
     @test !quiet(() -> DemoGen.clean_large(""))
+
+    empty = mktempdir()
+    @test !quiet(() -> DemoGen.clean_large(empty))
+    @test isdir(empty)
+    @test !quiet(() -> DemoGen.clean_large(tree(; marker = true)))
+
+    trailing = tree("large_01")
+    @test quiet(() -> DemoGen.clean_large(trailing * "/"))
+    @test !ispath(trailing)
+end
+
+@testset "demo-clean deletes what the large generator really writes (#358)" begin
+    gen(root) = redirect_stdout(devnull) do
+        DemoGen.main([root, "--large", "--experiments", "2", "--samples", "2", "--no-images"])
+    end
+    finished = joinpath(mktempdir(), "demo-large")
+    gen(finished)
+    @test isfile(joinpath(finished, DemoGen.LARGE_MARKER))
+    @test DemoGen.clean_large(finished)
+    @test !ispath(finished)
+
+    interrupted = joinpath(mktempdir(), "demo-large")
+    gen(interrupted)
+    rm(joinpath(interrupted, DemoGen.LARGE_MARKER))
+    @test DemoGen.clean_large(interrupted)
+    @test !ispath(interrupted)
 end

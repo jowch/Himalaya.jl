@@ -207,8 +207,9 @@ work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
   deletes the large tree only when everything in it is a `large_NN` folder or
   the `.demo-large-complete` marker, so an interrupted run is cleaned up too.
   Any other file, a hidden one, or a link makes it leave the folder alone and
-  say why. The check runs in Julia (`--clean-large` in `make_demo_data.jl`), so
-  `make demo-clean` needs the `make setup` environment.
+  say why, and so does a folder with no `large_NN` folder in it. The check runs
+  in Julia (`--clean-large` in `make_demo_data.jl`) and only when
+  `DEMO_LARGE_DIR` exists, so it needs the `make setup` environment only then.
 - Cost, measured with the defaults: about 35 s, 1.4 GB on disk (12,000 `.tif`
   names, 240 distinct files), 3,000 samples and 12,000 exposures. Ingesting all
   ten through `demo_ingest.jl` takes about 3 minutes.
