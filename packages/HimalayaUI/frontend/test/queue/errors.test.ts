@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { NetworkError } from "../../src/api";
 import { isValidationError, isInfrastructureError, isUnreachableError, buildValidationMessage } from "../../src/lib/queue/errors";
 
 describe("error classification", () => {
@@ -41,7 +42,8 @@ describe("error classification", () => {
   });
 
   it("isUnreachableError covers a refused connection and a gateway with no backend, not a server bug", () => {
-    expect(isUnreachableError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isUnreachableError(new NetworkError("PUT", "/api/x"))).toBe(true);
+    expect(isUnreachableError(new TypeError("Cannot read properties of undefined"))).toBe(false);
     for (const status of [502, 503, 504]) {
       expect(isUnreachableError(Object.assign(new Error(String(status)), { status }))).toBe(true);
     }
