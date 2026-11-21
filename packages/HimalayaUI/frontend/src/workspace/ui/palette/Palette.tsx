@@ -24,6 +24,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   const listId = useId();
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
+  const heldBack = useRef(false);
   const top = stack[stack.length - 1];
   const form = top?.form;
   const page = top?.page !== undefined ? pages[top.page] : undefined;
@@ -34,6 +35,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   const back = (): void => {
     const prev = stack[stack.length - 1];
     if (!prev) return onClose();
+    heldBack.current = true;
     setStack(stack.slice(0, -1));
     setQuery(prev.query);
     highlight.setAt(prev.cursor);
@@ -68,6 +70,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   useEffect(() => input.current?.focus(), [stack.length]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Backspace" && e.repeat && heldBack.current) return e.preventDefault();
     if (highlight.onKeyDown(e)) return;
     if (e.key === "Backspace" && query === "" && page && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
@@ -103,6 +106,9 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
         highlight.setAt(0);
       }}
       onKeyDown={onKeyDown}
+      onKeyUp={() => {
+        heldBack.current = false;
+      }}
       placeholder={page ? (page.placeholder ?? "Type to filter") : "Type a command or a sample"}
       className="h-full min-w-0 flex-1 bg-transparent text-lg text-ink placeholder:text-ink-faint focus:outline-none"
     />

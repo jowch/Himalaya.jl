@@ -39,7 +39,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -663,7 +663,7 @@ export function WorkspacePage(): JSX.Element {
     },
     labels: {
       known: paletteLabels,
-      nextColor: firstUnusedColor(labelColors.data ?? [], vocabulary),
+      colorFor: (name) => (labelColorIsDefault(labelColors.data ?? [], name) ? firstUnusedColor(labelColors.data ?? [], vocabulary) : labelColor(labelColors.data ?? [], name)),
       toggle: (l) => {
         if (sampleId === undefined) return;
         if (l.onSample === "confirmed") removeLabel.mutate({ sampleId, label: l.label });
@@ -671,7 +671,7 @@ export function WorkspacePage(): JSX.Element {
       },
       create: (name, color) => {
         if (sampleId === undefined) return;
-        setLabelColor.mutate({ label: name, color });
+        if (labelColorIsDefault(labelColors.data ?? [], name) || labelColor(labelColors.data ?? [], name) !== color) setLabelColor.mutate({ label: name, color });
         addLabel.mutate({ sampleId, label: name });
       },
       recolour: (label, color) => setLabelColor.mutate({ label, color }),

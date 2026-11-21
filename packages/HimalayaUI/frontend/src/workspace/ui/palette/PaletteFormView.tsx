@@ -75,8 +75,10 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
               key={f.id}
               data-field={f.id}
               onMouseDown={(e) => {
-                if (e.target === e.currentTarget) e.preventDefault();
+                if (e.target instanceof HTMLInputElement) return setFocus(i);
+                e.preventDefault();
                 setFocus(i);
+                refs.current[i]?.focus();
               }}
               className={"inline-flex h-7 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 " + (on ? "bg-plate " : "bg-paper-sunk ") + ring}
             >

@@ -197,6 +197,24 @@ describe("Palette", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("clicking a field's caption focuses that field and keeps the form's keys working", () => {
+    const { onClose } = open();
+    submitted.length = 0;
+    fireEvent.click(screen.getByRole("option", { name: "Label" }));
+    fireEvent.change(field(), { target: { value: "dried" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    const caption = screen.getByText("Colour", { selector: "span" });
+    expect(fireEvent.mouseDown(caption)).toBe(false);
+    const colour = screen.getByRole("combobox", { name: "Colour" });
+    expect(colour).toHaveFocus();
+    expect(fireEvent.mouseDown(screen.getByText("Name", { selector: "span" }))).toBe(false);
+    const name = screen.getByRole("textbox", { name: "Name" });
+    expect(name).toHaveFocus();
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(submitted).toEqual([{ name: "dried", color: "teal" }]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("a held Enter in a form submits once, and a held Esc steps back one level", () => {
     const { onClose } = open();
     submitted.length = 0;
@@ -210,6 +228,37 @@ describe("Palette", () => {
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape", repeat: true });
     expect(screen.getByRole("combobox", { name: "Name" })).toHaveValue("x");
     expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(field(), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Enter" });
+    expect(submitted).toEqual([{ name: "x", color: "teal" }]);
+  });
+
+  it("a held Backspace that leaves a form or a page does not then eat the restored text", () => {
+    open();
+    fireEvent.click(screen.getByRole("option", { name: "Label" }));
+    fireEvent.change(field(), { target: { value: "dried" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    const name = screen.getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "" } });
+    fireEvent.keyDown(name, { key: "Backspace" });
+    const repeat = fireEvent.keyDown(field(), { key: "Backspace", repeat: true });
+    expect(repeat).toBe(false);
+    expect(field()).toHaveValue("dried");
+    fireEvent.keyUp(field(), { key: "Backspace" });
+    expect(fireEvent.keyDown(field(), { key: "Backspace", repeat: true })).toBe(true);
+  });
+
+  it("Shift+Tab wraps to the last field, and Enter while composing does not submit", () => {
+    open();
+    submitted.length = 0;
+    fireEvent.click(screen.getByRole("option", { name: "Label" }));
+    fireEvent.change(field(), { target: { value: "y" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    const name = screen.getByRole("textbox", { name: "Name" });
+    fireEvent.keyDown(name, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("combobox", { name: "Colour" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Colour" }), { key: "Enter", isComposing: true });
+    expect(submitted).toEqual([]);
   });
 
   it("refuses to submit an invalid field, outlines it and says why, and Esc returns to the list as it was", () => {
