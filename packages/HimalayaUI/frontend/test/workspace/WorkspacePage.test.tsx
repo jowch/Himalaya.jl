@@ -886,6 +886,16 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: unbridged A2");
     });
 
+    it("Ctrl+K then Enter still goes to the next unreviewed sample when there is something to undo", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+      await settle();
+      expect(ops()).toEqual([]);
+      expect(screen.getByTestId("where")).not.toHaveTextContent("/experiments/1/workspace/10");
+    });
+
     it("lists the next undo in the command palette", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });

@@ -73,13 +73,16 @@ describe("workspacePalette", () => {
     const { groups } = workspacePalette(input({ removeExperiment: vi.fn() }));
     expect(groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "remove-experiment")).toMatchObject({ typeOnly: true, danger: true });
   });
-  it("puts undo and redo first, naming the edit, only when there is one", () => {
+  it("keeps the root order and lists undo and redo only when typed, at the end of App", () => {
     const run = vi.fn();
-    const { groups } = workspacePalette({ ...input(), history: { undo: "dropped frame 2 of A1", redo: undefined, run } });
-    expect(groups[0]!.title).toBe("Edit");
-    expect(groups[0]!.items.map((i) => i.label)).toEqual(["Undo: dropped frame 2 of A1"]);
-    groups[0]!.items[0]!.run?.();
+    const { groups } = workspacePalette(input({ history: { undo: "dropped frame 2 of A1", redo: "ticked Pn3m on A1", run } }));
+    expect(groups.map((g) => g.title)).toEqual(workspacePalette(input()).groups.map((g) => g.title));
+    expect(groups[0]!.items[0]!.id).toBe("next-unreviewed");
+    const app = groups.find((g) => g.title === "App")!.items;
+    const undo = app.find((i) => i.id === "undo")!;
+    expect(undo).toMatchObject({ label: "Undo: dropped frame 2 of A1", typeOnly: true });
+    expect(app.find((i) => i.id === "redo")).toMatchObject({ label: "Redo: ticked Pn3m on A1", typeOnly: true });
+    undo.run?.();
     expect(run).toHaveBeenCalledWith("undo");
-    expect(workspacePalette(input()).groups[0]!.title).not.toBe("Edit");
   });
 });

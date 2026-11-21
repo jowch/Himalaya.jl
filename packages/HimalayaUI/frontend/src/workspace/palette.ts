@@ -122,13 +122,10 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "theme", label: "Theme", hint: themeName, page: "theme" },
     { id: "switch-user", label: p.user.name ? "Switch user" : "Sign in", hint: p.user.name, run: p.user.switch },
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: p.help },
-  ];
-  const edit: PaletteItem[] = [
-    ...(p.history.undo ? [{ id: "undo", label: `Undo: ${p.history.undo}`, shortcut: `${p.modKey} Z`, run: () => p.history.run("undo") }] : []),
-    ...(p.history.redo ? [{ id: "redo", label: `Redo: ${p.history.redo}`, shortcut: `${p.modKey} ⇧ Z`, run: () => p.history.run("redo") }] : []),
+    ...(p.history.undo ? [{ id: "undo", label: `Undo: ${p.history.undo}`, shortcut: `${p.modKey} Z`, typeOnly: true, run: () => p.history.run("undo") }] : []),
+    ...(p.history.redo ? [{ id: "redo", label: `Redo: ${p.history.redo}`, shortcut: `${p.modKey} ⇧ Z`, typeOnly: true, run: () => p.history.run("redo") }] : []),
   ];
   const groups: PaletteGroup[] = [
-    ...(edit.length > 0 ? [{ title: "Edit", items: edit }] : []),
     { title: "This sample", items: sample },
     { title: "Plot", items: plot },
     { title: "Experiment", items: experiment },
