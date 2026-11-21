@@ -210,7 +210,7 @@
     "src/routes_series.jl": 85,
     "src/routes_users.jl": 3,
     "src/series.jl": 130,
-    "src/server.jl": 182,
+    "src/server.jl": 173,
     "src/speculative.jl": 239
   }
 }
