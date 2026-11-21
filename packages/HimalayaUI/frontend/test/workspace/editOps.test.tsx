@@ -309,6 +309,15 @@ describe("undo against the server", () => {
     expect(api.patchCompares).not.toHaveBeenCalled();
   });
 
+  it("undoing an added comparison sends nothing once someone else already removed it", async () => {
+    const { result } = setup();
+    const at = { label: "compared", sampleId: 1, exposureId: undefined };
+    act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "add", ref: 2 } })));
+    server.compares = { compares: [{ sample_id: 1, ref_sample_id: 3, added_by: "ana" }], subtractions: [] };
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(api.patchCompares).not.toHaveBeenCalled();
+  });
+
   it("undoing a removed comparison brings back its subtraction unless another one was set since", async () => {
     const { result } = setup();
     const at = { label: "stopped comparing", sampleId: 1, exposureId: undefined };

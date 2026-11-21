@@ -9,6 +9,8 @@ import { peakList } from "../fixtures/peaks";
 import { useSyncExternalStore } from "react";
 import type { CompareChange, CompareState } from "../../src/api";
 import { applyCompareChange, EMPTY_COMPARES } from "../../src/lib/compares";
+import { COMPARES_FULL, MAX_COMPARES } from "../../src/workspace/compare";
+import { COMPARE_COLORS } from "../../src/workspace/ui/WorkspacePlot";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
@@ -59,6 +61,7 @@ function recorder(hook: string) {
 }
 
 const toasts: string[] = [];
+const compareFetches: number[][] = [];
 vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
 
 const server = {
@@ -169,8 +172,10 @@ vi.mock("../../src/workspace/prefetch", () => ({
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
-  useCompareTraces: (ids: readonly number[]) =>
-    new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : []))),
+  useCompareTraces: (ids: readonly number[]) => {
+    compareFetches.push([...ids]);
+    return new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : [])));
+  },
 }));
 
 function makeTrace(level: number): Trace {
@@ -262,6 +267,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
   toasts.length = 0;
+  compareFetches.length = 0;
   prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
@@ -1813,6 +1819,77 @@ describe("WorkspacePage", () => {
     expect(lines()).toEqual(["11"]);
     runFromPalette("compare with a sample", "a3");
     expect(lines()).toEqual(["11", "12"]);
+  });
+
+  it("a sample holds five comparisons, one per colour, and the picker, palette and sample list say so at the cap", () => {
+    state.corpus = [...state.corpus, sample(14, "A5"), sample(15, "A6"), sample(16, "A7")];
+    expect(COMPARE_COLORS).toHaveLength(MAX_COMPARES);
+    act(() => setCompares({ compares: [11, 12, 13, 14, 15].map((r) => ({ sample_id: 10, ref_sample_id: r, added_by: "jc" })), subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    const colours = Array.from(screen.getByTestId("workspace-compare-bar").querySelectorAll<HTMLElement>("[data-compare-chip]")).map((n) => n.style.color);
+    expect(new Set(colours).size).toBe(MAX_COMPARES);
+    fireEvent.keyDown(window, { key: "c" });
+    const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
+    expect(within(picker).queryAllByRole("button")).toHaveLength(0);
+    expect(picker).toHaveTextContent(COMPARES_FULL);
+    fireEvent.keyDown(within(picker).getByLabelText("Find a sample to compare"), { key: "Escape" });
+    runFromPalette("compare with a sample");
+    expect(screen.getByRole("dialog")).toHaveTextContent(COMPARES_FULL);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    calls.length = 0;
+    fireEvent.click(within(screen.getByTestId("workspace-samples")).getByRole("button", { name: /A7/ }), { ctrlKey: true });
+    expect(calls.filter((c) => c.hook === "patchCompares")).toEqual([]);
+    expect(toasts.at(-1)).toBe(COMPARES_FULL);
+  });
+
+  it("showing or hiding a comparison is kept per sample, even when two samples compare the same one", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(2)]]);
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }, { sample_id: 11, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A3" }));
+    expect(screen.getByRole("button", { name: "A3, hidden" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.getByRole("button", { name: "A3" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(screen.getByRole("button", { name: "A3, hidden" })).toBeInTheDocument();
+  });
+
+  it("Minus is kept per sample: another sample subtracting the same comparison opens on Raw", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(2)]]);
+    act(() => setCompares({
+      compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }, { sample_id: 11, ref_sample_id: 12, added_by: "jc" }],
+      subtractions: [{ sample_id: 11, ref_sample_id: 12 }],
+    }));
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A3" }), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Minus A3" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("when someone else changes the subtraction, Minus stays on and uses the new background", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    act(() => setCompares({ compares: [11, 12].map((r) => ({ sample_id: 10, ref_sample_id: r, added_by: "jc" })), subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
+    act(() => setCompares(applyCompareChange(compareStore.data, 10, { subtraction: 12 }, "ana")));
+    expect(screen.getByRole("button", { name: "Minus A3" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("a hidden comparison someone else added fetches no trace until it is shown", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "ana" }], subtractions: [] }));
+    expect(compareFetches.at(-1)).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
+    expect(compareFetches.at(-1)).toEqual([11]);
   });
 
   it("the compare picker lists samples you compared recently first, without adding them anywhere", () => {
