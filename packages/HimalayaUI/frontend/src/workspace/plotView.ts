@@ -46,12 +46,6 @@ export function viewLabel(view: PlotView): string | null {
   return view === "kratky" ? "q²·I" : null;
 }
 
-export function nextView(view: PlotView, dir: 1 | -1): PlotView {
-  const i = PLOT_VIEWS.findIndex((v) => v.view === view);
-  const n = PLOT_VIEWS.length;
-  return PLOT_VIEWS[(((i + dir) % n) + n) % n]!.view;
-}
-
 function read(): PlotView {
   try {
     const v = window.localStorage.getItem(KEY);

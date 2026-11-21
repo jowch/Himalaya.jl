@@ -272,8 +272,15 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "set_exposure_status": {
+      const status = payload?.status as Exposure["status"];
       qc.setQueryData(queryKeys.exposure(id), (old: Exposure | undefined) =>
-        old ? { ...old, status: payload?.status as Exposure["status"] } : old);
+        old ? { ...old, status } : old);
+      qc.setQueriesData<Exposure[]>(
+        { predicate: (q) => q.queryKey[0] === "sample" && q.queryKey[2] === "exposures" },
+        (list) => list?.some((e) => e.id === id)
+          ? list.map((e) => (e.id === id ? { ...e, status } : e))
+          : list,
+      );
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }

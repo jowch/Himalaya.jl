@@ -51,7 +51,7 @@ export function StatusCell({ phase, formFactor = false, noExposures = false, doo
       ) : (
         <span data-role="status-unset" className="text-ink-soft text-xs whitespace-nowrap">
           <Dot tone="muted" size="xs" className="mr-1.5 align-middle" />
-          Not indexed
+          Unreviewed
         </span>
       )}
     </div>

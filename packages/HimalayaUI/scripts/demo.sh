@@ -3,6 +3,8 @@
 # experiment. Wrapped by `make demo` / `make demo-empty`; see docs/demo.md.
 #
 #   demo.sh            backend on a persistent demo DB, demo experiment ingested
+#   demo.sh --large    same, for the --large tree of experiments in DEMO_DIR
+#                      (generated first if missing); every experiment is ingested
 #   demo.sh --empty    backend on a FRESH empty DB, nothing ingested, so the
 #                      New-experiment funnel can be walked from the start
 #
@@ -25,14 +27,23 @@ UI_PORT="${DEMO_UI_PORT:-5173}"
 JL="julia --project=packages/HimalayaUI"
 up() { curl -s -o /dev/null --connect-timeout 1 --max-time 3 "http://127.0.0.1:$API_PORT/api/experiments"; }
 
-empty=0
+empty=0; large=0
 case "${1:-}" in
   "") ;;
   --empty) empty=1 ;;
-  *) echo "usage: demo.sh [--empty]" >&2; exit 2 ;;
+  --large) large=1 ;;
+  *) echo "usage: demo.sh [--empty|--large]" >&2; exit 2 ;;
 esac
 
-if [[ ! -f "$DEMO_DIR/TRUTH.csv" ]]; then
+if (( large )); then
+  if [[ ! -f "$DEMO_DIR/.demo-large-complete" ]]; then
+    echo "No complete large demo at $DEMO_DIR; generating it (make demo-large-data)."
+    $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR" --large
+  elif grep -qs ',false,' "$DEMO_DIR"/*/TRUTH.csv; then
+    echo "$DEMO_DIR was generated with --no-images (empty TIFFs); regenerate it with make demo-large-data." >&2
+    exit 1
+  fi
+elif [[ ! -f "$DEMO_DIR/TRUTH.csv" ]]; then
   echo "No demo data at $DEMO_DIR; generating it (make demo-data)."
   $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR"
 elif grep -q ',false,' "$DEMO_DIR/TRUTH.csv"; then
@@ -68,6 +79,8 @@ up || { echo "Backend did not answer on :$API_PORT within 5 min; see $DEMO_DB_DI
 
 if (( empty )); then
   echo "Empty DB: use '+ New experiment' and point it at $(cd "$DEMO_DIR" && pwd)"
+elif (( large )); then
+  $JL packages/HimalayaUI/scripts/demo_ingest.jl "$DEMO_DIR"/*/ --port "$API_PORT"
 else
   $JL packages/HimalayaUI/scripts/demo_ingest.jl "$DEMO_DIR" --port "$API_PORT"
 fi

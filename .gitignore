@@ -84,3 +84,4 @@ cache/thumb-*/
 # (its own .gitignore covers that); this anchors the root so a stray vitest/vite run
 # from the repo root never commits a node_modules cache (e.g. .vite/vitest results.json).
 node_modules/
+LocalPreferences.toml

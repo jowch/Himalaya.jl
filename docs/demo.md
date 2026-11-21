@@ -7,7 +7,8 @@ Used for UI walkthroughs and Playwright screenshots.
 ## Quick start
 
 ```bash
-make setup        # once per checkout: npm ci + Pkg.develop/instantiate (≈5 min cold)
+make dev-setup    # once per checkout: npm ci + Pkg.develop/instantiate (≈5 min cold), with
+                  # the ~100 s route precompile workload off for dev (CLAUDE.md)
 make demo         # generate data if missing, start backend :8080, ingest, start Vite :5173
 # open http://127.0.0.1:5173/   (Ctrl-C stops both servers)
 
@@ -69,9 +70,9 @@ scratch/demo-experiment/
     (newest) and `MO_AMP_10` (newest): the beam clipped the capillary wall. The detector image
     shows a bright horizontal streak through the beamstop, perpendicular to the
     capillary. The sample's rings are still there at about 60% strength, and the
-    1D trace gains a low-q excess. Across seeds 1–12, 36 of 48 flares kept the
-    sample's auto call and 12 lost a phase (most often `MO_AMP_10`'s weaker
-    lattice), so a flare can mislead the auto call without looking wrong in 1D.
+    1D trace gains a low-q excess. Across seeds 1–12, 24 of 48 flares kept the
+    sample's auto call and 24 lost a phase or every phase, so a flare can mislead
+    the auto call without looking wrong in 1D.
     A flare must be dropped, and its auto call may lose phases but must not add
     one.
   - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
@@ -137,9 +138,9 @@ The app needs Julia (compat says ≥ 1.9; tested on 1.13), Node ≥ 20 and npm. 
    ```
 
    Node, npm and Playwright's Chromium are already in the cloud image. Keep the
-   script machine-level; run `make setup` in the session (it needs the repo).
+   script machine-level; run `make dev-setup` in the session (it needs the repo).
 
-Then, in the session: `make setup && make demo`. Playwright can drive
+Then, in the session: `make dev-setup && make demo`. Playwright can drive
 `http://127.0.0.1:5173` from the same container (`require('playwright')` works
 from any directory). To skip onboarding in scripted runs, seed localStorage
 before navigating:
@@ -148,6 +149,68 @@ before navigating:
 await page.addInitScript(() => localStorage.setItem('himalaya-ui:state',
   JSON.stringify({ state: { username: 'demo', tutorialSeen: true }, version: 5 })));
 ```
+
+### How close it is to real data
+
+The generator is tuned to aggregate figures from SSRL Pilatus 1M lipid
+beamtimes, so images and traces load and index like real ones:
+
+| | Demo | Beamline |
+|---|---|---|
+| Counts per pixel, far from the beam | ~100 | ~100 |
+| Beamstop shadow radius | 10 px | ~10 px |
+| Trace scatter at high q | ~0.3% | ~0.35% |
+| Low-q rise (I(0.006) ÷ high-q floor) | ~100–200× | ~110× (median) |
+| Bilayer hump near 0.11 Å⁻¹ | ~2× the floor | ~2× (median) |
+| Strongest peak ÷ local background | 0.1–8 | median ~0.4, p90 ~8 |
+| Full detector PNG the image route sends | ~700 KB | ~850 KB |
+
+Two differences remain on purpose. The curated samples sit at the clear end of
+the real range, because each has a known answer `test_demo_data.jl` checks; most
+real frames are weaker, and over a third have no automatic peaks. And there are
+13 samples with 1–3 frames each, where a real experiment has hundreds of samples
+with a median of 4 frames. Performance work needs real scale and a real network
+(the app is usually reached through an SSH tunnel), so test it with the
+`--large` option below and a throttled browser.
+
+### Large mode
+
+`make demo-large-data` (generate only, into `scratch/demo-large/`) or
+`make demo-large` (generate if missing, ingest every experiment into one DB at
+`scratch/demo-large-db/`, start the app) writes realistic scale for performance
+work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
+`make_demo_data.jl [out_dir] --large [--experiments N] [--samples M] [--seed S] [--no-images]`
+(defaults 10 experiments of 300 samples).
+
+- One complete beamtime tree per experiment, `out_dir/large_01/` onward, each with
+  its own `TRUTH.csv` (same columns; `auto` is empty because nothing is pinned),
+  start date and flight path (0.8 m or 1.7 m setups). Sample labels are `L01_N0001`.
+- Per sample: 4 frames about 82% of the time, with short, long and very long
+  series in the tail; about 40% have no Bragg peaks; the rest have one phase
+  (85%) or two (15%), weighted towards Lamellar, Im3m and Square; peak height and
+  width are log-normal at the real medians; about 6% of frames are bad (flare,
+  missed, beam off). Holders of 10-16 samples sit more than an hour apart, so
+  grouping recovers the loads and samples.
+- **Images come from a pool.** Each experiment renders about 24 frames (no-peak,
+  weak and strong examples of each phase, flare, missed, beam off) and every
+  exposure's `.tif` is a hardlink to one of them. A frame's image therefore does
+  not match its own trace; use large mode for scale, not for checking images
+  against traces. `--no-images` writes empty `.tif` files instead.
+- **Geometry is approximate.** Pool frames use each experiment's flight path,
+  but every trace keeps the curated demo's q grid and noise model, and
+  `setup_info` keeps its 1.8 m calibration rings. Fine for scale and loading
+  tests; don't use large mode to check q calibration.
+- A finished run writes `.demo-large-complete`. An interrupted run has none, so
+  `make demo-large` regenerates instead of ingesting a partial tree, and the
+  generator only writes into an empty folder or an existing large tree.
+- Cost, measured with the defaults: about 35 s, 1.4 GB on disk (12,000 `.tif`
+  names, 240 distinct files), 3,000 samples and 12,000 exposures. Ingesting all
+  ten through `demo_ingest.jl` takes about 3 minutes.
+- The defaults are a worst case: each experiment is as large as the largest real
+  one, and the total is about 1.7× a typical lab database (about 1,800 samples
+  over 11 experiments). Use `--samples 180` to match that total. Costs that grow
+  with the whole database show the difference: `GET /api/experiments` took 6.3 s
+  on the defaults and 1.6 s on the real database (#348).
 
 ### Driving it from an agent
 
@@ -174,5 +237,5 @@ delayed further.
   Playwright version, whose browser build isn't in the image. Harmless; skeletons
   still load from the committed `src/bones/` captures.
 - On Julia ≥ 1.11, `Pkg.develop(path=".")` rewrites `packages/HimalayaUI/Project.toml`
-  (adds `[sources]`, strips comments). `make setup` restores the tracked file; the
+  (adds `[sources]`, strips comments). `make setup` (and `make dev-setup`) restores the tracked file; the
   gitignored Manifest keeps the path dependency.
