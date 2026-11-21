@@ -19,7 +19,6 @@
     "frontend/src/hooks/useFocusTrap.ts": 25,
     "frontend/src/hooks/useInlineEdit.ts": 25,
     "frontend/src/hooks/useStateFromUrl.ts": 21,
-    "frontend/src/hooks/useUndoStack.ts": 34,
     "frontend/src/lib/announce.ts": 16,
     "frontend/src/lib/authOpts.ts": 7,
     "frontend/src/lib/clientId.ts": 8,

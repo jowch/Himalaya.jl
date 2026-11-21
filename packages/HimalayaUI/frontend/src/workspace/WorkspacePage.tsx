@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Exposure, IndexEntry } from "../api";
+import type { Exposure, IndexEntry, TagColor } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -35,13 +35,17 @@ import {
   useCheckForNewFilesOnOpen,
   useEditOps,
 } from "../queries";
-import { useUndoHistory, type UndoEntry } from "./undo";
+import { useUndoHistory, type UndoStep } from "./undo";
+import {
+  bridgeEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  tagColorEntry, tickEntry, unbridgeEntry, untickEntry,
+} from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayTag, labelsFor, sameLabel, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -121,8 +125,8 @@ function helpSections(mod: string): HelpSection[] {
       title: "Anywhere",
       rows: [
         { keys: [mod, "K"], what: "Commands and go to a sample" },
-        { keys: [mod, "Z"], what: "Undo the last call, drop or peak edit, even on another sample" },
-        { keys: [mod, "⇧", "Z"], what: "Redo it" },
+        { keys: [mod, "Z"], what: "Undo the last edit (calls, drops, peaks, custom index, labels, bridges), even on another sample" },
+        { keys: [mod, "⇧", "Z"], what: "Redo it (Ctrl+Y also works)" },
         { keys: ["?"], what: "This list" },
       ],
     },
@@ -282,8 +286,8 @@ export function WorkspacePage(): JSX.Element {
   const addPeak = useAddPeak(exposure?.id ?? 0);
   const removePeak = useRemovePeak(exposure?.id ?? 0);
   const setExcluded = useSetPeakExcluded(exposure?.id ?? 0);
-  const ops = useEditOps();
-  const history = useUndoHistory(experimentId);
+  const ops = useEditOps(experimentId);
+  const history = useUndoHistory(`${experimentId}:${username ?? ""}`, ops.whenSaved);
   const frameName = useCallback(
     (eid: number) => `frame ${exposureList.findIndex((e) => e.id === eid) + 1} of ${sample?.name ?? "this sample"}`,
     [exposureList, sample?.name],
@@ -318,22 +322,24 @@ export function WorkspacePage(): JSX.Element {
       const action = peakClick(peaks.data ?? [], ref);
       if (!action || !exposure || sampleId === undefined) return;
       const eid = exposure.id;
+      const q = (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q;
       if (action.kind === "remove") {
-        const q = (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q;
+        if (ref.id < 0) return;
         removePeak.mutate(ref.id);
         if (q !== undefined) {
-          history.record({
-            label: `removed peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid,
-            undo: () => ops.addPeak(eid, q), redo: () => ops.removeManualPeakNear(eid, q),
-          });
+          history.record(peakEntry(ops, {
+            label: `removed a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: false,
+          }));
         }
         return;
       }
       setExcluded.mutate({ peakId: ref.id, excluded: action.excluded });
-      history.record({
-        label: `${action.excluded ? "turned off" : "turned on"} a peak on ${frameName(eid)}`, sampleId, exposureId: eid,
-        undo: () => ops.setPeakExcluded(eid, ref.id, !action.excluded), redo: () => ops.setPeakExcluded(eid, ref.id, action.excluded),
-      });
+      if (q !== undefined) {
+        history.record(excludeEntry(ops, {
+          label: `${action.excluded ? "turned off" : "turned on"} a peak on ${frameName(eid)}`, sampleId, exposureId: eid, q,
+          excluded: action.excluded,
+        }));
+      }
     },
     [peaks.data, removePeak, setExcluded, exposure, sampleId, history, ops, frameName],
   );
@@ -343,10 +349,9 @@ export function WorkspacePage(): JSX.Element {
       if (!exposure || sampleId === undefined) return;
       const eid = exposure.id;
       addPeak.mutate(q);
-      history.record({
-        label: `added a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid,
-        undo: () => ops.removeManualPeakNear(eid, q), redo: () => ops.addPeak(eid, q),
-      });
+      history.record(peakEntry(ops, {
+        label: `added a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: true,
+      }));
     },
     [exposure, sampleId, addPeak, history, ops, frameName],
   );
@@ -363,33 +368,25 @@ export function WorkspacePage(): JSX.Element {
       const where = sample?.name ?? "this sample";
       if (assignment.data?.members.includes(ix.id)) {
         removePhase.mutate(ix.id);
-        history.record({
+        history.record(untickEntry(ops, {
           label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
-          undo: () => ops.addPhase(eid, ix.id), redo: () => ops.removePhase(eid, ix.id),
-        });
+          ids: Promise.resolve([{ exposureId: eid, phase: ix.phase, basis: ix.basis }]),
+        }));
         return;
       }
       const elsewhere = otherMembers.filter((m) => m.phase === ix.phase);
       if (elsewhere.length > 0) {
+        const ids = identify(ops, elsewhere.map((m) => ({ exposureId: m.exposure_id, indexId: m.index_id })));
         for (const m of elsewhere) removeFramePhase.mutate(m.exposure_id, m.index_id);
-        history.record({
-          label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
-          undo: () => elsewhere.forEach((m) => ops.addPhase(m.exposure_id, m.index_id)),
-          redo: () => elsewhere.forEach((m) => ops.removePhase(m.exposure_id, m.index_id)),
-        });
+        history.record(untickEntry(ops, { label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid, ids }));
         return;
       }
       if (exposure.status === "rejected") return;
       addPhase.mutate(ix.id);
-      const wasFormFactor = isFormFactor;
-      history.record({
+      history.record(tickEntry(ops, {
         label: `ticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
-        undo: () => {
-          ops.removePhase(eid, ix.id);
-          if (wasFormFactor) ops.setCallState(sampleId, "form_factor");
-        },
-        redo: () => ops.addPhase(eid, ix.id),
-      });
+        id: { exposureId: eid, phase: ix.phase, basis: ix.basis }, wasFormFactor: isFormFactor,
+      }));
     },
     [exposure, sampleId, sample?.name, assignment.data, otherMembers, isFormFactor, addPhase, removePhase, removeFramePhase, history, ops],
   );
@@ -399,17 +396,15 @@ export function WorkspacePage(): JSX.Element {
     const on = !isFormFactor;
     const eid = exposure.id;
     const ticked = on
-      ? [...(assignment.data?.members ?? []).map((indexId) => ({ exposure_id: eid, index_id: indexId })), ...otherMembers]
-      : [];
+      ? identify(ops, [
+          ...(assignment.data?.members ?? []).map((indexId) => ({ exposureId: eid, indexId })),
+          ...otherMembers.map((m) => ({ exposureId: m.exposure_id, indexId: m.index_id })),
+        ])
+      : Promise.resolve([]);
     setCallState.mutate(on ? "form_factor" : "null");
-    history.record({
-      label: `${on ? "marked" : "cleared"} no phase on ${sample?.name ?? "this sample"}`, sampleId, exposureId: eid,
-      undo: () => {
-        ops.setCallState(sampleId, on ? "null" : "form_factor");
-        for (const m of ticked) ops.addPhase(m.exposure_id, m.index_id);
-      },
-      redo: () => ops.setCallState(sampleId, on ? "form_factor" : "null"),
-    });
+    history.record(noPhaseEntry(ops, {
+      label: `${on ? "marked" : "cleared"} no phase on ${sample?.name ?? "this sample"}`, sampleId, exposureId: eid, on, ticked,
+    }));
   }, [exposure, sampleId, sample?.name, isFormFactor, assignment.data, otherMembers, setCallState, history, ops]);
 
   const toggleDrop = useCallback(
@@ -419,11 +414,9 @@ export function WorkspacePage(): JSX.Element {
       const next = prev === "rejected" ? null : "rejected";
       setStatus.mutate({ exposureId: e.id, status: next });
       if (sampleId === undefined) return;
-      const sid = sampleId;
-      history.record({
-        label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId: sid, exposureId: e.id,
-        undo: () => ops.setStatus(sid, e.id, prev), redo: () => ops.setStatus(sid, e.id, next),
-      });
+      history.record(dropEntry(ops, {
+        label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, prev, next,
+      }));
     },
     [setStatus, sampleId, history, ops, frameName],
   );
@@ -491,18 +484,61 @@ export function WorkspacePage(): JSX.Element {
   const openBridge = useCallback(() => {
     if (username && sampleId !== undefined) setBridging(true);
   }, [username, sampleId]);
+  const unbridgeOne = useCallback(
+    (target: number) => {
+      if (!username || sampleId === undefined) return;
+      unbridgeSample.mutate({ sampleId: target });
+      history.record(unbridgeEntry(ops, {
+        label: `unbridged ${sampleNames.get(target) ?? "a sample"}`, sampleId, exposureId: undefined, target, bridges: bridgeList,
+      }));
+    },
+    [username, sampleId, unbridgeSample, history, ops, sampleNames, bridgeList],
+  );
   const leaveBridges = useCallback(() => {
-    if (username && sampleId !== undefined && bridged.length > 0) unbridgeSample.mutate({ sampleId });
-  }, [username, sampleId, bridged, unbridgeSample]);
+    if (sampleId !== undefined && bridged.length > 0) unbridgeOne(sampleId);
+  }, [sampleId, bridged, unbridgeOne]);
   const onRemoveChip = useCallback(
     (rid: number) => {
       if (!bridged.includes(rid)) {
         removeCompare(rid);
         return;
       }
-      if (username) unbridgeSample.mutate({ sampleId: rid });
+      unbridgeOne(rid);
     },
-    [bridged, removeCompare, username, unbridgeSample],
+    [bridged, removeCompare, unbridgeOne],
+  );
+  const bridgeTo = useCallback(
+    (rid: number) => {
+      if (sampleId === undefined) return;
+      bridgeSamples.mutate({ sampleId, toSampleId: rid });
+      history.record(bridgeEntry(ops, {
+        label: `bridged ${sample?.name ?? "this sample"} to ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
+        from: sampleId, to: rid, bridges: bridgeList,
+      }));
+    },
+    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList],
+  );
+  const editLabel = useCallback(
+    (tag: string, added: boolean) => {
+      if (sampleId === undefined) return;
+      (added ? addLabel : removeLabel).mutate({ sampleId, label: tag });
+      history.record(labelEntry(ops, {
+        label: `${added ? "added" : "removed"} the label ${displayTag(tag)} on ${sample?.name ?? "this sample"}`,
+        sampleId, exposureId: undefined, tag, added,
+      }));
+    },
+    [sampleId, sample?.name, addLabel, removeLabel, history, ops],
+  );
+  const recolorTag = useCallback(
+    (tag: string, color: TagColor | null) => {
+      if (sampleId === undefined) return;
+      const prev = (tagColors.data ?? []).find((t) => sameLabel(t.label, tag))?.color ?? null;
+      setTagColor.mutate({ label: tag, color });
+      history.record(tagColorEntry(ops, {
+        label: `recoloured the label ${displayTag(tag)}`, sampleId, exposureId: undefined, tag, prev, next: color,
+      }));
+    },
+    [sampleId, tagColors.data, setTagColor, history, ops],
   );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
@@ -527,12 +563,11 @@ export function WorkspacePage(): JSX.Element {
     commitCustom.mutate(c.phase, c.basis, c.ratios);
     setDraft(null);
     if (sampleId === undefined) return;
-    const eid = exposure.id;
-    history.record({
-      label: `added a custom ${c.phase} index on ${sample?.name ?? "this sample"}`, sampleId, exposureId: eid,
-      undo: () => ops.tickCustomIndex(eid, c.phase, c.basis, false), redo: () => ops.tickCustomIndex(eid, c.phase, c.basis, true),
-    });
-  }, [draft, exposure, canCall, commitCustom, sampleId, sample?.name, history, ops]);
+    history.record(customIndexEntry(ops, {
+      label: `added a custom ${c.phase} index on ${sample?.name ?? "this sample"}`, sampleId, exposureId: exposure.id,
+      phase: c.phase, basis: c.basis, ratios: c.ratios, wasFormFactor: isFormFactor,
+    }));
+  }, [draft, exposure, canCall, commitCustom, sampleId, sample?.name, isFormFactor, history, ops]);
   const snapDraft = useCallback(
     (q: number) => {
       if (!draft) return;
@@ -574,20 +609,31 @@ export function WorkspacePage(): JSX.Element {
   const applyHistory = useCallback(
     (dir: "undo" | "redo") => {
       if (!username) return;
-      const entry: UndoEntry | undefined = dir === "undo" ? history.undo() : history.redo();
-      if (!entry) {
+      if (draft) {
+        showToast("Close the custom index first (Esc).");
+        return;
+      }
+      const saving = ops.saving();
+      const step: UndoStep | undefined = dir === "undo" ? history.undo() : history.redo();
+      if (!step) {
         showToast(dir === "undo" ? "Nothing to undo." : "Nothing to redo.");
         return;
       }
+      const { entry } = step;
       if (entry.sampleId !== sampleId) {
         const qs = entry.exposureId === undefined ? "" : `?exposure=${entry.exposureId}`;
         navigate(`/experiments/${experimentId}/workspace/${entry.sampleId}${qs}`, { replace: true });
       } else if (entry.exposureId !== undefined) {
         setExposureId(entry.exposureId);
       }
-      showToast(`${dir === "undo" ? "Undone" : "Redone"}: ${entry.label}`);
+      const verb = dir === "undo" ? "Undone" : "Redone";
+      if (saving) showToast(`Saving your last edit first, then ${dir === "undo" ? "undoing" : "redoing"}: ${entry.label}`);
+      step.done.then(
+        (sent) => showToast(sent > 0 ? `${verb}: ${entry.label}` : `Already that way, nothing to ${dir}: ${entry.label}`),
+        () => showToast(`Couldn't ${dir}: ${entry.label}. The server can't be reached.`, "error"),
+      );
     },
-    [username, history, sampleId, navigate, experimentId],
+    [username, draft, ops, history, sampleId, navigate, experimentId],
   );
 
   useEffect(() => {
@@ -611,6 +657,7 @@ export function WorkspacePage(): JSX.Element {
       const redoY = ev.ctrlKey && !ev.metaKey && !ev.shiftKey && lower === "y";
       if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (lower === "z" || redoY) && !isTyping(ev.target) && !inOverlay(ev.target)) {
         ev.preventDefault();
+        if (ev.repeat) return;
         applyHistory(redoY || ev.shiftKey ? "redo" : "undo");
         return;
       }
@@ -822,9 +869,9 @@ export function WorkspacePage(): JSX.Element {
                 setColoringTag(label);
               }}
               onCloseColor={() => setColoringTag(undefined)}
-              onSetColor={(label, color) => setTagColor.mutate({ label, color })}
-              onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
-              onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
+              onSetColor={recolorTag}
+              onAdd={(label) => editLabel(label, true)}
+              onRemove={(label) => editLabel(label, false)}
             />
             <div className="relative px-3.5 py-1">
               <CompareBar
@@ -859,7 +906,7 @@ export function WorkspacePage(): JSX.Element {
                   label={`Bridge ${sample.name} to a sample`}
                   inputLabel="Find a sample to bridge to"
                   onPick={(rid) => {
-                    bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
+                    bridgeTo(rid);
                     setRefsOn(true);
                   }}
                   onClose={() => setBridging(false)}

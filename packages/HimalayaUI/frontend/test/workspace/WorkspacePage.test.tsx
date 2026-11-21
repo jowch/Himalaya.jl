@@ -49,6 +49,12 @@ function recorder(hook: string) {
 const toasts: string[] = [];
 vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
 
+const server = {
+  indices: new Map<number, IndexEntry[]>(),
+  assignments: new Map<number, Assignment>(),
+  saving: false,
+  saved: undefined as (() => void) | undefined,
+};
 const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
 const editOps = {
   addPhase: editOp("addPhase"),
@@ -56,9 +62,28 @@ const editOps = {
   setCallState: editOp("setCallState"),
   setStatus: editOp("setStatus"),
   addPeak: editOp("addPeak"),
-  removeManualPeakNear: editOp("removeManualPeakNear"),
+  removePeak: editOp("removePeak"),
   setPeakExcluded: editOp("setPeakExcluded"),
-  tickCustomIndex: editOp("tickCustomIndex"),
+  commitCustom: editOp("commitCustom"),
+  deleteIndex: editOp("deleteIndex"),
+  addLabel: editOp("addLabel"),
+  removeLabel: editOp("removeLabel"),
+  setTagColor: editOp("setTagColor"),
+  bridge: editOp("bridge"),
+  unbridge: editOp("unbridge"),
+  read: {
+    peaks: async () => state.peaks,
+    indices: async (eid: number) => server.indices.get(eid) ?? state.indices,
+    knownIndices: async (eid: number) => server.indices.get(eid) ?? state.indices,
+    assignment: async (eid: number) =>
+      server.assignments.get(eid)
+      ?? (state.assignment?.exposure_id === eid ? state.assignment : state.frameAssignments.get(eid))
+      ?? { exposure_id: eid, state: "null" as const, members: [] },
+    labels: async () => state.labels,
+    bridges: async () => state.bridges,
+  },
+  saving: () => server.saving,
+  whenSaved: () => (server.saving ? new Promise<void>((r) => { server.saved = r; }) : Promise.resolve()),
 };
 
 vi.mock("../../src/queries", () => ({
@@ -235,6 +260,10 @@ beforeEach(() => {
   state.tagColors = [];
   state.ingest = undefined;
   state.rescanError = false;
+  server.indices = new Map();
+  server.assignments = new Map();
+  server.saving = false;
+  server.saved = undefined;
   rescans.length = 0;
   removals.length = 0;
   opened.length = 0;
@@ -632,90 +661,194 @@ describe("WorkspacePage", () => {
 
   describe("undo and redo", () => {
     const ops = () => calls.filter((c) => c.hook.startsWith("op:")).map((c) => [c.hook.slice(3), ...(c.arg as unknown[])]);
+    const settle = () => act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    const press = async (init: KeyboardEventInit) => {
+      fireEvent.keyDown(window, init);
+      await settle();
+    };
+    const undo = () => press({ key: "z", ctrlKey: true });
+    const redo = () => press({ key: "Z", ctrlKey: true, shiftKey: true });
+    const onServer = (eid: number, a: Partial<Assignment>) =>
+      server.assignments.set(eid, { exposure_id: eid, state: "indexed", members: [], ...a });
 
-    it("Ctrl+Z after 0 clears no phase and ticks every phase it wiped, on this frame and others", () => {
-      state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+    it("Ctrl+Z after 0 clears no phase and ticks every phase it wiped, on this frame and others", async () => {
       state.sampleCall = {
         sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m", "Im3m"],
         members: [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }, { index_id: 7, exposure_id: 100, phase: "Im3m" }],
       };
+      server.indices.set(100, [{ ...index(7, "Im3m", 0.5), exposure_id: 100 }]);
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "0" });
       expect(calls[0]).toEqual({ hook: "state", boundTo: 10, arg: "form_factor" });
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      onServer(101, { state: "form_factor" });
+      onServer(100, { state: "form_factor" });
+      await undo();
       expect(ops()).toEqual([["setCallState", 10, "null"], ["addPhase", 101, 2], ["addPhase", 100, 7]]);
       expect(toasts.at(-1)).toBe("Undone: marked no phase on A1");
     });
 
-    it("Ctrl+Shift+Z redoes what was undone", () => {
+    it("Ctrl+Shift+Z redoes what was undone", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "1" });
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
-      fireEvent.keyDown(window, { key: "Z", ctrlKey: true, shiftKey: true });
+      onServer(101, { members: [] });
+      await undo();
+      onServer(101, { members: [2] });
+      await redo();
       expect(ops()).toEqual([["addPhase", 101, 2], ["removePhase", 101, 2]]);
       expect(toasts.at(-1)).toBe("Redone: unticked Pn3m on A1");
     });
 
-    it("undoes a drop by restoring the frame", () => {
+    it("unticks a phase by its lattice after a peak edit renumbered the candidates", async () => {
+      state.assignment = { exposure_id: 101, state: "null", members: [] };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      server.indices.set(101, [{ ...index(33, "Pn3m", 0.9), basis: 0.101 }, index(34, "Im3m", 0.4)]);
+      onServer(101, { members: [33] });
+      await undo();
+      expect(ops()).toEqual([["removePhase", 101, 33]]);
+      onServer(101, { members: [] });
+      await redo();
+      expect(ops()).toEqual([["removePhase", 101, 33], ["addPhase", 101, 33]]);
+    });
+
+    it("says so instead of claiming an undo when the edit is already undone", async () => {
+      state.assignment = { exposure_id: 101, state: "null", members: [] };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: ticked Pn3m on A1");
+    });
+
+    it("waits for the last edit to save before undoing it", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
-      fireEvent.keyDown(window, { key: "z", metaKey: true });
+      server.saving = true;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Saving your last edit first, then undoing: dropped frame 2 of A1");
+      server.saving = false;
+      server.saved?.();
+      await settle();
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
       expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
     });
 
-    it("goes back to the sample the undone edit was made on", () => {
+    it("undoes a drop by restoring the frame", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await press({ key: "z", metaKey: true });
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("ignores a held-down Ctrl+Z", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await press({ key: "z", ctrlKey: true, repeat: true });
+      expect(ops()).toEqual([]);
+      await undo();
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+    });
+
+    it("goes back to the sample the undone edit was made on", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
       fireEvent.keyDown(window, { key: "ArrowDown" });
       expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      await undo();
       expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/10");
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
     });
 
-    it("undoes peak edits made on the plot", () => {
+    it("undoes peak edits made on the plot, finding each peak by q on the server", async () => {
       state.trace = makeTrace(1);
       state.peaks = peakList(101, { auto: [0.1, 0.12], manual: [0.2] });
       renderAt("/experiments/1/workspace/10");
       clickPlotAt(0.1);
       clickPlotAt(0.2);
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      state.peaks = peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] });
+      await undo();
+      expect(ops()).toEqual([["addPeak", 101, 0.2]]);
+      state.peaks = [...peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] }), { ...peak(9, 0.2, "manual") }];
+      await undo();
       expect(ops()).toEqual([["addPeak", 101, 0.2], ["setPeakExcluded", 101, 1, false]]);
     });
 
-    it("leaves Ctrl+Z to a text field being typed in", () => {
+    it("does not record removing a peak that is still saving", async () => {
+      state.trace = makeTrace(1);
+      state.peaks = [peak(-5, 0.2, "manual")];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(screen.getByRole("button", { name: /Manual peak at q = 0\.2000/ }), { key: "Enter" });
+      expect(calls.filter((c) => c.hook === "removePeak")).toEqual([]);
+      await undo();
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
+    it("leaves Ctrl+Z alone while the custom index is open", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      fireEvent.keyDown(window, { key: "i" });
+      expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Close the custom index first (Esc).");
+    });
+
+    it("leaves Ctrl+Z to a text field being typed in", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
       const filter = screen.getByRole("searchbox", { name: "Filter samples" });
       filter.focus();
       fireEvent.keyDown(filter, { key: "z", ctrlKey: true });
+      await settle();
       expect(ops()).toEqual([]);
     });
 
-    it("says so when there is nothing to undo", () => {
+    it("says so when there is nothing to undo", async () => {
       renderAt("/experiments/1/workspace/10");
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      await undo();
       expect(ops()).toEqual([]);
       expect(toasts.at(-1)).toBe("Nothing to undo.");
     });
 
-    it("does not undo before a user is set", () => {
+    it("does not undo before a user is set", async () => {
       const { rerender } = renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
       state.username = undefined;
       rerender(page("/experiments/1/workspace/10"));
-      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      await undo();
       expect(ops()).toEqual([]);
     });
 
-    it("lists the next undo in the command palette", () => {
+    it("undoes removing a label from the label row", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Remove tag Buffer" }));
+      expect(calls.some((c) => c.hook === "removeLabel")).toBe(true);
+      state.labels = [];
+      await undo();
+      expect(ops()).toEqual([["addLabel", 10, "Buffer"]]);
+    });
+
+    it("undoes removing a bridge from the compare bar", async () => {
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Remove bridge to A2" }));
+      expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 11 } });
+      state.bridges = [];
+      await undo();
+      expect(ops()).toEqual([["bridge", 11, 10]]);
+      expect(toasts.at(-1)).toBe("Undone: unbridged A2");
+    });
+
+    it("lists the next undo in the command palette", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
       fireEvent.keyDown(window, { key: "k", ctrlKey: true });
       fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "undo" } });
       fireEvent.click(screen.getByRole("option", { name: /Undo: dropped frame 2 of A1/ }));
+      await settle();
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
     });
   });
