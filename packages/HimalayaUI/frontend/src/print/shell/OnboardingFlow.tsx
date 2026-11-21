@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../../api";
 import type { User } from "../../api";
 import { useAppState } from "../../state";
@@ -104,8 +104,7 @@ export function OnboardingFlow(): JSX.Element | null {
         ...(created.first_name ? { firstName: created.first_name } : {}),
         ...(created.last_name  ? { lastName:  created.last_name  } : {}),
       };
-      // Brand-new user AND hasn't seen tutorial? → stash, show tutorial.
-      if (isNew && !tutorialSeen) {
+      if (!tutorialSeen) {
         setPending(next);
         setPhase("tutorial");
       } else {
@@ -297,8 +296,11 @@ function TutorialStep({
 }: TutorialStepProps): JSX.Element {
   const slide = TUTORIAL_SLIDES[slideIdx]!;
   const isLast = slideIdx === TUTORIAL_SLIDES.length - 1;
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => root.current?.focus(), []);
   return (
     <div
+      ref={root}
       data-testid="onboarding-tutorial"
       tabIndex={-1}
       onKeyDown={onKeyDown}
