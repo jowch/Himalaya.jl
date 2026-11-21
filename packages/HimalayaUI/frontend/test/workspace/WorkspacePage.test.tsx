@@ -56,6 +56,7 @@ const server = {
   saved: undefined as (() => void) | undefined,
   status: new Map<number, Exposure["status"]>(),
   colors: new Map<string, LabelColor | null>(),
+  experiment: { name: "BL-19", description: null as string | null },
 };
 const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
   server.status.set(eid, status);
@@ -80,6 +81,7 @@ const editOps = {
   removeLabel: editOp("removeLabel"),
   restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
   setLabelColor: serverColor,
+  patchExperiment: editOp("patchExperiment"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
   read: {
@@ -101,6 +103,7 @@ const editOps = {
       }
       return [...merged.values()];
     },
+    experiment: async () => ({ id: 1, ...server.experiment }),
   },
   saving: () => server.saving,
   whenSaved: () => (server.saving ? new Promise<void>((r) => { server.saved = r; }) : Promise.resolve()),
@@ -115,7 +118,6 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
-  usePatchExperiment: () => ({ mutate: (patch: unknown) => calls.push({ hook: "patchExperiment", boundTo: 1, arg: patch }) }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useDeleteExperiment: (experimentId: number) => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
@@ -297,6 +299,7 @@ beforeEach(() => {
   server.saved = undefined;
   server.status = new Map();
   server.colors = new Map();
+  server.experiment = { name: "BL-19", description: null };
   rescans.length = 0;
   removals.length = 0;
   opened.length = 0;
@@ -827,6 +830,45 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Already that way, nothing to undo: recoloured the label 37C");
     });
 
+    it("redoes a drop only while the frame is still how the undo left it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await undo();
+      server.status.set(101, "rejected");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: dropped frame 2 of A1");
+    });
+
+    it("redoes a label recolour only while the label still has the colour the undo restored", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      server.colors.set("37c", "green");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: recoloured the label 37C");
+    });
+
+    it("redoes a rename only while the server still holds the name the undo restored", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "BL-20" } });
+      fireEvent.keyDown(name, { key: "Enter" });
+      server.experiment = { name: "BL-20", description: null };
+      await undo();
+      server.experiment = { name: "BL-21", description: null };
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: renamed the experiment to BL-20");
+    });
+
     it("undoes recolouring a label while it still has the colour this edit set", async () => {
       state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
       renderAt("/experiments/1/workspace/10");
@@ -943,6 +985,68 @@ describe("WorkspacePage", () => {
       await undo();
       expect(ops()).toEqual([["restoreLabelSuggestion", 10, "Buffer"]]);
       expect(toasts.at(-1)).toBe("Undone: confirmed the suggested label Buffer on A1");
+    });
+
+    it("undoes and redoes renaming the experiment and changing its description from the palette", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "BL-20" } });
+      fireEvent.keyDown(name, { key: "Enter" });
+      runFromPalette("settings", "description");
+      const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
+      fireEvent.change(description, { target: { value: "Lipid screen" } });
+      fireEvent.keyDown(description, { key: "Enter" });
+      server.experiment = { name: "BL-20", description: "Lipid screen" };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchExperiment", { description: null }]]);
+      expect(toasts.at(-1)).toBe("Undone: changed the experiment description");
+      server.experiment = { name: "BL-20", description: null };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchExperiment", { name: "BL-19" }]]);
+      expect(toasts.at(-1)).toBe("Undone: renamed the experiment to BL-20");
+      server.experiment = { name: "BL-19", description: null };
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([["patchExperiment", { name: "BL-20" }]]);
+      expect(toasts.at(-1)).toBe("Redone: renamed the experiment to BL-20");
+    });
+
+    const renameTo = (value: string) => {
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value } });
+      fireEvent.keyDown(name, { key: "Enter" });
+    };
+
+    it("leaves a newer rename by someone else alone when undoing a rename", async () => {
+      renderAt("/experiments/1/workspace/10");
+      renameTo("BL-20");
+      server.experiment = { name: "BL-21", description: null };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: renamed the experiment to BL-20");
+    });
+
+    it("sends nothing when the server already holds the name the undo would restore", async () => {
+      renderAt("/experiments/1/workspace/10");
+      renameTo("BL-20");
+      server.experiment = { name: "BL-19", description: null };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: renamed the experiment to BL-20");
+    });
+
+    it("records nothing for a Settings save that leaves the name unchanged", async () => {
+      renderAt("/experiments/1/workspace/10");
+      renameTo("BL-19");
+      expect(ops()).toEqual([]);
+      await undo();
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
     });
 
     it("undoes creating a coloured label from the palette in one step", async () => {
@@ -1248,13 +1352,13 @@ describe("WorkspacePage", () => {
     fireEvent.change(name, { target: { value: "BL-20" } });
     fireEvent.keyDown(name, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+    expect(calls).toEqual([{ hook: "op:patchExperiment", boundTo: 0, arg: [{ name: "BL-20" }] }]);
     calls.length = 0;
     runFromPalette("settings", "description");
     const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
     fireEvent.change(description, { target: { value: "Lipid screen" } });
     fireEvent.keyDown(description, { key: "Enter" });
-    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { description: "Lipid screen" } }]);
+    expect(calls).toEqual([{ hook: "op:patchExperiment", boundTo: 0, arg: [{ description: "Lipid screen" }] }]);
   });
 
   it("offers no Settings before a user is set", () => {
