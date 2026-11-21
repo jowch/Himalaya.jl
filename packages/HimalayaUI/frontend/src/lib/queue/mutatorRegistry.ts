@@ -21,10 +21,6 @@ import {
 import { deleteIndexMutator } from "./mutators/indexGroup";
 import { createSpeculativeMutator } from "./mutators/createSpeculative";
 import { reanalyzeExposureMutator } from "./mutators/reanalyzeExposure";
-import { saveSeriesMutator } from "./mutators/saveSeries";
-import { deleteSeriesMutator } from "./mutators/deleteSeries";
-import { commitSeriesPlateMutator } from "./mutators/commitSeriesPlate";
-import { scopeSeriesMutator } from "./mutators/scopeSeries";
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
@@ -64,21 +60,13 @@ export function resolveMutator(
     | {
         experimentId?: number; sampleId?: number;
         exposureId?: number;
-        tags?: unknown;
       }
     | undefined;
   switch (op.kind) {
     case "update_sample":
       return updateSampleMutator;
     case "add_tag":
-      // Quad-scope (#159 tri-scope + #174 scoping batch). Peel the scoping
-      // BATCH off FIRST: a persisted scoping op (add_tag + clientOpId, mirrored
-      // by persistence.ts) carries the batch shape {key, tags} — no sampleId/
-      // exposureId/experimentId — so it would otherwise fall through to the
-      // corpus single-tag mutator and replay a malformed POST with undefined
-      // sampleId/value. The `tags` array is the unique discriminator.
-      if (Array.isArray(p?.tags)) return scopeSeriesMutator;
-      // Then exposure: an exposure-tag op carries {sampleId, exposureId} and —
+      // An exposure-tag op carries {sampleId, exposureId} and —
       // like a corpus-tag op — has no experimentId, so the two collide unless
       // exposureId is tested before the experimentId split.
       if (p?.exposureId !== undefined) return addExposureTagMutator;
@@ -116,12 +104,6 @@ export function resolveMutator(
       return undefined; // server-driven; no outbound op of this kind
     case "reanalyze_exposure":
       return reanalyzeExposureMutator;
-    case "series_save":
-      return saveSeriesMutator;
-    case "series_delete":
-      return deleteSeriesMutator;
-    case "series_commit":
-      return commitSeriesPlateMutator;
     case "assignment_add":
       return addAssignmentPhaseMutator;
     case "assignment_remove":
@@ -167,13 +149,6 @@ export function resolveMutatorForEvent(
     // event-kind speculative_deleted is the SSE counterpart of op-kind delete_index
     case "speculative_deleted": return deleteIndexMutator;
     case "analyze_run":         return reanalyzeExposureMutator;
-    case "series_created":
-    case "series_recipe_updated":
-      return saveSeriesMutator;
-    case "series_deleted":
-      return deleteSeriesMutator;
-    case "series_plate_committed":
-      return commitSeriesPlateMutator;
     case "assignment_add":         return addAssignmentPhaseMutator;
     case "assignment_remove":      return removeAssignmentPhaseMutator;
     case "sample_call_set_state":  return setSampleCallStateMutator;

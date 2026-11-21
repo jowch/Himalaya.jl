@@ -59,13 +59,13 @@ end
 
 ## Shared cross-file helpers live in `test_fixtures.jl`
 
-Helpers used by more than one file (`_setup_analyzed_exposure`, `_setup_for_resolve`, `_premint_cmp!`, `_member_payload`) have a single definition in `test_fixtures.jl`, included via `test_http.jl`. Don't redefine them per file — under GROUP bucketing a helper defined in file A is not in scope for file B unless it's in `test_fixtures.jl`. **No `@testset` in the include-only files** (`test_http.jl`, `test_fixtures.jl`, `test_inproc.jl`, `test_template_db.jl`) — they're included once per bucket, so a testset there would multiply Pass counts across buckets.
+Helpers used by more than one file (`_setup_analyzed_exposure`, `_setup_for_resolve`, `align_next_curation_id!`) have a single definition in `test_fixtures.jl`, included via `test_http.jl`. Don't redefine them per file — under GROUP bucketing a helper defined in file A is not in scope for file B unless it's in `test_fixtures.jl`. **No `@testset` in the include-only files** (`test_http.jl`, `test_fixtures.jl`, `test_inproc.jl`, `test_template_db.jl`) — they're included once per bucket, so a testset there would multiply Pass counts across buckets.
 
 ## Oxygen is a process-global singleton
 
 `_DB_REF`, the Oxygen `CONTEXT[]`, `SSE_SUBSCRIBERS`, and `OP_LOCKS` are module-level globals — one per process. So **two route fixtures can't be live at once in a process**, and parallelism is achieved by **sharding across processes** (the GROUP buckets in `make test-parallel`), not by threads within one process. A route test file still can't run standalone (`julia test/test_routes_*.jl`) without first including `test_http.jl` (which pulls in `test_fixtures.jl` + `test_inproc.jl` + `test_template_db.jl`).
 
-**In-memory fixtures need the migration chain too.** A bare `SQLite.DB(); create_schema!(db)` fixture under-provisions the schema: migration-created tables (`series*`, `comparison*`, `speculative_peak_intents`) won't exist, and `_persist_analysis_inner!` reads `speculative_peak_intents` unconditionally. Any fixture that calls `persist_analysis!`/`analyze_exposure!` must run `migrate_schema!(db)` after `create_schema!(db)` — or just use `open_db` on a tmp path.
+**In-memory fixtures need the migration chain too.** A bare `SQLite.DB(); create_schema!(db)` fixture under-provisions the schema: migration-created tables (`speculative_peak_intents`, `sample_bridges`) won't exist, and `_persist_analysis_inner!` reads `speculative_peak_intents` unconditionally. Any fixture that calls `persist_analysis!`/`analyze_exposure!` must run `migrate_schema!(db)` after `create_schema!(db)` — or just use `open_db` on a tmp path.
 
 ## In-process SSE subscriber
 

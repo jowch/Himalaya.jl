@@ -1,9 +1,6 @@
 using SQLite, DBInterface, Tables
 using Dates: now, UTC, format, @dateformat_str
 
-# Sentinel marker name for the I3.1 comparison→series data migration (#171).
-const MIGRATION_COMPARISONS_TO_SERIES = "comparisons_to_series"
-
 # Sentinel marker name for the speculative peak durability migration (2026-07-14).
 const MIGRATION_SPECULATIVE_PEAK_DURABILITY = "speculative_peak_durability"
 
@@ -37,12 +34,11 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
-# `schema_migrations` table. Mirrors the inlined pattern in
-# `migrate_assignments!` / `migrate_comparisons_to_series!`.
+# `schema_migrations` table.
 _migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
     "SELECT 1 FROM schema_migrations WHERE name = ?", [name])))
 _record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db,
-    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", [name, comparison_now_iso()])
+    "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", [name, now_iso()])
 
 # Column names of a table — lets ADD COLUMN migrations stay idempotent on a
 # partially-migrated DB by skipping columns that already exist.
@@ -305,6 +301,11 @@ CREATE TABLE IF NOT EXISTS idempotent_responses (
 
 CREATE INDEX IF NOT EXISTS idx_idempotent_responses_created
     ON idempotent_responses(created_at);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name        TEXT PRIMARY KEY,
+    applied_at  TEXT
+);
 """
 
 """
@@ -472,43 +473,10 @@ function migrate_schema!(db::SQLite.DB)
     # Must run AFTER R2 migrations (which create auto_peaks and drop legacy peaks).
     migrate_r4_rebase_entity_type!(db)
 
-    # Compare page (Plan §Phase 1, Task 1.1): comparisons / comparison_members /
-    # comparison_messages. Must run AFTER R4 — none of the compare tables touch
-    # user_actions, but ordering keeps every cross-cutting fix-up bounded by the
-    # earlier R-numbered migrations. (compare page retired; see git history)
-    migrate_compare!(db)
-
-    # Compare page Phase 13: per-user pinned comparisons.
-    migrate_comparison_pins!(db)
-
-    # Issue #67: drop NOT NULL on the four `comparisons` columns the route
-    # used to seed with empty-string placeholders. Must run AFTER
-    # migrate_comparison_pins! (and migrate_compare!) — both create FK refs
-    # to comparisons that the relax migration heals when it RENAMEs the
-    # table during the rebuild.
-    migrate_compare_relax_nullability!(db)
-
-    # 2026-05-14 — Compare UX refinement (spec §6.4): persist view choices
-    # on the comparison so they round-trip across viewers.
-    migrate_compare_view_choices!(db)
-
-    # Series model (#164, master plan §5.1): new `series*` tables + the
-    # `schema_migrations` sentinel. Placed after the compare migrations so
-    # the compare/series schema stays grouped and #171's
-    # `migrate_comparisons_to_series!` has a natural slot after this. New
-    # tables only — the `comparison*` tables are never renamed (§2.1).
-    migrate_series!(db)
-
-    # I3.1 (#171): copy the comparison corpus into the series* tables. MUST run
-    # after migrate_series! (tables + schema_migrations sentinel exist) and after
-    # the two compare migrations above (reads their columns). Own transaction;
-    # sentinel-gated; raw-INSERT user_actions, never apply_event! (no broadcast).
-    migrate_comparisons_to_series!(db)
-
     # Plotting redesign Plan A: durable per-exposure assignment. MUST run AFTER
     # migrate_pk_to_autoincrement! (db.jl, which rebuilds exposures/indices — the
     # assignments/assignment_members FKs must point at the rebuilt tables) and
-    # after create_schema!/migrate_series! (the assignment tables + the
+    # after create_schema! (the assignment tables + the
     # schema_migrations sentinel exist). Backfills from the legacy active group;
     # sentinel-gated; own transaction.
     migrate_assignments!(db)
@@ -541,7 +509,7 @@ function migrate_schema!(db::SQLite.DB)
     # Speculative peak durability (2026-07-14 spec): intents table + legacy
     # basis rescale + heal trigger. Must run last — see the function docstring
     # for the three ordering constraints (after the PK/AUTOINCREMENT rebuild +
-    # FK-heal, after migrate_r2_split_peaks!, after migrate_series!).
+    # FK-heal, after migrate_r2_split_peaks!).
     migrate_speculative_peak_durability!(db)
 
     # #304: √11 removed from phaseratios(Hexagonal). Renumbers the durable
@@ -552,7 +520,24 @@ function migrate_schema!(db::SQLite.DB)
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
     migrate_sample_calls!(db)
+    migrate_drop_series!(db)
 end
+
+const RETIRED_SERIES_TABLES = (
+    "series_pins", "series_messages", "series_samples", "series_members", "series",
+    "comparison_pins", "comparison_messages", "comparison_members", "comparisons",
+)
+
+function migrate_drop_series!(db::SQLite.DB)
+    SQLite.transaction(db) do
+        for table in RETIRED_SERIES_TABLES
+            DBInterface.execute(db, "DROP TABLE IF EXISTS $table")
+        end
+    end
+    nothing
+end
+
+now_iso() = format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ")
 
 function migrate_sample_bridges!(db::SQLite.DB)
     DBInterface.execute(db, """
@@ -875,586 +860,6 @@ function backfill_load_sessions!(db::SQLite.DB)
 end
 
 """
-    migrate_compare!(db)
-
-Install the Compare-page tables (`comparisons`, `comparison_members`,
-`comparison_messages`) and their supporting indexes. Idempotent — every
-statement is `IF NOT EXISTS`-guarded so reopening an already-migrated DB
-is a no-op.
-
-Why each FK action:
-- `comparisons.forked_from_id ON DELETE SET NULL` — forks survive parent
-  deletion as independent artifacts; the `forked_at_hash` (immutable) is
-  retained for historical reference.
-- `comparisons.created_by ON DELETE SET NULL` — user-FK rule.
-- `comparison_members.comparison_id ON DELETE CASCADE` — members are part
-  of the artifact; deleting the comparison drops its membership.
-- `comparison_members.exposure_id ON DELETE SET NULL` — exposure deletion
-  leaves a visible orphan placeholder rather than silently mutating the
-  figure (preserves chat references).
-- `comparison_messages.comparison_id ON DELETE CASCADE` — chat is part
-  of the comparison's discussion thread.
-- `comparison_messages.author_id ON DELETE SET NULL` — user-FK rule.
-
-`comparisons.id` uses `INTEGER PRIMARY KEY AUTOINCREMENT` because comparisons
-are `@`-mention targets (mention-target rule, see CLAUDE.md). Members and
-messages use plain `INTEGER PRIMARY KEY` — neither is `@`-mentioned, and
-`comparison_messages` matches the existing `sample_messages` shape.
-"""
-function migrate_compare!(db::SQLite.DB)
-    # `title`, `content_hash`, `created_at`, `updated_at` are nullable here
-    # (issue #67): the route uses `INSERT INTO comparisons DEFAULT VALUES`
-    # to mint the AUTOINCREMENT id and the dispatcher fills these via
-    # `COALESCE(col, ?)`. Pre-#67 these were `TEXT NOT NULL` and the route
-    # seeded `''` placeholders, which trapped #54 because empty-string is
-    # NOT NULL but IS a sentinel that the dispatcher's COALESCE preserved.
-    # `migrate_compare_relax_nullability!` rebuilds legacy DBs to this shape.
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS comparisons (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            title           TEXT,
-            description     TEXT,
-            content_hash    TEXT,
-            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            created_at      TEXT,
-            updated_at      TEXT,
-            forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
-            forked_at_hash  TEXT
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_comparisons_forked_from
-            ON comparisons(forked_from_id)""")
-
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS comparison_members (
-            id              INTEGER PRIMARY KEY,
-            comparison_id   INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
-            exposure_id     INTEGER REFERENCES exposures(id) ON DELETE SET NULL,
-            display_order   INTEGER NOT NULL,
-            band_height     REAL    NOT NULL DEFAULT 1.0,
-            y_offset        REAL    NOT NULL DEFAULT 0,
-            normalization   TEXT    NOT NULL DEFAULT 'none',
-            color_override  TEXT,
-            label_override  TEXT,
-            q_window_min    REAL,
-            q_window_max    REAL,
-            peak_display    TEXT    CHECK (peak_display IS NULL OR json_valid(peak_display)),
-            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
-            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            created_at      TEXT    NOT NULL
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_comparison_members_by_comparison
-            ON comparison_members(comparison_id, display_order)""")
-
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS comparison_messages (
-            id            INTEGER PRIMARY KEY,
-            comparison_id INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
-            author_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            body          TEXT NOT NULL,
-            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_comparison_messages_comparison
-            ON comparison_messages(comparison_id, created_at)""")
-    nothing
-end
-
-"""
-    migrate_comparison_pins!(db)
-
-Install the `comparison_pins` table for per-user pinned comparisons
-(Plan §Phase 13, Task 13.2). Idempotent.
-
-Composite PK on `(user_id, comparison_id)` enforces "one pin per (user,
-comparison)" — pinning the same comparison twice is a no-op INSERT OR
-IGNORE. Both FK columns cascade on delete: if a user is removed, their
-pins disappear; if a comparison is deleted, the pin disappears with it.
-This matches the expectation that a "pin" is purely metadata about an
-otherwise-unaffected user/comparison pair.
-
-Pin/unpin routes wrap in `with_idempotency` (the wrapper provides the
-outer SQLite tx that `apply_event!(InTransaction(), …)` requires); when
-no `X-Client-Op-Id` header is present the wrapper falls through, and
-repeated POSTs simply re-affirm the "pinned" state via
-`INSERT OR IGNORE` / idempotent `DELETE`. View-table state stays
-correct either way. The `pinned_at` timestamp captures user-perceived
-ordering for display in the sidebar (most-recently-pinned first).
-"""
-function migrate_comparison_pins!(db::SQLite.DB)
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS comparison_pins (
-            user_id        INTEGER NOT NULL REFERENCES users(id)       ON DELETE CASCADE,
-            comparison_id  INTEGER NOT NULL REFERENCES comparisons(id) ON DELETE CASCADE,
-            pinned_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, comparison_id)
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_comparison_pins_by_user
-            ON comparison_pins(user_id, pinned_at DESC)""")
-    nothing
-end
-
-"""
-    migrate_compare_relax_nullability!(db)
-
-Issue #67: drop `NOT NULL` on `title`, `content_hash`, `created_at`,
-`updated_at` of the `comparisons` table. Pre-#67 these four columns were
-`TEXT NOT NULL` and the route's mint-the-id INSERT seeded them with
-empty-string placeholders that the dispatcher then folded over. Empty
-string is NOT NULL but IS a sentinel — it trapped #54 because plain
-`COALESCE(created_at, ?)` preserved `''` forever. PR #66 patched the
-symptom with `NULLIF(created_at, '')`; this migration removes the trap
-structurally so the route can use a clean `INSERT INTO comparisons
-DEFAULT VALUES` and the dispatcher's `COALESCE` Just Works on NULLs.
-
-Idempotent — sentinel parses `sqlite_master.sql` and no-ops once the
-relaxed shape is already installed (fresh DBs created by the post-#67
-`migrate_compare!` are already relaxed).
-
-Data heal: rows with `created_at = ''` (the #54 bug) have it rewritten
-to `CURRENT_TIMESTAMP` so the frontend's row-shape contract (non-empty
-ISO timestamp, asserted in test_route_response_shapes.jl) holds for
-legacy rows too.
-"""
-function migrate_compare_relax_nullability!(db::SQLite.DB)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='comparisons'"))
-    isempty(rows) && return  # comparisons table absent (pre-migrate_compare!)
-    sql = String(rows[1].sql)
-    # Sentinel: `title TEXT NOT NULL` is the canonical legacy marker; absent
-    # iff the relaxed schema is already installed.
-    occursin(r"\btitle\s+TEXT\s+NOT\s+NULL\b"i, sql) || return
-
-    # FK enforcement must be disabled OUTSIDE the transaction (SQLite docs)
-    # — comparisons is referenced by comparison_members (CASCADE) and
-    # comparison_pins (CASCADE), which would otherwise trip during the
-    # rename + rebuild sequence.
-    DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
-    try
-        SQLite.transaction(db) do
-            DBInterface.execute(db,
-                "ALTER TABLE comparisons RENAME TO _migrate_old_comparisons")
-            DBInterface.execute(db, """
-                CREATE TABLE comparisons (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title           TEXT,
-                    description     TEXT,
-                    content_hash    TEXT,
-                    created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
-                    created_at      TEXT,
-                    updated_at      TEXT,
-                    forked_from_id  INTEGER REFERENCES comparisons(id) ON DELETE SET NULL,
-                    forked_at_hash  TEXT
-                )""")
-            DBInterface.execute(db, """
-                INSERT INTO comparisons
-                  (id, title, description, content_hash, created_by,
-                   created_at, updated_at, forked_from_id, forked_at_hash)
-                SELECT id, title, description, content_hash, created_by,
-                       created_at, updated_at, forked_from_id, forked_at_hash
-                  FROM _migrate_old_comparisons""")
-            DBInterface.execute(db, "DROP TABLE _migrate_old_comparisons")
-            # The forked_from_id index travels with the table — recreate it.
-            DBInterface.execute(db, """
-                CREATE INDEX IF NOT EXISTS idx_comparisons_forked_from
-                    ON comparisons(forked_from_id)""")
-        end
-        # After the transaction commits, heal FK references corrupted by
-        # SQLite's ALTER TABLE RENAME tracking — comparison_members and
-        # comparison_pins (and any future table that REFERENCES comparisons)
-        # had their stored FK target rewritten to `_migrate_old_comparisons`.
-        _heal_renamed_table_fk_refs!(db, "comparisons")
-        # One-time data heal: convert the #54 stale `''` created_at /
-        # updated_at rows to a real timestamp so the frontend's row-shape
-        # assertion holds for legacy rows. Format MUST match
-        # `comparison_now_iso()` — fresh rows use
-        # `yyyy-mm-ddTHH:MM:SS.sssZ`, and ComparisonSidebar.tsx sorts on
-        # `updated_at` as a string. SQLite's `CURRENT_TIMESTAMP` returns
-        # `YYYY-MM-DD HH:MM:SS` (space, no `Z`); space sorts BEFORE `T`,
-        # so healed legacy rows would lexically precede fresh rows of the
-        # same instant. Substitute a Julia-formatted string instead.
-        # Idempotent — no-op once the rewrite has run.
-        now_iso = format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ")
-        DBInterface.execute(db, """
-            UPDATE comparisons
-               SET created_at = ?
-             WHERE created_at = ''""", [now_iso])
-        DBInterface.execute(db, """
-            UPDATE comparisons
-               SET updated_at = ?
-             WHERE updated_at = ''""", [now_iso])
-    finally
-        DBInterface.execute(db, "PRAGMA foreign_keys = ON")
-    end
-end
-
-"""
-    migrate_compare_view_choices!(db)
-
-Add `view_grouping_mode`, `view_show_peak_ticks`, `view_show_peak_labels`
-columns to `comparisons` so the author's view choices round-trip across
-viewers (spec §6.4). All NULL on existing rows; the frontend falls back to
-per-tab Zustand defaults when NULL.
-
-Idempotent: each `ALTER TABLE ... ADD COLUMN` is wrapped in a try/catch
-that treats "duplicate column name" as success — the same pattern used
-by other additive migrations.
-"""
-function migrate_compare_view_choices!(db::SQLite.DB)
-    for stmt in (
-        "ALTER TABLE comparisons ADD COLUMN view_grouping_mode TEXT",
-        "ALTER TABLE comparisons ADD COLUMN view_show_peak_ticks INTEGER",
-        "ALTER TABLE comparisons ADD COLUMN view_show_peak_labels INTEGER",
-    )
-        try
-            DBInterface.execute(db, stmt)
-        catch err
-            msg = sprint(showerror, err)
-            occursin("duplicate column name", lowercase(msg)) || rethrow()
-        end
-    end
-end
-
-"""
-    migrate_series!(db)
-
-Install the Series-model tables (`series`, `series_members`, `series_samples`,
-`series_messages`, `series_pins`) and the `schema_migrations` sentinel table.
-Idempotent — every statement is `IF NOT EXISTS`-guarded, so reopening an
-already-migrated DB is a no-op.
-
-The `series` model is a *new* table set, never a rename of `comparison*`:
-`rebuild_views_from_log!` re-folds historical events through dispatcher
-branches that `INSERT INTO` the named `comparison*` tables, so renaming them
-would break event-log replay on every existing DB (master plan §2.1). The
-`comparison*` tables therefore stay permanently as replay machinery; series
-data is copied forward later by `migrate_comparisons_to_series!` (#171).
-
-Each table is created in its final shape in one `CREATE TABLE` — unlike the
-`comparison*` tables, which reached their shape through three migrations.
-
-Why each FK action:
-- `series.created_by ON DELETE SET NULL` / `series_members.created_by` /
-  `series_messages.author_id` — user-FK rule.
-- `series.forked_from_id ON DELETE SET NULL` — forks survive parent deletion
-  as independent artifacts (the `comparisons.forked_from_id` precedent).
-- `series_members.exposure_id ON DELETE SET NULL` — exposure deletion leaves
-  a visible orphan placeholder rather than silently mutating the figure
-  (the `comparison_members.exposure_id` precedent).
-- All four child tables `… series_id … ON DELETE CASCADE` — children are
-  part of the artifact; deleting the series drops them, so the future
-  `series_deleted` dispatcher branch stays a one-line `DELETE FROM series`.
-- `series_samples.sample_id ON DELETE CASCADE` (not `SET NULL`) — a
-  `series_samples` row is a pure pointer with no snapshot, so a NULL
-  `sample_id` is unrenderable (master plan §5.1).
-
-`series.id` is `INTEGER PRIMARY KEY AUTOINCREMENT` because series are
-`@`-mention targets (mention-target rule, see CLAUDE.md), exactly as
-`comparisons.id` is. The child tables use plain `INTEGER PRIMARY KEY` —
-none is `@`-mentioned, and `series_samples.id` is replay-volatile (master
-plan §11): never key client state on it.
-
-`schema_migrations` is created empty. The `migrate_comparisons_to_series!`
-copy (#171) writes its marker row last, inside its own transaction.
-
-Timestamp caveat (inherited from `comparison_messages`, issue #76):
-`series_messages.created_at` is `DATETIME DEFAULT CURRENT_TIMESTAMP`, which
-yields the space-separated `YYYY-MM-DD HH:MM:SS` form — NOT the ISO
-`yyyy-mm-ddTHH:MM:SS.sssZ` form that `series.created_at` carries when a
-route writes it via `comparison_now_iso()`. A future series route or
-dispatcher must not string-sort `series_messages.created_at` against the
-`series`/`series_members` timestamps; sort `series_messages` on its own
-column only.
-"""
-function migrate_series!(db::SQLite.DB)
-    # `series`: the comparison columns (nullable, post-#67 shape) + the
-    # view-choice columns + the recipe columns (`ordering_variable`,
-    # `order_rule`, `state`). `content_hash` is NULL while `state='draft'`.
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS series (
-            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-            title                 TEXT,
-            description           TEXT,
-            content_hash          TEXT,
-            created_by            INTEGER REFERENCES users(id)  ON DELETE SET NULL,
-            created_at            TEXT,
-            updated_at            TEXT,
-            forked_from_id        INTEGER REFERENCES series(id) ON DELETE SET NULL,
-            forked_at_hash        TEXT,
-            view_grouping_mode    TEXT,
-            view_show_peak_ticks  INTEGER,
-            view_show_peak_labels INTEGER,
-            ordering_variable     TEXT,
-            order_rule            TEXT NOT NULL DEFAULT 'manual'
-                                    CHECK (order_rule IN ('ascending','descending','manual')),
-            state                 TEXT NOT NULL DEFAULT 'committed'
-                                    CHECK (state IN ('draft','committed'))
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_series_forked_from
-            ON series(forked_from_id)""")
-
-    # `series_members` — the plate. The `comparison_members` shape with
-    # `comparison_id` renamed to `series_id` (CASCADE). `exposure_id` keeps
-    # `ON DELETE SET NULL` (orphan-placeholder rule).
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS series_members (
-            id              INTEGER PRIMARY KEY,
-            series_id       INTEGER NOT NULL REFERENCES series(id)    ON DELETE CASCADE,
-            exposure_id     INTEGER          REFERENCES exposures(id) ON DELETE SET NULL,
-            display_order   INTEGER NOT NULL,
-            band_height     REAL    NOT NULL DEFAULT 1.0,
-            y_offset        REAL    NOT NULL DEFAULT 0,
-            normalization   TEXT    NOT NULL DEFAULT 'none',
-            color_override  TEXT,
-            label_override  TEXT,
-            q_window_min    REAL,
-            q_window_max    REAL,
-            peak_display    TEXT    CHECK (peak_display IS NULL OR json_valid(peak_display)),
-            snapshot        TEXT    NOT NULL CHECK (json_valid(snapshot)),
-            created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            created_at      TEXT    NOT NULL
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_series_members_by_series
-            ON series_members(series_id, display_order)""")
-
-    # `series_samples` — the recipe membership: an explicit ordered sample
-    # list. `series_id`/`sample_id` are both NOT NULL (a pointer row with a
-    # NULL target is unrenderable; #164 spec text omits NOT NULL — see plan
-    # preamble). `UNIQUE(series_id, position)` also serves ordered reads, so
-    # no separate index is created.
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS series_samples (
-            id          INTEGER PRIMARY KEY,
-            series_id   INTEGER NOT NULL REFERENCES series(id)  ON DELETE CASCADE,
-            sample_id   INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
-            position    INTEGER NOT NULL,
-            pinned      INTEGER NOT NULL DEFAULT 0 CHECK (pinned   IN (0,1)),
-            excluded    INTEGER NOT NULL DEFAULT 0 CHECK (excluded IN (0,1)),
-            UNIQUE(series_id, position)
-        )""")
-
-    # `series_messages` — the `comparison_messages` shape, `series_id` (CASCADE).
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS series_messages (
-            id         INTEGER PRIMARY KEY,
-            series_id  INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
-            author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-            body       TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_series_messages_by_series
-            ON series_messages(series_id, created_at)""")
-
-    # `series_pins` — the `comparison_pins` shape. Composite PK enforces one
-    # pin per (user, series); both FKs CASCADE.
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS series_pins (
-            user_id    INTEGER NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
-            series_id  INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
-            pinned_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, series_id)
-        )""")
-    DBInterface.execute(db, """
-        CREATE INDEX IF NOT EXISTS idx_series_pins_by_user
-            ON series_pins(user_id, pinned_at DESC)""")
-
-    # Migration-version sentinel. No such table exists today; #171's copy
-    # needs a real marker. Created empty here — #164 writes no rows.
-    DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            name        TEXT PRIMARY KEY,
-            applied_at  TEXT
-        )""")
-    nothing
-end
-
-# Build the `series_created` recipe-snapshot payload for one comparison.
-# Recipe samples are the DISTINCT, non-NULL sample_ids of the comparison's
-# members' exposures, in first-seen display_order, at sequential 0-based
-# positions. Orphan members (NULL exposure_id) and exposures with NULL
-# sample_id contribute no recipe row. Master plan §6.1 step 2.
-function _series_created_payload_from_comparison(db::SQLite.DB, cmp)
-    sample_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT e.sample_id AS sample_id
-           FROM comparison_members cm
-           JOIN exposures e ON e.id = cm.exposure_id
-           WHERE cm.comparison_id = ? AND e.sample_id IS NOT NULL
-           ORDER BY cm.display_order ASC, cm.id ASC""", [Int(cmp.id)]))
-    seen = Set{Int}()
-    samples = Vector{Dict{Symbol,Any}}()
-    for r in sample_rows
-        sid = Int(r.sample_id)
-        sid in seen && continue
-        push!(seen, sid)
-        push!(samples, Dict{Symbol,Any}(
-            :sample_id => sid,
-            :position  => length(samples),
-            :pinned    => false,
-            :excluded  => false,
-        ))
-    end
-    Dict{Symbol,Any}(
-        :title                 => ismissing(cmp.title) ? nothing : String(cmp.title),
-        :description           => ismissing(cmp.description) ? nothing : String(cmp.description),
-        # CRITICAL (P1 — id-space mismatch): NULL the fork lineage on migrated series.
-        # `comparisons.forked_from_id` references comparisons(id); `series.forked_from_id`
-        # references series(id) — DIFFERENT id-spaces. Copying the comparison's id straight
-        # through would write a dangling reference (an arbitrary/nonexistent series id). FK
-        # enforcement is ON at this point (migrate_compare_relax_nullability!'s `finally`
-        # re-enabled `PRAGMA foreign_keys=ON` before this migration runs), so such a write
-        # would FK-throw at INSERT and abort the migration; the `PRAGMA foreign_key_check`
-        # test confirms the copy leaves no dangling ref. A comparison_id→series_id remap is
-        # unsafe (id-order does NOT guarantee parent.id < child.id). Fork lineage across the
-        # comparison→series cutover is not meaningful, so drop it: BOTH fields NULL.
-        # (Human-approved option a.)
-        :forked_from_id        => nothing,
-        :forked_at_hash        => nothing,
-        :ordering_variable     => nothing,   # comparisons have no recipe ordering
-        :order_rule            => nothing,   # dispatcher COALESCEs to 'manual'
-        :view_grouping_mode    => ismissing(cmp.view_grouping_mode) ? nothing : String(cmp.view_grouping_mode),
-        :view_show_peak_ticks  => ismissing(cmp.view_show_peak_ticks) ? nothing : cmp.view_show_peak_ticks,
-        :view_show_peak_labels => ismissing(cmp.view_show_peak_labels) ? nothing : cmp.view_show_peak_labels,
-        :samples               => samples,
-    )
-end
-
-# Build the `series_plate_committed` member-list payload for one comparison.
-# Members carry NO ids (the dispatcher mints fresh PKs). Field shape matches
-# `_series_member_payload` output. Master plan §6.1 step 2.
-function _series_plate_committed_payload_from_comparison(db::SQLite.DB, cmp)
-    member_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT exposure_id, display_order, band_height, y_offset, normalization,
-                  color_override, label_override, q_window_min, q_window_max,
-                  peak_display, snapshot
-           FROM comparison_members WHERE comparison_id = ?
-           ORDER BY display_order ASC, id ASC""", [Int(cmp.id)]))
-    members = Vector{Dict{Symbol,Any}}()
-    for m in member_rows
-        push!(members, Dict{Symbol,Any}(
-            :id             => nothing,
-            :exposure_id    => ismissing(m.exposure_id)    ? nothing : Int(m.exposure_id),
-            :display_order  => Int(m.display_order),
-            :band_height    => Float64(m.band_height),
-            :y_offset       => Float64(m.y_offset),
-            :normalization  => String(m.normalization),
-            :color_override => ismissing(m.color_override) ? nothing : String(m.color_override),
-            :label_override => ismissing(m.label_override) ? nothing : String(m.label_override),
-            :q_window_min   => ismissing(m.q_window_min)   ? nothing : Float64(m.q_window_min),
-            :q_window_max   => ismissing(m.q_window_max)   ? nothing : Float64(m.q_window_max),
-            # peak_display/snapshot are stored JSON text; parse so the payload
-            # round-trips as structured JSON (matches the route's parsed shape).
-            :peak_display   => ismissing(m.peak_display) ? nothing : JSON3.read(String(m.peak_display)),
-            :snapshot       => JSON3.read(String(m.snapshot)),
-        ))
-    end
-    Dict{Symbol,Any}(:members => members)
-end
-
-# Raw-INSERT one synthesized user_actions row (no broadcast, NULL client ids,
-# carrying the comparison's user_id + historical timestamp), then fold its
-# payload through the live dispatcher. Returns the new event_id.
-# NOTE: the timestamp column is named `timestamp`, NOT `created_at`.
-function _synthesize_series_event!(db::SQLite.DB, kind::String, series_id::Integer,
-                                   payload::Dict, user_id, ts)
-    payload_json = JSON3.write(payload)
-    res = DBInterface.execute(db,
-        """INSERT INTO user_actions
-             (user_id, action, entity_type, entity_id, payload,
-              undoes_event_id, client_id, client_op_id, timestamp)
-           VALUES (?, ?, 'series', ?, ?, NULL, NULL, NULL, ?)""",
-        [user_id, kind, Int(series_id), payload_json, ts])
-    event_id = Int(DBInterface.lastrowid(res))
-    # Canonicalize exactly as apply_event! does so the dispatcher branches see a
-    # JSON3.Object, not a Dict.
-    payload_canonical = JSON3.read(payload_json)
-    update_view_for_event!(db, kind, Int(series_id), payload_canonical, event_id)
-    event_id
-end
-
-"""
-    migrate_comparisons_to_series!(db)
-
-Event-sourced copy of every `comparisons` row into the `series*` tables
-(master plan §6.1, issue #171). Runs at `migrate_schema!` time, after
-`migrate_series!` (so the `series*` tables and `schema_migrations` sentinel
-exist) and after `migrate_compare_view_choices!`/`migrate_compare_relax_nullability!`
-(it reads the columns those add). Wrapped in its own `SQLite.transaction`.
-
-Idempotent via the `schema_migrations` sentinel (gate at start, marker row
-written LAST inside the same transaction — the gate flips only on a fully
-committed copy). NEVER calls `apply_event!` (its public method broadcasts; a
-migration must not fan out N replay-as-reruns). Raw-`INSERT`s `user_actions`
-rows with `client_op_id`/`client_id` NULL — so no `idempotent_responses` cache
-rows are written and the partial unique index does not apply.
-"""
-function migrate_comparisons_to_series!(db::SQLite.DB)
-    # Gate: skip if already applied. A single read before the transaction is
-    # sufficient — migrate_schema! runs single-threaded inside open_db, before
-    # serve accepts connections, so there is no concurrent opener to race.
-    already = Tables.rowtable(DBInterface.execute(db,
-        "SELECT 1 FROM schema_migrations WHERE name = ?",
-        [MIGRATION_COMPARISONS_TO_SERIES]))
-    isempty(already) || return nothing
-
-    SQLite.transaction(db) do
-        # NOTE: `forked_from_id`/`forked_at_hash` are deliberately NOT selected —
-        # the migrated series always NULLs its fork lineage (id-space mismatch; see
-        # `_series_created_payload_from_comparison`). Selecting them would be a dead read.
-        cmps = Tables.rowtable(DBInterface.execute(db,
-            """SELECT id, title, description, content_hash, created_by, created_at,
-                      updated_at,
-                      view_grouping_mode, view_show_peak_ticks, view_show_peak_labels
-               FROM comparisons ORDER BY id ASC"""))
-
-        for cmp in cmps
-            uid = ismissing(cmp.created_by) ? nothing : Int(cmp.created_by)
-            # Historical timestamp carried onto the synthesized event rows'
-            # `timestamp` column. Falls back to now() only if the comparison
-            # somehow has a NULL created_at (post-#67 it is nullable).
-            ts  = ismissing(cmp.created_at) ? comparison_now_iso() : String(cmp.created_at)
-
-            # Mint the series id exactly as the live route does.
-            res = DBInterface.execute(db, "INSERT INTO series DEFAULT VALUES")
-            new_id = Int(DBInterface.lastrowid(res))
-
-            created_payload = _series_created_payload_from_comparison(db, cmp)
-            _synthesize_series_event!(db, "series_created", new_id, created_payload, uid, ts)
-
-            plate_payload = _series_plate_committed_payload_from_comparison(db, cmp)
-            _synthesize_series_event!(db, "series_plate_committed", new_id, plate_payload, uid, ts)
-
-            # Messages: carry author_id + body + created_at (don't let the
-            # DEFAULT CURRENT_TIMESTAMP overwrite history). series_messages.id
-            # auto-assigns.
-            DBInterface.execute(db,
-                """INSERT INTO series_messages (series_id, author_id, body, created_at)
-                   SELECT ?, author_id, body, created_at
-                   FROM comparison_messages WHERE comparison_id = ?
-                   ORDER BY created_at ASC, id ASC""", [new_id, Int(cmp.id)])
-
-            # Pins: carry user_id + pinned_at. OR IGNORE defends against a dup
-            # (user, series) PK (can't actually occur — comparison_pins PK is
-            # (user, comparison) and one comparison maps to one series).
-            DBInterface.execute(db,
-                """INSERT OR IGNORE INTO series_pins (user_id, series_id, pinned_at)
-                   SELECT user_id, ?, pinned_at
-                   FROM comparison_pins WHERE comparison_id = ?""", [new_id, Int(cmp.id)])
-        end
-
-        # Sentinel marker LAST, inside the same transaction.
-        DBInterface.execute(db,
-            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-            [MIGRATION_COMPARISONS_TO_SERIES, comparison_now_iso()])
-    end
-    nothing
-end
-
-"""
     migrate_speculative_peak_durability!(db)
 
 One-shot durability migration for speculative indices (spec:
@@ -1465,7 +870,7 @@ One-shot durability migration for speculative indices (spec:
    Deliberately NOT in the `SCHEMA` const: `create_schema!` runs before
    `migrate_pk_to_autoincrement!` rename-rebuilds `indices`, and SQLite's
    RENAME tracking would rewrite this table's FK to `_migrate_old_indices`
-   (same hazard `migrate_compare!` documents).
+   (the same RENAME hazard `_fix_fk_references_after_autoincrement_migration!` heals).
 2. Rescales legacy speculative `basis` values from the un-normalized fit
    convention to the normalized one (factor = first raw phase ratio: √2
    Pn3m/Im3m, √3 Fm3m/Fd3m, √6 Ia3d; 1 elsewhere — no-op).
@@ -1480,8 +885,7 @@ One-shot durability migration for speculative indices (spec:
 Steps 2-4 + the sentinel marker run in one transaction, sentinel-gated.
 Must be called at the END of `migrate_schema!`: after
 `migrate_pk_to_autoincrement!` + FK-heal (indices table settled), after
-`migrate_r2_split_peaks!` (backfill join needs the post-R2 peak tables), and
-after `migrate_series!` (creates `schema_migrations`).
+`migrate_r2_split_peaks!` (backfill join needs the post-R2 peak tables).
 """
 function migrate_speculative_peak_durability!(db::SQLite.DB)
     DBInterface.execute(db, """
@@ -1540,7 +944,7 @@ function migrate_speculative_peak_durability!(db::SQLite.DB)
         # concurrent-open race roll back the losing racer's whole tx.
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-            [MIGRATION_SPECULATIVE_PEAK_DURABILITY, comparison_now_iso()])
+            [MIGRATION_SPECULATIVE_PEAK_DURABILITY, now_iso()])
     end
     nothing
 end
@@ -1670,7 +1074,7 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
         # race roll back the losing racer's whole tx.
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-            [MIGRATION_HEX_SQRT11, comparison_now_iso()])
+            [MIGRATION_HEX_SQRT11, now_iso()])
     end
     nothing
 end
@@ -1720,7 +1124,7 @@ function migrate_sample_calls!(db::SQLite.DB)
         end
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-            [MIGRATION_SAMPLE_CALLS, comparison_now_iso()])
+            [MIGRATION_SAMPLE_CALLS, now_iso()])
     end
     nothing
 end
@@ -1759,7 +1163,7 @@ function migrate_index_peaks_ratio_int!(db::SQLite.DB)
         if unknown == 0
             DBInterface.execute(db,
                 "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-                [MIGRATION_RATIO_POSITION_INT, comparison_now_iso()])
+                [MIGRATION_RATIO_POSITION_INT, now_iso()])
         end
         unknown
     end
@@ -1817,67 +1221,9 @@ function migrate_assignments!(db::SQLite.DB)
                WHERE g.active = 1""")
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
-            [MIGRATION_ASSIGNMENTS, comparison_now_iso()])
+            [MIGRATION_ASSIGNMENTS, now_iso()])
     end
     nothing
-end
-
-# Heal FK references in `sqlite_master.sql` that point at `_migrate_old_<entity>`
-# back to `<entity>`. SQLite's ALTER TABLE RENAME tracking rewrites stored FK
-# refs in EVERY table whose CREATE statement named the renamed entity — those
-# stale refs surface later as `no such table: main._migrate_old_*` on unrelated
-# INSERTs (the prepare step walks the FK graph). Mirrors the strategy in
-# `_fix_fk_references_after_autoincrement_migration!` but scoped to one entity
-# (the `comparisons` rebuild for #67).
-#
-# When to use this vs. _fix_fk_references_after_autoincrement_migration!:
-# - one-off scoped rebuild of a single entity (e.g. comparisons for #67) →
-#   call this helper directly with the entity name.
-# - entity participates in the autoincrement / R2 widen rebuild → add it to
-#   `_MIGRATION_TEMP_ENTITIES` instead so the existing iteration covers it.
-function _heal_renamed_table_fk_refs!(db::SQLite.DB, entity::String)
-    old_name = "_migrate_old_$entity"
-    broken = Tables.rowtable(DBInterface.execute(db,
-        "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE ?",
-        ["%$old_name%"]))
-    isempty(broken) && return
-    DBInterface.execute(db, "PRAGMA writable_schema = ON")
-    try
-        SQLite.transaction(db) do
-            # Quoted ("…") and bare forms both occur depending on how the FK
-            # target was rendered in the original CREATE.
-            DBInterface.execute(db,
-                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
-                ["\"$old_name\"", entity])
-            DBInterface.execute(db,
-                "UPDATE sqlite_master SET sql = REPLACE(sql, ?, ?) WHERE type='table'",
-                [old_name, entity])
-            remaining = Tables.rowtable(DBInterface.execute(db,
-                "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE ?",
-                ["%$old_name%"]))
-            isempty(remaining) || error(
-                "_heal_renamed_table_fk_refs!($entity): tables still carry " *
-                "`$old_name` FKs after heal: " *
-                join(String[String(r.name) for r in remaining], ", "))
-        end
-    finally
-        DBInterface.execute(db, "PRAGMA writable_schema = OFF")
-    end
-    # Force SQLite to invalidate its in-memory schema cache. VACUUM is the
-    # standard idiom but acquires an EXCLUSIVE lock and can fail with
-    # SQLITE_BUSY under multi-process access — fall back to bumping
-    # schema_version (also invalidates the cache).
-    try
-        DBInterface.execute(db, "VACUUM")
-    catch err
-        @warn "VACUUM after $entity FK heal failed; bumping schema_version" exception=err
-        DBInterface.execute(db, "PRAGMA writable_schema = ON")
-        try
-            DBInterface.execute(db, "PRAGMA schema_version = schema_version + 1")
-        finally
-            DBInterface.execute(db, "PRAGMA writable_schema = OFF")
-        end
-    end
 end
 
 """
@@ -2578,8 +1924,8 @@ end
     retire_sample!(db, loser_id; merged_into_id)
 
 Mark a sample as retired by pointing its `merged_into_id` at the survivor.
-Does NOT hard-delete the row — FKs from `series_samples` etc. are re-pointed
-before this is called (see merge route). Sets `merged_into_id` only; no SSE.
+Does NOT hard-delete the row — FKs are re-pointed before this is called (see
+merge route). Sets `merged_into_id` only; no SSE.
 """
 function retire_sample!(db::SQLite.DB, loser_id::Integer;
                          merged_into_id::Integer)

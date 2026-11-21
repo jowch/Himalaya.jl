@@ -50,12 +50,10 @@ describe("AppRoutes — single unified shell (TopNav, T3.2)", () => {
   });
 
   it.each(["/series", "/series/4", "/compare/all", "/experiments/7/compare/123"])(
-    "redirects retired %s to the experiments home",
+    "treats the deleted %s as a stale URL",
     async (path) => {
-      vi.spyOn(api, "listExperiments").mockResolvedValue([]);
       renderRoutes(path);
-      expect(await screen.findByText("All experiments")).toBeInTheDocument();
-      expect(useAppState.getState().staleUrlContext).toBeNull();
+      expect(await screen.findByTestId("stale-url-page")).toBeInTheDocument();
     },
   );
 

@@ -114,8 +114,6 @@ async function mockExperiment(
     }));
   await page.route("**/api/sample-tags", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/series", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/events*", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route(`**/api/experiments/${opts.id}/bridges`, (r) =>

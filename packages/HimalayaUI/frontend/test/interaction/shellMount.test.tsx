@@ -2,7 +2,7 @@
  * Task 0.7: proves that AppShell mounts both InteractionDock and useKeyboardLayer.
  *
  * Strategy (not the false-green from the brief's Step 1):
- *   - Render AppRoutes at /series (lightweight; mocking listSeries suffices).
+ *   - Render AppRoutes at /experiments (lightweight; mocking listExperiments suffices).
  *   - After the shell mounts, seed the interaction store.
  *   - dock-primary appearing proves InteractionDock is rendered inside the shell.
  *   - Enter firing the spy proves useKeyboardLayer's window listener is live.
@@ -21,14 +21,14 @@ import { useInteraction } from "../../src/print/interaction/registry";
 import { core } from "../../src/print/interaction/core";
 import * as api from "../../src/api";
 
-function renderAtSeries() {
+function renderShell() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  vi.spyOn(api, "listSeries").mockResolvedValue([]);
+  vi.spyOn(api, "listExperiments").mockResolvedValue([]);
   render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/series"]}>
+      <MemoryRouter initialEntries={["/experiments"]}>
         <AppRoutes />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("AppShell mounts the interaction layer (Task 0.7)", () => {
   it("InteractionDock is mounted in the shell (dock-primary appears after setPage)", async () => {
-    renderAtSeries();
+    renderShell();
     // Wait for the shell to be in the DOM.
     await screen.findByTestId("app-shell");
 
@@ -59,7 +59,7 @@ describe("AppShell mounts the interaction layer (Task 0.7)", () => {
   });
 
   it("useKeyboardLayer window listener is live (Enter fires registered action)", async () => {
-    renderAtSeries();
+    renderShell();
     await screen.findByTestId("app-shell");
 
     const spy = vi.fn();

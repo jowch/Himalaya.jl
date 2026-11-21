@@ -13,7 +13,7 @@ export const STORAGE_KEY = "himalaya-ui:queue";
 // queued group op must DROP on rehydrate rather than replay into a dead route.
 // Bumped 4 → 5 (Phase E1, Task 1b): samples.display_name collapsed into non-null
 // name; pre-deploy update_sample ops carrying display_name DROP on rehydrate.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 interface PersistedOp {
   schemaVersion: number;

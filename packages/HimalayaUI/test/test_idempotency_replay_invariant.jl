@@ -209,21 +209,5 @@ end
             end
         end
     end
-
-    # I3.6 (#177): the comparison replay-invariant testsets (comparison_created
-    # / _submitted / _deleted / comparison_message / pinned / unpinned + the
-    # 409-retry) drove the invariant through the deleted /api/comparisons*
-    # routes. Those routes are retired with the Compare page; the invariant
-    # itself stays covered by the surviving kinds above (peak_added,
-    # assignment_add, post_message, update_sample). The kept comparison_*
-    # dispatcher branches' fold is covered by test_events.jl.
-    # comparison replay invariants (retired with the Compare routes, #177);
-    # routes deleted in I3.6; invariant covered by surviving kinds above.
 end
 
-# I3.6 (#177): the "SSE frame includes view_* on comparison_submitted (A-6)"
-# testset drove the deleted POST /api/comparisons + /submit routes to assert
-# the SSE post_state envelope. The routes are retired with the Compare page;
-# the kept `comparison_submitted` dispatcher branch's fold is covered by
-# test_events.jl, and the general SSE-fanout-per-op invariant by the surviving
-# kinds in the replay-invariant testset above.
