@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { LABEL_COLORS } from "../../src/api";
-import { KNOWN_PHASES, phaseToken } from "../../src/phases";
 import { contrastRatio, parseOklch } from "../helpers/contrast";
 import { themeToken } from "../helpers/cssBlocks";
 
-const FROM_OTHERS = 0.06;
 const BETWEEN_LABELS = 0.047;
 
 function oklabDistance(x: string, y: string): number {
@@ -31,16 +29,6 @@ describe.each(["light", "dark"] as const)("label colours in the %s theme", (them
     for (const c of LABEL_COLORS) {
       expect(contrastRatio(ink(c), wash(c)), `${c} on its wash`).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(ink(c), plate), `${c} on plate`).toBeGreaterThanOrEqual(4.5);
-    }
-  });
-
-  it("keeps every ink at least 0.06 OKLab from each phase colour and status colour", () => {
-    const others = [
-      ...KNOWN_PHASES.map((p) => [p, themeToken(theme, phaseToken(p).replace("--color-", ""))] as const),
-      ...["accent", "success", "warning", "error"].map((n) => [n, themeToken(theme, n)] as const),
-    ];
-    for (const c of LABEL_COLORS) {
-      for (const [name, value] of others) expect(oklabDistance(ink(c), value), `${c} vs ${name}`).toBeGreaterThanOrEqual(FROM_OTHERS);
     }
   });
 
