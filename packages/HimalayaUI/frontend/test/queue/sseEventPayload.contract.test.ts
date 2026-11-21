@@ -550,20 +550,20 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   //   (b.ii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
-  const noSynth: Array<{ kind: string; entity_type: string }> = [
+  const noSynth: Array<{ kind: string }> = [
     // (b.i) forward-scaffolded
-    { kind: "set_exposure_status", entity_type: "exposure"           },
-    { kind: "update_sample",       entity_type: "sample"             },
-    { kind: "select_exposure",     entity_type: "exposure"           },
+    { kind: "set_exposure_status" },
+    { kind: "update_sample" },
+    { kind: "select_exposure" },
     // (b.ii) looksFull-handled or hash-only effects
-    { kind: "analyze_run",         entity_type: "exposure"           },
-    { kind: "peak_removed",        entity_type: "exposure"           },
-    { kind: "speculative_created", entity_type: "exposure"           },
-    { kind: "speculative_deleted", entity_type: "exposure"           },
+    { kind: "analyze_run" },
+    { kind: "peak_removed" },
+    { kind: "speculative_created" },
+    { kind: "speculative_deleted" },
   ];
   it.each(noSynth)(
-    "$kind/$entity_type stays on the generic fallback (no mutator.synthesizeFromSse)",
-    ({ kind, entity_type }) => {
+    "$kind stays on the generic fallback (no mutator.synthesizeFromSse)",
+    ({ kind }) => {
       const mutator = resolveMutatorForEvent(kind);
       expect(mutator).toBeDefined();
       expect(mutator!.synthesizeFromSse).toBeUndefined();

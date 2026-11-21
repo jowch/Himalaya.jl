@@ -93,7 +93,7 @@
     "frontend/src/print/ui/Card.tsx": 39,
     "frontend/src/print/ui/CheckCircle.tsx": 9,
     "frontend/src/print/ui/Checkbox.tsx": 21,
-    "frontend/src/print/ui/Chip.tsx": 48,
+    "frontend/src/print/ui/Chip.tsx": 46,
     "frontend/src/print/ui/Dock.tsx": 24,
     "frontend/src/print/ui/DockStepper.tsx": 11,
     "frontend/src/print/ui/DockUpLink.tsx": 11,

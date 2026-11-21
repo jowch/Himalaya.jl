@@ -74,7 +74,8 @@ flat payload before any callback runs. Mutator code never has to cast.
 path, by op-payload shape) and `resolveMutatorForEvent` (the
 `synthesizeResponseFromSse` path, by event kind alone). Every kind maps to
 one mutator, so both agree; `test/queue/mutatorRegistry.test.ts` checks
-the round trip for each mutator.
+the round trip for the queue's core mutators (peaks, indices, exposure
+status, sample updates).
 
 ---
 
