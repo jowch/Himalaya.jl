@@ -190,35 +190,34 @@ test("representative_kept: the corpus status describes a dropped frame while a k
   assert.equal(onKept.invariants.representative_kept.ok, true);
 });
 
-function withViews(samples, views, corpusText = "Not indexed", workspaceText = "Unreviewed", corpusKept = {}) {
+function withViews(samples, views, workspaceText = "Unreviewed", workspaceKept = {}) {
   return samples.map((s) => {
     const last = s.frames.at(-1).filename;
     return {
       ...s,
       views: views[s.id] ?? { workspace: last },
-      corpusText,
       workspaceText,
-      corpusKept: s.id in corpusKept ? corpusKept[s.id] : `${s.frames.filter((f) => f.status !== "rejected").length}/${s.frames.length}`,
+      workspaceKept: s.id in workspaceKept ? workspaceKept[s.id] : `${s.frames.filter((f) => f.status !== "rejected").length}/${s.frames.length}`,
     };
   });
 }
 
-test("with --ui, the corpus Kept column must show the app's kept / total", () => {
+test("with --ui, the workspace's frame cards must show the app's kept / total", () => {
   const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped)];
   const same = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }));
   assert.equal(same.ok, true);
-  assert.equal(same.samples[0].shown.corpus_kept, "1/2");
+  assert.equal(same.samples[0].shown.workspace_kept, "1/2");
 
-  const stale = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }, "Not indexed", "Unreviewed", { 1: "2/2" }));
+  const stale = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }, "Unreviewed", { 1: "2/2" }));
   assert.equal(stale.ok, false);
-  assert.deepEqual(stale.samples[0].problems, ['the corpus Kept column reads "2/2" but the app has 1/2 frames kept']);
+  assert.deepEqual(stale.samples[0].problems, ["the workspace's frame cards show 2/2 kept but the app has 1/2"]);
 
-  const unread = compareTruth(TRUTH, withViews(app(), {}, "Not indexed", "Unreviewed", { 2: null }));
+  const unread = compareTruth(TRUTH, withViews(app(), {}, "Unreviewed", { 2: null }));
   assert.equal(unread.ok, false);
-  assert.match(unread.samples[1].problems[0], /Kept column reads "nothing"/);
+  assert.match(unread.samples[1].problems[0], /frame cards show nothing kept/);
 });
 
-test("views_agree compares the corpus frame with the frame the workspace opens on", () => {
+test("views_agree compares the API status frame with the frame the workspace opens on", () => {
   const agree = compareTruth(TRUTH, withViews(app(), {}));
   assert.equal(agree.invariants.views_agree.checked, true);
   assert.equal(agree.invariants.views_agree.ok, true);
@@ -237,16 +236,6 @@ test("a view opening on a dropped frame breaks representative_kept", () => {
   assert.deepEqual(r.invariants.representative_kept.violations, [
     { sample: "MO_H2O", view: "workspace", frame: "MO_H2O_S1", kept: ["MO_H2O_S2"] },
   ]);
-});
-
-test("with --ui, the corpus text must match the status read from the API", () => {
-  const same = compareTruth(TRUTH, withViews(app(), {}));
-  assert.equal(same.ok, true);
-  assert.equal(same.samples[0].shown.corpus_text, "Not indexed");
-
-  const differ = compareTruth(TRUTH, withViews(app({ pegShown: { phase: "Im3m" } }), {}));
-  assert.equal(differ.ok, false);
-  assert.match(differ.samples[1].problems[0], /corpus reads "Not indexed" but GET \/api\/samples says phase/);
 });
 
 test("a workspace read that finds no frame is a problem, and the view invariants report unchecked", () => {
@@ -275,7 +264,7 @@ test("with --ui, the workspace list must show the status GET /api/samples report
   assert.equal(same.invariants.workspace_status_matches.ok, true);
   assert.equal(same.samples[0].shown.workspace_text, "Unreviewed");
 
-  const stale = compareTruth(TRUTH, withViews(app({ pegShown: { phase: "Im3m" } }), {}, "Im3m", "Unreviewed"));
+  const stale = compareTruth(TRUTH, withViews(app({ pegShown: { phase: "Im3m" } }), {}, "Unreviewed"));
   assert.equal(stale.ok, false);
   assert.ok(stale.summary.invariants_failed.includes("workspace_status_matches"));
   assert.deepEqual(stale.invariants.workspace_status_matches.violations.find((v) => v.sample === "MO_PEG5"), {

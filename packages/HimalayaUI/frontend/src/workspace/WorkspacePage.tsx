@@ -12,6 +12,7 @@ import {
   useExperiment,
   useExposures,
   useIndices,
+  useLoads,
   usePeaks,
   useRemoveAssignmentPhase,
   useSetAssignmentState,
@@ -21,12 +22,15 @@ import {
   useSetPeakExcluded,
   useTrace,
   useUnbridgeSample,
+  useTriggerScan,
 } from "../queries";
+import { useScanState } from "../hooks/useScanState";
+import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { firstUnreviewed, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -50,6 +54,7 @@ import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
+import { ExperimentNotice } from "./ui/ExperimentNotice";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
@@ -138,6 +143,24 @@ export function WorkspacePage(): JSX.Element {
   const username = useAppState((s) => s.username);
   const clearUsername = useAppState((s) => s.clearUsername);
   const experiment = useExperiment(experimentId);
+  const scan = useScanState(experimentId);
+  const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
+  const triggerScan = useTriggerScan(experimentId);
+  const loads = useLoads(experimentId);
+  const flagged = useMemo(
+    () => (loads.data ?? []).flatMap((l) => l.samples).filter((s) => s.flag !== null).length,
+    [loads.data],
+  );
+  const rescanText = !scan.rescanning
+    ? undefined
+    : isIngestStage(inFlight?.stage)
+      ? `Rescanning: ${stageLabel(inFlight.stage)} ${inFlight.processed} / ${inFlight.total}`
+      : inFlight && inFlight.total > 0
+        ? `Rescanning: ${inFlight.processed} / ${inFlight.total}`
+        : "Rescanning…";
+  const rescanFailed = scan.failed || triggerScan.isError;
+  const showFailure = useCallback(() => navigate(`/experiments/${experimentId}`), [navigate, experimentId]);
+  const reviewGrouping = useCallback(() => navigate(`/experiments/${experimentId}/grouping`), [navigate, experimentId]);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
 
@@ -151,12 +174,17 @@ export function WorkspacePage(): JSX.Element {
   }, [samples, filter]);
 
   const requested = sampleParam === undefined ? undefined : Number(sampleParam);
-  const sample = requested === undefined ? samples[0] : samples.find((s) => s.id === requested);
+  const sample = requested === undefined ? firstUnreviewed(samples) : samples.find((s) => s.id === requested);
   const sampleId = sample?.id;
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
   );
+  useEffect(() => {
+    if (requested !== undefined || sampleId === undefined) return;
+    const qs = search.toString();
+    navigate(`/experiments/${experimentId}/workspace/${sampleId}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [requested, sampleId, search, navigate, experimentId]);
 
   const exposures = useExposures(sampleId);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
@@ -372,6 +400,7 @@ export function WorkspacePage(): JSX.Element {
   const draftFit = useMemo(() => (draft ? indexFit(draftQs, activePeakQs, xExtent) : null), [draft, draftQs, activePeakQs, xExtent]);
 
   const indexSeries: IndexSeries[] = useMemo(() => {
+    if (!xExtent) return [];
     if (draft && draftFit) {
       return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, param: latticeParam(draft.phase), r2: draftFit.r2 }];
     }
@@ -520,6 +549,9 @@ export function WorkspacePage(): JSX.Element {
       : []),
     ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
+    ...(scan.rescanning ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate() }]),
+    { id: "grouping", label: "Review grouping", run: reviewGrouping },
+    { id: "configure", label: "Configure experiment", run: () => navigate(`/experiments/${experimentId}/config`) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
@@ -552,14 +584,13 @@ export function WorkspacePage(): JSX.Element {
       }
       header={
         <WorkspaceHeader
-          experimentId={experimentId}
           experimentName={experiment.data?.name ?? `Experiment ${experimentId}`}
           reviewed={reviewed}
           total={samples.length}
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice rescan={rescanText} failed={rescanFailed} flagged={flagged} onReview={reviewGrouping} onFailure={showFailure} />} />}
       main={
         sample ? (
           <>
