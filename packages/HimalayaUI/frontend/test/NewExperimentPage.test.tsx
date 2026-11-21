@@ -157,6 +157,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
     const field = document.createElement("input");
@@ -169,6 +170,8 @@ describe("NewExperimentPage", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(create).not.toHaveBeenCalled();
     dialog.remove();
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   });
 
   it("adds once when ⌘/Ctrl+Enter is pressed twice quickly", async () => {
