@@ -59,6 +59,11 @@ describe("NewExperimentPage", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("puts the cursor in the folder field on arrival", () => {
+    renderPage();
+    expect(document.activeElement).toBe(screen.getByTestId("dirpicker-input").querySelector("input"));
+  });
+
   it("keeps the add button disabled until a folder with setups is picked", () => {
     renderPage();
     expect(screen.getByTestId("create-submit")).toBeDisabled();

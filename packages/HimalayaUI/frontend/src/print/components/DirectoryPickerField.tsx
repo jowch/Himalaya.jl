@@ -13,6 +13,7 @@ export interface DirectoryPickerFieldProps {
   /** Accessible label for the input. Default "Data directory" (the primary
    *  new-experiment use); set e.g. "Analysis directory" when reused elsewhere. */
   ariaLabel?: string;
+  autoFocus?: boolean;
   /** PLACEMENT-ONLY. */
   className?: string;
 }
@@ -39,6 +40,7 @@ export function DirectoryPickerField({
   onSubmit,
   suggestions,
   ariaLabel = "Data directory",
+  autoFocus = false,
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
   const [active, setActive] = useState(-1);
@@ -118,6 +120,7 @@ export function DirectoryPickerField({
             mono
             placeholder="Type or paste your experiment directory…"
             aria-label={ariaLabel}
+            autoFocus={autoFocus}
             className="w-full"
           />
         }
