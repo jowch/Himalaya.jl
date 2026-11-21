@@ -131,7 +131,7 @@ export function ExperimentsHomePage(): JSX.Element {
                 <div key={year} className="flex items-start gap-2">
                   <Dot tone="neutral" className="mt-1 shrink-0" />
                   <div>
-                    <div className="text-body text-ink font-medium">{year}</div>
+                    <div className="text-body text-ink">{year}</div>
                     <div className="text-xs text-ink-soft">
                       {items.length} {items.length === 1 ? "session" : "sessions"}
                     </div>
@@ -172,7 +172,7 @@ export function ExperimentsHomePage(): JSX.Element {
                       >
                         {/* Card header: name + state chip */}
                         <div className="flex items-start justify-between gap-3 mb-2">
-                          <span className="text-body text-ink font-medium leading-snug">
+                          <span className="text-body text-ink leading-snug">
                             {e.name ?? `Experiment ${e.id}`}
                           </span>
                           <NoticePill
@@ -184,7 +184,7 @@ export function ExperimentsHomePage(): JSX.Element {
                         </div>
 
                         {/* data_dir path */}
-                        <div className="font-mono text-xs text-ink-soft mb-2 truncate">
+                        <div className="text-xs text-ink-soft mb-2 truncate">
                           {e.data_dir}
                         </div>
 
@@ -193,11 +193,11 @@ export function ExperimentsHomePage(): JSX.Element {
                           <div className="text-xs text-ink-soft">indexing…</div>
                         ) : (
                           <div className="text-xs text-ink-soft">
-                            <span className="font-mono text-ink">{stats.samples}</span>
+                            <span className="text-ink">{stats.samples}</span>
                             {" samples · "}
-                            <span className="font-mono text-ink">{stats.exposures}</span>
+                            <span className="text-ink">{stats.exposures}</span>
                             {" exposures · "}
-                            <span className="font-mono text-ink">{stats.loads}</span>
+                            <span className="text-ink">{stats.loads}</span>
                             {" loads"}
                           </div>
                         )}

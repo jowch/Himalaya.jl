@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 export type WorkspaceTheme = "system" | "light" | "dark";
 
 const KEY = "himalaya-ui:workspace-theme";
+const CHANGED = "himalaya-ui:theme-changed";
 
 function read(): WorkspaceTheme {
   try {
@@ -40,9 +41,24 @@ export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; t
       else window.localStorage.setItem(KEY, next);
     } catch {
       return;
+    } finally {
+      window.dispatchEvent(new Event(CHANGED));
     }
   }, []);
   const toggle = useCallback(() => choose(isDark ? "light" : "dark"), [choose, isDark]);
   const followSystem = useCallback(() => choose("system"), [choose]);
   return { theme, isDark, toggle, followSystem };
+}
+
+export function useDocumentTheme(): void {
+  useEffect(() => {
+    const apply = (): void => document.documentElement.setAttribute("data-workspace-theme", read());
+    apply();
+    window.addEventListener(CHANGED, apply);
+    window.addEventListener("storage", apply);
+    return () => {
+      window.removeEventListener(CHANGED, apply);
+      window.removeEventListener("storage", apply);
+    };
+  }, []);
 }

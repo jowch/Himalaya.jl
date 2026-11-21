@@ -3,7 +3,7 @@
     "frontend/src/print/components/DirectoryPickerField.tsx": 7,
     "frontend/src/print/components/SourcesCard.tsx": 21,
     "frontend/src/print/components/Thumbnail.tsx": 21,
-    "frontend/src/print/pages/ExperimentsHomePage.tsx": 28,
+    "frontend/src/print/pages/ExperimentsHomePage.tsx": 22,
     "frontend/src/print/pages/NewExperimentPage.tsx": 15,
     "frontend/src/print/shell/AppRoutes.tsx": 2,
     "frontend/src/print/shell/InfrastructureBanner.tsx": 16,
