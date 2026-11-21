@@ -355,7 +355,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
 
                 with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("peak_removed") do
-                        r = call("DELETE", "/api/peaks/$cur_id";
+                        r = call("DELETE", "/api/peaks/manual/$cur_id";
                             headers = ["X-Username" => "alice"])
                         @test r.status == 200
                     end
@@ -401,7 +401,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
 
                 with_inproc_routes(db) do call
                     frames = _fwipe_capture_sse("peak_excluded") do
-                        r = call("PATCH", "/api/peaks/$patch_id";
+                        r = call("PATCH", "/api/peaks/auto/$patch_id";
                             headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
                             body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))))
                         @test r.status == 200

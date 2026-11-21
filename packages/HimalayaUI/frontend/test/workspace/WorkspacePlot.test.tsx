@@ -157,22 +157,22 @@ describe("WorkspacePlot", () => {
     const lineYs = (): number[] =>
       screen.getByTestId("workspace-trace").querySelector('[data-role="trace-line"] path')!.getAttribute("d")!
         .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
-    const glyph = (id: number): Element => screen.getByTestId("workspace-trace").querySelector(`[data-role="peak-glyph"] [data-peak-id="${id}"]`)!;
-    const glyphYs = (id: number): number[] => glyph(id).getAttribute("points")!.split(" ").map((pt) => Number(pt.split(",")[1]));
+    const glyph = (key: string): Element => screen.getByTestId("workspace-trace").querySelector(`[data-role="peak-glyph"] [data-peak-key="${key}"]`)!;
+    const glyphYs = (key: string): number[] => glyph(key).getAttribute("points")!.split(" ").map((pt) => Number(pt.split(",")[1]));
     const { rerender } = render(<WorkspacePlot trace={steep} peaks={peaks} combs={[]} view="linear" />);
     const linear = lineYs();
     expect(linear[0]!).toBeLessThan(linear[linear.length - 1]!);
-    const rowLinear = glyphYs(1);
+    const rowLinear = glyphYs("auto:1");
     rerender(<WorkspacePlot trace={steep} peaks={peaks} combs={[]} view="kratky" />);
     const kratky = lineYs();
     expect(kratky[0]!).toBeGreaterThan(kratky[kratky.length - 1]!);
-    expect(glyphYs(1)).toEqual(rowLinear);
-    for (const id of [1, 2, 3]) expect(Math.max(...glyphYs(id))).toBeLessThanOrEqual(0);
-    expect(glyph(1).getAttribute("fill")).toBe("var(--color-ink)");
-    expect(glyph(2).getAttribute("fill")).toBe("none");
-    expect(glyph(2).getAttribute("stroke")).toBe("var(--color-ink-faint)");
-    expect(glyph(3).getAttribute("points")!.split(" ")).toHaveLength(3);
-    expect(glyph(3).getAttribute("fill")).toBe("var(--color-accent)");
+    expect(glyphYs("auto:1")).toEqual(rowLinear);
+    for (const key of ["auto:1", "auto:2", "manual:3"]) expect(Math.max(...glyphYs(key))).toBeLessThanOrEqual(0);
+    expect(glyph("auto:1").getAttribute("fill")).toBe("var(--color-ink)");
+    expect(glyph("auto:2").getAttribute("fill")).toBe("none");
+    expect(glyph("auto:2").getAttribute("stroke")).toBe("var(--color-ink-faint)");
+    expect(glyph("manual:3").getAttribute("points")!.split(" ")).toHaveLength(3);
+    expect(glyph("manual:3").getAttribute("fill")).toBe("var(--color-accent)");
   });
 
   it("shows q and d under the cursor and nothing once it leaves", () => {
@@ -188,8 +188,8 @@ describe("WorkspacePlot", () => {
 
   const kpeaks = [
     { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
-    { id: 2, exposure_id: 1, q: 0.15, intensity: 8, prominence: null, sharpness: null, source: "manual" as const, excluded: true },
-    { id: 3, exposure_id: 1, q: 0.3, intensity: 8, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+    { id: 1, exposure_id: 1, q: 0.15, intensity: 8, prominence: null, sharpness: null, source: "manual" as const, excluded: true },
+    { id: 2, exposure_id: 1, q: 0.3, intensity: 8, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
   ];
 
   it("lets the keyboard reach and toggle every peak in the window", () => {
@@ -201,7 +201,24 @@ describe("WorkspacePlot", () => {
     expect(screen.queryByRole("button", { name: /0\.3000/ })).toBeNull();
     fireEvent.keyDown(auto, { key: "Enter" });
     fireEvent.keyDown(manual, { key: " " });
-    expect(onClickPeak.mock.calls).toEqual([[1], [2]]);
+    expect(onClickPeak.mock.calls).toEqual([[{ id: 1, source: "auto" }], [{ id: 1, source: "manual" }]]);
+  });
+
+  it("renders an auto and a manual peak that share an id without a duplicate key", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={() => {}} />);
+    expect(error.mock.calls.filter((c) => String(c[0]).includes("same key"))).toEqual([]);
+    error.mockRestore();
+  });
+
+  it("a click reports the source of the peak it lands on when an auto and a manual peak share an id", () => {
+    const onClickPeak = vi.fn();
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={onClickPeak} />);
+    const plotWidth = 640 - PLOT_MARGINS.left - PLOT_MARGINS.right;
+    const svg = screen.getByTestId("workspace-trace");
+    fireEvent.click(svg, { clientX: PLOT_MARGINS.left + plotWidth * 0.5, clientY: 100 });
+    fireEvent.click(svg, { clientX: PLOT_MARGINS.left + plotWidth * 0.25, clientY: 100 });
+    expect(onClickPeak.mock.calls).toEqual([[{ id: 1, source: "manual" }], [{ id: 1, source: "auto" }]]);
   });
 
   it("does not hit a peak drawn outside the window, and adds peaks only inside the plot area", () => {

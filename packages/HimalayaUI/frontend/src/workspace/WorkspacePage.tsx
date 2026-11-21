@@ -27,6 +27,7 @@ import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
@@ -212,11 +213,11 @@ export function WorkspacePage(): JSX.Element {
   const compareTraces = useCompareTraces(shownRefs);
 
   const onClickPeak = useCallback(
-    (peakId: number) => {
-      const action = peakClick(peaks.data ?? [], peakId);
+    (ref: PeakRef) => {
+      const action = peakClick(peaks.data ?? [], ref);
       if (!action) return;
-      if (action.kind === "remove") removePeak.mutate(peakId);
-      else setExcluded.mutate({ peakId, excluded: action.excluded });
+      if (action.kind === "remove") removePeak.mutate(ref.id);
+      else setExcluded.mutate({ peakId: ref.id, excluded: action.excluded });
     },
     [peaks.data, removePeak, setExcluded],
   );
@@ -362,8 +363,8 @@ export function WorkspacePage(): JSX.Element {
     [draft, activePeakQs, setDraftClamped],
   );
   const snapDraftToPeak = useCallback(
-    (peakId: number) => {
-      const p = (peaks.data ?? []).find((pk) => pk.id === peakId);
+    (ref: PeakRef) => {
+      const p = (peaks.data ?? []).find((pk) => samePeak(pk, ref));
       if (p) snapDraft(p.q);
     },
     [peaks.data, snapDraft],

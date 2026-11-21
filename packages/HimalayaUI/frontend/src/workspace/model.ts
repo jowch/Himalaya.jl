@@ -1,4 +1,5 @@
 import type { CorpusSample, Exposure, IndexEntry } from "../api";
+import { samePeak, type PeakRef } from "../lib/peakRef";
 
 export type SampleStatus =
   | { kind: "unreviewed" }
@@ -61,10 +62,10 @@ export function imageUrl(e: Pick<Exposure, "id" | "image_path" | "image_version"
 export type PeakClick = { kind: "exclude"; excluded: boolean } | { kind: "remove" };
 
 export function peakClick(
-  peaks: readonly { id: number; source: string; excluded: boolean }[],
-  id: number,
+  peaks: readonly (PeakRef & { excluded: boolean })[],
+  ref: PeakRef,
 ): PeakClick | null {
-  const p = peaks.find((pk) => pk.id === id);
+  const p = peaks.find((pk) => samePeak(pk, ref));
   if (!p) return null;
   return p.source === "auto" ? { kind: "exclude", excluded: !p.excluded } : { kind: "remove" };
 }
