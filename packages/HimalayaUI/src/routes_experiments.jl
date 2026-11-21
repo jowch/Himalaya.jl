@@ -306,7 +306,7 @@ function register_experiments_routes!()
         # structural tables off exposures/samples/indices, and almost none of those
         # FKs declare `ON DELETE CASCADE`: samples.experiment_id (db.jl:34),
         # exposures.sample_id (db.jl:42), and the exposure-keyed tables
-        # exposure_sources, exposure_tags, indices, auto_peaks, peak_curations,
+        # exposure_sources, indices, auto_peaks, peak_curations,
         # index_groups, assignments, assignment_members (db.jl:60-152), plus the
         # indices-keyed index_peaks / index_group_members. Corrected Plan A does NOT
         # add cascades (SQLite cannot ALTER a cascade onto an existing column).
@@ -344,7 +344,7 @@ function register_experiments_routes!()
                             WHERE e.experiment_id = ?)""", [id])
                     for tbl in ("assignment_members", "assignments", "index_groups",
                                 "indices", "auto_peaks", "peak_curations",
-                                "exposure_sources", "exposure_tags")
+                                "exposure_sources")
                         # exposure_sources keys two exposure columns; clean both.
                         if tbl == "exposure_sources"
                             DBInterface.execute(db, """
@@ -361,9 +361,6 @@ function register_experiments_routes!()
                         end
                     end
                     # sample-keyed tables, then the core rows.
-                    DBInterface.execute(db, """
-                        DELETE FROM sample_tags WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         DELETE FROM sample_bridges WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])

@@ -36,7 +36,7 @@ describe("error classification", () => {
 
   it("buildValidationMessage produces a per-kind copy", () => {
     expect(buildValidationMessage("peak_added", new Error("bad q"))).toMatch(/peak/i);
-    expect(buildValidationMessage("add_tag", new Error("missing key"))).toMatch(/tag/i);
+    expect(buildValidationMessage("add_label", new Error("missing key"))).toMatch(/tag/i);
     // Unknown kind falls back to a generic message.
     expect(buildValidationMessage("update_sample" as any, new Error("oops"))).toBeTruthy();
   });

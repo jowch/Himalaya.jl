@@ -397,28 +397,6 @@ describe("handleRemoteEvent", () => {
     expect(result.auto_peak_id).toBeUndefined();
   });
 
-  it("synthesizeResponseFromSse for add_tag maps tag_id → id and adds source: 'manual'", async () => {
-    const d = makeDeferred<any>("op-add-tag-shape");
-    handleRemoteEvent({
-      id: 50,
-      kind: "add_tag",
-      entity_type: "sample",
-      entity_id: 10,
-      client_op_id: "op-add-tag-shape",
-      payload: { key: "category", value: "control", tag_id: 77, experiment_id: 1 },
-    }, qc, qc.getMutationCache());
-    const result = await d.promise;
-    // Without this synthesis, addSampleTagMutator.onSuccess would read
-    // response.id → undefined and response.source → undefined, landing a
-    // malformed (undeletable, mis-classified) tag in the cache.
-    expect(result).toMatchObject({
-      id: 77,
-      key: "category",
-      value: "control",
-      source: "manual",
-    });
-  });
-
   it("applyRemoteToCache default branch invalidates peaks/indices for unknown kinds", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     handleRemoteEvent({

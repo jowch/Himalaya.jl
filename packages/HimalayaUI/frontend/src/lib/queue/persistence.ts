@@ -24,9 +24,7 @@ interface PersistedOp {
 
 /**
  * A function that, given a persisted op, returns the Mutator that should
- * replay it (or undefined if the op should be dropped). Used for kinds whose
- * dispatch depends on the payload shape (e.g. `add_tag` is sample-scoped or
- * exposure-scoped depending on whether the payload carries `experimentId`).
+ * replay it (or undefined if the op should be dropped).
  */
 export type MutatorResolver = (
   op: PersistedOpForResolution,

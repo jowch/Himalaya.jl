@@ -7,7 +7,7 @@ const SAMPLES = [
   { id: 42, name: `${LONG}01` },
   { id: 43, name: `${LONG}02_${LONG}_${LONG}` },
   { id: 44, name: `${LONG}03` },
-].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, tags: [], q_units: "A-1" }));
+].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, q_units: "A-1" }));
 
 const q = Array.from({ length: 200 }, (_, i) => 0.02 + i * 0.0015);
 const trace = { q, I: q.map((x) => 1 / (x * x) + 50 * Math.exp(-(((x - 0.1) / 0.002) ** 2))), sigma: q.map(() => 1) };
@@ -16,7 +16,7 @@ function exposureOf(sampleId: number, monitors: boolean, frame = 0, averaged = f
   return {
     id: sampleId * 10 + frame, sample_id: sampleId, filename: `JC_S${sampleId}_0_00${frame + 1}`,
     kind: averaged ? "averaged" : "file", selected: true, status: null,
-    image_path: null, image_version: "", tags: [], sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
+    image_path: null, image_version: "", sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
     exposure_time: monitors ? 15 : null, counting_time: monitors ? 15 : null,
     transmitted_counts: monitors ? 7000 : null, incident_monitor: monitors ? 1.5 : null,
     timestamp: monitors ? "2026-04-26T18:20:27" : null, beam_energy_ev: monitors ? 11000 : null,

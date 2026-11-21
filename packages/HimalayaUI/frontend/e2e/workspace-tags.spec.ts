@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 const SAMPLES = ["JC001", "JC002"].map((name, i) => ({
   id: 40 + i, experiment_id: 17, display_name: name, name,
-  notes: null, tags: [], q_units: "A-1",
+  notes: null, q_units: "A-1",
 }));
 
 const NAMES = ["buffer", "37C", "heated twice", "retake", "dilute 1 to 10", "cloudy", "after spin",
