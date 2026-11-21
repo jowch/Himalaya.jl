@@ -10,9 +10,10 @@ import { profileDir, resetBrowserProfile } from "./browser.mjs";
 
 const DEMO_SCRIPT = "packages/HimalayaUI/scripts/demo.sh";
 
-function demoEnv(cfg) {
+function demoEnv(cfg, flags = {}) {
   return {
     ...process.env,
+    ...(flags["late-trace"] ? { DEMO_DATA_FLAGS: "--late-trace" } : {}),
     DEMO_DIR: cfg.demoDir,
     DEMO_DB_DIR: cfg.demoDbDir,
     DEMO_API_PORT: String(cfg.apiPort),
@@ -53,6 +54,7 @@ async function experimentCount(cfg) {
 
 export function seedPlan(cfg, flags) {
   const steps = [];
+  if (flags["late-trace"]) steps.push(`generate the demo with --late-trace, holding one sample's traces in ${path.join(cfg.demoDir, "late")}`);
   if (flags.reset) {
     steps.push(`stop the demo servers started by bin/verify (pid file ${pidPath(cfg)})`);
     steps.push(`delete ${cfg.demoDbDir} and ${cfg.demoDbDir}-empty (demo DBs)`);
@@ -71,6 +73,9 @@ export function seedPlan(cfg, flags) {
 export async function seed(cfg, flags) {
   const empty = Boolean(flags.empty);
   const timeoutMs = intFlag(flags, "timeout", 600000);
+  if (flags["late-trace"] && (!flags.reset || empty)) {
+    throw new UsageError("--late-trace needs --reset (and no --empty), since it only applies when the demo data is generated", "run `bin/verify seed --reset --late-trace`");
+  }
   if (flags["dry-run"]) return { dryRun: true, steps: seedPlan(cfg, flags) };
   if (flags.reset) {
     const stopped = await stop(cfg);
@@ -103,7 +108,7 @@ export async function seed(cfg, flags) {
   const log = fs.openSync(logPath, "w");
   const child = spawn("bash", [DEMO_SCRIPT, ...(empty ? ["--empty"] : [])], {
     cwd: REPO,
-    env: demoEnv(cfg),
+    env: demoEnv(cfg, flags),
     detached: true,
     stdio: ["ignore", log, log],
   });

@@ -1,6 +1,6 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
-const LABEL_COLORS = ("violet", "blue", "teal", "rose", "stone")
+const LABEL_COLORS = ("rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone")
 const LABEL_COLOR_ENTITY_ID = 0
 
 function label_colors_list(db)
