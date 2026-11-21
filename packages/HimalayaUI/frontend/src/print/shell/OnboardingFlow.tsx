@@ -2,30 +2,37 @@ import { useEffect, useState } from "react";
 import * as api from "../../api";
 import type { User } from "../../api";
 import { useAppState } from "../../state";
-import { Button, ModalShell, Kicker } from "../ui";
+import { Button, ModalShell, Kicker, KbKey } from "../ui";
 
-const TUTORIAL_SLIDES: readonly { title: string; body: string }[] = [
+type Segment = string | { key: string };
+
+const TUTORIAL_SLIDES: readonly { title: string; body: readonly Segment[] }[] = [
   {
-    title: "From a directory to a corpus",
-    body:
-      "Point Himalaya at your experiment folder. It finds your setup, scans the " +
-      "exposures, and groups them into samples. You review the grouping, correct " +
-      "anything off, then work the corpus.",
+    title: "Add a beamtime",
+    body: [
+      "Point Himalaya at a beamtime or setup folder. It finds each setup, reads the " +
+        "exposures and groups them into samples. New files are picked up whenever you " +
+        "open the experiment.",
+    ],
   },
   {
-    title: "Screen the corpus",
-    body:
-      "Each sample shows its detector images. Reject the ones with flares or " +
-      "artifacts; keeping is the default and nothing is flagged for you. What " +
-      "survives is your working set.",
+    title: "One sample at a time",
+    body: [
+      "An experiment opens on the first unreviewed sample: its trace, its exposures " +
+        "and the ranked phase candidates. Move between samples with ",
+      { key: "↑" }, " ", { key: "↓" }, ", step through exposures with ",
+      { key: "←" }, " ", { key: "→" }, ", enlarge a detector image with ", { key: "Space" },
+      " and drop a bad exposure with ", { key: "X" }, ".",
+    ],
   },
   {
-    title: "Focus: read the trace",
-    body:
-      "Open a sample to curate the Bragg peaks on its 1D integration. The detector " +
-      "image sits alongside, linked by q, so a trace peak and its ring light up " +
-      "together: a crisp ring is real signal, a blob or streak is an artifact. The " +
-      "phase call is the output.",
+    title: "Call it and move on",
+    body: [
+      "Tick a candidate with ", { key: "1–9" }, ", mark no phase with ", { key: "0" },
+      ", or drag a lattice of your own with ", { key: "I" }, ". ", { key: "C" },
+      " overlays another sample, such as the buffer. ", { key: "Z" },
+      " goes to the next unreviewed sample, and ", { key: "?" }, " lists every key.",
+    ],
   },
 ];
 
@@ -299,7 +306,9 @@ function TutorialStep({
     >
       <Kicker tone="soft">Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}</Kicker>
       <h2 className="text-lg font-semibold text-ink">{slide.title}</h2>
-      <p className="text-ink-soft text-base leading-relaxed">{slide.body}</p>
+      <p className="text-ink-soft text-base leading-relaxed">
+        {slide.body.map((seg, i) => (typeof seg === "string" ? seg : <KbKey key={i}>{seg.key}</KbKey>))}
+      </p>
       <div className="flex items-center justify-between pt-2">
         <div className="flex gap-1">
           {TUTORIAL_SLIDES.map((_, i) => (
