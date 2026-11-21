@@ -538,6 +538,19 @@ function migrate_schema!(db::SQLite.DB)
     # ratio_position store and reopens the indexpeaks memoization gate. Must run
     # after migrate_speculative_peak_durability! (needs speculative_peak_intents).
     migrate_hex_sqrt11!(db)
+
+    migrate_sample_bridges!(db)
+end
+
+function migrate_sample_bridges!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_bridges (
+            sample_id INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+            group_id  INTEGER NOT NULL
+        )""")
+    DBInterface.execute(db,
+        "CREATE INDEX IF NOT EXISTS idx_sample_bridges_group ON sample_bridges(group_id)")
+    nothing
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────

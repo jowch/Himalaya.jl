@@ -131,6 +131,7 @@ function register_routes!()
     register_picker_routes!()
     register_resolve_routes!()
     register_grouping_routes!()
+    register_bridge_routes!()
     register_fs_routes!()
 end
 

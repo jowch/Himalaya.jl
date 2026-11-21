@@ -6,6 +6,8 @@ import {
   useAddPeak,
   useCommitCustomIndex,
   useAssignment,
+  useBridgeSamples,
+  useBridges,
   useCorpusSamples,
   useExperiment,
   useExposures,
@@ -18,7 +20,9 @@ import {
   useSetExposureStatus,
   useSetPeakExcluded,
   useTrace,
+  useUnbridgeSample,
 } from "../queries";
+import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -184,7 +188,6 @@ export function WorkspacePage(): JSX.Element {
   const [view, setView] = usePlotView();
   const [refs, setRefs] = useState<number[]>([]);
   const [subChoice, setSubRef] = useState<number | undefined>(undefined);
-  const subRef = subChoice !== undefined && refs.includes(subChoice) ? subChoice : undefined;
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -197,7 +200,16 @@ export function WorkspacePage(): JSX.Element {
   const draftOpen = draft !== null;
   useEffect(() => setCustomError(null), [draftOpen]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
-  const compareTraces = useCompareTraces(refs);
+  const bridges = useBridges(experimentId);
+  const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
+  const bridgeSamples = useBridgeSamples(experimentId);
+  const unbridgeSample = useUnbridgeSample(experimentId);
+  const [bridging, setBridging] = useState(false);
+  const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
+  const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
+  const compareTraces = useCompareTraces(shownRefs);
 
   const onClickPeak = useCallback(
     (peakId: number) => {
@@ -255,7 +267,7 @@ export function WorkspacePage(): JSX.Element {
   }, [candidates, hoverId, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
-  const activeRefs = refs.filter((r) => r !== sampleId);
+  const activeRefs = shownRefs.filter((r) => r !== sampleId);
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
   const scales = useMemo(() => {
@@ -266,14 +278,14 @@ export function WorkspacePage(): JSX.Element {
   }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
-    return refs.flatMap((rid, i) => {
+    return shownRefs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
       if (rid === sampleId || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, shownRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
@@ -285,7 +297,24 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
-  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !refs.includes(s.id)), [samples, sampleId, refs]);
+  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
+  const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
+  const openBridge = useCallback(() => {
+    if (username && sampleId !== undefined) setBridging(true);
+  }, [username, sampleId]);
+  const leaveBridges = useCallback(() => {
+    if (username && sampleId !== undefined && bridged.length > 0) unbridgeSample.mutate({ sampleId });
+  }, [username, sampleId, bridged, unbridgeSample]);
+  const onRemoveChip = useCallback(
+    (rid: number) => {
+      if (!bridged.includes(rid)) {
+        removeCompare(rid);
+        return;
+      }
+      if (username) unbridgeSample.mutate({ sampleId: rid });
+    },
+    [bridged, removeCompare, username, unbridgeSample],
+  );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
   const canCall = Boolean(username && exposure && !exposureDropped);
@@ -364,6 +393,7 @@ export function WorkspacePage(): JSX.Element {
         ev.preventDefault();
         setHelpOpen(false);
         setPicking(false);
+        setBridging(false);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -481,6 +511,12 @@ export function WorkspacePage(): JSX.Element {
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
+    ...(username && sample
+      ? [
+          { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
+          ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
+        ]
+      : []),
     ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
@@ -522,18 +558,24 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} />}
       main={
         sample ? (
           <>
             <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
             <div className="relative px-3.5 py-1">
               <CompareBar
-                chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, color: COMPARE_COLORS[refs.indexOf(rid) % COMPARE_COLORS.length]!, scale: scales.get(rid) }))}
+                chips={activeRefs.map((rid) => ({
+                  id: rid,
+                  name: sampleNames.get(rid) ?? `Sample ${rid}`,
+                  color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
+                  scale: scales.get(rid),
+                  bridged: bridged.includes(rid),
+                }))}
                 subtractId={subRef}
                 hidden={!refsOn}
                 onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
-                onRemove={removeCompare}
+                onRemove={onRemoveChip}
                 onAdd={() => setPicking(true)}
               />
               {picking && (
@@ -545,6 +587,18 @@ export function WorkspacePage(): JSX.Element {
                     setRefsOn(true);
                   }}
                   onClose={() => setPicking(false)}
+                />
+              )}
+              {bridging && (
+                <ComparePicker
+                  samples={bridgePickable}
+                  label={`Bridge ${sample.name} to a sample`}
+                  inputLabel="Find a sample to bridge to"
+                  onPick={(rid) => {
+                    bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
+                    setRefsOn(true);
+                  }}
+                  onClose={() => setBridging(false)}
                 />
               )}
             </div>
