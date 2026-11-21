@@ -480,20 +480,27 @@ frame written by the *other* version mid-rollout:
 | Class | Examples | Retry? | UX |
 |---|---|---|---|
 | Validation | 4xx, schema rejection, duplicate ↔ existing row | No | Toast with kind-specific message |
-| Infrastructure | 5xx, network error, timeout | Yes (up to 5x, exponential backoff capped at 30s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
+| Unreachable | network error (connection refused), 502, 503, 504 | Yes, until the server answers (exponential backoff capped at 5s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
+| Server error | other 5xx | Yes (up to 5x, backoff capped at 5s), then rolls back | Banner while retrying, then a kind-specific error toast |
 
 A validation error rolls back the optimistic effect via `context.restore`
 and the user sees a toast. The mutation's `state` ends in `error`.
 
-An infrastructure error keeps the optimistic effect *visible* and retries
-in the background — the banner indicates "trying"; the user can keep
-working. After 5 failures, the mutation lands in `error` and the
-optimistic effect rolls back.
+An unreachable server never makes an edit terminal. The optimistic effect
+stays visible and the edit keeps retrying with the same `client_op_id`, so a
+backend restart or deploy during triage loses nothing (#343). The pending set
+is mirrored to sessionStorage, so a reload in the meantime rehydrates it.
+Other 5xx are treated as a server bug: after 5 failures the mutation lands in
+`error`, the optimistic effect rolls back, and the global handler toasts, so
+no consumer can leave a silent rollback.
 
 `InfrastructureBanner` (`print/shell/InfrastructureBanner.tsx`) is a global
-status strip that reads from `useMutationState` directly. It hides until
-any mutation has been pending > 500ms (avoids flicker on fast successes)
-and upgrades to a "stuck" state with a Refresh button after > 30s.
+status strip that reads from `useMutationState` and the `useConnection` store
+(`lib/connection.ts`, fed by `openLiveStream`'s `onStatus`). It hides until
+any mutation has been pending > 500ms (avoids flicker on fast successes),
+counts the changes not saved yet after > 30s, and says "Connection lost.
+Retrying…" once the live stream has been down > 5s, with or without pending
+edits (#344).
 
 ---
 

@@ -14,6 +14,7 @@ import { resolveMutator } from "../lib/queue/mutatorRegistry";
 import { exposeTestHelpers } from "../lib/queue/testHelpers";
 import { showToast } from "../lib/toast";
 import { openLiveStream } from "../lib/liveStream";
+import { useConnection } from "../lib/connection";
 import { createReconnectRefresh } from "../lib/queue/reconnectRefresh";
 import { useAppState } from "../state";
 import type { SseEvent } from "../lib/queue/types";
@@ -87,6 +88,11 @@ export function PrintApp(): JSX.Element {
     return openLiveStream("/api/events", {
       listeners: { curation: onCuration },
       onReconnect: createReconnectRefresh(qc, mc),
+      onStatus: (status) => {
+        const c = useConnection.getState();
+        if (status === "open") c.setStreamOpen();
+        else c.setStreamDown();
+      },
     });
   }, [qc, mc, setIngestProgress, clearIngestProgress]); // stable selector results; EventSource lifetime unchanged
 
