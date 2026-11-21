@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppRoutes } from "../src/print/shell/AppRoutes";
+import * as toast from "../src/lib/toast";
 
 vi.mock("../src/workspace/WorkspacePage", () => ({ WorkspacePage: () => <div data-testid="workspace-stub" /> }));
 
@@ -43,10 +44,28 @@ describe("old sample links open the workspace", () => {
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments/7/workspace/42"));
   });
 
-  it("a sample that no longer exists lands on the experiments home", async () => {
+  it("a sample that no longer exists lands on the experiments home and says the link is stale", async () => {
+    const shown = vi.spyOn(toast, "showToast").mockImplementation(() => {});
     stubApi();
     renderAt("/sample/99");
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments"));
+    expect(shown).toHaveBeenCalledWith("That sample link is no longer valid", "warning");
+  });
+
+  it("a permalink that no longer resolves lands on the experiments home and says the link is stale", async () => {
+    const shown = vi.spyOn(toast, "showToast").mockImplementation(() => {});
+    stubApi({ error: "not found" });
+    renderAt("/index/lipid/gone");
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments"));
+    expect(shown).toHaveBeenCalledWith("That sample link is no longer valid", "warning");
+  });
+
+  it("a link that resolves says nothing", async () => {
+    const shown = vi.spyOn(toast, "showToast").mockImplementation(() => {});
+    stubApi({ experiment_id: 7, experiment_name: "lipid", sample_id: 42, sample_name: "A1" });
+    renderAt("/index/lipid/A1");
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments/7/workspace/42"));
+    expect(shown).not.toHaveBeenCalled();
   });
 
   it("an old /index/:experiment/:sample permalink resolves the slugs and opens the workspace", async () => {
