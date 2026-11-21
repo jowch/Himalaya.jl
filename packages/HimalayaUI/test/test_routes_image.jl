@@ -115,7 +115,7 @@ end
 @testset "the full image is served from the disk cache with the same headers" begin
     mktempdir() do tmp
         src = joinpath(tmp, "frame.tiff")
-        save(src, Gray.(rand(Float32, 400, 600)))
+        save(src, Gray.(rand(Float32, 1600, 2048)))
         db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
         exp  = HimalayaUI.create_experiment!(db; path=tmp, data_dir=tmp, analysis_dir=tmp)
         samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
@@ -126,8 +126,8 @@ end
             @test isfile(cached)
             r2 = call("GET", "/api/exposures/$e/image")
             @test r2.body == r1.body == read(cached)
-            @test Dict(r2.headers)["X-Image-Width"] == "600"
-            @test Dict(r2.headers)["X-Image-Height"] == "400"
+            @test Dict(r2.headers)["X-Image-Width"] == "2048"
+            @test Dict(r2.headers)["X-Image-Height"] == "1600"
         end
         DBInterface.close!(db)
     end

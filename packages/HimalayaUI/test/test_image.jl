@@ -164,6 +164,30 @@ end
     end
 end
 
+@testset "ensure_full_cached: a new token replaces the old entry, and a broken entry renders again" begin
+    mktempdir() do tmp
+        disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
+        path = _make_detector_tiff(64)
+        try
+            old = HimalayaUI.full_cache_path(disk, 5, "v0-1")
+            HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-1")
+            HimalayaUI.ensure_full_cached(disk, 6, path; token="v0-1")
+            @test isfile(old)
+            fresh = HimalayaUI.full_cache_path(disk, 5, "v0-2")
+            HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-2")
+            @test sort(readdir(dirname(fresh))) == sort(basename.([fresh, HimalayaUI._full_size_path(fresh)]))
+            @test isfile(HimalayaUI.full_cache_path(disk, 6, "v0-1"))
+
+            rm(fresh)
+            @test HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-2").raw_w == 64
+            write(HimalayaUI._full_size_path(fresh), "garbage")
+            @test HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-2").raw_h == 64
+        finally
+            rm(path; force=true)
+        end
+    end
+end
+
 @testset "ensure_thumb_cached — token change writes a NEW file, leaves the stale one" begin
     mktempdir() do tmp
         disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
