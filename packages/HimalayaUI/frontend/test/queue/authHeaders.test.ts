@@ -27,7 +27,7 @@ import {
 import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import {
-  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
+  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setSampleCallStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
 import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
@@ -137,10 +137,10 @@ const SPECS: Spec[] = [
       new AbortController().signal),
   },
   {
-    name: "setAssignmentState",
-    run: (qc) => setAssignmentStateMutator.request(
-      { ...FLAT_BASE, kind: "assignment_set_state", payload: { state: "form_factor" },
-        exposureId: 5, state: "form_factor" } as any,
+    name: "setSampleCallState",
+    run: (qc) => setSampleCallStateMutator.request(
+      { ...FLAT_BASE, kind: "sample_call_set_state", payload: { state: "form_factor" },
+        sampleId: 1, state: "form_factor" } as any,
       new AbortController().signal),
   },
   {

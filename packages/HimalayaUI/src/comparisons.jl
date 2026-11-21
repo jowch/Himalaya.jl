@@ -265,10 +265,11 @@ function compute_member_snapshot(db::SQLite.DB, exposure_id::Integer)::Dict{Symb
     # `confirmed_index` is null for BOTH a form_factor and a null member, so the
     # explicit state is what tells them apart, and `confirmed_phases` lets
     # coexistence reads/rows/strip cells self-decode without a second round-trip
-    # to /assignment. Default to "indexed" when no assignments row exists.
-    state_rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT state FROM assignments WHERE exposure_id = ?", [eid]))
-    assignment_state = isempty(state_rows) ? "indexed" : String(state_rows[1].state)
+    # to /assignment. Default to "indexed" when no sample_calls row exists.
+    sample_rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT sample_id FROM exposures WHERE id = ?", [eid]))
+    assignment_state = (isempty(sample_rows) || ismissing(sample_rows[1].sample_id)) ?
+        "indexed" : sample_call_state(db, Int(sample_rows[1].sample_id))
 
     # confirmed_index: the representative index for peak highlighting + Series
     # anchors — the highest-scored member of the durable assignment. Sourced
