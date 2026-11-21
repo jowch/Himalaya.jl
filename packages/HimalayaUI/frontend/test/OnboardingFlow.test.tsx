@@ -42,4 +42,26 @@ describe("OnboardingFlow tutorial", () => {
     const { keys } = await walkTutorial();
     expect(keys).toEqual(expect.arrayContaining(["X", "1–9", "0", "C", "Z", "?"]));
   });
+
+  it("still shows the tutorial after a reload between creating the user and finishing the slides", async () => {
+    vi.spyOn(api, "listUsers").mockResolvedValue([{ username: "nora", first_name: "Nora", last_name: null } as never]);
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await screen.findByRole("option", { name: /nora/ });
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByTestId("onboarding-tutorial")).toBeInTheDocument();
+  });
+
+  it("steps slides with the arrow keys without clicking first", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await user.type(await screen.findByPlaceholderText("First name"), "Nora");
+    await user.type(screen.getByPlaceholderText("handle"), "nora");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByTestId("onboarding-tutorial");
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByText(/2 of 3/)).toBeInTheDocument();
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByText(/1 of 3/)).toBeInTheDocument();
+  });
 });
