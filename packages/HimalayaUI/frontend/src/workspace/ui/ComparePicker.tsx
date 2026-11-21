@@ -7,6 +7,7 @@ interface Props {
   onClose: () => void;
   label?: string;
   inputLabel?: string;
+  notes?: ReadonlyMap<number, string>;
 }
 
 export function ComparePicker({
@@ -15,6 +16,7 @@ export function ComparePicker({
   onClose,
   label = "Compare with a sample",
   inputLabel = "Find a sample to compare",
+  notes,
 }: Props): JSX.Element {
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -80,9 +82,10 @@ export function ComparePicker({
               aria-current={i === cursor ? "true" : undefined}
               onMouseEnter={() => setCursor(i)}
               onClick={() => pick(s)}
-              className={"w-full px-3 py-1 text-left text-body " + (i === cursor ? "bg-row-cursor" : "")}
+              className={"flex w-full items-baseline gap-2 px-3 py-1 text-left text-body " + (i === cursor ? "bg-row-cursor" : "")}
             >
-              {s.name}
+              <span className="min-w-0 flex-1 truncate">{s.name}</span>
+              {notes?.get(s.id) && <span className="shrink-0 text-caption">{notes.get(s.id)}</span>}
             </button>
           </li>
         ))}

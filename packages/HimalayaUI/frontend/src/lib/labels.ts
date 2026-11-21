@@ -28,6 +28,20 @@ export function labelsFor(list: readonly SampleLabel[], sampleId: number): Sampl
   return list.filter((l) => l.sample_id === sampleId);
 }
 
+export function bufferRole(list: readonly SampleLabel[], sampleId: number): SampleLabel["state"] | undefined {
+  const hit = list.filter((l) => l.sample_id === sampleId && sameLabel(l.label, "Buffer"));
+  if (hit.some((l) => l.state === "confirmed")) return "confirmed";
+  return hit.length > 0 ? "suggested" : undefined;
+}
+
+export function buffersFirst<T extends { id: number }>(samples: readonly T[], list: readonly SampleLabel[]): T[] {
+  const rank = (id: number): number => {
+    const role = bufferRole(list, id);
+    return role === "confirmed" ? 0 : role === "suggested" ? 1 : 2;
+  };
+  return samples.map((s) => ({ s, r: rank(s.id) })).sort((a, b) => a.r - b.r).map(({ s }) => s);
+}
+
 export function applyAddLabel(list: readonly SampleLabel[], sampleId: number, label: string): SampleLabel[] {
   const hit = list.find((l) => l.sample_id === sampleId && sameLabel(l.label, label));
   if (hit) return list.map((l) => (l === hit ? { ...l, state: "confirmed" } : l));

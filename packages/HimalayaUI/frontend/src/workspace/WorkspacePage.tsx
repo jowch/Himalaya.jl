@@ -37,7 +37,7 @@ import {
 import { useScanState } from "../hooks/useScanState";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -382,7 +382,18 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
-  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
+  const pickable = useMemo(
+    () => buffersFirst(samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), labelList),
+    [samples, sampleId, shownRefs, labelList],
+  );
+  const bufferNotes = useMemo(() => {
+    const notes = new Map<number, string>();
+    for (const s of samples) {
+      const role = bufferRole(labelList, s.id);
+      if (role) notes.set(s.id, role === "confirmed" ? "Buffer" : "Suggested buffer");
+    }
+    return notes;
+  }, [samples, labelList]);
   const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
   useEffect(() => {
     setTagging(false);
@@ -707,6 +718,7 @@ export function WorkspacePage(): JSX.Element {
               {picking && (
                 <ComparePicker
                   samples={pickable}
+                  notes={bufferNotes}
                   onPick={(rid) => {
                     setRefs((r) => addCompare(r, rid));
                     if (subRef === undefined) setSubRef(rid);

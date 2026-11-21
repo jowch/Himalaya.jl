@@ -279,9 +279,17 @@ Details button opens the list; picking a row opens that sample.
 Every pass goes through `run_ingest!` (`server.jl`), which holds a per-experiment
 lock, so one experiment never has two passes at once; a second caller waits and
 then runs its own, usually empty, pass. It sets `ingest_status` to `scanning`,
-back-fills beam monitors, runs `scan_and_group!`, and ends `complete` (stamping
-`last_scanned_at`) or `failed`. Every pass after the first sends
-`phase: "rescan"`.
+back-fills beam monitors, runs `scan_and_group!`, suggests role tags, and ends
+`complete` (stamping `last_scanned_at`) or `failed`. Every pass after the first
+sends `phase: "rescan"`.
+
+Role tags come from `suggest_labels!` (`label_suggestions.jl`). A sample whose
+name has a word such as `buffer`, `blank`, `hepes`, `agbeh` or `empty` gets a
+*suggested* Buffer, Calibrant or Empty capillary tag (source `ingest`). A sample
+that already has any role tag, suggested or confirmed, is left alone, so a
+rescan never brings back a suggestion the user removed or changed. A suggestion
+never picks a subtraction buffer by itself. It only puts tagged buffers first in
+the compare picker, where confirmed buffers come before suggested ones.
 
 `ingest_has_work(db, id)` (`ingest.jl`) says whether a pass would change
 anything: an image (with its metadata file, when the folder has any) that has no
