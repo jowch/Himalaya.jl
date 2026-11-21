@@ -608,6 +608,15 @@ describe("WorkspacePage", () => {
     expect(within(list).getByText("A4")).toBeInTheDocument();
   });
 
+  it("keeps the tag row mounted on one line even with no tags and no user, so the plot below never moves", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/11");
+    const row = screen.getByTestId("workspace-tags");
+    expect(row.className).toMatch(/\bh-7\b/);
+    expect(row.className).toMatch(/\bflex-nowrap\b/);
+    expect(screen.getByTestId("workspace-tag-chips").className).toMatch(/\boverflow-hidden\b/);
+  });
+
   it("offers no tag editing before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
