@@ -29,7 +29,7 @@
     "frontend/src/lib/detectorOrient.ts": 9,
     "frontend/src/lib/findNextEnabled.ts": 5,
     "frontend/src/lib/ingestStatus.ts": 23,
-    "frontend/src/lib/keys.ts": 68,
+    "frontend/src/lib/keys.ts": 49,
     "frontend/src/lib/plot/formatAxis.ts": 9,
     "frontend/src/lib/qRing.ts": 11,
     "frontend/src/lib/queue/applyRemoteToCache.ts": 81,
