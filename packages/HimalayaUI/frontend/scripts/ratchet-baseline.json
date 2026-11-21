@@ -223,6 +223,6 @@
     "src/routes_users.jl": 3,
     "src/series.jl": 131,
     "src/server.jl": 182,
-    "src/speculative.jl": 244
+    "src/speculative.jl": 240
   }
 }
