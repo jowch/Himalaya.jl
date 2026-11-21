@@ -141,7 +141,7 @@ function exposureRows(e: Exposure): [string, string][] {
   return rows;
 }
 
-const SHORT_WINDOW = "(max-height: 800px)";
+const SHORT_WINDOW = "(max-height: 860px)";
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -552,13 +552,18 @@ export function WorkspacePage(): JSX.Element {
           if (exposure && username) toggleDrop(exposure);
           break;
         case "0":
-          if (username) toggleFormFactor();
+          if (username) {
+            setOpenPanel("call");
+            toggleFormFactor();
+          }
           break;
         default: {
           const n = Number(ev.key);
           const c = Number.isInteger(n) && n >= 1 ? candidates[n - 1] : undefined;
-          if (c && username) toggleCandidate(c);
-          else handled = false;
+          if (c && username) {
+            setOpenPanel("call");
+            toggleCandidate(c);
+          } else handled = false;
         }
       }
       if (handled) ev.preventDefault();
@@ -607,7 +612,7 @@ export function WorkspacePage(): JSX.Element {
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
     { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
-    ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: toggleFormFactor }] : []),
+    ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: () => { setOpenPanel("call"); toggleFormFactor(); } }] : []),
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
     ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
   ];
@@ -782,7 +787,7 @@ export function WorkspacePage(): JSX.Element {
               title="Exposure"
               aside="← →"
               className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
-              collapsible={shortWindow ? { open: exposureOpen, onOpen: () => setOpenPanel("exposure") } : undefined}
+              collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
             >
               <MetaList rows={exposureRows(exposure)} />
             </Section>

@@ -76,6 +76,10 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route(/\/api\/exposures\/\d+\/assignment/, (r) => {
     const eid = Number(/exposures\/(\d+)\//.exec(r.request().url())![1]);
+    if (r.request().method() === "POST") {
+      const { index_id } = r.request().postDataJSON() as { index_id: number };
+      return r.fulfill(json({ exposure_id: eid, state: "indexed", members: [index_id], event_id: 1, view_row_id: null }));
+    }
     const members = eid === 410 ? indicesOf(eid, 3).map((ix) => ix.id) : [];
     return r.fulfill(json({ exposure_id: eid, state: "indexed", members }));
   });
@@ -229,24 +233,39 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
   await expect(page.locator("[data-testid=workspace-candidates]")).toHaveCount(0);
   await expect(page.locator("aside").getByText("JC_S41_0_001")).toBeVisible();
   expect(await fits()).toBe(true);
+  const lastRow = () => page.locator("aside section[data-section=Exposure] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
   const first = await measured(page);
+  const firstLastRow = await lastRow();
   for (const id of [44, 43, 40, 41]) {
     await openSample(page, id);
     await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
     const { exposures, ...rest } = await measured(page);
     const { exposures: firstExposures, ...firstRest } = first;
     expect({ ...rest, exposuresTop: exposures[0] }, `layout on sample ${id}`).toEqual({ ...firstRest, exposuresTop: firstExposures[0] });
+    expect(await lastRow(), `last exposure row on sample ${id}`).toBe(firstLastRow);
   }
 
   await page.keyboard.press("i");
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
-  await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(exposureToggle(page), "Exposure is not a dead toggle while a custom index is open").toHaveCount(0);
+  await expect(page.locator("aside section[data-section=Exposure]")).toHaveAttribute("data-collapsed", "true");
   await page.keyboard.press("Escape");
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
 });
 
+test("on a short window a number key opens the Call list before making the call", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  await exposureToggle(page).click();
+  await expect(callToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("1");
+  await expect(callToggle(page)).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("[data-testid=workspace-candidates] button[aria-pressed]").first()).toHaveAttribute("aria-pressed", "true");
+});
+
 test("on a medium window the Call list scrolls inside a column that never scrolls", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 820 });
+  await page.setViewportSize({ width: 1440, height: 880 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
   await expect(exposureToggle(page)).toHaveCount(0);

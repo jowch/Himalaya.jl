@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 interface Collapsible {
   open: boolean;
-  onOpen: () => void;
+  onOpen?: (() => void) | undefined;
 }
 
 export function Section({ title, aside, className, collapsible, children }: { title: string; aside?: ReactNode; className?: string; collapsible?: Collapsible | undefined; children: ReactNode }): JSX.Element {
@@ -10,12 +10,17 @@ export function Section({ title, aside, className, collapsible, children }: { ti
   return (
     <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")} data-section={title} data-collapsed={open ? undefined : "true"}>
       <header className={(open ? "mb-2 " : "") + "flex items-baseline justify-between gap-2"}>
-        {collapsible ? (
+        {collapsible?.onOpen ? (
           <h2 className="text-sm font-semibold text-ink-soft">
             <button type="button" aria-expanded={open} onClick={collapsible.onOpen} className="inline-flex items-baseline gap-1 hover:text-ink">
               <span aria-hidden="true" className="inline-block w-2.5 text-ink-faint">{open ? "▾" : "▸"}</span>
               {title}
             </button>
+          </h2>
+        ) : collapsible ? (
+          <h2 className="inline-flex items-baseline gap-1 text-sm font-semibold text-ink-faint">
+            <span aria-hidden="true" className="inline-block w-2.5">{open ? "▾" : "▸"}</span>
+            {title}
           </h2>
         ) : (
           <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>

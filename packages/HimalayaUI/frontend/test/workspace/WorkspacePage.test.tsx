@@ -1151,7 +1151,7 @@ describe("WorkspacePage", () => {
   });
 
   it("folds Call and Exposure as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 800px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
@@ -1166,7 +1166,9 @@ describe("WorkspacePage", () => {
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-      expect(within(tools).getByRole("button", { name: /Exposure/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).queryByRole("button", { name: /Exposure/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /Exposure/ })).toBeInTheDocument();
+      expect(within(tools).queryByText("File")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
