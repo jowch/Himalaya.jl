@@ -812,12 +812,6 @@ export function WorkspacePage(): JSX.Element {
       }
       tools={
         <>
-          <Section
-            title="Indexing"
-            aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
-          >
-            <IndexingPlot series={indexSeries} />
-          </Section>
           <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
             {draft && draftBounds ? (
               <Section title="Custom index">
@@ -848,6 +842,13 @@ export function WorkspacePage(): JSX.Element {
               </Section>
             )}
           </div>
+          <Section
+            title="Indexing"
+            className="shrink-0"
+            aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
+          >
+            <IndexingPlot series={indexSeries} />
+          </Section>
           {exposure && (
             <Section
               title="Exposure"
