@@ -142,6 +142,7 @@ export interface AuthOpts {
   username?: string;
   clientId?: string;
   clientOpId?: string;
+  signal?: AbortSignal;
 }
 
 export async function request<T>(
@@ -158,6 +159,7 @@ export async function request<T>(
 
   new Headers(headers);
   const init: RequestInit = { method, headers };
+  if (opts?.signal) init.signal = opts.signal;
   if (body !== undefined) init.body = JSON.stringify(body);
 
   let res: Response;
@@ -435,8 +437,8 @@ export interface Exposure {
   incident_monitor: number | null;
 }
 
-export const listExposures = (sample_id: number) =>
-  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`);
+export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`, undefined, opts);
 
 export const setExposureStatus = (
   id: number,
@@ -473,8 +475,8 @@ export interface Trace {
   monitors?: TraceMonitors;
 }
 
-export const getTrace = (exposure_id: number) =>
-  request<Trace>("GET", `/api/exposures/${exposure_id}/trace`);
+export const getTrace = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Trace>("GET", `/api/exposures/${exposure_id}/trace`, undefined, opts);
 
 /** Batch member traces for a series, keyed by exposure_id. Matches the
  *  `toWaterfallRows(members, tracesById)` contract (a plain Record, number index).
@@ -537,8 +539,8 @@ export interface PeakRemoveResponse {
   analysis_inputs_hash: string;
 }
 
-export const listPeaks = (exposure_id: number) =>
-  request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
+export const listPeaks = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`, undefined, opts);
 export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
   request<PeakAddResponse>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
 export const removeManualPeak = (peak_id: number, opts?: AuthOpts) =>
@@ -582,8 +584,8 @@ export interface IndexEntry {
   bonnet?: BonnetFlag | null;
 }
 
-export const listIndices = (exposure_id: number) =>
-  request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`);
+export const listIndices = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`, undefined, opts);
 
 export const deleteIndex = (id: number, opts?: AuthOpts) =>
   request<{ deleted: number }>("DELETE", `/api/indices/${id}`, undefined, opts);
@@ -657,8 +659,8 @@ export type AssignmentMutationResponse = Assignment & {
   view_row_id: number | null;
 };
 
-export const getAssignment = (exposure_id: number) =>
-  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`);
+export const getAssignment = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`, undefined, opts);
 
 export interface SampleCallMember {
   index_id: number;
