@@ -18,15 +18,6 @@ const _PLAIN_PATCH_FIELDS = ["name", "description"]
 const _CLEARABLE_PATCH_FIELDS = ("description",)
 const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]
 
-# Serialize a GroupingFlag (MergeFlag/SplitFlag) to the §8.8 wire shape. The
-# internal structs carry no `kind` field, but the frontend `GroupingFlag` union
-# narrows on `kind` — inject it here at the wire boundary (GET /experiments/:id/loads).
-_flag_json(::Nothing) = nothing
-_flag_json(f::MergeFlag) = Dict(:kind => "merge",
-    :merge_with_sample_id => f.merge_with_sample_id, :merge_with_label => f.merge_with_label)
-_flag_json(f::SplitFlag) = Dict(:kind => "split",
-    :split_at_index => f.split_at_index, :jump_from => f.jump_from, :jump_to => f.jump_to)
-
 """
     _experiment_stats(db, exp_id) -> NamedTuple
 
@@ -57,21 +48,6 @@ function _experiment_stats(db::SQLite.DB, exp_id::Integer)
     started_at = (t === missing || t === nothing) ? nothing : String(t)
     (loads = Int(loads), samples = Int(samples), exposures = Int(exposures),
      sessions = Int(sessions), span_hours = span_hours, started_at = started_at)
-end
-
-"""
-    _experiment_review_count(db, exp_id) -> Int
-
-Count of samples in this experiment that carry a pending grouping flag
-(SplitFlag or MergeFlag) — i.e. samples the user should review. Reuses the
-single-sourced flag derivation in `get_loads_rollup` / `derive_sample_flags`.
-
-# ponytail: O(rollup) per experiment, fine for the gallery (loads once, few
-# experiments); precompute/lighter-query if it ever slows at many-experiments scale.
-"""
-function _experiment_review_count(db::SQLite.DB, exp_id::Integer)
-    rollup = get_loads_rollup(db, exp_id)   # nested loads → samples (each .flag); dismiss-suppressed
-    count(s -> s.flag !== nothing, (s for ld in rollup for s in ld.samples))
 end
 
 """
@@ -200,11 +176,7 @@ function register_experiments_routes!()
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM experiments ORDER BY id"))
-        out = map(rows) do r
-            d = _experiment_row_to_json(r, db)
-            d[:review_count] = _experiment_review_count(db, Int(r.id))
-            d
-        end
+        out = [_experiment_row_to_json(r, db) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
@@ -284,49 +256,13 @@ function register_experiments_routes!()
             JSON3.write(_experiment_row_to_json(updated_rows[1], db)))
     end
 
-    @get "/api/experiments/{id}/loads" function(req::HTTP.Request, id::Int)
-        db   = current_db()
+    @get "/api/experiments/{id}/problems" function(req::HTTP.Request, id::Int)
+        db = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM experiments WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
-
-        rollup = get_loads_rollup(db, id)
-        # Serialize: NamedTuples → JSON-friendly Dict tree.
-        # Field names are the §8.8 contract verbatim (Load / LoadSample /
-        # LoadExposure). `flag` is a GroupingFlag struct (MergeFlag/SplitFlag) or
-        # nothing; `_flag_json` injects the `kind` discriminator the frontend
-        # `GroupingFlag` union narrows on (the bare struct has no `kind` field),
-        # emitting {"kind":"merge",…}/{"kind":"split",…} or JSON null.
-        out = map(rollup) do ld
-            Dict(
-                :load_id     => ld.load_id,
-                :load_index  => ld.load_index,
-                :session_id  => ld.session_id,
-                :start_time  => ld.start_time,
-                :end_time    => ld.end_time,
-                :frame_count => ld.frame_count,
-                :note        => ld.note,
-                :samples     => map(ld.samples) do sm
-                    Dict(
-                        :sample_id       => sm.sample_id,
-                        :name            => sm.name,
-                        :slot_index      => sm.slot_index,
-                        :grouping_source => sm.grouping_source,
-                        :name_source     => sm.name_source,
-                        :merged_into_id  => sm.merged_into_id,
-                        :flag            => _flag_json(sm.flag),
-                        :exposures       => map(sm.exposures) do ex
-                            Dict(
-                                :id                  => ex.id,
-                                :filename            => ex.filename,
-                                :horizontal_position => ex.horizontal_position,
-                                :timestamp           => ex.timestamp)
-                        end)
-                end)
-        end
-        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+            "SELECT ingest_error FROM experiments WHERE id = ?", [id]))
+        isempty(rows) && return _json(404, Dict(:error => "experiment not found"))
+        _json(200, Dict(:ingest_error => coalesce(first(rows).ingest_error, nothing),
+                        :exposures => ingest_problems(db, id)))
     end
 
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)

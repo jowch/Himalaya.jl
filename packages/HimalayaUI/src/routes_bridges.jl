@@ -60,11 +60,6 @@ function bridge_samples!(db, req, a::Int, b::Int, exp_id::Int)
     end
 end
 
-function inherit_bridges!(db, req, loser_id::Int, survivor_id::Int, exp_id::Int)
-    _bridge_group_of(db, loser_id) === nothing && return
-    bridge_samples!(db, req, loser_id, survivor_id, exp_id)
-end
-
 function register_bridge_routes!()
     @get "/api/experiments/{id}/bridges" function(req::HTTP.Request, id::Int)
         _json_ok(bridge_groups_for_experiment(current_db(), id))

@@ -125,31 +125,6 @@ _bridge_rows(db) = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.exe
         end
     end
 
-    @testset "merging a bridged sample hands its bridges to the survivor" begin
-        db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b, c, d, e)) = _seed_bridge_samples(db, 5)
-        merge(loser, survivor) = call -> call("POST", "/api/samples/$loser/merge"; headers=_BRIDGE_HEADERS,
-            body=Vector{UInt8}(JSON3.write(Dict(:survivor_id => survivor))))
-        with_inproc_routes(db) do call
-            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
-            @test merge(b, c)(call).status == 200
-            @test _groups(call, exp_id) == Set([Set([a, c])])
-            call("POST", "/api/samples/$d/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(e))
-            @test merge(c, d)(call).status == 200
-            @test _groups(call, exp_id) == Set([Set([a, d, e])])
-            @test merge(e, a)(call).status == 200
-            @test _groups(call, exp_id) == Set([Set([a, d])])
-        end
-        db2 = open_prepared_clone(mktempdir())
-        (exp2, (p, q, r_)) = _seed_bridge_samples(db2, 3)
-        with_inproc_routes(db2) do call
-            call("POST", "/api/samples/$p/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(q))
-            @test merge(r_, p)(call).status == 200
-            @test _groups(call, exp2) == Set([Set([p, q])])
-            @test _bridge_rows(db2) == Set([p, q])
-        end
-    end
-
     @testset "a body that is not JSON is a 400" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b)) = _seed_bridge_samples(db, 2)

@@ -35,6 +35,8 @@ const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 
 const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
+const MIGRATION_EXPERIMENTS_INGEST_ERROR = "experiments_ingest_error_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
 _migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
@@ -82,6 +84,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     q_units_source           TEXT DEFAULT 'default',
     last_scanned_at          TEXT,
     ingest_status            TEXT DEFAULT 'idle',
+    ingest_error             TEXT,
     last_scan_tier           TEXT DEFAULT 'fast',
     consecutive_empty_ticks  INTEGER NOT NULL DEFAULT 0
 );
@@ -500,6 +503,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_drop_scan_signature!(db)
     migrate_exposures_beam_monitors!(db)
     migrate_exposures_ingest_state!(db)
+    migrate_experiments_ingest_error!(db)
 
     # Speculative peak durability (2026-07-14 spec): intents table + legacy
     # basis rescale + heal trigger. Must run last — see the function docstring
@@ -829,6 +833,16 @@ function migrate_exposures_ingest_state!(db::SQLite.DB)
             "UPDATE exposures SET analysis_version = ? WHERE trace_hash IS NOT NULL AND analysis_version IS NULL",
             [ANALYSIS_VERSION])
         _record_migration!(db, MIGRATION_EXPOSURES_INGEST_STATE)
+    end
+    nothing
+end
+
+function migrate_experiments_ingest_error!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPERIMENTS_INGEST_ERROR) && return nothing
+    SQLite.transaction(db) do
+        "ingest_error" in cols_of(db, "experiments") ||
+            DBInterface.execute(db, "ALTER TABLE experiments ADD COLUMN ingest_error TEXT")
+        _record_migration!(db, MIGRATION_EXPERIMENTS_INGEST_ERROR)
     end
     nothing
 end
@@ -1946,21 +1960,6 @@ function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractStr
     return Int(DBInterface.lastrowid(res))
 end
 
-"""
-    retire_sample!(db, loser_id; merged_into_id)
-
-Mark a sample as retired by pointing its `merged_into_id` at the survivor.
-Does NOT hard-delete the row — FKs are re-pointed before this is called (see
-merge route). Sets `merged_into_id` only; no SSE.
-"""
-function retire_sample!(db::SQLite.DB, loser_id::Integer;
-                         merged_into_id::Integer)
-    DBInterface.execute(db,
-        "UPDATE samples SET merged_into_id = ? WHERE id = ?",
-        [Int(merged_into_id), Int(loser_id)])
-    nothing
-end
-
 function create_exposure!(db::SQLite.DB;
         experiment_id::Int,                              # required (Phase A)
         sample_id::Union{Int,Nothing}      = nothing,    # optional (transient pre-group state)
@@ -2011,101 +2010,6 @@ end
 function get_exposures(db::SQLite.DB, sample_id::Int)
     Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sample_id]))
-end
-
-"""
-    get_loads_rollup(db, experiment_id) -> Vector{NamedTuple}
-
-Return the Load ▸ Sample ▸ Exposures roll-up for the grouping-review surface,
-in the exact nested shape spec §8.8 pins (field names are load-bearing — the
-frontend `Load`/`LoadSample`/`LoadExposure` interfaces mirror them verbatim).
-
-Each Load NamedTuple:
-    (load_id, load_index, session_id, start_time, end_time, frame_count, note, samples)
-each LoadSample NamedTuple:
-    (sample_id, name, slot_index, grouping_source, name_source,
-     merged_into_id, flag, exposures)
-each LoadExposure NamedTuple:
-    (id, filename, horizontal_position, timestamp)
-
-`flag` is the per-sample merge/split suggestion: it is NOT a stored column —
-it is produced by Phase B Task 12's `derive_sample_flags` (§9.1) over the nested
-rows this function just read, THEN any flag whose sample has a non-undone
-`grouping_flag_dismissed` event is suppressed to `nothing`. Phase B is a
-prerequisite; `derive_sample_flags` must be present or this call throws loudly.
-
-Only non-retired samples (merged_into_id IS NULL) are included.
-Re-derived from (load_id, slot_index) — NOT replayed from the event log.
-"""
-function get_loads_rollup(db::SQLite.DB, experiment_id::Integer)
-    loads = Tables.rowtable(DBInterface.execute(db,
-        """SELECT id AS load_id, load_index, session_id,
-                  start_time, end_time, frame_count, note
-           FROM loads
-           WHERE experiment_id = ?
-           ORDER BY load_index""", [Int(experiment_id)]))
-
-    # Samples whose flag is dismissed by a NON-UNDONE grouping_flag_dismissed
-    # event. A *dismiss* is a grouping_flag_dismissed row with NO undoes_event_id
-    # (an undo is also a grouping_flag_dismissed row but CARRIES undoes_event_id,
-    # so `ua.undoes_event_id IS NULL` excludes undo rows from being counted as
-    # dismisses-of-their-own — Task 8b). A dismiss is "undone" iff a later event
-    # carries `undoes_event_id = <dismiss id>`; the NOT EXISTS drops those.
-    # (entity_type='sample', so this never collides with exposure-keyed events.)
-    dismissed_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT DISTINCT ua.entity_id AS sample_id
-           FROM user_actions ua
-           JOIN samples s ON s.id = ua.entity_id
-           WHERE ua.action = 'grouping_flag_dismissed'
-             AND ua.entity_type = 'sample'
-             AND ua.undoes_event_id IS NULL
-             AND s.experiment_id = ?
-             AND NOT EXISTS (
-               SELECT 1 FROM user_actions u2
-               WHERE u2.undoes_event_id = ua.id
-             )""", [Int(experiment_id)]))
-    dismissed = Set(Int(r.sample_id) for r in dismissed_rows)
-
-    nested = map(loads) do ld
-        samples = Tables.rowtable(DBInterface.execute(db,
-            """SELECT id AS sample_id, name, slot_index,
-                      grouping_source, name_source, merged_into_id
-               FROM samples
-               WHERE load_id = ? AND (merged_into_id IS NULL)
-               ORDER BY slot_index""", [Int(ld.load_id)]))
-
-        samples_with_exposures = map(samples) do sm
-            exposures = Tables.rowtable(DBInterface.execute(db,
-                """SELECT id, filename, horizontal_position, timestamp
-                   FROM exposures
-                   WHERE sample_id = ?
-                   ORDER BY frame_no, id""", [Int(sm.sample_id)]))
-            # `flag` is filled in below from derive_sample_flags; seed nothing.
-            merge(sm, (flag = nothing, exposures = exposures))
-        end
-
-        merge(ld, (samples = samples_with_exposures,))
-    end
-
-    # Attach the derived per-sample flag (Phase B §9.1). derive_sample_flags
-    # is pure over the nested rows above and returns
-    # Dict{Int sample_id => GroupingFlag (a NamedTuple) | nothing}. We pass it
-    # the load rows it needs (each sample's slot_index/name + its exposures'
-    # horizontal_position/timestamp/filename) — exactly the nested shape it
-    # documents. Suppress any flag whose sample is in the dismissed set.
-    # Phase B is a prerequisite; a missing derive_sample_flags should throw loudly,
-    # not be silently swallowed.
-    flags = derive_sample_flags(nested)        # Dict{Int, Any}
-    nested = map(nested) do ld
-        new_samples = map(ld.samples) do sm
-            f = get(flags, Int(sm.sample_id), nothing)
-            Int(sm.sample_id) in dismissed && (f = nothing)
-            merge(sm, (flag = f,))
-        end
-        merge(ld, (samples = new_samples,))
-    end
-
-    return nested
 end
 
 """

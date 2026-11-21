@@ -373,6 +373,25 @@ function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::Abstr
     false
 end
 
+"""
+    ingest_problems(db, experiment_id) -> Vector{Dict}
+
+Exposures whose trace is missing or whose analysis failed, with the stored reason.
+"""
+function ingest_problems(db::SQLite.DB, experiment_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db, """
+        SELECT e.id, e.filename, e.analysis_error, e.sample_id, s.name AS sample_name
+          FROM exposures e LEFT JOIN samples s ON s.id = e.sample_id
+         WHERE e.experiment_id = ? AND e.analysis_error IS NOT NULL
+         ORDER BY e.sample_id, e.filename, e.id""", [experiment_id]))
+    [Dict(:exposure_id => Int(r.id),
+          :filename => coalesce(r.filename, nothing),
+          :sample_id => ismissing(r.sample_id) ? nothing : Int(r.sample_id),
+          :sample_name => coalesce(r.sample_name, nothing),
+          :problem => r.analysis_error == NO_TRACE ? "no_trace" : "failed",
+          :reason => String(r.analysis_error)) for r in rows]
+end
+
 function pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = false)
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT analysis_dir FROM experiments WHERE id = ?", [experiment_id])))

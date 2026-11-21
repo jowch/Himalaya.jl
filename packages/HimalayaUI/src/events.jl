@@ -297,6 +297,7 @@ const RETIRED_EVENT_KINDS = (
     "series_created", "series_deleted", "series_pinned", "series_plate_committed",
     "series_recipe_updated", "series_unpinned",
     "post_message",
+    "sample_renamed", "sample_created", "sample_split", "grouping_flag_dismissed",
 )
 
 """
@@ -435,14 +436,6 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 
-    # Structural grouping edits (routes_grouping.jl): the route handlers write the
-    # samples / flag rows directly (like exposure_moved above), so the dispatcher is
-    # a no-op. Explicit guards for exhaustiveness so rebuild_views_from_log! treats
-    # them as known kinds rather than silently falling through to the default.
-    kind == "sample_renamed" && return nothing
-    kind == "sample_created" && return nothing
-    kind == "sample_split" && return nothing
-    kind == "grouping_flag_dismissed" && return nothing
     if kind == "sample_bridged"
         DBInterface.execute(db,
             """INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, ?)
