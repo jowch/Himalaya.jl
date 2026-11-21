@@ -24,6 +24,7 @@ function exposure(id: number, sampleId: number): Exposure {
   return {
     id, sample_id: sampleId, filename: `f${id}.tif`, kind: "file", selected: false, status: null, exposure_time: 1,
     image_path: "x.tif", image_version: "v1", tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null,
+    counting_time: null, transmitted_counts: null, incident_monitor: null,
   };
 }
 
