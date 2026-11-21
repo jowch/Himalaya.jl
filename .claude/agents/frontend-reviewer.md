@@ -49,7 +49,7 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 ### Plot interaction (d3)
 
-- **Pixel → q math lives in `src/print/plot/interaction.ts`** (the bespoke d3 engine; Observable Plot was retired). `TracePlot` (`src/print/plot/TracePlot.tsx`) translates click pixel coords to q values via these helpers (e.g. `hitTestPeaks`), not via any Observable Plot `scale.invert`.
+- **Pixel → q math lives in `src/print/plot/interaction.ts`** (the bespoke d3 engine; Observable Plot was retired). `WorkspacePlot` (`src/workspace/ui/WorkspacePlot.tsx`) translates click pixel coords to q values via these helpers (e.g. `hitTestPeaks`, `zoomXDomain`), not via any Observable Plot `scale.invert`.
 
 ### Testing conventions
 
