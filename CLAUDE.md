@@ -71,10 +71,11 @@ scratch/                            # gitignored — exploratory scripts and tra
 # gitignored and there is no [sources], so a bare instantiate resolves Himalaya from
 # the REGISTRY (different physics from this checkout). `[compat] Himalaya = "0.6"`
 # makes that fail loudly instead of silently; `develop` is the fix, not a workaround.
-# `make setup` also writes packages/HimalayaUI/LocalPreferences.toml (gitignored) with
-# `precompile_workload = false`, so a src/ edit recompiles in ~5 s, not ~100 s. Delete
-# that file (or set it to true) to build the deploy-time route warm-up, e.g. to time a
-# cold start. The manual steps below don't write it. See packages/HimalayaUI/src/AGENTS.md.
+# For development use `make dev-setup`: it first writes packages/HimalayaUI/LocalPreferences.toml
+# (gitignored) with `precompile_workload = false`, so a src/ edit recompiles in ~5 s, not
+# ~100 s. `make setup` is the deploy path and keeps the route warm-up. Delete that file (or
+# set it to true) to build the warm-up in dev, e.g. to time a cold start. The manual steps
+# below don't write it. See packages/HimalayaUI/src/AGENTS.md.
 (cd packages/HimalayaUI/frontend && npm install)
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
@@ -122,7 +123,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
 
 Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md).
 
-**No lab data handy (or in a cloud session)?** `make setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
+**No lab data handy (or in a cloud session)?** `make dev-setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
 
 **Verifying a change in the real app:** use the `verify-himalaya` skill. `bin/verify doctor`, `bin/verify seed`, then drive the browser (`open`, `snapshot`, `click`, `press`, `screenshot`) and run `bin/verify check-truth` against the demo's `TRUTH.csv`. Its Feature Map (`.claude/skills/verify-himalaya/references/features/README.md`) says how to reach and drive each feature. CLI tests: `npm run test:verify` in `packages/HimalayaUI/frontend`.
 

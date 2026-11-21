@@ -226,7 +226,7 @@ A few non-obvious things to know:
   still serving, and the restart then answers in ~8 s. With a sysimage, `make
   sysimage` does this, and `bin/himalaya` keeps using `build/himalaya.so` until
   you rebuild it, so a pull without `make sysimage` keeps serving the old code.
-  Don't copy a dev `LocalPreferences.toml` (written by `make setup`) to the
+  Don't copy a dev `LocalPreferences.toml` (written by `make dev-setup`) to the
   server: it turns the warm-up off.
 - **CLI users do nothing.** The wrapper resolves the sysimage on each
   invocation; whoever runs `himalaya …` next gets the new code.

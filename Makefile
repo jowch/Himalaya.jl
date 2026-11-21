@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup dev-setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
 
 all: frontend sysimage
 
@@ -68,10 +68,16 @@ UI_PREFS   := packages/HimalayaUI/LocalPreferences.toml
 setup:
 	cd $(FRONTEND_DIR) && npm ci
 	julia --project=. -e 'using Pkg; Pkg.instantiate()'
-	@test -f $(UI_PREFS) || printf '[HimalayaUI]\nprecompile_workload = false\n' > $(UI_PREFS)
 	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak; \
 	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
 	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'
+	@! grep -qs 'precompile_workload *= *false' $(UI_PREFS) || \
+		echo "Note: $(UI_PREFS) turns the route warm-up off. Delete it on a server."
+
+dev-setup:
+	@test -f $(UI_PREFS) || printf '[HimalayaUI]\nprecompile_workload = false\n' > $(UI_PREFS)
+	$(MAKE) setup
 
 # Synthetic SSRL-style experiment, generated on demand and NEVER committed
 # (scratch/ is gitignored). Override the target dir with DEMO_DIR=/tmp/...
