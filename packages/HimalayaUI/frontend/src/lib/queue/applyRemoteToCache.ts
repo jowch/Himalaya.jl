@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
 import type {
-  Peak, Exposure, Sample, SampleMessage,
+  Peak, Exposure, Sample,
   Assignment,
 } from "../../api";
 import { queryKeys } from "../../queries";
@@ -280,20 +280,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           : list,
       );
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-      break;
-    }
-    case "post_message": {
-      // Sample chat only (the comparison-message thread was retired with the
-      // Compare page). entity_id on the SSE frame is the message id; the
-      // parent sample id rides in the payload.
-      const sampleId = payload?.sample_id as number;
-      qc.setQueryData<SampleMessage[]>(queryKeys.messages(sampleId), (old = []) => {
-        // Dedupe in case the same SSE arrives twice (own-op late echo races
-        // post-onSuccess writes); message ids are server-assigned positives.
-        const incoming = payload as unknown as SampleMessage;
-        if (old.some((m) => m.id === incoming.id)) return old;
-        return [...old, incoming];
-      });
       break;
     }
     case "add_tag":

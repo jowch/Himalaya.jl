@@ -39,7 +39,7 @@ export type OpKind =
   | "speculative_created" | "speculative_deleted"
   | "set_exposure_status" | "select_exposure"
   | "add_tag" | "remove_tag" | "edit_tag"
-  | "post_message" | "update_sample"
+  | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the

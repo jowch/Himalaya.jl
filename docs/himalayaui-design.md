@@ -364,10 +364,6 @@ machines starts them over (intentional — server doesn't know about
   are written exclusively by the dispatcher in `events.jl`. See
   [`docs/event-log.md`](event-log.md) for the dispatcher contract,
   hash memoization, and SSE multiplayer.
-- **Chat (`sample_messages`).** FK `author_id → users.id` with
-  `ON DELETE SET NULL`. Persists as a parked data plane — the chat
-  presentation (ChatCard / @-mention subsystem) was retired 2026-05-29 and
-  there is no UI on top of it.
 - Exposure, tag, and notes endpoints are intact even though the UI
   doesn't surface them right now (see §1.9).
 
@@ -436,11 +432,10 @@ Things we know we don't yet have a good answer for:
   channel (ticks) and shape channel (Miller dots) could make the phase
   distinction redundant with hue. Not done.
 - **Chat threads / mentions / reactions.** The chat UI was retired
-  2026-05-29 (presentation deleted, including the @-mention subsystem); only
-  the parked `sample_messages` data plane remains. The original experiment —
-  per-sample conversation — never gathered enough evidence that scientists
-  want it. The open question is whether to revive it at all before layering
-  threads / mentions / reactions on top.
+  2026-05-29 and its data plane (`sample_messages`, `/api/samples/{id}/messages`)
+  was deleted 2026-11-21. The original experiment — per-sample conversation —
+  never gathered enough evidence that scientists want it. Any revival is a
+  fresh design.
 
 See [`docs/future-feature-ideas.md`](future-feature-ideas.md) for the
 running list of deferred work, including these and analysis-engine ideas

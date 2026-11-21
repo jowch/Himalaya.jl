@@ -297,15 +297,18 @@ describe("persistence: stale-schemaVersion op drop", () => {
     requestSpy.mockRestore();
   });
 
-  it("drops a persisted op of a deleted kind (series_save) without replaying it", async () => {
+  it.each([
+    ["series_save", { title: "draft", samples: [] }],
+    ["post_message", { sampleId: 10, body: "hi" }],
+  ])("drops a persisted op of a deleted kind (%s) without replaying it", async (kind, payload) => {
     sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify([
         {
           schemaVersion: SCHEMA_VERSION,
-          kind: "series_save",
-          clientOpId: "op-series",
-          payload: { title: "draft", samples: [] },
+          kind,
+          clientOpId: `op-${kind}`,
+          payload,
         },
       ]),
     );
