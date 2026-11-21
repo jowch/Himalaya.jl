@@ -442,7 +442,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-workspace-theme="system"] {
+  [data-theme="system"] {
     --color-paper:       oklch(0.165 0.005 280);
     --color-paper-sunk:  oklch(0.140 0.005 280);
     --color-plate:       oklch(0.195 0.006 280);
@@ -486,7 +486,7 @@
     color-scheme: dark;
   }
 }
-[data-workspace-theme="dark"] {
+[data-theme="dark"] {
   --color-paper:       oklch(0.165 0.005 280);
   --color-paper-sunk:  oklch(0.140 0.005 280);
   --color-plate:       oklch(0.195 0.006 280);

@@ -230,7 +230,7 @@ function currentFrame(): string | null {
 }
 
 afterEach(() => {
-  window.localStorage.removeItem("himalaya-ui:workspace-theme");
+  window.localStorage.removeItem("himalaya-ui:theme");
   window.localStorage.removeItem("himalaya-ui:workspace-plot-view");
 });
 
@@ -1838,21 +1838,21 @@ describe("WorkspacePage", () => {
   it("the palette's theme page switches the workspace to dark and back, remembers it, and can follow the system again", () => {
     const { unmount } = renderAt("/experiments/1/workspace/10");
     const root = screen.getByTestId("workspace");
-    expect(root).toHaveAttribute("data-workspace-theme", "system");
+    expect(root).toHaveAttribute("data-theme", "system");
     runFromPalette("theme", "dark");
-    expect(root).toHaveAttribute("data-workspace-theme", "dark");
+    expect(root).toHaveAttribute("data-theme", "dark");
     unmount();
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "dark");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "dark");
     runFromPalette("theme");
     expect(screen.getByRole("option", { name: "Dark, Current" })).toBeInTheDocument();
     const input = screen.getByRole("combobox", { name: "Theme" });
     fireEvent.change(input, { target: { value: "light" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "light");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "light");
     runFromPalette("theme", "system");
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
-    expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "system");
+    expect(window.localStorage.getItem("himalaya-ui:theme")).toBeNull();
     runFromPalette("theme");
     expect(screen.getByRole("option", { name: "Follow the system, Current" })).toBeInTheDocument();
   });

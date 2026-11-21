@@ -2,7 +2,7 @@ import { LABEL_COLORS, type CorpusSample, type IndexEntry, type LabelColor } fro
 import { cleanLabel, sameLabel } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
-import type { WorkspaceTheme } from "./theme";
+import type { AppTheme } from "../lib/theme";
 import { LABEL_SWATCH } from "./ui/labelSwatches";
 import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "./ui/palette/model";
 
@@ -48,7 +48,7 @@ export interface WorkspacePaletteInput {
   problems: (() => void) | undefined;
   removeExperiment: (() => void) | undefined;
   home: () => void;
-  theme: { current: WorkspaceTheme; choose: (t: WorkspaceTheme) => void };
+  theme: { current: AppTheme; choose: (t: AppTheme) => void };
   user: { name: string | undefined; switch: () => void };
   help: () => void;
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
@@ -56,7 +56,7 @@ export interface WorkspacePaletteInput {
   goSample: (id: number) => void;
 }
 
-const THEMES: readonly { theme: WorkspaceTheme; name: string }[] = [
+const THEMES: readonly { theme: AppTheme; name: string }[] = [
   { theme: "light", name: "Light" },
   { theme: "dark", name: "Dark" },
   { theme: "system", name: "Follow the system" },
