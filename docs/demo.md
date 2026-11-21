@@ -196,7 +196,13 @@ work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
   not match its own trace; use large mode for scale, not for checking images
   against traces. `--no-images` writes empty `.tif` files instead.
 - Cost, measured with the defaults: about 35 s, 1.4 GB on disk (12,000 `.tif`
-  names, 240 distinct files), 3,000 samples and 12,000 exposures.
+  names, 240 distinct files), 3,000 samples and 12,000 exposures. Ingesting all
+  ten through `demo_ingest.jl` takes about 3 minutes.
+- The defaults are a worst case: each experiment is as large as the largest real
+  one, and the total is about 1.7× a typical lab database (about 1,800 samples
+  over 11 experiments). Use `--samples 180` to match that total. Costs that grow
+  with the whole database show the difference: `GET /api/experiments` took 6.3 s
+  on the defaults and 1.6 s on the real database (#348).
 
 ### Driving it from an agent
 
