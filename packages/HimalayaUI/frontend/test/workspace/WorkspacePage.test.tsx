@@ -280,6 +280,7 @@ beforeEach(() => {
   state.bridges = [];
   compareStore.data = EMPTY_COMPARES;
   localStorage.removeItem("himalaya-ui:recent:comparison:1");
+  localStorage.removeItem("himalaya-ui:recent:label");
   state.labels = [];
   state.problems = { ingest_error: null, exposures: [] };
   state.labelColors = [];
@@ -1177,6 +1178,25 @@ describe("WorkspacePage", () => {
     fireEvent.change(input, { target: { value: "buf" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+  });
+
+  it("the label picker lists labels added recently first, and the choice stays on this browser only", () => {
+    state.labels = [
+      { id: 1, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 12, label: "37C", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 12, label: "dried", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const options = () =>
+      [...screen.getByTestId("workspace-label-picker").querySelectorAll("[data-label-option='existing']")].map((b) => b.textContent);
+    fireEvent.keyDown(window, { key: "l" });
+    expect(options()).toEqual(["37C", "dried", "Buffer", "Calibrant", "Empty capillary"]);
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
+    fireEvent.change(input, { target: { value: "cal" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "l" });
+    expect(options()).toEqual(["Calibrant", "37C", "dried", "Buffer", "Empty capillary"]);
+    expect(JSON.parse(localStorage.getItem("himalaya-ui:recent:label")!)).toEqual(["calibrant"]);
   });
 
   it("L does nothing before a user is set", () => {

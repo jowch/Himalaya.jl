@@ -145,6 +145,8 @@ function helpSections(mod: string): HelpSection[] {
 
 const HELP = helpSections(MOD_KEY);
 
+const RECENT_LABELS = "label";
+
 function exposureRows(e: Exposure): [string, string][] {
   const rows: [string, string][] = [["File", e.filename ?? "—"]];
   rows.push(["Kind", e.kind === "averaged" ? "Averaged" : e.kind === "background_subtracted" ? "Subtracted" : "Single"]);
@@ -208,7 +210,11 @@ export function WorkspacePage(): JSX.Element {
   );
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
-  const vocabulary = useMemo(() => labelVocabulary(labelList), [labelList]);
+  const [recentLabels, setRecentLabels] = useState(() => recentRank(RECENT_LABELS));
+  const vocabulary = useMemo(
+    () => byRecent(labelVocabulary(labelList), (t) => t.toLowerCase(), recentLabels),
+    [labelList, recentLabels],
+  );
   const addLabel = useAddLabel(experimentId);
   const removeLabel = useRemoveLabel(experimentId);
   const [labeling, setLabeling] = useState(false);
@@ -576,6 +582,10 @@ export function WorkspacePage(): JSX.Element {
     (sid: number, tag: string, added: boolean) => {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
       (added ? addLabel : removeLabel).mutate({ sampleId: sid, label: tag });
+      if (added) {
+        recordRecent(RECENT_LABELS, tag.toLowerCase());
+        setRecentLabels(recentRank(RECENT_LABELS));
+      }
       const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
       return labelEntry(ops, {
         label: `${verb} label ${displayLabel(tag)} on ${sample?.name ?? "this sample"}`,
