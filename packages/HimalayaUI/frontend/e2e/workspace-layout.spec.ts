@@ -34,10 +34,10 @@ function indicesOf(exposureId: number, n: number) {
 
 const CANDIDATES: Record<number, number> = { 40: 1, 41: 6, 42: 3, 43: 0, 44: 2 };
 const FRAMES: Record<number, number> = { 44: 7 };
-const TAGS = ["buffer", "37C", "heated twice", "retake", "dilute 1 to 10", "cloudy", "after spin", "second capillary", "check flare", "low counts"];
+const NAMES = ["buffer", "37C", "heated twice", "retake", "dilute 1 to 10", "cloudy", "after spin", "second capillary", "check flare", "low counts"];
 const LABELS = [
-  ...TAGS.slice(0, 2).map((label, i) => ({ id: i + 1, sample_id: 42, label, state: "confirmed", source: "user" })),
-  ...TAGS.map((label, i) => ({ id: i + 11, sample_id: 44, label, state: i === 0 ? "suggested" : "confirmed", source: "user" })),
+  ...NAMES.slice(0, 2).map((label, i) => ({ id: i + 1, sample_id: 42, label, state: "confirmed", source: "user" })),
+  ...NAMES.map((label, i) => ({ id: i + 11, sample_id: 44, label, state: i === 0 ? "suggested" : "confirmed", source: "user" })),
 ];
 const VIEWPORTS = [
   { width: 1440, height: 900 },
@@ -57,7 +57,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/problems", (r) => r.fulfill(json({ ingest_error: null, exposures: [] })));
-  await page.route("**/api/tag-colors", (r) => r.fulfill(json([])));
+  await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(LABELS)));
   await page.route("**/api/experiments/17/scan", (r) => r.fulfill(json({ status: "complete", experiment_id: 17, changed: false })));
   await page.route(/\/api\/samples\/\d+\/call$/, (r) => {
@@ -97,7 +97,7 @@ async function layout(page: Page): Promise<Record<string, number[]>> {
     const section = (title: string) => document.querySelector(`aside section[data-section="${title}"]`);
     return {
       title: box(sampleTitle),
-      tags: box(document.querySelector("[data-testid=workspace-tags]")),
+      labels: box(document.querySelector("[data-testid=workspace-labels]")),
       compareBar: box(document.querySelector("[data-testid=workspace-compare-bar]")),
       plot: box(document.querySelector("[data-testid=workspace-trace]")),
       exposures: box(document.querySelector("[data-testid=workspace-exposures]")),

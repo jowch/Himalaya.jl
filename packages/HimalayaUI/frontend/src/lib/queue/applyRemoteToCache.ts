@@ -316,7 +316,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "tag_color_set":
-      qc.invalidateQueries({ queryKey: queryKeys.tagColors() });
+      qc.invalidateQueries({ queryKey: queryKeys.labelColors() });
       break;
     case "label_added":
     case "label_removed": {

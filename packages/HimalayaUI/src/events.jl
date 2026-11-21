@@ -457,10 +457,10 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     if kind == "tag_color_set"
         color = get(payload, :color, nothing)
         if color === nothing
-            DBInterface.execute(db, "DELETE FROM tag_colors WHERE label = ? COLLATE NOCASE", [String(payload.label)])
+            DBInterface.execute(db, "DELETE FROM label_colors WHERE label = ? COLLATE NOCASE", [String(payload.label)])
         else
             DBInterface.execute(db,
-                """INSERT INTO tag_colors (label, color) VALUES (?, ?)
+                """INSERT INTO label_colors (label, color) VALUES (?, ?)
                    ON CONFLICT(label COLLATE NOCASE) DO UPDATE SET color = excluded.color""",
                 [String(payload.label), String(color)])
         end

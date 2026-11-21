@@ -29,7 +29,7 @@ test.beforeEach(async ({ page }) => {
   await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(SAMPLES)));
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
-  await page.route("**/api/tag-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/label-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/scan", (r) =>
     r.fulfill(json({ status: "complete", experiment_id: 17, changed: false })));
   await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(LABELS)));
@@ -43,43 +43,62 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
 });
 
-async function belowTags(page: import("@playwright/test").Page): Promise<number> {
-  return page.getByTestId("workspace-tags").evaluate((el) => {
+async function belowLabels(page: import("@playwright/test").Page): Promise<number> {
+  return page.getByTestId("workspace-labels").evaluate((el) => {
     const next = el.nextElementSibling as HTMLElement | null;
     return (next ?? el).getBoundingClientRect().top + (next ? 0 : el.getBoundingClientRect().height);
   });
 }
 
-test("many tags stay on one line, every tag is reachable, and the content below never moves", async ({ page }) => {
+test("many labels stay on one line, every label is reachable, and the content below never moves", async ({ page }) => {
   await page.goto("/experiments/17/workspace/41");
-  await expect(page.getByRole("button", { name: "+ Tag" })).toBeVisible();
-  const emptyTop = await belowTags(page);
+  await expect(page.getByRole("button", { name: "+ Label L" })).toBeVisible();
+  const emptyTop = await belowLabels(page);
 
   await page.goto("/experiments/17/workspace/40");
-  const chips = page.getByTestId("workspace-tag-chips");
-  const more = page.getByTestId("workspace-tags-more");
+  const chips = page.getByTestId("workspace-label-chips");
+  const more = page.getByTestId("workspace-labels-more");
   await expect(more).toBeVisible();
-  expect(await belowTags(page)).toBe(emptyTop);
+  expect(await belowLabels(page)).toBe(emptyTop);
 
-  const row = await page.getByTestId("workspace-tags").boundingBox();
-  const tops = await chips.locator("[data-tag]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+  const row = await page.getByTestId("workspace-labels").boundingBox();
+  const tops = await chips.locator("[data-label]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
   expect(new Set(tops).size).toBe(1);
-  const rights = await chips.locator("[data-tag]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
+  const rights = await chips.locator("[data-label]").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
   const box = await chips.boundingBox();
   for (const r of rights) expect(r).toBeLessThanOrEqual(box!.x + box!.width + 0.5);
   expect(row!.height).toBeLessThan(40);
   expect(await page.locator("main").evaluate((m) => m.scrollWidth - m.clientWidth)).toBeLessThanOrEqual(0);
-  expect(await page.locator("[data-tag]").count()).toBe(await chips.locator("[data-tag]").count());
+  expect(await page.locator("[data-label]").count()).toBe(await chips.locator("[data-label]").count());
 
-  const shown = await chips.locator("[data-tag]").evaluateAll((els) => els.map((e) => e.getAttribute("data-tag")));
+  const shown = await chips.locator("[data-label]").evaluateAll((els) => els.map((e) => e.getAttribute("data-label")));
   await more.click();
-  const overflow = page.getByRole("dialog", { name: "More tags" });
-  const hidden = await overflow.locator("[data-tag]").evaluateAll((els) => els.map((e) => e.getAttribute("data-tag")));
+  const overflow = page.getByRole("dialog", { name: "More labels" });
+  const hidden = await overflow.locator("[data-label]").evaluateAll((els) => els.map((e) => e.getAttribute("data-label")));
   expect([...shown, ...hidden]).toEqual(NAMES);
   await expect(more).toHaveText(`+${hidden.length}`);
-  expect(await belowTags(page)).toBe(emptyTop);
+  expect(await belowLabels(page)).toBe(emptyTop);
   await expect(overflow.getByRole("button").first()).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(overflow).toBeHidden();
   await expect(more).toBeFocused();
+});
+
+test("L opens the label picker with an empty, focused field, and Enter confirms the suggested buffer", async ({ page }) => {
+  const posts: unknown[] = [];
+  await page.route(/\/api\/samples\/40\/labels$/, (r) => {
+    posts.push(r.request().postDataJSON());
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: 1, sample_id: 40, label: "Buffer", state: "confirmed", source: "user" }]) });
+  });
+  await page.goto("/experiments/17/workspace/40");
+  await expect(page.getByRole("button", { name: "+ Label L" })).toBeVisible();
+  await page.keyboard.press("l");
+  const field = page.getByRole("dialog", { name: "Add a label" }).getByLabel("Label name");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("");
+  await page.keyboard.type("buf");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Add a label" })).toBeHidden();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]).toMatchObject({ label: "Buffer" });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { tagOptions } from "../../lib/labels";
+import { labelOptions } from "../../lib/labels";
 
 interface Props {
   vocabulary: readonly string[];
@@ -11,7 +11,7 @@ interface Props {
 
 type Row = { label: string; create: boolean };
 
-export function TagPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose }: Props): JSX.Element {
+export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose }: Props): JSX.Element {
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement | null>(null);
@@ -25,7 +25,7 @@ export function TagPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose 
     return () => document.removeEventListener("mousedown", onDown, true);
   }, [onClose]);
   const rows: Row[] = useMemo(() => {
-    const o = tagOptions(vocabulary, q, onSample);
+    const o = labelOptions(vocabulary, q, onSample);
     return [...o.matches.map((label) => ({ label, create: false })), ...(o.create ? [{ label: o.create, create: true }] : [])];
   }, [vocabulary, q, onSample]);
   useEffect(() => setCursor(0), [q]);
@@ -39,9 +39,9 @@ export function TagPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose 
     <div
       ref={root}
       role="dialog"
-      aria-label="Add a tag"
+      aria-label="Add a label"
       data-keys-trap
-      data-testid="workspace-tag-picker"
+      data-testid="workspace-label-picker"
       className="absolute left-0 top-full z-20 mt-1 w-64 rounded-sm border border-hair bg-plate shadow-lg"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
@@ -67,8 +67,8 @@ export function TagPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose 
         type="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Tag"
-        aria-label="Tag name"
+        placeholder="Label"
+        aria-label="Label name"
         className="w-full border-b border-hair bg-plate px-2 py-1 text-body placeholder:text-ink-faint focus:outline-none"
       />
       <ul className="max-h-64 overflow-y-auto py-1">
@@ -76,7 +76,7 @@ export function TagPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose 
           <li key={(r.create ? "+" : "") + r.label}>
             <button
               type="button"
-              data-tag-option={r.create ? "create" : "existing"}
+              data-label-option={r.create ? "create" : "existing"}
               aria-current={i === at ? "true" : undefined}
               onMouseEnter={() => setCursor(i)}
               onClick={() => pick(r)}
@@ -86,7 +86,7 @@ export function TagPicker({ vocabulary, onSample, onPick, onRemoveLast, onClose 
             </button>
           </li>
         ))}
-        {rows.length === 0 && <li className="px-3 py-2 text-caption">No more tags to add.</li>}
+        {rows.length === 0 && <li className="px-3 py-2 text-caption">No more labels to add.</li>}
       </ul>
     </div>
   );

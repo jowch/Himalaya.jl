@@ -28,7 +28,7 @@ import {
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
-import { setTagColorMutator } from "./lib/queue/mutators/tagColors";
+import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -45,7 +45,7 @@ export const queryKeys = {
   problems:   (experimentId: number) => ["experiment", experimentId, "problems"] as const,
   folderPreview: (path: string) => ["folder-preview", path] as const,
   folderPreviews: ["folder-preview"] as const,
-  tagColors:  () => ["tag-colors"] as const,
+  labelColors:  () => ["label-colors"] as const,
   manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
     ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
@@ -144,13 +144,13 @@ export function useRemoveLabel(experimentId: number) {
   return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useTagColors() {
-  return useQuery({ queryKey: queryKeys.tagColors(), queryFn: () => api.listTagColors() });
+export function useLabelColors() {
+  return useQuery({ queryKey: queryKeys.labelColors(), queryFn: () => api.listLabelColors() });
 }
 
-export function useSetTagColor() {
+export function useSetLabelColor() {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(setTagColorMutator, { username, clientId: CLIENT_ID });
+  return useQueueMutation(setLabelColorMutator, { username, clientId: CLIENT_ID });
 }
 
 export function useSamples(experimentId: number) {
@@ -361,7 +361,7 @@ export function useRemoveSampleTag(experimentId: number, sampleId: number) {
 }
 
 /**
- * Corpus contact-sheet sample tagging (#159). Scope carries `sampleId` only —
+ * Corpus contact-sheet sample labeling (#159). Scope carries `sampleId` only —
  * NO `experimentId` — which is how resolveMutator routes the op to the
  * corpus mutator rather than the experiment-scoped or exposure mutator.
  */
