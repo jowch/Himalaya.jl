@@ -135,6 +135,35 @@ end
     end
 end
 
+@testset "ensure_full_cached: a miss renders and stores, a hit keeps the raw size without the source" begin
+    mktempdir() do tmp
+        disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
+        path = _make_detector_tiff(256)
+        try
+            token = HimalayaUI.image_version_token(path)
+            first = HimalayaUI.ensure_full_cached(disk, 42, path; token=token)
+            @test first.raw_h == 256 && first.raw_w == 256
+            @test first.bytes == HimalayaUI.encode_png(HimalayaUI.load_and_lognormalize(path))
+            @test isfile(HimalayaUI.full_cache_path(disk, 42, token))
+            @test HimalayaUI.full_cache_path(disk, 42, token) != HimalayaUI.thumb_cache_path(disk, 42, token)
+
+            rm(path; force=true)
+            again = HimalayaUI.ensure_full_cached(disk, 42, path; token=token)
+            @test again == first
+        finally
+            rm(path; force=true)
+        end
+    end
+    mem = SQLite.DB()
+    path = _make_detector_tiff(64)
+    try
+        @test HimalayaUI.full_cache_path(mem, 1, "v3-1") === nothing
+        @test HimalayaUI.ensure_full_cached(mem, 1, path).raw_w == 64
+    finally
+        rm(path; force=true)
+    end
+end
+
 @testset "ensure_thumb_cached — token change writes a NEW file, leaves the stale one" begin
     mktempdir() do tmp
         disk = SQLite.DB(joinpath(tmp, "himalaya.db"))

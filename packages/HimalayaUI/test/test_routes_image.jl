@@ -111,3 +111,24 @@ end
     end
     rm(big_path; force=true); rm(rect_path; force=true)
 end
+
+@testset "the full image is served from the disk cache with the same headers" begin
+    mktempdir() do tmp
+        src = joinpath(tmp, "frame.tiff")
+        save(src, Gray.(rand(Float32, 400, 600)))
+        db = HimalayaUI.open_db(joinpath(tmp, "himalaya.db"))
+        exp  = HimalayaUI.create_experiment!(db; path=tmp, data_dir=tmp, analysis_dir=tmp)
+        samp = HimalayaUI.create_sample!(db; experiment_id=exp, name="S")
+        e    = HimalayaUI.create_exposure!(db; experiment_id=exp, sample_id=samp, image_path=src)
+        with_inproc_routes(db) do call
+            r1 = call("GET", "/api/exposures/$e/image")
+            cached = HimalayaUI.full_cache_path(db, e, HimalayaUI.image_version_token(src))
+            @test isfile(cached)
+            r2 = call("GET", "/api/exposures/$e/image")
+            @test r2.body == r1.body == read(cached)
+            @test Dict(r2.headers)["X-Image-Width"] == "600"
+            @test Dict(r2.headers)["X-Image-Height"] == "400"
+        end
+        DBInterface.close!(db)
+    end
+end
