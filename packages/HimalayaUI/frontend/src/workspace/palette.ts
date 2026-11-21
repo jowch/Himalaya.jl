@@ -18,7 +18,16 @@ export interface WorkspacePaletteInput {
   modKey: string;
   canEdit: boolean;
   nextUnreviewed: () => void;
-  compare: { samples: readonly CorpusSample[]; notes: ReadonlyMap<number, string>; pick: (id: number) => void };
+  compare: {
+    samples: readonly CorpusSample[];
+    notes: ReadonlyMap<number, string>;
+    pick: (id: number) => void;
+    compared: readonly CorpusSample[];
+    remove: (id: number) => void;
+    subtractable: readonly CorpusSample[];
+    subtracted: number | undefined;
+    subtract: (id: number) => void;
+  };
   bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: boolean; leave: () => void };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
@@ -147,6 +156,27 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === p.theme.current ? "Current" : undefined, run: () => p.theme.choose(t.theme) })),
     },
   };
+  if (p.compare.subtractable.length > 0) {
+    pages.subtract = {
+      title: "Subtract",
+      arg: "Sample",
+      deep: true,
+      items: p.compare.subtractable.map((s) => ({
+        id: `subtract-${s.id}`,
+        label: s.name,
+        hint: s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined,
+        run: () => p.compare.subtract(s.id),
+      })),
+    };
+  }
+  if (p.compare.compared.length > 0) {
+    pages.uncompare = {
+      title: "Stop comparing",
+      arg: "Sample",
+      deep: true,
+      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, run: () => p.compare.remove(s.id) })),
+    };
+  }
   if (p.settings) pages.settings = settingsPage(p.settings);
   if (p.canEdit) {
     pages.bridge = {
@@ -208,6 +238,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "next-unreviewed", label: "Next unreviewed sample", shortcut: "Z", run: p.nextUnreviewed },
     ...(p.canEdit ? [{ id: "label", label: "Label", page: "label" }] : []),
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
+    ...(pages.subtract ? [{ id: "subtract", label: "Subtract a comparison", page: "subtract" }] : []),
+    ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
     ...(p.canEdit ? [{ id: "bridge", label: "Bridge to a sample", page: "bridge" }] : []),
     ...(p.canEdit && p.bridge.bridged ? [{ id: "unbridge", label: "Take this sample out of its bridges", run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),

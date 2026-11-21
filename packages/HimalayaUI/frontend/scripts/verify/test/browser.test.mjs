@@ -13,6 +13,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <h1 id="h">Start</h1>
   <button onclick="busy()">Load</button>
   <button>Twin</button><button>Twin</button>
+  <button onclick="document.getElementById('h').textContent = (event.ctrlKey ? 'ctrl' : '') + (event.shiftKey ? 'shift' : '') || 'plain'">Mod</button>
   <button onclick="setTimeout(() => history.pushState({}, '', '/done'), 800)">Later</button>
   <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
   <button onclick="fetch('/hang')">Hang</button>
@@ -136,6 +137,18 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.ok(r.settle.ms >= 600, `settled after ${r.settle.ms} ms, before the slow request finished`);
   ({ r } = await run("snapshot", "--selector", "h1"));
   assert.match(r.snapshot, /Loaded/);
+
+  ({ code, r } = await run("click", "--role", "button", "--name", "Mod", "--modifiers", "Control,Shift"));
+  assert.equal(code, 0, JSON.stringify(r));
+  assert.deepEqual(r.modifiers, ["Control", "Shift"]);
+  ({ r } = await run("snapshot", "--selector", "h1"));
+  assert.match(r.snapshot, /ctrlshift/);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Mod"));
+  ({ r } = await run("snapshot", "--selector", "h1"));
+  assert.match(r.snapshot, /plain/);
+  ({ code, r } = await run("click", "--role", "button", "--name", "Mod", "--modifiers", "Hyper"));
+  assert.equal(code, 1);
+  assert.match(r.error, /--modifiers/);
 
   ({ code, r } = await run("click", "--role", "button", "--name", "Silent"));
   assert.equal(code, 0, JSON.stringify(r));
