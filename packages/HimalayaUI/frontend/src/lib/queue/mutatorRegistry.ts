@@ -32,6 +32,7 @@ import {
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
+import { addLabelMutator, removeLabelMutator } from "./mutators/labels";
 import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator } from "./mutators/grouping";
 
 /**
@@ -138,6 +139,8 @@ export function resolveMutator(
     case "undo_dismiss_grouping_flag": return undoDismissGroupingFlagMutator;
     case "bridge_samples":         return bridgeSamplesMutator;
     case "unbridge_sample":        return unbridgeSampleMutator;
+    case "add_label":              return addLabelMutator;
+    case "remove_label":           return removeLabelMutator;
     default:
       return undefined;
   }
@@ -220,6 +223,8 @@ export function resolveMutatorForEvent(
     case "grouping_flag_dismissed":  return dismissGroupingFlagMutator;
     case "sample_bridged":           return bridgeSamplesMutator;
     case "sample_unbridged":         return unbridgeSampleMutator;
+    case "label_added":              return addLabelMutator;
+    case "label_removed":            return removeLabelMutator;
     // merge_samples fans out as exposure_moved frames (no sample_merged kind exists);
     // own-op confirmation uses the exposure_moved arm above.
     // Event kinds with no queue mutator fall through here (handled entirely by
