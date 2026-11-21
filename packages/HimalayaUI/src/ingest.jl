@@ -135,7 +135,7 @@ function scan_and_group!(
     # 1. Scan: enumerate TIF+PRP+DAT triplets
     # -----------------------------------------------------------------------
     # `on_progress(processed, total, stage)` — stage names the segment the UI
-    # should be filling ("discovery" / "analyzing" / "thumbnails"). Discovery is
+    # should be filling ("discovery" / "analyzing"). Discovery is
     # the expensive silent half (two stats + a PRP parse per exposure over SMB),
     # so it reports from inside scan_directory rather than only announcing its
     # total afterwards.
@@ -299,28 +299,6 @@ function scan_and_group!(
         # and the loop above never runs (a 0/0 segment reads as complete, not as a
         # stalled bar).
         on_progress === nothing || on_progress(n_new, n_new, "analyzing")
-
-        # Prewarm the thumbnail disk cache for the freshly-ingested exposures so the
-        # first contact-sheet visit is fast (cold lazy generation staggers badly over
-        # SMB — the exact case prewarm exists for, issue #261). The scan→ingest rewrite
-        # dropped the old init/reingest call sites; this restores it on the live path.
-        # Prewarm is a non-essential cache warm — an unreadable TIFF must never fail
-        # the ingest (the thumb then just generates lazily on first view).
-        try
-            # Scoped to THIS experiment — the unscoped call walked every exposure
-            # in every experiment on every scan. Scoping by experiment (rather
-            # than by the ids just inserted) keeps the repair path: a thumbnail
-            # that failed to warm on an earlier scan gets another attempt on the
-            # next one, which a new-ids-only warm would never revisit.
-            # overwrite=false so an already-cached thumb short-circuits instead of
-            # re-rendering; see the prewarm_thumbnails! docstring for the
-            # same-second-mtime hole this trades away.
-            prewarm_thumbnails!(db; overwrite = false, experiment_id = experiment_id,
-                                on_progress = on_progress === nothing ? nothing :
-                                    (p, t) -> on_progress(p, t, "thumbnails"))
-        catch e
-            @warn "scan_and_group!: thumbnail prewarm failed (non-fatal)" exception=e
-        end
     end
 
     return (

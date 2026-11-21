@@ -151,6 +151,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         @test ismissing(first(_rows(db, "SELECT trace_hash FROM exposures WHERE experiment_id = ?", [id])).trace_hash)
 
         @test HimalayaUI.run_ingest!(db, id; force = true) === :ok
+        HimalayaUI.wait_prewarm(id)
         ok = first(_rows(db, "SELECT trace_hash, analysis_error FROM exposures WHERE experiment_id = ?", [id]))
         @test !ismissing(ok.trace_hash)
         @test ismissing(ok.analysis_error)
@@ -181,6 +182,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         DBInterface.execute(db, "UPDATE exposures SET analysis_version = 'old' WHERE id = ?", [eid])
         @test HimalayaUI.ingest_has_work(db, id)
         @test HimalayaUI.run_ingest!(db, id) === :ok
+        HimalayaUI.wait_prewarm(id)
         @test first(_rows(db, "SELECT analysis_version FROM exposures WHERE id = ?", [eid])).analysis_version ==
               HimalayaUI.ANALYSIS_VERSION
 
@@ -201,6 +203,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [id])
 
         HimalayaUI.resume_ingests!(db)
+        HimalayaUI.wait_prewarm(id)
         @test first(_rows(db, "SELECT ingest_status FROM experiments WHERE id = ?", [id])).ingest_status == "complete"
         @test _n(db, "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND trace_hash IS NOT NULL", [id]) == 1
     end

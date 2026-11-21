@@ -27,14 +27,13 @@ describe("deriveSegments", () => {
   });
 
   it("treats earlier stages as complete and later ones as untouched", () => {
-    const segs = deriveSegments("analyzing", 92, 604)!;
+    const analyzing = Object.fromEntries(deriveSegments("analyzing", 92, 604)!.map((s) => [s.key, s]));
+    expect(analyzing.discovery.fraction).toBe(1);
+    expect(analyzing.discovery.active).toBe(false);
+    const segs = deriveSegments("discovery", 10, 100)!;
     const byKey = Object.fromEntries(segs.map((s) => [s.key, s]));
-    // discovery already ran to completion
-    expect(byKey.discovery.fraction).toBe(1);
-    expect(byKey.discovery.active).toBe(false);
-    // thumbnails has not started
-    expect(byKey.thumbnails.fraction).toBe(0);
-    expect(byKey.thumbnails.active).toBe(false);
+    expect(byKey.analyzing.fraction).toBe(0);
+    expect(byKey.analyzing.active).toBe(false);
     // exactly one active segment at a time
     expect(segs.filter((s) => s.active)).toHaveLength(1);
   });
@@ -55,7 +54,7 @@ describe("deriveSegments", () => {
   });
 
   it("always returns one segment per stage, in execution order", () => {
-    const segs = deriveSegments("thumbnails", 1, 2)!;
+    const segs = deriveSegments("analyzing", 1, 2)!;
     expect(segs.map((s) => s.key)).toEqual([...INGEST_STAGES]);
     // Every segment carries a human label for the caption + a11y text.
     expect(segs.every((s) => s.label.length > 0)).toBe(true);
@@ -73,13 +72,11 @@ describe("deriveSegments", () => {
       totalFill("discovery", 1100, 1100),
       totalFill("analyzing", 0, 604),
       totalFill("analyzing", 604, 604),
-      totalFill("thumbnails", 0, 604),
-      totalFill("thumbnails", 604, 604),
     ];
     for (let i = 1; i < timeline.length; i++) {
       expect(timeline[i]).toBeGreaterThanOrEqual(timeline[i - 1]);
     }
-    expect(timeline.at(-1)).toBe(3); // all three segments full
+    expect(timeline.at(-1)).toBe(2);
   });
 });
 
@@ -87,7 +84,7 @@ describe("isIngestStage / stageLabel", () => {
   it("accepts only the known wire values", () => {
     expect(isIngestStage("discovery")).toBe(true);
     expect(isIngestStage("analyzing")).toBe(true);
-    expect(isIngestStage("thumbnails")).toBe(true);
+    expect(isIngestStage("thumbnails")).toBe(false);
     expect(isIngestStage("rescan")).toBe(false); // that's `phase`, not `stage`
     expect(isIngestStage(undefined)).toBe(false);
   });

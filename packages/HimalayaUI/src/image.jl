@@ -326,12 +326,11 @@ function ensure_full_cached(db::SQLite.DB, exposure_id::Integer, path::String;
 end
 
 """
-    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing,
-                        on_progress = nothing) -> NamedTuple
+    prewarm_thumbnails!(db; threads = true, overwrite = false, experiment_id = nothing) -> NamedTuple
 
 Populate the on-disk thumbnail cache for every exposure with a non-NULL
-`image_path`. Run from `init` and `reingest` (issue #261) so the very first
-contact-sheet visit on a freshly-prepared corpus is fast (no cold-load stagger).
+`image_path`. Run after each ingest pass (issue #261) so the very first
+workspace visit on a freshly ingested experiment is fast (no cold-load stagger).
 
 The exposure list is materialized via `Tables.rowtable` *before* the parallel
 loop so the threaded workers touch only the filesystem — never the shared DB
@@ -342,29 +341,25 @@ Unreadable source TIFFs are skipped-with-`@info` (matching the route's graceful
 404), so a partially-present corpus still warms what it can — both a file missing
 from disk AND one that is present but fails to decode. The decode guard matters
 because `work` runs under `@threads`: an uncaught throw there aborts the rest of
-the batch, silently leaving every later exposure unwarmed. Returns
-`(warmed, skipped)` counts.
+the batch, silently leaving every later exposure unwarmed. An entry already in
+the cache is left alone without being read, so a warm doesn't mark it recently
+viewed. Returns `(warmed, skipped)` counts.
 
-`experiment_id` restricts the warm to one experiment. `scan_and_group!` passes
-its own id: the whole-DB default walks EVERY exposure in EVERY experiment on
-every scan, which is O(corpus) per ingest and a long silent tail after the last
-progress tick — the bar sits at 100% while an unrelated experiment's thumbnails
-regenerate.
+`experiment_id` restricts the warm to one experiment. `prewarm_after_ingest!` passes
+its own id: the whole-DB default walks every exposure in every experiment.
 
 `overwrite = true` re-renders unconditionally, defeating whole-second mtime token
 granularity (a TIFF rewritten in the same second as its render keeps the same
 token, so the cache would serve a stale PNG). NOTE the ingest path deliberately
 passes `overwrite = false`: closing that same-second hole costs a full re-render
-of every exposure on every scan, which is what made the unscoped call so
-expensive. With `false`, an exposure whose TIFF is rewritten in a *different*
-second gets a fresh token → fresh cache path → re-renders normally; only the
-same-second rewrite is missed. On a `:memory:` DB this is a no-op pass (rendering
-with nowhere to write).
+of every exposure on every scan. With `false`, an exposure whose TIFF is rewritten
+in a *different* second gets a fresh token → fresh cache path → re-renders
+normally; only the same-second rewrite is missed. On a `:memory:` DB this is a
+no-op pass (rendering with nowhere to write).
 """
 function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
                              overwrite::Bool = false,
-                             experiment_id::Union{Integer, Nothing} = nothing,
-                             on_progress::Union{Function, Nothing} = nothing)
+                             experiment_id::Union{Integer, Nothing} = nothing)
     rows = experiment_id === nothing ?
         Tables.rowtable(DBInterface.execute(db,
             "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL")) :
@@ -374,41 +369,28 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
 
     n_warmed  = Atomic{Int}(0)
     n_skipped = Atomic{Int}(0)
-    # Progress counts rows RETIRED (warmed or skipped), so the segment fills even
-    # on a corpus that is mostly cache hits or mostly missing files. Atomic
-    # because `work` runs under `@threads` — and the tick is emitted from the
-    # worker, so `on_progress` must tolerate being called off the main task
-    # (broadcast_progress! is lock-guarded, so it does).
-    n_done   = Atomic{Int}(0)
-    n_total  = length(rows)
-    step     = max(1, n_total ÷ 100)
-    tick = function ()
-        d = atomic_add!(n_done, 1) + 1     # atomic_add! returns the OLD value
-        if on_progress !== nothing && (d % step == 0 || d == n_total)
-            on_progress(d, n_total)
-        end
-    end
 
     work = function (row)
         path = String(row.image_path)
         if !isfile(path)
             atomic_add!(n_skipped, 1)
             @info "thumb prewarm skip" exposure_id=row.id reason="TIFF not on disk" path
-            tick()
             return
         end
-        # A present-but-undecodable TIFF must not abort the @threads batch and
-        # take every later exposure down with it — skip it like a missing file.
+        token = image_version_token(path)
+        cached = thumb_cache_path(db, Int(row.id), token)
+        if !overwrite && cached !== nothing && isfile(cached)
+            atomic_add!(n_warmed, 1)
+            return
+        end
         try
-            ensure_thumb_cached(db, Int(row.id), path; overwrite = overwrite)
+            ensure_thumb_cached(db, Int(row.id), path; token, overwrite = overwrite)
         catch e
             atomic_add!(n_skipped, 1)
             @info "thumb prewarm skip" exposure_id=row.id reason="render failed" path exception=e
-            tick()
             return
         end
         atomic_add!(n_warmed, 1)
-        tick()
     end
 
     if threads
@@ -420,13 +402,6 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
             work(row)
         end
     end
-
-    # Close the segment explicitly, mirroring the analyze loop's terminal tick.
-    # Two reasons the in-loop ticks cannot be trusted to land it full: a zero-row
-    # prewarm never ticks at all (segment stuck at 0), and under `threads` the
-    # per-worker ticks can be broadcast out of order, so the LAST frame observed is
-    # not necessarily the highest. This fires after @threads has joined.
-    on_progress === nothing || on_progress(n_total, n_total)
 
     @info "thumb prewarm complete" warmed=n_warmed[] skipped=n_skipped[]
     (warmed = n_warmed[], skipped = n_skipped[])

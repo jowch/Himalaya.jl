@@ -93,7 +93,6 @@ describe("GroupingReviewPage scanning surface (p1-grouping)", () => {
     expect(screen.queryByTestId("progressbar")).toBeNull();
     expect(screen.getByTestId("segment-discovery")).toHaveAttribute("data-fraction", "1");
     expect(screen.getByTestId("segment-analyzing")).toHaveAttribute("data-active", "true");
-    expect(screen.getByTestId("segment-thumbnails")).toHaveAttribute("data-fraction", "0");
   });
 
   it("scanning during discovery: reports files, not exposures, and no loads yet", () => {

@@ -336,6 +336,7 @@ end
             end
             try
                 @test HimalayaUI.run_ingest!(db, exp_id; phase = "rescan") === :ok
+                HimalayaUI.wait_prewarm(exp_id)
 
                 kinds  = String[]
                 phases = String[]
@@ -417,7 +418,8 @@ end
                 r = post()
                 @test r.status == 202
                 @test JSON3.read(String(r.body)).status == "scanning"
-                @test wait_until(() -> status_of() == "complete")
+                @test wait_until(() -> status_of() == "complete" && !HimalayaUI.ingest_running(exp_id))
+                HimalayaUI.wait_prewarm(exp_id)
                 seen = kinds()
                 @test "ingest_started" in seen
                 @test "ingest_complete" in seen
@@ -430,7 +432,8 @@ end
                 r = post(Dict(:force => true))
                 @test r.status == 202
                 @test JSON3.read(String(r.body)).status == "scanning"
-                @test wait_until(() -> status_of() == "complete")
+                @test wait_until(() -> status_of() == "complete" && !HimalayaUI.ingest_running(exp_id))
+                HimalayaUI.wait_prewarm(exp_id)
                 @test "ingest_started" in kinds()
 
                 r = post(Dict(:force => false))
@@ -490,6 +493,7 @@ end
             prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
         try
             HimalayaUI.run_ingest!(db, exp_id)
+            HimalayaUI.wait_prewarm(exp_id)
             r = Tables.rowtable(DBInterface.execute(db,
                 "SELECT transmitted_counts FROM exposures WHERE experiment_id = ?", [exp_id]))[1]
             @test r.transmitted_counts ≈ 6500.0
@@ -623,6 +627,7 @@ end
                                           data_dir = data_dir, analysis_dir = data_dir,
                                           ingest_status = "complete")
         HimalayaUI.run_ingest!(db, id; phase = "rescan")
+        HimalayaUI.wait_prewarm(id)
 
         n = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) c FROM exposures WHERE experiment_id = ?", [id]))).c
