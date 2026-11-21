@@ -1,5 +1,29 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
+const PRP_DETAILS = Dict{String,Dict{Symbol,Any}}()
+const PRP_DETAILS_LOCK = ReentrantLock()
+
+function prp_details(path; parse = parse_prp)
+    empty = Dict{Symbol,Any}(:beam_energy_ev => nothing, :pipe_length_m => nothing, :detector => nothing)
+    path isa AbstractString || return empty
+    hit = lock(() -> get(PRP_DETAILS, path, nothing), PRP_DETAILS_LOCK)
+    hit === nothing || return hit
+    isfile(path) || return empty
+    prp = try
+        parse(path)
+    catch err
+        @warn "prp_details: could not read" path exception = err
+        return empty
+    end
+    details = Dict{Symbol,Any}(
+        :beam_energy_ev => coalesce(prp.beam_energy_ev, nothing),
+        :pipe_length_m  => coalesce(prp.pipe_length_m, nothing),
+        :detector       => coalesce(prp.detector, nothing),
+    )
+    lock(() -> PRP_DETAILS[path] = details, PRP_DETAILS_LOCK)
+    details
+end
+
 function register_exposures_routes!()
     @get "/api/samples/{id}/exposures" function(req::HTTP.Request, id::Int)
         db = current_db()
@@ -16,6 +40,7 @@ function register_exposures_routes!()
             d[:tags]          = rows_to_json(tags)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
+            merge!(d, prp_details(e.prp_path))
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],

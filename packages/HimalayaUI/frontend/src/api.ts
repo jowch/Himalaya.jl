@@ -451,6 +451,10 @@ export interface Exposure {
   counting_time: number | null;
   transmitted_counts: number | null;
   incident_monitor: number | null;
+  timestamp: string | null;
+  beam_energy_ev: number | null;
+  pipe_length_m: number | null;
+  detector: string | null;
 }
 
 export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>
