@@ -69,3 +69,20 @@ export function peakClick(
   if (!p) return null;
   return p.source === "auto" ? { kind: "exclude", excluded: !p.excluded } : { kind: "remove" };
 }
+
+// physics: I₀ is the upstream ion chamber. With the shutter closed its electrometer
+// physics: reads an offset of a few mV of either sign, not 0, and the beam's own
+// physics: level depends on the chamber gain. So a frame counts as beam-off when |I₀|
+// physics: is under 5% of the brightest frame of the same sample: far above the
+// physics: offset, far below a beam that decayed ~20% between top-ups.
+export const BEAM_OFF_FRACTION = 0.05;
+
+export function beamLikelyOff(
+  frame: { incident_monitor: number | null } | undefined,
+  frames: readonly { incident_monitor: number | null }[],
+): boolean {
+  const i0 = frame?.incident_monitor;
+  if (i0 == null) return false;
+  const brightest = Math.max(...frames.map((f) => f.incident_monitor ?? -Infinity));
+  return brightest > 0 && Math.abs(i0) < BEAM_OFF_FRACTION * brightest;
+}

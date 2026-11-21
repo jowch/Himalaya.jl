@@ -305,11 +305,17 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it("says the beam was likely off when the shown frame's I₀ read 0", () => {
-    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: 0 })];
+  it.each([0, 0.004, -0.0045])("says the beam was likely off when the shown frame's I₀ reads %s beside a 1.5 V frame", (i0) => {
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: i0 })];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent("I₀ read 0 on this frame, so the beam was likely off.");
+    expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent("Beam likely off: I₀ is near zero.");
     fireEvent.click(within(screen.getByTestId("workspace-exposures")).getByRole("button", { name: "Frame 1" }));
+    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
+  });
+
+  it("says nothing about a low but real beam", () => {
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: 1.2 })];
+    renderAt("/experiments/1/workspace/10");
     expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
   });
 

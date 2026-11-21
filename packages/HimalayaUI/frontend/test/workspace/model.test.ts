@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { sampleStatus, nextUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { beamLikelyOff, sampleStatus, nextUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
@@ -114,5 +114,19 @@ describe("peakClick", () => {
   });
   it("ignores an unknown peak", () => {
     expect(peakClick(peaks, { id: 3, source: "auto" })).toBeNull();
+  });
+});
+
+describe("beamLikelyOff", () => {
+  const f = (incident_monitor: number | null) => ({ incident_monitor });
+
+  it("is true for an electrometer offset of either sign beside a beam", () => {
+    for (const i0 of [0, 0.004, -0.0045]) expect(beamLikelyOff(f(i0), [f(1.5), f(i0)])).toBe(true);
+  });
+
+  it("is false for a decayed but real beam, a lone frame and an unknown I₀", () => {
+    expect(beamLikelyOff(f(1.2), [f(1.5), f(1.2)])).toBe(false);
+    expect(beamLikelyOff(f(0.004), [f(0.004)])).toBe(false);
+    expect(beamLikelyOff(f(null), [f(1.5), f(null)])).toBe(false);
   });
 });

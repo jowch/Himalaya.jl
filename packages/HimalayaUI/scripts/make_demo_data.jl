@@ -319,6 +319,15 @@ end
 # raw Int32 bits as Q0f31 produces the same on-disk format as the beamline.
 write_tif(path, counts::Matrix{Int32}) = save(path, Gray.(reinterpret.(Q0f31, counts)))
 
+# physics: with the shutter closed the ion chamber's electrometer reads its offset, a
+# physics: few mV of either sign (the idle Vt channel on the real 2026 .prp reads
+# physics: -0.0045 V), not 0. Drawn from the file stem so the shared beam stream
+# physics: and every other frame's output stay as they were.
+function electrometer_offset(stem)
+    r = Xoshiro(hash(stem))
+    (rand(r, Bool) ? 1 : -1) * (0.001 + 0.004 * rand(r))
+end
+
 function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LENGTH_MM, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
     stem = splitext(basename(path))[1]
     counting = exposure_time + 0.8
@@ -331,7 +340,7 @@ function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LE
         println(io, "Time this file was written: $ts")
         println(io, "I_Signal (i.e. I1 in header file) is from: i_apd")
         println(io, "I_signal=$i_signal (corrected for dark counts)")
-        @printf(io, "I_0(daqIon3.0)=%.4f\n", I0_VOLTS * i0)
+        @printf(io, "I_0(daqIon3.0)=%.4f\n", i0 == 0 ? electrometer_offset(stem) : I0_VOLTS * i0)
         println(io, "I_1(daqCounter1.0)=$i_1")
         println(io, "I_apd(daqCounter1.0)=$i_1")
         println(io, "Exposure time=$exposure_time")
