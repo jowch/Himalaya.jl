@@ -49,4 +49,5 @@ test("the workspace is read in place when the shared tab is already on it", () =
   assert.deepEqual(workspaceStart(`${ui}/experiments/1/corpus`, ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
   assert.deepEqual(workspaceStart("about:blank", ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
   assert.deepEqual(workspaceStart("http://elsewhere:9000/experiments/1/workspace/7", ui, 1, 3), { reuse: false, route: "/experiments/1/workspace/3" });
+  assert.deepEqual(workspaceStart(`${ui}/experiments/1/workspace/7`, ui, 1, 3, { reload: true }), { reuse: false, route: "/experiments/1/workspace/3" });
 });

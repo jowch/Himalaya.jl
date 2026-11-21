@@ -257,3 +257,28 @@ end
     @test DemoGen.clean_large(interrupted)
     @test !ispath(interrupted)
 end
+
+@testset "demo data: --late-trace holds one sample's traces back until delivered" begin
+    plain, late = mktempdir(), mktempdir()
+    redirect_stdout(devnull) do
+        DemoGen.main([plain, "--no-images"])
+        DemoGen.main([late, "--no-images", "--late-trace"])
+    end
+    @test read(joinpath(plain, "TRUTH.csv"), String) == read(joinpath(late, "TRUTH.csv"), String)
+    row = only(split(l, ",")[2] for l in readlines(joinpath(late, "TRUTH.csv")) if startswith(l, DemoGen.LATE_TRACE_SAMPLE * ","))
+    held = Set(b * "_tot.dat" for b in split(row))
+    tot(root) = Set(readdir(joinpath(root, "analysis", "automatic_analysis", "tot_files")))
+    @test !isempty(held)
+    @test Set(readdir(joinpath(late, "late"))) == held
+    @test tot(late) == setdiff(tot(plain), held)
+    for f in held
+        @test read(joinpath(late, "late", f)) == read(joinpath(plain, "analysis", "automatic_analysis", "tot_files", f))
+    end
+    @test HimalayaUI.resolve_experiment_layout(late).integration_pattern == "{name}_tot.dat"
+    redirect_stdout(devnull) do
+        DemoGen.main([late, "--no-images"])
+    end
+    @test !isdir(joinpath(late, "late"))
+    @test tot(late) == tot(plain)
+    @test_throws ErrorException DemoGen.parse_args([late, "--large", "--late-trace"])
+end

@@ -84,7 +84,7 @@ dev-setup:
 DEMO_DIR    ?= scratch/demo-experiment
 DEMO_DB_DIR ?= scratch/demo
 demo-data:
-	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
+	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR) $(DEMO_DATA_FLAGS)
 
 # Realistic scale: DEMO_LARGE_DIR/large_01 ... large_10, 300 samples each, with
 # images shared from a pool (docs/demo.md "Large mode"). Takes ~35 s, ~1.4 GB.
