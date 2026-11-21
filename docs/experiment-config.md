@@ -346,7 +346,8 @@ himalaya serve [--port N] [--host H]
     can create the first experiment through the funnel.
 ```
 
-`-e` takes an id, a name or a path. When it is left out, `analyze` and `show`
+`-e` takes an id, a name or a path. A path matches the experiment's folder whether
+it is typed through a symlink or with a trailing slash. When it is left out, `analyze` and `show`
 use the only registered experiment and fail with a list if there are several.
 
 ## Further reading
