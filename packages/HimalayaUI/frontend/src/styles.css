@@ -45,10 +45,10 @@
   --color-phase-hexagonal: oklch(0.530 0.140 130);
   --color-phase-lamellar: oklch(0.440 0.090 100);
   --color-phase-square: oklch(0.550 0.020 250);
-  --color-tag-wash:     oklch(0.935 0.022 280);
-  --color-tag-ink:      oklch(0.420 0.070 280);
-  --color-tag-std-wash: oklch(0.935 0.028 240);
-  --color-tag-std-ink:  oklch(0.370 0.085 240);
+  --color-tag-wash:     oklch(0.935 0.028 280);
+  --color-tag-ink:      oklch(0.360 0.075 280);
+  --color-tag-std-wash: oklch(0.935 0.030 240);
+  --color-tag-std-ink:  oklch(0.360 0.085 240);
   /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
      Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
      `border-hair`/`text-print-accent` utilities. `--color-accent` above is now
@@ -416,10 +416,10 @@
     --color-phase-hexagonal: oklch(0.760 0.140 130);
     --color-phase-lamellar: oklch(0.700 0.090 100);
     --color-phase-square: oklch(0.840 0.020 250);
-    --color-tag-wash:     oklch(0.280 0.030 280);
-    --color-tag-ink:      oklch(0.820 0.060 280);
-    --color-tag-std-wash: oklch(0.300 0.035 240);
-    --color-tag-std-ink:  oklch(0.860 0.055 240);
+    --color-tag-wash:     oklch(0.290 0.040 280);
+    --color-tag-ink:      oklch(0.880 0.055 280);
+    --color-tag-std-wash: oklch(0.290 0.042 240);
+    --color-tag-std-ink:  oklch(0.880 0.055 240);
     color-scheme: dark;
   }
 }
@@ -448,9 +448,9 @@
   --color-phase-hexagonal: oklch(0.760 0.140 130);
   --color-phase-lamellar: oklch(0.700 0.090 100);
   --color-phase-square: oklch(0.840 0.020 250);
-  --color-tag-wash:     oklch(0.280 0.030 280);
-  --color-tag-ink:      oklch(0.820 0.060 280);
-  --color-tag-std-wash: oklch(0.300 0.035 240);
-  --color-tag-std-ink:  oklch(0.860 0.055 240);
+  --color-tag-wash:     oklch(0.290 0.040 280);
+  --color-tag-ink:      oklch(0.880 0.055 280);
+  --color-tag-std-wash: oklch(0.290 0.042 240);
+  --color-tag-std-ink:  oklch(0.880 0.055 240);
   color-scheme: dark;
 }

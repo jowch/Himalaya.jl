@@ -20,11 +20,12 @@ const MORE_WIDTH = 44;
 interface ChipProps {
   tag: SampleLabel;
   editable: boolean;
+  measure?: boolean;
   onAdd?: (label: string) => void;
   onRemove?: (label: string) => void;
 }
 
-function Chip({ tag, editable, onAdd, onRemove }: ChipProps): JSX.Element {
+function Chip({ tag, editable, measure = false, onAdd, onRemove }: ChipProps): JSX.Element {
   const suggested = tag.state === "suggested";
   const standard = standardTag(tag.label) !== undefined;
   const name = displayTag(tag.label);
@@ -36,9 +37,9 @@ function Chip({ tag, editable, onAdd, onRemove }: ChipProps): JSX.Element {
       : "border-transparent bg-tag-wash";
   return (
     <span
-      data-tag={tag.label}
-      data-tag-state={tag.state}
-      data-tag-standard={standard ? "true" : undefined}
+      data-tag={measure ? undefined : tag.label}
+      data-tag-state={measure ? undefined : tag.state}
+      data-tag-standard={standard && !measure ? "true" : undefined}
       className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border pb-0 pl-2.5 pr-1 pt-1 text-caption ${tone} ${fill}`}
     >
       {suggested && editable && onAdd ? (
@@ -96,6 +97,7 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
     if (typeof ResizeObserver === "undefined" || !box.current) return;
     const ro = new ResizeObserver(measure);
     ro.observe(box.current);
+    if (ruler.current) ro.observe(ruler.current);
     return () => ro.disconnect();
   }, [tags, editable]);
 
@@ -135,10 +137,12 @@ export function TagRow({ tags, vocabulary, editable, adding, onOpenAdd, onCloseA
           </button>
         )}
       </div>
-      <div ref={ruler} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex gap-1.5" data-testid="workspace-tag-ruler">
-        {tags.map((t) => (
-          <Chip key={t.id} tag={t} editable={editable} />
-        ))}
+      <div aria-hidden="true" className="pointer-events-none invisible absolute inset-0 overflow-hidden">
+        <div ref={ruler} className="absolute left-0 top-0 flex w-max gap-1.5" data-testid="workspace-tag-ruler">
+          {tags.map((t) => (
+            <Chip key={t.id} tag={t} editable={editable} measure />
+          ))}
+        </div>
       </div>
       {editable && (
         <button

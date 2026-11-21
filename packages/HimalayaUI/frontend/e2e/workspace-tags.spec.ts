@@ -65,6 +65,8 @@ test("many tags stay on one line, every tag is reachable, and the content below 
   const box = await chips.boundingBox();
   for (const r of rights) expect(r).toBeLessThanOrEqual(box!.x + box!.width + 0.5);
   expect(row!.height).toBeLessThan(40);
+  expect(await page.locator("main").evaluate((m) => m.scrollWidth - m.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await page.locator("[data-tag]").count()).toBe(await chips.locator("[data-tag]").count());
 
   const shown = await chips.locator("[data-tag]").evaluateAll((els) => els.map((e) => e.getAttribute("data-tag")));
   await more.click();

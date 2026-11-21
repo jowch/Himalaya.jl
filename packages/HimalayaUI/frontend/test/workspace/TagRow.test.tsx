@@ -27,7 +27,7 @@ function renderRow(onAdd = vi.fn(), onRemove = vi.fn()): void {
 describe("TagRow overflow", () => {
   beforeEach(() => {
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
-      return this.hasAttribute("data-tag") ? 60 : 0;
+      return this.parentElement?.dataset.testid === "workspace-tag-ruler" ? 60 : 0;
     });
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
       return this.dataset.testid === "workspace-tag-chips" ? 200 : 0;
