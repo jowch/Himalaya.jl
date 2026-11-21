@@ -164,6 +164,7 @@ export function WorkspacePage(): JSX.Element {
   const exposureList: Exposure[] = useMemo(() => exposures.data ?? [], [exposures.data]);
   const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
 
+  const beamOff = exposure?.incident_monitor != null && exposure.incident_monitor <= 0;
   const trace = useTrace(exposure?.id);
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
@@ -604,7 +605,7 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard>
+              <PlotCard {...(beamOff ? { notice: "I₀ read 0 on this frame, so the beam was likely off." } : {})}>
                 <WorkspacePlot
                   trace={trace.data}
                   {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}

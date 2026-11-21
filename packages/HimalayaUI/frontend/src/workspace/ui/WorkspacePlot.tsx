@@ -125,8 +125,16 @@ export function WorkspacePlot({
     );
   }
 
-  if (!trace || trace.q.length < 2) {
+  if (!trace) {
     return <div className="rounded-sm bg-paper-sunk" style={{ height }} data-testid="workspace-trace-empty" />;
+  }
+
+  if (trace.q.length < 2) {
+    return (
+      <div className="flex items-center justify-center rounded-sm bg-paper-sunk text-base text-ink-soft" style={{ height }} data-testid="workspace-trace-empty">
+        This frame's trace has no points.
+      </div>
+    );
   }
 
   const xExtent = positiveExtent(trace.q);

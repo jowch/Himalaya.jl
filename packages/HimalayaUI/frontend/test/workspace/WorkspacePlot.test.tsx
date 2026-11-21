@@ -7,6 +7,13 @@ import { SubtractionStrip } from "../../src/workspace/ui/SubtractionStrip";
 const trace = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [10, 50, 8, 6, 5], sigma: [0, 0, 0, 0, 0] };
 
 describe("WorkspacePlot", () => {
+  it("says so when a frame's trace has no points, but stays quiet while it loads", () => {
+    const { rerender } = render(<WorkspacePlot trace={undefined} peaks={[]} combs={[]} />);
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("");
+    rerender(<WorkspacePlot trace={{ q: [], I: [], sigma: [] } as never} peaks={[]} combs={[]} />);
+    expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("This frame's trace has no points.");
+  });
+
   it("double-click does not reset the zoom", () => {
     const onXDomain = vi.fn();
     render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} xDomain={[0.1, 0.2]} onXDomain={onXDomain} />);

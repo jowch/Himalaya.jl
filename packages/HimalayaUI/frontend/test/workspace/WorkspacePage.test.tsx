@@ -305,6 +305,19 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
+  it("says the beam was likely off when the shown frame's I₀ read 0", () => {
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: 0 })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent("I₀ read 0 on this frame, so the beam was likely off.");
+    fireEvent.click(within(screen.getByTestId("workspace-exposures")).getByRole("button", { name: "Frame 1" }));
+    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
+  });
+
+  it("says nothing about the beam when I₀ is unknown", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
+  });
+
   it("opens on the representative frame", () => {
     renderAt("/experiments/1/workspace/10");
     expect(currentFrame()).toBe("Frame 2");
