@@ -4,7 +4,7 @@ import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed
 import { peakList } from "../fixtures/peaks";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
-  return { id, experiment_id: 1, name: `S${id}`, notes: null, tags: [], q_units: "A^-1", ...over };
+  return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", ...over };
 }
 
 function index(id: number, phase: string, score: number | null): IndexEntry {
@@ -17,7 +17,7 @@ function index(id: number, phase: string, score: number | null): IndexEntry {
 function exposure(id: number, over: Partial<Exposure> = {}): Exposure {
   return {
     id, sample_id: 1, filename: `f${id}.tif`, kind: "file", selected: false, status: null,
-    image_path: "x.tif", image_version: "v1", tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
+    image_path: "x.tif", image_version: "v1", sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
   };
 }
 

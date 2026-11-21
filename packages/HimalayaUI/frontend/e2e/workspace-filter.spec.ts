@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 
 const SAMPLES = ["JC001", "JC002", "JC003", "BUF001"].map((name, i) => ({
   id: 40 + i, experiment_id: 17, display_name: name, name,
-  notes: null, tags: [], q_units: "A-1",
+  notes: null, q_units: "A-1",
 }));
 
 test.beforeEach(async ({ page }) => {

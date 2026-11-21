@@ -31,8 +31,8 @@ describe("label mutations", () => {
   it("routes both the outbound op and the echo back to the label mutators", () => {
     expect(resolveMutator({ kind: "add_label", payload: {} })).toBe(addLabelMutator);
     expect(resolveMutator({ kind: "remove_label", payload: {} })).toBe(removeLabelMutator);
-    expect(resolveMutatorForEvent("label_added", "sample")).toBe(addLabelMutator);
-    expect(resolveMutatorForEvent("label_removed", "sample")).toBe(removeLabelMutator);
+    expect(resolveMutatorForEvent("label_added")).toBe(addLabelMutator);
+    expect(resolveMutatorForEvent("label_removed")).toBe(removeLabelMutator);
   });
 
   it("adding shows the tag at once and rolls back cleanly", () => {

@@ -285,17 +285,6 @@ good / bad / maybe rating. The current Index page auto-picks the first
 exposure by id; this page would let the user curate which exposure the
 analysis runs on.
 
-### Tag editing — known gaps
-
-A full tag-editing UI now exists (`TagEditor`, `TagList`, `TagPill`,
-`TagSuggest` primitives + the `ManageTagsModal` composite; routes nested
-under `routes_samples.jl`). The remaining work is coherence + bug-fixes
-across the three surfaces it appears on:
-
-- **Modal add-row ignores Enter (A1).** In `ManageTagsModal` the `onCommit`
-  on the key/value `TagSuggest` fields only updates local state — it never
-  calls `handleAdd`; the user must click **Add**. Enter should commit.
-
 ### Stale-indices banner
 
 Detect when peak edits have happened since the last reanalysis and surface
@@ -317,7 +306,7 @@ CSV/JSON.
 
 ### Cross-experiment sample comparison
 
-Query `sample_tags` and analysis results across multiple experiment
+Query sample labels and analysis results across multiple experiment
 databases to compare samples with similar compositions (e.g., same
 lipid/peptide system across beamtimes). The SQLite-per-experiment schema
 is migration-friendly: a thin aggregation layer can open multiple DBs and

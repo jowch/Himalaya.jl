@@ -22,7 +22,7 @@ describe("tag colour mutations", () => {
 
   it("routes the outbound op and its echo to the colour mutator", () => {
     expect(resolveMutator({ kind: "set_tag_color", payload: {} })).toBe(setTagColorMutator);
-    expect(resolveMutatorForEvent("tag_color_set", "tag")).toBe(setTagColorMutator);
+    expect(resolveMutatorForEvent("tag_color_set")).toBe(setTagColorMutator);
   });
 
   it("recolours at once, matching the name without case, and rolls back cleanly", () => {

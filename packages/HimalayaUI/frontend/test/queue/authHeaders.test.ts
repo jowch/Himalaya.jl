@@ -33,9 +33,6 @@ import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
-  addSampleTagMutator, removeSampleTagMutator,
-  addCorpusSampleTagMutator, removeCorpusSampleTagMutator,
-  addExposureTagMutator, removeExposureTagMutator,
   setExposureStatusMutator, selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
 
@@ -171,54 +168,6 @@ const SPECS: Spec[] = [
       { ...FLAT_BASE, kind: "update_sample",
         payload: { sampleId: 10 },
         sampleId: 10, experimentId: 1, display_name: "x" } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "addSampleTag",
-    run: (qc) => addSampleTagMutator.request(
-      { ...FLAT_BASE, kind: "add_tag",
-        payload: { key: "k", value: "v" },
-        sampleId: 10, experimentId: 1, key: "k", value: "v" } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "removeSampleTag",
-    run: (qc) => removeSampleTagMutator.request(
-      { ...FLAT_BASE, kind: "remove_tag",
-        payload: { tagId: 1 },
-        sampleId: 10, experimentId: 1, tagId: 1 } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "addCorpusSampleTag",
-    run: (qc) => addCorpusSampleTagMutator.request(
-      { ...FLAT_BASE, kind: "add_tag",
-        payload: { key: "k", value: "v" },
-        sampleId: 10, key: "k", value: "v" } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "removeCorpusSampleTag",
-    run: (qc) => removeCorpusSampleTagMutator.request(
-      { ...FLAT_BASE, kind: "remove_tag",
-        payload: { tagId: 1 },
-        sampleId: 10, tagId: 1 } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "addExposureTag",
-    run: (qc) => addExposureTagMutator.request(
-      { ...FLAT_BASE, kind: "add_tag",
-        payload: { key: "k", value: "v" },
-        sampleId: 1, exposureId: 5, key: "k", value: "v" } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "removeExposureTag",
-    run: (qc) => removeExposureTagMutator.request(
-      { ...FLAT_BASE, kind: "remove_tag",
-        payload: { tagId: 99 },
-        sampleId: 1, exposureId: 5, tagId: 99 } as any,
       new AbortController().signal),
   },
   {

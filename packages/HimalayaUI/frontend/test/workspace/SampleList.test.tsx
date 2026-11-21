@@ -18,3 +18,14 @@ describe("SampleList filter keys", () => {
     expect(onPick).toHaveBeenCalledWith(1);
   });
 });
+
+describe("SampleList weights", () => {
+  it("sets only the current sample's name in semibold, so the cursor row stands out", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(
+      <SampleList samples={[sample(1, "JC001"), sample(2, "JC002")]} currentId={2} filter="" onFilter={() => {}} onPick={() => {}} />,
+    );
+    expect(screen.getByRole("button", { name: /JC002/ }).className).toMatch(/\bfont-semibold\b/);
+    expect(screen.getByRole("button", { name: /JC001/ }).className).not.toMatch(/\bfont-semibold\b/);
+  });
+});
