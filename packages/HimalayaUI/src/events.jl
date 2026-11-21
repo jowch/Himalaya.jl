@@ -291,6 +291,13 @@ events emitted from `analyze_exposure!`.
 """
 _system_request() = HTTP.Request("INTERNAL", "/_system", Pair{String,String}[], UInt8[])
 
+const RETIRED_EVENT_KINDS = (
+    "comparison_created", "comparison_deleted", "comparison_pinned",
+    "comparison_submitted", "comparison_unpinned",
+    "series_created", "series_deleted", "series_pinned", "series_plate_committed",
+    "series_recipe_updated", "series_unpinned",
+)
+
 """
 Dispatcher that updates materialized views based on event kind.
 Currently a no-op for most events; populated as routes migrate to apply_event!.
@@ -302,13 +309,6 @@ see during `rebuild_views_from_log!`. This eliminates the Symbol-key vs
 String-key footgun: `JSON3.Object` supports both `obj.q` and `obj[:q]` /
 `obj["q"]`. Branch code accesses fields uniformly via `payload.q` style.
 """
-const RETIRED_EVENT_KINDS = (
-    "comparison_created", "comparison_deleted", "comparison_pinned",
-    "comparison_submitted", "comparison_unpinned",
-    "series_created", "series_deleted", "series_pinned", "series_plate_committed",
-    "series_recipe_updated", "series_unpinned",
-)
-
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # R4.2 dispatcher branches — one per view-producing curation kind.
     # All writes happen inside the transaction opened by apply_event!.
