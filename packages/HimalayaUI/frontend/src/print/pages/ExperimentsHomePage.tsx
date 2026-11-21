@@ -15,10 +15,10 @@ import type { Experiment } from "../../api";
 
 function stateChip(e: Experiment): { tone: NoticePillTone; label: string } {
   if (e.ingest_status === "scanning" || e.ingest_status === "analyzing") {
-    return { tone: "scanning", label: "scanning…" };
+    return { tone: "scanning", label: "Scanning…" };
   }
-  if (e.ingest_status === "failed") return { tone: "warning", label: "last ingest failed" };
-  return { tone: "success", label: "up to date" };
+  if (e.ingest_status === "failed") return { tone: "warning", label: "Last ingest failed" };
+  return { tone: "success", label: "Up to date" };
 }
 
 // ─── Year grouping ───────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ export function ExperimentsHomePage(): JSX.Element {
                             <span className="font-mono text-ink">{stats.samples}</span>
                             {" samples · "}
                             <span className="font-mono text-ink">{stats.exposures}</span>
-                            {" exp · "}
+                            {" exposures · "}
                             <span className="font-mono text-ink">{stats.loads}</span>
                             {" loads"}
                           </div>
