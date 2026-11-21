@@ -7,9 +7,10 @@ interface Props {
   children: ReactNode;
   testId?: string;
   closeKeys?: readonly string[];
+  onKey?: (key: string) => boolean;
 }
 
-export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape"] }: Props): JSX.Element {
+export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape"], onKey }: Props): JSX.Element {
   const panel = useRef<HTMLDivElement | null>(null);
   useFocusTrap(panel, true);
   return (
@@ -32,6 +33,8 @@ export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape
           if (closeKeys.includes(e.key)) {
             e.preventDefault();
             onClose();
+          } else if (!e.metaKey && !e.ctrlKey && !e.altKey && onKey?.(e.key)) {
+            e.preventDefault();
           }
         }}
       >

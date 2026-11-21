@@ -67,7 +67,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
         { keys: ["X"], what: "Drop or restore the exposure" },
-        { keys: ["Space"], what: "Enlarge its detector image" },
+        { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
     {
@@ -497,8 +497,17 @@ export function WorkspacePage(): JSX.Element {
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
-          {bigOpen && exposure && imageUrl(exposure, false) && (
-            <DetectorOverlay src={imageUrl(exposure, false)!} caption={`${exposure.filename ?? `Exposure ${exposure.id}`} · Esc to close`} onClose={() => setBigOpen(false)} />
+          {bigOpen && exposure && (
+            <DetectorOverlay
+              exposures={exposureList}
+              currentId={exposure.id}
+              onStep={(dir) => {
+                const eid = stepExposure(exposureList, exposure.id, dir);
+                if (eid !== undefined) setExposureId(eid);
+              }}
+              onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
+              onClose={() => setBigOpen(false)}
+            />
           )}
           {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
         </>

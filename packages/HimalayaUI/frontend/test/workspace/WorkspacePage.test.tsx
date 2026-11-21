@@ -192,13 +192,46 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: " " });
     const dialog = screen.getByRole("dialog", { name: "Detector image" });
-    expect(dialog.querySelector("img")!.getAttribute("src")).toBe("/api/exposures/101/image?v=7");
-    expect(dialog).toHaveTextContent("f101.dat · Esc to close");
+    expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("src")).toBe("/api/exposures/101/image?v=7");
+    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 2 · f101.dat");
     fireEvent.keyDown(dialog, { key: " " });
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
     fireEvent.keyDown(window, { key: " " });
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+  });
+
+  it("flips through frames inside the enlarged view and drops one without closing it", () => {
+    state.exposures = [
+      exposure(100, { image_path: "/a.tif" }),
+      exposure(101, { selected: true, image_path: "/b.tif" }),
+      exposure(102, { image_path: "/c.tif" }),
+    ];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    const dialog = screen.getByRole("dialog", { name: "Detector image" });
+    expect(dialog.querySelectorAll("img")).toHaveLength(3);
+    const caption = screen.getByTestId("workspace-detector-caption");
+    expect(caption).toHaveTextContent("Frame 2 of 3");
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    expect(caption).toHaveTextContent("Frame 3 of 3 · f102.dat");
+    expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("data-exposure-id")).toBe("102");
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    expect(caption).toHaveTextContent("Frame 1 of 3");
+    fireEvent.keyDown(dialog, { key: "x" });
+    expect(calls.filter((c) => c.hook === "status").map((c) => c.arg)).toEqual([{ exposureId: 100, status: "rejected" }]);
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+    expect(currentFrame()).toBe("Frame 1");
+  });
+
+  it("does not drop from the enlarged view before a user is set", () => {
+    state.username = undefined;
+    state.exposures = [exposure(100, { selected: true, image_path: "/a.tif" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: "x" });
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
   });
 
   it("Space does nothing on a frame without a detector image", () => {
