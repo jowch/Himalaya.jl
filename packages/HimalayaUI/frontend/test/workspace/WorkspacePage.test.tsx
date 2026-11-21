@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, TagColorEntry, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
@@ -30,7 +30,7 @@ const state = {
   bridges: [] as SampleBridge[],
   labels: [] as SampleLabel[],
   problems: { ingest_error: null as string | null, exposures: [] as ProblemExposure[] },
-  tagColors: [] as TagColorEntry[],
+  labelColors: [] as LabelColorEntry[],
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
 };
@@ -68,7 +68,7 @@ const editOps = {
   deleteIndex: editOp("deleteIndex"),
   addLabel: editOp("addLabel"),
   removeLabel: editOp("removeLabel"),
-  setTagColor: editOp("setTagColor"),
+  setLabelColor: editOp("setLabelColor"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
   read: {
@@ -119,8 +119,8 @@ vi.mock("../../src/queries", () => ({
   useLabels: () => ({ data: state.labels }),
   useAddLabel: recorder("addLabel"),
   useRemoveLabel: recorder("removeLabel"),
-  useTagColors: () => ({ data: state.tagColors }),
-  useSetTagColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setTagColor", boundTo: 0, arg }) }),
+  useLabelColors: () => ({ data: state.labelColors }),
+  useSetLabelColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setLabelColor", boundTo: 0, arg }) }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
@@ -257,7 +257,7 @@ beforeEach(() => {
   state.bridges = [];
   state.labels = [];
   state.problems = { ingest_error: null, exposures: [] };
-  state.tagColors = [];
+  state.labelColors = [];
   state.ingest = undefined;
   state.rescanError = false;
   server.indices = new Map();
@@ -550,7 +550,7 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it("J, L and R are no longer shortcuts", () => {
+  it("J and R are no longer shortcuts", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -558,7 +558,6 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("dialog").querySelector("[data-sample-id='11']")!);
     expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "j" });
-    fireEvent.keyDown(window, { key: "l" });
     fireEvent.keyDown(window, { key: "r" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
     expect(currentView()).toBe("Log");
@@ -847,7 +846,7 @@ describe("WorkspacePage", () => {
     it("undoes removing a label from the label row", async () => {
       state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "user" }];
       renderAt("/experiments/1/workspace/10");
-      fireEvent.click(screen.getByRole("button", { name: "Remove tag Buffer" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove label Buffer" }));
       expect(calls.some((c) => c.hook === "removeLabel")).toBe(true);
       state.labels = [];
       await undo();
@@ -857,7 +856,7 @@ describe("WorkspacePage", () => {
     it("refuses to undo confirming a suggested label instead of deleting it", async () => {
       state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "suggested", source: "suggested" }];
       renderAt("/experiments/1/workspace/10");
-      fireEvent.click(screen.getByRole("button", { name: "Confirm tag Buffer" }));
+      fireEvent.click(screen.getByRole("button", { name: "Confirm label Buffer" }));
       state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "suggested" }];
       await undo();
       expect(ops()).toEqual([]);
@@ -965,53 +964,72 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("shows the sample's tags under its heading, with suggestions dashed and confirmed by a click", () => {
+  it("shows the sample's labels under its heading, with suggestions dashed and confirmed by a click", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
       { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
     ];
     renderAt("/experiments/1/workspace/10");
-    const row = screen.getByTestId("workspace-tags");
-    const chips = screen.getByTestId("workspace-tag-chips");
-    expect([...chips.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-state")])).toEqual([
+    const row = screen.getByTestId("workspace-labels");
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect([...chips.querySelectorAll("[data-label]")].map((c) => [c.getAttribute("data-label"), c.getAttribute("data-label-state")])).toEqual([
       ["37C", "confirmed"],
       ["buffer", "suggested"],
     ]);
-    const buffer = chips.querySelector<HTMLElement>("[data-tag='buffer']")!;
-    expect(buffer).toHaveAttribute("data-tag-standard", "true");
+    const buffer = chips.querySelector<HTMLElement>("[data-label='buffer']")!;
+    expect(buffer).toHaveAttribute("data-label-standard", "true");
     expect(within(buffer).getByText("Buffer")).toBeInTheDocument();
-    expect(within(chips.querySelector<HTMLElement>("[data-tag='37C']")!).queryByText(", suggested")).toBeNull();
-    expect(chips.querySelector("[data-tag='37C']")).not.toHaveAttribute("data-tag-standard");
-    fireEvent.click(within(row).getByRole("button", { name: "Confirm tag Buffer" }));
-    fireEvent.click(within(row).getByRole("button", { name: "Remove tag 37C" }));
+    expect(within(chips.querySelector<HTMLElement>("[data-label='37C']")!).queryByText(", suggested")).toBeNull();
+    expect(chips.querySelector("[data-label='37C']")).not.toHaveAttribute("data-label-standard");
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm label Buffer" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Remove label 37C" }));
     expect(calls).toEqual([
       { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } },
       { hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } },
     ]);
   });
 
-  it("the palette opens the tag picker, which suggests experiment tags and adds the pick on Enter", () => {
+  it("the palette opens the label picker, which suggests experiment labels and adds the pick on Enter", () => {
     state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Add tag to A1");
-    const picker = screen.getByRole("dialog", { name: "Add a tag" });
+    pickView("Add label to A1");
+    const picker = screen.getByRole("dialog", { name: "Add a label" });
     expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
-    const input = within(picker).getByLabelText("Tag name");
+    const input = within(picker).getByLabelText("Label name");
     fireEvent.change(input, { target: { value: "bufer" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.queryByRole("dialog", { name: "Add a tag" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
     expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
   });
 
-  it("a new tag needs the Create row, and Backspace in the empty picker removes the last confirmed tag, never a suggestion", () => {
+  it("L opens the label picker without typing the L, and Enter confirms a suggestion", () => {
+    state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "l" });
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "buf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+  });
+
+  it("L does nothing before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "L" });
+    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
+  });
+
+  it("a new label needs the Create row, and Backspace in the empty picker removes the last confirmed label, never a suggestion", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
     ];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.click(screen.getByRole("button", { name: "+ Tag" }));
-    const input = within(screen.getByRole("dialog", { name: "Add a tag" })).getByLabelText("Tag name");
+    fireEvent.click(screen.getByRole("button", { name: "+ Label L" }));
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
     fireEvent.keyDown(input, { key: "Backspace" });
     fireEvent.change(input, { target: { value: "heated" } });
     expect(screen.getByRole("button", { name: "Create “heated”" })).toBeInTheDocument();
@@ -1022,7 +1040,7 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("the sample filter matches tags as well as names", () => {
+  it("the sample filter matches labels as well as names", () => {
     state.labels = [{ id: 1, sample_id: 13, label: "empty capillary", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.change(screen.getByLabelText("Filter samples"), { target: { value: "capill" } });
@@ -1031,67 +1049,67 @@ describe("WorkspacePage", () => {
     expect(within(list).getByText("A4")).toBeInTheDocument();
   });
 
-  it("keeps the tag row mounted with no tags and no user, so the plot below never moves", () => {
+  it("keeps the label row mounted with no labels and no user, so the plot below never moves", () => {
     state.username = undefined;
     renderAt("/experiments/1/workspace/11");
-    const row = screen.getByTestId("workspace-tags");
-    expect(row.querySelector("[data-testid='workspace-tag-chips'] [data-tag]")).toBeNull();
+    const row = screen.getByTestId("workspace-labels");
+    expect(row.querySelector("[data-testid='workspace-label-chips'] [data-label]")).toBeNull();
   });
 
-  it("colours each tag from the shared map, built-ins blue and other tags violet by default", () => {
+  it("colours each label from the shared map, built-ins blue and other labels violet by default", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
       { id: 3, sample_id: 10, label: "retake", state: "suggested", source: "ingest" },
     ];
-    state.tagColors = [{ label: "RETAKE", color: "rose" }];
+    state.labelColors = [{ label: "RETAKE", color: "rose" }];
     renderAt("/experiments/1/workspace/10");
-    const chips = screen.getByTestId("workspace-tag-chips");
-    expect([...chips.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-color")])).toEqual([
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect([...chips.querySelectorAll("[data-label]")].map((c) => [c.getAttribute("data-label"), c.getAttribute("data-label-color")])).toEqual([
       ["37C", "violet"],
       ["buffer", "blue"],
       ["retake", "rose"],
     ]);
   });
 
-  it("right-clicking a tag opens its colour menu, and a pick sets the colour for that name", () => {
+  it("right-clicking a label opens its colour menu, and a pick sets the colour for that name", () => {
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.contextMenu(screen.getByTestId("workspace-tag-chips").querySelector("[data-tag='37C']")!);
-    const menu = screen.getByRole("dialog", { name: "Colour of tag 37C" });
+    fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+    const menu = screen.getByRole("dialog", { name: "Colour of label 37C" });
     expect(within(menu).getByRole("radio", { name: "Violet" })).toHaveAttribute("aria-checked", "true");
     expect(within(menu).queryByRole("button", { name: "Default colour" })).toBeNull();
     fireEvent.click(within(menu).getByRole("radio", { name: "Teal" }));
-    expect(screen.queryByRole("dialog", { name: "Colour of tag 37C" })).toBeNull();
-    expect(calls).toEqual([{ hook: "setTagColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
+    expect(screen.queryByRole("dialog", { name: "Colour of label 37C" })).toBeNull();
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
   });
 
-  it("the palette opens a tag's colour menu, which can reset a recoloured tag to its default", () => {
+  it("the palette opens a label's colour menu, which can reset a recoloured label to its default", () => {
     state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" }];
-    state.tagColors = [{ label: "buffer", color: "stone" }];
+    state.labelColors = [{ label: "buffer", color: "stone" }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Set colour of tag Buffer");
-    const menu = screen.getByRole("dialog", { name: "Colour of tag Buffer" });
+    pickView("Set colour of label Buffer");
+    const menu = screen.getByRole("dialog", { name: "Colour of label Buffer" });
     expect(within(menu).getByRole("radio", { name: "Stone" })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(within(menu).getByRole("button", { name: "Default colour" }));
-    expect(calls).toEqual([{ hook: "setTagColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
   });
 
   it("offers no colour menu before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.contextMenu(screen.getByTestId("workspace-tag-chips").querySelector("[data-tag='37C']")!);
-    expect(screen.queryByRole("dialog", { name: "Colour of tag 37C" })).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+    expect(screen.queryByRole("dialog", { name: "Colour of label 37C" })).toBeNull();
   });
 
-  it("offers no tag editing before a user is set", () => {
+  it("offers no label editing before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    const row = screen.getByTestId("workspace-tags");
+    const row = screen.getByTestId("workspace-labels");
     expect(within(row).queryAllByRole("button")).toHaveLength(0);
-    expect(row.querySelector("[data-tag='37C']")).not.toBeNull();
+    expect(row.querySelector("[data-label='37C']")).not.toBeNull();
   });
 
   it("filters the sample list by name", () => {

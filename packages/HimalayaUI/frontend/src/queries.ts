@@ -22,7 +22,7 @@ import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
-import { setTagColorMutator } from "./lib/queue/mutators/tagColors";
+import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -39,7 +39,7 @@ export const queryKeys = {
   problems:   (experimentId: number) => ["experiment", experimentId, "problems"] as const,
   folderPreview: (path: string) => ["folder-preview", path] as const,
   folderPreviews: ["folder-preview"] as const,
-  tagColors:  () => ["tag-colors"] as const,
+  labelColors:  () => ["label-colors"] as const,
   manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
     ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
@@ -133,13 +133,13 @@ export function useRemoveLabel(experimentId: number) {
   return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useTagColors() {
-  return useQuery({ queryKey: queryKeys.tagColors(), queryFn: () => api.listTagColors() });
+export function useLabelColors() {
+  return useQuery({ queryKey: queryKeys.labelColors(), queryFn: () => api.listLabelColors() });
 }
 
-export function useSetTagColor() {
+export function useSetLabelColor() {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(setTagColorMutator, { username, clientId: CLIENT_ID });
+  return useQueueMutation(setLabelColorMutator, { username, clientId: CLIENT_ID });
 }
 
 export function useSamples(experimentId: number) {
@@ -354,7 +354,7 @@ export interface EditOps {
   deleteIndex: (exposureId: number, indexId: number) => void;
   addLabel: (sampleId: number, label: string) => void;
   removeLabel: (sampleId: number, label: string) => void;
-  setTagColor: (label: string, color: api.TagColor | null) => void;
+  setLabelColor: (label: string, color: api.LabelColor | null) => void;
   bridge: (sampleId: number, toSampleId: number) => void;
   unbridge: (sampleId: number) => void;
   read: EditReads;
@@ -394,7 +394,7 @@ export function useEditOps(experimentId: number): EditOps {
   const labelScope = { ...who, experimentId };
   const addLabel = useQueueMutation(addLabelMutator, labelScope);
   const removeLabel = useQueueMutation(removeLabelMutator, labelScope);
-  const tagColor = useQueueMutation(setTagColorMutator, who);
+  const labelColor = useQueueMutation(setLabelColorMutator, who);
   const bridge = useQueueMutation(bridgeSamplesMutator, labelScope);
   const unbridge = useQueueMutation(unbridgeSampleMutator, labelScope);
   const fresh = <T,>(queryKey: readonly unknown[], queryFn: () => Promise<T>): Promise<T> =>
@@ -412,7 +412,7 @@ export function useEditOps(experimentId: number): EditOps {
     deleteIndex: (exposureId, indexId) => deleteIndex.mutateIn({ ...who, exposureId }, { indexId }),
     addLabel: (sampleId, label) => addLabel.mutate({ sampleId, label }),
     removeLabel: (sampleId, label) => removeLabel.mutate({ sampleId, label }),
-    setTagColor: (label, color) => tagColor.mutate({ label, color }),
+    setLabelColor: (label, color) => labelColor.mutate({ label, color }),
     bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),
     read: {

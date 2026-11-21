@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ComparePicker } from "../../src/workspace/ui/ComparePicker";
-import { STANDARD_TAGS } from "../../src/lib/labels";
+import { STANDARD_LABELS } from "../../src/lib/labels";
 import type { CorpusSample } from "../../src/api";
 
 const sample = (id: number, name: string) => ({ id, name, experiment_id: 1, notes: null, q_units: "A-1" }) as unknown as CorpusSample;
@@ -29,6 +29,6 @@ describe("ComparePicker", () => {
   it("uses the same role names as the backend's ingest suggestions", () => {
     const jl = readFileSync(resolve(__dirname, "../../../src/label_suggestions.jl"), "utf8");
     const roles = [...jl.matchAll(/^\s+"([^"]+)"\s+=>/gm)].map((m) => m[1]);
-    expect([...roles].sort()).toEqual([...STANDARD_TAGS].sort());
+    expect([...roles].sort()).toEqual([...STANDARD_LABELS].sort());
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Exposure, IndexEntry, TagColor } from "../api";
+import type { Exposure, IndexEntry, LabelColor } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -18,8 +18,8 @@ import {
   useRemoveLabel,
   useProblems,
   useDeleteExperiment,
-  useTagColors,
-  useSetTagColor,
+  useLabelColors,
+  useSetLabelColor,
   usePeaks,
   useFrameAssignments,
   useRemoveAssignmentPhase,
@@ -38,14 +38,14 @@ import {
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
   bridgeEntry, CANNOT_UNDO, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  tagColorEntry, tickEntry, unbridgeEntry, untickEntry,
+  labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayTag, labelsFor, sameLabel, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayLabel, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -83,7 +83,7 @@ import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
-import { TagRow } from "./ui/TagRow";
+import { LabelRow } from "./ui/LabelRow";
 import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
@@ -93,7 +93,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
         { keys: ["Z"], what: "Next unreviewed sample" },
-        { keys: ["/"], what: "Filter samples by name" },
+        { keys: ["/"], what: "Filter samples by name or label" },
       ],
     },
     {
@@ -110,6 +110,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
         { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice; Enter adds, Esc cancels" },
+        { keys: ["L"], what: "Label the sample, e.g. Buffer; Enter adds, Esc closes" },
       ],
     },
     {
@@ -203,13 +204,13 @@ export function WorkspacePage(): JSX.Element {
   );
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
-  const vocabulary = useMemo(() => tagVocabulary(labelList), [labelList]);
+  const vocabulary = useMemo(() => labelVocabulary(labelList), [labelList]);
   const addLabel = useAddLabel(experimentId);
   const removeLabel = useRemoveLabel(experimentId);
-  const [tagging, setTagging] = useState(false);
-  const tagColors = useTagColors();
-  const setTagColor = useSetTagColor();
-  const [coloringTag, setColoringTag] = useState<string | undefined>(undefined);
+  const [labeling, setLabeling] = useState(false);
+  const labelColors = useLabelColors();
+  const setLabelColor = useSetLabelColor();
+  const [coloringLabel, setColoringLabel] = useState<string | undefined>(undefined);
   const visible = useMemo(
     () => samples.filter((s) => sampleMatchesFilter(s.name, labelsFor(labelList, s.id), filter)),
     [samples, labelList, filter],
@@ -475,14 +476,14 @@ export function WorkspacePage(): JSX.Element {
   }, [samples, labelList]);
   const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
   useEffect(() => {
-    setTagging(false);
-    setColoringTag(undefined);
+    setLabeling(false);
+    setColoringLabel(undefined);
   }, [sampleId]);
-  const sampleTags = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
-  const openTagging = useCallback(() => {
+  const sampleLabels = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
+  const openLabeling = useCallback(() => {
     if (!username || sampleId === undefined) return;
-    setColoringTag(undefined);
-    setTagging(true);
+    setColoringLabel(undefined);
+    setLabeling(true);
   }, [username, sampleId]);
   const openBridge = useCallback(() => {
     if (username && sampleId !== undefined) setBridging(true);
@@ -528,22 +529,22 @@ export function WorkspacePage(): JSX.Element {
       (added ? addLabel : removeLabel).mutate({ sampleId, label: tag });
       const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
       history.record(labelEntry(ops, {
-        label: `${verb} label ${displayTag(tag)} on ${sample?.name ?? "this sample"}`,
+        label: `${verb} label ${displayLabel(tag)} on ${sample?.name ?? "this sample"}`,
         sampleId, exposureId: undefined, tag, added, prev,
       }));
     },
     [sampleId, sample?.name, labelList, addLabel, removeLabel, history, ops],
   );
-  const recolorTag = useCallback(
-    (tag: string, color: TagColor | null) => {
+  const recolorLabel = useCallback(
+    (tag: string, color: LabelColor | null) => {
       if (sampleId === undefined) return;
-      const prev = (tagColors.data ?? []).find((t) => sameLabel(t.label, tag))?.color ?? null;
-      setTagColor.mutate({ label: tag, color });
-      history.record(tagColorEntry(ops, {
-        label: `recoloured the label ${displayTag(tag)}`, sampleId, exposureId: undefined, tag, prev, next: color,
+      const prev = (labelColors.data ?? []).find((t) => sameLabel(t.label, tag))?.color ?? null;
+      setLabelColor.mutate({ label: tag, color });
+      history.record(labelColorEntry(ops, {
+        label: `recoloured the label ${displayLabel(tag)}`, sampleId, exposureId: undefined, tag, prev, next: color,
       }));
     },
-    [sampleId, tagColors.data, setTagColor, history, ops],
+    [sampleId, labelColors.data, setLabelColor, history, ops],
   );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
@@ -657,8 +658,8 @@ export function WorkspacePage(): JSX.Element {
         setHelpOpen(false);
         setPicking(false);
         setBridging(false);
-        setTagging(false);
-        setColoringTag(undefined);
+        setLabeling(false);
+        setColoringLabel(undefined);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -726,6 +727,11 @@ export function WorkspacePage(): JSX.Element {
         case "I":
           openCustom();
           break;
+        case "l":
+        case "L":
+          if (username && sample) openLabeling();
+          else handled = false;
+          break;
         case "?":
           setHelpOpen(true);
           break;
@@ -763,7 +769,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, applyHistory]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory]);
 
   const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
@@ -793,8 +799,8 @@ export function WorkspacePage(): JSX.Element {
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
     ...(username && sample
       ? [
-          { id: "tag", label: `Add tag to ${sample.name}`, run: openTagging },
-          ...sampleTags.map((t) => ({ id: `tag-color-${t.label}`, label: `Set colour of tag ${displayTag(t.label)}`, run: () => setColoringTag(t.label) })),
+          { id: "label", label: `Add label to ${sample.name}`, shortcut: "L", run: openLabeling },
+          ...sampleLabels.map((t) => ({ id: `label-color-${t.label}`, label: `Set colour of label ${displayLabel(t.label)}`, run: () => setColoringLabel(t.label) })),
           { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
           ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
         ]
@@ -863,24 +869,29 @@ export function WorkspacePage(): JSX.Element {
       main={
         sample ? (
           <>
-            <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
-            <TagRow
-              tags={sampleTags}
-              vocabulary={vocabulary}
-              editable={Boolean(username)}
-              adding={tagging}
-              onOpenAdd={openTagging}
-              onCloseAdd={() => setTagging(false)}
-              colors={tagColors.data ?? []}
-              coloring={coloringTag}
-              onOpenColor={(label) => {
-                setTagging(false);
-                setColoringTag(label);
-              }}
-              onCloseColor={() => setColoringTag(undefined)}
-              onSetColor={recolorTag}
-              onAdd={(label) => editLabel(label, true)}
-              onRemove={(label) => editLabel(label, false)}
+            <SampleHeading
+              name={sample.name}
+              meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
+              aside={
+                <LabelRow
+                  labels={sampleLabels}
+                  vocabulary={vocabulary}
+                  editable={Boolean(username)}
+                  adding={labeling}
+                  onOpenAdd={openLabeling}
+                  onCloseAdd={() => setLabeling(false)}
+                  colors={labelColors.data ?? []}
+                  coloring={coloringLabel}
+                  onOpenColor={(label) => {
+                    setLabeling(false);
+                    setColoringLabel(label);
+                  }}
+                  onCloseColor={() => setColoringLabel(undefined)}
+                  onSetColor={recolorLabel}
+                  onAdd={(label) => editLabel(label, true)}
+                  onRemove={(label) => editLabel(label, false)}
+                />
+              }
             />
             <div className="relative px-3.5 py-1">
               <CompareBar

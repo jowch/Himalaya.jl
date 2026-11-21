@@ -1,4 +1,4 @@
-import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, TagColor } from "../api";
+import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, LabelColor } from "../api";
 import type { EditOps } from "../queries";
 import { bridgedWith } from "../lib/bridges";
 import { sameLabel } from "../lib/labels";
@@ -201,18 +201,18 @@ export function labelEntry(
   };
 }
 
-export function tagColorEntry(
+export function labelColorEntry(
   ops: EditOps,
-  at: Where & { tag: string; prev: TagColor | null; next: TagColor | null },
+  at: Where & { tag: string; prev: LabelColor | null; next: LabelColor | null },
 ): UndoEntry {
   return {
     ...at,
     undo: async () => {
-      ops.setTagColor(at.tag, at.prev);
+      ops.setLabelColor(at.tag, at.prev);
       return 1;
     },
     redo: async () => {
-      ops.setTagColor(at.tag, at.next);
+      ops.setLabelColor(at.tag, at.next);
       return 1;
     },
   };
