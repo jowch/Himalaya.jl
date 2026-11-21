@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # e2e-mock-mode
 
-The mocked suite needs no backend and no server started by hand. `npm run e2e` builds the bundle and serves it with `vite preview` on `127.0.0.1:5173`, or reuses whatever already answers there outside CI. Every spec takes `test` from `e2e/fixtures.ts`, which answers any `/api` request the spec did not mock with a 501 and fails the test. A backend running on :8080 can't leak into the results, so there's no need to stop it.
+The mocked suite needs no backend and no server started by hand. `npm run e2e` builds this checkout's bundle and serves it with `vite preview` on `127.0.0.1:5191`, its own port, and never reuses a running server, so a demo or dev server on :5173 can't stand in for your code. Every spec takes `test` from `e2e/fixtures.ts`, which answers any `/api` request the spec did not mock with a 501 and fails the test. A backend running on :8080 can't leak into the results, so there's no need to stop it.
 
 ## Procedure
 

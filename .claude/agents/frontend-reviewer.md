@@ -54,7 +54,7 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 ### Testing conventions
 
 - **`data-testid`, `role`, or `data-*` attributes only** in Playwright and Vitest/RTL selectors. Never assert on Tailwind class strings — they change when styling evolves. Use `screen.getByText("X").closest("li")` + `toHaveAttribute` in RTL rather than `document.querySelector`.
-- **Playwright binds to `127.0.0.1:5173`**, not `localhost`. Tests hang for 60s if another process holds that port. If a live Julia backend is running on :8080, Playwright route mocks don't match URLs with query strings and the backend leaks through.
+- **Mocked Playwright binds to `127.0.0.1:5191`**, not `localhost`, and never reuses a running server. The run fails at startup if another process holds that port. If a live Julia backend is running on :8080, Playwright route mocks don't match URLs with query strings and the backend leaks through.
 
 ### Tailwind v4
 
