@@ -584,3 +584,17 @@ end
     @test length(spec[:peaks]) == 2
     @test String(spec[:status]) == "candidate"
 end
+
+@testset "the frontend's reflection indices match core phaseratios" begin
+    path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "phaseRatioIndices.json")
+    indices = JSON3.read(read(path, String))
+    phases = Dict("Pn3m" => Pn3m, "Im3m" => Im3m, "Ia3d" => Ia3d, "Fm3m" => Fm3m,
+                  "Fd3m" => Fd3m, "Lamellar" => Lamellar, "Hexagonal" => Hexagonal,
+                  "Square" => Square)
+    @test Set(String.(keys(indices))) == Set(keys(phases))
+    for (name, P) in phases
+        Ms = collect(Int, indices[Symbol(name)])
+        expected = P === Lamellar ? Float64.(Ms) : sqrt.(Ms)
+        @test isequal(length(Ms), length(phaseratios(P))) && expected ≈ phaseratios(P)
+    end
+end
