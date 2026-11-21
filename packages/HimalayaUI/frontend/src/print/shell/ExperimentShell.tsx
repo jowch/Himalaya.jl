@@ -18,28 +18,14 @@ import { effectiveIngestStatus } from "../../lib/ingestStatus";
 import { formatRelativeTime } from "../../lib/relativeTime";
 import { Dot } from "../ui/Dot";
 
-/**
- * ExperimentShell — the /experiments/:id layout route. Renders the experiment
- * page content (header + Outlet). T3.2: the top chrome (TopNav) is provided by
- * the outer AppShell — this is pure page content, not a chrome. The
- * Corpus|Configuration tab bar is retired (M3): Corpus is the experiment home
- * (the index route), and Configuration is reached via the ⚙ in the header.
- */
 export function ExperimentShell(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const expId = id ? Number(id) : 0;
   const navigate = useNavigate();
-  // The config view nests under this shell, so the ⚙ has no inverse. On config,
-  // turn it into a back-to-corpus control (the only way back, item 9).
   const onConfig = useLocation().pathname.endsWith("/config");
   const exp = useExperiment(expId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[expId]);
   const username = useAppState((s) => s.username);
-  // THIRD consumer of this ingestInFlight entry (GroupingReviewPage and
-  // ExperimentCorpusPage are the others). processed/total are PER-STAGE now, so a
-  // plain bar here would reset at every stage boundary -- and because
-  // ExperimentCorpusPage mounts as a nested route INSIDE this shell, a rescan
-  // would show the segmented bar with a resetting single-track bar right above it.
   const segments = deriveSegments(
     inFlight?.stage, inFlight?.processed ?? 0, inFlight?.total ?? 0);
 
@@ -86,12 +72,6 @@ export function ExperimentShell(): JSX.Element {
           // Caption names the STAGE so a per-stage count is not read as
           // whole-scan progress ("Processed 1100 / ~1100" then "0 / ~604").
           caption: isIngestStage(inFlight?.stage) ? stageLabel(inFlight.stage) : "Processed",
-          // Gate on stage-presence BEFORE total, exactly as the two sibling
-          // consumers do (ExperimentCorpusPage, GroupingReviewPage). Checking
-          // `total > 0` first conflates "this stage has nothing to do" with "no
-          // stage has reported yet": `ingest_started` carries processed=0,
-          // total=0 and NO stage, so the header read "done" while the bar below
-          // it sat at 0% for the whole of readdir plus the first 1% of discovery.
           value: !inFlight
             ? "\u2014"
             : !isIngestStage(inFlight.stage)
@@ -205,10 +185,10 @@ export function ExperimentShell(): JSX.Element {
             </Button>
             {onConfig ? (
               <IconButton
-                label="Back to corpus"
+                label="Back to workspace"
                 tone="ghost"
                 data-testid="experiment-config-back"
-                onClick={() => navigate(`/experiments/${expId}/corpus`)}
+                onClick={() => navigate(`/experiments/${expId}/workspace`)}
               >
                 ←
               </IconButton>

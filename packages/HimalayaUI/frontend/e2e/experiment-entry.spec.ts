@@ -1,19 +1,4 @@
-/**
- * E2E: ExperimentCorpusPage — mocked Playwright spec (Task 4.3).
- *
- * Exercises the `/experiments/:id/corpus` route and its §6.2 state machine:
- *   1. `clean` — ingest_status=complete + no grouping flags → SheetTable visible
- *      with one row per sample (header + N rows).
- *   2. `scanning` — inFlight.status=scanning → GroupingReviewPage rendered.
- *   3. `has-flags` — loads with flagged samples → banner + SheetTable.
- *   4. `failed` — ingest_status=failed → ScanFailedPage rendered.
- */
-
 import { test, expect, type Page } from "./fixtures";
-
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
 
 const EXPERIMENT_ID = 7;
 
@@ -26,9 +11,6 @@ function makeExperiment(ingest_status = "complete"): object {
     analysis_dir: "/analysis",
     manifest_path: null,
     created_at: "2026-01-01",
-    // Non-null so a `scanning` row renders the inline rescan ProgressBar
-    // (rescanning), not the initial-scan grouping-takeover redirect —
-    // last_scanned_at is null only before the first scan completes.
     last_scanned_at: "2026-01-01T10:00:00",
     ingest_status,
     stats: { loads: 1, samples: 3, exposures: 3, sessions: 1 },
@@ -82,7 +64,6 @@ function makeLoads(sampleCount: number, withFlag = false): object[] {
   ];
 }
 
-/** Seed localStorage so the tutorial and username prompts don't gate navigation. */
 async function seedState(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -92,10 +73,6 @@ async function seedState(page: Page): Promise<void> {
   });
 }
 
-/**
- * Register base API mocks for the experiment corpus route.
- * `mockExperiment(page, { id: 7, ingest_status: 'complete', samples: 3 })`
- */
 async function mockExperiment(
   page: Page,
   opts: { id: number; ingest_status: string; samples: number; withFlag?: boolean },
@@ -114,7 +91,6 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
   await page.route(`**/api/experiments/${opts.id}/loads`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(loads) }));
-  // Corpus-wide sample list (NavModal / SheetTable / SamplesPage may request it).
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
   for (const sample of loads.flatMap((l) => (l as { samples: { sample_id: number; exposures: { id: number; filename: string }[] }[] }).samples)) {
@@ -140,73 +116,60 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/series", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  // SSE endpoint — return an empty stream so the SSE hook doesn't hang.
   await page.route("**/api/events*", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
+  await page.route(`**/api/experiments/${opts.id}/bridges`, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  const q = Array.from({ length: 50 }, (_, i) => 0.01 + i * 0.006);
+  await page.route(/\/api\/exposures\/(\d+)\/trace$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ q, I: q.map((x) => 1 / x), sigma: q.map(() => 0.1) }) }));
+  await page.route(/\/api\/exposures\/(\d+)\/image/, (r) =>
+    r.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==", "base64") }));
+  await page.route(/\/api\/exposures\/(\d+)\/(peaks|indices)$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route(/\/api\/exposures\/(\d+)\/assignment$/, (r) => {
+    const id = Number(/exposures\/(\d+)\//.exec(r.request().url())![1]);
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ exposure_id: id, state: "null", members: [] }) });
+  });
 }
-
-// ---------------------------------------------------------------------------
-// Setup
-// ---------------------------------------------------------------------------
 
 test.beforeEach(async ({ page }) => {
   await seedState(page);
 });
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-test("experiment corpus shows the scoped sheet when clean", async ({ page }) => {
+test("opening a scanned experiment lands on its first sample in the workspace", async ({ page }) => {
   await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 3 });
-  await page.goto("/experiments/7/corpus");
-  await expect(page.getByRole("table")).toBeVisible();
-  await expect(page.getByRole("row")).toHaveCount(4); // header + 3
-  const kept = page.getByTestId("sample-table-row").filter({ hasText: "Sample 1" }).getByTestId("kept-cell");
-  await expect(kept.locator("[data-role='kept-count']")).toHaveText("1");
-  await expect(kept.locator("[data-role='kept-total']")).toHaveText(/^\D*2\D*$/);
+  await page.goto("/experiments/7");
+  await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
+  await expect(page.getByRole("heading", { level: 2, name: "Sample 1" })).toBeVisible();
+  await expect(page.getByTestId("workspace-notice")).toHaveCount(0);
 });
 
-test("experiment corpus shows the scoped sheet when complete with no flags", async ({ page }) => {
+test("an old corpus link opens the workspace", async ({ page }) => {
   await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 2 });
   await page.goto("/experiments/7/corpus");
-  await expect(page.getByRole("table")).toBeVisible();
-  await expect(page.getByRole("row")).toHaveCount(3); // header + 2
-  // The grouping-review banner now renders unconditionally when loads are
-  // known; with no flags it shows data-state="clear" ("Grouping looks settled.").
-  await expect(page.getByTestId("grouping-review-banner")).toHaveAttribute("data-state", "clear");
-  await expect(page.getByTestId("grouping-review-banner")).toContainText("Grouping looks settled");
+  await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
 });
 
-test("experiment corpus shows review banner when loads have flagged samples", async ({ page }) => {
+test("flagged grouping shows a notice in the sample pane that opens the review", async ({ page }) => {
   await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 3, withFlag: true });
-  await page.goto("/experiments/7/corpus");
-  // Sheet still visible.
-  await expect(page.getByRole("table")).toBeVisible();
-  // Banner appears above the sheet.
-  await expect(page.getByTestId("grouping-review-banner")).toBeVisible();
-  await expect(page.getByTestId("grouping-review-link")).toBeVisible();
+  await page.goto("/experiments/7");
+  const notice = page.getByTestId("workspace-notice");
+  await expect(notice).toContainText("1 sample needs a grouping check.");
+  await notice.getByRole("button", { name: "Review" }).click();
+  await expect(page).toHaveURL(/\/experiments\/7\/grouping/);
 });
 
-test("experiment corpus shows ScanFailedPage when ingest_status=failed", async ({ page }) => {
+test("a failed scan shows what did not parse instead of the workspace", async ({ page }) => {
   await mockExperiment(page, { id: 7, ingest_status: "failed", samples: 0 });
-  await page.goto("/experiments/7/corpus");
-  // The failed branch renders ScanFailedPage — the primary action is "Open Configuration".
+  await page.goto("/experiments/7");
   await expect(page.getByRole("button", { name: /Open Configuration/i })).toBeVisible();
   await expect(page.getByLabel("Unmatched files")).toContainText("HA_01_002.tif");
-  // The table must NOT be visible on the failed branch.
-  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/experiments\/7$/);
 });
 
-test("a live rescan SSE frame drives the corpus ProgressBar (6f)", async ({ page }) => {
-  // End-to-end seam: backend broadcast_progress! → /api/events frame →
-  // App.tsx ingest listener → ingestInFlight → corpus rescanning ProgressBar.
-  // The unit halves are covered separately; this ties the whole chain together.
+test("a live rescan SSE frame shows its progress in the workspace", async ({ page }) => {
   await mockExperiment(page, { id: 7, ingest_status: "scanning", samples: 3 });
-  // Override /api/events with a single rescan progress frame. EventSource parses
-  // it on connect and App.tsx's "curation" listener maps phase:"rescan" →
-  // analyzing. Registered AFTER mockExperiment so this handler wins (Playwright
-  // invokes the most-recently-added matching route first).
   await page.route("**/api/events*", (r) =>
     r.fulfill({
       status: 200,
@@ -215,11 +178,6 @@ test("a live rescan SSE frame drives the corpus ProgressBar (6f)", async ({ page
         'event: curation\n' +
         'data: {"kind":"ingest_progress","payload":{"experiment_id":7,"processed":5,"total":10,"phase":"rescan"}}\n\n',
     }));
-  await page.goto("/experiments/7/corpus");
-
-  const bar = page.getByTestId("live-ingest-slot").getByRole("progressbar");
-  await expect(bar).toBeVisible();
-  // The bar reflects the FRAME's processed/total, proving the SSE→UI wiring.
-  await expect(bar).toHaveAttribute("aria-valuenow", "5");
-  await expect(bar).toHaveAttribute("aria-valuemax", "10");
+  await page.goto("/experiments/7");
+  await expect(page.getByTestId("workspace-rescan")).toHaveText("Rescanning: 5 / 10");
 });

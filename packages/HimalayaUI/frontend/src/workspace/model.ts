@@ -14,6 +14,10 @@ export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase">
   return { kind: "unreviewed" };
 }
 
+export function firstUnreviewed<T extends Pick<CorpusSample, "assignment_state" | "phase">>(samples: readonly T[]): T | undefined {
+  return samples.find((s) => sampleStatus(s).kind === "unreviewed") ?? samples[0];
+}
+
 export function nextUnreviewed(
   samples: readonly CorpusSample[],
   currentId: number | undefined,
