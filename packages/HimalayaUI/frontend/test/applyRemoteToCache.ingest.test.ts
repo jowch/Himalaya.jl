@@ -61,6 +61,7 @@ describe("ingest_* cache arms (Phase E1)", () => {
       watch(queryKeys.peaks(12), () => { calls.otherPeaks += 1; return Promise.resolve([]); }),
     ];
     await vi.waitFor(() => expect(calls).toEqual({ trace: 1, peaks: 1, otherPeaks: 1 }));
+    await vi.waitFor(() => expect([queryKeys.trace(11), queryKeys.peaks(11), queryKeys.peaks(12)].map((k) => qc.getQueryState(k)?.fetchStatus)).toEqual(["idle", "idle", "idle"]));
     const run = (before: string | null, after: string) => ({
       kind: "analyze_run", entity_id: 11, entity_type: "exposure",
       payload: { trace_hash_before: before, trace_hash_after: after },
