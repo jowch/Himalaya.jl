@@ -57,7 +57,7 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
             >
               <Kbd>{i + 1}</Kbd>
               <PhaseChip phase={c.phase} variant="solid" />
-              <span className="text-ink">{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
+              <span className="text-ink-soft">{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
               <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
             </button>
           </li>

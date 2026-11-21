@@ -17,7 +17,7 @@ interface PhaseChipProps
    *  only because a `formFactor` chip carries no phase. */
   phase?: string;
   /** A form-factor classification: indexed-but-phaseless (a real, terminal
-   *  result), so it reads as a CHIP distinct from the grey "Unreviewed" text —
+   *  result), so it reads as a CHIP distinct from the grey "Not indexed" text —
    *  tinted NEUTRAL since it has no crystalline-phase hue. Ignores `phase`. */
   formFactor?: boolean;
   /** Optional coexisting phases beyond the dominant `phase`. When non-empty the

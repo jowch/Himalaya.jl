@@ -42,7 +42,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 ## Corpus (contact sheet)
 
-- **Route:** `/experiments/<id>/corpus`. Reached by clicking an experiment on the home page, or "← Corpus" in the workspace.
+- **Route:** `/experiments/<id>/corpus`. Reached by clicking an experiment on the home page, or the "Himalaya" link in the workspace header.
 - **Shows:** stats (loads, samples, exposures, span, sessions), a grouping banner with a "Review grouping →" link, and a `table "Samples"` with a row per sample: checkbox "Select sample", the sample name button, frame thumbnails ("Frame 1"…), kept count and phase ("Not indexed" until a human assigns one).
 - **Drive:**
   ```bash
@@ -60,7 +60,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 ## Workspace (three-pane triage)
 
-- **Route:** `/experiments/<id>/workspace/<sampleId>`; without a sample id it opens the first sample. Reached from the "Open workspace" button in the experiment header. It mounts outside the app shell, so there is no top nav; "← Corpus" in its header goes back.
+- **Route:** `/experiments/<id>/workspace/<sampleId>`; without a sample id it opens the first sample. Reached from the "Open workspace" button in the experiment header. It mounts outside the app shell, so there is no top nav; the "Himalaya" link in its header goes back to the corpus.
 - **Shows:** the sample list (`list` in `navigation "Samples"`, the current row has `aria-current`; each row ends in the phase, "Form factor", or an `img "Unreviewed"` ○), the progress "N of M reviewed", the trace plot, the frame thumbnails (`button "Frame N"` / `"Frame N, dropped"`, the shown one has `aria-current`), the ranked phase candidates (buttons with a keycap 1–9, `aria-pressed` when assigned; a custom index reads "Custom"), the `button "0 No phase (form factor)"` row (`aria-pressed` when the frame is marked form factor) and the exposure details. `?exposure=<id>` on the route opens that frame; old `/sample/:id` and `/sample/:id/loupe` links redirect here and keep it. Above the plot sits the compare bar: one chip per comparison sample (its name is a button, `aria-pressed` when it is the subtraction reference, then the scale applied as `×N`, or `×N matched` with `data-scale-source="matched"` when either frame lacks beam monitors; `button "Remove NAME"`), and "+ Compare". There are no view buttons and no view key: the palette (`Ctrl+K`, type "plot") lists Log, Linear, Log-log and q²I with ", current view" on the active one; the choice is remembered per browser. The q²I view labels its y axis "q²·I"; the others have no y title. Hovering the plot shows `[data-role="q-readout"]` ("q … Å⁻¹ · d … Å"); peak markers are `[data-role="peak-glyph"] polygon[data-peak-id]` in a row above the plot. With a subtraction reference, `workspace-subtraction` under the plot is labelled "minus NAME".
 - **Drive:**
   ```bash

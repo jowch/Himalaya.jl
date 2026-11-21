@@ -110,7 +110,7 @@ function exposureRows(e: Exposure): [string, string][] {
   if (e.exposure_time != null) rows.push(["Exposure", `${e.exposure_time.toFixed(1)} s`]);
   const i0 = e.incident_monitor;
   const i2 = e.transmitted_counts;
-  if (i0 != null) rows.push(["I₀", Math.round(i0).toLocaleString("en-US")]);
+  if (i0 != null) rows.push(["I₀", i0.toLocaleString("en-US", { maximumSignificantDigits: 4 })]);
   if (i2 != null) rows.push(["I signal", Math.round(i2).toLocaleString("en-US")]);
   return rows;
 }
@@ -433,6 +433,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         }
         case " ":
+          if (ev.repeat) break;
           if (exposure && imageUrl(exposure, false)) setBigOpen(true);
           else handled = false;
           break;
@@ -551,7 +552,7 @@ export function WorkspacePage(): JSX.Element {
               <PlotCard>
                 <WorkspacePlot
                   trace={trace.data}
-                  {...(trace.isError ? { onRetry: () => void trace.refetch() } : {})}
+                  {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}

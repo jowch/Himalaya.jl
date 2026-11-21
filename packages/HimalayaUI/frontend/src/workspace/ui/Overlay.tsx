@@ -32,7 +32,7 @@ export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape
         onKeyDown={(e) => {
           if (closeKeys.includes(e.key)) {
             e.preventDefault();
-            onClose();
+            if (!e.repeat) onClose();
           } else if (!e.metaKey && !e.ctrlKey && !e.altKey && onKey?.(e.key)) {
             e.preventDefault();
           }

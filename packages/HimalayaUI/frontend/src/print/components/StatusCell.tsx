@@ -5,18 +5,18 @@ export interface StatusCellProps {
   phase?: string | null;
   /** The representative exposure's durable assignment is `form_factor` (a real
    *  trace with no Bragg peaks to index). It carries no phase, but it is a
-   *  DELIBERATE classification — distinct from an un-triaged "Unreviewed"
+   *  DELIBERATE classification — distinct from an un-triaged "Not indexed"
    *  sample — so it gets its own terminal status rather than reading as
    *  unindexed (which would imply pending work). Outranks the door invite for
    *  the same reason; yields only to `noExposures`. */
   formFactor?: boolean;
   /** The sample has zero exposures: there is nothing to index, so the cell reads
-   *  a terminal "No exposures" status instead of the "Unreviewed" invitation
+   *  a terminal "No exposures" status instead of the "Not indexed" invitation
    *  (which would imply an action the empty sample can't take). SA-ZEROEXP. */
   noExposures?: boolean;
   /** This cell sits inside the Index door button (the sample is indexable).
    *  SA-RESCORE3 F9: an unindexed door then reads as an INVITATION ("Index" + a
-   *  → chevron) rather than a dead "Unreviewed" status, so the door visibly
+   *  → chevron) rather than a dead "Not indexed" status, so the door visibly
    *  affords its click instead of looking like a terminal label. An indexed door
    *  keeps the PhaseChip (already an obvious thing to open). */
   door?: boolean;
@@ -41,7 +41,7 @@ export function StatusCell({ phase, formFactor = false, noExposures = false, doo
         <PhaseChip phase={phase as string} />
       ) : formFactor ? (
         // A real, terminal classification (indexed, no crystalline phase) → a
-        // neutral CHIP, distinct from the grey "Unreviewed" text below.
+        // neutral CHIP, distinct from the grey "Not indexed" text below.
         <PhaseChip formFactor data-role="status-form-factor" />
       ) : door ? (
         <span data-role="status-index-invite" className="text-accent text-xs font-semibold whitespace-nowrap">

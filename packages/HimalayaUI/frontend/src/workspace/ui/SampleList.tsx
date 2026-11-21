@@ -47,8 +47,8 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick }: Pro
                 data-sample-id={s.id}
                 onClick={() => onPick(s.id)}
                 className={
-                  "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base text-ink " +
-                  (cur ? "bg-row-cursor font-semibold shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-paper-sunk")
+                  "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base font-semibold text-ink " +
+                  (cur ? "bg-row-cursor shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-paper-sunk")
                 }
               >
                 <span className="truncate">{s.name}</span>

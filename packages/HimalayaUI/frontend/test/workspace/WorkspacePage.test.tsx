@@ -17,6 +17,7 @@ const state = {
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
   traceError: false,
+  traceFetching: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
 };
@@ -33,7 +34,7 @@ vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19" } }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace, isError: state.traceError, refetch: traceRefetch }),
+  useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
   usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
@@ -154,6 +155,7 @@ beforeEach(() => {
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.trace = undefined;
   state.traceError = false;
+  state.traceFetching = false;
   state.peaks = [];
   state.compareTraces = new Map();
 });
@@ -185,6 +187,21 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("Couldn't load this sample")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(traceRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Retry while the retry is in flight", () => {
+    state.traceError = true;
+    state.traceFetching = true;
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("button", { name: "Retrying…" })).toBeDisabled();
+  });
+
+  it("holding Space opens the detector view once and does not close it", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, image_path: "/x.tif" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: " ", repeat: true });
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
   });
 
   it("Space enlarges the shown frame's detector image, and Space or Esc closes it", () => {
@@ -262,12 +279,18 @@ describe("WorkspacePage", () => {
 
   it("J, L and R are no longer shortcuts", () => {
     state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(screen.getByRole("dialog").querySelector("[data-sample-id='11']")!);
+    expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "j" });
     fireEvent.keyDown(window, { key: "l" });
     fireEvent.keyDown(window, { key: "r" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
     expect(currentView()).toBe("Log");
+    expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "A2, hidden" })).toBeNull();
   });
 
   it("arrow down steps to the next sample in the list", () => {
@@ -819,13 +842,13 @@ describe("WorkspacePage", () => {
   });
 
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1868810, transmitted_counts: 1532078 })];
+    state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
-    expect(text).toContain("I₀1,868,810");
-    expect(text).toContain("I signal1,532,078");
+    expect(text).toContain("I₀1.501");
+    expect(text).toContain("I signal7,798");
   });
 
   it("the indexing plot follows the custom index while it is open", () => {
