@@ -64,6 +64,10 @@ first_peak_q(::Type{Hexagonal}, a) = 4π / (sqrt(3) * a)       # a = rod spacing
 first_peak_q(::Type{P}, a) where {P<:Phase} = 2π * first(phaseratios(P)) / a  # cubic: 2π√N/a
 
 # (phase, lattice parameter Å, peak height relative to background at q1, peak sigma)
+# Heights sit in the real range (on SSRL lipid traces the strongest indexed peak
+# is a median ~0.4× its local background, ~8× at the 90th percentile) and widths
+# near it (half-maximum width ~0.003-0.010 Å⁻¹). The two-phase samples use the
+# sharp end, since broader peaks merge their neighbouring first reflections.
 const Component = Tuple{DataType,Float64,Float64,Float64}
 
 # A plausible lipid screen with known answers, mounted in two capillary holders
@@ -78,16 +82,16 @@ const Component = Tuple{DataType,Float64,Float64,Float64}
 # those samples are the "promote the second hypothesis by hand" cases.
 const SAMPLES = [
     # label            nscans components                                                  auto            note
-    ("MO_H2O",         3, Component[(Pn3m, 102.0, 40.0, 7e-4)],                          "Pn3m",           "monoolein in excess water, clean Pn3m"),
-    ("MO_H2O_37C",     2, Component[(Pn3m, 95.0, 35.0, 7e-4)],                           "Pn3m",           "Pn3m, lattice shrinks on heating"),
-    ("MO_PEG5",        2, Component[(Pn3m, 108.0, 30.0, 8e-4), (Im3m, 138.0, 14.0, 8e-4)], "Im3m",          "Pn3m + Im3m coexistence (Bonnet ratio ~1.28). Pn3m √6 overlaps Im3m √10, so auto_group keeps Im3m; Pn3m is the second hypothesis to promote by hand"),
-    ("MO_F127",        2, Component[(Im3m, 145.0, 30.0, 8e-4)],                          "Im3m",           "polymer-stabilised Im3m"),
-    ("MO_lowH2O",      2, Component[(Ia3d, 150.0, 35.0, 7e-4)],                          "Ia3d",           "low hydration Ia3d"),
-    ("DOPE_H2O",       3, Component[(Hexagonal, 74.0, 45.0, 9e-4)],                      "Hexagonal",      "DOPE inverse hexagonal"),
-    ("DOPC_H2O",       2, Component[(Lamellar, 63.0, 60.0, 1.0e-3)],                     "Lamellar",       "DOPC multilamellar"),
-    ("DOPC_DOPE_1to1", 2, Component[(Lamellar, 60.0, 20.0, 1.1e-3), (Hexagonal, 72.0, 22.0, 1.0e-3)], "Hexagonal+Lamellar", "La + HII coexistence"),
-    ("MO_AMP_weak",    2, Component[(Pn3m, 99.0, 4.0, 9e-4)],                            "none",           "weak Pn3m near the noise floor; too weak to index automatically"),
-    ("MO_AMP_10",      3, Component[(Pn3m, 96.0, 25.0, 9e-4), (Hexagonal, 53.0, 35.0, 1.0e-3)], "Hexagonal+Pn3m", "Pn3m drifting to HII under peptide"),
+    ("MO_H2O",         3, Component[(Pn3m, 102.0, 5.0, 2.1e-3)],                          "Pn3m",           "monoolein in excess water, clean Pn3m"),
+    ("MO_H2O_37C",     2, Component[(Pn3m, 95.0, 4.0, 2.1e-3)],                           "Pn3m",           "Pn3m, lattice shrinks on heating"),
+    ("MO_PEG5",        2, Component[(Pn3m, 108.0, 3.0, 1.6e-3), (Im3m, 138.0, 2.0, 1.6e-3)], "Im3m",          "Pn3m + Im3m coexistence (Bonnet ratio ~1.28). Pn3m √6 overlaps Im3m √10, so auto_group keeps Im3m; Pn3m is the second hypothesis to promote by hand"),
+    ("MO_F127",        2, Component[(Im3m, 145.0, 3.0, 2.4e-3)],                          "Im3m",           "polymer-stabilised Im3m"),
+    ("MO_lowH2O",      2, Component[(Ia3d, 150.0, 4.0, 2.1e-3)],                          "Ia3d",           "low hydration Ia3d"),
+    ("DOPE_H2O",       3, Component[(Hexagonal, 74.0, 6.0, 2.7e-3)],                      "Hexagonal",      "DOPE inverse hexagonal"),
+    ("DOPC_H2O",       2, Component[(Lamellar, 63.0, 8.0, 3.0e-3)],                     "Lamellar",       "DOPC multilamellar"),
+    ("DOPC_DOPE_1to1", 2, Component[(Lamellar, 60.0, 4.0, 1.3e-3), (Hexagonal, 72.0, 4.0, 1.3e-3)], "Hexagonal+Lamellar", "La + HII coexistence"),
+    ("MO_AMP_weak",    2, Component[(Pn3m, 99.0, 0.12, 2.7e-3)],                            "none",           "weak Pn3m near the noise floor; too weak to index automatically"),
+    ("MO_AMP_10",      3, Component[(Pn3m, 96.0, 6.0, 1.0e-3), (Hexagonal, 53.0, 6.0, 1.0e-3)], "Hexagonal+Pn3m", "Pn3m drifting to HII under peptide"),
     ("buffer_blank",   1, Component[],                                                   "none",           "buffer only, no Bragg peaks"),
     ("vesicles_ULV",   2, Component[],                                                   "none",           "unilamellar vesicles, form factor only"),
     ("leaked_capillary", 2, Component[],                                                 "none",           "capillary leaked before measurement; both scans are air, so the sample has no usable frame"),
@@ -112,15 +116,13 @@ const BAD_SCANS = Dict(
 
 # physics: beam off (shutter closed) leaves only the detector's dark floor, about
 # physics: 0.01 counts per pixel in 15 s, with no q dependence.
-# physics: a missed capillary leaves only air and slit (parasitic) scatter: a steep
-# physics: ~q^-4 rise into the beamstop over a faint air floor, about an eighth of the
-# physics: incoherent floor a filled capillary gives, so the frame is dark past the
-# physics: first few hundred pixels.
-const DARK_FLOOR = 0.2
-const AIR_FLOOR = 4.0
+# physics: a missed capillary leaves only air and slit (parasitic) scatter: half the
+# physics: low-q rise a filled capillary shows, over a faint air floor about an eighth
+# physics: of the solvent floor, so the frame is dim past the first hundred pixels.
+const DARK_FLOOR = 0.002
 bad_trace(kind::Symbol, model) =
     kind === :beam_off ? fill(DARK_FLOOR, length(Q)) :
-    kind === :missed   ? @.(0.002 * Q^-4 + AIR_FLOOR) :
+    kind === :missed   ? @.(AIR_FLOOR + 0.5 * SOLVENT_FLOOR * RISE * Q^-RISE_EXP) :
     kind === :flare    ? @.(FLARE_SAMPLE_FRACTION * model + flare_average(Q)) :
     error("unknown bad scan kind $kind")
 
@@ -134,7 +136,7 @@ bad_trace(kind::Symbol, model) =
 # physics: Gaussian arms of half-width w on a ring of radius r cover w*sqrt(pi)/(pi r).
 const FLARE_SAMPLE_FRACTION = 0.6
 const FLARE_HALF_WIDTH_PX = 12.0
-const FLARE_AMP = 160.0
+const FLARE_AMP = 90.0
 flare_streak(q) = FLARE_AMP * q^-2
 radius_px(q) = MEAN_DISTANCE_MM * 1e-3 * tan(2 * asin(q * WAVELENGTH_A / (4π))) / (PIXEL_UM * 1e-6)
 flare_average(q) = flare_streak(q) * FLARE_HALF_WIDTH_PX / (sqrt(π) * radius_px(q))
@@ -155,16 +157,23 @@ end
 # physics: the flat floor is solvent and capillary scatter. Every capillary holds
 # physics: the same buffer, so per unit transmitted flux the floor is the same in
 # physics: every sample and buffer_blank is exactly what a subtraction should remove.
-const SOLVENT_FLOOR = 30.0
+# physics: Over it sit a steep rise into the beamstop (parasitic and large-scale
+# physics: scatter) and a broad bilayer form-factor hump near 0.11 Å⁻¹. The shape
+# physics: follows the median of SSRL 1M lipid traces: about 100× the floor at
+# physics: q = 0.006, 2× at 0.03, a hump of about 2× at 0.12, flat past 0.25.
+const SOLVENT_FLOOR = 17.0
+const RISE, RISE_EXP = 4.5e-5, 2.8
+const HUMP, HUMP_Q, HUMP_W = 1.1, 0.11, 0.045
+# physics: a trace is the azimuthal mean per pixel in units where the solvent floor
+# physics: is ~100 counts per pixel on a 15 s frame, as on the beamline.
+const PX_PER_TRACE = 6.0
+const AIR_FLOOR = SOLVENT_FLOOR / 8
 
-"Power-law low-q upturn + flat incoherent floor, shaped like example_tot.dat."
+"Solvent floor × (1 + low-q rise + bilayer hump), with the rise and hump varying by sample."
 function background(rng, formfactor::Bool)
-    amp = 0.7 + 0.6 * rand(rng)
-    if formfactor
-        # broad bilayer form-factor bump around 0.1-0.2 Å⁻¹ on a q^-2 upturn
-        return @. amp * (3.0 * Q^-2.0 + 120 * exp(-((Q - 0.14) / 0.045)^2)) + SOLVENT_FLOOR
-    end
-    @. amp * (0.06 * Q^-3.2 + 1.2 * Q^-1.2) + SOLVENT_FLOOR
+    rise = RISE * exp(0.5 * randn(rng))
+    hump = (formfactor ? 3.0 : HUMP) * (0.6 + 0.8 * rand(rng))
+    @. SOLVENT_FLOOR * (1 + rise * Q^-RISE_EXP + hump * exp(-0.5 * ((Q - HUMP_Q) / HUMP_W)^2))
 end
 
 # physics: traces are written as raw detector counts, as the beamline's integration
@@ -218,11 +227,26 @@ function model_trace(rng, label, comps)
     I, peaks
 end
 
+# physics: each trace point averages every detector pixel in its q bin, so its
+# physics: counting error is sqrt(counts per pixel × pixels in the bin) over that
+# physics: total: about 0.3% at high q, as on the beamline. NPIX counts the live
+# physics: pixels per Q bin from the detector geometry (gaps included, which is close
+# physics: enough for noise).
+const NPIX = let
+    n = zeros(length(Q)); dq = Q[2] - Q[1]
+    for c in 1:DET_W, r in 1:DET_H
+        rm = hypot(c - 1 - BEAM_X, DET_H - r - BEAM_Y) * PIXEL_UM * 1e-6
+        q = 4π * sin(atan(rm / (MEAN_DISTANCE_MM * 1e-3)) / 2) / WAVELENGTH_A
+        k = round(Int, (q - Q[1]) / dq) + 1
+        1 <= k <= length(Q) && (n[k] += 1)
+    end
+    max.(n, 1.0)
+end
+
 "One noisy measurement of a model trace; σ is the noise actually applied."
 function measure(rng, I)
-    # counting noise: relative error grows where intensity is low
-    sig = @. 0.35 * (sqrt(I * 8.0) + 0.02 * I)
-    @. max(I + randn(rng) * sig, 1e-3), sig
+    sig = @. sqrt(max(I, 1e-6) / (PX_PER_TRACE * NPIX))
+    @. max(I + randn(rng) * sig, 1e-6), sig
 end
 
 # ---- detector frame ----------------------------------------------------------
@@ -266,21 +290,20 @@ function poisson(rng, λ)
     end
 end
 
+const BEAMSTOP_PX = 10.0
+
 function make_frame(rng, ring, qm, dx, dy, gaps, frame_scale; flare = false)
     counts = Matrix{Int32}(undef, DET_H, DET_W)
     for i in eachindex(qm)
         # radial profile -> 2D, scaled to plausible per-pixel counts for a 15 s exposure
         λ = interpq(qm[i], ring)
         flare && (λ += flare_streak(qm[i]) * exp(-(dy[i] / FLARE_HALF_WIDTH_PX)^2))
-        counts[i] = min(poisson(rng, λ * 0.05 * frame_scale), PILATUS_MAX_COUNTS)
+        counts[i] = min(poisson(rng, λ * PX_PER_TRACE * frame_scale), PILATUS_MAX_COUNTS)
         # beamstop + arm shadow (arm runs down-left from the beam centre)
         r = hypot(dx[i], dy[i])
-        if r < 18 || (abs(dy[i] - 0.55 * dx[i]) < 6 && dx[i] < 0)
+        if r < BEAMSTOP_PX || (abs(dy[i] - 0.55 * dx[i]) < 6 && dx[i] < 0)
             counts[i] = 0
         end
-    end
-    for k in rand(rng, 1:length(counts), 6)        # a few hot pixels
-        counts[k] = PILATUS_MAX_COUNTS
     end
     counts[gaps] .= -1
     counts

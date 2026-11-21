@@ -67,11 +67,10 @@ end
         end
     end
     # Floors, not exact counts (CLAUDE.md): 3 seeds × 24 unflared exposures.
-    # Measured 2026-11-20 over seeds 1-12: every call matched and the 48 empty
-    # scans all called "none", except MO_AMP_10 on 3 of 24 unflared scans (an
-    # extra Pn3m lattice claims HII's first peak). Of the 48 flares, 36 kept the
-    # sample's call and 12 lost a phase or every phase; none invented one.
-    # Raise deliberately.
+    # Measured 2026-11-21 over seeds 1-12 with the beamline-like noise and
+    # backgrounds: all 288 unflared calls matched and the 84 empty or bad scans all
+    # called "none". Of the 48 flares, 24 kept the sample's call and 24 lost a
+    # phase or every phase; none invented one. Raise deliberately.
     @test hits / total >= 0.95
     @test spurious <= 1
 end

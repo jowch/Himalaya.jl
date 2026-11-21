@@ -69,9 +69,9 @@ scratch/demo-experiment/
     (newest) and `MO_AMP_10` (newest): the beam clipped the capillary wall. The detector image
     shows a bright horizontal streak through the beamstop, perpendicular to the
     capillary. The sample's rings are still there at about 60% strength, and the
-    1D trace gains a low-q excess. Across seeds 1–12, 36 of 48 flares kept the
-    sample's auto call and 12 lost a phase (most often `MO_AMP_10`'s weaker
-    lattice), so a flare can mislead the auto call without looking wrong in 1D.
+    1D trace gains a low-q excess. Across seeds 1–12, 24 of 48 flares kept the
+    sample's auto call and 24 lost a phase or every phase, so a flare can mislead
+    the auto call without looking wrong in 1D.
     A flare must be dropped, and its auto call may lose phases but must not add
     one.
   - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
@@ -148,6 +148,29 @@ before navigating:
 await page.addInitScript(() => localStorage.setItem('himalaya-ui:state',
   JSON.stringify({ state: { username: 'demo', tutorialSeen: true }, version: 5 })));
 ```
+
+### How close it is to real data
+
+The generator is tuned to aggregate figures from SSRL Pilatus 1M lipid
+beamtimes, so images and traces load and index like real ones:
+
+| | Demo | Beamline |
+|---|---|---|
+| Counts per pixel, far from the beam | ~100 | ~100 |
+| Beamstop shadow radius | 10 px | ~10 px |
+| Trace scatter at high q | ~0.3% | ~0.35% |
+| Low-q rise (I(0.006) ÷ high-q floor) | ~100–200× | ~110× (median) |
+| Bilayer hump near 0.11 Å⁻¹ | ~2× the floor | ~2× (median) |
+| Strongest peak ÷ local background | 0.1–8 | median ~0.4, p90 ~8 |
+| Full detector PNG the image route sends | ~700 KB | ~850 KB |
+
+Two differences remain on purpose. The curated samples sit at the clear end of
+the real range, because each has a known answer `test_demo_data.jl` checks; most
+real frames are weaker, and over a third have no automatic peaks. And there are
+13 samples with 1–3 frames each, where a real experiment has hundreds of samples
+with a median of 4 frames. Performance work needs real scale and a real network
+(the app is usually reached through an SSH tunnel), so test it with the
+`--large` option below and a throttled browser.
 
 ### Driving it from an agent
 
