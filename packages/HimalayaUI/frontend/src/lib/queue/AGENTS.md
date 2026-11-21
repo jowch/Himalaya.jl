@@ -16,6 +16,7 @@ lib/queue/
 ├── queueMeta.ts          # per-mutation metadata
 ├── replacePlaceholder.ts # swap optimistic placeholder ids for real ids
 ├── assignmentDropped.ts  # dropped-assignment handling
+├── sampleCall.ts         # writes a sample's call to every frame's assignment cache
 ├── optimisticId.ts       # Negative placeholder ids
 ├── peakQTol.ts           # q-value tolerance helper
 ├── deferred.ts           # Deferred promise utility

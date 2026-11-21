@@ -64,6 +64,9 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([SAMPLE]) }));
   await page.route("**/api/users", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/samples/42/call", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ sample_id: 42, state: "indexed", phase: null, call_phases: [], members: [] }) }));
   await page.route("**/api/samples/42/exposures*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/events", (r) =>

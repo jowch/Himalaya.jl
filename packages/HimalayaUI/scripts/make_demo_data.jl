@@ -364,7 +364,7 @@ end
 csvq(s) = occursin(r"[,\"]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s
 
 const USAGE = "usage: make_demo_data.jl [out_dir] [--seed N] [--no-images] " *
-              "[--large [--experiments N] [--samples M]]"
+              "[--large [--experiments N] [--samples M]] | --clean-large <dir>"
 
 function parse_args(args)
     out = joinpath(dirname(dirname(dirname(@__DIR__))), "scratch", "demo-experiment")
@@ -700,7 +700,35 @@ function main_large(o)
     o.out
 end
 
+large_tree_strays(dir) = filter(readdir(dir)) do e
+    p = joinpath(dir, e)
+    e == LARGE_MARKER && isfile(p) && !islink(p) && return false
+    is_large_entry(e) && isdir(p) && !islink(p) && return false
+    true
+end
+
+function clean_large(dir)
+    isempty(dir) && return false
+    d = rstrip(normpath(abspath(dir)), '/')
+    isempty(d) && return (println(stderr, "$dir is the filesystem root; leaving it"); false)
+    islink(d) && return (println(stderr, "$dir is a link; leaving it"); false)
+    isdir(d) || return (ispath(d) && println(stderr, "$dir is not a folder; leaving it"); false)
+    strays = large_tree_strays(d)
+    if !isempty(strays)
+        println(stderr, "$dir holds more than large_NN folders and $LARGE_MARKER ",
+                "($(join(first(strays, 3), ", "))); not a large demo tree, leaving it")
+        return false
+    end
+    if !any(is_large_entry, readdir(d))
+        println(stderr, "$dir holds no large_NN folder; not a large demo tree, leaving it")
+        return false
+    end
+    rm(d; recursive = true)
+    true
+end
+
 function main(args = ARGS)
+    length(args) == 2 && args[1] == "--clean-large" && return clean_large(args[2])
     o = parse_args(args)
     check_target(o.out, o.large)
     o.large ? main_large(o) : main_curated(o)

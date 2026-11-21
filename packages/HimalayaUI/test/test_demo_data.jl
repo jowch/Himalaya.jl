@@ -173,3 +173,87 @@ end
     end
     @test count(c -> "Square" in c, calls) >= 4
 end
+
+@testset "demo-clean deletes a large demo tree and nothing else (#358)" begin
+    function tree(entries...; marker = true)
+        root = mktempdir()
+        for e in entries
+            mkpath(joinpath(root, e, "data"))
+            touch(joinpath(root, e, "TRUTH.csv"))
+        end
+        marker && touch(joinpath(root, DemoGen.LARGE_MARKER))
+        root
+    end
+    quiet(f) = redirect_stderr(f, devnull)
+
+    finished = tree("large_01", "large_02")
+    @test quiet(() -> DemoGen.clean_large(finished))
+    @test !ispath(finished)
+
+    interrupted = tree("large_01"; marker = false)
+    @test quiet(() -> DemoGen.clean_large(interrupted))
+    @test !ispath(interrupted)
+
+    real = tree("large_01")
+    touch(joinpath(real, "notes.txt"))
+    @test !quiet(() -> DemoGen.clean_large(real))
+    @test isdir(joinpath(real, "large_01"))
+
+    misnamed = tree("large_01", "large_x")
+    @test !quiet(() -> DemoGen.clean_large(misnamed))
+    @test isdir(misnamed)
+
+    filelike = tree()
+    touch(joinpath(filelike, "large_03"))
+    @test !quiet(() -> DemoGen.clean_large(filelike))
+    @test isfile(joinpath(filelike, "large_03"))
+
+    hidden = tree("large_01")
+    touch(joinpath(hidden, ".keep"))
+    @test !quiet(() -> DemoGen.clean_large(hidden))
+    @test isdir(hidden)
+
+    target = tree("large_01")
+    link = joinpath(mktempdir(), "link")
+    symlink(target, link)
+    @test !quiet(() -> DemoGen.clean_large(link))
+    @test isdir(joinpath(target, "large_01"))
+    for spelled in (link * "/", link * "/.", link * "//")
+        @test !quiet(() -> DemoGen.clean_large(spelled))
+        @test isdir(joinpath(target, "large_01"))
+    end
+
+    linked_entry = tree()
+    symlink(tree("large_01"), joinpath(linked_entry, "large_02"))
+    @test !quiet(() -> DemoGen.clean_large(linked_entry))
+    @test islink(joinpath(linked_entry, "large_02"))
+
+    @test !quiet(() -> DemoGen.clean_large(joinpath(mktempdir(), "missing")))
+    @test !quiet(() -> DemoGen.clean_large(""))
+
+    empty = mktempdir()
+    @test !quiet(() -> DemoGen.clean_large(empty))
+    @test isdir(empty)
+    @test !quiet(() -> DemoGen.clean_large(tree(; marker = true)))
+
+    trailing = tree("large_01")
+    @test quiet(() -> DemoGen.clean_large(trailing * "/"))
+    @test !ispath(trailing)
+end
+
+@testset "demo-clean deletes what the large generator really writes (#358)" begin
+    gen(root) = redirect_stdout(devnull) do
+        DemoGen.main([root, "--large", "--experiments", "2", "--samples", "2", "--no-images"])
+    end
+    finished = joinpath(mktempdir(), "demo-large")
+    gen(finished)
+    @test isfile(joinpath(finished, DemoGen.LARGE_MARKER))
+    @test DemoGen.clean_large(finished)
+    @test !ispath(finished)
+
+    interrupted = joinpath(mktempdir(), "demo-large")
+    gen(interrupted)
+    rm(joinpath(interrupted, DemoGen.LARGE_MARKER))
+    @test DemoGen.clean_large(interrupted)
+    @test !ispath(interrupted)
+end

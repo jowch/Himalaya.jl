@@ -95,8 +95,9 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
         _workload_call(send, "POST", "/api/exposures/$exposure/assignment/members", Dict(:index_id => index_id))
         _workload_call(send, "DELETE", "/api/exposures/$exposure/assignment/members/$index_id")
     end
-    _workload_call(send, "POST", "/api/exposures/$exposure/assignment/state", Dict(:state => "form_factor"))
-    _workload_call(send, "POST", "/api/exposures/$exposure/assignment/state", Dict(:state => "indexed"))
+    _workload_call(send, "GET", "/api/samples/$sample/call")
+    _workload_call(send, "POST", "/api/samples/$sample/call/state", Dict(:state => "form_factor"))
+    _workload_call(send, "POST", "/api/samples/$sample/call/state", Dict(:state => "indexed"))
     _workload_call(send, "POST", "/api/exposures/$exposure/custom-index",
                    Dict(:phase => "Pn3m", :basis => 0.06, :ratios => sqrt.(Float64[2, 3, 4])))
     _workload_call(send, "POST", "/api/exposures/$exposure/analyze", Dict())
