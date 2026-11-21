@@ -319,14 +319,11 @@ end
 # raw Int32 bits as Q0f31 produces the same on-disk format as the beamline.
 write_tif(path, counts::Matrix{Int32}) = save(path, Gray.(reinterpret.(Q0f31, counts)))
 
-# physics: with the shutter closed the ion chamber's electrometer reads its offset, a
-# physics: few mV of either sign (the idle Vt channel on the real 2026 .prp reads
-# physics: -0.0045 V), not 0. Drawn from the file stem so the shared beam stream
-# physics: and every other frame's output stay as they were.
-function electrometer_offset(stem)
-    r = Xoshiro(hash(stem))
-    (rand(r, Bool) ? 1 : -1) * (0.001 + 0.004 * rand(r))
-end
+# physics: with the shutter closed the ion chamber's electrometer reads a negative
+# physics: offset, about -0.07 to -0.12 V on real SSRL beam-off frames, never 0.
+# physics: Drawn from the file stem so the shared beam stream and every other
+# physics: frame's output stay as they were.
+electrometer_offset(stem) = -(0.07 + 0.05 * rand(Xoshiro(hash(stem))))
 
 function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LENGTH_MM, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
     stem = splitext(basename(path))[1]

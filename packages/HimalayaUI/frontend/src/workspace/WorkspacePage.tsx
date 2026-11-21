@@ -192,7 +192,7 @@ export function WorkspacePage(): JSX.Element {
   const exposureList: Exposure[] = useMemo(() => exposures.data ?? [], [exposures.data]);
   const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
 
-  const beamOff = beamLikelyOff(exposure, exposureList);
+  const beamOff = beamLikelyOff(exposure);
   const trace = useTrace(exposure?.id);
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
@@ -636,7 +636,7 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard {...(beamOff ? { notice: "Beam likely off: I₀ is near zero." } : {})}>
+              <PlotCard {...(beamOff ? { notice: `Beam likely off: I₀ reads ${exposure?.incident_monitor} V.` } : {})}>
                 <WorkspacePlot
                   trace={trace.data}
                   {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}

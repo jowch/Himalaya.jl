@@ -134,13 +134,13 @@ describe("peakClick", () => {
 describe("beamLikelyOff", () => {
   const f = (incident_monitor: number | null) => ({ incident_monitor });
 
-  it("is true for an electrometer offset of either sign beside a beam", () => {
-    for (const i0 of [0, 0.004, -0.0045]) expect(beamLikelyOff(f(i0), [f(1.5), f(i0)])).toBe(true);
+  it("is true for the negative electrometer offset real beam-off frames read, and for 0", () => {
+    for (const i0 of [-0.12, -0.1, -0.07, -0.0045, 0, 0.004]) expect(beamLikelyOff(f(i0))).toBe(true);
   });
 
-  it("is false for a decayed but real beam, a lone frame and an unknown I₀", () => {
-    expect(beamLikelyOff(f(1.2), [f(1.5), f(1.2)])).toBe(false);
-    expect(beamLikelyOff(f(0.004), [f(0.004)])).toBe(false);
-    expect(beamLikelyOff(f(null), [f(1.5), f(null)])).toBe(false);
+  it("is false for a beam at low chamber gain, a full beam and an unknown I₀", () => {
+    for (const i0 of [0.08, 0.09, 1.2, 1.5]) expect(beamLikelyOff(f(i0))).toBe(false);
+    expect(beamLikelyOff(f(null))).toBe(false);
+    expect(beamLikelyOff(undefined)).toBe(false);
   });
 });
