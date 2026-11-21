@@ -275,7 +275,7 @@ export function WorkspacePlot({
                         role: "button",
                         tabIndex: 0,
                         "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
-                        className: "cursor-pointer outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
+                        className: "cursor-pointer outline-none focus-visible:stroke-accent focus-visible:stroke-2",
                         onKeyDown: (ev: React.KeyboardEvent) => {
                           if (ev.key !== "Enter" && ev.key !== " ") return;
                           ev.preventDefault();
