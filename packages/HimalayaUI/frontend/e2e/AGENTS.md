@@ -2,7 +2,7 @@
 
 Two suites:
 
-- **`e2e/`** — default mocked suite. `page.route` intercepts `/api/...`. Run via `npm run e2e`; CI runs it in the `Frontend E2E (mocked)` job. It builds the bundle and serves it with `vite preview` on 127.0.0.1:5173 (or reuses a server already there, outside CI).
+- **`e2e/`** — default mocked suite. `page.route` intercepts `/api/...`. Run via `npm run e2e`; CI runs it in the `Frontend E2E (mocked)` job. It builds this checkout's bundle into `dist-e2e/` and serves it with `vite preview` on 127.0.0.1:5191. It has its own port and build folder, and never reuses a running server.
 - **`e2e/live/`** — live-integration. Real backend + dev DB. Run via `npm run e2e:live`. Operator brings up backend (port 8090) + Vite (5180) manually. Full runbook: [live/README.md](live/README.md).
 
 ## Every request is mocked
@@ -43,7 +43,7 @@ See the live specs for the full pattern.
 
 ## Port binding
 
-`npm run e2e` builds the bundle and serves it on `http://127.0.0.1:5173` (not `localhost`) with `vite preview`. There's no need to start a server first. Outside CI it reuses whatever already answers on :5173 (a dev server or the demo). Because every `/api` request is answered inside the browser, the backend behind that server is never reached. If something else holds :5173 and doesn't serve the app, free it: `lsof -ti:5173 | xargs kill -9`.
+`npm run e2e` builds this checkout's bundle into `dist-e2e/` and serves it on `http://127.0.0.1:5191` (not `localhost`) with `vite preview`. There's no need to start a server first, and a running demo can stay up: the suite touches neither its port nor its `dist/`. It never reuses a running server, because a reused server serves another checkout's bundle, so the suite would pass or fail on code that isn't yours (this hid a missing mock on #347). If :5191 is taken, the run fails at startup; free it with `lsof -ti:5191 | xargs kill -9`.
 
 ## Live-integration timing
 
