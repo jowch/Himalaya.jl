@@ -120,6 +120,7 @@ export interface CorpusSample extends Sample {
    *  everything else reads "Not indexed". Absent on older payloads → treated as
    *  unindexed. */
   assignment_state?: AssignmentState;
+  call_phases?: string[];
   representative_exposure_id?: number | null;
 }
 
@@ -659,10 +660,32 @@ export type AssignmentMutationResponse = Assignment & {
 export const getAssignment = (exposure_id: number) =>
   request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`);
 
-export const setAssignmentState = (
-  exposure_id: number, state: AssignmentState, opts?: AuthOpts,
-) => request<AssignmentMutationResponse>(
-  "POST", `/api/exposures/${exposure_id}/assignment/state`, { state }, opts);
+export interface SampleCallMember {
+  index_id: number;
+  exposure_id: number;
+  phase: string;
+}
+
+export interface SampleCall {
+  sample_id: number;
+  state: AssignmentState;
+  phase: string | null;
+  call_phases: string[];
+  members: SampleCallMember[];
+}
+
+export type SampleCallMutationResponse = SampleCall & {
+  event_id: number;
+  view_row_id: number | null;
+};
+
+export const getSampleCall = (sample_id: number) =>
+  request<SampleCall>("GET", `/api/samples/${sample_id}/call`);
+
+export const setSampleCallState = (
+  sample_id: number, state: AssignmentState, opts?: AuthOpts,
+) => request<SampleCallMutationResponse>(
+  "POST", `/api/samples/${sample_id}/call/state`, { state }, opts);
 
 export const addAssignmentPhase = (
   exposure_id: number, index_id: number, opts?: AuthOpts,

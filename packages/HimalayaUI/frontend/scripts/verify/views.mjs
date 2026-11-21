@@ -79,6 +79,18 @@ async function workspaceKept(page) {
   return keptFromLabels(labels);
 }
 
+async function workspaceRail(page) {
+  const rows = await page.locator("[data-testid='workspace-candidates'] button[aria-pressed]").evaluateAll((els) =>
+    els.map((el) => ({
+      phase: (el.querySelector("[data-testid='phase-chip']")?.textContent ?? "").trim(),
+      on: el.getAttribute("aria-pressed") === "true",
+    })),
+  );
+  const ff = page.locator("[data-testid='workspace-form-factor']");
+  const formFactor = (await ff.count()) ? (await ff.getAttribute("aria-pressed")) === "true" : false;
+  return { ticked: rows.filter((r) => r.on).map((r) => r.phase), candidates: rows.map((r) => r.phase), form_factor: formFactor };
+}
+
 async function currentWorkspaceFrame(page, frameOrder) {
   const current = page.locator("[data-testid='workspace-exposures'] [aria-current='true']");
   const labels = await current.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
@@ -99,6 +111,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
     const row = page.locator(`[data-testid='workspace-samples'] [data-sample-id='${s.id}']`);
     let frame = null;
     let kept = null;
+    let rail = null;
     if (await row.count()) {
       const tracker = armSettle(page);
       await row.click();
@@ -107,8 +120,9 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
       failedRequests(settle, `the workspace on sample ${s.id}`);
       frame = await currentWorkspaceFrame(page, s.frameOrder);
       kept = await workspaceKept(page);
+      rail = await workspaceRail(page);
     }
-    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_reused: start.reuse });
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse });
   }
   return out;
 }

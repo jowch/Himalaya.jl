@@ -194,7 +194,7 @@ end
         s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
         e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id)
         DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
-        DBInterface.execute(db, "INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')", [e_id])
+        DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [s_id])
 
         # The route's body is _assignment_body; assert its JSON-serialized shape.
         body = HimalayaUI._assignment_body(db, e_id)
@@ -252,7 +252,7 @@ end
 end
 
 if isdefined(@__MODULE__, :with_test_server)
-    @testset "POST /assignment/state in-process HTTP" begin
+    @testset "POST /samples/{id}/call/state in-process HTTP" begin
         mktempdir() do dir
             db = open_prepared_clone(dir)
             exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
@@ -264,13 +264,13 @@ if isdefined(@__MODULE__, :with_test_server)
 
             with_inproc_routes(db) do call
                 # Invalid state → 400.
-                r = call("POST", "/api/exposures/$e_id/assignment/state";
+                r = call("POST", "/api/samples/$s_id/call/state";
                     headers = ["Content-Type" => "application/json"],
                     body = Vector{UInt8}(JSON3.write(Dict(:state => "bogus"))))
                 @test r.status == 400
 
                 # Valid: form_factor clears members.
-                r = call("POST", "/api/exposures/$e_id/assignment/state";
+                r = call("POST", "/api/samples/$s_id/call/state";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
                     body = Vector{UInt8}(JSON3.write(Dict(:state => "form_factor"))))
                 @test r.status == 200

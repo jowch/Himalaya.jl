@@ -75,10 +75,8 @@ function register_samples_routes!()
         end
 
         rep_by_sample = Dict{Int, Int}()
-        state_by_exp  = Dict{Int, String}()
-        phase_by_exp  = Dict{Int, String}()
+        sids = [Int(sm.id) for sm in samples]
         if !isempty(samples)
-            sids = [Int(sm.id) for sm in samples]
             ph   = join(fill("?", length(sids)), ",")
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
             for e in Tables.rowtable(DBInterface.execute(db,
@@ -90,31 +88,9 @@ function register_samples_routes!()
                 rep = representative_exposure_id(exps)
                 rep === nothing || (rep_by_sample[sid] = rep)
             end
-
-            rep_ids = collect(values(rep_by_sample))
-            if !isempty(rep_ids)
-                rp = join(fill("?", length(rep_ids)), ",")
-                for r in Tables.rowtable(DBInterface.execute(db,
-                        "SELECT exposure_id, state FROM assignments
-                         WHERE exposure_id IN ($rp)", rep_ids))
-                    state_by_exp[Int(r.exposure_id)] = String(r.state)
-                end
-                # Dominant phase: the top-scored assigned index's phase per
-                # exposure (mirrors compute_member_snapshot's confirmed_index).
-                best_score = Dict{Int, Float64}()
-                for r in Tables.rowtable(DBInterface.execute(db,
-                        "SELECT m.exposure_id AS eid, i.phase AS phase, i.score AS score
-                         FROM assignment_members m JOIN indices i ON i.id = m.index_id
-                         WHERE m.exposure_id IN ($rp)", rep_ids))
-                    eid = Int(r.eid)
-                    sc  = r.score === missing ? -Inf : Float64(r.score)
-                    if !haskey(best_score, eid) || sc > best_score[eid]
-                        best_score[eid]  = sc
-                        phase_by_exp[eid] = String(r.phase)
-                    end
-                end
-            end
         end
+        call_states  = sample_call_states(db, sids)
+        call_members = sample_call_members(db, sids)
 
         out = map(samples) do sm
             d          = row_to_json(sm)
@@ -123,14 +99,12 @@ function register_samples_routes!()
             # (e.g. a future ON DELETE SET NULL) rather than throwing in Int().
             d[:q_units] = ismissing(sm.experiment_id) ? "A-1" :
                 get(qunits_by_exp, Int(sm.experiment_id), "A-1")
-            rep = get(rep_by_sample, Int(sm.id), nothing)
-            d[:representative_exposure_id] = rep
-            if rep !== nothing
-                state = get(state_by_exp, rep, "indexed")
-                d[:assignment_state] = state
-                # Phase only when actually indexed; form_factor/null carry none.
-                d[:phase] = state == "indexed" ? get(phase_by_exp, rep, nothing) : nothing
-            end
+            d[:representative_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
+            state = get(call_states, Int(sm.id), "indexed")
+            summary = call_summary(state, get(call_members, Int(sm.id), []))
+            d[:assignment_state] = state
+            d[:phase] = summary.phase
+            d[:call_phases] = summary.call_phases
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
