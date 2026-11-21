@@ -121,11 +121,11 @@ describe("<StatusCell> with phase", () => {
 });
 
 describe("<StatusCell> unset states", () => {
-  it("renders data-role=status-unset with 'Not indexed' text when phase is null", () => {
+  it("renders data-role=status-unset with 'Unreviewed' text when phase is null", () => {
     const { container } = render(<StatusCell phase={null} />);
     const el = container.querySelector("[data-role='status-unset']");
     expect(el).toBeInTheDocument();
-    expect(el).toHaveTextContent("Not indexed");
+    expect(el).toHaveTextContent("Unreviewed");
   });
 
   it("renders data-role=status-unset when phase is empty string", () => {
@@ -155,7 +155,7 @@ describe("<StatusCell> unset states", () => {
 });
 
 describe("<StatusCell> noExposures (SA-ZEROEXP)", () => {
-  it("reads 'No exposures' (not 'Not indexed') and carries its own data-role", () => {
+  it("reads 'No exposures' (not 'Unreviewed') and carries its own data-role", () => {
     const { container } = render(<StatusCell phase={null} noExposures />);
     const el = container.querySelector("[data-role='status-no-exposures']");
     expect(el).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe("<StatusCell> noExposures (SA-ZEROEXP)", () => {
 });
 
 describe("<StatusCell> form factor (representative exposure declared form_factor)", () => {
-  it("renders a distinct 'Form factor' status, not 'Not indexed'", () => {
+  it("renders a distinct 'Form factor' status, not 'Unreviewed'", () => {
     const { container } = render(<StatusCell phase={null} formFactor />);
     const el = container.querySelector("[data-role='status-form-factor']");
     expect(el).toBeInTheDocument();
@@ -193,7 +193,7 @@ describe("<StatusCell> form factor (representative exposure declared form_factor
 });
 
 describe("<StatusCell> door invite (SA-RESCORE3 F9)", () => {
-  it("an unindexed DOOR reads as an 'Index' invitation, not a dead 'Not indexed' status", () => {
+  it("an unindexed DOOR reads as an 'Index' invitation, not a dead 'Unreviewed' status", () => {
     const { container } = render(<StatusCell phase={null} door />);
     const invite = container.querySelector("[data-role='status-index-invite']");
     expect(invite).toBeInTheDocument();
@@ -202,7 +202,7 @@ describe("<StatusCell> door invite (SA-RESCORE3 F9)", () => {
     expect(container.querySelector("[data-role='status-unset']")).not.toBeInTheDocument();
   });
 
-  it("a non-door unindexed cell keeps the passive 'Not indexed' status (no false invite)", () => {
+  it("a non-door unindexed cell keeps the passive 'Unreviewed' status (no false invite)", () => {
     const { container } = render(<StatusCell phase={null} />);
     expect(container.querySelector("[data-role='status-unset']")).toBeInTheDocument();
     expect(container.querySelector("[data-role='status-index-invite']")).not.toBeInTheDocument();

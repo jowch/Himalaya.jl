@@ -541,6 +541,7 @@ export function WorkspacePage(): JSX.Element {
               <PlotCard>
                 <WorkspacePlot
                   trace={trace.data}
+                  {...(trace.isError ? { onRetry: () => void trace.refetch() } : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}

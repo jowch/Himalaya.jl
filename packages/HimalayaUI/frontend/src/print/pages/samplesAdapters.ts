@@ -15,7 +15,7 @@ export interface SampleRowModel {
   tags: Tag[];
   phase: string | null | undefined;
   /** The representative exposure is declared form_factor → the status cell reads
-   *  "Form factor" instead of "Not indexed". */
+   *  "Form factor" instead of "Unreviewed". */
   formFactor: boolean;
 }
 

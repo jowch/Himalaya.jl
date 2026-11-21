@@ -110,14 +110,14 @@ export interface Load {
 // `phase` is an optional, forward-looking seam for the contact sheet (R1 / #224):
 // the sample's resolved liquid-crystalline phase, surfaced by a future
 // indexing-rollup route. When present the status cell shows a phase chip; when
-// absent it shows the "Not indexed" affordance (M-6).
+// absent it shows the "Unreviewed" affordance (M-6).
 export interface CorpusSample extends Sample {
   q_units: string;
   phase?: string | null;
   /** The representative exposure's durable assignment state (`representative_exposure_id`:
    *  the selected frame if kept, else the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
    *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
-   *  everything else reads "Not indexed". Absent on older payloads → treated as
+   *  everything else reads "Unreviewed". Absent on older payloads → treated as
    *  unindexed. */
   assignment_state?: AssignmentState;
   representative_exposure_id?: number | null;

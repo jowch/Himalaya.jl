@@ -37,7 +37,7 @@ export interface SampleTableRowProps {
   onRemoveTag?: (t: Tag) => void;
   phase?: string | null;
   /** The representative exposure is declared form_factor → the status cell reads
-   *  "Form factor" rather than the phase chip or the "Not indexed" invite. */
+   *  "Form factor" rather than the phase chip or the "Unreviewed" invite. */
   formFactor?: boolean;
   /** When set, the sample name in the SpecCell becomes a button that opens the
    *  workspace for this sample. */
@@ -74,7 +74,7 @@ export interface SampleTableRowProps {
  *
  *  Per-column MIN-WIDTHS (not fixed px that clip): atomic columns are sized to
  *  fit their longest realistic value so they NEVER truncate — Kept holds
- *  "10 / 12" + "2 dropped" (96px), Status holds "Not indexed" (150px). The
+ *  "10 / 12" + "2 dropped" (96px), Status holds "Unreviewed" (150px). The
  *  identity / exposures / tags columns carry a min + grow (fr). The row's
  *  intrinsic min-width is the sum of mins (~1018px); SheetTable wraps the
  *  header + rows in ONE shared horizontal-scroll container, so a narrow

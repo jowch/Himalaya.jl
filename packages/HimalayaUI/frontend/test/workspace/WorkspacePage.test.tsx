@@ -8,6 +8,7 @@ type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
 const calls: Call[] = [];
 
+const traceRefetch = vi.fn();
 const state = {
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
@@ -15,6 +16,7 @@ const state = {
   assignment: undefined as Assignment | undefined,
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
+  traceError: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
 };
@@ -31,7 +33,7 @@ vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19" } }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace }),
+  useTrace: () => ({ data: state.trace, isError: state.traceError, refetch: traceRefetch }),
   usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
@@ -151,6 +153,7 @@ beforeEach(() => {
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.trace = undefined;
+  state.traceError = false;
   state.peaks = [];
   state.compareTraces = new Map();
 });
@@ -173,6 +176,15 @@ describe("WorkspacePage", () => {
     expect(screen.getAllByRole("option").some((o) => /Switch user, signed in as jc/.test(o.textContent ?? ""))).toBe(true);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(clearUsername).toHaveBeenCalledTimes(1);
+  });
+
+  it("says when the trace failed to load and retries on request", () => {
+    state.traceError = true;
+    traceRefetch.mockClear();
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByText("Couldn't load this sample")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(traceRefetch).toHaveBeenCalledTimes(1);
   });
 
   it("links the Himalaya brand back to the corpus", () => {
