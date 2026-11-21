@@ -42,7 +42,7 @@ import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
+  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -384,12 +384,6 @@ export function WorkspacePage(): JSX.Element {
     [exposure, sampleId, addPeak, history, ops, frameName],
   );
 
-  const removeCompare = useCallback(
-    (rid: number) => {
-      if (sampleId !== undefined) patchCompares.mutate({ sampleId, change: { remove: [rid] } });
-    },
-    [sampleId, patchCompares],
-  );
 
   const toggleCandidate = useCallback(
     (ix: IndexEntry) => {
@@ -458,6 +452,18 @@ export function WorkspacePage(): JSX.Element {
   }, [candidates, hoverId, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
+  const nameOf = useCallback((rid: number) => sampleNames.get(rid) ?? `sample ${rid}`, [sampleNames]);
+  const removeCompare = useCallback(
+    (rid: number) => {
+      if (sampleId === undefined) return;
+      patchCompares.mutate({ sampleId, change: { remove: [rid] } });
+      history.record(compareEntry(ops, {
+        label: `stopped comparing ${sample?.name ?? "this sample"} with ${nameOf(rid)}`, sampleId, exposureId: undefined,
+        edit: { kind: "remove", ref: rid, subtracted: subChoice === rid },
+      }));
+    },
+    [sampleId, patchCompares, history, ops, sample?.name, nameOf, subChoice],
+  );
   const activeRefs = shownRefs.filter((r) => r !== sampleId);
   const compareColors = useMemo(
     () => new Map(shownRefs.filter((r) => r !== sampleId).map((rid) => [rid, COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!] as const)),
@@ -869,6 +875,10 @@ export function WorkspacePage(): JSX.Element {
   const addReference = (rid: number): void => {
     if (sampleId === undefined) return;
     patchCompares.mutate({ sampleId, change: { add: [rid] } });
+    history.record(compareEntry(ops, {
+      label: `compared ${sample?.name ?? "this sample"} with ${nameOf(rid)}`, sampleId, exposureId: undefined,
+      edit: { kind: "add", ref: rid },
+    }));
     recordRecent(recentKind, String(rid));
     setRecentCompares(recentRank(recentKind));
     setShown(rid, true);
@@ -878,7 +888,12 @@ export function WorkspacePage(): JSX.Element {
     if (sampleId === undefined) return;
     setRefsOn(true);
     setMinusFor(subRef === rid ? undefined : `${sampleId}:${rid}`);
-    patchCompares.mutate({ sampleId, change: { subtraction: subRef === rid ? null : rid } });
+    const to = subRef === rid ? undefined : rid;
+    patchCompares.mutate({ sampleId, change: { subtraction: to ?? null } });
+    history.record(compareEntry(ops, {
+      label: to === undefined ? `stopped subtracting ${nameOf(rid)} from ${sample?.name ?? "this sample"}` : `subtracted ${nameOf(rid)} from ${sample?.name ?? "this sample"}`,
+      sampleId, exposureId: undefined, edit: { kind: "subtract", from: subChoice, to },
+    }));
   };
   const toggleCompare = (rid: number): void => {
     if (rid === sampleId || bridged.includes(rid)) return;

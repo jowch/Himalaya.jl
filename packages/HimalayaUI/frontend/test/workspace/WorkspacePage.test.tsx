@@ -86,6 +86,10 @@ const editOps = {
   patchExperiment: editOp("patchExperiment"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
+  patchCompares: (sampleId: number, change: CompareChange) => {
+    calls.push({ hook: "op:patchCompares", boundTo: 0, arg: [sampleId, change] });
+    setCompares(applyCompareChange(compareStore.data, sampleId, change, state.username ?? null));
+  },
   read: {
     peaks: async () => state.peaks,
     indices: async (eid: number) => server.indices.get(eid) ?? state.indices,
@@ -97,6 +101,7 @@ const editOps = {
     labels: async () => state.labels,
     bridges: async () => state.bridges,
     experiment: async () => ({ id: 1, ...server.experiment }),
+    compares: async () => compareStore.data,
   },
   saving: () => server.saving,
   whenSaved: () => (server.saving ? new Promise<void>((r) => { server.saved = r; }) : Promise.resolve()),
@@ -994,6 +999,52 @@ describe("WorkspacePage", () => {
       await undo();
       expect(ops()).toEqual([["bridge", 11, 10]]);
       expect(toasts.at(-1)).toBe("Undone: unbridged A2");
+    });
+
+    it("undoes and redoes adding a comparison, and skips the redo once someone else re-added it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "c" });
+      fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchCompares", 10, { remove: [11] }]]);
+      expect(toasts.at(-1)).toBe("Undone: compared A1 with A2");
+      expect(screen.queryByRole("button", { name: "Remove A2" })).toBeNull();
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([["patchCompares", 10, { add: [11] }]]);
+      expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
+      await undo();
+      act(() => setCompares(applyCompareChange(compareStore.data, 10, { add: [11] }, "ana")));
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+    });
+
+    it("undoing a subtraction puts the raw trace back and leaves the comparison", async () => {
+      state.trace = makeTrace(1);
+      state.compareTraces = new Map([[11, makeTrace(2)]]);
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "c" });
+      fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+      fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+      expect(screen.getByTestId("workspace-subtraction-toggle")).toBeInTheDocument();
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchCompares", 10, { subtraction: null }]]);
+      expect(toasts.at(-1)).toBe("Undone: subtracted A2 from A1");
+      expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+      expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
+    });
+
+    it("undoing removing a subtracted comparison restores it as the subtraction", async () => {
+      act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "verify" }], subtractions: [{ sample_id: 10, ref_sample_id: 11 }] }));
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchCompares", 10, { add: [11], subtraction: 11 }]]);
+      expect(toasts.at(-1)).toBe("Undone: stopped comparing A1 with A2");
     });
 
     it("Ctrl+K then Enter still goes to the next unreviewed sample when there is something to undo", async () => {

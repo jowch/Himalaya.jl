@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { Assignment, IndexEntry, Peak, SampleBridge, SampleLabel } from "../../src/api";
+import type { Assignment, CompareState, IndexEntry, Peak, SampleBridge, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
 import { useUndoHistory, type UndoEntry } from "../../src/workspace/undo";
-import { bridgeEntry, combinedEntry, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
+import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
 const server = {
@@ -14,6 +14,7 @@ const server = {
   assignments: new Map<number, Assignment>(),
   labels: [] as SampleLabel[],
   bridges: [] as SampleBridge[],
+  compares: { compares: [], subtractions: [] } as CompareState,
 };
 
 vi.mock("../../src/state", () => ({
@@ -49,6 +50,8 @@ vi.mock("../../src/api", async (importOriginal) => {
     getAssignment: vi.fn(async (eid: number) => server.assignments.get(eid) ?? { exposure_id: eid, state: "null", members: [] }),
     listLabels: vi.fn(async () => server.labels),
     listBridges: vi.fn(async () => server.bridges),
+    patchCompares: vi.fn(async () => server.compares),
+    listCompares: vi.fn(async () => server.compares),
   };
 });
 
@@ -80,6 +83,7 @@ beforeEach(() => {
   server.assignments = new Map();
   server.labels = [];
   server.bridges = [];
+  server.compares = { compares: [], subtractions: [] };
 });
 
 const firstArgs = (fn: unknown) => mocked(fn).mock.calls.map((c) => c.slice(0, 2));
@@ -290,6 +294,47 @@ describe("undo against the server", () => {
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.unbridgeSample).map((c) => c[0])).toEqual([4, 5]);
     expect(firstArgs(api.bridgeSamples)).toEqual([[4, 5]]);
+  });
+
+  it("undoes and redoes a comparison only while the server still matches what the edit left", async () => {
+    const { result } = setup();
+    const at = { label: "compared", sampleId: 1, exposureId: undefined };
+    act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "add", ref: 2 } })));
+    server.compares = { compares: [{ sample_id: 1, ref_sample_id: 2, added_by: "jc" }], subtractions: [] };
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.patchCompares)).toEqual([[1, { remove: [2] }]]);
+    mocked(api.patchCompares).mockClear();
+    server.compares = { compares: [{ sample_id: 1, ref_sample_id: 2, added_by: "ana" }], subtractions: [] };
+    await act(async () => { await result.current.history.redo()!.done; });
+    expect(api.patchCompares).not.toHaveBeenCalled();
+  });
+
+  it("undoing a removed comparison brings back its subtraction unless another one was set since", async () => {
+    const { result } = setup();
+    const at = { label: "stopped comparing", sampleId: 1, exposureId: undefined };
+    act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "remove", ref: 2, subtracted: true } })));
+    server.compares = { compares: [], subtractions: [] };
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.patchCompares)).toEqual([[1, { add: [2], subtraction: 2 }]]);
+    mocked(api.patchCompares).mockClear();
+    act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "remove", ref: 2, subtracted: true } })));
+    server.compares = { compares: [{ sample_id: 1, ref_sample_id: 3, added_by: "ana" }], subtractions: [{ sample_id: 1, ref_sample_id: 3 }] };
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.patchCompares)).toEqual([[1, { add: [2] }]]);
+  });
+
+  it("undoes a subtraction change only while that subtraction still stands", async () => {
+    const { result } = setup();
+    const at = { label: "subtracted", sampleId: 1, exposureId: undefined };
+    act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "subtract", from: 3, to: 2 } })));
+    server.compares = { compares: [], subtractions: [{ sample_id: 1, ref_sample_id: 2 }] };
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.patchCompares)).toEqual([[1, { subtraction: 3 }]]);
+    mocked(api.patchCompares).mockClear();
+    act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "subtract", from: undefined, to: 2 } })));
+    server.compares = { compares: [], subtractions: [{ sample_id: 1, ref_sample_id: 4 }] };
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(api.patchCompares).not.toHaveBeenCalled();
   });
 
   it("rejoins an unbridged sample to the group it left", async () => {

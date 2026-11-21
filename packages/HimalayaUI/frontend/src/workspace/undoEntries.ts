@@ -2,6 +2,7 @@ import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, LabelC
 import type { EditOps } from "../queries";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import { bridgedWith } from "../lib/bridges";
+import { comparesOf } from "../lib/compares";
 import { sameLabel } from "../lib/labels";
 import { peakQTol } from "../lib/queue/peakQTol";
 import type { UndoEntry } from "./undo";
@@ -308,4 +309,30 @@ export function unbridgeEntry(
       return 1;
     },
   };
+}
+
+export type CompareEdit =
+  | { kind: "add"; ref: number }
+  | { kind: "remove"; ref: number; subtracted: boolean }
+  | { kind: "subtract"; from: number | undefined; to: number | undefined };
+
+export function compareEntry(ops: EditOps, at: Where & { edit: CompareEdit }): UndoEntry {
+  const now = async () => comparesOf(await ops.read.compares(), at.sampleId);
+  const e = at.edit;
+  const send = (change: Parameters<EditOps["patchCompares"]>[1]): number => {
+    ops.patchCompares(at.sampleId, change);
+    return 1;
+  };
+  if (e.kind === "subtract") {
+    const flip = async (expect: number | undefined, next: number | undefined): Promise<number> =>
+      (await now()).subtraction === expect ? send({ subtraction: next ?? null }) : 0;
+    return { ...at, undo: () => flip(e.to, e.from), redo: () => flip(e.from, e.to) };
+  }
+  const put = async (): Promise<number> => {
+    const s = await now();
+    if (s.refs.includes(e.ref)) return 0;
+    return send(e.kind === "remove" && e.subtracted && s.subtraction === undefined ? { add: [e.ref], subtraction: e.ref } : { add: [e.ref] });
+  };
+  const take = async (): Promise<number> => ((await now()).refs.includes(e.ref) ? send({ remove: [e.ref] }) : 0);
+  return e.kind === "add" ? { ...at, undo: take, redo: put } : { ...at, undo: put, redo: take };
 }
