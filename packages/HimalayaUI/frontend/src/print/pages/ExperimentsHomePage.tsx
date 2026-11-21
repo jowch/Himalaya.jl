@@ -196,7 +196,7 @@ export function ExperimentsHomePage(): JSX.Element {
                             <span className="font-mono text-ink">{stats.samples}</span>
                             {" samples · "}
                             <span className="font-mono text-ink">{stats.exposures}</span>
-                            {" exposures · "}
+                            {" frames · "}
                             <span className="font-mono text-ink">{stats.loads}</span>
                             {" loads"}
                           </div>

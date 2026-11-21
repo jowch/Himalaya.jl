@@ -103,7 +103,7 @@ async function layout(page: Page): Promise<Record<string, number[]>> {
       exposures: box(document.querySelector("[data-testid=workspace-exposures]")),
       indexing: box(section("Indexing")),
       indexingPlot: box(document.querySelector("[data-testid=workspace-indexing] svg")),
-      exposure: box(section("Exposure")),
+      exposure: box(section("Frame")),
     };
   });
 }
@@ -115,7 +115,7 @@ async function measured(page: Page): Promise<Record<string, number[]>> {
 }
 
 function exposureToggle(page: Page) {
-  return page.locator("aside").getByRole("button", { name: "Exposure" });
+  return page.locator("aside").getByRole("button", { name: "Frame" });
 }
 
 function callToggle(page: Page) {
@@ -134,7 +134,7 @@ async function openSample(page: Page, id: number): Promise<void> {
   await expect(page.locator("[data-testid=workspace-indexing] svg")).toBeVisible();
   if ((await callToggle(page).count()) === 0 || (await callToggle(page).getAttribute("aria-expanded")) === "true") {
     await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
-    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this exposure.")).toBeVisible();
+    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this frame.")).toBeVisible();
   }
   await expect(page.locator("[data-testid=workspace-exposures] > li")).toHaveCount(FRAMES[id] ?? 1);
   const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
@@ -217,7 +217,7 @@ test("three comparisons with long names keep the compare bar on one line", async
   expect(after.plot[0]).toEqual(before.plot[0]);
 });
 
-test("on a short window Call and Exposure fold as an accordion, and stay put from sample to sample", async ({ page }) => {
+test("on a short window Call and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -234,7 +234,7 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
   await expect(page.locator("[data-testid=workspace-candidates]")).toHaveCount(0);
   await expect(page.locator("aside").getByText("JC_S41_0_001")).toBeVisible();
   expect(await fits()).toBe(true);
-  const lastRow = () => page.locator("aside section[data-section=Exposure] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
+  const lastRow = () => page.locator("aside section[data-section=Frame] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
   const first = await measured(page);
   const firstLastRow = await lastRow();
   for (const id of [44, 43, 40, 41]) {
@@ -249,7 +249,7 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
   await page.keyboard.press("i");
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
   await expect(exposureToggle(page), "Exposure is not a dead toggle while a custom index is open").toHaveCount(0);
-  await expect(page.locator("aside section[data-section=Exposure]")).toHaveAttribute("data-collapsed", "true");
+  await expect(page.locator("aside section[data-section=Frame]")).toHaveAttribute("data-collapsed", "true");
   await page.keyboard.press("Escape");
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
 });
@@ -280,7 +280,7 @@ test("on a medium window the Call list scrolls inside a column that never scroll
   expect(state).toEqual({ asideFits: true, middleScrolls: true });
 });
 
-test("on a very short window the open Exposure section scrolls inside a column that never scrolls", async ({ page }) => {
+test("on a very short window the open Frame section scrolls inside a column that never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 520 });
   await page.goto("/experiments/17/workspace/44");
   await openSample(page, 44);
@@ -288,7 +288,7 @@ test("on a very short window the open Exposure section scrolls inside a column t
   await expect(page.locator("aside").getByText("JC_S44_0_007")).toBeVisible();
   const state = await page.evaluate(() => {
     const aside = document.querySelector("aside")!;
-    const exposure = aside.querySelector("section[data-section=Exposure]") as HTMLElement;
+    const exposure = aside.querySelector("section[data-section=Frame]") as HTMLElement;
     return { asideFits: aside.scrollHeight <= aside.clientHeight, exposureScrolls: exposure.scrollHeight > exposure.clientHeight };
   });
   expect(state).toEqual({ asideFits: true, exposureScrolls: true });

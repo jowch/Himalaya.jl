@@ -74,9 +74,9 @@ describe("NewExperimentPage", () => {
     const rows = await screen.findAllByTestId("setup-row");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByTestId("setup-summary")).toHaveTextContent(
-      "1,220 exposures · flight path 1.81 m · 3 without a trace yet",
+      "1,220 frames · flight path 1.81 m · 3 without a trace yet",
     );
-    expect(within(rows[1]!).getByTestId("setup-summary")).toHaveTextContent("1 exposure · flight path 1.81 m");
+    expect(within(rows[1]!).getByTestId("setup-summary")).toHaveTextContent("1 frame · flight path 1.81 m");
     expect(screen.getByTestId("create-submit")).toHaveTextContent("Add 2 experiments");
   });
 
@@ -227,7 +227,7 @@ describe("NewExperimentPage", () => {
     fireEvent.change(screen.getByTestId("setup-name").querySelector("input")!, { target: { value: "kept" } });
     preview.mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1", { exposures: 2000 })] });
     await qc.invalidateQueries();
-    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("2,000 exposures"));
+    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("2,000 frames"));
     expect(screen.getByTestId("setup-name").querySelector("input")).toHaveValue("kept");
   });
 
@@ -284,7 +284,7 @@ describe("NewExperimentPage", () => {
     expect(screen.getByTestId("setup-summary")).toHaveTextContent("integration layout not recognised");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.change(screen.getByTestId("details-image-pattern").querySelector("input")!, { target: { value: "{name}_0_001.tif" } });
-    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("5 exposures"));
+    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("5 frames"));
     expect(screen.getByTestId("setup-summary")).toHaveTextContent("1 without a trace yet");
     expect(manifest.mock.calls.at(-1)![1]).toMatchObject({ image: "{name}_0_001.tif" });
   });
