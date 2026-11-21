@@ -8,22 +8,26 @@ export interface CompareChip {
   color: string;
   scale: CompareScale | undefined;
   bridged?: boolean;
+  hidden?: boolean;
 }
 
 interface Props {
   chips: readonly CompareChip[];
   subtractId: number | undefined;
   hidden: boolean;
+  modKey: string;
+  onToggleShown: (id: number) => void;
   onSubtract: (id: number) => void;
   onRemove: (id: number) => void;
   onAdd: () => void;
 }
 
-export function CompareBar({ chips, subtractId, hidden, onSubtract, onRemove, onAdd }: Props): JSX.Element {
+export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd }: Props): JSX.Element {
   return (
     <div className="flex min-w-0 flex-nowrap items-center gap-2" data-testid="workspace-compare-bar">
       {chips.map((c) => {
         const sub = c.id === subtractId;
+        const off = hidden || c.hidden === true;
         return (
           <span
             key={c.id}
@@ -32,7 +36,7 @@ export function CompareBar({ chips, subtractId, hidden, onSubtract, onRemove, on
             className={
               "inline-flex min-w-0 items-center gap-1.5 rounded-sm border bg-plate py-0.5 pl-2 pr-1 text-caption text-ink " +
               (sub ? "border-ink-soft" : "border-hair") +
-              (hidden ? " opacity-45" : "")
+              (off ? " opacity-45" : "")
             }
           >
             <svg width={18} height={4} aria-hidden="true" className="shrink-0">
@@ -40,10 +44,15 @@ export function CompareBar({ chips, subtractId, hidden, onSubtract, onRemove, on
             </svg>
             <button
               type="button"
-              aria-pressed={sub}
-              {...(hidden ? { "aria-label": `${c.name}, hidden` } : {})}
-              title={sub ? "Stop subtracting" : "Subtract from the current trace"}
-              onClick={() => onSubtract(c.id)}
+              aria-pressed={!off}
+              {...(off ? { "aria-label": `${c.name}, hidden` } : {})}
+              aria-description={sub ? "Subtracted from the current trace" : undefined}
+              data-subtracted={sub ? "" : undefined}
+              title={`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract from the current trace"}.`}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey) onSubtract(c.id);
+                else onToggleShown(c.id);
+              }}
               className="min-w-0 truncate text-ink"
             >
               {c.name}

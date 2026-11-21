@@ -51,7 +51,7 @@ import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { MAX_CANDIDATES, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
-import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
+import { addCompare, clampDomain, withoutRef, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
 import { usePrefetchNeighbours } from "./prefetch";
@@ -120,6 +120,9 @@ function helpSections(mod: string): HelpSection[] {
         { gesture: "Scroll", what: "Zoom q" },
         { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["C"], what: "Compare with another sample" },
+        { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
+        { gesture: "Click a comparison", what: "Hide or show its trace" },
+        { gesture: `${mod}-click a comparison`, what: "Subtract it from the current trace, or stop" },
       ],
     },
     {
@@ -299,6 +302,7 @@ export function WorkspacePage(): JSX.Element {
   const [refs, setRefs] = useState<number[]>([]);
   const [subChoice, setSubRef] = useState<number | undefined>(undefined);
   const [refsOn, setRefsOn] = useState(true);
+  const [hiddenRefs, setHiddenRefs] = useState<ReadonlySet<number>>(() => new Set());
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
@@ -358,6 +362,7 @@ export function WorkspacePage(): JSX.Element {
 
   const removeCompare = useCallback((rid: number) => {
     setRefs((r) => r.filter((x) => x !== rid));
+    setHiddenRefs((h) => withoutRef(h, rid));
     setSubRef((cur) => (cur === rid ? undefined : cur));
   }, []);
 
@@ -429,6 +434,10 @@ export function WorkspacePage(): JSX.Element {
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const activeRefs = shownRefs.filter((r) => r !== sampleId);
+  const compareColors = useMemo(
+    () => new Map(shownRefs.filter((r) => r !== sampleId).map((rid) => [rid, COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!] as const)),
+    [shownRefs, sampleId],
+  );
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
   const scales = useMemo(() => {
@@ -442,11 +451,11 @@ export function WorkspacePage(): JSX.Element {
     return shownRefs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
-      if (rid === sampleId || !t || scale === undefined) return [];
+      if (rid === sampleId || hiddenRefs.has(rid) || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, shownRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, shownRefs, hiddenRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
@@ -791,8 +800,14 @@ export function WorkspacePage(): JSX.Element {
 
   const addReference = (rid: number): void => {
     setRefs((r) => addCompare(r, rid));
+    setHiddenRefs((h) => withoutRef(h, rid));
     if (subRef === undefined) setSubRef(rid);
     setRefsOn(true);
+  };
+  const toggleCompare = (rid: number): void => {
+    if (rid === sampleId || bridged.includes(rid)) return;
+    if (refs.includes(rid)) removeCompare(rid);
+    else addReference(rid);
   };
   const palette = workspacePalette({
     modKey: MOD_KEY,
@@ -805,6 +820,8 @@ export function WorkspacePage(): JSX.Element {
       samples: pickable,
       notes: bufferNotes,
       pick: addReference,
+      compared: refs.filter((r) => r !== sampleId && !bridged.includes(r)).flatMap((r) => samples.filter((x) => x.id === r)),
+      remove: removeCompare,
     },
     bridge: {
       samples: bridgePickable,
@@ -914,7 +931,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>
@@ -950,9 +967,15 @@ export function WorkspacePage(): JSX.Element {
                   color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
                   bridged: bridged.includes(rid),
+                  hidden: hiddenRefs.has(rid),
                 }))}
                 subtractId={subRef}
                 hidden={!refsOn}
+                modKey={MOD_KEY}
+                onToggleShown={(rid) => {
+                  setRefsOn(true);
+                  setHiddenRefs((h) => (refsOn && !h.has(rid) ? new Set([...h, rid]) : withoutRef(h, rid)));
+                }}
                 onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
                 onRemove={onRemoveChip}
                 onAdd={() => setPicking(true)}

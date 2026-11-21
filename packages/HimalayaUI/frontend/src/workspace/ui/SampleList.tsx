@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { CorpusSample } from "../../api";
 import { sampleStatus } from "../model";
+import { COMPARE_DASH } from "./WorkspacePlot";
 
 interface Props {
   samples: readonly CorpusSample[];
@@ -8,6 +9,8 @@ interface Props {
   filter: string;
   onFilter: (v: string) => void;
   onPick: (id: number) => void;
+  onToggleCompare?: (id: number) => void;
+  compareColors?: ReadonlyMap<number, string>;
   bridgeCounts?: ReadonlyMap<number, number>;
   notice?: ReactNode;
 }
@@ -19,7 +22,7 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
 }
 
-export function SampleList({ samples, currentId, filter, onFilter, onPick, bridgeCounts, notice }: Props): JSX.Element {
+export function SampleList({ samples, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, bridgeCounts, notice }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -56,6 +59,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
         {samples.map((s) => {
           const cur = s.id === currentId;
           const bridges = bridgeCounts?.get(s.id) ?? 0;
+          const compareColor = compareColors?.get(s.id);
           return (
             <li key={s.id}>
               <button
@@ -63,7 +67,15 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
                 type="button"
                 aria-current={cur ? "true" : undefined}
                 data-sample-id={s.id}
-                onClick={() => onPick(s.id)}
+                data-compared={compareColor !== undefined ? "" : undefined}
+                onClick={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && onToggleCompare) {
+                    e.preventDefault();
+                    onToggleCompare(s.id);
+                    return;
+                  }
+                  onPick(s.id);
+                }}
                 className={
                   "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base text-ink " +
                   (cur ? "font-semibold bg-row-cursor shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-paper-sunk")
@@ -78,7 +90,14 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
                     </span>
                   )}
                 </span>
-                <StatusMark s={s} />
+                <span className="flex shrink-0 items-center gap-2">
+                  {compareColor !== undefined && (
+                    <svg width={14} height={4} role="img" aria-label="Compared" style={{ color: compareColor }} className="shrink-0">
+                      <line x1={0} x2={14} y1={2} y2={2} stroke="currentColor" strokeWidth={2} strokeDasharray={COMPARE_DASH} />
+                    </svg>
+                  )}
+                  <StatusMark s={s} />
+                </span>
               </button>
             </li>
           );

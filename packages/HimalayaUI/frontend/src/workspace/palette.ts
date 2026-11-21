@@ -18,7 +18,13 @@ export interface WorkspacePaletteInput {
   modKey: string;
   canEdit: boolean;
   nextUnreviewed: () => void;
-  compare: { samples: readonly CorpusSample[]; notes: ReadonlyMap<number, string>; pick: (id: number) => void };
+  compare: {
+    samples: readonly CorpusSample[];
+    notes: ReadonlyMap<number, string>;
+    pick: (id: number) => void;
+    compared: readonly CorpusSample[];
+    remove: (id: number) => void;
+  };
   bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: boolean; leave: () => void };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
@@ -113,6 +119,14 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === p.theme.current ? "Current" : undefined, run: () => p.theme.choose(t.theme) })),
     },
   };
+  if (p.compare.compared.length > 0) {
+    pages.uncompare = {
+      title: "Stop comparing",
+      arg: "Sample",
+      deep: true,
+      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, run: () => p.compare.remove(s.id) })),
+    };
+  }
   if (p.canEdit) {
     pages.bridge = {
       title: "Bridge to",
@@ -173,6 +187,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "next-unreviewed", label: "Next unreviewed sample", shortcut: "Z", run: p.nextUnreviewed },
     ...(p.canEdit ? [{ id: "label", label: "Label", page: "label" }] : []),
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
+    ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
     ...(p.canEdit ? [{ id: "bridge", label: "Bridge to a sample", page: "bridge" }] : []),
     ...(p.canEdit && p.bridge.bridged ? [{ id: "unbridge", label: "Take this sample out of its bridges", run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),
