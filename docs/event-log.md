@@ -189,13 +189,7 @@ actually having anything to read back. The `analyze_run` event payload
 records the full skip predicate's outcome — instrumentation must reflect
 the real branch taken, not the hash comparison alone.
 
-**Staleness is derived, not a named component.** A stale-indices `alert`
-(role=`alert`; there is no `StaleIndicesBanner` component) surfaces when
-*any* index's `inputs_hash` differs from its exposure's current
-`analysis_inputs_hash`; the reanalyze action is wired through
-`useReanalyzeExposure`. This replaces the retired `status='stale'` enum —
-there is no write-side "mark all indices stale" call. Staleness is purely
-derived from the hash comparison.
+**Staleness is derived.** An index is stale when its `inputs_hash` differs from its exposure's current `analysis_inputs_hash`; there is no `status='stale'` enum and no write-side "mark stale" call. No UI shows staleness today.
 
 **`hash_peak_set` is order-independent.** Inputs are sorted by `q` before
 hashing, so an exclude-then-add or add-then-exclude that lands on the
@@ -375,8 +369,7 @@ top of it.
 **Full architecture:** [docs/mutation-queue.md](mutation-queue.md). It
 covers `client_op_id` lifecycle, the deferred-promise pattern, the
 replay-as-rerun algorithm, the `InTransaction` sentinel, the post-commit
-broadcast queue, the optimistic-id-negativity invariant, and how
-`useExposureHasPendingPeakOps` gates derivative reads.
+broadcast queue, and the optimistic-id-negativity invariant.
 
 The pieces that interact directly with the dispatcher / SSE contracts in
 this doc:

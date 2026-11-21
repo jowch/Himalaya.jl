@@ -62,7 +62,6 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "GET", "/api/experiments/$experiment/bridges")
     _workload_call(send, "GET", "/api/samples")
     _workload_call(send, "GET", "/api/samples?experiment_id=$experiment")
-    _workload_call(send, "GET", "/api/samples/$sample")
     _workload_call(send, "GET", "/api/samples/$sample/exposures")
     _workload_call(send, "POST", "/api/samples/$sample/bridge", Dict(:to_sample_id => other))
     _workload_call(send, "DELETE", "/api/samples/$sample/bridge")
@@ -72,7 +71,6 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "GET", "/api/tag-colors")
     _workload_call(send, "PUT", "/api/tag-colors", Dict(:label => "precompile", :color => "teal"))
     _workload_call(send, "PUT", "/api/tag-colors", Dict(:label => "precompile", :color => nothing))
-    _workload_call(send, "GET", "/api/exposures/$exposure")
     _workload_call(send, "GET", "/api/exposures/$exposure/trace")
     _workload_call(send, "GET", "/api/exposures/$exposure/image?thumb=1")
     _workload_call(send, "GET", "/api/exposures/$exposure/image")
@@ -111,7 +109,8 @@ function _save_module_state()
      pool = _READER_POOL[],
      subscribers = lock(() -> copy(SSE_SUBSCRIBERS[]), SSE_LOCK),
      op_ids = lock(() -> Set(keys(OP_LOCKS)), OP_LOCKS_MU),
-     hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK))
+     hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK),
+     cache_bytes = lock(() -> copy(_CACHE_BYTES), _IMAGE_CACHE_LOCK))
 end
 
 function _restore_module_state!(saved)
@@ -124,6 +123,7 @@ function _restore_module_state!(saved)
         empty!(_PEAK_SET_HASH_CACHE); merge!(_PEAK_SET_HASH_CACHE, saved.hashes[1])
         empty!(_PEAK_SET_HASH_CACHE_ORDER); append!(_PEAK_SET_HASH_CACHE_ORDER, saved.hashes[2])
     end
+    lock(() -> (empty!(_CACHE_BYTES); merge!(_CACHE_BYTES, saved.cache_bytes)), _IMAGE_CACHE_LOCK)
     nothing
 end
 

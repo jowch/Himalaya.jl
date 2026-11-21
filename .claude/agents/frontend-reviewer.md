@@ -41,7 +41,7 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 ### Effects and memoization
 
-- **Imperative render functions in effects: use `useCallback`.** Any function defined inside a component that is also used as a `useEffect` dependency must be wrapped in `useCallback` with its true deps. The effect depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `DetectorImage`'s `renderImage`/`evaluateOrient` `useCallback` + `useEffect` (`src/print/detector/DetectorImage.tsx`) is the canonical example.
+- **Imperative render functions in effects: use `useCallback`.** Any function defined inside a component that is also used as a `useEffect` dependency must be wrapped in `useCallback` with its true deps. The effect depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `DetectorImage`'s `evaluateOrient` `useCallback` + `useEffect` (`src/print/detector/DetectorImage.tsx`) is the canonical example.
 
 ### Inputs
 

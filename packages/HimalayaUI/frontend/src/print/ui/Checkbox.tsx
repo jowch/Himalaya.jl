@@ -28,12 +28,6 @@ export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "on
  * activation, a disabled guard, and the accent `focus-visible` ring. The inner
  * CheckCircle is `aria-hidden` so the role/label live only on the wrapper.
  *
- * Indeterminate note: CheckCircle has no indeterminate visual, and no real
- * consumer currently passes a truthy `indeterminate` (SampleTableRow only
- * plumbs the prop through). The prop is retained for API/test compatibility —
- * outer `aria-checked="mixed"` + `data-indeterminate` are honoured — but the
- * rendered badge falls back to the unchecked CheckCircle look.
- *
  * Appearance lives entirely in CheckCircle (token-driven); the wrapper carries
  * only placement + interaction classes — no inline colour literals here.
  */

@@ -173,25 +173,6 @@ end
         end
     end
 
-    @testset "GET /api/indices/:id → single IndexEntry full shape" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            with_inproc_routes(ctx.db) do call
-                rs = call("GET", "/api/exposures/$(ctx.exposure_id)/indices")
-                first_id = JSON3.read(String(rs.body))[1].id
-                r = call("GET", "/api/indices/$first_id")
-                @test r.status == 200
-                body = JSON3.read(String(r.body))
-                expected = [
-                    :id, :exposure_id, :phase, :basis, :score, :r_squared,
-                    :lattice_d, :ngc, :status, :kind, :inputs_hash,
-                    :peaks, :predicted_q,
-                ]
-                assert_keys(body, expected)
-            end
-        end
-    end
-
     @testset "POST /api/exposures/:id/speculative → IndexEntry full shape (incl. ngc)" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
@@ -296,17 +277,16 @@ end
     # canonical example before we tightened it. Any future SELECT * regression
     # on an entity table will fail one of these assertions.
 
-    @testset "GET /api/exposures/:id → full Exposure shape" begin
+    @testset "GET /api/samples/:id/exposures → full Exposure shape" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/exposures/$(ctx.exposure_id)")
+                r = call("GET", "/api/samples/$(ctx.sample_id)/exposures")
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = only(JSON3.read(String(r.body)))
                 expected = [
                     :id, :sample_id, :filename, :kind, :selected, :status,
                     :image_path, :trace_hash, :analysis_inputs_hash,
-                    # Phase-A exposure columns (the route SELECT *s, so all surface)
                     :experiment_id, :prp_path, :timestamp, :exposure_time,
                     :horizontal_position, :scan_id, :frame_no, :load_id,
                     :content_fingerprint,
@@ -341,16 +321,13 @@ end
         end
     end
 
-    @testset "GET /api/samples/:id → full Sample shape (including tags)" begin
+    @testset "GET /api/experiments/:id/samples → full Sample shape (including tags)" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/samples/$(ctx.sample_id)")
+                r = call("GET", "/api/experiments/$(ctx.experiment_id)/samples")
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
-                # Sample type: id, experiment_id, name, notes, tags.
-                # Route adds `created_at` from the row; document either as
-                # tightened or as known-extra.
+                body = only(JSON3.read(String(r.body)))
                 @test :id in keys(body)
                 @test :experiment_id in keys(body)
                 @test :tags in keys(body)

@@ -33,15 +33,6 @@ export function viewIntensity(view: PlotView, q: number, I: number): number {
   return view === "kratky" ? q * q * I : I;
 }
 
-export function applyView<T extends { q: number[]; I: number[]; sigma: number[] }>(view: PlotView, trace: T): T {
-  if (view !== "kratky") return trace;
-  return {
-    ...trace,
-    I: trace.I.map((v, i) => viewIntensity(view, trace.q[i]!, v)),
-    sigma: trace.sigma.map((v, i) => viewIntensity(view, trace.q[i]!, v)),
-  };
-}
-
 export function viewLabel(view: PlotView): string | null {
   return view === "kratky" ? "q²·I" : null;
 }

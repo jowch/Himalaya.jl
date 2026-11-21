@@ -55,7 +55,6 @@ onMutate(payload, qc) // optimistic cache write; returns RollbackContext
 request(payload, sig) // HTTP call; honours AbortSignal
 onSuccess(payload, response, qc)  // canonical cache write
 synthesizeFromSse?(remote, base)  // SSE-wins synthetic response (see §3)
-affectsExposurePeaks?(payload, exposureId)  // hook-level scoping
 treats404AsSuccess?   // treat HTTP 404 as a no-op success (idempotent removes)
 ```
 
@@ -67,8 +66,7 @@ flat payload before any callback runs. Mutator code never has to cast.
 **`OpKind` ≠ event kind in two cases:** `delete_index` emits
 `speculative_deleted`; `reanalyze_exposure` emits `analyze_run`. The
 `OpKind` describes the *user gesture*; the event name describes the
-*durable mutation*. Membership predicates like
-`useExposureHasPendingPeakOps` operate on `OpKind`.
+*durable mutation*.
 
 ### Two resolvers, two arm counts — `add_tag` is asymmetric on purpose
 
@@ -406,26 +404,7 @@ durable count of "nothing happened" offers no observability value).
 
 ---
 
-## 8. The `useExposureHasPendingPeakOps` gate
-
-While a peak-affecting mutation is queued for an exposure, any UI
-affordance that depends on the *effective peak set* must be suspended —
-otherwise the user sees flicker as the optimistic state, the server
-response, and the SSE echo land out of order.
-
-Canonical consumers:
-
-- a stale-indices indicator on the sample surface — don't show "stale" while a re-analyze is mid-flight.
-- `useSpeculativeSnap` — don't snap to a peak that may roll back.
-
-Reuse the hook for any new card or query that reads `peaks(exposureId)`
-derivatively. The membership predicate uses `affectsExposurePeaks` on the
-mutator definition, so a new peak-touching mutator participates
-automatically once it sets that flag.
-
----
-
-## 9. Persistence across reload
+## 8. Persistence across reload
 
 Pending mutations are mirrored into `sessionStorage` via
 `lib/queue/persistence.ts`. On reload, the queue rehydrates the pending
@@ -444,7 +423,7 @@ frame written by the *other* version mid-rollout:
 
 - **Persisted op queue (handled automatically).** Bumping `SCHEMA_VERSION`
   (`lib/queue/persistence.ts`) drops any stale persisted ops with the "N edits
-  couldn't be restored" toast (§9 above). A pre-deploy op carrying an old field
+  couldn't be restored" toast (§8 above). A pre-deploy op carrying an old field
   name is dropped, not replayed; the user redoes that edit.
 - **Live SSE frames (operational, NOT code).** `applyRemoteToCache`'s
   `update_sample` branch does a blind untyped spread `{ ...old, ...payload }`
@@ -460,7 +439,7 @@ frame written by the *other* version mid-rollout:
 
 ---
 
-## 10. Failure classes + retry policy
+## 9. Failure classes + retry policy
 
 `useQueueMutation` distinguishes two failure classes via
 `lib/queue/errors.ts`:
@@ -502,7 +481,7 @@ edits (#344).
 
 ---
 
-## 11. Multi-layer reconciliation contract
+## 10. Multi-layer reconciliation contract
 
 Six layers participate in any kind's optimistic-and-confirmation flow:
 
@@ -535,7 +514,6 @@ discipline and the canonical paired test files.
 | `lib/queue/replayCoordinator.ts` | `handleRemoteEvent`: own-op confirmation + foreign-event replay-as-rerun |
 | `lib/queue/applyRemoteToCache.ts` | Per-kind cache merge for foreign events; `applyPostStateOnly` for own-op + self-echo |
 | `lib/queue/persistence.ts` | sessionStorage mirror + rehydrate |
-| `lib/queue/hooks.ts` | `useExposureHasPendingPeakOps`, `useQueueOpStatus` |
 | `lib/queue/errors.ts` | `isValidationError`, `isInfrastructureError`, `buildValidationMessage` |
 | `lib/queue/mutatorRegistry.ts` | Discovery / lookup of mutators by kind |
 | `lib/queue/optimisticId.ts` | Negative-id minting helper |
@@ -570,7 +548,6 @@ Frontend (`packages/HimalayaUI/frontend/test/queue/`):
 - `persistence.test.ts` — rehydrate cycle; schema-version drop
 - `deferred.test.ts` — registry mint / resolve / leak-on-abort
 - `mutatorOnSseWins.test.ts` — SSE-first race resolution per kind
-- `hooks.test.tsx` — `useExposureHasPendingPeakOps` membership semantics
 - `errors.test.ts` — validation vs infrastructure classification
 
 Backend (`packages/HimalayaUI/test/`):

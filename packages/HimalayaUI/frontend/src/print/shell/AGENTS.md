@@ -1,6 +1,6 @@
 # frontend/src/print/shell — app shell, routing, modals
 
-The live application shell: the single layout shell, the topbar chrome, the route table, and the global onboarding/nav/error overlays. Everything else in the frontend is composed under `src/print/` (`ui/` primitives, `components/` composites, `pages/`, the `plot`/`detector`/`comb`/`waterfall` render layers, `export/` figure utilities) — the app shell itself is `src/print/App.tsx` (`PrintApp`) — plus the non-presentational layers at `src/` root (`state.ts`, `queries.ts`, `api.ts`, `lib/`, `hooks/`).
+The live application shell: the single layout shell, the topbar chrome, the route table, and the global onboarding/nav/error overlays. Everything else in the frontend is composed under `src/print/` (`ui/` primitives, `components/` composites, `pages/`, `interaction/`, the `plot`/`detector` render layers), the triage workspace under `src/workspace/` — the app shell itself is `src/print/App.tsx` (`PrintApp`) — plus the non-presentational layers at `src/` root (`state.ts`, `queries.ts`, `api.ts`, `lib/`, `hooks/`).
 
 ## Where things live
 
@@ -39,7 +39,7 @@ Arrow nav was lifted off the per-page scope-container `onKeyDown` into `arrowHan
 
 ## The floatingDock lane protocol
 
-The `InfrastructureBanner` is fixed bottom-centre by default (most prominent for a "Saving…" / "Couldn't save" status). A page that mounts an opaque, higher-z fixed bottom-centre action bar — the contact sheet's `CullBar` / `ComposeBar` (`bg-ink z-50`) — paints straight over the banner (`z-40`) and occludes it entirely (the banner still renders, it's just hidden underneath). LA-COLLIDE.
+The `InfrastructureBanner` is fixed bottom-centre by default (most prominent for a "Saving…" / "Couldn't save" status). A page that mounts an opaque, higher-z fixed bottom-centre action bar — a `Dock` (`print/ui/Dock.tsx`, `bg-ink z-50`), e.g. the grouping review's — paints straight over the banner (`z-40`) and occludes it entirely (the banner still renders, it's just hidden underneath). LA-COLLIDE.
 
 Any page mounting such a bar MUST claim the lane: call `setCenterLaneOccupied(true)` on mount and release it (`false`) on unmount. The banner reads the flag and steps aside to the bottom-right corner (free — toasts own top-right) until the lane clears, so both stay visible (`floatingDock.ts`; reader `./InfrastructureBanner.tsx`). This is **pure convention** — a small dedicated Zustand store (`useFloatingDock`), a plain boolean (not a pixel offset, so no brittle coupling to bar heights), with **no type-system enforcement**. Forget the call and the bar silently occludes the banner.
 
