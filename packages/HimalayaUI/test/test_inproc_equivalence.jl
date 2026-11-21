@@ -102,7 +102,7 @@ end
                 call("POST", "/api/exposures/99999/peaks";
                      headers=hdrs, body=Vector{UInt8}(bodyj))
             end
-            @test w.status >= 400
+            @test w.status == 500
             _assert_equiv(w, ip; label="fk-throw")
         end
     end

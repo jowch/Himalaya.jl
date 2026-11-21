@@ -145,7 +145,6 @@ describe("api", () => {
     expect(indices[0]!.peaks[0]!.q_observed).toBeCloseTo(0.71);
   });
 
-
   it("threads X-Client-Op-Id on POST mutations", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({

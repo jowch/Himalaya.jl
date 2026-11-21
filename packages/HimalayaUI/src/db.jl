@@ -1316,7 +1316,7 @@ were freshly created (`auto_peaks`, `peak_curations`). That missed
 populated tables like `sample_tags`, `exposure_tags`,
 `exposure_sources`, `index_groups`, `index_group_members` whose FKs had
 the same corruption. A real prod DB at `/tmp/himalaya-dev.db` with rows
-in `sample_tags` exhibited the bug — caught only by
+in `sample_tags` and the since-deleted `sample_messages` exhibited the bug — caught only by
 running the actual server (smoke checklist), not by the test suite which
 uses freshly-built DBs that don't go through this exact sequence.
 

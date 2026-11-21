@@ -353,7 +353,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
-
   it("speculative_created invalidates indices (no inline cache write)", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
@@ -453,7 +452,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
   });
 
-
   it("add_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
@@ -524,7 +522,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       queryKeys.indices(5),
     ]);
   });
-
 
   it("remove_tag (exposure) invalidates the sample's exposures list", () => {
     let invalidated: unknown = null;

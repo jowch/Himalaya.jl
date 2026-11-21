@@ -151,7 +151,6 @@ describe("resolveMutatorForEvent", () => {
     expect(resolveMutatorForEvent("edit_tag", "sample")).toBe(editCorpusSampleTagMutator);
   });
 
-
   it("routes analyze_run to reanalyzeExposure", () => {
     expect(resolveMutatorForEvent("analyze_run", "exposure")).toBe(reanalyzeExposureMutator);
   });
