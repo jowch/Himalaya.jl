@@ -373,7 +373,7 @@ export function WorkspacePage(): JSX.Element {
         removePhase.mutate(ix.id);
         history.record(untickEntry(ops, {
           label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
-          ids: Promise.resolve([{ exposureId: eid, phase: ix.phase, basis: ix.basis }]),
+          ids: Promise.resolve([{ exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }]),
         }));
         return;
       }
@@ -388,7 +388,7 @@ export function WorkspacePage(): JSX.Element {
       addPhase.mutate(ix.id);
       history.record(tickEntry(ops, {
         label: `ticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
-        id: { exposureId: eid, phase: ix.phase, basis: ix.basis }, wasFormFactor: isFormFactor,
+        id: { exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }, wasFormFactor: isFormFactor,
       }));
     },
     [exposure, sampleId, sample?.name, assignment.data, otherMembers, isFormFactor, addPhase, removePhase, removeFramePhase, history, ops],

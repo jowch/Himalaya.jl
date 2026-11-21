@@ -12,6 +12,7 @@ export interface PhaseIdentity {
   exposureId: number;
   phase: string;
   basis: number;
+  kind: IndexEntry["kind"];
 }
 
 interface Where {
@@ -43,7 +44,7 @@ export async function identify(
   const out: PhaseIdentity[] = [];
   for (const ref of refs) {
     const ix = (await ops.read.knownIndices(ref.exposureId)).find((i) => i.id === ref.indexId);
-    if (ix) out.push({ exposureId: ref.exposureId, phase: ix.phase, basis: ix.basis });
+    if (ix) out.push({ exposureId: ref.exposureId, phase: ix.phase, basis: ix.basis, kind: ix.kind });
   }
   return out;
 }
@@ -51,7 +52,7 @@ export async function identify(
 export async function setPhaseTicked(ops: EditOps, id: PhaseIdentity, ticked: boolean): Promise<number> {
   const [indices, assignment] = await Promise.all([ops.read.indices(id.exposureId), ops.read.assignment(id.exposureId)]);
   const members = new Set(assignment.members);
-  const hit = matchIndex(indices, id.phase, id.basis, (ix) => members.has(ix.id) !== ticked);
+  const hit = matchIndex(indices, id.phase, id.basis, (ix) => ix.kind === id.kind && members.has(ix.id) !== ticked);
   if (!hit) return 0;
   if (ticked) ops.addPhase(id.exposureId, hit.id);
   else ops.removePhase(id.exposureId, hit.id);

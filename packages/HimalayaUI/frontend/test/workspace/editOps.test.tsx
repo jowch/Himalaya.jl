@@ -137,7 +137,7 @@ describe("undo against the server", () => {
     server.indices.set(101, [index(33, "Pn3m", 0.101), index(34, "Im3m", 0.2)]);
     server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [33] });
     act(() => result.current.history.record(tickEntry(result.current.ops, {
-      label: "ticked Pn3m", sampleId: 10, exposureId: 101, id: { exposureId: 101, phase: "Pn3m", basis: 0.1 }, wasFormFactor: false,
+      label: "ticked Pn3m", sampleId: 10, exposureId: 101, id: { exposureId: 101, phase: "Pn3m", basis: 0.1, kind: "auto" }, wasFormFactor: false,
     })));
     let sent = 0;
     await act(async () => { sent = await result.current.history.undo()!.done; });
@@ -147,6 +147,17 @@ describe("undo against the server", () => {
     server.assignments.set(101, { exposure_id: 101, state: "null", members: [] });
     await act(async () => { await result.current.history.redo()!.done; });
     expect(firstArgs(api.addAssignmentPhase)).toEqual([[101, 33]]);
+  });
+
+  it("unticks the auto index, not a custom index of the same phase at a nearby lattice", async () => {
+    const { result } = setup();
+    server.indices.set(101, [index(50, "Pn3m", 0.1005, "speculative"), index(51, "Pn3m", 0.102)]);
+    server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [50, 51] });
+    act(() => result.current.history.record(tickEntry(result.current.ops, {
+      label: "ticked Pn3m", sampleId: 10, exposureId: 101, id: { exposureId: 101, phase: "Pn3m", basis: 0.1, kind: "auto" }, wasFormFactor: false,
+    })));
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.removeAssignmentPhase)).toEqual([[101, 51]]);
   });
 
   it("waits for a slow peak add to land, then removes the peak the server made", async () => {
