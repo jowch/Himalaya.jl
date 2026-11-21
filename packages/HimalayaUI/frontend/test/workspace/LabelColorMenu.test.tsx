@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { TagColorMenu } from "../../src/workspace/ui/TagColorMenu";
+import { LabelColorMenu } from "../../src/workspace/ui/LabelColorMenu";
 
 function menu(onPick = vi.fn(), onClose = vi.fn()) {
-  return <TagColorMenu name="37C" current="violet" isDefault left={0} onPick={onPick} onClose={onClose} />;
+  return <LabelColorMenu name="37C" current="violet" isDefault left={0} onPick={onPick} onClose={onClose} />;
 }
 
-describe("TagColorMenu", () => {
+describe("LabelColorMenu", () => {
   it("focuses the current colour once and keeps focus where the user moved it across rerenders", () => {
     const { rerender } = render(menu());
     expect(screen.getByRole("radio", { name: "Violet" })).toHaveFocus();
