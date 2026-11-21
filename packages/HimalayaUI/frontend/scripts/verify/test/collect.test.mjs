@@ -143,6 +143,8 @@ test("triage drops TRUTH's bad frames once and --undo keeps them again", async (
   }
 });
 
+const RAIL_PN3M = { ticked: ["Pn3m"], candidates: ["Pn3m"], form_factor: false };
+
 test("check-truth --ui hands the reader each sample's exposure order and folds in what it saw", async () => {
   const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
   fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);
@@ -152,8 +154,8 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
   const views = async (_cfg, experimentId, samples) => {
     asked.push({ experimentId, samples });
     return new Map([
-      [10, { workspace_kept: "2/2", workspace: "MO_H2O_S2", workspace_text: "Pn3m" }],
-      [11, { workspace_kept: "1/1", workspace: "MO_PEG5_S3", workspace_text: "Pn3m" }],
+      [10, { workspace_kept: "2/2", workspace: "MO_H2O_S2", workspace_text: "Pn3m", workspace_rail: RAIL_PN3M }],
+      [11, { workspace_kept: "1/1", workspace: "MO_PEG5_S3", workspace_text: "Pn3m", workspace_rail: RAIL_PN3M }],
     ]);
   };
   try {
