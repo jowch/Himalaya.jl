@@ -23,13 +23,6 @@ struct ExposureMeta
     prp          ::Union{NamedTuple, Nothing}  # parse_prp result; nothing if no .prp
 end
 
-"""
-    tif_listing(data_dir, tif_pattern) -> (dir, filenames, suffix) or nothing
-
-The TIFFs `tif_pattern` matches in `data_dir`, sorted. A stem is a filename
-minus `suffix`. `scan_directory` and `ingest_has_work` both enumerate through
-this so they agree on which stems exist. `nothing` when the directory is missing.
-"""
 function tif_listing(data_dir::AbstractString, tif_pattern::AbstractString)
     tif_parts = split(tif_pattern, "{name}"; limit=2)
     length(tif_parts) == 2 || error("tif_pattern must contain {{name}}: $tif_pattern")

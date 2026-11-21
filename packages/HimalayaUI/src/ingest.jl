@@ -395,15 +395,6 @@ function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::Abstr
     false
 end
 
-"""
-    pending_analysis_ids(db, experiment_id; retry_failed = false) -> Vector{Int}
-
-Exposures a pass should analyze: never analyzed, analyzed by an older
-`ANALYSIS_VERSION`, missing a trace that has since appeared, or failed on a
-trace file whose size or mtime has changed since. `retry_failed` also returns
-every failed exposure whose trace exists. One `readdir` of the trace directory,
-plus a stat per failed exposure.
-"""
 function pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = false)
     exp_row = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
