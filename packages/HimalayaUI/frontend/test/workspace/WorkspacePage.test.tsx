@@ -686,6 +686,22 @@ describe("WorkspacePage", () => {
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
   });
 
+  it("the indexing plot waits for the trace before counting reflections", () => {
+    state.trace = undefined;
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
+    state.indices = [
+      {
+        ...index(2, "Pn3m", 0.9),
+        peaks: [
+          { peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 },
+          { peak_id: 8, ratio_position: 2, residual: 0, q_observed: 0.14 },
+        ],
+      },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-indexing-fit")).toBeNull();
+  });
+
   it("the indexing plot follows the custom index while it is open", () => {
     state.trace = makeTrace(1);
     const a = (2 * Math.PI * Math.SQRT2) / 0.1;
