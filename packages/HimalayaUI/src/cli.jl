@@ -10,7 +10,7 @@ Resolve an experiment from the central DB. `key` may be:
     a listing otherwise.
   - a numeric string — looked up by `experiments.id`.
   - a path-like string (starts with `/` or `.`, or contains a separator) —
-    matched against `experiments.path` and `experiments.data_dir`, as typed
+    matched against `experiments.path` and its setups' `root_dir` and `data_dir`, as typed
     (after `abspath`) and with symlinks resolved, ignoring a trailing slash.
   - any other string — looked up by `experiments.name`.
 """
@@ -42,8 +42,11 @@ function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
     elseif looks_like_path
         plain = rstrip(abspath(key), '/')
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, name, path FROM experiments WHERE rtrim(path, '/') IN (?, ?) OR rtrim(data_dir, '/') IN (?, ?)",
-            [plain, _canonical_dir(plain), plain, _canonical_dir(plain)]))
+            """SELECT DISTINCT x.id, x.name, x.path FROM experiments x
+                 LEFT JOIN setups st ON st.experiment_id = x.id
+                WHERE rtrim(x.path, '/') IN (?1, ?2) OR rtrim(st.data_dir, '/') IN (?1, ?2)
+                   OR rtrim(st.root_dir, '/') IN (?1, ?2)""",
+            [plain, _canonical_dir(plain)]))
     else
         Tables.rowtable(DBInterface.execute(db,
             "SELECT id, name, path FROM experiments WHERE name = ?", [key]))

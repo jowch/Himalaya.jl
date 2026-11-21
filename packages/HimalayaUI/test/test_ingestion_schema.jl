@@ -14,11 +14,9 @@ function fresh_db()
     return path
 end
 
-"Insert a minimal experiment honouring its NOT NULL columns (name/path/data_dir/analysis_dir, db.jl:21-23). Returns the id."
 function seed_experiment(db; name="e")
-    DBInterface.lastrowid(DBInterface.execute(db,
-        "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES (?, ?, ?, ?)",
-        [name, "/exp/$name", "/exp/$name/data", "/exp/$name/analysis"]))
+    HimalayaUI.create_experiment!(db; name, path = "/exp/$name",
+        data_dir = "/exp/$name/data", analysis_dir = "/exp/$name/analysis")
 end
 
 "Open a path, run f(db), always close."
@@ -81,17 +79,21 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             # new dedup index present, old one gone
             idx = indexes(db, "exposures")
             @test any(i -> occursin("exposures_unique_filename", i), idx)
-            # the new index is on (experiment_id, filename): same filename, different sample, same experiment → rejected
             DBInterface.execute(db, "PRAGMA foreign_keys=ON")
             eid = seed_experiment(db)   # honours NOT NULL name/path/data_dir/analysis_dir
             s1 = DBInterface.lastrowid(DBInterface.execute(db,
                 "INSERT INTO samples (experiment_id, name) VALUES (?, 'A')", [eid]))
             s2 = DBInterface.lastrowid(DBInterface.execute(db,
                 "INSERT INTO samples (experiment_id, name) VALUES (?, 'B')", [eid]))
+            st = HimalayaUI.default_setup_id(db, eid)
             DBInterface.execute(db,
-                "INSERT INTO exposures (experiment_id, sample_id, filename) VALUES (?, ?, 'f.tif')", [eid, s1])
+                "INSERT INTO exposures (experiment_id, setup_id, sample_id, filename) VALUES (?, ?, ?, 'f.tif')", [eid, st, s1])
             @test_throws Exception DBInterface.execute(db,
-                "INSERT INTO exposures (experiment_id, sample_id, filename) VALUES (?, ?, 'f.tif')", [eid, s2])
+                "INSERT INTO exposures (experiment_id, setup_id, sample_id, filename) VALUES (?, ?, ?, 'f.tif')", [eid, st, s2])
+            other = HimalayaUI.create_setup!(db; experiment_id = eid, data_dir = "/exp/e/setup2/data",
+                analysis_dir = "/exp/e/setup2/analysis", position = 1)
+            @test_nowarn DBInterface.execute(db,
+                "INSERT INTO exposures (experiment_id, setup_id, sample_id, filename) VALUES (?, ?, ?, 'f.tif')", [eid, other, s2])
         end
     end
 
@@ -151,14 +153,15 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
     @testset "experiments geometry+scan columns" begin
         path = fresh_db()
         with_db(path) do db
-            c = cols(db, "experiments")
+            c = cols(db, "setups")
             for col in ["beam_center_x","beam_center_y","pixel_size_um","q_units",
                         "energy_kev_source","flight_path_m_source","beam_center_x_source",
-                        "beam_center_y_source","pixel_size_um_source","q_units_source",
-                        "last_scanned_at","ingest_status",
-                        "last_scan_tier","consecutive_empty_ticks"]
+                        "beam_center_y_source","pixel_size_um_source","q_units_source"]
                 @test col in c
             end
+            xc = cols(db, "experiments")
+            @test "last_scanned_at" in xc && "ingest_status" in xc
+            @test !("last_scan_tier" in xc) && !("consecutive_empty_ticks" in xc)
             @test !("detector_distance_mm" in c)   # spec §10: no separate column
             @test !("scan_signature" in c)
         end
@@ -174,7 +177,7 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             DBInterface.execute(db, "UPDATE experiments SET scan_signature = 'sig' WHERE id = ?", [eid])
             HimalayaUI.migrate_schema!(db)
             @test !("scan_signature" in cols(db, "experiments"))
-            rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, name, data_dir FROM experiments"))
+            rows = Tables.rowtable(DBInterface.execute(db, "SELECT x.id, x.name, st.data_dir FROM experiments x JOIN setups st ON st.experiment_id = x.id"))
             @test length(rows) == 1
             @test rows[1].id == eid
             @test rows[1].name == "kept"
@@ -213,7 +216,7 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
                 beam_center_x=421.409, beam_center_y=836.946, beam_center_x_source="setup",
                 pixel_size_um=172.0, q_units="A^-1")
             row = first(Tables.rowtable(DBInterface.execute(db,
-                "SELECT flight_path_m, flight_path_m_source, beam_center_x FROM experiments WHERE id=?", [id])))
+                "SELECT flight_path_m, flight_path_m_source, beam_center_x FROM setups WHERE experiment_id = ?", [id])))
             @test row.flight_path_m ≈ 1.8095
             @test row.flight_path_m_source == "setup"
             @test row.beam_center_x ≈ 421.409
@@ -247,6 +250,7 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
         dir = mktempdir(); path = joinpath(dir, "duplabel.db")
         db = SQLite.DB(path)
         HimalayaUI.create_schema!(db)
+        add_legacy_experiment_columns!(db)
         DBInterface.execute(db, "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'e','/exp/e','/exp/e/data','/exp/e/analysis')")
         # distinct machine names (unique), SAME display_name (the future label)
         DBInterface.execute(db, "INSERT INTO samples (id, experiment_id, name, display_name) VALUES (1,1,'m1','HA85 (S01P15)')")
@@ -302,6 +306,7 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
         dir = mktempdir(); path = joinpath(dir, "legacy.db")
         db = SQLite.DB(path)
         HimalayaUI.create_schema!(db)
+        add_legacy_experiment_columns!(db)
         DBInterface.execute(db,
             "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacy','/exp/legacy','/exp/legacy/data','/exp/legacy/analysis')")
         # name = machine id ('JC001'), display_name = human label ('JC C04')

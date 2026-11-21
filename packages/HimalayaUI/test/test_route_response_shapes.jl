@@ -286,7 +286,7 @@ end
                     :horizontal_position, :scan_id, :frame_no, :load_id,
                     :content_fingerprint,
                     :transmitted_counts, :incident_monitor, :counting_time, :monitors_read,
-                    :analysis_version, :analysis_error, :analysis_trace_stat,
+                    :analysis_version, :analysis_error, :analysis_trace_stat, :setup_id,
                     :sources, :image_version,
                     :beam_energy_ev, :pipe_length_m, :detector,
                 ]

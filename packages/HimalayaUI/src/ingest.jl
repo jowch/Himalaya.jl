@@ -4,8 +4,8 @@
 #
 # Discipline cloned from _reingest_inner! (cli.jl) + analyze_exposure! (pipeline.jl):
 #   - Insert-only for loads/samples/exposures (no clobber on rescan).
-#   - The exposure dedup key is (experiment_id, filename) — also enforced by the
-#     `exposures_unique_filename` UNIQUE index (db.jl migrate_exposures_unique_filename!).
+#   - The exposure dedup key is (setup_id, filename) — also enforced by the
+#     `exposures_unique_filename` UNIQUE index (setups.jl _setup_keyed_indexes!).
 #   - Geometry is FILL-ONLY: it writes a field only when still unset ('default');
 #     any established source (setup/prp/computed, or 'user') is left untouched, so
 #     geometry derived once (at the funnel preview) is never re-derived (spec §4).
@@ -89,28 +89,10 @@ end
 """
     scan_and_group!(db, experiment_id; analyze=true, on_progress=nothing)
 
-Full ingest of a beamtime directory into `db` under `experiment_id`. The scan
-root is the experiment's own `data_dir`/`analysis_dir` (resolved from its row).
-
-Steps:
-  1. Resolve `data_dir` and `analysis_dir` from the `experiments` row.
-  2. Scan: enumerate TIF+PRP+DAT triplets with `scan_directory`.
-  3. Geometry: FILL-ONLY — derive from the sampled PRPs + setup_info, but write
-     only fields still unset; never overwrite geometry already established (e.g.
-     committed from the funnel preview, which derived it with the confirmed setup
-     file). Derived once, not re-derived each scan.
-  4. Group: `group_into_samples` → loads/samples/slots.
-  5. Persist: insert `loads`, `samples`, `exposures` rows inside ONE write
-     transaction (insert-only — dedup loads by (experiment_id, load_index),
-     samples by (experiment_id, load_id, slot_index), exposures by
-     (experiment_id, filename) — so a clean rescan is a true no-op).
-  6. Analyze: run `analyze_exposure!` for every newly inserted exposure, OUTSIDE
-     the write transaction (same contract as `cli_init_with_db!`). Skipped when
-     `analyze=false` (test-only).
-
-The insert-only discipline makes every scan additive: a clean rescan is a no-op,
-new files extend the existing loads/samples/exposures. Returns a NamedTuple summary
-`(status, added_loads, added_samples, added_exposures)`.
+Full ingest of every included setup of `experiment_id`, in setup order. Each
+setup is scanned, grouped, persisted and analyzed on its own (`_scan_setup!`).
+Returns a NamedTuple summary `(status, added_loads, added_samples, added_exposures)`;
+`status` is `:empty` only when no setup found any image.
 """
 function scan_and_group!(
     db           ::SQLite.DB,
@@ -119,17 +101,24 @@ function scan_and_group!(
     retry_failed ::Bool   = false,
     on_progress  ::Union{Function,Nothing} = nothing,
 )
-    # Resolve data_dir, analysis_dir, and per-experiment pattern overrides from the row.
-    exp_row = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern FROM experiments WHERE id = ?", [experiment_id])))
-    data_dir     = String(exp_row.data_dir)
-    analysis_dir = String(exp_row.analysis_dir)
+    results = [_scan_setup!(db, experiment_id, setup; analyze, retry_failed, on_progress)
+               for setup in setups_of(db, experiment_id; included_only = true)]
+    ok = filter(r -> r.status == :ok, results)
+    isempty(ok) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
+    (status          = :ok,
+     added_loads     = sum(r.added_loads for r in ok),
+     added_samples   = sum(r.added_samples for r in ok),
+     added_exposures = sum(r.added_exposures for r in ok))
+end
 
-    # Read file patterns from DB columns (set via PATCH /api/experiments/:id); fall back to
-    # legacy {name}.<ext> defaults when the column is NULL.
-    tif_pattern = coalesce(exp_row.image_pattern,       "{name}.tif")
-    prp_pattern = coalesce(exp_row.metadata_pattern,    "{name}.prp")
-    dat_pattern = coalesce(exp_row.integration_pattern, "{name}.dat")
+function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
+                      analyze::Bool, retry_failed::Bool, on_progress)
+    setup_id     = Int(setup.id)
+    data_dir     = String(setup.data_dir)
+    analysis_dir = String(setup.analysis_dir)
+    tif_pattern = coalesce(setup.image_pattern,       "{name}.tif")
+    prp_pattern = coalesce(setup.metadata_pattern,    "{name}.prp")
+    dat_pattern = coalesce(setup.integration_pattern, "{name}.dat")
 
     # -----------------------------------------------------------------------
     # 1. Scan: enumerate TIF+PRP+DAT triplets
@@ -171,7 +160,7 @@ function scan_and_group!(
     # left untouched — geometry is derived once, not re-derived on every scan.
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
-            _fill_unset_geometry!(db, experiment_id, geo)
+            _fill_unset_geometry!(db, setup_id, geo)
         end
     end
 
@@ -191,12 +180,12 @@ function scan_and_group!(
             # Existing exposure filenames for this experiment (dedup key).
             existing_filenames = Set{String}(String(r.filename)
                 for r in Tables.rowtable(DBInterface.execute(db,
-                    "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
-                    [experiment_id])))
+                    "SELECT filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL",
+                    [setup_id])))
 
             for gl in grouping.loads
                 any(ge -> !(ge.stem in existing_filenames), (ge for gs in gl.samples for ge in gs.exposures)) || continue
-                # Dedup the load row by (experiment_id, load_index). The loads table
+                # Dedup the load row by (setup_id, load_index). The loads table
                 # has only a NON-unique index (loads_experiment_idx), so an
                 # unconditional INSERT would mint a fresh load_id on every rescan —
                 # that re-keys the sample dedup below onto a NEW load_id, finds
@@ -205,14 +194,14 @@ function scan_and_group!(
                 # existing load_id when present; insert only when absent. This makes
                 # a clean rescan a true no-op.
                 existing_load = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id FROM loads WHERE experiment_id = ? AND load_index = ?",
-                    [experiment_id, gl.load_index]))
+                    "SELECT id FROM loads WHERE setup_id = ? AND load_index = ?",
+                    [setup_id, gl.load_index]))
                 if isempty(existing_load)
                     load_id = Int(DBInterface.lastrowid(DBInterface.execute(db, """
-                        INSERT INTO loads (experiment_id, load_index, frame_count,
+                        INSERT INTO loads (experiment_id, setup_id, load_index, frame_count,
                                            start_time, end_time, session_id)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, [experiment_id, gl.load_index, gl.frame_count,
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, [experiment_id, setup_id, gl.load_index, gl.frame_count,
                           ismissing(gl.start_time) ? nothing : Dates.format(gl.start_time, "yyyy-mm-ddTHH:MM:SS"),
                           ismissing(gl.end_time)   ? nothing : Dates.format(gl.end_time,   "yyyy-mm-ddTHH:MM:SS"),
                           gl.session_index])))
@@ -222,15 +211,16 @@ function scan_and_group!(
 
                 for gs in gl.samples
                     any(ge -> !(ge.stem in existing_filenames), gs.exposures) || continue
-                    # Sample dedup by (experiment_id, load_id, slot_index). Reuse the
+                    # Sample dedup by (setup_id, load_id, slot_index). Reuse the
                     # existing row on rescan rather than re-inserting (also avoids
                     # tripping the samples_unique_name UNIQUE index).
                     existing_sample = Tables.rowtable(DBInterface.execute(db,
-                        "SELECT id FROM samples WHERE experiment_id = ? AND load_id = ? AND slot_index = ?",
-                        [experiment_id, load_id, gs.slot_index]))
+                        "SELECT id FROM samples WHERE setup_id = ? AND load_id = ? AND slot_index = ?",
+                        [setup_id, load_id, gs.slot_index]))
                     if isempty(existing_sample)
                         sample_id = create_sample!(db;
                             experiment_id   = experiment_id,
+                            setup_id        = setup_id,
                             name            = gs.name,
                             load_id         = load_id,
                             slot_index      = gs.slot_index,
@@ -244,6 +234,7 @@ function scan_and_group!(
                         ge.stem in existing_filenames && continue
                         eid = create_exposure!(db;
                             experiment_id       = experiment_id,
+                            setup_id            = setup_id,
                             sample_id           = sample_id,
                             filename            = ge.stem,
                             # image_path is required by the image route + prewarm_thumbnails!
@@ -274,7 +265,7 @@ function scan_and_group!(
     # -----------------------------------------------------------------------
     if analyze
         to_analyze = vcat(new_exposure_ids,
-            setdiff(pending_analysis_ids(db, experiment_id; retry_failed), new_exposure_ids))
+            setdiff(_pending_setup_ids(db, setup; retry_failed), new_exposure_ids))
         n_new = length(to_analyze)
         # The "analyzing" segment reports against n_new, its OWN denominator — the
         # segmented bar gives each stage its own track, so stages no longer have to
@@ -340,8 +331,8 @@ function _file_finder(base::AbstractString, pattern::AbstractString; strip_acqui
     end
 end
 
-_trace_finder(db::SQLite.DB, experiment_id::Int, analysis_dir::AbstractString) =
-    _file_finder(analysis_dir, integration_pattern_for(db, experiment_id); strip_acquisition = true)
+_trace_finder(setup) =
+    _file_finder(String(setup.analysis_dir), integration_pattern_for(setup); strip_acquisition = true)
 
 function _stat_signature(path::AbstractString)
     st = stat(path)
@@ -350,8 +341,8 @@ end
 
 function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::AbstractString)
     row = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT filename, experiment_id FROM exposures WHERE id = ?", [exposure_id])))
-    trace = resolve_trace_path(analysis_dir, integration_pattern_for(db, Int(row.experiment_id)), String(row.filename))
+        "SELECT filename FROM exposures WHERE id = ?", [exposure_id])))
+    trace = resolve_trace_path(analysis_dir, integration_pattern_for_exposure(db, exposure_id), String(row.filename))
     error_text = if trace === nothing
         NO_TRACE
     else
@@ -387,16 +378,18 @@ function ingest_problems(db::SQLite.DB, experiment_id::Int)
           :reason => String(r.analysis_error)) for r in rows]
 end
 
-function pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = false)
-    exp_row = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
+pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = false) =
+    reduce(vcat, (_pending_setup_ids(db, st; retry_failed)
+                  for st in setups_of(db, experiment_id; included_only = true)); init = Int[])
+
+function _pending_setup_ids(db::SQLite.DB, setup; retry_failed::Bool = false)
     rows = Tables.rowtable(DBInterface.execute(db, """
         SELECT id, filename, analysis_error, analysis_version, analysis_trace_stat FROM exposures
-         WHERE experiment_id = ?2 AND filename IS NOT NULL
+         WHERE setup_id = ?2 AND filename IS NOT NULL
            AND (trace_hash IS NULL OR analysis_version IS NULL OR analysis_version != ?1)
-         ORDER BY id""", [ANALYSIS_VERSION, experiment_id]))
+         ORDER BY id""", [ANALYSIS_VERSION, Int(setup.id)]))
     isempty(rows) && return Int[]
-    find_trace = _trace_finder(db, experiment_id, String(exp_row.analysis_dir))
+    find_trace = _trace_finder(setup)
     function due(r)
         ismissing(r.analysis_error) && return true
         trace = find_trace(String(r.filename))
@@ -410,11 +403,11 @@ function pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::B
     Int[Int(r.id) for r in rows if due(r)]
 end
 
-function _insertable_stems(db::SQLite.DB, experiment_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir, image_pattern, metadata_pattern FROM experiments WHERE id = ?", [experiment_id]))
-    isempty(rows) && return String[]
-    r = first(rows)
+_insertable_stems(db::SQLite.DB, experiment_id::Int) =
+    reduce(vcat, (_insertable_setup_stems(db, st)
+                  for st in setups_of(db, experiment_id; included_only = true)); init = String[])
+
+function _insertable_setup_stems(db::SQLite.DB, r)
     data_dir = String(r.data_dir)
     listing = try
         tif_listing(data_dir, coalesce(r.image_pattern, "{name}.tif"))
@@ -425,7 +418,7 @@ function _insertable_stems(db::SQLite.DB, experiment_id::Int)
     _, tif_files, tif_suffix = listing
     stems = String[f[1:end-length(tif_suffix)] for f in tif_files]
     known = Set(String(x.filename) for x in Tables.rowtable(DBInterface.execute(db,
-        "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL", [experiment_id])))
+        "SELECT filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL", [Int(r.id)])))
     find_prp = _file_finder(data_dir, coalesce(r.metadata_pattern, "{name}.prp"))
     has_prp(stem) = find_prp(stem) !== nothing
     any_prp = any(has_prp, stems)
@@ -445,9 +438,9 @@ function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
 end
 
 """
-    _fill_unset_geometry!(db, experiment_id, geo)
+    _fill_unset_geometry!(db, setup_id, geo)
 
-FILL-ONLY geometry write: write a derived field to the `experiments` row ONLY when
+FILL-ONLY geometry write: write a derived field to the `setups` row ONLY when
 that field is still UNSET (its current `*_source` is `'default'`). Any field that
 already has an established source — `'setup'`/`'prp'`/`'computed'` (derived once,
 e.g. committed from the funnel preview) or `'user'` (a manual override) — is left
@@ -460,11 +453,11 @@ callers that did not supply it, and it never silently re-derives over an
 established value (so a rescan presents what was committed, not a fresh — and
 possibly worse — re-derivation). The user can always re-edit in Configuration.
 """
-function _fill_unset_geometry!(db::SQLite.DB, experiment_id::Int, geo::NamedTuple)
+function _fill_unset_geometry!(db::SQLite.DB, setup_id::Int, geo::NamedTuple)
     current = first(Tables.rowtable(DBInterface.execute(db,
         """SELECT energy_kev_source, flight_path_m_source,
                   beam_center_x_source, beam_center_y_source, pixel_size_um_source
-             FROM experiments WHERE id = ?""", [experiment_id])))
+             FROM setups WHERE id = ?""", [setup_id])))
 
     updates = Pair{String,Any}[]
 
@@ -491,6 +484,6 @@ function _fill_unset_geometry!(db::SQLite.DB, experiment_id::Int, geo::NamedTupl
     cols = join(first.(updates) .* " = ?", ", ")
     vals = last.(updates)
     DBInterface.execute(db,
-        "UPDATE experiments SET $cols WHERE id = ?",
-        vcat(vals, [experiment_id]))
+        "UPDATE setups SET $cols WHERE id = ?",
+        vcat(vals, [setup_id]))
 end

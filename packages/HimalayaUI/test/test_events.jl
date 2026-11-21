@@ -358,7 +358,7 @@ end
         db = open_prepared_clone(tmp)
         # Seed FK chain.
         DBInterface.execute(db,
-            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+            "INSERT INTO experiments (name, path) VALUES ('e', '/p')")
         DBInterface.execute(db,
             "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
@@ -391,7 +391,7 @@ end
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         DBInterface.execute(db,
-            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+            "INSERT INTO experiments (name, path) VALUES ('e', '/p')")
         DBInterface.execute(db,
             "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
@@ -417,7 +417,7 @@ end
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         DBInterface.execute(db,
-            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+            "INSERT INTO experiments (name, path) VALUES ('e', '/p')")
         DBInterface.execute(db,
             "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,

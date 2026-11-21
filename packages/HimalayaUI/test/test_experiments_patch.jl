@@ -41,11 +41,7 @@ using HimalayaUI: with_inproc_routes, open_prepared_clone
             r4 = call("PATCH", "/api/experiments/$exp_id";
                 headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
                 body=Vector{UInt8}(JSON3.write(Dict("image_pattern" => "*.tif"))))
-            @test r4.status == 200
-            r4b = call("GET", "/api/experiments/$exp_id")
-            exp4 = JSON3.read(r4b.body)
-            @test exp4["image_pattern"] == "*.tif"
-            @test !haskey(exp4, "scan_signature")
+            @test r4.status == 400
 
             # data_dir stays read-only (400)
             r5 = call("PATCH", "/api/experiments/$exp_id";

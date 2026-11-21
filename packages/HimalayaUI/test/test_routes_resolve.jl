@@ -191,7 +191,7 @@ using HimalayaUI
             ctx = _setup_for_resolve(tmp)
             # Insert a second experiment with the same name.
             res = DBInterface.execute(ctx.db,
-                "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('test-exp','/p','/d','/a')")
+                "INSERT INTO experiments (name, path) VALUES ('test-exp', '/p')")
             second_id = Int(DBInterface.lastrowid(res))
             @test second_id > ctx.experiment_id
 

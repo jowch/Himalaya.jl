@@ -122,11 +122,11 @@ end
         SQLite.close(db)
     end
 
-    @testset "GET /api/experiments/{id} includes typed geometry + ingest_status + stats" begin
+    @testset "GET /api/experiments/{id} includes setup geometry + ingest_status + stats" begin
         db, dir, exp_id = scan_test_db()
         # Seed typed geometry columns directly (Phase B would do this via scan_and_group!)
         DBInterface.execute(db, """
-            UPDATE experiments SET
+            UPDATE setups SET
                 beam_center_x       = 421.409,
                 beam_center_y       = 836.946,
                 beam_center_x_source = 'setup',
@@ -137,11 +137,12 @@ end
                 flight_path_m_source = 'setup',
                 energy_kev          = 9.0,
                 energy_kev_source   = 'prp',
-                q_units             = 'A^-1',
-                ingest_status       = 'complete',
-                last_scanned_at     = '2026-04-12T10:00:00Z'
-            WHERE id = ?
+                q_units             = 'A^-1'
+            WHERE experiment_id = ?
         """, [exp_id])
+        DBInterface.execute(db,
+            "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = '2026-04-12T10:00:00Z' WHERE id = ?",
+            [exp_id])
         # Seed a load + sample + exposure so stats are non-zero
         lid = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 4)
         sid = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "HA85 (S01P15)",
@@ -154,14 +155,15 @@ end
             body = JSON3.read(String(r.body))
 
             # Typed geometry
-            @test body.beam_center_x       ≈ 421.409
-            @test body.beam_center_x_source == "setup"
-            @test body.flight_path_m       ≈ 1.8095
-            @test body.flight_path_m_source == "setup"
-            @test body.energy_kev          ≈ 9.0
-            @test body.energy_kev_source   == "prp"
-            @test body.pixel_size_um       ≈ 172.0
-            @test body.q_units             == "A^-1"
+            st = only(body.setups)
+            @test st.beam_center_x       ≈ 421.409
+            @test st.beam_center_x_source == "setup"
+            @test st.flight_path_m       ≈ 1.8095
+            @test st.flight_path_m_source == "setup"
+            @test st.energy_kev          ≈ 9.0
+            @test st.energy_kev_source   == "prp"
+            @test st.pixel_size_um       ≈ 172.0
+            @test st.q_units             == "A^-1"
             @test body.ingest_status       == "complete"
             @test body.last_scanned_at     == "2026-04-12T10:00:00Z"
 
@@ -170,82 +172,6 @@ end
             @test body.stats.loads     == 1
             @test body.stats.samples   == 1
             @test body.stats.exposures == 1
-        end
-        SQLite.close(db)
-    end
-
-    @testset "PATCH /api/experiments/{id} writes geometry overrides, marks source=user" begin
-        db, dir, exp_id = scan_test_db()
-
-        with_test_server(db) do port, base
-            # Patch a geometry field
-            r = HTTP.patch("$base/api/experiments/$exp_id";
-                body    = JSON3.write(Dict(
-                    :flight_path_m  => 1.7500,
-                    :beam_center_x  => 500.0,
-                    :beam_center_y  => 800.0,
-                    :pixel_size_um  => 172.0,
-                    :energy_kev     => 9.0,
-                    :q_units        => "nm^-1")),
-                headers = ["Content-Type" => "application/json",
-                           "X-Username"   => "alice"],
-                status_exception = false)
-            @test r.status == 200
-
-            # Verify persisted values + source override
-            row = Tables.rowtable(DBInterface.execute(db, """
-                SELECT flight_path_m, flight_path_m_source,
-                       beam_center_x, beam_center_x_source,
-                       q_units
-                  FROM experiments WHERE id = ?
-            """, [exp_id]))[1]
-            @test row.flight_path_m       ≈ 1.7500
-            @test row.flight_path_m_source == "user"
-            @test row.beam_center_x       ≈ 500.0
-            @test row.beam_center_x_source == "user"
-            @test row.q_units             == "nm^-1"
-
-            # Partial patch: only flight_path_m. Others untouched.
-            r2 = HTTP.patch("$base/api/experiments/$exp_id";
-                body    = JSON3.write(Dict(:energy_kev => 12.0)),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r2.status == 200
-            row2 = Tables.rowtable(DBInterface.execute(db,
-                "SELECT energy_kev, energy_kev_source, flight_path_m FROM experiments WHERE id=?",
-                [exp_id]))[1]
-            @test row2.energy_kev        ≈ 12.0
-            @test row2.energy_kev_source == "user"
-            @test row2.flight_path_m     ≈ 1.7500  # previous value preserved
-
-            # 404 for unknown experiment
-            r3 = HTTP.patch("$base/api/experiments/999999";
-                body    = JSON3.write(Dict(:energy_kev => 1.0)),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r3.status == 404
-
-            # Read-only fields rejected
-            r4 = HTTP.patch("$base/api/experiments/$exp_id";
-                body    = JSON3.write(Dict(:data_dir => "/evil")),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r4.status == 400
-
-            # name is now editable (Phase E1: name/description became writable via PATCH).
-            r5 = HTTP.patch("$base/api/experiments/$exp_id";
-                body    = JSON3.write(Dict(:name => "Renamed")),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r5.status == 200
-
-            # A body with no recognized patchable (geometry) field → 400, matching
-            # the codebase PATCH-validation convention (test_route_validation_routing.jl).
-            r6 = HTTP.patch("$base/api/experiments/$exp_id";
-                body    = JSON3.write(Dict(:NOT_a_field => "x")),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r6.status == 400
         end
         SQLite.close(db)
     end
@@ -520,7 +446,7 @@ end
 
                 # Experiment row is created
                 exp_rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id, name, data_dir, ingest_status FROM experiments WHERE id = ?",
+                    "SELECT x.id, x.name, st.data_dir, x.ingest_status FROM experiments x JOIN setups st ON st.experiment_id = x.id WHERE x.id = ?",
                     [body.id]))
                 @test length(exp_rows) == 1
                 @test exp_rows[1].name == "MyExp"
@@ -559,7 +485,7 @@ end
             @test resp.status == 202
             id  = JSON3.read(resp.body).id
             row = only(Tables.rowtable(DBInterface.execute(db,
-                "SELECT image_pattern FROM experiments WHERE id = ?", [id])))
+                "SELECT image_pattern FROM setups WHERE experiment_id = ?", [id])))
             @test row.image_pattern == "{name}.tiff"
             # Poll for the async scan to finish before with_inproc_routes closes the DB.
             deadline = time() + 5.0

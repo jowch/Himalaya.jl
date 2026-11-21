@@ -65,7 +65,7 @@ function groupByYear(
 /**
  * ExperimentsHomePage — /experiments gallery (M2). Year-grouped 2-column card
  * grid with a slim left timeline rail. Each card shows the experiment name,
- * state chip (scanning / N to review / up to date), data_dir path, and counts.
+ * state chip (scanning / N to review / up to date), folder path, and counts.
  * Empty → EmptyState + New CTA.
  */
 export function ExperimentsHomePage(): JSX.Element {
@@ -183,9 +183,8 @@ export function ExperimentsHomePage(): JSX.Element {
                           </NoticePill>
                         </div>
 
-                        {/* data_dir path */}
                         <div className="font-mono text-xs text-ink-soft mb-2 truncate">
-                          {e.data_dir}
+                          {e.path}
                         </div>
 
                         {/* Counts or indexing placeholder */}

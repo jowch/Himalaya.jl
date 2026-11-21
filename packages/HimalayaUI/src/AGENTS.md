@@ -72,7 +72,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 
 ## Experiment config
 
-The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/preview`, which lists every setup under the picked folder, then one `POST /api/experiments` per setup; `/api/fs/manifest` recounts a setup the user corrected); `PATCH /api/experiments/:id` edits all but the path fields, though no page calls it any more. The `experiments.config` column holds legacy TOML that nothing reads or sends. There is no `experiment.toml`.
+The `setups` rows under an experiment are the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source` (`setups.jl`). The experiment row keeps only `name`, `description`, `path` (the beamtime folder) and ingest status. Loads, samples and exposures carry `setup_id`; resolve a file's folder or pattern through the exposure's setup (`exposure_setup`, `integration_pattern_for_exposure`), never through the experiment. Dedup keys are per setup (`exposures(setup_id, filename)`). The New-experiment funnel sets them (`/api/fs/preview`, which lists every setup under the picked folder, then one `POST /api/experiments` per setup; `/api/fs/manifest` recounts a setup the user corrected); `PATCH /api/experiments/:id` edits only `name` and `description`. There is no `experiment.toml`.
 
 
 Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.

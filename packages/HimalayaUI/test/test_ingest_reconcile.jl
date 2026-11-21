@@ -232,7 +232,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         dir, data, ana = _recon_tree()
         _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)
         db, id = _recon_db(dir, data, ana)
-        DBInterface.execute(db, "UPDATE experiments SET image_pattern = 'broken.tif' WHERE id = ?", [id])
+        DBInterface.execute(db, "UPDATE setups SET image_pattern = 'broken.tif' WHERE experiment_id = ?", [id])
         @test HimalayaUI.run_ingest!(db, id) === :failed
         row = first(_rows(db, "SELECT ingest_status, ingest_error FROM experiments WHERE id = ?", [id]))
         @test row.ingest_status == "failed"
@@ -241,7 +241,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
             body = HimalayaUI.JSON3.read(call("GET", "/api/experiments/$id/problems").body)
             @test body.ingest_error == row.ingest_error
         end
-        DBInterface.execute(db, "UPDATE experiments SET image_pattern = NULL WHERE id = ?", [id])
+        DBInterface.execute(db, "UPDATE setups SET image_pattern = NULL WHERE experiment_id = ?", [id])
         @test HimalayaUI.run_ingest!(db, id) === :ok
         HimalayaUI.wait_prewarm(id)
         row = first(_rows(db, "SELECT ingest_status, ingest_error FROM experiments WHERE id = ?", [id]))

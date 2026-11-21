@@ -269,7 +269,8 @@ _canonical_dir(p) = (q = rstrip(String(p), '/'); isempty(q) ? "/" : (ispath(q) ?
 function experiment_using_dir(db, dir)
     plain = rstrip(String(dir), '/')
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, name FROM experiments WHERE rtrim(data_dir, '/') IN (?, ?) ORDER BY id LIMIT 1",
+        """SELECT x.id, x.name FROM setups st JOIN experiments x ON x.id = st.experiment_id
+            WHERE rtrim(st.data_dir, '/') IN (?, ?) ORDER BY x.id LIMIT 1""",
         [plain, _canonical_dir(dir)]))
     isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))
 end

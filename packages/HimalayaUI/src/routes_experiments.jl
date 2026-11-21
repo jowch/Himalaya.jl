@@ -1,22 +1,8 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
-# PATCH /experiments writes three tiers of fields into one UPDATE:
-#  - geometry (_GEOMETRY_PATCH_FIELDS): each has a companion *_source column set
-#    to "user" on override and never refreshed by rescan.
-#  - plain (_PLAIN_PATCH_FIELDS = name, description): plain write, no *_source, no rescan.
-#  - patterns (_PATTERN_FIELDS): plain write; the client forces a rescan afterwards
-#    (the discovered file set changes when a pattern changes).
-# The path fields (data_dir, analysis_dir, manifest_path, path) + id/created_at stay
-# read-only (_READONLY_FIELDS): set at create time, must stay in sync with the filesystem.
-const _GEOMETRY_PATCH_FIELDS = [
-    "flight_path_m", "beam_center_x", "beam_center_y",
-    "pixel_size_um", "energy_kev", "q_units",
-]
-const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path",
-                           "id", "created_at"]
+const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path", "id", "created_at"]
 const _PLAIN_PATCH_FIELDS = ["name", "description"]
 const _CLEARABLE_PATCH_FIELDS = ("description",)
-const _PATTERN_FIELDS     = ["image_pattern", "metadata_pattern", "integration_pattern"]
 
 """
     _experiment_stats(db, exp_id) -> NamedTuple
@@ -50,30 +36,22 @@ function _experiment_stats(db::SQLite.DB, exp_id::Integer)
      sessions = Int(sessions), span_hours = span_hours, started_at = started_at)
 end
 
-"""
-    _experiment_row_to_json(row, db) -> Dict
+function _setup_row_to_json(row::NamedTuple)
+    d = row_to_json(row)
+    d[:included] = Int(row.included) == 1
+    d[:name] = setup_display_name(row)
+    if ismissing(row.q_units)
+        d[:q_units] = "A-1"
+        d[:q_units_source] = "default"
+    end
+    d
+end
 
-Serialize an experiments row to the wire format.
-"""
 function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} = nothing)
     d = row_to_json(row)
-    delete!(d, :config)
-    # q_units is a unit convention, never derived from the data files (geometry.jl
-    # `derive_geometry` produces no q_units). Default it to the SAXS convention
-    # "A-1" whenever the column is unset — including the typed path above, where a
-    # migrated/fresh row carries real geometry but a NULL q_units — so every
-    # experiment reports a concrete unit (the geometry ledger never shows it blank)
-    # and stays consistent with routes_samples' per-sample A-1 default. A user
-    # PATCH override leaves the column non-null, so this is skipped.
-    let qv = get(d, :q_units, nothing)
-        if isnothing(qv) || ismissing(qv)
-            d[:q_units]        = "A-1"
-            d[:q_units_source] = "default"
-        end
-    end
-    # Add stats roll-up when db is supplied (single-row endpoint).
     if db !== nothing
         exp_id = Int(row.id)
+        d[:setups] = [_setup_row_to_json(st) for st in setups_of(db, exp_id)]
         d[:stats] = _experiment_stats(db, exp_id)
     end
     d
@@ -141,7 +119,7 @@ function register_experiments_routes!()
             SQLite.transaction(db) do
                 create_experiment!(db;
                     name              = exp_name,
-                    path              = data_dir,
+                    path              = setup_root_dir(data_dir),
                     data_dir          = data_dir,
                     analysis_dir      = analysis_dir,
                     image_pattern     = ppat(:image),
@@ -203,18 +181,9 @@ function register_experiments_routes!()
                     JSON3.write(Dict(:error => "$k is read-only; change it via create/scan")))
         end
 
-        # Build SET clauses for geometry fields present in the body.
         set_clauses = String[]
         params      = Any[]
         changed     = Dict{Symbol, Any}()
-        for field in _GEOMETRY_PATCH_FIELDS
-            val = get(body, Symbol(field), get(body, field, nothing))
-            val === nothing && continue
-            push!(set_clauses, "$field = ?")
-            push!(params, val)
-            push!(set_clauses, "$(field)_source = 'user'")
-            changed[Symbol(field)] = val
-        end
 
         for field in _PLAIN_PATCH_FIELDS
             (haskey(body, Symbol(field)) || haskey(body, field)) || continue
@@ -230,20 +199,13 @@ function register_experiments_routes!()
             changed[Symbol(field)] = val
         end
 
-        for field in _PATTERN_FIELDS
-            val = get(body, Symbol(field), get(body, field, nothing))
-            val === nothing && continue
-            push!(set_clauses, "$field = ?"); push!(params, val)
-            changed[Symbol(field)] = val
-        end
-
         # No recognized patchable field in the body → 400, matching the
         # codebase's PATCH validation convention (cf. PATCH /samples, exercised by
         # test_route_validation_routing.jl: a body with no patchable field is a
         # bad request, not a 200 no-op).
         isempty(set_clauses) && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no patchable fields; supply name, description, a pattern field (image_pattern, metadata_pattern, integration_pattern), or a geometry field (flight_path_m, beam_center_x/y, pixel_size_um, energy_kev, q_units)")))
+            JSON3.write(Dict(:error => "no patchable fields; supply name or description")))
 
         push!(params, id)
         return with_idempotency(db, req) do
@@ -388,6 +350,8 @@ function register_experiments_routes!()
                         "DELETE FROM samples WHERE experiment_id = ?", [id])
                     DBInterface.execute(db,
                         "DELETE FROM loads WHERE experiment_id = ?", [id])
+                    DBInterface.execute(db,
+                        "DELETE FROM setups WHERE experiment_id = ?", [id])
                     DBInterface.execute(db,
                         "DELETE FROM experiments WHERE id = ?", [id])
                 end

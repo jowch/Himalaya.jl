@@ -185,9 +185,9 @@ function register_exposures_routes!()
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT e.id, x.analysis_dir
+            "SELECT e.id, st.analysis_dir
              FROM exposures e JOIN samples s ON s.id = e.sample_id
-             JOIN experiments x ON x.id = s.experiment_id
+             JOIN setups st ON st.id = e.setup_id
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
