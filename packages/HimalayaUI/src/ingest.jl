@@ -687,12 +687,6 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                 # Absorbing owner = the one that took the most of this old sample's exposures.
                 owner = first(sort(collect(owners); by = p -> (-p.second, p.first))).first
                 # Carry metadata (dedup-then-repoint, mirroring routes_grouping.jl:150-203).
-                # series_samples: drop displaced membership where owner already in that series.
-                DBInterface.execute(db,
-                    """DELETE FROM series_samples
-                       WHERE sample_id = ?
-                         AND series_id IN (SELECT series_id FROM series_samples WHERE sample_id = ?)""",
-                    [old_sid, owner])
                 # sample_tags: drop displaced tag where owner already holds the key.
                 DBInterface.execute(db,
                     """DELETE FROM sample_tags
@@ -700,8 +694,6 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                          AND key IN (SELECT key FROM sample_tags WHERE sample_id = ?)""",
                     [old_sid, owner])
                 # Re-point the survivors of the dedup.
-                DBInterface.execute(db,
-                    "UPDATE series_samples SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
                 DBInterface.execute(db,
                     "UPDATE sample_tags SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
                 DBInterface.execute(db,
@@ -733,7 +725,6 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                          AND id NOT IN (SELECT DISTINCT sample_id FROM exposures
                                         WHERE sample_id IS NOT NULL)""", [experiment_id]))
                 gid = Int(r.id)
-                DBInterface.execute(db, "DELETE FROM series_samples WHERE sample_id = ?", [gid])
                 DBInterface.execute(db, "DELETE FROM sample_tags    WHERE sample_id = ?", [gid])
                 DBInterface.execute(db, "DELETE FROM sample_messages WHERE sample_id = ?", [gid])
                 DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [gid])

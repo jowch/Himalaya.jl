@@ -3,7 +3,7 @@ import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostSt
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
 import type {
   Peak, Exposure, Sample, SampleMessage,
-  Series, Assignment,
+  Assignment,
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { peakQTol } from "./peakQTol";
@@ -60,19 +60,6 @@ function writeAssignmentFromPostState(
  */
 export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!remote.post_state) return;
-  // `post_state` is a kind-keyed union (see SseEvent in types.ts): curation
-  // frames (peak_*, analyze_run) carry a CurationPostState; series-commit
-  // frames (series_plate_committed) carry a full Series. This function is
-  // called unconditionally for ALL kinds from replayCoordinator's own-tab
-  // paths (Case 1 deferred-match + self-echo guard), so an own-tab series
-  // commit DOES reach here. It only writes the curation caches, so bail
-  // unless the post_state actually is a CurationPostState — detected by its
-  // `indices` array. Without this guard the `as CurationPostState` cast reads
-  // `indices`/`analysis_inputs_hash` as `undefined` off a Series and
-  // clobbers `queryKeys.exposure(entity_id)`; series ids and exposure ids
-  // share the integer namespace, so a colliding cached exposure row would
-  // have its `analysis_inputs_hash` wiped (falsely tripping the stale-indices alert
-  // or breaking a later mutation's expected-hash check).
   const ps = remote.post_state as CurationPostState;
   if (!Array.isArray(ps.indices)) return;
   const id = remote.entity_id;
@@ -309,39 +296,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       });
       break;
     }
-    case "series_created":
-    case "series_recipe_updated": {
-      // Neither kind carries post_state (master plan §5.2); the SSE payload's
-      // series_samples entries are id-less and series_samples.id is
-      // replay-volatile (§11), so there is no safe surgical splice.
-      // Invalidate-only — the next read refetches the canonical projection.
-      qc.invalidateQueries({ queryKey: queryKeys.series(id) });
-      qc.invalidateQueries({ queryKey: queryKeys.seriesList });
-      break;
-    }
-    case "series_deleted": {
-      // Remove the detail cache — refetching a deleted resource 404s and
-      // leaves stale `isError` state. Filter the id out of the listing.
-      qc.removeQueries({ queryKey: queryKeys.series(id) });
-      qc.setQueriesData<{ id: number }[]>(
-        { queryKey: queryKeys.seriesList },
-        (old) => (old ? old.filter((s) => s.id !== id) : old),
-      );
-      break;
-    }
-    case "series_plate_committed": {
-      // The one series event carrying a post_state envelope (master plan
-      // §5.2): post_state IS the fetch_series_with_plate projection. Splice it
-      // straight into the detail cache; invalidate the listing (denormalised
-      // member_count / has_stale_members / last_event_at fields).
-      if (remote.post_state != null) {
-        qc.setQueryData(queryKeys.series(id), remote.post_state as Series);
-      } else {
-        qc.invalidateQueries({ queryKey: queryKeys.series(id) });
-      }
-      qc.invalidateQueries({ queryKey: queryKeys.seriesList });
-      break;
-    }
     case "add_tag":
     case "remove_tag":
     case "edit_tag": {
@@ -355,15 +309,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           queryKey: queryKeys.samples(payload?.experiment_id as number),
         });
         qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-        // I3.4 (#174): the scoping surface (/series/new) reads two more corpus
-        // projections off the same tags — the distinct (key,value) proposal
-        // source and the picker projection (which carries per-sample tags). A
-        // foreign scoping write must refresh both so a peer's proposal isn't
-        // stale (master plan §11 — add_tag fan-out re-audit). Tri-scope-safe:
-        // this is inside the `entity_type === "sample"` arm, so exposure/corpus
-        // tag routing is untouched.
         qc.invalidateQueries({ queryKey: queryKeys.corpusSampleTags });
-        qc.invalidateQueries({ queryKey: queryKeys.corpusPickerSamples });
       } else {
         qc.invalidateQueries({
           queryKey: queryKeys.exposures(payload?.sample_id as number),
@@ -379,12 +325,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "select_exposure": {
       const sampleId = payload?.sample_id as number;
       qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) });
-      // The picker's indexing_exposure_id derives from exposure selection
-      // (the representative-frame rule), and the builder's Confirm
-      // resolves its plate through that projection (BU-RECIPENOOP) - a stale
-      // picker after a foreign re-selection would silently commit the
-      // PREVIOUS representative exposure.
-      qc.invalidateQueries({ queryKey: queryKeys.corpusPickerSamples });
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
@@ -449,7 +389,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "sample_split":
     case "grouping_flag_dismissed": {
       // Orchestrations that create sample rows / change grouping whose new ids
-      // aren't worth a surgical splice (the series_created precedent). Refetch
+      // aren't worth a surgical splice. Refetch
       // the loads roll-up + both sample listings. MUST be before `default:` so
       // entity_id (a sample id) never poisons peaks(id)/indices(id). There is
       // NO sample_merged event — merging is grouping_flag_dismissed + the move.

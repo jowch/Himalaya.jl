@@ -238,10 +238,6 @@ DESIGN.md's "The Print":
 - **Reconcile the resets** — relabel the fit verb "fit"; reserve "reset" for
   true full-range. (The `+ Peak` mode is now a real armed mode with an Escape
   disarm handler — `addArmed` in `FocusPage.tsx` — so it no longer needs killing.)
-- **Focus editor first**, then propagate the proven grammar to the
-  series-builder (`src/print/components/BuilderRail.tsx` + the d3 plot under
-  `src/print/plot`); the Focus trace is *the plate*, the builder is a
-  read-leaning secondary surface with its own view-state-persistence gap.
 - Motion per canon: 120ms ease-out, no bounce; the drag is a quiet snap, with
   an optional subtle snap-to-local-max assist.
 
@@ -250,7 +246,7 @@ DESIGN.md's "The Print":
 output, **regenerated on every reanalysis**) and `peak_curations` (the manual
 delta layer, `kind IN ('exclude','add')`). Critically, **curations are
 keyed by q, not by a stable peak identity**: an exclude curation suppresses
-"whatever auto peak sits at q=X" (`events.jl:328`, `comparisons.jl:230`); the
+"whatever auto peak sits at q=X" (`events.jl:328`); the
 effective list is `auto_peaks LEFT JOIN peak_curations` with adds unioned in.
 So:
 - There is **no representation for "a moved auto peak"** — an auto peak's q is
@@ -312,31 +308,10 @@ covers most cases now, but a manual fallback is useful for batch edits.
 
 ---
 
-## Series page / cross-sample comparison
+## Cross-sample comparison
 
-(The standalone Compare page was retired into Series; `/compare*` deep-links
-redirect to the Series surface.)
-
-### Waterfall comparison — deferred enhancements
-
-The core waterfall shipped (the Series builder's `WaterfallChart`: per-member
-stacked traces with a configurable I-offset, plus PNG/SVG figure export).
-Deferred:
-
-- **Cross-stack reflection connector + ghost rings.** Hovering an anchor
-  would draw a dashed connector to the *same* reflection across the stacked
-  members, with ghost rings for predicted-but-absent reflections. Blocked
-  on the data model: `MemberSnapshotPeak` carries no `ratio_position` or
-  `phase` field, so the connector would misalign whenever a reflection drops
-  out. Needs a snapshot-schema change first.
-- **Heatmap toggle (YAGNI for now).** A continuous intensity-colour LUT
-  competes with the "colour = phase meaning" rule and stacked traces are
-  more legible at typical 6–8-exposure titration density. If built, it
-  should be a separate renderer triggered only at high member counts.
-- **Default offset tuning (awaiting owner decision).** The default
-  trace-offset of 1.20× opens ~28px inter-row gaps (step h·1.20 = 168px >
-  band h = 140px). The only honest lever is lowering the default toward
-  ~1.0–1.05 to close them; left as-is pending a call.
+(Series and the Compare page were deleted 2026-11-21. Anything like them gets a
+fresh design; the old code is only in git history.)
 
 ### Summary table
 
@@ -509,13 +484,6 @@ Every sample door (name, frames, "Index") in `SampleTableRow` is a
 anywhere in the corpus contact sheet — a real cost for a tool whose primary
 workflow is comparing samples side by side. Wants real hrefs on the doors.
 
-### Keyboard-accessible reorder in Scoping
-
-The Scoping worksheet reorders via drag handle only — no ▲▼ move buttons,
-so it has a WCAG 2.1.1 gap the Series builder doesn't (Builder has explicit
-Move up / Move down via `useReorderShortcuts`). The undo history already
-records `reorder` entries, so wiring keyboard moves is low-risk.
-
 ### Cross-surface keyboard consistency
 
 Two parallel sample-switchers exist — `[`/`]` on Loupe and `,`/`.` on the
@@ -529,7 +497,7 @@ hint).
 ### Code splitting
 
 Vite warns the bundle is >500 kB. Probably split: NavModal +
-OnboardingFlow + the Series builder page as lazy chunks.
+OnboardingFlow as lazy chunks.
 
 ### Virtualize the samples contact sheet
 

@@ -93,10 +93,6 @@ Both pages were deleted on 2026-11-20 in favour of the workspace. `/sample/<id>`
   ```
 - **Check:** `check-truth` reports `strays` (an app sample that mixes two truth samples) and `split into n app samples`.
 
-## Series
-
-Hidden pending the redesign (decided 2026-11-19: the Series page is dropped for now and its routes and nav are hidden in the first redesign PR). Not mapped; check-truth does not depend on it.
-
 ## Experiment configuration
 
 - **Route:** `/experiments/<id>/config`.
