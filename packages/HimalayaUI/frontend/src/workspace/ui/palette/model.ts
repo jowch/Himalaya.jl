@@ -2,6 +2,7 @@ export interface PaletteItem {
   id: string;
   label: string;
   name?: string;
+  value?: string | undefined;
   hint?: string | undefined;
   shortcut?: string | undefined;
   page?: string;

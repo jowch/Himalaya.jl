@@ -68,6 +68,7 @@ const editOps = {
   deleteIndex: editOp("deleteIndex"),
   addLabel: editOp("addLabel"),
   removeLabel: editOp("removeLabel"),
+  restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
   setLabelColor: editOp("setLabelColor"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
@@ -95,6 +96,7 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
+  usePatchExperiment: () => ({ mutate: (patch: unknown) => calls.push({ hook: "patchExperiment", boundTo: 1, arg: patch }) }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useDeleteExperiment: (experimentId: number) => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
@@ -872,16 +874,29 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: added the label Calibrant on A1");
     });
 
-    it("refuses to undo confirming a suggested label instead of deleting it", async () => {
-      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "suggested", source: "suggested" }];
+    it("undoes confirming a suggested label by putting it back to suggested, not deleting it", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "suggested", source: "ingest" }];
       renderAt("/experiments/1/workspace/10");
       fireEvent.click(screen.getByRole("button", { name: "Confirm label Buffer" }));
-      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "suggested" }];
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "user" }];
+      await undo();
+      expect(ops()).toEqual([["restoreLabelSuggestion", 10, "Buffer"]]);
+      expect(toasts.at(-1)).toBe("Undone: confirmed the suggested label Buffer on A1");
+    });
+
+    it("undoes creating a coloured label from the palette in one step", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("label", "dehydrated");
+      const form = screen.getByRole("dialog", { name: "New label" });
+      fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Enter" });
+      state.labels = [{ id: 1, sample_id: 10, label: "dehydrated", state: "confirmed", source: "user" }];
+      await undo();
+      expect(ops()).toEqual([["removeLabel", 10, "dehydrated"], ["setLabelColor", "dehydrated", null]]);
+      expect(toasts.at(-1)).toBe("Undone: created the label dehydrated on A1");
+      calls.length = 0;
       await undo();
       expect(ops()).toEqual([]);
-      expect(toasts.at(-1)).toBe(
-        "Can't undo: confirmed the suggested label Buffer on A1. A label can't go back to suggested, so it was left as it is.",
-      );
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
     });
 
     it("undoes removing a bridge from the compare bar", async () => {
@@ -1162,6 +1177,30 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(form).getByRole("option", { name: "Green" }));
     fireEvent.keyDown(colour, { key: "Enter" });
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
+  });
+
+  it("the palette's Settings page renames the experiment and sets its description", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("settings", "name");
+    const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+    expect(name).toHaveValue("BL-19");
+    fireEvent.change(name, { target: { value: "BL-20" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+    calls.length = 0;
+    runFromPalette("settings", "description");
+    const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
+    fireEvent.change(description, { target: { value: "Lipid screen" } });
+    fireEvent.keyDown(description, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { description: "Lipid screen" } }]);
+  });
+
+  it("offers no Settings before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(document.querySelector("[data-palette-item='settings']")).toBeNull();
   });
 
   it("offers no colour menu before a user is set", () => {

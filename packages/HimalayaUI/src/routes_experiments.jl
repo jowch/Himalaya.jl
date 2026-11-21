@@ -206,25 +206,35 @@ function register_experiments_routes!()
         # Build SET clauses for geometry fields present in the body.
         set_clauses = String[]
         params      = Any[]
+        changed     = Dict{Symbol, Any}()
         for field in _GEOMETRY_PATCH_FIELDS
             val = get(body, Symbol(field), get(body, field, nothing))
             val === nothing && continue
             push!(set_clauses, "$field = ?")
             push!(params, val)
             push!(set_clauses, "$(field)_source = 'user'")
+            changed[Symbol(field)] = val
         end
 
         for field in _PLAIN_PATCH_FIELDS
             (haskey(body, Symbol(field)) || haskey(body, field)) || continue
             val = get(body, Symbol(field), get(body, field, nothing))
             val === nothing && !(field in _CLEARABLE_PATCH_FIELDS) && continue
+            if field == "name"
+                (val isa AbstractString && !isempty(strip(val))) || return HTTP.Response(400,
+                    ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "name must be a non-empty string")))
+                val = String(strip(val))
+            end
             push!(set_clauses, "$field = ?"); push!(params, something(val, missing))
+            changed[Symbol(field)] = val
         end
 
         for field in _PATTERN_FIELDS
             val = get(body, Symbol(field), get(body, field, nothing))
             val === nothing && continue
             push!(set_clauses, "$field = ?"); push!(params, val)
+            changed[Symbol(field)] = val
         end
 
         # No recognized patchable field in the body → 400, matching the
@@ -236,18 +246,20 @@ function register_experiments_routes!()
             JSON3.write(Dict(:error => "no patchable fields; supply name, description, a pattern field (image_pattern, metadata_pattern, integration_pattern), or a geometry field (flight_path_m, beam_center_x/y, pixel_size_um, energy_kev, q_units)")))
 
         push!(params, id)
-        lock(_DB_WRITE_LOCK) do
-            SQLite.transaction(db) do
-                DBInterface.execute(db,
-                    "UPDATE experiments SET $(join(set_clauses, ", ")) WHERE id = ?",
-                    params)
-            end
+        return with_idempotency(db, req) do
+            DBInterface.execute(db,
+                "UPDATE experiments SET $(join(set_clauses, ", ")) WHERE id = ?",
+                params)
+            result = apply_event!(InTransaction(), db, req;
+                kind = "experiment_updated",
+                entity_type = "experiment", entity_id = id,
+                payload = changed)
+            _enqueue_broadcast_from_result!(result, "experiment_updated", "experiment", id)
+            updated_rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT * FROM experiments WHERE id = ?", [id]))
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(_experiment_row_to_json(updated_rows[1], db)))
         end
-
-        updated_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM experiments WHERE id = ?", [id]))
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_experiment_row_to_json(updated_rows[1], db)))
     end
 
     @get "/api/experiments/{id}/problems" function(req::HTTP.Request, id::Int)
