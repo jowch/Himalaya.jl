@@ -14,7 +14,7 @@ export function loadPlaywright() {
   } catch {
     throw new UsageError(
       "playwright is not installed in the frontend",
-      "run `make setup` (or `npm ci` in packages/HimalayaUI/frontend)",
+      "run `make dev-setup` (or `npm ci` in packages/HimalayaUI/frontend)",
     );
   }
 }
