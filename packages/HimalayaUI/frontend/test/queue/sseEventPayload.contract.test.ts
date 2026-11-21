@@ -407,24 +407,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   // Exposure-scoped events
   // -------------------------------------------------------------------------
 
-  it("set_exposure_status invalidates the sample's exposure list", () => {
-    const invalidated: unknown[] = [];
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated.push(arg.queryKey); return Promise.resolve();
-    }) as typeof qc.invalidateQueries;
-    const evt: SseEvent = {
-      id: 99, kind: "set_exposure_status", entity_type: "exposure", entity_id: 5,
-      payload: { status: "rejected", sample_id: 7 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toContainEqual(queryKeys.exposures(7));
-  });
-
   it("set_exposure_status writes status onto the exposure entity", () => {
     qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+    // Mirrors routes_exposures.jl PATCH: payload is {status}.
     const evt: SseEvent = {
       id: 99, kind: "set_exposure_status", entity_type: "exposure", entity_id: 5,
-      payload: { status: "rejected", sample_id: 7 },
+      payload: { status: "rejected" },
     };
     applyRemoteToCache(evt, qc);
     expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.status).toBe("rejected");
