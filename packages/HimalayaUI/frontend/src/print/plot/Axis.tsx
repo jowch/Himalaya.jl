@@ -1,5 +1,5 @@
 import { type Axis1D, axisTicks } from "./projection";
-import { formatAxis } from "../../lib/plot/formatAxis";
+import { formatTicks } from "../../lib/plot/formatAxis";
 
 export interface AxisProps {
   axis: Axis1D;
@@ -32,6 +32,8 @@ export function Axis({
   label,
 }: AxisProps): JSX.Element {
   const ticks = axisTicks(axis);
+  const labelledTicks = ticks.filter((t) => t.kind !== "minor");
+  const texts = new Map(formatTicks(labelledTicks.map((t) => t.value)).map((text, i) => [labelledTicks[i]!.value, text]));
   const isBottom = orientation === "bottom";
   return (
     <g data-role={`axis-${orientation}`} aria-hidden="true">
@@ -97,7 +99,7 @@ export function Axis({
             <line y2={len} stroke={stroke} strokeWidth={1} />
             {labelled && (
               <text y={len + 11} textAnchor="middle" style={TICK_LABEL_STYLE}>
-                {formatAxis(t.value)}
+                {texts.get(t.value)}
               </text>
             )}
           </g>
@@ -111,7 +113,7 @@ export function Axis({
                 textAnchor="end"
                 style={TICK_LABEL_STYLE}
               >
-                {formatAxis(t.value)}
+                {texts.get(t.value)}
               </text>
             )}
           </g>

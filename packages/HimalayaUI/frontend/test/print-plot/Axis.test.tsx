@@ -21,6 +21,18 @@ describe("Axis", () => {
     expect(texts.length).toBe(labelled.length);
   });
 
+  it("gives every tick in a tight zoom its own label", () => {
+    const a = makeAxis([0.1, 0.12], [0, 300], "log");
+    const { container } = render(
+      <svg>
+        <Axis axis={a} orientation="bottom" plotWidth={300} plotHeight={150} />
+      </svg>,
+    );
+    const labels = Array.from(container.querySelectorAll('[data-role="axis-bottom"] text')).map((t) => t.textContent);
+    expect(labels.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
   it("paints tick labels in ink-soft, the AA-normal data tone (CC-AXIS-TICK)", () => {
     // The q-values ARE the data; at 10.5px they are small text and must clear
     // AA-normal (4.5:1). ink-faint (3.16:1) is AA-large/non-text only, so tick
