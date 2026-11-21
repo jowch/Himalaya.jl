@@ -267,12 +267,11 @@ end
 _canonical_dir(p) = (q = rstrip(String(p), '/'); isempty(q) ? "/" : (ispath(q) ? realpath(q) : q))
 
 function experiment_using_dir(db, dir)
-    target = _canonical_dir(dir)
-    for r in Tables.rowtable(DBInterface.execute(db, "SELECT id, name, data_dir FROM experiments"))
-        ismissing(r.data_dir) && continue
-        _canonical_dir(r.data_dir) == target && return (; id = Int(r.id), name = String(r.name))
-    end
-    nothing
+    plain = rstrip(String(dir), '/')
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, name FROM experiments WHERE rtrim(data_dir, '/') IN (?, ?) ORDER BY id LIMIT 1",
+        [plain, _canonical_dir(dir)]))
+    isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))
 end
 
 _trim_slash(p) = rstrip(p, '/')
