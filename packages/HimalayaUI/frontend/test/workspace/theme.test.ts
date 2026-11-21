@@ -16,11 +16,11 @@ describe("workspace theme", () => {
   });
 
   it("states the same dark tokens for the system setting and the explicit choice", () => {
-    expect(block('[data-workspace-theme="system"]')).toEqual(block('[data-workspace-theme="dark"]'));
+    expect(block('[data-theme="system"]')).toEqual(block('[data-theme="dark"]'));
   });
 
   it("restates every token that mixes another token, since those resolve where they are declared", () => {
-    const dark = block('[data-workspace-theme="dark"]');
+    const dark = block('[data-theme="dark"]');
     const theme = css.slice(css.indexOf("@theme {"), css.indexOf("\n}\n", css.indexOf("@theme {")));
     const derivedColours = Array.from(theme.matchAll(/^\s*(--color-[\w-]+):[^;]*var\(--color-/gm)).map((m) => m[1]!);
     const files = (dir: string): string[] =>

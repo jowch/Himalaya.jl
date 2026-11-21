@@ -118,7 +118,7 @@ test("a deleted /compare URL shows the stale-URL page", async ({ page }) => {
 test("the experiments home follows a dark pick from the workspace, and its status pill has no extra letter-spacing", async ({ page }) => {
   await mockCore(page);
   await seedState(page, {});
-  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:workspace-theme", "dark"); });
+  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:theme", "dark"); });
   await page.goto("/experiments");
   const pill = page.getByTestId("notice-pill").filter({ hasText: "Up to date" });
   await expect(pill).toBeVisible();
@@ -137,10 +137,10 @@ test("the experiments home follows a dark pick from the workspace, and its statu
 
 test("a dark pick is on the page before the app script runs, so a dark user never sees light paper first", async ({ page }) => {
   await page.route(/\/assets\/.*\.js$/, (r) => r.abort());
-  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:workspace-theme", "dark"); });
+  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:theme", "dark"); });
   await page.goto("/experiments", { waitUntil: "domcontentloaded" });
   const root = await page.evaluate(() => ({
-    theme: document.documentElement.getAttribute("data-workspace-theme"),
+    theme: document.documentElement.getAttribute("data-theme"),
     dark: document.documentElement.classList.contains("dark"),
     appMounted: document.getElementById("app")!.childElementCount > 0,
   }));

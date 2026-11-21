@@ -95,11 +95,11 @@ describe("App smoke", () => {
 
 
   it("puts the workspace theme pick on the page root, so the experiments home follows it", async () => {
-    localStorage.setItem("himalaya-ui:workspace-theme", "dark");
+    localStorage.setItem("himalaya-ui:theme", "dark");
     renderAppAt("/experiments");
-    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-workspace-theme", "dark"));
-    localStorage.removeItem("himalaya-ui:workspace-theme");
-    document.documentElement.removeAttribute("data-workspace-theme");
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "dark"));
+    localStorage.removeItem("himalaya-ui:theme");
+    document.documentElement.removeAttribute("data-theme");
     document.documentElement.classList.remove("dark");
   });
 });

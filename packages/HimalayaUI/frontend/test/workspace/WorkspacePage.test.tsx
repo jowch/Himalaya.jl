@@ -185,7 +185,7 @@ function currentFrame(): string | null {
 }
 
 afterEach(() => {
-  window.localStorage.removeItem("himalaya-ui:workspace-theme");
+  window.localStorage.removeItem("himalaya-ui:theme");
   window.localStorage.removeItem("himalaya-ui:workspace-plot-view");
 });
 
@@ -1170,23 +1170,23 @@ describe("WorkspacePage", () => {
   it("the palette switches the workspace to dark and back, remembers it, and can follow the system again", () => {
     const { unmount } = renderAt("/experiments/1/workspace/10");
     const root = screen.getByTestId("workspace");
-    expect(root).toHaveAttribute("data-workspace-theme", "system");
+    expect(root).toHaveAttribute("data-theme", "system");
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "dark theme" } });
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
-    expect(root).toHaveAttribute("data-workspace-theme", "dark");
+    expect(root).toHaveAttribute("data-theme", "dark");
     unmount();
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "dark");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "dark");
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "light theme" } });
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "light");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "light");
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
-    expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "system");
+    expect(window.localStorage.getItem("himalaya-ui:theme")).toBeNull();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
     expect(screen.queryByRole("option")).toBeNull();
