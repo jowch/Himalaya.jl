@@ -235,6 +235,9 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
                 scan_and_group!(db, experiment_id; retry_failed = force,
                     on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
                         kind = "ingest_progress", processed = p, total = t, stage = stage, extra...))
+                lock(_DB_WRITE_LOCK) do
+                    SQLite.transaction(() -> suggest_labels_for_experiment!(db, experiment_id), db)
+                end
                 _set_ingest_status!(db, experiment_id, "complete"; scanned = true)
                 broadcast_progress!(experiment_id; kind = "ingest_complete", processed = 0, total = 0)
                 :ok
