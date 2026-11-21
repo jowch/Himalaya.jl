@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
@@ -522,6 +523,20 @@ export function useTriggerScan(experimentId: number) {
     ...inner,
     mutate: (force = false) => inner.mutate(force),
   };
+}
+
+export function useCheckForNewFilesOnOpen(experimentId: number): void {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  const { mutate } = useMutation({
+    mutationFn: () => api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), false),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
+  });
+  useEffect(() => {
+    if (experimentId > 0) mutate();
+  }, [experimentId, mutate]);
 }
 
 /** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only

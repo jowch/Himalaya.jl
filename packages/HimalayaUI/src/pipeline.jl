@@ -842,6 +842,14 @@ end
 # obviously file-I/O-free).
 # ──────────────────────────────────────────────────────────────────────────────
 
+const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+1")
+
+function read_analysis_version(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_version FROM exposures WHERE id = ?", [exposure_id]))
+    (isempty(rows) || ismissing(rows[1].analysis_version)) ? nothing : String(rows[1].analysis_version)
+end
+
 function read_trace_hash(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT trace_hash FROM exposures WHERE id = ?", [exposure_id]))
@@ -1004,9 +1012,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     integration_pattern = integration_pattern_for(db, experiment_id)
     dat_path = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
 
-    # DB-only reads first so the fast path can short-circuit before any file I/O.
-    stored_trace_hash  = read_trace_hash(db, exposure_id)
-    stored_inputs_hash = read_inputs_hash(db, exposure_id)
+    current_version = read_analysis_version(db, exposure_id) == ANALYSIS_VERSION
+    stored_trace_hash  = current_version ? read_trace_hash(db, exposure_id) : nothing
+    stored_inputs_hash = current_version ? read_inputs_hash(db, exposure_id) : nothing
 
     new_trace_hash = nothing
     findpeaks_skipped = false
@@ -1155,6 +1163,9 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         # / pipeline callers that have no request context. InTransaction()
         # variant participates in the outer tx so the event row commits with
         # the analysis state — broadcast deferred to after the tx commits.
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_version = ?, analysis_error = NULL, analysis_trace_stat = NULL WHERE id = ?",
+            [ANALYSIS_VERSION, exposure_id])
         event_result = apply_event!(InTransaction(), db, event_req;
             kind        = "analyze_run",
             entity_type = "exposure",

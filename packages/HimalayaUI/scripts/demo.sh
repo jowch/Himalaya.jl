@@ -24,7 +24,7 @@ DEMO_DIR="${DEMO_DIR:-scratch/demo-experiment}"
 DEMO_DB_DIR="${DEMO_DB_DIR:-scratch/demo}"
 API_PORT="${DEMO_API_PORT:-8080}"
 UI_PORT="${DEMO_UI_PORT:-5173}"
-JL="julia --project=packages/HimalayaUI"
+JL="julia --threads=${JULIA_NUM_THREADS:-4,1} --project=packages/HimalayaUI"
 up() { curl -s -o /dev/null --connect-timeout 1 --max-time 3 "http://127.0.0.1:$API_PORT/api/experiments"; }
 
 empty=0; large=0
