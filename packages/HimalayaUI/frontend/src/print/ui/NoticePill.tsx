@@ -38,6 +38,7 @@ export function NoticePill({
         className={cx(baseClasses, "text-print-accent", className)}
         style={{
           fontSize: "10px",
+          lineHeight: "15px",
           letterSpacing: "0.03em",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-accent) 14%, transparent)",
@@ -56,6 +57,7 @@ export function NoticePill({
         className={cx(baseClasses, "text-success border border-success", className)}
         style={{
           fontSize: "10px",
+          lineHeight: "15px",
           letterSpacing: "0.03em",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-success) 10%, transparent)",
@@ -74,6 +76,7 @@ export function NoticePill({
         className={cx(baseClasses, "text-warning border border-warning", className)}
         style={{
           fontSize: "10px",
+          lineHeight: "15px",
           letterSpacing: "0.03em",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-warning) 10%, transparent)",
@@ -92,6 +95,7 @@ export function NoticePill({
         className={cx(baseClasses, "text-print-accent border border-accent", className)}
         style={{
           fontSize: "10px",
+          lineHeight: "15px",
           letterSpacing: "0.03em",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-accent) 10%, transparent)",
@@ -114,6 +118,7 @@ export function NoticePill({
       )}
       style={{
         fontSize: "10px",
+        lineHeight: "15px",
         letterSpacing: "0.03em",
         padding: "2px 8px",
       }}
