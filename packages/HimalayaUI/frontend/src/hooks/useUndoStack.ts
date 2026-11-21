@@ -7,8 +7,8 @@ import { useCallback, useRef, useState } from "react";
  * the caller can replay either direction from a returned entry.
  *
  * Every state transition uses a FUNCTIONAL updater so React StrictMode's
- * double-invoke in dev does NOT double-push or double-pop (the SeriesScoping
- * lesson: an impure updater that reads a captured `stack` pushed twice).
+ * double-invoke in dev does NOT double-push or double-pop (an impure updater
+ * that reads a captured `stack` pushes twice).
  */
 export interface UndoStack<T> {
   /** Push one entry. Functional-updater safe (StrictMode double-invoke pushes
@@ -20,8 +20,7 @@ export interface UndoStack<T> {
    * it onto the redo stack. The caller runs the inverse effect OUTSIDE any
    * setState — `pop` performs NO side effect of its own, so a StrictMode
    * double-invoke of the internal updater cannot double-apply the caller's
-   * effect (the SeriesScoping lesson: never run a side effect inside a setState
-   * updater).
+   * effect (never run a side effect inside a setState updater).
    */
   pop: () => T | undefined;
   /**

@@ -10,7 +10,7 @@ import { parseLocation } from "../lib/url/parseLocation";
 // surfaces are all retired. `parseLocation` no longer returns a slug-bearing
 // `index`/`inspect`/`compare` kind, so this hook no longer resolves slug URLs
 // into Zustand active ids — those URLs are redirected at the router (Index →
-// /samples or /sample/:id; Inspect → /samples; Compare → /series). What
+// /samples or /sample/:id; Inspect → /samples; Compare is a stale URL). What
 // remains:
 //   - `root` (/) → redirect to the corpus contact sheet (/samples) per §4.1.
 //   - `stale`    → park the user on StaleUrlPage.

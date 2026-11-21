@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
+import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
@@ -44,10 +45,13 @@ vi.mock("../../src/queries", () => ({
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
-  usePeaks: () => ({ data: state.peaks }),
-  useIndices: () => ({ data: state.indices }),
-  useAssignment: () => ({ data: state.assignment }),
+  useTrace: () => ({
+    data: state.trace, isError: state.traceError, isFetching: state.traceFetching,
+    fetchStatus: state.traceFetching ? "fetching" : "idle", refetch: traceRefetch,
+  }),
+  usePeaks: () => ({ data: state.peaks, fetchStatus: "idle" }),
+  useIndices: () => ({ data: state.indices, fetchStatus: "idle" }),
+  useAssignment: () => ({ data: state.assignment, fetchStatus: "idle" }),
   useSampleCall: () => ({ data: state.sampleCall }),
   useFrameAssignments: (ids: number[]) => ids.map((id) => ({ data: state.frameAssignments.get(id) })),
   useRemoveFramePhase: () => ({
@@ -66,6 +70,13 @@ vi.mock("../../src/queries", () => ({
   useCommitCustomIndex: (boundTo: number) => ({
     mutate: (phase: string, basis: number, ratios: number[]) => calls.push({ hook: "custom", boundTo, arg: { phase, basis, ratios } }),
   }),
+}));
+
+const prefetchTargets: PrefetchTarget[] = [];
+vi.mock("../../src/workspace/prefetch", () => ({
+  usePrefetchNeighbours: (target: PrefetchTarget) => {
+    prefetchTargets.push(target);
+  },
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
@@ -161,6 +172,7 @@ afterEach(() => {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
+  prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
@@ -187,6 +199,21 @@ beforeEach(() => {
 });
 
 describe("WorkspacePage", () => {
+  it("prefetches around the open sample in the listed order, once its own data has settled", () => {
+    state.traceFetching = true;
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    const loading = prefetchTargets.at(-1)!;
+    expect(loading.samples.map((s) => s.id)).toEqual([10, 11, 12, 13]);
+    expect(loading.currentId).toBe(11);
+    expect(loading.exposures.map((e) => e.id)).toEqual([100, 101]);
+    expect(loading.shownId).toBe(101);
+    expect(loading.settled).toBe(false);
+
+    state.traceFetching = false;
+    rerender(page("/experiments/1/workspace/11"));
+    expect(prefetchTargets.at(-1)!.settled).toBe(true);
+  });
+
   it("lists only this experiment's samples and marks unreviewed ones", () => {
     renderAt("/experiments/1/workspace/10");
     const list = screen.getByTestId("workspace-samples");
@@ -671,9 +698,9 @@ describe("WorkspacePage", () => {
   });
 
   it("scales by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
-    const frame = (exposure_id: number, transmitted_counts: number) => ({ exposure_id, transmitted_counts, exposure_time: 15, counting_time: 15.8 });
-    state.trace = { ...makeTrace(1), frames: [frame(101, 6000)] };
-    state.compareTraces = new Map([[11, { ...makeTrace(2), frames: [frame(111, 8000)] }]]);
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));

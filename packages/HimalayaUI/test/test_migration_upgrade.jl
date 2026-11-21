@@ -50,7 +50,6 @@
 #                              with provenance chips; acquisition timeline renders)
 #        - Legacy /samples contact sheet  (thumbnails, phase calls)
 #        - Legacy /sample/:id Focus  (trace plate, peaks, assignment rail)
-#        - Legacy /series  (folio/scoping/builder overlays)
 #        - Legacy /loupe (Inspect)  (detector image, thumbnail gallery, metadata)
 #   5. Idempotency by hand: re-run `upgrade-grouping --apply` — the summary must
 #      show loads/samples unchanged (loads dedup, owners already claimed). A
@@ -93,9 +92,7 @@ function count_curation(db::SQLite.DB)
      assignments           = n("assignments"),
      assignment_members    = n("assignment_members"),
      exposure_tags         = n("exposure_tags"),
-     exposure_sources      = n("exposure_sources"),
-     series_members        = n("series_members"),
-     comparison_members    = n("comparison_members"))
+     exposure_sources      = n("exposure_sources"))
 end
 
 # ---------------------------------------------------------------------------
@@ -553,7 +550,7 @@ end
         end
     end
 
-    @testset "count_curation returns the twelve named tables" begin
+    @testset "count_curation returns the ten named tables" begin
         path, info = build_legacy_db(mktempdir())
         with_migration_db(path) do db
             # drop the collision non-survivor so the migration preflight passes
@@ -565,8 +562,7 @@ end
             c = count_curation(db)
             @test propertynames(c) == (:auto_peaks, :peak_curations, :indices,
                 :index_peaks, :index_group_members, :index_groups, :assignments,
-                :assignment_members, :exposure_tags, :exposure_sources,
-                :series_members, :comparison_members)
+                :assignment_members, :exposure_tags, :exposure_sources)
             @test all(v -> v isa Integer && v >= 0, values(c))
         end
     end
@@ -1620,25 +1616,16 @@ end
     @test startswith(mig_names[1].name, "Manifest")       # human label kept, not auto-derived
 end
 
-# ---------------------------------------------------------------------------
-# Production trace naming: a real pre-rework DB's integration traces are the
-# per-acquisition `_tot.dat` totals (HA_5_010_S1965_tot.dat). Single-frame ingest
-# (the migration resolves the funnel's detected `{name}_0_001.*` pattern from
-# disk, dropping the frame suffix) names the exposure by the acquisition stem
-# (HA_5_010_S1965) — identical to a fresh scan. The migration's analyze step must
-# resolve the shared `_tot.dat` so inserted exposures get peaks, not just exist.
-# ---------------------------------------------------------------------------
-@testset "migration analyzes inserted exposures via per-acquisition _tot.dat" begin
+@testset "migration analyzes inserted exposures via their _tot.dat" begin
     dir          = mktempdir()
     data_dir     = joinpath(dir, "data");      mkpath(data_dir)
     analysis_dir = joinpath(dir, "analysis");  mkpath(analysis_dir)
     write_setup_dir!(analysis_dir)
 
-    full = "HA_5_010_S1965_0_001"   # on-disk per-frame file
-    acq  = "HA_5_010_S1965"         # acquisition stem == ingested exposures.filename
+    full = "HA_5_010_S1965_0_001"
+    acq  = "HA_5_010_S1965"
     write_stem_fixtures!(data_dir, analysis_dir, full;
         horizontal_position_mm = 58.9, timestamp = DateTime(2026, 4, 26, 23, 14, 8))
-    # Real trace bytes named by the ACQUISITION stem (frame suffix dropped).
     fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
     cp(fixture, joinpath(analysis_dir, "HA_5_010_S1965_tot.dat"); force = true)
 
