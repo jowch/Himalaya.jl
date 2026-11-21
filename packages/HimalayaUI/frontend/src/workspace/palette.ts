@@ -41,6 +41,7 @@ export interface WorkspacePaletteInput {
   theme: { current: WorkspaceTheme; choose: (t: WorkspaceTheme) => void };
   user: { name: string | undefined; switch: () => void };
   help: () => void;
+  history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
 }
@@ -232,6 +233,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "theme", label: "Theme", hint: themeName, page: "theme" },
     { id: "switch-user", label: p.user.name ? "Switch user" : "Sign in", hint: p.user.name, run: p.user.switch },
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: p.help },
+    ...(p.history.undo ? [{ id: "undo", label: `Undo: ${p.history.undo}`, shortcut: `${p.modKey} Z`, typeOnly: true, run: () => p.history.run("undo") }] : []),
+    ...(p.history.redo ? [{ id: "redo", label: `Redo: ${p.history.redo}`, shortcut: `${p.modKey} ⇧ Z`, typeOnly: true, run: () => p.history.run("redo") }] : []),
   ];
   const groups: PaletteGroup[] = [
     { title: "This sample", items: sample },
