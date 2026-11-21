@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Himalaya · The Print</title>
+    <script>
+      (function () {
+        var theme = "system";
+        try {
+          var v = localStorage.getItem("himalaya-ui:workspace-theme");
+          if (v === "light" || v === "dark") theme = v;
+        } catch (e) {}
+        var dark = theme === "dark" || (theme === "system" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.setAttribute("data-workspace-theme", theme);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -122,15 +122,27 @@ test("the experiments home follows a dark pick from the workspace, and its statu
   await page.goto("/experiments");
   const pill = page.getByTestId("notice-pill").filter({ hasText: "Up to date" });
   await expect(pill).toBeVisible();
-  const look = await page.evaluate(() => {
+  const read = () => page.evaluate(() => {
     const probe = document.createElement("div");
     probe.style.color = "oklch(0.165 0.005 280)";
     document.body.appendChild(probe);
     const darkPaper = getComputedStyle(probe).color;
     probe.remove();
     const pillEl = document.querySelector('[data-testid="notice-pill"]')!;
-    return { body: getComputedStyle(document.body).backgroundColor, darkPaper, spacing: getComputedStyle(pillEl).letterSpacing };
+    return { onDarkPaper: getComputedStyle(document.body).backgroundColor === darkPaper, spacing: getComputedStyle(pillEl).letterSpacing };
   });
-  expect(look.body).toBe(look.darkPaper);
-  expect(look.spacing).toBe("normal");
+  await expect.poll(async () => (await read()).onDarkPaper).toBe(true);
+  expect((await read()).spacing).toBe("normal");
+});
+
+test("a dark pick is on the page before the app script runs, so a dark user never sees light paper first", async ({ page }) => {
+  await page.route(/\/assets\/.*\.js$/, (r) => r.abort());
+  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:workspace-theme", "dark"); });
+  await page.goto("/experiments", { waitUntil: "domcontentloaded" });
+  const root = await page.evaluate(() => ({
+    theme: document.documentElement.getAttribute("data-workspace-theme"),
+    dark: document.documentElement.classList.contains("dark"),
+    appMounted: document.getElementById("app")!.childElementCount > 0,
+  }));
+  expect(root).toEqual({ theme: "dark", dark: true, appMounted: false });
 });
