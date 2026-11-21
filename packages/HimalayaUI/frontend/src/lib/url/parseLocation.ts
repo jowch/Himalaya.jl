@@ -14,10 +14,5 @@ export function parseLocation(pathname: string, search: string): ParsedUrl {
   const segs = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
   if (segs.length === 0) return { kind: "root" };
 
-  // I1.7 (#163) / I4.4 (#181) / I3.6 (#177): Inspect, Index, and Compare are
-  // all retired. `/inspect*`, `/index*`, and `/compare*` are redirected by the
-  // router (Inspect → /samples; Index → /samples or /sample/:id; Compare →
-  // /series) before this parser runs, so there are no parse arms for them —
-  // any stray legacy path falls through to `stale`.
   return { kind: "stale", raw: pathname + (search ?? "") };
 }

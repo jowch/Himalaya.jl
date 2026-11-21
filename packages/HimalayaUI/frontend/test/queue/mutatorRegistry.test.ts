@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
-import { scopeSeriesMutator } from "../../src/lib/queue/mutators/scopeSeries";
 import {
   addSampleTagMutator,
   removeSampleTagMutator,
@@ -10,7 +9,6 @@ import {
   removeCorpusSampleTagMutator,
   editCorpusSampleTagMutator,
   updateSampleMutator,
-  postSampleMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
@@ -79,20 +77,6 @@ describe("resolveMutator", () => {
     ).toBe(editCorpusSampleTagMutator);
   });
 
-  it("dispatches a persisted scoping batch op (add_tag with `tags`) to scopeSeriesMutator", () => {
-    // I3.4 (#174): a scoping op persists across reload (kind add_tag +
-    // clientOpId, mirrored by persistence.ts). Its payload is the batch shape
-    // {key, tags} — no sampleId/value — so it must NOT fall through to
-    // addCorpusSampleTagMutator (which would fire a malformed single-tag POST
-    // with sampleId/value undefined). Peel the batch off FIRST.
-    expect(
-      resolveMutator({
-        kind: "add_tag",
-        payload: { key: "ratio", tags: [{ sampleId: 10, value: "1:1" }] },
-      }),
-    ).toBe(scopeSeriesMutator);
-  });
-
   it("returns the canonical mutator for non-dual kinds", () => {
     expect(resolveMutator({ kind: "peak_added", payload: {} })).toBe(
       peakAddMutator,
@@ -117,9 +101,6 @@ describe("resolveMutator", () => {
     ).toBe(reanalyzeExposureMutator);
     expect(resolveMutator({ kind: "update_sample", payload: {} })).toBe(
       updateSampleMutator,
-    );
-    expect(resolveMutator({ kind: "post_message", payload: {} })).toBe(
-      postSampleMessageMutator,
     );
     expect(
       resolveMutator({ kind: "set_exposure_status", payload: {} }),
@@ -170,10 +151,6 @@ describe("resolveMutatorForEvent", () => {
     expect(resolveMutatorForEvent("edit_tag", "sample")).toBe(editCorpusSampleTagMutator);
   });
 
-  it("splits post_message by entity_type (wire-string entity types)", () => {
-    expect(resolveMutatorForEvent("post_message", "sample_message"))    .toBe(postSampleMessageMutator);
-  });
-
   it("routes analyze_run to reanalyzeExposure", () => {
     expect(resolveMutatorForEvent("analyze_run", "exposure")).toBe(reanalyzeExposureMutator);
   });
@@ -200,7 +177,6 @@ describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
     { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
     { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
     { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
-    { mutator: postSampleMessageMutator, eventKind: "post_message",       entityType: "sample_message"     },
     { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
     { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
     { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },

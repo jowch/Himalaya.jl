@@ -102,17 +102,15 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
   await expect(page.getByTestId("onboarding-tutorial")).toBeVisible();
   await page.getByTestId("tutorial-next").click();
   await page.getByTestId("tutorial-next").click();
-  await page.getByTestId("tutorial-next").click();
   await page.getByTestId("tutorial-done").click();
 
   await expect(page.getByTestId("onboarding-overlay")).not.toBeVisible();
   await expect(page.getByText("All experiments")).toBeVisible();
 });
 
-test("a retired /compare URL redirects to the experiments home", async ({ page }) => {
+test("a deleted /compare URL shows the stale-URL page", async ({ page }) => {
   await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
   await mockCore(page, [{ id: 1, username: "alice" }]);
   await page.goto("/experiments/1/compare");
-  await expect(page).toHaveURL(/\/experiments$/);
-  await expect(page.getByText("All experiments")).toBeVisible();
+  await expect(page.getByTestId("stale-url-page")).toBeVisible();
 });

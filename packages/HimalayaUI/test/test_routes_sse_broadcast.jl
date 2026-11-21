@@ -51,26 +51,6 @@ function _with_sub(f::Function)
 end
 
 @testset "Migrated routes broadcast SSE frames (issue #5)" begin
-    @testset "POST /api/samples/:id/messages → post_message frame" begin
-        tmp    = mktempdir()
-        db     = open_prepared_clone(tmp)
-        exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-            data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-
-        _with_sub() do pending
-            with_test_server(db) do port, base
-                r = HTTP.post("$base/api/samples/$s_id/messages";
-                    body = JSON3.write(Dict(:body => "hello")),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                @test r.status == 201
-            end
-            kinds = _frame_kinds(_drain_frames(pending))
-            @test "post_message" in kinds
-        end
-    end
-
     @testset "PATCH /api/samples/:id → update_sample frame" begin
         tmp    = mktempdir()
         db     = open_prepared_clone(tmp)

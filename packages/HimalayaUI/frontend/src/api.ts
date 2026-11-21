@@ -142,6 +142,7 @@ export interface AuthOpts {
   username?: string;
   clientId?: string;
   clientOpId?: string;
+  signal?: AbortSignal;
 }
 
 export async function request<T>(
@@ -158,6 +159,7 @@ export async function request<T>(
 
   new Headers(headers);
   const init: RequestInit = { method, headers };
+  if (opts?.signal) init.signal = opts.signal;
   if (body !== undefined) init.body = JSON.stringify(body);
 
   let res: Response;
@@ -402,6 +404,25 @@ export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthO
 export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
 
+export type SampleLabelState = "suggested" | "confirmed";
+
+export interface SampleLabel {
+  id: number;
+  sample_id: number;
+  label: string;
+  state: SampleLabelState;
+  source: string;
+}
+
+export const listLabels = (experimentId: number): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("GET", `/api/experiments/${experimentId}/labels`);
+
+export const addLabel = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("POST", `/api/samples/${sampleId}/labels`, { label }, opts);
+
+export const removeLabel = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("DELETE", `/api/samples/${sampleId}/labels?label=${encodeURIComponent(label)}`, undefined, opts);
+
 // Exposures
 export interface ExposureTag {
   id: number;
@@ -435,8 +456,8 @@ export interface Exposure {
   incident_monitor: number | null;
 }
 
-export const listExposures = (sample_id: number) =>
-  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`);
+export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`, undefined, opts);
 
 export const setExposureStatus = (
   id: number,
@@ -473,14 +494,8 @@ export interface Trace {
   monitors?: TraceMonitors;
 }
 
-export const getTrace = (exposure_id: number) =>
-  request<Trace>("GET", `/api/exposures/${exposure_id}/trace`);
-
-/** Batch member traces for a series, keyed by exposure_id. Matches the
- *  `toWaterfallRows(members, tracesById)` contract (a plain Record, number index).
- *  Unresolvable members (no exposure / derived / missing .dat) are absent from the map. */
-export const getSeriesTraces = (series_id: number) =>
-  request<Record<number, Trace>>("GET", `/api/series/${series_id}/traces`);
+export const getTrace = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Trace>("GET", `/api/exposures/${exposure_id}/trace`, undefined, opts);
 
 // Peaks
 export interface Peak {
@@ -537,8 +552,8 @@ export interface PeakRemoveResponse {
   analysis_inputs_hash: string;
 }
 
-export const listPeaks = (exposure_id: number) =>
-  request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`);
+export const listPeaks = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Peak[]>("GET", `/api/exposures/${exposure_id}/peaks`, undefined, opts);
 export const addPeak = (exposure_id: number, q: number, opts?: AuthOpts) =>
   request<PeakAddResponse>("POST", `/api/exposures/${exposure_id}/peaks`, { q }, opts);
 export const removeManualPeak = (peak_id: number, opts?: AuthOpts) =>
@@ -582,8 +597,8 @@ export interface IndexEntry {
   bonnet?: BonnetFlag | null;
 }
 
-export const listIndices = (exposure_id: number) =>
-  request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`);
+export const listIndices = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<IndexEntry[]>("GET", `/api/exposures/${exposure_id}/indices`, undefined, opts);
 
 export const deleteIndex = (id: number, opts?: AuthOpts) =>
   request<{ deleted: number }>("DELETE", `/api/indices/${id}`, undefined, opts);
@@ -657,8 +672,8 @@ export type AssignmentMutationResponse = Assignment & {
   view_row_id: number | null;
 };
 
-export const getAssignment = (exposure_id: number) =>
-  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`);
+export const getAssignment = (exposure_id: number, opts?: { signal?: AbortSignal }) =>
+  request<Assignment>("GET", `/api/exposures/${exposure_id}/assignment`, undefined, opts);
 
 export interface SampleCallMember {
   index_id: number;
@@ -697,20 +712,6 @@ export const removeAssignmentPhase = (
 ) => request<AssignmentMutationResponse>(
   "DELETE", `/api/exposures/${exposure_id}/assignment/members/${index_id}`, undefined, opts);
 
-// Sample messages (chat log)
-export interface SampleMessage {
-  id: number;
-  sample_id: number;
-  author_id: number | null;
-  /** Null if the author's user row has been deleted. */
-  author: string | null;
-  body: string;
-  created_at: string;
-}
-
-export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOpts) =>
-  request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
-
 // Analysis
 export interface ReanalyzeResponse {
   id: number;
@@ -727,77 +728,6 @@ export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indi
 export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
 export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);
 
-// ─── Member snapshots (shared by the Series plate) ──────────────────────────
-//
-// The `MemberSnapshot` type lives here because it must be the single source of
-// truth for both the HTTP response parser AND the SSE `applyRemoteToCache`
-// handler — both paths must produce the same parsed shape to avoid cache
-// divergence during reconciliation. Consumed by `SeriesMember` (the going-
-// forward render-pipeline input type) and the series reading/figure helpers.
-
-export interface MemberSnapshotPeak {
-  id: number;
-  q: number;
-  intensity: number | null;
-  sharpness: number;
-  source: "auto" | "manual";
-}
-
-export interface MemberSnapshotConfirmedIndex {
-  id: number;
-  phase: string;
-  lattice_d: number;
-  r_squared: number;
-  ngc: number;
-  peak_ids: number[];
-}
-
-/** One assigned phase + its fitted lattice (Plan E E-4). `lattice_d` is the
- *  index lattice parameter (`a` for cubics, `d` for lamellar/hexagonal). */
-export interface MemberSnapshotPhase {
-  phase: string;
-  lattice_d: number | null;
-}
-
-export interface MemberSnapshot {
-  effective_peaks: MemberSnapshotPeak[];
-  confirmed_index: MemberSnapshotConfirmedIndex | null;
-  /** Durable 3-state assignment (Plan E E-7). Older snapshots predate this
-   *  field; treat a missing value as "indexed". */
-  assignment_state?: AssignmentState;
-  /** Distinct phases the member's assignment carries (Plan E E-4), each with
-   *  its fitted lattice. Drives the coexistence reading / member rows / strip
-   *  cells (both lattices under coexistence). Empty for form-factor / null
-   *  members. Missing on older snapshots → derive from confirmed_index. */
-  confirmed_phases?: MemberSnapshotPhase[];
-  analysis_inputs_hash: string;
-}
-
-/** Lightweight summary row used by the listing endpoints. */
-/**
- * Thrown by a fetcher when the server returns 409 (content_hash drift).
- * Carries the server's `current_hash` and `current_state`. `status` is 409 so
- * the queue's failure-class router treats it as a validation error (no retry,
- * surfaces in `onError`); `useQueueMutation` suppresses the toast on it.
- *
- * There is no longer a conflict surface that consumes it. The series-commit
- * route is last-write-wins (Plan 6a, no longer 409s). The type is kept because
- * `commitSeriesPlate` still defensively parses a 409 should one ever arrive.
- */
-export class ConflictError extends Error {
-  status = 409 as const;
-  constructor(
-    public current_hash: string | null,
-    // A series-commit 409 (`commitSeriesPlate`) carries a `Series`.
-    public current_state: Series | null,
-    message?: string,
-  ) {
-    super(message ?? "content_hash conflict");
-    this.name = "ConflictError";
-  }
-}
-
-// ─── Picker / scoping shared types ──────────────────────────────────────────
 
 /** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
  *  the experiment-scoped `/api/experiments/:eid/sample-tags`.
@@ -811,20 +741,6 @@ export interface SampleTagPair {
   count?: number;
 }
 
-/** Per-row shape returned by `GET /api/experiments/:eid/picker-samples`
- *  and the corpus-wide `GET /api/picker-samples`. */
-export interface PickerSampleRow {
-  sample: Sample;
-  indexing_exposure_id: number | null;
-  all_exposures: PickerSampleExposure[];
-}
-
-export interface PickerSampleExposure {
-  id: number;
-  sample_id: number;
-  filename: string | null;
-  selected: boolean;
-}
 
 // ─── Corpus scoping reads (I0.2 / I0.3 corpus siblings; I3.4 consumer) ──────
 /** Corpus-wide distinct (key,value) tag pairs — GET /api/sample-tags. Reuses
@@ -832,10 +748,6 @@ export interface PickerSampleExposure {
 export const getCorpusSampleTags = (): Promise<SampleTagPair[]> =>
   request<SampleTagPair[]>("GET", "/api/sample-tags");
 
-/** Corpus-wide picker projection — GET /api/picker-samples. Same PickerSampleRow
- *  shape as the experiment-scoped getPickerSamples. */
-export const getCorpusPickerSamples = (): Promise<PickerSampleRow[]> =>
-  request<PickerSampleRow[]>("GET", "/api/picker-samples");
 
 // ─── Series scoping batch write (I2.6 route, source='scoping') ──────────────
 export interface BatchSampleTagEntry { sample_id: number; value: string }
@@ -852,229 +764,6 @@ export const batchSampleTags = (
 ): Promise<BatchSampleTagResult[]> =>
   request<BatchSampleTagResult[]>(
     "POST", "/api/samples/tags/batch", { key, tags, source }, opts);
-
-// ─── Series (#166 / #167 / #168 — series event-kind cluster) ────────────────
-//
-// Queue-side scaffolding (#198) + the folio read layer (#173 / I3.3): the
-// listing summary type `SeriesSummary` and the read fetchers
-// (listSeries / getSeries) below back the read hooks
-// useSeriesList / useSeries in queries.ts. See the Decision Record in
-// docs/event-log.md.
-// Shapes mirror `fetch_series_with_plate` / `_series_listing_rows` in series.jl.
-
-/**
- * Lightweight summary row returned by GET /api/series (the corpus listing).
- * Mirrors `_series_listing_rows` in packages/HimalayaUI/src/series.jl — keep
- * the field set in lockstep with that projection. NOT the full `Series` type
- * (that is the GET-detail shape with nested members/samples).
- *
- * `content_hash === ""` is the draft sentinel (an uncommitted series), the
- * same convention the full `Series` type documents.
- */
-export interface SeriesSummary {
-  id: number;
-  title: string;
-  description: string | null;
-  content_hash: string;
-  created_by: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  forked_from_id: number | null;
-  forked_at_hash: string | null;
-  view_grouping_mode: string | null;
-  view_show_peak_ticks: boolean | null;
-  view_show_peak_labels: boolean | null;
-  /** Normalised (SQLite `datetime()`) recency sort key; backend sorts DESC. */
-  last_event_at: string | null;
-  author_username: string | null;
-  member_count: number;
-  /** Backend-capped top-3 distinct phases (`_topk_phases`). */
-  member_phases: string[];
-  /** True distinct-phase total — for a `+N more` overflow if shown. */
-  member_phase_count: number;
-  has_stale_members: boolean;
-  /** Recipe ordering variable (e.g. "LL37 : lipid ratio"); null until scoped. */
-  ordering_variable: string | null;
-  /** True when the members resolve to >1 distinct `samples.experiment_id`.
-   *  Valid because q is absolute (Å⁻¹) — series may legitimately span experiments. */
-  spans_experiments: boolean;
-  /** Beamtime provenance: the members' single experiment's `name` when the
-   *  series does NOT span experiments; null when spanning, memberless, or the single experiment has no name. */
-  experiment_name: string | null;
-}
-
-/** The recipe membership — one `series_samples` row. */
-export interface SeriesSample {
-  id: number;
-  series_id: number;
-  sample_id: number;
-  position: number;
-  pinned: boolean;
-  excluded: boolean;
-}
-
-/** The plate — one `series_members` row. */
-export interface SeriesMember {
-  id: number;
-  series_id: number;
-  exposure_id: number | null;
-  display_order: number;
-  band_height: number;
-  y_offset: number;
-  normalization: string;
-  color_override: string | null;
-  label_override: string | null;
-  q_window_min: number | null;
-  q_window_max: number | null;
-  peak_display: unknown;
-  snapshot: MemberSnapshot | null;
-  is_stale: boolean;
-  created_by: number | null;
-  created_at: string | null;
-}
-
-/** How a series orders its samples. Shared by `Series`, `SaveSeriesBody`, and
- *  the `saveSeries` mutator input so the literal union has one source. */
-export type OrderRule = "ascending" | "descending" | "manual";
-
-/** Full nested response from `GET/POST/PATCH /api/series*`. */
-export interface Series {
-  id: number;
-  title: string;
-  description: string | null;
-  /** Empty string `""` is the draft sentinel: `fetch_series_with_plate`
-   *  projects a NULL `content_hash` (an uncommitted draft) to `""`. */
-  content_hash: string;
-  created_by: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-  forked_from_id: number | null;
-  forked_at_hash: string | null;
-  forked_from_title: string | null;
-  view_grouping_mode: string | null;
-  view_show_peak_ticks: boolean | null;
-  view_show_peak_labels: boolean | null;
-  ordering_variable: string | null;
-  order_rule: string;
-  state: string;
-  members: SeriesMember[];
-  samples: SeriesSample[];
-}
-
-/**
- * Structural type-guard: is `x` a full `Series` projection (both nested
- * arrays + `state`), as opposed to the partial shape `saveSeries`'s
- * `synthesizeFromSse` yields on the SSE-wins path? Used by the series
- * mutators' `onSuccess` to choose between a cache splice and an invalidate.
- */
-export function isFullSeries(x: unknown): x is Series {
-  if (typeof x !== "object" || x === null) return false;
-  const o = x as Record<string, unknown>;
-  return typeof o.id === "number"
-    && typeof o.state === "string"
-    && Array.isArray(o.members)
-    && Array.isArray(o.samples);
-}
-
-/** Per-recipe-row input for `POST /api/series` and `PATCH /api/series/:id`. */
-export interface SeriesSampleInput {
-  sample_id: number;
-  position?: number;
-  pinned?: boolean;
-  excluded?: boolean;
-}
-
-/** Per-plate-member input for `POST /api/series/:id/commit`. Members carry no
- *  id — the dispatcher mints them. `snapshot` is server-filled when omitted. */
-export interface SeriesMemberInput {
-  exposure_id: number | null;
-  display_order: number;
-  band_height?: number;
-  y_offset?: number;
-  normalization?: string;
-  color_override?: string | null;
-  label_override?: string | null;
-  q_window_min?: number | null;
-  q_window_max?: number | null;
-  peak_display?: unknown;
-  snapshot?: MemberSnapshot;
-}
-
-/** Body for `POST /api/series` (create) and `PATCH /api/series/:id` (recipe). */
-export interface SaveSeriesBody {
-  title: string;
-  description?: string | null;
-  samples: SeriesSampleInput[];
-  ordering_variable?: string | null;
-  order_rule?: OrderRule;
-  forked_from_id?: number | null;
-  forked_at_hash?: string | null;
-  view_grouping_mode?: string | null;
-  view_show_peak_ticks?: boolean | null;
-  view_show_peak_labels?: boolean | null;
-}
-
-/** Body for `POST /api/series/:id/commit`. */
-export interface CommitSeriesPlateBody {
-  members: SeriesMemberInput[];
-}
-
-/**
- * Save a series — create (no id ⇒ `POST /api/series`) or recipe-edit
- * (id present ⇒ `PATCH /api/series/:id`). Branches on id so the queue
- * mutator's `request` stays a single-payload call.
- */
-export async function saveSeries(
-  body: SaveSeriesBody,
-  seriesId: number | undefined,
-  opts?: AuthOpts,
-): Promise<Series> {
-  return seriesId === undefined
-    ? request<Series>("POST", "/api/series", body, opts)
-    : request<Series>("PATCH", `/api/series/${seriesId}`, body, opts);
-}
-
-/**
- * Commit the plate (the old "submit"). On 409 (content_hash drift) throws the
- * typed `ConflictError` carrying the server's `current_hash` + `current_state`
- * (a `Series`). This is the ONLY series
- * fetcher that throws `ConflictError`: recipe-save (`PATCH /api/series/:id`)
- * never reads `expected_content_hash` and never 409s, so `saveSeries` is left
- * untouched.
- */
-export async function commitSeriesPlate(
-  id: number, body: CommitSeriesPlateBody, opts?: AuthOpts,
-): Promise<Series> {
-  try {
-    return await request<Series>("POST", `/api/series/${id}/commit`, body, opts);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 409) {
-      const b = err.body as
-        | { current_hash?: string; current_state?: Series }
-        | null;
-      throw new ConflictError(
-        b?.current_hash ?? null,
-        b?.current_state ?? null,
-        err.message,
-      );
-    }
-    throw err;
-  }
-}
-
-export const deleteSeries = (id: number, opts?: AuthOpts) =>
-  request<{ id: number; deleted: boolean; event_id: number }>(
-    "DELETE", `/api/series/${id}`, undefined, opts);
-
-// ── Series read fetchers (#173 / I3.3 — the folio read layer) ──
-
-/** Corpus-wide listing for the series folio (#173). GET /api/series. */
-export const listSeries = () =>
-  request<SeriesSummary[]>("GET", "/api/series");
-
-/** Full nested detail for one series (#175 builder reuses this). */
-export const getSeries = (id: number) =>
-  request<Series>("GET", `/api/series/${id}`);
 
 // ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
 

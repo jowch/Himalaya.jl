@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, SampleLabel, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
+import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
@@ -26,6 +27,7 @@ const state = {
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
+  labels: [] as SampleLabel[],
   loads: [] as { samples: { flag: object | null }[] }[],
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
@@ -46,10 +48,13 @@ vi.mock("../../src/queries", () => ({
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
-  usePeaks: () => ({ data: state.peaks }),
-  useIndices: () => ({ data: state.indices }),
-  useAssignment: () => ({ data: state.assignment }),
+  useTrace: () => ({
+    data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching,
+    fetchStatus: state.traceFetching ? "fetching" : "idle", refetch: traceRefetch,
+  }),
+  usePeaks: () => ({ data: state.peaks, fetchStatus: "idle" }),
+  useIndices: () => ({ data: state.indices, fetchStatus: "idle" }),
+  useAssignment: () => ({ data: state.assignment, fetchStatus: "idle" }),
   useSampleCall: () => ({ data: state.sampleCall }),
   useFrameAssignments: (ids: number[]) => ids.map((id) => ({ data: state.frameAssignments.get(id) })),
   useRemoveFramePhase: () => ({
@@ -58,6 +63,9 @@ vi.mock("../../src/queries", () => ({
   useBridges: () => ({ data: state.bridges }),
   useBridgeSamples: recorder("bridge"),
   useUnbridgeSample: recorder("unbridge"),
+  useLabels: () => ({ data: state.labels }),
+  useAddLabel: recorder("addLabel"),
+  useRemoveLabel: recorder("removeLabel"),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
@@ -68,6 +76,13 @@ vi.mock("../../src/queries", () => ({
   useCommitCustomIndex: (boundTo: number) => ({
     mutate: (phase: string, basis: number, ratios: number[]) => calls.push({ hook: "custom", boundTo, arg: { phase, basis, ratios } }),
   }),
+}));
+
+const prefetchTargets: PrefetchTarget[] = [];
+vi.mock("../../src/workspace/prefetch", () => ({
+  usePrefetchNeighbours: (target: PrefetchTarget) => {
+    prefetchTargets.push(target);
+  },
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
@@ -163,6 +178,7 @@ afterEach(() => {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
+  prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
@@ -183,6 +199,7 @@ beforeEach(() => {
   state.peaks = [];
   state.compareTraces = new Map();
   state.bridges = [];
+  state.labels = [];
   state.loads = [];
   state.ingest = undefined;
   state.rescanError = false;
@@ -190,6 +207,21 @@ beforeEach(() => {
 });
 
 describe("WorkspacePage", () => {
+  it("prefetches around the open sample in the listed order, once its own data has settled", () => {
+    state.traceFetching = true;
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    const loading = prefetchTargets.at(-1)!;
+    expect(loading.samples.map((s) => s.id)).toEqual([10, 11, 12, 13]);
+    expect(loading.currentId).toBe(11);
+    expect(loading.exposures.map((e) => e.id)).toEqual([100, 101]);
+    expect(loading.shownId).toBe(101);
+    expect(loading.settled).toBe(false);
+
+    state.traceFetching = false;
+    rerender(page("/experiments/1/workspace/11"));
+    expect(prefetchTargets.at(-1)!.settled).toBe(true);
+  });
+
   it("lists only this experiment's samples and marks unreviewed ones", () => {
     renderAt("/experiments/1/workspace/10");
     const list = screen.getByTestId("workspace-samples");
@@ -556,6 +588,75 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "x" });
     fireEvent.keyDown(window, { key: "1" });
     expect(calls).toEqual([]);
+  });
+
+  it("shows the sample's tags under its heading, with suggestions dashed and confirmed by a click", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const row = screen.getByTestId("workspace-tags");
+    expect([...row.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-state")])).toEqual([
+      ["37C", "confirmed"],
+      ["buffer", "suggested"],
+    ]);
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm tag buffer" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Remove tag 37C" }));
+    expect(calls).toEqual([
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } },
+      { hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } },
+    ]);
+  });
+
+  it("the palette opens the tag picker, which suggests experiment tags and adds the pick on Enter", () => {
+    state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    pickView("Add tag to A1");
+    const picker = screen.getByRole("dialog", { name: "Add a tag" });
+    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "buffer", "calibrant", "empty capillary"]);
+    const input = within(picker).getByLabelText("Tag name");
+    fireEvent.change(input, { target: { value: "bufer" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByRole("dialog", { name: "Add a tag" })).toBeNull();
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } }]);
+  });
+
+  it("a new tag needs the Create row, and Backspace in the empty picker removes the last confirmed tag, never a suggestion", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "+ Tag" }));
+    const input = within(screen.getByRole("dialog", { name: "Add a tag" })).getByLabelText("Tag name");
+    fireEvent.keyDown(input, { key: "Backspace" });
+    fireEvent.change(input, { target: { value: "heated" } });
+    expect(screen.getByRole("button", { name: "Create “heated”" })).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(calls).toEqual([
+      { hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } },
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "heated" } },
+    ]);
+  });
+
+  it("the sample filter matches tags as well as names", () => {
+    state.labels = [{ id: 1, sample_id: 13, label: "empty capillary", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.change(screen.getByLabelText("Filter samples"), { target: { value: "capill" } });
+    const list = screen.getByTestId("workspace-samples");
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+    expect(within(list).getByText("A4")).toBeInTheDocument();
+  });
+
+  it("offers no tag editing before a user is set", () => {
+    state.username = undefined;
+    state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    const row = screen.getByTestId("workspace-tags");
+    expect(within(row).queryAllByRole("button")).toHaveLength(0);
+    expect(row.querySelector("[data-tag='37C']")).not.toBeNull();
   });
 
   it("filters the sample list by name", () => {

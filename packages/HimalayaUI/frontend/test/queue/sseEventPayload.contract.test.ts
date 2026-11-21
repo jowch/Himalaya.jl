@@ -26,7 +26,7 @@ import { resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import type { SseEvent } from "../../src/lib/queue/types";
 import { remoteForeignEvent } from "./helpers";
 import type {
-  Peak, Exposure, Sample, SampleMessage, Assignment,
+  Peak, Exposure, Sample, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
 
@@ -364,7 +364,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(spy).toHaveBeenCalledWith({ queryKey: queryKeys.assignment(5) });
   });
 
-
   it("speculative_created invalidates indices (no inline cache write)", () => {
     let called = 0;
     const orig = qc.invalidateQueries.bind(qc);
@@ -441,11 +440,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     };
     applyRemoteToCache(evt, qc);
     expect(invalidated).toContainEqual(queryKeys.exposures(1));
-    // indexing_exposure_id derives from selection; the builder's Confirm
-    // resolves its plate through the picker projection (BU-RECIPENOOP), so a
-    // foreign re-selection must refresh it or Confirm commits the PREVIOUS
-    // representative exposure.
-    expect(invalidated).toContainEqual(queryKeys.corpusPickerSamples);
   });
 
   // -------------------------------------------------------------------------
@@ -469,35 +463,12 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
   });
 
-  it("post_message dedupes by id and inserts the SampleMessage", () => {
-    qc.setQueryData<SampleMessage[]>(queryKeys.messages(10), []);
-    // Mirrors routes_messages.jl POST: payload is the full SampleMessage row.
-    const evt: SseEvent = {
-      id: 99, kind: "post_message", entity_type: "sample_message", entity_id: 200,
-      payload: {
-        id: 200, sample_id: 10, author_id: 3, author: "alice",
-        body: "hi", created_at: "2026-05-03T12:00:00Z",
-      },
-    };
-    applyRemoteToCache(evt, qc);
-    const msgs = qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!;
-    expect(msgs).toHaveLength(1);
-    expect(msgs[0]!.id).toBe(200);
-    // Idempotency: replaying the same frame must not double-insert.
-    applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!).toHaveLength(1);
-  });
-
-  it("add_tag (sample) invalidates the experiment + corpus samples lists AND the scoping caches", () => {
+  it("add_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
       invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
     // Mirrors routes_samples.jl POST: payload always includes experiment_id.
-    // A sample tag lives in four cached projections — the per-experiment list,
-    // the corpus contact-sheet list, and (I3.4 #174) the corpus tag proposal +
-    // picker projection the /series/new scoping surface reads — so all four
-    // keys must invalidate on a foreign tag write.
     const evt: SseEvent = {
       id: 99, kind: "add_tag", entity_type: "sample", entity_id: 10,
       payload: { key: "k", value: "v", tag_id: 50, experiment_id: 1 },
@@ -505,7 +476,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     applyRemoteToCache(evt, qc);
     expect(invalidated).toEqual([
       queryKeys.samples(1), queryKeys.corpusSamples,
-      queryKeys.corpusSampleTags, queryKeys.corpusPickerSamples,
+      queryKeys.corpusSampleTags,
     ]);
   });
 
@@ -523,13 +494,11 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidated).toEqual(queryKeys.exposures(1));
   });
 
-  it("remove_tag (sample) invalidates the experiment + corpus samples lists AND the scoping caches", () => {
+  it("remove_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
     const invalidated: unknown[] = [];
     qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
       invalidated.push(arg.queryKey); return Promise.resolve();
     }) as typeof qc.invalidateQueries;
-    // remove_tag shares the add_tag(sample) branch, so it fans out to the same
-    // four keys (I3.4 #174 added the two corpus-scoping caches).
     const evt: SseEvent = {
       id: 99, kind: "remove_tag", entity_type: "sample", entity_id: 10,
       payload: { tag_id: 50, experiment_id: 1 },
@@ -537,7 +506,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     applyRemoteToCache(evt, qc);
     expect(invalidated).toEqual([
       queryKeys.samples(1), queryKeys.corpusSamples,
-      queryKeys.corpusSampleTags, queryKeys.corpusPickerSamples,
+      queryKeys.corpusSampleTags,
     ]);
   });
 
@@ -563,21 +532,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       queryKeys.peaks(5),
       queryKeys.indices(5),
     ]);
-  });
-
-  it("post_message with entity_type=sample_message still routes to sample messages cache", () => {
-    // Regression: extending the dispatch must not break the legacy path.
-    qc.setQueryData<SampleMessage[]>(queryKeys.messages(10), []);
-    const evt: SseEvent = {
-      id: 99, kind: "post_message", entity_type: "sample_message", entity_id: 200,
-      payload: {
-        id: 200, sample_id: 10, author_id: 3, author: "alice",
-        body: "hi sample", created_at: "2026-05-06T12:00:00Z",
-      },
-    };
-    applyRemoteToCache(evt, qc);
-    const msgs = qc.getQueryData<SampleMessage[]>(queryKeys.messages(10))!;
-    expect(msgs).toHaveLength(1);
   });
 
   it("remove_tag (exposure) invalidates the sample's exposures list", () => {
@@ -650,16 +604,13 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   // (e.g. a half-baked synth landed on a mutator before the pipeline is
   // ready) trips a test rather than silently changing wire shape.
   //
-  // Camp (b) breaks down into three rationales:
+  // Camp (b) breaks down into two rationales:
   //
   //   (b.i)  Forward-scaffolded — mutator exists but no UI gesture queues it
   //          today (set_exposure_status, update_sample, select_exposure,
   //          remove_tag ×2). When a future plan wires the gesture, add
   //          synthesizeFromSse to the owning mutator.
-  //   (b.ii) Active mutators whose SSE payload IS the cache row shape, so
-  //          the generic fallback already produces the correct shape
-  //          (post_message — payload IS SampleMessage).
-  //   (b.iii) Active mutators whose onSuccess relies on the `looksFull`
+  //   (b.ii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
   //          Plus mutators whose SSE-wins-and-then-resolve has no cache
@@ -672,9 +623,7 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     { kind: "select_exposure",     entity_type: "exposure"           },
     { kind: "remove_tag",          entity_type: "sample"             },
     { kind: "remove_tag",          entity_type: "exposure"           },
-    // (b.ii) payload IS cache-row shape
-    { kind: "post_message",        entity_type: "sample_message"     },
-    // (b.iii) looksFull-handled or hash-only effects
+    // (b.ii) looksFull-handled or hash-only effects
     { kind: "analyze_run",         entity_type: "exposure"           },
     { kind: "peak_removed",        entity_type: "exposure"           },
     { kind: "speculative_created", entity_type: "exposure"           },
