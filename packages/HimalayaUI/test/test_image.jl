@@ -164,6 +164,38 @@ end
     end
 end
 
+@testset "ensure_full_cached: the cache stays under its byte cap by evicting the least recently viewed frames" begin
+    mktempdir() do tmp
+        disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
+        path = _make_detector_tiff(64)
+        try
+            token = HimalayaUI.image_version_token(path)
+            thumb = HimalayaUI.ensure_thumb_cached(disk, 1, path; token=token)
+            entry(id) = HimalayaUI.full_cache_path(disk, id, token)
+            HimalayaUI.ensure_full_cached(disk, 1, path; token=token)
+            one = filesize(entry(1)) + filesize(HimalayaUI._full_size_path(entry(1)))
+            @test 7one > length(thumb)
+            cap = length(thumb) + 3one - 1
+            viewed(id) = (HimalayaUI.ensure_full_cached(disk, id, path; token=token, cap=cap); sleep(1.1))
+
+            sleep(1.1)
+            viewed(2)
+            viewed(1)
+            viewed(3)
+            @test isfile(entry(1)) && isfile(entry(3))
+            @test !isfile(entry(2)) && !isfile(HimalayaUI._full_size_path(entry(2)))
+            @test !isdir(dirname(entry(2)))
+            @test isfile(HimalayaUI.thumb_cache_path(disk, 1, token))
+
+            HimalayaUI.ensure_full_cached(disk, 4, path; token=token, cap=length(thumb) + one ÷ 2)
+            @test isfile(entry(4)) && !isfile(entry(1)) && !isfile(entry(3))
+            @test isfile(HimalayaUI.thumb_cache_path(disk, 1, token))
+        finally
+            rm(path; force=true)
+        end
+    end
+end
+
 @testset "ensure_full_cached: a new token replaces the old entry, and a broken entry renders again" begin
     mktempdir() do tmp
         disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
