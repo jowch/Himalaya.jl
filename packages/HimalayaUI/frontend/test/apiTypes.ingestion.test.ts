@@ -1,6 +1,6 @@
 // test/apiTypes.ingestion.test.ts
 import { describe, it, expect } from "vitest";
-import type { Experiment, Sample, Load, GroupingFlag } from "../src/api";
+import type { Experiment, Sample } from "../src/api";
 
 describe("ingestion api types (Phase E1)", () => {
   it("Experiment carries typed geometry source tags + scan columns + E1 additive fields", () => {
@@ -32,33 +32,5 @@ describe("ingestion api types (Phase E1)", () => {
     // @ts-expect-error name is non-null after the collapse — null is not assignable
     const _nn: Sample = { id: 2, experiment_id: 1, name: null, notes: null, tags: [] };
     void _nn;
-  });
-
-  it("Load is the NESTED roll-up (Load ▸ Sample ▸ Exposures)", () => {
-    const l: Load = {
-      load_id: 3, load_index: 1, session_id: 1,
-      start_time: "2026-04-12T10:00:00", end_time: "2026-04-12T10:10:00",
-      frame_count: 64, note: null,
-      samples: [
-        {
-          sample_id: 9, name: "HA85 (S01P15)", slot_index: 15,
-          grouping_source: "computed", name_source: "computed",
-          merged_into_id: null, flag: null,
-          exposures: [
-            { id: 51, filename: "ha85_001.tif", horizontal_position: 12.4, timestamp: "2026-04-12T10:00:01" },
-          ],
-        },
-      ],
-    };
-    expect(l.load_index).toBe(1);
-    expect(l.samples[0]!.exposures[0]!.id).toBe(51);
-    expect(l.samples[0]!.flag).toBeNull();
-  });
-
-  it("a Load sample can carry a merge or split GroupingFlag", () => {
-    const merge: GroupingFlag = { kind: "merge", merge_with_sample_id: 4, merge_with_label: "HA85 (S01P14)" };
-    const split: GroupingFlag = { kind: "split", split_at_index: 32, jump_from: 12.4, jump_to: 48.1 };
-    expect(merge.kind).toBe("merge");
-    expect(split.kind).toBe("split");
   });
 });

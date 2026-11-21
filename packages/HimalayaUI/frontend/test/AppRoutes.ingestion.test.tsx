@@ -32,21 +32,14 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
     expect(screen.getByTestId("dirpicker-input")).toBeInTheDocument();
   });
 
-  it("/experiments/:id/corpus mounts ExperimentShell chrome + corpus body", async () => {
-    renderAt("/experiments/7/corpus");
-    expect(await screen.findByTestId("experiment-shell")).toBeInTheDocument();
-    // T3.2: AppShell renders TopNav; ExperimentShell is pure page content.
-    // There is exactly ONE topnav in the DOM (from AppShell).
-    expect(screen.getByTestId("topnav")).toBeInTheDocument();
-    expect(screen.queryByTestId("corpus-topbar")).toBeNull();
+  it.each(["corpus", "config", "grouping"])("/experiments/:id/%s goes to the workspace", async (retired) => {
+    renderAt(`/experiments/7/${retired}`);
+    expect(await screen.findByTestId("workspace")).toBeInTheDocument();
   });
 
-  it("/experiments/:id/grouping mounts GroupingReviewPage (E2)", async () => {
-    vi.spyOn(api, "listLoads").mockResolvedValue([]);
-    renderAt("/experiments/7/grouping");
-    // GroupingReviewPage renders the "Check the grouping" heading + filter bar.
-    expect(await screen.findByText("Check the grouping")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Filter samples" })).toBeInTheDocument();
+  it("/experiments/new/config goes back to the new-experiment screen", () => {
+    renderAt("/experiments/new/config");
+    expect(screen.getByTestId("dirpicker-input")).toBeInTheDocument();
   });
 
   it("/ redirects to /experiments", async () => {

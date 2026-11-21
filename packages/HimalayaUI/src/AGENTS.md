@@ -72,7 +72,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 
 ## Experiment config
 
-The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/resolve` → `/api/fs/manifest` → `POST /api/experiments`); `PATCH /api/experiments/:id` edits all but the path fields. The `experiments.config` column holds legacy TOML that nothing reads or sends. There is no `experiment.toml`.
+The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/preview`, which lists every setup under the picked folder, then one `POST /api/experiments` per setup; `/api/fs/manifest` recounts a setup the user corrected); `PATCH /api/experiments/:id` edits all but the path fields, though no page calls it any more. The `experiments.config` column holds legacy TOML that nothing reads or sends. There is no `experiment.toml`.
 
 
 Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.

@@ -281,8 +281,8 @@ end
 """
     register_fs_routes!()
 
-Read-only filesystem probes for the New-experiment screen: `suggest`, `resolve`,
-`validate`, `manifest`, and `preview` (every setup under a picked folder).
+Read-only filesystem probes for the New-experiment screen: `suggest`, `manifest`,
+and `preview` (every setup under a picked folder).
 """
 function register_fs_routes!()
     @get "/api/fs/suggest" function(req::HTTP.Request)
@@ -301,20 +301,6 @@ function register_fs_routes!()
         end
         _json(200, Dict(:suggestions => kids))
     end
-    @get "/api/fs/resolve" function(req::HTTP.Request)
-        q    = HTTP.queryparams(HTTP.URI(req.target))
-        path = get(q, "path", "")
-        isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
-        r = resolve_experiment_layout(path)
-        _json(200, Dict(:name => r.name,
-                   :data_dir => r.data_dir,
-                   :analysis_dir => r.analysis_dir,
-                   :setup_file => r.setup_file,
-                   :setup_ambiguous => r.setup_ambiguous,
-                   :image_pattern => r.image_pattern,
-                   :metadata_pattern => r.metadata_pattern,
-                   :integration_pattern => r.integration_pattern))
-    end
     @get "/api/fs/preview" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
         path = get(q, "path", "")
@@ -322,22 +308,6 @@ function register_fs_routes!()
         db = current_db()
         _json(200, Dict(:path => path,
                         :setups => [_setup_preview(db, path, root) for root in setup_roots(path)]))
-    end
-    @get "/api/fs/validate" function(req::HTTP.Request)
-        q    = HTTP.queryparams(HTTP.URI(req.target))
-        path = get(q, "path", "")
-        if isempty(path) || !isdir(path)
-            return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
-                               :message => "path does not exist or is not a directory"))
-        end
-        dup = !isempty(DBInterface.execute(current_db(),
-            "SELECT 1 FROM experiments WHERE data_dir = ? LIMIT 1", [path]) |> Tables.rowtable)
-        if dup
-            return _json(200, Dict(:ok => false, :matched => 0, :scanned => 0,
-                               :message => "an experiment already uses this directory"))
-        end
-        scanned = count(!startswith("."), readdir(path))
-        _json(200, Dict(:ok => true, :matched => scanned, :scanned => scanned, :message => nothing))
     end
     @get "/api/fs/manifest" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))

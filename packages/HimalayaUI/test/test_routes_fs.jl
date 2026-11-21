@@ -52,37 +52,6 @@ end
     end
 end
 
-@testset "GET /api/fs/validate gates the picker" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            good = mktempdir()
-            touch(joinpath(good, "x.tif"))
-
-            # existing dir → ok
-            r1 = call("GET", "/api/fs/validate?path=$(HTTP.escapeuri(good))")
-            @test r1.status == 200
-            body1 = JSON3.read(r1.body)
-            @test body1.ok == true
-            @test body1.message === nothing
-
-            # nonexistent path → not ok + message
-            r2 = call("GET", "/api/fs/validate?path=$(HTTP.escapeuri(good * "_nope"))")
-            @test r2.status == 200
-            body2 = JSON3.read(r2.body)
-            @test body2.ok == false
-            @test body2.message !== nothing
-
-            # already-an-experiment → not ok
-            HimalayaUI.create_experiment!(db; name="e", path=good,
-                data_dir=good, analysis_dir=good)
-            r3 = call("GET", "/api/fs/validate?path=$(HTTP.escapeuri(good))")
-            @test r3.status == 200
-            @test JSON3.read(r3.body).ok == false
-        end
-    end
-end
-
 @testset "GET /api/fs/manifest counts by type without writing" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
@@ -391,26 +360,6 @@ end
         @test r.analysis_dir === nothing
         @test r.setup_file === nothing
         @test r.setup_ambiguous == true
-    end
-end
-
-@testset "GET /api/fs/resolve returns the structural layout" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            root = joinpath(mktempdir(), "1p7m"); mkpath(root)
-            _fs_make_experiment_root(root)
-            resp = call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri(root))")
-            @test resp.status == 200
-            r = JSON3.read(resp.body)
-            @test r.name == "1p7m"
-            @test endswith(String(r.data_dir), "/data")
-            @test endswith(String(r.setup_file), "setup_info_20260425_181705.txt")
-            @test r.setup_ambiguous == false
-            @test r.integration_pattern == "{name}_tot.dat"   # detected tot convention surfaced
-            # 400 for a non-directory.
-            @test call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri("/no/such/xyz"))").status == 400
-        end
     end
 end
 

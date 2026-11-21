@@ -373,11 +373,6 @@ function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::Abstr
     false
 end
 
-"""
-    ingest_problems(db, experiment_id) -> Vector{Dict}
-
-Exposures whose trace is missing or whose analysis failed, with the stored reason.
-"""
 function ingest_problems(db::SQLite.DB, experiment_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db, """
         SELECT e.id, e.filename, e.analysis_error, e.sample_id, s.name AS sample_name
