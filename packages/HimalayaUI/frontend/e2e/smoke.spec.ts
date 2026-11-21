@@ -114,3 +114,35 @@ test("a deleted /compare URL shows the stale-URL page", async ({ page }) => {
   await page.goto("/experiments/1/compare");
   await expect(page.getByTestId("stale-url-page")).toBeVisible();
 });
+
+test("the experiments home follows a dark pick from the workspace, and its status pill has no extra letter-spacing", async ({ page }) => {
+  await mockCore(page);
+  await seedState(page, {});
+  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:theme", "dark"); });
+  await page.goto("/experiments");
+  const pill = page.getByTestId("notice-pill").filter({ hasText: "Up to date" });
+  await expect(pill).toBeVisible();
+  const read = () => page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.color = "oklch(0.165 0.005 280)";
+    document.body.appendChild(probe);
+    const darkPaper = getComputedStyle(probe).color;
+    probe.remove();
+    const pillEl = document.querySelector('[data-testid="notice-pill"]')!;
+    return { onDarkPaper: getComputedStyle(document.body).backgroundColor === darkPaper, spacing: getComputedStyle(pillEl).letterSpacing };
+  });
+  await expect.poll(async () => (await read()).onDarkPaper).toBe(true);
+  expect((await read()).spacing).toBe("normal");
+});
+
+test("a dark pick is on the page before the app script runs, so a dark user never sees light paper first", async ({ page }) => {
+  await page.route(/\/assets\/.*\.js$/, (r) => r.abort());
+  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:theme", "dark"); });
+  await page.goto("/experiments", { waitUntil: "domcontentloaded" });
+  const root = await page.evaluate(() => ({
+    theme: document.documentElement.getAttribute("data-theme"),
+    dark: document.documentElement.classList.contains("dark"),
+    appMounted: document.getElementById("app")!.childElementCount > 0,
+  }));
+  expect(root).toEqual({ theme: "dark", dark: true, appMounted: false });
+});
