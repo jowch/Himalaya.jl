@@ -71,6 +71,7 @@ import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
+import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { TagRow } from "./ui/TagRow";
 import { SYMS } from "../lib/customIndex";
 
@@ -128,12 +129,12 @@ function latticeParam(phase: string): string {
 
 function exposureRows(e: Exposure): [string, string][] {
   const rows: [string, string][] = [["File", e.filename ?? "—"]];
-  if (e.kind !== "file") rows.push(["Kind", e.kind === "averaged" ? "Averaged" : "Subtracted"]);
-  if (e.exposure_time != null) rows.push(["Exposure", `${e.exposure_time.toFixed(1)} s`]);
+  rows.push(["Kind", e.kind === "averaged" ? "Averaged" : e.kind === "background_subtracted" ? "Subtracted" : "Single"]);
   const i0 = e.incident_monitor;
   const i2 = e.transmitted_counts;
-  if (i0 != null) rows.push(["I₀", i0.toLocaleString("en-US", { maximumSignificantDigits: 4 })]);
-  if (i2 != null) rows.push(["I signal", Math.round(i2).toLocaleString("en-US")]);
+  rows.push(["Exposure", e.exposure_time != null ? `${e.exposure_time.toFixed(1)} s` : "—"]);
+  rows.push(["I₀", i0 != null ? i0.toLocaleString("en-US", { maximumSignificantDigits: 4 }) : "—"]);
+  rows.push(["I signal", i2 != null ? Math.round(i2).toLocaleString("en-US") : "—"]);
   return rows;
 }
 
@@ -749,39 +750,44 @@ export function WorkspacePage(): JSX.Element {
       }
       tools={
         <>
-          {draft && draftBounds ? (
-            <Section title="Custom index">
-              <CustomIndexPanel
-                draft={draft}
-                min={draftBounds.min}
-                max={draftBounds.max}
-                landed={draftFit?.landed ?? 0}
-                total={draftFit?.points.length ?? 0}
-                disabled={!canCall}
-                onChange={setDraftClamped}
-                onAdd={addCustom}
-                onCancel={() => setDraft(null)}
-              />
-            </Section>
-          ) : (
-            <Section title="Call">
-              {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
-              <CandidateList
-                candidates={candidates}
-                assigned={assigned}
-                disabled={exposureDropped || !username}
-                formFactor={isFormFactor}
-                onToggle={toggleCandidate}
-                onFormFactor={toggleFormFactor}
-                onHover={setHoverId}
-              />
-            </Section>
-          )}
-          <Section title="Indexing">
+          <Section
+            title="Indexing"
+            aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
+          >
             <IndexingPlot series={indexSeries} />
           </Section>
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-tools-middle">
+            {draft && draftBounds ? (
+              <Section title="Custom index">
+                <CustomIndexPanel
+                  draft={draft}
+                  min={draftBounds.min}
+                  max={draftBounds.max}
+                  landed={draftFit?.landed ?? 0}
+                  total={draftFit?.points.length ?? 0}
+                  disabled={!canCall}
+                  onChange={setDraftClamped}
+                  onAdd={addCustom}
+                  onCancel={() => setDraft(null)}
+                />
+              </Section>
+            ) : (
+              <Section title="Call">
+                {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
+                <CandidateList
+                  candidates={candidates}
+                  assigned={assigned}
+                  disabled={exposureDropped || !username}
+                  formFactor={isFormFactor}
+                  onToggle={toggleCandidate}
+                  onFormFactor={toggleFormFactor}
+                  onHover={setHoverId}
+                />
+              </Section>
+            )}
+          </div>
           {exposure && (
-            <Section title="Exposure" aside="← →">
+            <Section title="Exposure" aside="← →" className="shrink-0">
               <MetaList rows={exposureRows(exposure)} />
             </Section>
           )}

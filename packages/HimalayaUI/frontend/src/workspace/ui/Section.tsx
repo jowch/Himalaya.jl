@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
-export function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }): JSX.Element {
+export function Section({ title, aside, className, children }: { title: string; aside?: ReactNode; className?: string; children: ReactNode }): JSX.Element {
   return (
-    <section className="flex flex-col px-3.5 py-3">
+    <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")}>
       <header className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
         {aside && <span className="text-xs text-ink-faint">{aside}</span>}
@@ -26,9 +26,9 @@ export function MainSection({ title, hint, children }: { title: string; hint?: R
 
 export function SampleHeading({ name, meta }: { name: string; meta?: ReactNode }): JSX.Element {
   return (
-    <div className="flex flex-wrap items-baseline gap-3 px-3.5 pb-1 pt-2.5">
-      <h2 className="m-0 text-xl font-normal leading-tight text-ink">{name}</h2>
-      {meta && <span className="text-base text-ink-faint">{meta}</span>}
+    <div className="flex min-w-0 items-baseline gap-3 px-3.5 pb-1 pt-2.5">
+      <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink" title={name}>{name}</h2>
+      {meta && <span className="shrink-0 whitespace-nowrap text-base text-ink-faint">{meta}</span>}
     </div>
   );
 }
