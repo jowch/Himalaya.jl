@@ -223,6 +223,10 @@ function register_analysis_routes!()
                 JSON3.write(Dict(:error => "index_id must be an integer")))
         end
         return with_idempotency(db, req) do
+            isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM indices WHERE id = ? AND exposure_id = ?", [index_id, id]))) &&
+                return HTTP.Response(409, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "index $index_id is not one of this exposure's current indices")))
             result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_add",
                 entity_type = "exposure",
