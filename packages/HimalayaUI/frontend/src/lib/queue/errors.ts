@@ -1,4 +1,5 @@
 import type { OpKind } from "./types";
+import { NetworkError } from "../../api";
 
 interface ErrorWithStatus {
   status?: number;
@@ -51,10 +52,14 @@ export function isInfrastructureError(err: unknown): boolean {
 const UNREACHABLE_STATUSES = new Set([502, 503, 504]);
 
 export function isUnreachableError(err: unknown): boolean {
+  if (err instanceof NetworkError) return true;
   const e = asErrorWithStatus(err);
-  if (!e) return false;
-  if (typeof e.status === "number") return UNREACHABLE_STATUSES.has(e.status);
-  return !(err instanceof DOMException && err.name === "AbortError");
+  return !!e && typeof e.status === "number" && UNREACHABLE_STATUSES.has(e.status);
+}
+
+export function isServerError(err: unknown): boolean {
+  const e = asErrorWithStatus(err);
+  return !!e && typeof e.status === "number" && e.status >= 500 && e.status < 600;
 }
 
 const VALIDATION_COPY: Partial<Record<OpKind, string>> = {

@@ -18,6 +18,12 @@ export default defineConfig({
         target: `http://127.0.0.1:${apiPort}`,
         changeOrigin: false,
         configure: (proxy) => {
+          proxy.on("error", (_err, _req, res) => {
+            if ("writeHead" in res && !res.headersSent) {
+              res.writeHead(502, { "Content-Type": "text/plain" });
+              res.end("backend unreachable");
+            }
+          });
           proxy.on("proxyRes", (upstream, _req, res) => {
             upstream.on("close", () => {
               if (!res.writableEnded) res.destroy();

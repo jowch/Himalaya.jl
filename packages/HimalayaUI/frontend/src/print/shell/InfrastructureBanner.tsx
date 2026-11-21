@@ -70,7 +70,7 @@ export function InfrastructureBanner(): JSX.Element | null {
     >
       {offline || stuck ? (
         <>
-          <span aria-label={offline ? "Offline" : "Not saved"} className="flex-shrink-0 font-bold text-error">
+          <span aria-label={offline ? "Offline" : "Not saved"} className="flex-shrink-0 font-bold text-warning">
             {"✕"}
           </span>
           {offline ? (

@@ -7,6 +7,7 @@ import {
   isValidationError,
   isInfrastructureError,
   isUnreachableError,
+  isServerError,
   is404Error,
   buildValidationMessage,
   buildServerErrorMessage,
@@ -19,9 +20,10 @@ import type { FlatPayload, Mutator, RollbackContext } from "./types";
  * - `onSuccess` fires on CONFIRMATION — HTTP response or own-op SSE frame,
  *   whichever wins the race. Consumers use it for honest success toasts
  *   (never toast optimistically at mutate() time).
- * - `onError` fires on TERMINAL failure. An unreachable server never makes an
- *   edit terminal (it stays queued under the InfrastructureBanner); other 5xx
- *   turn terminal after the retry budget and the global handler toasts.
+ * - `onError` fires on TERMINAL failure. An unreachable server is never
+ *   terminal, so a flow gated on `onSuccess` waits out the outage. Other 5xx
+ *   end after the retry budget and toast unless the call passed `onError`.
+ *   See docs/mutation-queue.md §10.
  * TanStack semantics apply: when mutate() is called again before the previous
  * call settles, only the LATEST call's callbacks fire (no toast pile-up).
   * NOTE: onError also fires for 404s a `treats404AsSuccess` mutator treats
@@ -47,6 +49,8 @@ export interface UseQueueMutationResult<TInput, TResponse = unknown> {
 const MAX_RETRIES = 5;
 const MAX_BACKOFF_MS = 5_000;
 
+const ownErrorSurface = new Set<string>();
+
 /**
  * Wires a Mutator into TanStack Query's useMutation with:
  * - per-call client_op_id mint (newClientOpId() on every mutate())
@@ -54,9 +58,8 @@ const MAX_BACKOFF_MS = 5_000;
  * - deferred-promise resolution: HTTP and SSE race; first to land wins
  * - failure-class routing: 4xx → Validation toast, 5xx/network → infrastructure
  *   (banner is mounted by M2 at App.tsx and reads from useMutationState directly)
- * - retry policy: validation never retries; an unreachable server (network
- *   failure, 502/503/504) retries until it answers; other 5xx retry up to 5x
- *   and then toast; backoff is exponential, capped at 5s
+ * - retry and ordering: one scope, so edits land in the order made; the retry
+ *   classes are in docs/mutation-queue.md §10
  *
  * `scope` is merged into every payload before mutator callbacks run. Use it
  * for invariants the mutator needs but that aren't part of the per-call input
@@ -76,6 +79,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
   const mutation = useMutation<TResponse, unknown, Payload, RollbackContext>(
     {
       mutationKey: [mutator.kind],
+      scope: { id: "queue" },
       mutationFn: async (payload) => {
         // TanStack v5 doesn't surface a per-call AbortSignal on the
         // MutationFunctionContext, so we mint our own. mutator.request still
@@ -125,9 +129,12 @@ export function useQueueMutation<TInput, TScope, TResponse>(
           // own bespoke error surface; gate via instanceof.
           if (err instanceof ConflictError) return;
           showToast(buildValidationMessage(mutator.kind, err), "error");
-        } else if (isInfrastructureError(err)) {
+        } else if (isServerError(err) && !ownErrorSurface.has(_payload.clientOpId)) {
           showToast(buildServerErrorMessage(mutator.kind), "error");
         }
+      },
+      onSettled: (_data, _err, payload) => {
+        ownErrorSurface.delete(payload.clientOpId);
       },
       retry: (failureCount, err) => {
         if (isValidationError(err)) return false;
@@ -151,6 +158,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
       ...scope,
       ...(input as object),
     } as unknown as Payload;
+    if (callbacks?.onError) ownErrorSurface.add(payload.clientOpId);
     // Conditional spread (exactOptionalPropertyTypes): never pass an explicit
     // `undefined` handler into TanStack's MutateOptions.
     mutation.mutate(payload, {

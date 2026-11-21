@@ -480,19 +480,29 @@ frame written by the *other* version mid-rollout:
 | Class | Examples | Retry? | UX |
 |---|---|---|---|
 | Validation | 4xx, schema rejection, duplicate ↔ existing row | No | Toast with kind-specific message |
-| Unreachable | network error (connection refused), 502, 503, 504 | Yes, until the server answers (exponential backoff capped at 5s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
-| Server error | other 5xx | Yes (up to 5x, backoff capped at 5s), then rolls back | Banner while retrying, then a kind-specific error toast |
+| Unreachable | a `NetworkError` from `api.request` (only a rejected `fetch` becomes one), 502, 503, 504 | Yes, until the server answers (exponential backoff capped at 5s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
+| Server error | other 5xx | Yes (up to 5x, backoff capped at 5s), then rolls back | Banner while retrying, then a kind-specific error toast unless the call passed its own `onError` |
+| Client-side throw | a bug in a mutator's `request`, a header `fetch` refuses | Yes (up to 5x), then rolls back | No toast; the caller's `onError` decides |
 
 A validation error rolls back the optimistic effect via `context.restore`
 and the user sees a toast. The mutation's `state` ends in `error`.
 
 An unreachable server never makes an edit terminal. The optimistic effect
 stays visible and the edit keeps retrying with the same `client_op_id`, so a
-backend restart or deploy during triage loses nothing (#343). The pending set
-is mirrored to sessionStorage, so a reload in the meantime rehydrates it.
+backend restart or deploy during triage loses nothing (#343). A reload during
+the outage does not yet keep these edits safe (#353).
 Other 5xx are treated as a server bug: after 5 failures the mutation lands in
 `error`, the optimistic effect rolls back, and the global handler toasts, so
 no consumer can leave a silent rollback.
+
+Every queued edit shares one TanStack `scope` (`"queue"`), so edits reach the
+server one at a time in the order they were made. Without it each edit has its
+own retry timer and a replay after an outage can land out of order, so
+last-write-wins undoes the later edit. A narrower scope is not safe: edits on
+one sample carry different keys (a frame drop has `sampleId`, a phase call only
+`exposureId`). Optimistic effects still apply at once, because `onMutate` runs
+before the scope queue. A flow that waits for `onSuccess` waits out the whole
+outage.
 
 `InfrastructureBanner` (`print/shell/InfrastructureBanner.tsx`) is a global
 status strip that reads from `useMutationState` and the `useConnection` store

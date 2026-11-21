@@ -13,7 +13,7 @@ describe("api.request failure classes", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const err = await request("PUT", "/api/x", {}, { username: "名前" }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(TypeError);
+    expect((err as Error).name).toBe("TypeError");
     expect(err).not.toBeInstanceOf(NetworkError);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
