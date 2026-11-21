@@ -88,8 +88,8 @@ class PrefetchRun {
   }
 }
 
-async function prefetchAround(run: PrefetchRun, shownFull: string[], otherFull: string[], neighbours: Neighbour[]): Promise<void> {
-  await Promise.all([run.images(shownFull), ...neighbours.map((n) => run.neighbour(n))]);
+async function prefetchAround(run: PrefetchRun, shownFull: string[], otherFull: string[], siblings: number[], neighbours: Neighbour[]): Promise<void> {
+  await Promise.all([run.images(shownFull), ...siblings.map((id) => run.exposureData(id)), ...neighbours.map((n) => run.neighbour(n))]);
   await run.images(otherFull);
   await run.images(
     neighbours.flatMap((n) => {
@@ -135,7 +135,10 @@ export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, 
   const qc = useQueryClient();
   const neighbourKey = encodeNeighbours(neighbourSamples(samples, currentId));
   const framesKey = exposures.flatMap((e) => imageUrl(e, false) ?? []).join("\n");
+  const exposureIds = exposures.map((e) => e.id).join(",");
   const shown = exposures.find((e) => e.id === shownId);
+  const shownIdRef = useRef<number | undefined>(undefined);
+  shownIdRef.current = shownId;
   const shownUrl = useRef<string | undefined>(undefined);
   shownUrl.current = (shown && imageUrl(shown, false)) ?? undefined;
 
@@ -149,6 +152,7 @@ export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, 
         run,
         first ? [first] : [],
         frames.filter((url) => url !== first),
+        exposureIds ? exposureIds.split(",").map(Number).filter((id) => id !== shownIdRef.current) : [],
         decodeNeighbours(neighbourKey),
       );
     }, PREFETCH_DWELL_MS);
@@ -156,5 +160,5 @@ export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, 
       clearTimeout(timer);
       run.cancel();
     };
-  }, [qc, currentId, settled, neighbourKey, framesKey]);
+  }, [qc, currentId, settled, neighbourKey, framesKey, exposureIds]);
 }
