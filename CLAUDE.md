@@ -71,6 +71,10 @@ scratch/                            # gitignored — exploratory scripts and tra
 # gitignored and there is no [sources], so a bare instantiate resolves Himalaya from
 # the REGISTRY (different physics from this checkout). `[compat] Himalaya = "0.6"`
 # makes that fail loudly instead of silently; `develop` is the fix, not a workaround.
+# `make setup` also writes packages/HimalayaUI/LocalPreferences.toml (gitignored) with
+# `precompile_workload = false`, so a src/ edit recompiles in ~5 s, not ~100 s. Delete
+# that file (or set it to true) to build the deploy-time route warm-up, e.g. to time a
+# cold start. The manual steps below don't write it. See packages/HimalayaUI/src/AGENTS.md.
 (cd packages/HimalayaUI/frontend && npm install)
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'

@@ -42,6 +42,10 @@ function _workload_socket(port::Int)
                                               _workload_headers(), payload; status_exception = false)
 end
 
+_recording(send, ::Nothing) = send
+_recording(send, record::AbstractVector) =
+    (method, target, payload) -> (push!(record, (method, target)); send(method, target, payload))
+
 function _workload_call(send, method::AbstractString, target::AbstractString, body = nothing)
     payload = body === nothing ? UInt8[] : Vector{UInt8}(JSON3.write(body))
     res = send(method, target, payload)
@@ -50,7 +54,7 @@ function _workload_call(send, method::AbstractString, target::AbstractString, bo
     isempty(res.body) || !json_body ? nothing : JSON3.read(res.body)
 end
 
-function _workload_requests(send, experiment::Int, sample::Int, exposure::Int)
+function _workload_requests(send, experiment::Int, sample::Int, other::Int, exposure::Int)
     _workload_call(send, "GET", "/api/health")
     _workload_call(send, "GET", "/api/users")
     _workload_call(send, "GET", "/api/experiments")
@@ -60,6 +64,8 @@ function _workload_requests(send, experiment::Int, sample::Int, exposure::Int)
     _workload_call(send, "GET", "/api/samples?experiment_id=$experiment")
     _workload_call(send, "GET", "/api/samples/$sample")
     _workload_call(send, "GET", "/api/samples/$sample/exposures")
+    _workload_call(send, "POST", "/api/samples/$sample/bridge", Dict(:to_sample_id => other))
+    _workload_call(send, "DELETE", "/api/samples/$sample/bridge")
     _workload_call(send, "GET", "/api/exposures/$exposure")
     _workload_call(send, "GET", "/api/exposures/$exposure/trace")
     _workload_call(send, "GET", "/api/exposures/$exposure/image?thumb=1")
@@ -69,10 +75,12 @@ function _workload_requests(send, experiment::Int, sample::Int, exposure::Int)
     _workload_call(send, "GET", "/api/exposures/$exposure/assignment")
 
     added = _workload_call(send, "POST", "/api/exposures/$exposure/peaks", Dict(:q => 0.3))
-    _workload_call(send, "DELETE", "/api/peaks/$(added.id)")
-    auto = first(p for p in peaks if p.source == "auto")
-    _workload_call(send, "PATCH", "/api/peaks/$(auto.id)", Dict(:excluded => true))
-    _workload_call(send, "PATCH", "/api/peaks/$(auto.id)", Dict(:excluded => false))
+    _workload_call(send, "DELETE", "/api/peaks/manual/$(added.id)")
+    at = findfirst(p -> p.source == "auto", peaks)
+    at === nothing && error("precompile workload: the synthetic trace gave no auto peaks")
+    auto = peaks[at]
+    _workload_call(send, "PATCH", "/api/peaks/auto/$(auto.id)", Dict(:excluded => true))
+    _workload_call(send, "PATCH", "/api/peaks/auto/$(auto.id)", Dict(:excluded => false))
 
     _workload_call(send, "PATCH", "/api/exposures/$exposure/status", Dict(:status => "rejected"))
     _workload_call(send, "PATCH", "/api/exposures/$exposure/status", Dict(:status => nothing))
@@ -91,17 +99,37 @@ function _workload_requests(send, experiment::Int, sample::Int, exposure::Int)
     _workload_call(send, "POST", "/api/exposures/$exposure/analyze", Dict())
 end
 
-function run_route_workload(dir::AbstractString)
+function _save_module_state()
+    (db = _DB_REF[],
+     subscribers = lock(() -> copy(SSE_SUBSCRIBERS[]), SSE_LOCK),
+     op_ids = lock(() -> Set(keys(OP_LOCKS)), OP_LOCKS_MU),
+     hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK))
+end
+
+function _restore_module_state!(saved)
+    _DB_REF[] = saved.db
+    lock(() -> SSE_SUBSCRIBERS[] = saved.subscribers, SSE_LOCK)
+    lock(() -> filter!(kv -> kv.first in saved.op_ids, OP_LOCKS), OP_LOCKS_MU)
+    lock(_PEAK_SET_HASH_CACHE_LOCK) do
+        empty!(_PEAK_SET_HASH_CACHE); merge!(_PEAK_SET_HASH_CACHE, saved.hashes[1])
+        empty!(_PEAK_SET_HASH_CACHE_ORDER); append!(_PEAK_SET_HASH_CACHE_ORDER, saved.hashes[2])
+    end
+    nothing
+end
+
+function run_route_workload(dir::AbstractString; record = nothing)
     analysis_dir = joinpath(dir, "analysis")
     data_dir = joinpath(dir, "data")
     mkpath(analysis_dir); mkpath(data_dir)
     _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame")))
     image = joinpath(data_dir, "frame.tif")
     _workload_frame(image)
+    saved = _save_module_state()
     db = open_db(joinpath(dir, "himalaya.db"))
     try
         experiment = init_experiment!(db; path = dir, data_dir = data_dir, analysis_dir = analysis_dir)
         sample = create_sample!(db; experiment_id = experiment, name = "precompile")
+        other = create_sample!(db; experiment_id = experiment, name = "precompile_b")
         exposure = create_exposure!(db; experiment_id = experiment, sample_id = sample,
                                     filename = "frame", image_path = image)
         create_exposure!(db; experiment_id = experiment, sample_id = sample,
@@ -115,24 +143,21 @@ function run_route_workload(dir::AbstractString)
         bind_db!(db)
         register_routes!()
 
-        _workload_call(_workload_inproc, "POST", "/api/users", Dict(:username => "precompile"))
-        _workload_requests(_workload_inproc, experiment, sample, exposure)
+        inproc = _recording(_workload_inproc, record)
+        _workload_call(inproc, "POST", "/api/users", Dict(:username => "precompile"))
+        _workload_requests(inproc, experiment, sample, other, exposure)
         port = find_free_port()
         Oxygen.serve(; host = "127.0.0.1", port, async = true, show_banner = false,
                      docs = false, metrics = false, parallel = true)
         try
             _wait_for_server(port)
-            _workload_requests(_workload_socket(port), experiment, sample, exposure)
+            _workload_requests(_recording(_workload_socket(port), record), experiment, sample, other, exposure)
         finally
             Oxygen.terminate()
         end
     finally
         Oxygen.resetstate()
-        _DB_REF[] = nothing
-        lock(SSE_LOCK) do
-            SSE_SUBSCRIBERS[] = []
-        end
-        empty!(OP_LOCKS)
+        _restore_module_state!(saved)
         DBInterface.close!(db)
     end
     nothing
@@ -140,7 +165,9 @@ end
 
 @setup_workload begin
     @compile_workload begin
-        parse_serve_args(["--port", "8080", "--host", "127.0.0.1"])
-        mktempdir(run_route_workload)
+        Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+            parse_serve_args(["--port", "8080", "--host", "127.0.0.1"])
+            mktempdir(run_route_workload)
+        end
     end
 end

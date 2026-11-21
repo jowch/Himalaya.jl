@@ -64,9 +64,11 @@ test-parallel:
 # Manifest already records the path dep, so put back the file as it was before
 # (a copy, not `git checkout`, so uncommitted edits to it survive).
 UI_PROJECT := packages/HimalayaUI/Project.toml
+UI_PREFS   := packages/HimalayaUI/LocalPreferences.toml
 setup:
 	cd $(FRONTEND_DIR) && npm ci
 	julia --project=. -e 'using Pkg; Pkg.instantiate()'
+	@test -f $(UI_PREFS) || printf '[HimalayaUI]\nprecompile_workload = false\n' > $(UI_PREFS)
 	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak; \
 	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
 	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'

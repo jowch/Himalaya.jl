@@ -7,7 +7,8 @@ Used for UI walkthroughs and Playwright screenshots.
 ## Quick start
 
 ```bash
-make setup        # once per checkout: npm ci + Pkg.develop/instantiate (≈5 min cold)
+make setup        # once per checkout: npm ci + Pkg.develop/instantiate (≈5 min cold);
+                  # turns the ~100 s route precompile workload off for dev (CLAUDE.md)
 make demo         # generate data if missing, start backend :8080, ingest, start Vite :5173
 # open http://127.0.0.1:5173/   (Ctrl-C stops both servers)
 

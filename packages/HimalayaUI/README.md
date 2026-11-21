@@ -194,6 +194,7 @@ The work needed depends on what changed:
 |---|---|---|
 | Frontend only (TS/CSS/React) | `git pull` → `make frontend` → browser refresh | ~30 s |
 | Backend Julia, no new deps | `git pull` → `make sysimage` → `sudo systemctl restart himalaya` | ~5–10 min |
+| Backend Julia, no sysimage | `git pull` → `julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'` → `sudo systemctl restart himalaya` | ~2 min, before the restart |
 | Backend with new Julia deps | as above + `Pkg.instantiate()` against the shared depot **before** `make sysimage` | ~5–10 min |
 | Schema migration | none extra — `open_db` runs migrations on connect, daemon restart picks them up | — |
 | Julia version bump (juliaup) | rebuild sysimage (`make check-sysimage` flags the mismatch) | ~5–10 min |
@@ -219,6 +220,14 @@ A few non-obvious things to know:
   already-loaded sysimage in RAM; you can `make sysimage` (which overwrites
   `build/himalaya.so` in place) without downtime. CLI invocations starting
   during the rebuild will see the new file once it's fully written.
+- **Precompile before you restart.** Without a sysimage, the first start after a
+  backend change precompiles HimalayaUI, including a warm-up that drives every
+  workspace route once (~100 s). Run `Pkg.precompile()` while the old daemon is
+  still serving, and the restart then answers in ~8 s. With a sysimage, `make
+  sysimage` does this, and `bin/himalaya` keeps using `build/himalaya.so` until
+  you rebuild it, so a pull without `make sysimage` keeps serving the old code.
+  Don't copy a dev `LocalPreferences.toml` (written by `make setup`) to the
+  server: it turns the warm-up off.
 - **CLI users do nothing.** The wrapper resolves the sysimage on each
   invocation; whoever runs `himalaya …` next gets the new code.
 - **DB migrations are idempotent.** `create_schema!` is `CREATE TABLE IF NOT
