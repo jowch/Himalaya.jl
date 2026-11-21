@@ -305,6 +305,20 @@ export const removeExposureTagMutator: Mutator<RemoveExposureTagInput, RemoveExp
 // via resolveMutatorForEvent (shared SampleTag shape) — see the comment in
 // mutatorRegistry.ts.
 
+function patchCorpusLists(
+  qc: QueryClient,
+  patch: (list: CorpusSample[]) => CorpusSample[],
+): RollbackContext {
+  const filters = { queryKey: queryKeys.corpusSamples };
+  const prev = qc.getQueriesData<CorpusSample[]>(filters);
+  qc.setQueriesData<CorpusSample[]>(filters, (list) => (list ? patch(list) : list));
+  return {
+    restore: () => {
+      for (const [key, data] of prev) qc.setQueryData(key, data);
+    },
+  };
+}
+
 export type AddCorpusSampleTagInput = { key: string; value: string };
 type AddCorpusSampleTagScope = BaseScope & { sampleId: number };
 
@@ -313,23 +327,14 @@ export const addCorpusSampleTagMutator: Mutator<
 > = {
   kind: "add_tag",
   onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.corpusSamples;
-    const prev = qc.getQueryData<CorpusSample[]>(key);
     const placeholderId = nextOptimisticId();
-    if (prev) {
-      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
-        s.id === p.sampleId
-          ? { ...s, tags: [...s.tags, {
-              id: placeholderId, key: p.key, value: p.value, source: "manual",
-            }] }
-          : s,
-      ));
-    }
-    return {
-      restore: () => {
-        if (prev !== undefined) qc.setQueryData(key, prev);
-      },
-    };
+    return patchCorpusLists(qc, (list) => list.map((s) =>
+      s.id === p.sampleId
+        ? { ...s, tags: [...s.tags, {
+            id: placeholderId, key: p.key, value: p.value, source: "manual",
+          }] }
+        : s,
+    ));
   },
   request: (p) => api.addSampleTag(p.sampleId, p.key, p.value, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
@@ -339,9 +344,7 @@ export const addCorpusSampleTagMutator: Mutator<
       id: response.id, key: response.key, value: response.value,
       source: response.source,
     };
-    const key = queryKeys.corpusSamples;
-    qc.setQueryData<CorpusSample[]>(key, (list) => {
-      if (!list) return list;
+    patchCorpusLists(qc, (list) => {
       return list.map((s) =>
         s.id !== p.sampleId
           ? s
@@ -366,20 +369,11 @@ export const removeCorpusSampleTagMutator: Mutator<
 > = {
   kind: "remove_tag",
   onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.corpusSamples;
-    const prev = qc.getQueryData<CorpusSample[]>(key);
-    if (prev) {
-      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
-        s.id === p.sampleId
-          ? { ...s, tags: s.tags.filter((t) => t.id !== p.tagId) }
-          : s,
-      ));
-    }
-    return {
-      restore: () => {
-        if (prev !== undefined) qc.setQueryData(key, prev);
-      },
-    };
+    return patchCorpusLists(qc, (list) => list.map((s) =>
+      s.id === p.sampleId
+        ? { ...s, tags: s.tags.filter((t) => t.id !== p.tagId) }
+        : s,
+    ));
   },
   request: (p) => api.removeSampleTag(p.sampleId, p.tagId, buildAuthOpts(p)),
   onSuccess: () => {},
@@ -399,21 +393,12 @@ export const editCorpusSampleTagMutator: Mutator<
 > = {
   kind: "edit_tag",
   onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.corpusSamples;
-    const prev = qc.getQueryData<CorpusSample[]>(key);
-    if (prev) {
-      qc.setQueryData<CorpusSample[]>(key, prev.map((s) =>
-        s.id === p.sampleId
-          ? { ...s, tags: s.tags.map((t) =>
-              t.id === p.tagId ? { ...t, key: p.key, value: p.value } : t) }
-          : s,
-      ));
-    }
-    return {
-      restore: () => {
-        if (prev !== undefined) qc.setQueryData(key, prev);
-      },
-    };
+    return patchCorpusLists(qc, (list) => list.map((s) =>
+      s.id === p.sampleId
+        ? { ...s, tags: s.tags.map((t) =>
+            t.id === p.tagId ? { ...t, key: p.key, value: p.value } : t) }
+        : s,
+    ));
   },
   request: (p) => api.editSampleTag(p.sampleId, p.tagId, { key: p.key, value: p.value }, buildAuthOpts(p)),
   // id is stable across the edit, so the optimistic row already matches the

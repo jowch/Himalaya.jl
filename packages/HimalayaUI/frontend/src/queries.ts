@@ -73,6 +73,7 @@ export const queryKeys = {
   // invalidations never collide with the per-experiment
   // ["experiment", id, "samples"] entries that `samples` produces.
   corpusSamples: ["corpus", "samples"] as const,
+  experimentCorpusSamples: (experimentId: number) => ["corpus", "samples", experimentId] as const,
 };
 
 export function useExperiments() {
@@ -174,10 +175,18 @@ export function useSamples(experimentId: number) {
  * per-experiment useSamples(experimentId): no parameter, so no `enabled`
  * gate — the fetch runs unconditionally.
  */
-export function useCorpusSamples() {
+export function useCorpusSamples({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.corpusSamples,
     queryFn: () => api.listCorpusSamples(),
+    enabled,
+  });
+}
+
+export function useExperimentCorpusSamples(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.experimentCorpusSamples(experimentId),
+    queryFn: () => api.listCorpusSamples(experimentId),
   });
 }
 

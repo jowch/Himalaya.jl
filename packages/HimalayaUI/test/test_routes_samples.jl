@@ -770,6 +770,7 @@ end
         filtered = JSON3.read(String(r.body))
         @test length(filtered) == 2
         @test Set(s.name for s in filtered) == Set(["A1", "A2"])
+        @test JSON3.write.(filtered) == JSON3.write.([s for s in all if s.experiment_id == e1])
 
         # Nonexistent experiment id → empty array (SQL gives this for free).
         r = call("GET", "/api/samples?experiment_id=999999")

@@ -43,7 +43,7 @@ function recorder(hook: string) {
 }
 
 vi.mock("../../src/queries", () => ({
-  useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
+  useExperimentCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
