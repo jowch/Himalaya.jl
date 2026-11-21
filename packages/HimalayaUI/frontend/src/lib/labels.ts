@@ -118,16 +118,28 @@ export function applyLabelColor(list: readonly LabelColorEntry[], label: string,
   return color === null ? rest : [...rest, { label: label.trim(), color }];
 }
 
+export const STANDARD_LABEL_COLORS: Readonly<Record<(typeof STANDARD_LABELS)[number], LabelColor>> = {
+  Buffer: "blue",
+  Calibrant: "ochre",
+  "Empty capillary": "stone",
+};
+
+export function labelColorIsFixed(label: string): boolean {
+  return standardLabel(label) !== undefined;
+}
+
 export function defaultLabelColor(label: string): LabelColor {
-  return standardLabel(label) ? "blue" : "violet";
+  const standard = standardLabel(label);
+  return standard ? STANDARD_LABEL_COLORS[standard as keyof typeof STANDARD_LABEL_COLORS] : "violet";
 }
 
 export function labelColor(colors: readonly LabelColorEntry[], label: string): LabelColor {
+  if (labelColorIsFixed(label)) return defaultLabelColor(label);
   return colors.find((e) => sameLabel(e.label, label))?.color ?? defaultLabelColor(label);
 }
 
 export function labelColorIsDefault(colors: readonly LabelColorEntry[], label: string): boolean {
-  return !colors.some((e) => sameLabel(e.label, label));
+  return labelColorIsFixed(label) || !colors.some((e) => sameLabel(e.label, label));
 }
 
 export function firstUnusedColor(colors: readonly LabelColorEntry[], labels: readonly string[]): LabelColor {

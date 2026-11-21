@@ -13,7 +13,7 @@ import {
   labelsFor,
   sampleMatchesFilter,
   labelColor,
-  labelColorIsDefault,
+  labelColorIsDefault, labelColorIsFixed,
   labelOptions,
   labelVocabulary,
 } from "../../src/lib/labels";
@@ -96,12 +96,21 @@ describe("sample filter", () => {
 });
 
 describe("tag colours", () => {
-  it("built-ins default to blue and other tags to violet, and a stored colour wins without case", () => {
+  it("system labels have their own fixed colours, other labels default to violet, and a stored colour wins without case", () => {
     expect(labelColor([], "BUFFER")).toBe("blue");
+    expect(labelColor([], "calibrant")).toBe("ochre");
+    expect(labelColor([], "Empty capillary")).toBe("stone");
     expect(labelColor([], "37C")).toBe("violet");
-    expect(labelColor([{ label: "buffer", color: "stone" }], "Buffer")).toBe("stone");
+    expect(labelColor([{ label: "37c", color: "teal" }], "37C")).toBe("teal");
     expect(labelColorIsDefault([{ label: "37c", color: "teal" }], "37C")).toBe(false);
     expect(labelColorIsDefault([], "37C")).toBe(true);
+  });
+
+  it("a stored colour never overrides a system label's colour", () => {
+    expect(labelColor([{ label: "buffer", color: "rose" }], "Buffer")).toBe("blue");
+    expect(labelColorIsDefault([{ label: "buffer", color: "rose" }], "Buffer")).toBe(true);
+    expect(labelColorIsFixed("EMPTY CAPILLARY")).toBe(true);
+    expect(labelColorIsFixed("buffer 2")).toBe(false);
   });
 
   it("matches names ignoring ASCII case only, as the database does", () => {

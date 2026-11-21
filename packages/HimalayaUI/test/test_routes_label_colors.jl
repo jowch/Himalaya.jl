@@ -35,8 +35,8 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
     @testset "null resets a label to its default colour" begin
         db = open_prepared_clone(mktempdir())
         with_inproc_routes(db) do call
-            _set_color(call, "Buffer", "rose")
-            @test _set_color(call, "buffer", nothing).status == 200
+            _set_color(call, "Dried", "rose")
+            @test _set_color(call, "dried", nothing).status == 200
             @test _colors(call) == Dict()
         end
     end
@@ -60,6 +60,10 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
             @test _set_color(call, "37C", "magenta").status == 400
             @test _set_color(call, "37C", 3).status == 400
             @test _set_color(call, "   ", "teal").status == 400
+            for role in ("Buffer", "calibrant", "EMPTY CAPILLARY")
+                @test _set_color(call, role, "rose").status == 400
+                @test _set_color(call, role, nothing).status == 400
+            end
             @test call("PUT", "/api/label-colors"; headers=_COLOR_HEADERS, body=Vector{UInt8}("[]")).status == 400
             @test call("PUT", "/api/label-colors"; headers=_COLOR_HEADERS, body=Vector{UInt8}("{\"label\":\"37C\"}")).status == 400
         end
@@ -81,13 +85,13 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
         db = open_prepared_clone(mktempdir())
         with_inproc_routes(db) do call
             _set_color(call, "37C", "teal")
-            _set_color(call, "Buffer", "rose")
+            _set_color(call, "Dried", "rose")
             _set_color(call, "retake", "rose")
             _set_color(call, "retake", nothing)
             _set_color(call, "37C", "stone")
         end
         live = _color_rows(db)
-        @test live == Dict("37C" => "stone", "Buffer" => "rose")
+        @test live == Dict("37C" => "stone", "Dried" => "rose")
         DBInterface.execute(db, "DELETE FROM label_colors")
         HimalayaUI.rebuild_views_from_log!(db, HimalayaUI.LABEL_COLOR_ENTITY_ID; entity_type = "tag")
         @test _color_rows(db) == live

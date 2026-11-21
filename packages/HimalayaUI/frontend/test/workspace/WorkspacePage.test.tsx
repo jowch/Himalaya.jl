@@ -1164,6 +1164,24 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
   });
 
+  it("system labels keep their own colours: no colour menu, and no row on the palette's colour page", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "Calibrant", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 10, label: "retake", state: "confirmed", source: "user" },
+    ];
+    state.labelColors = [{ label: "buffer", color: "rose" }];
+    renderAt("/experiments/1/workspace/10");
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect(chips.querySelector("[data-label='buffer']")).toHaveAttribute("data-label-color", "blue");
+    expect(chips.querySelector("[data-label='Calibrant']")).toHaveAttribute("data-label-color", "ochre");
+    fireEvent.contextMenu(chips.querySelector("[data-label='buffer']")!);
+    expect(screen.queryByRole("dialog", { name: /^Colour of label/ })).toBeNull();
+    runFromPalette("label colour");
+    const page = screen.getByRole("dialog", { name: "Label colour" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["retake, 1 sample"]);
+  });
+
   it("offers no colour menu before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];

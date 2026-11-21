@@ -1,5 +1,5 @@
 import { LABEL_COLORS, type CorpusSample, type IndexEntry, type LabelColor } from "../api";
-import { cleanLabel, sameLabel } from "../lib/labels";
+import { cleanLabel, labelColorIsFixed, sameLabel } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
 import type { WorkspaceTheme } from "./theme";
@@ -158,7 +158,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Label colour",
       arg: "Label",
       placeholder: "Pick a label",
-      items: p.labels.known.map((l) => ({
+      items: p.labels.known.filter((l) => !labelColorIsFixed(l.label)).map((l) => ({
         id: `colour-${l.label}`,
         label: l.name,
         swatch: LABEL_SWATCH[l.color].solid,
