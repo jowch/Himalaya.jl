@@ -1,12 +1,20 @@
 import type { SampleLabel } from "../api";
 
-export const STANDARD_TAGS = ["buffer", "calibrant", "empty capillary"] as const;
+export const STANDARD_TAGS = ["Buffer", "Calibrant", "Empty capillary"] as const;
 export const MAX_TAG_LENGTH = 64;
 
 const fold = (s: string): string => s.trim().toLowerCase();
 
 export function sameLabel(a: string, b: string): boolean {
   return fold(a) === fold(b);
+}
+
+export function standardTag(label: string): string | undefined {
+  return STANDARD_TAGS.find((t) => sameLabel(t, label));
+}
+
+export function displayTag(label: string): string {
+  return standardTag(label) ?? label;
 }
 
 export function cleanTag(raw: string): string | undefined {
@@ -36,10 +44,10 @@ export function tagVocabulary(list: readonly SampleLabel[]): string[] {
     if (l.state !== "confirmed") continue;
     const k = fold(l.label);
     const cur = counts.get(k);
-    counts.set(k, { label: cur?.label ?? l.label, n: (cur?.n ?? 0) + 1 });
+    counts.set(k, { label: cur?.label ?? displayTag(l.label), n: (cur?.n ?? 0) + 1 });
   }
   const used = [...counts.values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label)).map((c) => c.label);
-  return [...used, ...STANDARD_TAGS.filter((t) => !counts.has(t))];
+  return [...used, ...STANDARD_TAGS.filter((t) => !counts.has(fold(t)))];
 }
 
 function editDistance(a: string, b: string): number {
