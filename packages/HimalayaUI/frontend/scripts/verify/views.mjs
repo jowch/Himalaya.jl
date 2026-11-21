@@ -9,7 +9,6 @@ export function statusFromText(text) {
   if (!t) return null;
   if (/^(Not indexed|Unreviewed)$|^Index\b/.test(t)) return "unreviewed";
   if (/^Form factor$/i.test(t)) return "form_factor";
-  if (/^No exposures$/.test(t)) return "no_exposures";
   return "phase";
 }
 

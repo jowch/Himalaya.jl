@@ -69,7 +69,7 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   peak_removed: "Couldn't remove peak",
   speculative_created: "Couldn't create speculative index",
   speculative_deleted: "Couldn't delete speculative index",
-  set_exposure_status: "Couldn't update exposure status",
+  set_exposure_status: "Couldn't drop or restore frame",
   select_exposure: "Couldn't switch frame",
   update_sample: "Couldn't update sample",
   add_label: "Couldn't add label",
