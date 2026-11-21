@@ -592,7 +592,7 @@ end
                   "Fd3m" => Fd3m, "Lamellar" => Lamellar, "Hexagonal" => Hexagonal,
                   "Square" => Square)
     @test Set(String.(keys(indices))) == Set(keys(phases))
-    for (name, P) in phases
+    @testset "$name" for (name, P) in phases
         Ms = collect(Int, indices[Symbol(name)])
         expected = P === Lamellar ? Float64.(Ms) : sqrt.(Ms)
         @test isequal(length(Ms), length(phaseratios(P))) && expected ≈ phaseratios(P)

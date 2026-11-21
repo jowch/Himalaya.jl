@@ -478,10 +478,7 @@ end
     end
 end
 
-# The normalized ratios the modal draws for Pn3m (SYMS.Ms = [2,3,4,6,8,9], and
-# Pn3m IS a clean positional prefix of the core series — Hexagonal is the one
-# that isn't, pinned separately below).
-_pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6]
+_pn3m_drawn_ratios() = Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)
 
 @testset "insert_custom_index! claims the peaks the modal showed landing" begin
     # The modal counts a reflection as landing at CUSTOM_SNAP_TOL (customIndex.ts
@@ -645,8 +642,6 @@ end
     @test isfile(ts_path)
     ts = read(ts_path, String)
 
-    # SYMS entries look like:  Pn3m: { kind: "cubic", Ms: phaseRatioIndices.Pn3m, …
-    # and the indices themselves live in phaseRatioIndices.json (#342).
     json_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "phaseRatioIndices.json")
     indices = JSON3.read(read(json_path, String))
     entries = Dict{String, Tuple{String, Vector{Int}}}()
@@ -717,7 +712,7 @@ end
         end
 
         nid = HimalayaUI.insert_custom_index!(db, e_id, P, basis;
-                                             drawn_ratios = ratios[1:6])
+                                             drawn_ratios = ratios)
         @test Int(Tables.rowtable(DBInterface.execute(db,
             "SELECT basis_locked FROM indices WHERE id = ?", [nid]))[1].basis_locked) == 1
         @test Tables.rowtable(DBInterface.execute(db,

@@ -31,6 +31,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick }: Pro
           value={filter}
           onChange={(e) => onFilter(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Escape") {
               e.preventDefault();
               e.currentTarget.blur();

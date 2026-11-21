@@ -57,7 +57,7 @@ fields (e.g. the result of `Tables.rowtable` over a `peaks` query).
 
 `allowed_ratios` restricts the scan to the ratio positions whose NORMALIZED
 ratio appears in the supplied set (default: every position). Callers that must
-not claim beyond a shorter series the user was actually shown pass the ratios
+not claim beyond the reflections the user was actually shown pass the ratios
 they drew — see `insert_custom_index!`.
 
 Deliberately a ratio SET, not a count: a count assumes the caller's series is a
@@ -420,9 +420,8 @@ function insert_custom_index!(db::SQLite.DB, exposure_id::Int,
     # anchor_q = basis reproduces the stored comb exactly (normalized ratios[1]
     # is 1.0), so compute_snap matches against predicted q's, not a refit.
     # `allowed_ratios` bounds the scan to the orders the modal actually DREW
-    # (see the `drawn_ratios` note above) — without it the backend would claim
-    # reflections the user was never shown for every phase whose SYMS.Ms is
-    # truncated, and for Hexagonal one that cannot physically exist.
+    # (see the `drawn_ratios` note above), so the backend never claims a
+    # reflection the user was not shown.
     snaps = compute_snap(_effective_peak_rows(db, exposure_id), P, basis, 1;
                          tol = CUSTOM_SNAP_TOL, allowed_ratios = drawn_ratios)
 
