@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { LABEL_COLORS } from "../../src/api";
-import { contrastRatio, parseOklch } from "../helpers/contrast";
+import { contrastRatio, oklchToLinearSrgb, parseOklch } from "../helpers/contrast";
 import { themeToken } from "../helpers/cssBlocks";
 
-const BETWEEN_LABELS = 0.047;
+const BETWEEN_LABELS = 0.06;
+const GAMUT_SLACK = 1e-3;
 
 function oklabDistance(x: string, y: string): number {
   const ab = (s: string): [number, number, number] => {
@@ -32,7 +33,18 @@ describe.each(["light", "dark"] as const)("label colours in the %s theme", (them
     }
   });
 
-  it("keeps every pair of inks at least 0.047 OKLab apart", () => {
+  it("keeps every ink and wash inside sRGB, so the colour on screen is the one measured here", () => {
+    for (const c of LABEL_COLORS) {
+      for (const v of [ink(c), wash(c)]) {
+        for (const channel of oklchToLinearSrgb(parseOklch(v))) {
+          expect(channel, `${c} ${v}`).toBeGreaterThanOrEqual(-GAMUT_SLACK);
+          expect(channel, `${c} ${v}`).toBeLessThanOrEqual(1 + GAMUT_SLACK);
+        }
+      }
+    }
+  });
+
+  it("keeps every pair of inks at least 0.06 OKLab apart, three times a just-noticeable difference", () => {
     for (let i = 0; i < LABEL_COLORS.length; i++) {
       for (let j = i + 1; j < LABEL_COLORS.length; j++) {
         const a = LABEL_COLORS[i]!;
