@@ -508,8 +508,23 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
+    migrate_sample_labels!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
+end
+
+function migrate_sample_labels!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_labels (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            label     TEXT NOT NULL,
+            state     TEXT NOT NULL CHECK (state IN ('suggested', 'confirmed', 'removed')),
+            source    TEXT NOT NULL DEFAULT 'user'
+        )""")
+    DBInterface.execute(db,
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_labels_unique ON sample_labels(sample_id, label COLLATE NOCASE)")
+    nothing
 end
 
 const RETIRED_TABLES = (

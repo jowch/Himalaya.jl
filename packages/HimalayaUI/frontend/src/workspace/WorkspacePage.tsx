@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Exposure, IndexEntry } from "../api";
+import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
   useAddPeak,
@@ -12,6 +13,9 @@ import {
   useExperiment,
   useExposures,
   useIndices,
+  useLabels,
+  useAddLabel,
+  useRemoveLabel,
   useLoads,
   usePeaks,
   useFrameAssignments,
@@ -29,10 +33,11 @@ import {
 import { useScanState } from "../hooks/useScanState";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
+import { labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -63,6 +68,7 @@ import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
+import { TagRow } from "./ui/TagRow";
 import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
@@ -171,10 +177,16 @@ export function WorkspacePage(): JSX.Element {
     () => (corpus.data ?? []).filter((s) => s.experiment_id === experimentId),
     [corpus.data, experimentId],
   );
-  const visible = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    return f ? samples.filter((s) => s.name.toLowerCase().includes(f)) : samples;
-  }, [samples, filter]);
+  const labels = useLabels(experimentId);
+  const labelList = useMemo(() => labels.data ?? [], [labels.data]);
+  const vocabulary = useMemo(() => tagVocabulary(labelList), [labelList]);
+  const addLabel = useAddLabel(experimentId);
+  const removeLabel = useRemoveLabel(experimentId);
+  const [tagging, setTagging] = useState(false);
+  const visible = useMemo(
+    () => samples.filter((s) => sampleMatchesFilter(s.name, labelsFor(labelList, s.id), filter)),
+    [samples, labelList, filter],
+  );
 
   const requested = sampleParam === undefined ? undefined : Number(sampleParam);
   const sample = requested === undefined ? firstUnreviewed(samples) : samples.find((s) => s.id === requested);
@@ -196,6 +208,14 @@ export function WorkspacePage(): JSX.Element {
   const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
 
   const trace = useTrace(exposure?.id);
+  const noTrace = trace.error instanceof ApiError && trace.error.status === 404;
+  const i0Hint = i0BelowZero(exposure);
+  const darkNotice = traceIsDark(trace.data)
+    ? `No counts on the detector: the beam was likely off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
+    : undefined;
+  const noTraceMessage = noTrace
+    ? `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`
+    : undefined;
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
@@ -349,6 +369,11 @@ export function WorkspacePage(): JSX.Element {
   const shownDomain = clampDomain(xDomain, xExtent);
   const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
   const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
+  useEffect(() => setTagging(false), [sampleId]);
+  const sampleTags = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
+  const openTagging = useCallback(() => {
+    if (username && sampleId !== undefined) setTagging(true);
+  }, [username, sampleId]);
   const openBridge = useCallback(() => {
     if (username && sampleId !== undefined) setBridging(true);
   }, [username, sampleId]);
@@ -434,6 +459,7 @@ export function WorkspacePage(): JSX.Element {
         setHelpOpen(false);
         setPicking(false);
         setBridging(false);
+        setTagging(false);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -553,6 +579,7 @@ export function WorkspacePage(): JSX.Element {
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
     ...(username && sample
       ? [
+          { id: "tag", label: `Add tag to ${sample.name}`, run: openTagging },
           { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
           ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
         ]
@@ -605,6 +632,16 @@ export function WorkspacePage(): JSX.Element {
         sample ? (
           <>
             <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
+            <TagRow
+              tags={sampleTags}
+              vocabulary={vocabulary}
+              editable={Boolean(username)}
+              adding={tagging}
+              onOpenAdd={openTagging}
+              onCloseAdd={() => setTagging(false)}
+              onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
+              onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
+            />
             <div className="relative px-3.5 py-1">
               <CompareBar
                 chips={activeRefs.map((rid) => ({
@@ -645,10 +682,14 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard>
+              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})}>
                 <WorkspacePlot
                   trace={trace.data}
-                  {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}
+                  {...(noTraceMessage
+                    ? { emptyMessage: noTraceMessage }
+                    : trace.isError
+                      ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching }
+                      : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}

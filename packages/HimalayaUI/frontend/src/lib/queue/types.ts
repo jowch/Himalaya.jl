@@ -61,7 +61,8 @@ export type OpKind =
   | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag"
   // Symmetric undo of dismiss: re-shows the flag so the sample re-enters review.
   | "undo_dismiss_grouping_flag"
-  | "bridge_samples" | "unbridge_sample";
+  | "bridge_samples" | "unbridge_sample"
+  | "add_label" | "remove_label";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

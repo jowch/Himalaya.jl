@@ -371,6 +371,12 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
       break;
     }
+    case "label_added":
+    case "label_removed": {
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.labels(expId) });
+      break;
+    }
     case "sample_created":
     case "sample_split":
     case "grouping_flag_dismissed": {

@@ -182,6 +182,7 @@ function register_grouping_routes!()
                 [survivor_id, loser_id])
 
             inherit_bridges!(db, req, loser_id, survivor_id, exp_id)
+            inherit_labels!(db, req, loser_id, survivor_id, exp_id)
 
             # (iii) Retire the loser (sets merged_into_id; does not hard-delete).
             retire_sample!(db, loser_id; merged_into_id=survivor_id)

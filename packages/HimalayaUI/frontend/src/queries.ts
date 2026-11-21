@@ -30,6 +30,7 @@ import {
   splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
 } from "./lib/queue/mutators/grouping";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
+import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -45,6 +46,8 @@ export const queryKeys = {
     ["experiment", experimentId ?? "none", "samples"] as const,
   bridges:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "bridges"] as const,
+  labels:     (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "labels"] as const,
   loads:      (id: number | undefined) =>
     ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -129,6 +132,24 @@ export function useUnbridgeSample(experimentId: number) {
   return useQueueMutation(unbridgeSampleMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
+export function useLabels(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.labels(experimentId),
+    queryFn: () => api.listLabels(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
+export function useAddLabel(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(addLabelMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useRemoveLabel(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
 export function useLoads(id: number, refetchWhileScanning = false) {
   return useQuery({
     queryKey: queryKeys.loads(id),
@@ -173,6 +194,7 @@ export function useTrace(exposureId: number | undefined) {
     queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
+    retry: (failures, error) => !(error instanceof api.ApiError && error.status === 404) && failures < 1,
   });
 }
 
