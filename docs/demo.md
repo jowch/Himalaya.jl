@@ -223,7 +223,7 @@ compares the app's phase calls and frame counts with `TRUTH.csv`. See the
 ### Slow-network checks
 
 `VERIFY_THROTTLE=<mbit>mbit,<ms>ms bin/verify …` applies Chrome's network
-emulation to every command, for example `VERIFY_THROTTLE=20mbit,30ms`. The latency
+emulation to every command that drives the browser, for example `VERIFY_THROTTLE=20mbit,30ms`. The latency
 is a minimum round trip that overlaps server time, so a slow response is not
 delayed further.
 

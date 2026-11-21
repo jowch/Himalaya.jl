@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { applyThrottle } from "./throttle.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { FRONTEND } from "./config.mjs";
+import { applyThrottle } from "./throttle.mjs";
 import { UsageError } from "./args.mjs";
 import { commandOf, sleep, waitGone } from "./proc.mjs";
 

@@ -272,6 +272,11 @@ test("VERIFY_THROTTLE slows every request the command waits on, and the result s
     assert.equal(code, 0, JSON.stringify(r));
     assert.deepEqual(r.throttle, { mbit: 1, latencyMs: 600 });
     assert.ok(r.settle.ms >= unthrottled + 300, `settled after ${r.settle.ms} ms throttled, ${unthrottled} ms without`);
+    cfg = plain;
+    ({ code, r } = await run("click", "--role", "button", "--name", "Quick"));
+    assert.equal(code, 0, JSON.stringify(r));
+    assert.equal(r.throttle, null);
+    assert.ok(r.settle.ms < unthrottled + 300, `settled after ${r.settle.ms} ms once unthrottled again, ${unthrottled} ms before`);
   } finally {
     cfg = plain;
   }
