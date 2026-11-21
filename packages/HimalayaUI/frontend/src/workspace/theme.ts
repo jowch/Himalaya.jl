@@ -22,7 +22,7 @@ export function effectiveTheme(theme: WorkspaceTheme, prefersDark: boolean): "li
   return theme;
 }
 
-export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; toggle: () => void; followSystem: () => void } {
+export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; choose: (next: WorkspaceTheme) => void } {
   const [theme, setTheme] = useState<WorkspaceTheme>(read);
   const [prefersDark, setPrefersDark] = useState(systemDark);
   useEffect(() => {
@@ -42,7 +42,5 @@ export function useWorkspaceTheme(): { theme: WorkspaceTheme; isDark: boolean; t
       return;
     }
   }, []);
-  const toggle = useCallback(() => choose(isDark ? "light" : "dark"), [choose, isDark]);
-  const followSystem = useCallback(() => choose("system"), [choose]);
-  return { theme, isDark, toggle, followSystem };
+  return { theme, isDark, choose };
 }
