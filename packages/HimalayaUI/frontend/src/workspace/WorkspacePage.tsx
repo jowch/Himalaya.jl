@@ -42,7 +42,7 @@ import { bufferRole, buffersFirst, displayLabel, labelsFor, sampleMatchesFilter,
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { MAX_CANDIDATES, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -54,7 +54,8 @@ import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
-import { CommandPalette, type Command } from "./ui/CommandPalette";
+import { Palette } from "./ui/palette/Palette";
+import { workspacePalette } from "./palette";
 import { useWorkspaceTheme } from "./theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
@@ -245,7 +246,8 @@ export function WorkspacePage(): JSX.Element {
     shownId: exposure?.id,
     settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
   });
-  const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
+  const allCandidates = useMemo(() => rankCandidates(indices.data, Infinity), [indices.data]);
+  const candidates = useMemo(() => allCandidates.slice(0, MAX_CANDIDATES), [allCandidates]);
   const sampleCall = useSampleCall(sampleId);
   const otherFrames = useMemo(
     () => [...new Set((sampleCall.data?.members ?? []).map((m) => m.exposure_id))].filter((id) => id !== exposure?.id),
@@ -261,9 +263,9 @@ export function WorkspacePage(): JSX.Element {
   const assigned = useMemo(() => {
     const here = new Set(assignment.data?.members ?? []);
     const phases = new Set(otherMembers.map((m) => m.phase));
-    for (const c of candidates) if (phases.has(c.phase)) here.add(c.id);
+    for (const c of allCandidates) if (phases.has(c.phase)) here.add(c.id);
     return here;
-  }, [assignment.data, otherMembers, candidates]);
+  }, [assignment.data, otherMembers, allCandidates]);
   const [hoverId, setHoverId] = useState<number | undefined>(undefined);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
@@ -298,7 +300,6 @@ export function WorkspacePage(): JSX.Element {
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
-  const [bridging, setBridging] = useState(false);
   const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
   const compareTraces = useCompareTraces(shownRefs);
@@ -409,9 +410,6 @@ export function WorkspacePage(): JSX.Element {
     setColoringLabel(undefined);
     setLabeling(true);
   }, [username, sampleId]);
-  const openBridge = useCallback(() => {
-    if (username && sampleId !== undefined) setBridging(true);
-  }, [username, sampleId]);
   const leaveBridges = useCallback(() => {
     if (username && sampleId !== undefined && bridged.length > 0) unbridgeSample.mutate({ sampleId });
   }, [username, sampleId, bridged, unbridgeSample]);
@@ -497,7 +495,6 @@ export function WorkspacePage(): JSX.Element {
         ev.preventDefault();
         setHelpOpen(false);
         setPicking(false);
-        setBridging(false);
         setLabeling(false);
         setColoringLabel(undefined);
         setPaletteOpen((o) => !o);
@@ -615,39 +612,73 @@ export function WorkspacePage(): JSX.Element {
         ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
         : "This sample is not in this experiment.";
 
-  const commands: Command[] = [
-    {
-      id: "next-unreviewed",
-      label: "Next unreviewed sample",
-      shortcut: "Z",
-      run: () => {
-        const nid = nextUnreviewed(visible, sampleId, 1);
-        if (nid !== undefined) goSample(nid);
+  const palette = workspacePalette({
+    modKey: MOD_KEY,
+    sampleName: sample?.name,
+    canEdit: Boolean(username && sample),
+    nextUnreviewed: () => {
+      const nid = nextUnreviewed(visible, sampleId, 1);
+      if (nid !== undefined) goSample(nid);
+    },
+    compare: {
+      samples: pickable,
+      notes: bufferNotes,
+      pick: (rid) => {
+        setRefs((r) => addCompare(r, rid));
+        if (subRef === undefined) setSubRef(rid);
+        setRefsOn(true);
       },
     },
-    { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
-    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
-    ...(username && sample
-      ? [
-          { id: "label", label: `Add label to ${sample.name}`, shortcut: "L", run: openLabeling },
-          ...sampleLabels.map((t) => ({ id: `label-color-${t.label}`, label: `Set colour of label ${displayLabel(t.label)}`, run: () => setColoringLabel(t.label) })),
-          { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
-          ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
-        ]
-      : []),
-    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
-    { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
-    ...(ingesting ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate(ingestFailed || failedAnalyses > 0) }]),
-    ...(ingesting || !username ? [] : [{ id: "remove-experiment", label: "Remove this experiment", run: () => { removeExperiment.reset(); setRemoveOpen(true); } }]),
-    ...(problemRows.length > 0 || ingestFailed ? [{ id: "problems", label: "Show ingest problems", run: () => setProblemsOpen(true) }] : []),
-    { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
-    ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
-    { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
-    { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
-    ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: () => { setOpenPanel("call"); toggleFormFactor(); } }] : []),
-    { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
-    ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
-  ];
+    bridge: {
+      samples: bridgePickable,
+      pick: (rid) => {
+        if (sampleId === undefined) return;
+        bridgeSamples.mutate({ sampleId, toSampleId: rid });
+        setRefsOn(true);
+      },
+      bridged: bridged.length > 0,
+      leave: leaveBridges,
+    },
+    candidates: {
+      list: allCandidates,
+      ticked: assigned,
+      tick: (ix) => {
+        setOpenPanel("call");
+        toggleCandidate(ix);
+      },
+    },
+    labels: {
+      open: openLabeling,
+      onSample: sampleLabels.map((t) => ({ label: t.label, name: displayLabel(t.label) })),
+      recolour: (label) => setColoringLabel(label),
+    },
+    customIndex: openCustom,
+    formFactor: {
+      on: isFormFactor,
+      toggle: () => {
+        setOpenPanel("call");
+        toggleFormFactor();
+      },
+    },
+    views: { options: PLOT_VIEWS, current: view, set: setView },
+    resetZoom: () => setXDomain(null),
+    comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
+    rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
+    problems: problemRows.length > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
+    removeExperiment:
+      ingesting || !username
+        ? undefined
+        : () => {
+            removeExperiment.reset();
+            setRemoveOpen(true);
+          },
+    home: () => navigate("/experiments"),
+    theme: { current: theme.theme, choose: theme.choose },
+    user: { name: username ?? undefined, switch: clearUsername },
+    help: () => setHelpOpen(true),
+    samples,
+    goSample,
+  });
 
   return (
     <WorkspaceLayout
@@ -684,7 +715,7 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setBigOpen(false)}
             />
           )}
-          {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} />}
         </>
       }
       header={
@@ -748,18 +779,6 @@ export function WorkspacePage(): JSX.Element {
                     setRefsOn(true);
                   }}
                   onClose={() => setPicking(false)}
-                />
-              )}
-              {bridging && (
-                <ComparePicker
-                  samples={bridgePickable}
-                  label={`Bridge ${sample.name} to a sample`}
-                  inputLabel="Find a sample to bridge to"
-                  onPick={(rid) => {
-                    bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
-                    setRefsOn(true);
-                  }}
-                  onClose={() => setBridging(false)}
                 />
               )}
             </div>
