@@ -89,21 +89,9 @@ function _with_reader(f)
     end
 end
 
-function _reads_through_pool(req::HTTP.Request)
-    req.method == "GET" || req.method == "HEAD" || return false
-    path = HTTP.URI(req.target).path
-    !(path in _UNPOOLED_GET_PATHS)
-end
+_is_read(req::HTTP.Request) = req.method == "GET" || req.method == "HEAD"
+_is_event_stream(req::HTTP.Request) = HTTP.URI(req.target).path in _UNPOOLED_GET_PATHS
 
-"""
-    with_background_db(f, db)
-
-Run `f` with a connection of its own to `db`'s file, for work spawned off a
-request or a timer. Such work outlives the request that started it, so it can
-not share the singleton, which only the request holding `_DB_WRITE_LOCK` may
-touch. Its transactions still take `_DB_WRITE_LOCK`. An in-memory `db` has no
-file to reopen, so `f` gets `db` itself.
-"""
 function with_background_db(f, db::SQLite.DB)
     _poolable(db.file) || return f(db)
     background = SQLite.DB(db.file)
@@ -116,21 +104,11 @@ function with_background_db(f, db::SQLite.DB)
     end
 end
 
-"""
-    db_connection_middleware(handler)
-
-Oxygen middleware that gives each request a connection that is safe for its
-kind. GET and HEAD requests read through a pooled, `query_only` reader
-connection, so they never touch the singleton's statement cache and never wait
-for a writer (WAL). Every other request holds `_DB_WRITE_LOCK` for its whole
-duration, so the singleton is only ever used by one task at a time. The event
-stream keeps the singleton because it holds its request open indefinitely and
-does not read the DB.
-"""
 function db_connection_middleware(handler)
     function (req)
         req isa HTTP.Request || return handler(req)
-        _reads_through_pool(req) && return _with_reader(() -> handler(req))
-        lock(() -> handler(req), _DB_WRITE_LOCK)
+        _is_read(req) || return lock(() -> handler(req), _DB_WRITE_LOCK)
+        _is_event_stream(req) && return handler(req)
+        _with_reader(() -> handler(req))
     end
 end
