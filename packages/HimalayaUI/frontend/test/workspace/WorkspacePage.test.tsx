@@ -1373,14 +1373,15 @@ describe("WorkspacePage", () => {
     expect(ticks()).toBe(logTicks);
   });
 
-  it("the difference strip follows the plot view", () => {
+  it("the difference replaces the trace and follows the plot view", () => {
     state.trace = makeTrace(1);
     const flat = makeTrace(1);
     state.compareTraces = new Map([[11, { ...flat, I: flat.q.map(() => 1) }]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
-    const strip = (): string => screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!;
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    const strip = (): string => screen.getByTestId("workspace-trace").querySelector("[data-role='difference-line'] path")!.getAttribute("d")!;
     const log = strip();
     runFromPalette("plot log-log");
     const loglog = strip();
@@ -1390,7 +1391,7 @@ describe("WorkspacePage", () => {
     expect(strip()).not.toBe(loglog);
   });
 
-  it("C opens a picker, Enter adds the sample scaled to the current trace and subtracts it", () => {
+  it("C opens a picker, and Enter adds the sample scaled to the current trace without subtracting it", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -1403,7 +1404,8 @@ describe("WorkspacePage", () => {
     const chip = screen.getByRole("button", { name: "Remove A2" }).parentElement!;
     expect(chip).toHaveTextContent("×0.500");
     expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("minus A2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2" })).not.toHaveAttribute("data-subtracted");
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='11']")?.getAttribute("d")).toMatch(/^M/);
   });
 
@@ -1413,7 +1415,7 @@ describe("WorkspacePage", () => {
       { id: 2, sample_id: 12, label: "buffer", state: "confirmed", source: "user" },
     ];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.queryByText(/^minus /)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Minus / })).toBeNull();
     fireEvent.keyDown(window, { key: "c" });
     const rows = within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button");
     expect(rows.map((r) => r.textContent)).toEqual(["A3Buffer", "A4Suggested buffer", "A2"]);
@@ -1487,16 +1489,18 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
-    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    expect(screen.getByTestId("workspace-subtraction-toggle")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "A2" }), { metaKey: true });
-    expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     runFromPalette("Hide comparisons");
-    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
     runFromPalette("Show comparisons");
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
-    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
   });
 
@@ -1510,10 +1514,13 @@ describe("WorkspacePage", () => {
     }
     const lines = (): string[] => Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare")!);
     expect(lines()).toEqual(["11", "12"]);
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     expect(lines()).toEqual(["12"]);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("minus A2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toHaveAttribute("data-subtracted");
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
     expect(lines()).toEqual(["11", "12"]);
   });
@@ -1591,11 +1598,70 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     runFromPalette("compare with a sample", "a2");
     runFromPalette("compare with a sample", "a3");
-    expect(screen.getByText("minus A2")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    runFromPalette("subtract a comparison", "a2");
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
     runFromPalette("subtract a comparison", "a3");
-    expect(screen.getByText("minus A3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Minus A3" })).toBeInTheDocument();
     runFromPalette("subtract a comparison", "a3");
-    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+  });
+
+  it("Ctrl-click subtracts in the main plot, Raw brings the trace and comparisons back, and a dimmed chip goes back to Raw", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample", "a2");
+    runFromPalette("compare with a sample", "a3");
+    const plot = (): HTMLElement => screen.getByTestId("workspace-trace");
+    const lines = (): string[] => Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare")!);
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "A3" }), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Minus A3" })).toHaveAttribute("aria-pressed", "true");
+    expect(plot().querySelector("[data-role='trace-line']")).toBeNull();
+    expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
+    expect(lines()).toEqual([]);
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A3" })).toHaveAttribute("data-subtracted");
+    const mark = (id: number): string | null | undefined => document.querySelector(`[data-compared][data-sample-id='${id}'] [role='img']`)?.getAttribute("aria-label");
+    expect(mark(11)).toBe("Compared, hidden");
+    expect(mark(12)).toBe("Compared");
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+    expect(lines()).toEqual(["11", "12"]);
+    expect(mark(11)).toBe("Compared");
+    fireEvent.click(screen.getByRole("button", { name: "Minus A3" }));
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    expect(lines()).toEqual(["11", "12"]);
+    expect(screen.getByRole("button", { name: "A3" })).toHaveAttribute("data-subtracted");
+  });
+
+  it("the palette switches between the raw trace and the difference, and marks the subtracted sample", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample", "a2");
+    runFromPalette("subtract a comparison", "a2");
+    runFromPalette("show the raw trace");
+    runFromPalette("show minus a2");
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
+    runFromPalette("show the raw trace");
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    runFromPalette("subtract a comparison");
+    expect(screen.getByRole("option", { name: /A2/ })).toHaveTextContent("Subtracted, Enter stops");
+  });
+
+  it("Ctrl-clicking a chip while comparisons are hidden shows them and subtracts it", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample", "a2");
+    runFromPalette("Hide comparisons");
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("data-subtracted");
   });
 
   it("the palette stops comparing with a sample, and offers that only while there is one", () => {
@@ -1630,9 +1696,9 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "A3" }), { ctrlKey: true });
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     pick(11);
-    expect(screen.getByRole("button", { name: "A2" })).not.toHaveAttribute("data-subtracted");
+    expect(screen.getByRole("button", { name: "A2, hidden" })).not.toHaveAttribute("data-subtracted");
     expect(screen.getByRole("button", { name: "A3" })).toHaveAttribute("data-subtracted");
-    expect(screen.getByText("minus A3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Minus A3" })).toBeInTheDocument();
   });
 
   it("keeps comparisons when moving to another sample, but never compares a sample with itself", () => {
@@ -2191,7 +2257,7 @@ describe("WorkspacePage", () => {
     expect(list.querySelector("[data-sample-id='10'] [data-bridged]")).toHaveTextContent("1 bridge");
     expect(list.querySelector("[data-sample-id='12'] [data-bridged]")).not.toBeNull();
     expect(list.querySelector("[data-sample-id='11'] [data-bridged]")).toBeNull();
-    expect(screen.queryByText(/^minus /)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Minus / })).toBeNull();
   });
 
   it("the palette's bridge page leaves out this sample and its bridges, and Enter bridges to the pick", () => {
@@ -2224,8 +2290,8 @@ describe("WorkspacePage", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.click(screen.getByRole("button", { name: "A3" }), { ctrlKey: true });
-    expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
-    expect(screen.getByText("minus A3")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-subtraction-toggle")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Minus A3" })).toBeInTheDocument();
   });
 
   it("bridging while comparisons are hidden shows them again", () => {

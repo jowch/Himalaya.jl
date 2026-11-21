@@ -42,6 +42,7 @@ export interface WorkspacePaletteInput {
   views: { options: readonly PlotViewOption[]; current: PlotView; set: (v: PlotView) => void };
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
+  difference?: { on: boolean; name: string; toggle: () => void };
   settings: { name: string; description: string; save: (patch: { name?: string; description?: string | null }) => void } | undefined;
   rescan: (() => void) | undefined;
   problems: (() => void) | undefined;
@@ -251,6 +252,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "view", label: "Plot view", hint: current, page: "view" },
     { id: "zoom", label: "Reset zoom", shortcut: `${p.modKey} 0`, run: p.resetZoom },
     { id: "refs", label: p.comparisons.shown ? "Hide comparisons" : "Show comparisons", run: p.comparisons.toggle },
+    ...(p.difference ? [{ id: "difference", label: p.difference.on ? "Show the raw trace" : `Show minus ${p.difference.name}`, run: p.difference.toggle }] : []),
   ];
   const experiment: PaletteItem[] = [
     ...(pages.settings ? [{ id: "settings", label: "Settings", hint: "Name, description", page: "settings" }] : []),
