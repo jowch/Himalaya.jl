@@ -16,7 +16,7 @@ A web application for semi-automatic indexing of SAXS diffraction patterns. Poin
   - Tabbed properties panel: Exposures · Peaks table · Sample tags · Notes
 - **Configurable file patterns.** Image, metadata and integration filenames are matched by `{name}` patterns that you can correct per experiment, so a different layout needs no code changes.
 - **One central database.** A single SQLite DB at `~/.himalaya/himalaya.db` (override with `HIMALAYA_DB_PATH`) holds every experiment ever registered. Experiment directories are read-only data sources.
-- **Additive rescans.** New files on disk are picked up by a rescan (manual or scheduled). Rescans only add rows, so curation (rejections, renames, manual peaks, phase calls) is preserved.
+- **Additive rescans.** New files, and traces that land after their images, are picked up when the experiment is opened, on Rescan, and at server start. Rescans only add rows, so curation (rejections, renames, manual peaks, phase calls) is preserved.
 - **Multi-user by attribution.** Each browser session identifies as a username; every edit is logged to the `user_actions` audit table.
 
 ---
@@ -120,13 +120,13 @@ The CLI does not create experiments; use the New-experiment funnel in the UI.
 
 ### Identifying an experiment
 
-`analyze`, `show` and `upgrade-grouping` take an `-e`/`--experiment` flag whose value can be:
+`analyze` and `show` take an `-e`/`--experiment` flag whose value can be:
 
 - an **id** (`-e 1`)
 - a **name** (`-e "SSRL April 2026"`, must match `experiments.name`)
 - a **path** (`-e ~/beamtime/2026-04-exp42`, looked up against `experiments.path`)
 
-Without `-e`, `analyze` and `show` use the only registered experiment and fail with a list if there are several. `upgrade-grouping` runs on every experiment.
+Without `-e`, `analyze` and `show` use the only registered experiment and fail with a list if there are several.
 
 ### `himalaya analyze [-e <experiment> | --all] [--sample <name>]`
 
@@ -159,10 +159,6 @@ ssh -L 8080:127.0.0.1:8080 user@lab-workstation
 Then open `http://localhost:8080/` locally.
 
 If no DB exists at the resolved path, `serve` creates an empty one and warns, so a new user can create the first experiment in the UI.
-
-### `himalaya upgrade-grouping [--apply] [-e <experiment>]`
-
-Retrofits experiments ingested before the current auto-grouping to the loads/samples/exposures partition a fresh scan would produce, keeping curation. Dry run by default; pass `--apply` to commit. Back up the DB first.
 
 
 ---
