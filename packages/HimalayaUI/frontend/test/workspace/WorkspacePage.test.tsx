@@ -159,13 +159,13 @@ vi.mock("../../src/state", () => ({
 }));
 
 function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): CorpusSample {
-  return { id, experiment_id: 1, name, notes: null, tags: [], q_units: "A-1", ...extra } as CorpusSample;
+  return { id, experiment_id: 1, name, notes: null, q_units: "A-1", ...extra } as CorpusSample;
 }
 
 function exposure(id: number, extra: Partial<Exposure> = {}): Exposure {
   return {
     id, sample_id: 10, filename: `f${id}.dat`, kind: "file", selected: false, status: null,
-    image_path: null, image_version: "", tags: [], sources: [], ...extra,
+    image_path: null, image_version: "", sources: [], ...extra,
   } as Exposure;
 }
 

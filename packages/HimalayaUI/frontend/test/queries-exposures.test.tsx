@@ -4,8 +4,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
-  useAddExposureTag,
-  useRemoveExposureTag,
   useSetExposureStatus,
   useSelectExposure,
   queryKeys,
@@ -43,7 +41,6 @@ function makeExposure(over: Partial<Exposure>): Exposure {
     status: null,
     image_path: null,
     image_version: "",
-    tags: [],
     sources: [],
     trace_hash: null,
     analysis_inputs_hash: null,
@@ -55,131 +52,6 @@ describe("queries — exposure mutations (queue-driven)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     pendingDeferreds.clear();
-  });
-
-  // -------------------------------------------------------------------------
-  // useAddExposureTag
-  // -------------------------------------------------------------------------
-
-  describe("useAddExposureTag", () => {
-    it("appends an optimistic placeholder synchronously", () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);
-      // Stub fetch with a never-resolving promise so optimistic state is observed.
-      vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
-      const { result } = renderHook(
-        () => useAddExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate({ key: "buffer", value: "PBS" }); });
-      const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-      expect(list[0].tags).toHaveLength(1);
-      expect(list[0].tags[0].id).toBeLessThan(0);
-      expect(list[0].tags[0].key).toBe("buffer");
-      expect(list[0].tags[0].value).toBe("PBS");
-    });
-
-    it("replaces the optimistic placeholder with the server tag on success", async () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);
-      mockOnce(201, { id: 7, key: "buffer", value: "PBS", source: "manual" });
-      const { result } = renderHook(
-        () => useAddExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate({ key: "buffer", value: "PBS" }); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list[0].tags).toHaveLength(1);
-        expect(list[0].tags[0].id).toBe(7);
-        expect(list[0].tags[0].key).toBe("buffer");
-      });
-    });
-
-    it("rolls back to the seeded state on 4xx", async () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);
-      mockOnce(400, { error: "bad" });
-      const { result } = renderHook(
-        () => useAddExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate({ key: "buffer", value: "PBS" }); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list[0].tags).toHaveLength(0);
-      });
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // useRemoveExposureTag
-  // -------------------------------------------------------------------------
-
-  describe("useRemoveExposureTag", () => {
-    it("removes the tag optimistically", () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        makeExposure({ tags: [{ id: 7, key: "buffer", value: "PBS", source: "manual" }] }),
-      ]);
-      vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
-      const { result } = renderHook(
-        () => useRemoveExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(7); });
-      const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-      expect(list[0].tags).toHaveLength(0);
-    });
-
-    it("keeps the tag removed after a 204 success", async () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        makeExposure({ tags: [{ id: 7, key: "buffer", value: "PBS", source: "manual" }] }),
-      ]);
-      mockOnce(204, null);
-      const { result } = renderHook(
-        () => useRemoveExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(7); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list[0].tags).toHaveLength(0);
-      });
-    });
-
-    it("restores the tag on 4xx other than 404", async () => {
-      const { client, wrapper } = withClient();
-      const seeded = [
-        makeExposure({ tags: [{ id: 7, key: "buffer", value: "PBS", source: "manual" }] }),
-      ];
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), seeded);
-      mockOnce(400, { error: "bad" });
-      const { result } = renderHook(
-        () => useRemoveExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(7); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list[0].tags).toHaveLength(1);
-        expect(list[0].tags[0].id).toBe(7);
-      });
-    });
-
-    it("treats 404 as a no-op success — keeps the optimistic delete", async () => {
-      // Idempotent remove: a 404 means "already gone on the server", which
-      // matches the optimistic state. Rolling back would re-insert a tag the
-      // server doesn't have. See `treats404AsSuccess` on removeExposureTagMutator.
-      const { client, wrapper } = withClient();
-      const seeded = [
-        makeExposure({ tags: [{ id: 7, key: "buffer", value: "PBS", source: "manual" }] }),
-      ];
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), seeded);
-      mockOnce(404, { error: "missing" });
-      const { result } = renderHook(
-        () => useRemoveExposureTag(SAMPLE_ID, EXPOSURE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(7); });
-      await waitFor(() => expect(result.current.isPending).toBe(false));
-      const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-      expect(list[0].tags).toHaveLength(0);
-    });
   });
 
   // -------------------------------------------------------------------------

@@ -13,6 +13,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         name="D1")
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    for (label, state) in (("Buffer", "confirmed"), ("maybe", "suggested"), ("37C", "confirmed"), ("gone", "removed"))
+        DBInterface.execute(db, "INSERT INTO sample_labels (sample_id, label, state) VALUES (?, ?, ?)", [s_id, label, state])
+    end
 
     with_inproc_routes(db) do call
         # JSON
@@ -26,6 +29,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(s.exposures) == 1
         @test s.exposures[1].filename == "example_tot"
         @test length(s.exposures[1].indices) >= 1
+        @test collect(s.tags) == ["Buffer", "37C"]
 
         # CSV
         r = call("GET", "/api/experiments/$exp_id/export?format=csv")
@@ -34,6 +38,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         csv_body = String(r.body)
         @test startswith(csv_body, "sample_name,exposure_filename,phases")
         @test occursin("D1,example_tot", csv_body)
+        @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C")
 
         # Default = json
         r = call("GET", "/api/experiments/$exp_id/export")
