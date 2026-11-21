@@ -70,7 +70,7 @@ function unchanged(beforeFile, afterFile) {
   report({ ok: Object.keys(before).length > 0 && changed.length === 0, rule: "re-indexing from scratch changes nothing a person sees, and keeps their confirmed call", samples: Object.keys(before).length, changed });
 }
 
-const peakName = (p) => `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)}${p.excluded ? " (excluded)" : ""}`;
+const peakName = (p) => `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`;
 
 function gapQ(peaks) {
   const qs = peaks.map((p) => p.q).sort((a, b) => a - b);

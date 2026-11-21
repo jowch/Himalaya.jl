@@ -126,7 +126,14 @@
    * rings) to the light variant. The dark default + the `:root.theme-light`
    * override are gone.
    */
-  :root { color-scheme: light; }
+  :root {
+    color-scheme: light;
+    --color-compare-1: #8a8178;
+    --color-compare-2: #5f86a8;
+    --color-compare-3: #a57c45;
+    --color-compare-4: #7c6a9e;
+    --color-compare-5: #5d8f7a;
+  }
   body {
     background: var(--color-paper);
     color: var(--color-ink);
@@ -192,9 +199,6 @@
    *   .anim-pal-in     — backdrop / overlay fade. 120ms.
    *   .anim-pal-scale  — popover entry. translateY(-6px) + scale(0.98) → none.
    *                      140ms ease.
-   *   .anim-overlay    — applied to SVG fills/strokes inside the trace
-   *                      overlay so spotlight changes (gray ↔ phase color)
-   *                      ease in over 150ms instead of snapping.
    */
   @keyframes pal-in {
     from { opacity: 0; }
@@ -206,18 +210,6 @@
   }
   .anim-pal-in    { animation: pal-in    120ms ease both; }
   .anim-pal-scale { animation: pal-scale 140ms ease both; }
-  /* TraceViewer rebuilds overlay nodes on each render, so use a one-shot
-     fade-in animation rather than CSS transitions — newly-created circles
-     and triangles ease into view. Short duration so it reads as polish, not
-     as motion. */
-  @keyframes overlay-fade-in {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-  .anim-overlay svg [data-role="peak-root"] polygon,
-  .anim-overlay svg [data-role="tick-root"] line {
-    animation: overlay-fade-in 140ms ease both;
-  }
 
   /*
    * AN-MOTION (expressive entrances) — the app's transient surfaces enter with
@@ -365,17 +357,6 @@
   [data-observed-hit] { outline: none; cursor: pointer; }
   [data-observed-hit]:focus-visible { stroke: var(--color-accent); stroke-width: 2; }
 
-  /* Armed peak marks in the trace plot: while editing is armed each per-peak
-     SVG <g> becomes a role=button tab stop (PlotPeaks), but the base keyboard
-     ring above targets button:/a: only — an SVG g is neither. Mirror the 2px
-     accent ring on the g's bounding box (outline works on SVG elements in the
-     supported engines); a stroke override would be swallowed here because the
-     glyph shapes set their own stroke. Keyboard-only, like every other ring. */
-  [data-role="plot-peaks"] g[role="button"] { outline: none; cursor: pointer; }
-  [data-role="plot-peaks"] g[role="button"]:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-  }
 }
 
 /* Boneyard skeleton: slow pulse keeps the loading state subtle */
@@ -401,7 +382,7 @@
 
 /* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
    so it overrides the layered global transition rule AND the keyframe animations
-   (.anim-*, .bone skeleton pulse, overlay-fade-in). We near-zero rather than fully
+   (.anim-*, .bone skeleton pulse). We near-zero rather than fully
    remove durations so any transitionend/animationend listeners still fire. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

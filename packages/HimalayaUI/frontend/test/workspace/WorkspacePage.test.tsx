@@ -63,9 +63,26 @@ function peak(id: number, q: number, source: "auto" | "manual", excluded = false
   return { id, exposure_id: 101, q, intensity: null, prominence: null, sharpness: null, source, excluded };
 }
 
+function currentView(): string {
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  const input = screen.getByLabelText("Command or sample");
+  fireEvent.change(input, { target: { value: "current view" } });
+  const option = screen.getAllByRole("option").find((o) => /current view/.test(o.textContent ?? ""));
+  const name = /Plot (.+), current view/.exec(option?.textContent ?? "")?.[1] ?? "";
+  fireEvent.keyDown(input, { key: "Escape" });
+  return name;
+}
+
+function pickView(label: string): void {
+  fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+  const input = screen.getByLabelText("Command or sample");
+  fireEvent.change(input, { target: { value: label } });
+  fireEvent.keyDown(input, { key: "Enter" });
+}
+
 function clickPlotAt(q: number, detail = 1): void {
-  const plotWidth = 640 - 60 - 24;
-  const px = 60 + ((q - 0.05) / 0.2) * plotWidth;
+  const plotWidth = 640 - 52 - 12;
+  const px = 52 + ((q - 0.05) / 0.2) * plotWidth;
   fireEvent.click(screen.getByTestId("workspace-trace"), { clientX: px, clientY: 100, detail });
 }
 
@@ -315,31 +332,27 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("L steps through log, linear, log-log and q²I, Shift L steps back, and the view buttons pick one", () => {
+  it("L steps through log, linear, log-log and q²I, Shift L steps back, and the palette picks one", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
     const ticks = (): string =>
       Array.from(screen.getByTestId("workspace-trace").querySelectorAll('[data-role="axis-left"] text'))
         .map((t) => t.textContent)
         .join(" ");
-    const pressed = (): string[] =>
-      within(screen.getByRole("radiogroup", { name: "Plot view" }))
-        .getAllByRole("radio")
-        .filter((b) => b.getAttribute("aria-checked") === "true")
-        .map((b) => b.textContent ?? "");
     const logTicks = ticks();
-    expect(pressed()).toEqual(["Log"]);
+    expect(currentView()).toBe("Log");
     fireEvent.keyDown(window, { key: "l" });
-    expect(pressed()).toEqual(["Linear"]);
+    expect(currentView()).toBe("Linear");
     expect(ticks()).not.toBe(logTicks);
     fireEvent.keyDown(window, { key: "l" });
-    expect(pressed()).toEqual(["Log-log"]);
+    expect(currentView()).toBe("Log-log");
     fireEvent.keyDown(window, { key: "l" });
-    expect(pressed()).toEqual(["q²I"]);
+    expect(currentView()).toBe("q²I (Kratky)");
+    expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
     fireEvent.keyDown(window, { key: "L", shiftKey: true });
-    expect(pressed()).toEqual(["Log-log"]);
-    fireEvent.click(screen.getByRole("radio", { name: "Log" }));
-    expect(pressed()).toEqual(["Log"]);
+    expect(currentView()).toBe("Log-log");
+    pickView("Plot Log");
+    expect(currentView()).toBe("Log");
     expect(ticks()).toBe(logTicks);
   });
 
@@ -352,10 +365,10 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     const strip = (): string => screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!;
     const log = strip();
-    fireEvent.click(screen.getByRole("radio", { name: "Log-log" }));
+    pickView("Plot Log-log");
     const loglog = strip();
     expect(loglog).not.toBe(log);
-    fireEvent.click(screen.getByRole("radio", { name: "q²I" }));
+    pickView("Plot q²I");
     expect(strip()).not.toBe(log);
     expect(strip()).not.toBe(loglog);
   });
@@ -449,6 +462,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "r" });
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "r" });
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
@@ -581,7 +595,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "kratky" } });
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
-    expect(screen.getByRole("radio", { name: "q²I" })).toHaveAttribute("aria-checked", "true");
+    expect(currentView()).toBe("q²I (Kratky)");
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "plot" } });
     expect(screen.getByRole("option", { name: /q²I \(Kratky\), current view/ })).toBeInTheDocument();
@@ -816,6 +830,19 @@ describe("WorkspacePage", () => {
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Im3m/)]);
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
+  });
+  it("the plot draws a candidate's reflections only while it is hovered, not because it is ticked", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto")];
+    renderAt("/experiments/1/workspace/10");
+    const combIds = (): string[] => Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb") ?? "");
+    expect(combIds()).toEqual([]);
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    fireEvent.mouseEnter(rows[1]!);
+    expect(combIds().length).toBeGreaterThan(0);
+    expect(new Set(combIds())).toEqual(new Set(["1"]));
+    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
+    expect(combIds()).toEqual([]);
   });
   it("the indexing plot shows the peaks the stored index claimed, even where a fresh match would differ", () => {
     state.trace = makeTrace(1);

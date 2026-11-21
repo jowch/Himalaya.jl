@@ -30,6 +30,7 @@ import { useCompareTraces } from "./useCompareTraces";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
+import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
@@ -44,7 +45,7 @@ import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
-import { COMPARE_DASHES, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
+import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
@@ -232,10 +233,9 @@ export function WorkspacePage(): JSX.Element {
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(() => {
-    const shown = candidates.filter((c) => assigned.has(c.id) || c.id === hoverId);
-    const lines = shown.map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase), emphasis: assigned.has(c.id) }));
-    return draft ? [{ id: -1, qs: draftQs, color: phaseColor(draft.phase), emphasis: true }] : lines;
-  }, [candidates, assigned, hoverId, draft, draftQs]);
+    if (draft) return [{ id: -1, qs: draftQs, color: phaseColor(draft.phase) }];
+    return candidates.filter((c) => c.id === hoverId).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
+  }, [candidates, hoverId, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const activeRefs = refs.filter((r) => r !== sampleId);
@@ -254,7 +254,7 @@ export function WorkspacePage(): JSX.Element {
       const scale = scales.get(rid)?.scale;
       if (rid === sampleId || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
-      return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, dash: COMPARE_DASHES[i % COMPARE_DASHES.length]!, emphasis: rid === subRef }];
+      return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
   }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
@@ -445,7 +445,6 @@ export function WorkspacePage(): JSX.Element {
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
-  const callPhase = candidates.find((c) => assigned.has(c.id))?.phase ?? null;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
     : corpus.isLoading
@@ -501,11 +500,9 @@ export function WorkspacePage(): JSX.Element {
             <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
               <div className="relative mb-2">
                 <CompareBar
-                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, dash: COMPARE_DASHES[refs.indexOf(rid) % COMPARE_DASHES.length]!, scale: scales.get(rid) }))}
+                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, color: COMPARE_COLORS[refs.indexOf(rid) % COMPARE_COLORS.length]!, scale: scales.get(rid) }))}
                   subtractId={subRef}
                   hidden={!refsOn}
-                  view={view}
-                  onView={setView}
                   onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
                   onRemove={removeCompare}
                   onAdd={() => setPicking(true)}
@@ -522,32 +519,33 @@ export function WorkspacePage(): JSX.Element {
                   />
                 )}
               </div>
-              <WorkspacePlot
-                trace={trace.data}
-                peaks={peaks.data ?? []}
-                phase={callPhase}
-                combs={combs}
-                compares={compares}
-                xDomain={shownDomain}
-                view={view}
-                onXDomain={setXDomain}
-                {...(draft
-                  ? { onAddPeak: snapDraft, onClickPeak: snapDraftToPeak }
-                  : canEditPeaks
-                    ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak }
-                    : {})}
-              />
-              {difference && xExtent && subRef !== undefined && (
-                <SubtractionStrip
-                  q={difference.q}
-                  d={difference.d}
-                  label={`minus ${sampleNames.get(subRef) ?? `Sample ${subRef}`}`}
+              <PlotCard>
+                <WorkspacePlot
+                  trace={trace.data}
+                  peaks={peaks.data ?? []}
+                  combs={combs}
+                  compares={compares}
                   xDomain={shownDomain}
-                  xExtent={xExtent}
-                  peakQs={peakQs}
                   view={view}
+                  onXDomain={setXDomain}
+                  {...(draft
+                    ? { onAddPeak: snapDraft, onClickPeak: snapDraftToPeak }
+                    : canEditPeaks
+                      ? { onAddPeak: (q: number) => addPeak.mutate(q), onClickPeak }
+                      : {})}
                 />
-              )}
+                {difference && xExtent && subRef !== undefined && (
+                  <SubtractionStrip
+                    q={difference.q}
+                    d={difference.d}
+                    label={`minus ${sampleNames.get(subRef) ?? `Sample ${subRef}`}`}
+                    xDomain={shownDomain}
+                    xExtent={xExtent}
+                    peakQs={peakQs}
+                    view={view}
+                  />
+                )}
+              </PlotCard>
             </Section>
             <Section title="Exposures">
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
