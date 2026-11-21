@@ -36,8 +36,8 @@ case "${1:-}" in
 esac
 
 if (( large )); then
-  if ! compgen -G "$DEMO_DIR/*/TRUTH.csv" > /dev/null; then
-    echo "No large demo data at $DEMO_DIR; generating it (make demo-large-data)."
+  if [[ ! -f "$DEMO_DIR/.demo-large-complete" ]]; then
+    echo "No complete large demo at $DEMO_DIR; generating it (make demo-large-data)."
     $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR" --large
   elif grep -qs ',false,' "$DEMO_DIR"/*/TRUTH.csv; then
     echo "$DEMO_DIR was generated with --no-images (empty TIFFs); regenerate it with make demo-large-data." >&2

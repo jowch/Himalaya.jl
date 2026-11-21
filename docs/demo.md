@@ -175,7 +175,7 @@ with a median of 4 frames. Performance work needs real scale and a real network
 ### Large mode
 
 `make demo-large-data` (generate only, into `scratch/demo-large/`) or
-`make demo-large` (generate if missing, ingest every experiment into its own DB at
+`make demo-large` (generate if missing, ingest every experiment into one DB at
 `scratch/demo-large-db/`, start the app) writes realistic scale for performance
 work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
 `make_demo_data.jl [out_dir] --large [--experiments N] [--samples M] [--seed S] [--no-images]`
@@ -195,6 +195,13 @@ work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
   exposure's `.tif` is a hardlink to one of them. A frame's image therefore does
   not match its own trace; use large mode for scale, not for checking images
   against traces. `--no-images` writes empty `.tif` files instead.
+- **Geometry is approximate.** Pool frames use each experiment's flight path,
+  but every trace keeps the curated demo's q grid and noise model, and
+  `setup_info` keeps its 1.8 m calibration rings. Fine for scale and loading
+  tests; don't use large mode to check q calibration.
+- A finished run writes `.demo-large-complete`. An interrupted run has none, so
+  `make demo-large` regenerates instead of ingesting a partial tree, and the
+  generator only writes into an empty folder or an existing large tree.
 - Cost, measured with the defaults: about 35 s, 1.4 GB on disk (12,000 `.tif`
   names, 240 distinct files), 3,000 samples and 12,000 exposures. Ingesting all
   ten through `demo_ingest.jl` takes about 3 minutes.

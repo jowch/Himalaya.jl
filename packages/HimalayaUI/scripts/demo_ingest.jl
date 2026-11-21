@@ -29,8 +29,11 @@ function main(args = ARGS)
         i += 1
     end
     isempty(roots) && push!(roots, "scratch/demo-experiment")
-    for root in roots
-        ingest_root(abspath(root), port, length(roots) == 1 ? "Demo (synthetic)" : "Demo " * basename(abspath(root)))
+    names = length(roots) == 1 ? ["Demo (synthetic)"] :
+        ["Demo " * basename(rstrip(abspath(r), '/')) for r in roots]
+    allunique(names) || error("experiment names collide: $names")
+    for (root, name) in zip(roots, names)
+        ingest_root(abspath(root), port, name)
     end
 end
 

@@ -146,9 +146,30 @@ end
     @test median(nframes) == 4
     @test 0.25 <= nophase / nsamples <= 0.55
     @test "Square" in phases
-    # Same seed, same tree; and a re-run into the existing tree is allowed.
+    # A finished run leaves a marker; re-running with the same seed is allowed and
+    # rewrites the same tree, even after a run was cut short mid-experiment.
+    @test isfile(joinpath(root, DemoGen.LARGE_MARKER))
+    before = Dict(e => read(joinpath(root, e, "TRUTH.csv")) for e in exps)
+    rm(joinpath(root, exps[2], "TRUTH.csv")); rm(joinpath(root, DemoGen.LARGE_MARKER))
     redirect_stdout(devnull) do
         DemoGen.main([root, "--large", "--no-images", "--experiments", "2", "--samples", "60", "--seed", "3"])
     end
-    @test_throws ErrorException DemoGen.check_target(let d = mktempdir(); mkdir(joinpath(d, "x")); d end)
+    @test all(e -> read(joinpath(root, e, "TRUTH.csv")) == before[e], exps)
+    @test isfile(joinpath(root, DemoGen.LARGE_MARKER))
+
+    # The two modes never write into each other's tree, or into anything else.
+    curated = mktempdir(); write(joinpath(curated, "TRUTH.csv"), "")
+    @test_throws ErrorException DemoGen.check_target(curated, true)
+    @test_throws ErrorException DemoGen.check_target(root, false)
+    @test_throws ErrorException DemoGen.check_target(let d = mktempdir(); mkdir(joinpath(d, "x")); d end, true)
+
+    # Square is new to the generator: a clear Square trace must index as Square.
+    calls = map(1:5) do s
+        rng = Xoshiro(s)
+        model, _ = DemoGen.model_trace(rng, "sq", DemoGen.Component[(Himalaya.Square, 80.0, 3.0, 2.5e-3)])
+        I, σ = DemoGen.measure(rng, model)
+        pr = Himalaya.findpeaks(DemoGen.Q, I, σ)
+        [string(nameof(Himalaya.phase(x))) for x in HimalayaUI.auto_group(Himalaya.indexpeaks(pr.q, pr.sharpness))]
+    end
+    @test count(c -> "Square" in c, calls) >= 4
 end

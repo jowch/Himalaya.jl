@@ -398,12 +398,19 @@ Refuse to write into a directory that already holds something other than a demo
 tree, so a mistyped DEMO_DIR can't scatter synthetic files into real data. A large
 tree is a directory of experiment directories, each with its own TRUTH.csv.
 """
-function check_target(out)
+const LARGE_MARKER = ".demo-large-complete"
+is_large_entry(e) = occursin(r"^large_\d+$", e)
+
+function check_target(out, large::Bool = false)
     isdir(out) || return
     entries = filter(!startswith("."), readdir(out))
-    isempty(entries) || isfile(joinpath(out, "TRUTH.csv")) ||
-        all(e -> isfile(joinpath(out, e, "TRUTH.csv")), entries) ||
-        error("$out is not empty and has no TRUTH.csv, so it is not a demo tree; refusing to write into it")
+    isempty(entries) && return
+    curated = isfile(joinpath(out, "TRUTH.csv"))
+    largetree = all(is_large_entry, entries)
+    curated && large && error("$out holds the curated demo; write --large somewhere else")
+    largetree && !large && error("$out holds a --large demo; write the curated demo somewhere else")
+    curated || largetree ||
+        error("$out is not empty and is not a demo tree; refusing to write into it")
 end
 
 const TRUTH_HEADER = "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"
@@ -540,8 +547,10 @@ end
 
 # Heights: median 0.4, 90th percentile 8 (σ_ln = ln(20)/1.2816). Sigmas: median
 # 3.4e-3, 10th percentile 1.2e-3 (σ_ln = ln(3.4/1.2)/1.2816).
-draw_height(rng) = 0.4 * exp(2.337 * randn(rng))
-draw_sigma(rng) = 3.4e-3 * exp(0.8127 * randn(rng))
+# Clamped so the log-normal tails stay physical: real strongest peaks reach ~8× their
+# background at the 90th percentile, and half-max widths stay under ~0.03 Å⁻¹.
+draw_height(rng) = clamp(0.4 * exp(2.337 * randn(rng)), 0.02, 20.0)
+draw_sigma(rng) = clamp(3.4e-3 * exp(0.8127 * randn(rng)), 8e-4, 0.012)
 
 function draw_component(rng, P)
     a = LARGE_LATTICE[P] * (1 + 0.15 * (2rand(rng) - 1))
@@ -679,11 +688,13 @@ end
 
 function main_large(o)
     mkpath(o.out)
+    isfile(joinpath(o.out, LARGE_MARKER)) && Base.Filesystem.unlink(joinpath(o.out, LARGE_MARKER))
     for e in 1:o.experiments
         name = @sprintf("large_%02d", e)
         r = write_large_experiment(joinpath(o.out, name), e, o.samples, o.seed, o.images)
         println("  $name: $(r.samples) samples, flight path $(r.pipe_mm) mm")
     end
+    touch(joinpath(o.out, LARGE_MARKER))
     println("Wrote $(o.experiments) large synthetic experiments to $(o.out) (seed $(o.seed)",
             o.images ? ", images shared from a pool" : ", no images", ")")
     o.out
@@ -691,7 +702,7 @@ end
 
 function main(args = ARGS)
     o = parse_args(args)
-    check_target(o.out)
+    check_target(o.out, o.large)
     o.large ? main_large(o) : main_curated(o)
 end
 
