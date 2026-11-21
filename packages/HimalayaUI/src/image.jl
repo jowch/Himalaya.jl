@@ -197,8 +197,9 @@ function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
                              overwrite::Bool = false)
     cache_path = thumb_cache_path(db, exposure_id, token)
 
-    if cache_path !== nothing && !overwrite && isfile(cache_path)
-        return read(cache_path)
+    if cache_path !== nothing && !overwrite
+        hit = _read_cached(cache_path)
+        hit === nothing || return hit
     end
 
     bytes = encode_png(load_and_lognormalize_thumb(path))
@@ -214,11 +215,32 @@ end
 
 _full_size_path(cache_path::String) = first(splitext(cache_path)) * ".size"
 
+function _read_cached(cache_path::String)
+    f = try
+        Base.Filesystem.open(cache_path, Base.Filesystem.JL_O_RDONLY)
+    catch err
+        err isa Base.IOError || err isa SystemError || rethrow()
+        return nothing
+    end
+    try
+        try
+            touch(f)
+        catch err
+            err isa Base.IOError || err isa SystemError || rethrow()
+        end
+        read(f)
+    finally
+        close(f)
+    end
+end
+
 function _read_full_cached(cache_path::String)
     try
         dims = tryparse.(Int, split(read(_full_size_path(cache_path), String)))
         (length(dims) == 2 && !any(isnothing, dims)) || return nothing
-        (bytes = read(cache_path), raw_h = dims[1], raw_w = dims[2])
+        bytes = _read_cached(cache_path)
+        bytes === nothing && return nothing
+        (bytes = bytes, raw_h = dims[1], raw_w = dims[2])
     catch err
         err isa SystemError || err isa Base.IOError || rethrow()
         nothing
@@ -227,14 +249,70 @@ end
 
 function _remove_stale_full!(cache_path::String)
     keep = (basename(cache_path), basename(_full_size_path(cache_path)))
+    removed = 0
     for f in readdir(dirname(cache_path))
-        f in keep || !(endswith(f, ".png") || endswith(f, ".size")) ||
-            rm(joinpath(dirname(cache_path), f); force = true)
+        (f in keep || !(endswith(f, ".png") || endswith(f, ".size"))) && continue
+        removed += filesize(joinpath(dirname(cache_path), f))
+        rm(joinpath(dirname(cache_path), f); force = true)
+    end
+    removed
+end
+
+const IMAGE_CACHE_CAP_BYTES = 1 << 30
+const _IMAGE_CACHE_LOCK = ReentrantLock()
+const _CACHE_BYTES = Dict{String, Int}()
+const _ORPHAN_TEMP_AGE_S = 3600
+
+function _cache_usage(root::String)
+    total = 0
+    entries = Tuple{Float64, Int, String}[]
+    for (dir, _, files) in walkdir(root; onerror = _ -> nothing), f in files
+        path = joinpath(dir, f)
+        st = stat(path)
+        if endswith(f, ".png")
+            push!(entries, (st.mtime, st.size, path))
+        elseif !endswith(f, ".size") && time() - st.mtime > _ORPHAN_TEMP_AGE_S
+            rm(path; force = true)
+            continue
+        end
+        total += st.size
+    end
+    total, entries
+end
+
+function _evict_cache!(root::String, keep::String, target::Integer)
+    total, entries = _cache_usage(root)
+    sort!(entries)
+    for (_, bytes, png) in entries
+        total <= target && break
+        png == keep && continue
+        size_path = _full_size_path(png)
+        total -= bytes + filesize(size_path)
+        rm(png; force = true)
+        rm(size_path; force = true)
+        basename(dirname(dirname(png))) == "full-1536" && isempty(readdir(dirname(png))) &&
+            rm(dirname(png); force = true)
+    end
+    total
+end
+
+function _store_full!(cache_path::String, bytes::Vector{UInt8}, raw_h::Integer, raw_w::Integer, cap::Integer)
+    root = dirname(dirname(dirname(cache_path)))
+    size_bytes = Vector{UInt8}(string(raw_h, " ", raw_w))
+    lock(_IMAGE_CACHE_LOCK) do
+        total = get!(() -> first(_cache_usage(root)), _CACHE_BYTES, root)
+        total -= filesize(cache_path) + filesize(_full_size_path(cache_path))
+        _write_thumb_atomic(_full_size_path(cache_path), size_bytes)
+        _write_thumb_atomic(cache_path, bytes)
+        total += length(bytes) + length(size_bytes) - _remove_stale_full!(cache_path)
+        total > cap && (total = _evict_cache!(root, cache_path, 9 * cap ÷ 10))
+        _CACHE_BYTES[root] = total
     end
 end
 
 function ensure_full_cached(db::SQLite.DB, exposure_id::Integer, path::String;
-                            token::AbstractString = image_version_token(path))
+                            token::AbstractString = image_version_token(path),
+                            cap::Integer = IMAGE_CACHE_CAP_BYTES)
     cache_path = full_cache_path(db, exposure_id, token)
     if cache_path !== nothing
         hit = _read_full_cached(cache_path)
@@ -243,11 +321,7 @@ function ensure_full_cached(db::SQLite.DB, exposure_id::Integer, path::String;
     img = load_and_lognormalize(path)
     raw_h, raw_w = size(img)
     bytes = encode_png(resize_to_fit(img, 1536))
-    if cache_path !== nothing
-        _write_thumb_atomic(_full_size_path(cache_path), Vector{UInt8}(string(raw_h, " ", raw_w)))
-        _write_thumb_atomic(cache_path, bytes)
-        _remove_stale_full!(cache_path)
-    end
+    cache_path === nothing || _store_full!(cache_path, bytes, raw_h, raw_w, cap)
     (bytes = bytes, raw_h = raw_h, raw_w = raw_w)
 end
 
