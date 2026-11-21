@@ -112,3 +112,43 @@ end
     ring = [counts[i] for i in eachindex(counts) if 12 <= hypot(dx[i], dy[i]) <= 18 && counts[i] >= 0]
     @test median(ring) > 0
 end
+
+# `--large` writes several realistic-scale experiments (docs/demo.md "Large mode").
+# Floors, not exact counts: the mix is drawn from aggregate targets.
+@testset "demo data: --large mode" begin
+    root = mktempdir()
+    redirect_stdout(devnull) do
+        DemoGen.main([root, "--large", "--no-images", "--experiments", "2", "--samples", "60", "--seed", "3"])
+    end
+    exps = sort(filter(d -> isdir(joinpath(root, d)), readdir(root)))
+    @test length(exps) == 2
+    nframes = Int[]; nophase = 0; nsamples = 0; phases = String[]
+    for e in exps
+        dir = joinpath(root, e)
+        r = HimalayaUI.resolve_experiment_layout(dir)
+        @test r.integration_pattern == "{name}_tot.dat"
+        @test r.setup_file !== nothing && !r.setup_ambiguous
+        metas = HimalayaUI.scan_directory(r.data_dir, r.analysis_dir;
+            tif_pattern = r.image_pattern, prp_pattern = r.metadata_pattern,
+            dat_pattern = r.integration_pattern)
+        g = HimalayaUI.group_into_samples(metas)
+        @test all(l -> l.flag == :ok, g.loads)
+        rows = [split(l, ","; limit = 10) for l in readlines(joinpath(dir, "TRUTH.csv"))[2:end]]
+        found = sum(length(l.samples) for l in g.loads)
+        @test found >= 0.9 * length(rows)
+        @test length(g.loads) >= 2
+        for f in rows
+            push!(nframes, length(split(f[2])))
+            nsamples += 1
+            f[3] == "none" ? (nophase += 1) : append!(phases, split(f[3], "+"))
+        end
+    end
+    @test median(nframes) == 4
+    @test 0.25 <= nophase / nsamples <= 0.55
+    @test "Square" in phases
+    # Same seed, same tree; and a re-run into the existing tree is allowed.
+    redirect_stdout(devnull) do
+        DemoGen.main([root, "--large", "--no-images", "--experiments", "2", "--samples", "60", "--seed", "3"])
+    end
+    @test_throws ErrorException DemoGen.check_target(let d = mktempdir(); mkdir(joinpath(d, "x")); d end)
+end
