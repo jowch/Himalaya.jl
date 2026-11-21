@@ -61,7 +61,7 @@ describe("indexing", () => {
     const c = draftCommit({ phase: "Lamellar", lattice: 62.8 });
     expect(c.basis).toBeCloseTo((2 * Math.PI) / 62.8, 9);
     c.ratios.forEach((r, i) => expect(r).toBeCloseTo(i + 1, 9));
-    expect(c.ratios).toHaveLength(5);
+    expect(c.ratios).toHaveLength(11);
   });
 
   it("clamps the lattice to the phase's range and rounds to 0.1 Å", () => {

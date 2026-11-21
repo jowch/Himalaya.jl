@@ -372,6 +372,7 @@ export function WorkspacePage(): JSX.Element {
   const draftFit = useMemo(() => (draft ? indexFit(draftQs, activePeakQs, xExtent) : null), [draft, draftQs, activePeakQs, xExtent]);
 
   const indexSeries: IndexSeries[] = useMemo(() => {
+    if (!xExtent) return [];
     if (draft && draftFit) {
       return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, param: latticeParam(draft.phase), r2: draftFit.r2 }];
     }
