@@ -1,9 +1,6 @@
-import { useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
-import { Outlet } from "react-router-dom";
+import { useCallback, useState } from "react";
+import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAppState } from "../../state";
-import { useInteraction } from "../interaction/registry";
-import { core } from "../interaction/core";
 import { TopNav } from "./TopNav";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
@@ -13,8 +10,9 @@ import { SampleRedirect } from "./SampleRedirect";
 import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
-import { InteractionDock } from "../interaction/InteractionDock";
-import { useKeyboardLayer } from "../interaction/useKeyboardLayer";
+import { useShellKeys } from "./useShellKeys";
+import { HelpOverlay } from "../../workspace/ui/HelpOverlay";
+import { shellHelp } from "./shellHelp";
 import { WorkspacePage } from "../../workspace/WorkspacePage";
 
 /**
@@ -41,28 +39,11 @@ function PageBody(): JSX.Element {
   return <ResolvingFallback />;
 }
 
-/**
- * AppShell — the single unified shell wrapping every route (T3.2).
- * Renders TopNav (the unified nav bar) above the matched child.
- * Replaces the three legacy shells (deleted in T3.2).
- */
 function AppShell(): JSX.Element {
-  useKeyboardLayer(); // one window listener for the whole app
-
-  // Register the shell-level global shortcuts once.  These are scope-exempt
-  // (bypass the bare-key inPageScope guard) so `/`, `?`, and ⌘K work from
-  // anywhere in the app, not just inside [data-interaction-scope] elements.
-  useEffect(() => {
-    useInteraction.getState().setShellActions([
-      core("find", {
-        run: () => {
-          const s = useAppState.getState();
-          s.openNavModal(s.activeExperimentId === undefined ? "experiment" : "sample");
-        },
-      }),
-      core("help", { run: () => useAppState.getState().openHelpOverlay() }),
-    ]);
-  }, []);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const openHelp = useCallback(() => setHelpOpen(true), []);
+  useShellKeys(openHelp);
+  const { pathname } = useLocation();
 
   return (
     <div
@@ -73,7 +54,7 @@ function AppShell(): JSX.Element {
       <main className="flex-1 min-h-0 overflow-auto">
         <Outlet />
       </main>
-      <InteractionDock />
+      {helpOpen && <HelpOverlay sections={shellHelp(pathname)} onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

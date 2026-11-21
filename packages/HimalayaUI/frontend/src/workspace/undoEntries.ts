@@ -180,24 +180,43 @@ export function customIndexEntry(
   };
 }
 
-export const CANNOT_UNDO = -1;
-
 export function labelEntry(
   ops: EditOps,
   at: Where & { tag: string; added: boolean; prev: SampleLabelState | undefined },
 ): UndoEntry {
+  const current = async () =>
+    (await ops.read.labels()).find((l) => l.sample_id === at.sampleId && sameLabel(l.label, at.tag))?.state;
   const set = async (present: boolean): Promise<number> => {
-    const has = (await ops.read.labels()).some((l) => l.sample_id === at.sampleId && sameLabel(l.label, at.tag));
-    if (has === present) return 0;
+    if ((await current()) === (present ? "confirmed" : undefined)) return 0;
     if (present) ops.addLabel(at.sampleId, at.tag);
     else ops.removeLabel(at.sampleId, at.tag);
     return 1;
   };
-  const suggestion = at.prev === "suggested";
+  const resuggest = async (): Promise<number> => {
+    if ((await current()) === "suggested") return 0;
+    ops.restoreLabelSuggestion(at.sampleId, at.tag);
+    return 1;
+  };
   return {
     ...at,
-    undo: async () => (suggestion ? CANNOT_UNDO : set(!at.added)),
+    undo: () => (at.prev === "suggested" ? resuggest() : set(!at.added)),
     redo: () => set(at.added),
+  };
+}
+
+export function combinedEntry(at: Where, parts: readonly UndoEntry[]): UndoEntry {
+  return {
+    ...at,
+    undo: async () => {
+      let sent = 0;
+      for (const p of [...parts].reverse()) sent += await p.undo();
+      return sent;
+    },
+    redo: async () => {
+      let sent = 0;
+      for (const p of parts) sent += await p.redo();
+      return sent;
+    },
   };
 }
 
