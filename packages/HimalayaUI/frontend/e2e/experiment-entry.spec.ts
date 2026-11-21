@@ -120,6 +120,8 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route(`**/api/experiments/${opts.id}/bridges`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route(`**/api/experiments/${opts.id}/labels`, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   const q = Array.from({ length: 50 }, (_, i) => 0.01 + i * 0.006);
   await page.route(/\/api\/exposures\/(\d+)\/trace$/, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ q, I: q.map((x) => 1 / x), sigma: q.map(() => 0.1) }) }));
