@@ -249,13 +249,17 @@ end
     tables = [String(r.name) for r in DBInterface.execute(db,
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
     misfiled = String[]
+    checked = Set{String}()
     for t in tables, c in Tables.rowtable(DBInterface.execute(db, "SELECT name, type FROM pragma_table_info(?)", [t]))
         ok = get(allowed, uppercase(String(c.type)), nothing)
         ok === nothing && continue
         col = String(c.name)
+        push!(checked, "$t.$col")
         n = count_of("SELECT count(*) AS n FROM \"$t\" WHERE typeof(\"$col\") NOT IN ($(join(("'$x'" for x in ok), ", ")))")
         n > 0 && push!(misfiled, "$t.$col ($n rows)")
     end
+    @test "index_peaks.ratio_position" in checked
+    @test "auto_peaks.sharpness" in checked
     @test misfiled == String[]
 end
 
@@ -547,6 +551,7 @@ let
             @test occursin("score=n/a", out)
             @test occursin("R²=n/a", out)
             @test occursin("prom=n/a", out)
+            @test occursin("sharp=n/a", out)
         end
     end
 
