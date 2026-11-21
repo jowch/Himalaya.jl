@@ -39,6 +39,7 @@ interface Props {
   height?: number;
   onRetry?: () => void;
   retrying?: boolean;
+  emptyMessage?: string;
 }
 
 interface Geometry {
@@ -89,6 +90,7 @@ export function WorkspacePlot({
   height = PLOT_HEIGHT,
   onRetry,
   retrying = false,
+  emptyMessage,
 }: Props): JSX.Element {
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
@@ -125,8 +127,13 @@ export function WorkspacePlot({
     );
   }
 
-  if (!trace || trace.q.length < 2) {
-    return <div className="rounded-sm bg-paper-sunk" style={{ height }} data-testid="workspace-trace-empty" />;
+  const empty = trace ? (trace.q.length < 2 ? "This frame's trace has no points." : undefined) : emptyMessage ?? "";
+  if (empty !== undefined || !trace) {
+    return (
+      <div role={empty ? "status" : undefined} className="flex items-center justify-center rounded-sm bg-paper-sunk px-6 text-center text-base text-ink-soft" style={{ height }} data-testid="workspace-trace-empty">
+        {empty}
+      </div>
+    );
   }
 
   const xExtent = positiveExtent(trace.q);

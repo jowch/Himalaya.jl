@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Exposure, IndexEntry } from "../api";
+import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
   useAddPeak,
@@ -36,7 +37,7 @@ import { labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -207,6 +208,14 @@ export function WorkspacePage(): JSX.Element {
   const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
 
   const trace = useTrace(exposure?.id);
+  const noTrace = trace.error instanceof ApiError && trace.error.status === 404;
+  const i0Hint = i0BelowZero(exposure);
+  const darkNotice = traceIsDark(trace.data)
+    ? `No counts on the detector: the beam was likely off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
+    : undefined;
+  const noTraceMessage = noTrace
+    ? `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`
+    : undefined;
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
@@ -673,10 +682,14 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard>
+              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})}>
                 <WorkspacePlot
                   trace={trace.data}
-                  {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}
+                  {...(noTraceMessage
+                    ? { emptyMessage: noTraceMessage }
+                    : trace.isError
+                      ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching }
+                      : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}
