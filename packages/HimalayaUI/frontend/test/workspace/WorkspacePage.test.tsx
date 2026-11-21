@@ -950,7 +950,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByText(/^minus /)).toBeNull();
     fireEvent.keyDown(window, { key: "c" });
     const rows = within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button");
-    expect(rows.map((r) => r.textContent)).toEqual(["A3Buffer", "A4Suggested buffer", "A2"]);
+    expect(rows.map((r) => r.textContent)).toEqual(["A3, Buffer", "A4, Suggested buffer", "A2"]);
     expect(rows.map((r) => r.getAttribute("aria-current"))).toEqual(["true", null, null]);
     expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
   });
