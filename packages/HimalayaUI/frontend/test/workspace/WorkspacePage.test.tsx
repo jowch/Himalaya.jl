@@ -556,7 +556,11 @@ describe("WorkspacePage", () => {
       ["37C", "confirmed"],
       ["buffer", "suggested"],
     ]);
-    fireEvent.click(within(row).getByRole("button", { name: "Confirm tag buffer" }));
+    const buffer = row.querySelector("[data-tag='buffer']");
+    expect(buffer).toHaveAttribute("data-tag-standard", "true");
+    expect(buffer?.textContent).toBe("Buffer×");
+    expect(row.querySelector("[data-tag='37C']")).not.toHaveAttribute("data-tag-standard");
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm tag Buffer" }));
     fireEvent.click(within(row).getByRole("button", { name: "Remove tag 37C" }));
     expect(calls).toEqual([
       { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } },
@@ -569,12 +573,12 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     pickView("Add tag to A1");
     const picker = screen.getByRole("dialog", { name: "Add a tag" });
-    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "buffer", "calibrant", "empty capillary"]);
+    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
     const input = within(picker).getByLabelText("Tag name");
     fireEvent.change(input, { target: { value: "bufer" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByRole("dialog", { name: "Add a tag" })).toBeNull();
-    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } }]);
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
   });
 
   it("a new tag needs the Create row, and Backspace in the empty picker removes the last confirmed tag, never a suggestion", () => {
