@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SampleLabel, TagColor, TagColorEntry } from "../../api";
-import { displayTag, sameLabel, standardTag, tagColor, tagColorIsDefault } from "../../lib/labels";
+import { defaultTagColor, displayTag, sameLabel, standardTag, tagColor, tagColorIsDefault } from "../../lib/labels";
 import { TagColorMenu } from "./TagColorMenu";
 import { TagPicker } from "./TagPicker";
 import { TAG_SWATCH } from "./tagSwatches";
@@ -131,11 +131,24 @@ export function TagRow({
 
   const hidden = tags.slice(shown);
   const colored = coloring === undefined ? undefined : tags.find((t) => sameLabel(t.label, coloring));
-  const anchor = (): number => {
-    const chips = box.current;
-    const chip = colored ? chips?.querySelector<HTMLElement>(`[data-tag="${CSS.escape(colored.label)}"]`) : null;
-    const at = chip ?? moreButton.current;
-    return chips && at ? chips.offsetLeft + at.offsetLeft : 14;
+  const [menuLeft, setMenuLeft] = useState(14);
+  const restoreTo = useRef<string | undefined>(undefined);
+  const chipFor = (label: string): HTMLElement | null =>
+    box.current?.querySelector<HTMLElement>(`[data-tag="${CSS.escape(label)}"]`) ?? null;
+  useLayoutEffect(() => {
+    if (!colored) return;
+    const at = chipFor(colored.label) ?? moreButton.current;
+    setMenuLeft(at ? at.offsetLeft : 14);
+  }, [colored, shown]);
+  useEffect(() => {
+    if (coloring !== undefined || restoreTo.current === undefined) return;
+    const label = restoreTo.current;
+    restoreTo.current = undefined;
+    (chipFor(label)?.querySelector<HTMLElement>("button") ?? moreButton.current)?.focus();
+  }, [coloring]);
+  const closeColor = (restoreFocus: boolean): void => {
+    restoreTo.current = restoreFocus ? colored?.label : undefined;
+    onCloseColor();
   };
   const openColor = (label: string): void => {
     setMoreOpen(false);
@@ -227,9 +240,9 @@ export function TagRow({
           name={displayTag(colored.label)}
           current={tagColor(colors, colored.label)}
           isDefault={tagColorIsDefault(colors, colored.label)}
-          left={anchor()}
-          onPick={(c) => onSetColor(colored.label, c)}
-          onClose={onCloseColor}
+          left={menuLeft}
+          onPick={(c) => onSetColor(colored.label, c === defaultTagColor(colored.label) ? null : c)}
+          onClose={closeColor}
         />
       )}
       {adding && editable && (

@@ -38,6 +38,7 @@ function register_tag_color_routes!()
         body isa AbstractDict || return _json_error(400, "body must be an object")
         label = normalize_label(get(body, "label", nothing))
         label === nothing && return _json_error(400, "label must be 1 to $MAX_LABEL_LENGTH characters on one line")
+        haskey(body, "color") || return _json_error(400, "color is required; send null to reset")
         raw = get(body, "color", nothing)
         (raw === nothing || (raw isa AbstractString && raw in TAG_COLORS)) ||
             return _json_error(400, "color must be one of $(join(TAG_COLORS, ", ")) or null")

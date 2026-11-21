@@ -380,7 +380,9 @@ export function WorkspacePage(): JSX.Element {
   }, [sampleId]);
   const sampleTags = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
   const openTagging = useCallback(() => {
-    if (username && sampleId !== undefined) setTagging(true);
+    if (!username || sampleId === undefined) return;
+    setColoringTag(undefined);
+    setTagging(true);
   }, [username, sampleId]);
   const openBridge = useCallback(() => {
     if (username && sampleId !== undefined) setBridging(true);

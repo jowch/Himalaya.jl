@@ -65,6 +65,15 @@ describe("TagRow overflow", () => {
 });
 
 describe("TagRow colours", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function colorRow(over: Partial<Parameters<typeof TagRow>[0]> = {}) {
+    return (
+      <TagRow tags={TAGS} vocabulary={[]} editable adding={false} onOpenAdd={() => {}} onCloseAdd={() => {}}
+        onAdd={() => {}} onRemove={() => {}} {...NO_COLORS} {...over} />
+    );
+  }
+
   it("right-clicking a tag in the +N list closes the list and opens that tag's colour menu", () => {
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
       return this.parentElement?.dataset.testid === "workspace-tag-ruler" ? 60 : 0;
@@ -73,14 +82,25 @@ describe("TagRow colours", () => {
       return this.dataset.testid === "workspace-tag-chips" ? 200 : 0;
     });
     const onOpenColor = vi.fn();
-    render(
-      <TagRow tags={TAGS} vocabulary={[]} editable adding={false} onOpenAdd={() => {}} onCloseAdd={() => {}}
-        onAdd={() => {}} onRemove={() => {}} {...NO_COLORS} onOpenColor={onOpenColor} />,
-    );
+    render(colorRow({ onOpenColor }));
     fireEvent.click(screen.getByRole("button", { name: "3 more tags" }));
     fireEvent.contextMenu(screen.getByRole("dialog", { name: "More tags" }).querySelector("[data-tag='dilute']")!);
     expect(onOpenColor).toHaveBeenCalledWith("dilute");
     expect(screen.queryByRole("dialog", { name: "More tags" })).toBeNull();
-    vi.restoreAllMocks();
+  });
+
+  it("picking a tag's default colour clears the override instead of storing it", () => {
+    const onSetColor = vi.fn();
+    render(colorRow({ coloring: "buffer", colors: [{ label: "buffer", color: "teal" }], onSetColor }));
+    fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Rose" }));
+    expect(onSetColor.mock.calls).toEqual([["buffer", null], ["buffer", "rose"]]);
+  });
+
+  it("Escape hands focus back to the tag it was opened from", () => {
+    const { rerender } = render(colorRow({ coloring: "37C" }));
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Violet" }), { key: "Escape" });
+    rerender(colorRow({ coloring: undefined }));
+    expect(screen.getByRole("button", { name: "Remove tag 37C" })).toHaveFocus();
   });
 });

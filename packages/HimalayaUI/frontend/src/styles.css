@@ -423,15 +423,15 @@
     --color-phase-lamellar: oklch(0.700 0.090 100);
     --color-phase-square: oklch(0.840 0.020 250);
     --color-tag-violet-wash: oklch(0.290 0.040 280);
-    --color-tag-violet-ink:  oklch(0.880 0.055 280);
+    --color-tag-violet-ink:  oklch(0.860 0.085 280);
     --color-tag-blue-wash: oklch(0.290 0.042 240);
-    --color-tag-blue-ink:  oklch(0.880 0.055 240);
+    --color-tag-blue-ink:  oklch(0.860 0.080 240);
     --color-tag-teal-wash: oklch(0.290 0.036 182);
-    --color-tag-teal-ink:  oklch(0.880 0.050 182);
+    --color-tag-teal-ink:  oklch(0.860 0.075 182);
     --color-tag-rose-wash: oklch(0.290 0.040 352);
-    --color-tag-rose-ink:  oklch(0.880 0.055 352);
+    --color-tag-rose-ink:  oklch(0.860 0.085 352);
     --color-tag-stone-wash: oklch(0.290 0.014 75);
-    --color-tag-stone-ink:  oklch(0.880 0.014 75);
+    --color-tag-stone-ink:  oklch(0.860 0.030 70);
     color-scheme: dark;
   }
 }
@@ -461,14 +461,14 @@
   --color-phase-lamellar: oklch(0.700 0.090 100);
   --color-phase-square: oklch(0.840 0.020 250);
   --color-tag-violet-wash: oklch(0.290 0.040 280);
-  --color-tag-violet-ink:  oklch(0.880 0.055 280);
+  --color-tag-violet-ink:  oklch(0.860 0.085 280);
   --color-tag-blue-wash: oklch(0.290 0.042 240);
-  --color-tag-blue-ink:  oklch(0.880 0.055 240);
+  --color-tag-blue-ink:  oklch(0.860 0.080 240);
   --color-tag-teal-wash: oklch(0.290 0.036 182);
-  --color-tag-teal-ink:  oklch(0.880 0.050 182);
+  --color-tag-teal-ink:  oklch(0.860 0.075 182);
   --color-tag-rose-wash: oklch(0.290 0.040 352);
-  --color-tag-rose-ink:  oklch(0.880 0.055 352);
+  --color-tag-rose-ink:  oklch(0.860 0.085 352);
   --color-tag-stone-wash: oklch(0.290 0.014 75);
-  --color-tag-stone-ink:  oklch(0.880 0.014 75);
+  --color-tag-stone-ink:  oklch(0.860 0.030 70);
   color-scheme: dark;
 }

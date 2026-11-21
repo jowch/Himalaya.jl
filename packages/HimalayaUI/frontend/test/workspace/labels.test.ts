@@ -4,6 +4,7 @@ import {
   applyAddLabel,
   applyRemoveLabel,
   applyTagColor,
+  defaultTagColor,
   cleanTag,
   displayTag,
   labelsFor,
@@ -98,6 +99,12 @@ describe("tag colours", () => {
     expect(tagColor([{ label: "buffer", color: "stone" }], "Buffer")).toBe("stone");
     expect(tagColorIsDefault([{ label: "37c", color: "teal" }], "37C")).toBe(false);
     expect(tagColorIsDefault([], "37C")).toBe(true);
+  });
+
+  it("matches names ignoring ASCII case only, as the database does", () => {
+    expect(tagColor([{ label: "abc", color: "rose" }], "ABC")).toBe("rose");
+    expect(tagColor([{ label: "über", color: "rose" }], "Über")).toBe("violet");
+    expect(defaultTagColor("Buffer")).toBe("blue");
   });
 
   it("setting replaces the entry for that name and null removes it", () => {

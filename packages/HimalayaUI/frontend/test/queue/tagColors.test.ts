@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { applyRemoteToCache } from "../../src/lib/queue/applyRemoteToCache";
 import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
@@ -10,6 +10,8 @@ import type { TagColorEntry } from "../../src/api";
 const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "set_tag_color", payload: {} } as const;
 
 describe("tag colour mutations", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("a remote colour change refetches the shared colour map and nothing else", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
@@ -46,7 +48,6 @@ describe("tag colour mutations", () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     await setTagColorMutator.request({ ...scope, label: "37C", color: null }, new AbortController().signal);
-    vi.unstubAllGlobals();
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toMatch(/\/api\/tag-colors$/);
     expect(init.method).toBe("PUT");

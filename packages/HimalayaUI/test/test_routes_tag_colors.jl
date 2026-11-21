@@ -48,6 +48,7 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
             @test _set_color(call, "37C", 3).status == 400
             @test _set_color(call, "   ", "teal").status == 400
             @test call("PUT", "/api/tag-colors"; headers=_COLOR_HEADERS, body=Vector{UInt8}("[]")).status == 400
+            @test call("PUT", "/api/tag-colors"; headers=_COLOR_HEADERS, body=Vector{UInt8}("{\"label\":\"37C\"}")).status == 400
         end
         @test _color_rows(db) == Dict()
     end
