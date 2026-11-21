@@ -21,7 +21,7 @@ import {
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
-import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
+import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
@@ -354,6 +354,7 @@ export interface EditOps {
   deleteIndex: (exposureId: number, indexId: number) => void;
   addLabel: (sampleId: number, label: string) => void;
   removeLabel: (sampleId: number, label: string) => void;
+  restoreLabelSuggestion: (sampleId: number, label: string) => void;
   setLabelColor: (label: string, color: api.LabelColor | null) => void;
   bridge: (sampleId: number, toSampleId: number) => void;
   unbridge: (sampleId: number) => void;
@@ -394,6 +395,7 @@ export function useEditOps(experimentId: number): EditOps {
   const labelScope = { ...who, experimentId };
   const addLabel = useQueueMutation(addLabelMutator, labelScope);
   const removeLabel = useQueueMutation(removeLabelMutator, labelScope);
+  const restoreSuggestion = useQueueMutation(restoreLabelSuggestionMutator, labelScope);
   const labelColor = useQueueMutation(setLabelColorMutator, who);
   const bridge = useQueueMutation(bridgeSamplesMutator, labelScope);
   const unbridge = useQueueMutation(unbridgeSampleMutator, labelScope);
@@ -412,6 +414,7 @@ export function useEditOps(experimentId: number): EditOps {
     deleteIndex: (exposureId, indexId) => deleteIndex.mutateIn({ ...who, exposureId }, { indexId }),
     addLabel: (sampleId, label) => addLabel.mutate({ sampleId, label }),
     removeLabel: (sampleId, label) => removeLabel.mutate({ sampleId, label }),
+    restoreLabelSuggestion: (sampleId, label) => restoreSuggestion.mutate({ sampleId, label }),
     setLabelColor: (label, color) => labelColor.mutate({ label, color }),
     bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),

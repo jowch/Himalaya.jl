@@ -50,6 +50,7 @@ round-trip test in `test_events.jl`.
 | `assignment_set_state` | Legacy, no longer emitted. Replays as before and also upserts the frame's sample into `sample_calls` (entity_type=`exposure`, payload `{state}`) |
 | `label_added` | UPSERT `sample_labels` → `state='confirmed'`, unique per sample ignoring case; confirms a suggestion and brings back a removed label (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `label_removed` | UPSERT `sample_labels` → `state='removed'`; the row stays so a rescan never suggests the label again (entity_type=`sample`, payload `{label, experiment_id}`) |
+| `label_suggestion_restored` | UPSERT `sample_labels` → `state='suggested', source='ingest'`; undo of confirming or dismissing a suggestion. The route skips it when the sample has no such label or it is already suggested (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `tag_color_set` | UPSERT `label_colors` (unique per label ignoring case) to the colour, or DELETE the row when `color` is null so the label falls back to its default (blue for a built-in, violet otherwise). One colour per label name for the whole app (entity_type=`tag`, entity_id=0 `LABEL_COLOR_ENTITY_ID`, payload `{label, color}`). The kind and entity_type keep the old "tag" name because log rows are history; the table was `tag_colors` before `migrate_label_colors!` renamed it. |
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.

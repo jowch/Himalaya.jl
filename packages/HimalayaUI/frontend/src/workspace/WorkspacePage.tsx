@@ -37,7 +37,7 @@ import {
 } from "../queries";
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
-  bridgeEntry, CANNOT_UNDO, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
@@ -529,29 +529,51 @@ export function WorkspacePage(): JSX.Element {
     },
     [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList],
   );
+  const labelEdit = useCallback(
+    (sid: number, tag: string, added: boolean) => {
+      const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
+      (added ? addLabel : removeLabel).mutate({ sampleId: sid, label: tag });
+      const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
+      return labelEntry(ops, {
+        label: `${verb} label ${displayLabel(tag)} on ${sample?.name ?? "this sample"}`,
+        sampleId: sid, exposureId: undefined, tag, added, prev,
+      });
+    },
+    [sample?.name, labelList, addLabel, removeLabel, ops],
+  );
+  const labelRecolor = useCallback(
+    (sid: number, tag: string, color: LabelColor | null) => {
+      const prev = (labelColors.data ?? []).find((t) => sameLabel(t.label, tag))?.color ?? null;
+      setLabelColor.mutate({ label: tag, color });
+      return labelColorEntry(ops, {
+        label: `recoloured the label ${displayLabel(tag)}`, sampleId: sid, exposureId: undefined, tag, prev, next: color,
+      });
+    },
+    [labelColors.data, setLabelColor, ops],
+  );
   const editLabel = useCallback(
     (tag: string, added: boolean) => {
-      if (sampleId === undefined) return;
-      const prev = labelList.find((l) => l.sample_id === sampleId && sameLabel(l.label, tag))?.state;
-      (added ? addLabel : removeLabel).mutate({ sampleId, label: tag });
-      const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
-      history.record(labelEntry(ops, {
-        label: `${verb} label ${displayLabel(tag)} on ${sample?.name ?? "this sample"}`,
-        sampleId, exposureId: undefined, tag, added, prev,
-      }));
+      if (sampleId !== undefined) history.record(labelEdit(sampleId, tag, added));
     },
-    [sampleId, sample?.name, labelList, addLabel, removeLabel, history, ops],
+    [sampleId, history, labelEdit],
   );
   const recolorLabel = useCallback(
     (tag: string, color: LabelColor | null) => {
-      if (sampleId === undefined) return;
-      const prev = (labelColors.data ?? []).find((t) => sameLabel(t.label, tag))?.color ?? null;
-      setLabelColor.mutate({ label: tag, color });
-      history.record(labelColorEntry(ops, {
-        label: `recoloured the label ${displayLabel(tag)}`, sampleId, exposureId: undefined, tag, prev, next: color,
-      }));
+      if (sampleId !== undefined) history.record(labelRecolor(sampleId, tag, color));
     },
-    [sampleId, labelColors.data, setLabelColor, history, ops],
+    [sampleId, history, labelRecolor],
+  );
+  const createLabel = useCallback(
+    (name: string, color: LabelColor) => {
+      if (sampleId === undefined) return;
+      const known = labelColors.data ?? [];
+      const recolor = labelColorIsDefault(known, name) || labelColor(known, name) !== color;
+      const parts = [...(recolor ? [labelRecolor(sampleId, name, color)] : []), labelEdit(sampleId, name, true)];
+      history.record(combinedEntry({
+        label: `created the label ${displayLabel(name)} on ${sample?.name ?? "this sample"}`, sampleId, exposureId: undefined,
+      }, parts));
+    },
+    [sampleId, sample?.name, labelColors.data, labelRecolor, labelEdit, history],
   );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
@@ -643,9 +665,7 @@ export function WorkspacePage(): JSX.Element {
       if (saving) showToast(`Saving your last edit first, then ${dir === "undo" ? "undoing" : "redoing"}: ${entry.label}`);
       step.done.then(
         (sent) => showToast(
-          sent === CANNOT_UNDO
-            ? `Can't undo: ${entry.label}. A label can't go back to suggested, so it was left as it is.`
-            : sent > 0 ? `${verb}: ${entry.label}` : `Already that way, nothing to ${dir}: ${entry.label}`,
+          sent > 0 ? `${verb}: ${entry.label}` : `Already that way, nothing to ${dir}: ${entry.label}`,
         ),
         () => showToast(`Couldn't ${dir}: ${entry.label}. The server can't be reached.`, "error"),
       );
@@ -828,11 +848,7 @@ export function WorkspacePage(): JSX.Element {
       known: paletteLabels,
       colorFor: (name) => (labelColorIsDefault(labelColors.data ?? [], name) ? firstUnusedColor(labelColors.data ?? [], vocabulary) : labelColor(labelColors.data ?? [], name)),
       toggle: (l) => editLabel(l.label, l.onSample !== "confirmed"),
-      create: (name, color) => {
-        if (sampleId === undefined) return;
-        if (labelColorIsDefault(labelColors.data ?? [], name) || labelColor(labelColors.data ?? [], name) !== color) recolorLabel(name, color);
-        editLabel(name, true);
-      },
+      create: createLabel,
       recolour: recolorLabel,
     },
     customIndex: openCustom,

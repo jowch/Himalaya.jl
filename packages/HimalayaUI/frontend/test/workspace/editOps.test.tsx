@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { Assignment, IndexEntry, Peak, SampleBridge, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
-import { useUndoHistory } from "../../src/workspace/undo";
-import { bridgeEntry, CANNOT_UNDO, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
+import { useUndoHistory, type UndoEntry } from "../../src/workspace/undo";
+import { bridgeEntry, combinedEntry, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
 const server = {
@@ -40,6 +40,7 @@ vi.mock("../../src/api", async (importOriginal) => {
     deleteIndex: vi.fn(async () => ({ deleted: 1 })),
     addLabel: vi.fn(async () => []),
     removeLabel: vi.fn(async () => []),
+    restoreLabelSuggestion: vi.fn(async () => []),
     setLabelColor: vi.fn(async () => []),
     bridgeSamples: vi.fn(async () => []),
     unbridgeSample: vi.fn(async () => []),
@@ -223,19 +224,54 @@ describe("undo against the server", () => {
     expect(firstArgs(api.removeLabel)).toEqual([[11, "Buffer"]]);
   });
 
-  it("never deletes a label to undo confirming or dismissing a suggestion", async () => {
+  it("puts a confirmed or dismissed suggestion back to suggested instead of deleting it, and redoes the call", async () => {
     const { result } = setup();
-    server.labels = [{ id: 1, sample_id: 11, label: "Buffer", state: "confirmed", source: "suggested" }];
-    for (const added of [true, false]) {
-      act(() => result.current.history.record(labelEntry(result.current.ops, {
-        label: "suggestion", sampleId: 11, exposureId: undefined, tag: "Buffer", added, prev: "suggested",
-      })));
-      let sent = 0;
-      await act(async () => { sent = await result.current.history.undo()!.done; });
-      expect(sent).toBe(CANNOT_UNDO);
-    }
+    server.labels = [{ id: 1, sample_id: 11, label: "Buffer", state: "confirmed", source: "user" }];
+    act(() => result.current.history.record(labelEntry(result.current.ops, {
+      label: "confirmed", sampleId: 11, exposureId: undefined, tag: "Buffer", added: true, prev: "suggested",
+    })));
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.restoreLabelSuggestion)).toEqual([[11, "Buffer"]]);
+    server.labels = [{ id: 1, sample_id: 11, label: "Buffer", state: "suggested", source: "ingest" }];
+    await act(async () => { await result.current.history.redo()!.done; });
+    expect(firstArgs(api.addLabel)).toEqual([[11, "Buffer"]]);
+
+    mocked(api.restoreLabelSuggestion).mockClear();
+    server.labels = [];
+    act(() => result.current.history.record(labelEntry(result.current.ops, {
+      label: "dismissed", sampleId: 12, exposureId: undefined, tag: "Calibrant", added: false, prev: "suggested",
+    })));
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.restoreLabelSuggestion)).toEqual([[12, "Calibrant"]]);
     expect(api.removeLabel).not.toHaveBeenCalled();
-    expect(api.addLabel).not.toHaveBeenCalled();
+  });
+
+  it("says a suggestion is already back when the server shows it suggested", async () => {
+    const { result } = setup();
+    server.labels = [{ id: 1, sample_id: 11, label: "buffer", state: "suggested", source: "ingest" }];
+    act(() => result.current.history.record(labelEntry(result.current.ops, {
+      label: "confirmed", sampleId: 11, exposureId: undefined, tag: "Buffer", added: true, prev: "suggested",
+    })));
+    let sent = -1;
+    await act(async () => { sent = await result.current.history.undo()!.done; });
+    expect(sent).toBe(0);
+    expect(api.restoreLabelSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("undoes the parts of one gesture together, last first, and redoes them in order", async () => {
+    const { result } = setup();
+    const order: string[] = [];
+    const part = (name: string, sent: number): UndoEntry => ({
+      label: name, sampleId: 11, exposureId: undefined,
+      undo: async () => { order.push(`undo ${name}`); return sent; },
+      redo: async () => { order.push(`redo ${name}`); return sent; },
+    });
+    act(() => result.current.history.record(combinedEntry({ label: "created", sampleId: 11, exposureId: undefined }, [part("colour", 1), part("add", 0)])));
+    let sent = -1;
+    await act(async () => { sent = await result.current.history.undo()!.done; });
+    expect(sent).toBe(1);
+    await act(async () => { await result.current.history.redo()!.done; });
+    expect(order).toEqual(["undo add", "undo colour", "redo colour", "redo add"]);
   });
 
   it("splits a bridge back into the two groups it joined", async () => {
