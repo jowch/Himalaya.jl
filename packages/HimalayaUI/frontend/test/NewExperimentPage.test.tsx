@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NewExperimentPage } from "../src/print/pages/NewExperimentPage";
@@ -112,6 +112,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/20261103/setup1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
   });
@@ -177,6 +178,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     resolve({ id: 11 } as api.Experiment);
