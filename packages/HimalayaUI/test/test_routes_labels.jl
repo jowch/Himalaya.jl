@@ -92,6 +92,7 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
             _add_label(call, a, "buffer")
             @test _listed(call, exp_id) == Set([(a, "buffer", "confirmed")])
         end
+        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT source FROM sample_labels WHERE sample_id = ?", [a]))).source == "user"
     end
 
     @testset "removing a label the sample does not carry is a no-op without an event" begin
