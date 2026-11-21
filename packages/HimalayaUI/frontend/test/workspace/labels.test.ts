@@ -7,6 +7,7 @@ import {
   applyRemoveLabel,
   applyLabelColor,
   defaultLabelColor,
+  firstUnusedColor,
   cleanLabel,
   displayLabel,
   labelsFor,
@@ -132,5 +133,17 @@ describe("buffers first", () => {
 
   it("says whether a sample's Buffer tag is confirmed or only suggested", () => {
     expect([1, 2, 4].map((id) => bufferRole(labels, id))).toEqual([undefined, "suggested", "confirmed"]);
+  });
+});
+
+describe("firstUnusedColor", () => {
+  it("picks the first colour no label uses, counting defaults", () => {
+    expect(firstUnusedColor([], ["Buffer", "retake"])).toBe("rose");
+    expect(firstUnusedColor([{ label: "retake", color: "rose" }], ["Buffer", "retake", "37C"])).toBe("plum");
+  });
+
+  it("picks the least used colour once all eight are taken", () => {
+    const colors = (["rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone"] as const).map((color, i) => ({ label: `l${i}`, color }));
+    expect(firstUnusedColor([...colors, { label: "x", color: "rose" }], [...colors.map((c) => c.label), "x"])).toBe("plum");
   });
 });
