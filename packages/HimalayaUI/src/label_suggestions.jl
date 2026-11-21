@@ -11,7 +11,7 @@ const ROLE_WORDS = (
 const SOLVENT_WORDS = Set(["hepes", "pbs", "tris"])
 
 _bare(t) = (b = rstrip(isdigit, t); isempty(b) ? t : String(b))
-_is_code(t) = occursin(r"^([a-z]?[0-9]+)+$", t)
+_is_code(t) = occursin(r"^[a-z]?[0-9]+(?:[a-z][0-9]+)*$", t)
 
 function suggested_role(name::AbstractString)
     tokens = split(lowercase(name), r"[^a-z0-9]+"; keepempty = false)
@@ -66,11 +66,13 @@ end
 
 function migrate_label_suggestions!(db::SQLite.DB)
     _migrated(db, MIGRATION_LABEL_SUGGESTIONS) && return nothing
-    SQLite.transaction(db) do
-        for r in Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))
-            suggest_labels_for_experiment!(db, Int(r.id))
+    for r in Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))
+        try
+            SQLite.transaction(() -> suggest_labels_for_experiment!(db, Int(r.id)), db)
+        catch err
+            @warn "label suggestions failed" experiment_id = Int(r.id) exception = err
         end
-        _record_migration!(db, MIGRATION_LABEL_SUGGESTIONS)
     end
+    _record_migration!(db, MIGRATION_LABEL_SUGGESTIONS)
     nothing
 end
