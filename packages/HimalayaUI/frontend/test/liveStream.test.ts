@@ -66,6 +66,43 @@ describe("openLiveStream", () => {
     expect(reconnects).toBe(1);
   });
 
+  it("caps the wait between attempts at 5 s", () => {
+    last().fire("open");
+    for (const wait of [1000, 2000, 4000, 5000, 5000]) {
+      const before = FakeES.all.length;
+      last().failForGood();
+      vi.advanceTimersByTime(wait - 1);
+      expect(FakeES.all).toHaveLength(before);
+      vi.advanceTimersByTime(1);
+      expect(FakeES.all).toHaveLength(before + 1);
+    }
+  });
+
+  it("starts the wait from 1 s again after a stream opens", () => {
+    last().fire("open");
+    last().failForGood();
+    vi.advanceTimersByTime(1000);
+    last().failForGood();
+    vi.advanceTimersByTime(2000);
+    expect(FakeES.all).toHaveLength(3);
+    last().fire("open");
+    last().failForGood();
+    vi.advanceTimersByTime(999);
+    expect(FakeES.all).toHaveLength(3);
+    vi.advanceTimersByTime(1);
+    expect(FakeES.all).toHaveLength(4);
+  });
+
+  it("counts live updates as signs of life, so a busy stream is never replaced", () => {
+    last().fire("open");
+    for (let i = 0; i < 6; i++) {
+      vi.advanceTimersByTime(30_000);
+      last().fire("curation", `f${i}`);
+    }
+    expect(FakeES.all).toHaveLength(1);
+    expect(frames).toHaveLength(6);
+  });
+
   it("replaces a stream that has gone silent, since a proxy can hold it open after the backend dies", () => {
     last().fire("open");
     vi.advanceTimersByTime(20_000);
