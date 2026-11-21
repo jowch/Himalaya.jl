@@ -32,6 +32,7 @@ import {
 } from "./lib/queue/mutators/grouping";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
+import { setTagColorMutator } from "./lib/queue/mutators/tagColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -49,6 +50,7 @@ export const queryKeys = {
     ["experiment", experimentId ?? "none", "bridges"] as const,
   labels:     (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "labels"] as const,
+  tagColors:  () => ["tag-colors"] as const,
   loads:      (id: number | undefined) =>
     ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -144,6 +146,15 @@ export function useAddLabel(experimentId: number) {
 export function useRemoveLabel(experimentId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useTagColors() {
+  return useQuery({ queryKey: queryKeys.tagColors(), queryFn: () => api.listTagColors() });
+}
+
+export function useSetTagColor() {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(setTagColorMutator, { username, clientId: CLIENT_ID });
 }
 
 export function useLoads(id: number, refetchWhileScanning = false) {

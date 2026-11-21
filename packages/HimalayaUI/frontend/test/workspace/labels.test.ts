@@ -3,10 +3,14 @@ import type { SampleLabel } from "../../src/api";
 import {
   applyAddLabel,
   applyRemoveLabel,
+  applyTagColor,
+  defaultTagColor,
   cleanTag,
   displayTag,
   labelsFor,
   sampleMatchesFilter,
+  tagColor,
+  tagColorIsDefault,
   tagOptions,
   tagVocabulary,
 } from "../../src/lib/labels";
@@ -85,5 +89,27 @@ describe("sample filter", () => {
     expect(sampleMatchesFilter("MO_H2O", tags, "h2o")).toBe(true);
     expect(sampleMatchesFilter("MO_H2O", tags, "buffer")).toBe(false);
     expect(sampleMatchesFilter("MO_H2O", [], "  ")).toBe(true);
+  });
+});
+
+describe("tag colours", () => {
+  it("built-ins default to blue and other tags to violet, and a stored colour wins without case", () => {
+    expect(tagColor([], "BUFFER")).toBe("blue");
+    expect(tagColor([], "37C")).toBe("violet");
+    expect(tagColor([{ label: "buffer", color: "stone" }], "Buffer")).toBe("stone");
+    expect(tagColorIsDefault([{ label: "37c", color: "teal" }], "37C")).toBe(false);
+    expect(tagColorIsDefault([], "37C")).toBe(true);
+  });
+
+  it("matches names ignoring ASCII case only, as the database does", () => {
+    expect(tagColor([{ label: "abc", color: "rose" }], "ABC")).toBe("rose");
+    expect(tagColor([{ label: "über", color: "rose" }], "Über")).toBe("violet");
+    expect(defaultTagColor("Buffer")).toBe("blue");
+  });
+
+  it("setting replaces the entry for that name and null removes it", () => {
+    const list = [{ label: "37C", color: "teal" as const }];
+    expect(applyTagColor(list, " 37c ", "rose")).toEqual([{ label: "37c", color: "rose" }]);
+    expect(applyTagColor(list, "37c", null)).toEqual([]);
   });
 });
