@@ -27,16 +27,16 @@ _setup_infos(dir::AbstractString)::Vector{String} =
         String[]
 
 # Bounded discovery of WHERE integration sidecars live AND which pattern names
-# them. SSRL data nests integration under an analysis subtree, and the canonical
-# integration is the per-base TOTAL: `analysis/automatic_analysis/tot_files/{base}_tot.dat`
+# them. SSRL data nests integration under an analysis subtree, one `_tot.dat` per
+# exposure: `analysis/automatic_analysis/tot_files/{base}_tot.dat`
 # (`{base}` = the sample stem with its `_0_NNN` frame suffix stripped). So the
 # scan's flat `sidecar(analysis_dir, stem, dat_pattern)` only finds them when
 # analysis_dir points at the real `.dat` dir AND the patterns match the convention.
 #
 # Probe one sample data stem against shallow candidate dirs (analysis, its
 # immediate subdirs, and the immediate subdirs of `analysis/automatic_analysis`):
-#   1. TOT (canonical): `{base}_tot.dat` → patterns key off the frame suffix.
-#   2. Per-frame `.dat` (e.g. sastool): `{stem}.dat` → default `{name}` patterns.
+#   1. SSRL: `{base}_tot.dat` → patterns key off the frame suffix.
+#   2. Plain `.dat` (e.g. sastool): `{stem}.dat` → default `{name}` patterns.
 # Returns `(; dir, image_pattern, metadata_pattern, integration_pattern)` or
 # `nothing` (caller falls back to root/analysis with default patterns).
 # SMB-bounded: one `readdir(data_dir)` (as validate/manifest already do) for a
@@ -61,8 +61,6 @@ function _detect_integration_layout(data_dir::AbstractString, analysis_root::Abs
     append!(candidates, subdirs(analysis_root))
     append!(candidates, subdirs(joinpath(analysis_root, "automatic_analysis")))
 
-    # 1. Canonical TOTAL integration: {base}_tot.dat. The image/metadata patterns
-    #    key off the actual frame suffix so the scan's stem resolves to {base}.
     for d in candidates
         if isfile(joinpath(d, base * "_tot.dat"))
             return (; dir = d,
@@ -71,7 +69,6 @@ function _detect_integration_layout(data_dir::AbstractString, analysis_root::Abs
                       integration_pattern = "{name}_tot.dat")
         end
     end
-    # 2. Per-frame integration: {stem}.dat (default {name} patterns).
     for d in candidates
         if isfile(joinpath(d, stem * ".dat"))
             return (; dir = d,

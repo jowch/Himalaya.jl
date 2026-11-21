@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
+import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
@@ -15,6 +16,8 @@ const state = {
   exposures: [] as Exposure[],
   indices: [] as IndexEntry[],
   assignment: undefined as Assignment | undefined,
+  sampleCall: undefined as SampleCall | undefined,
+  frameAssignments: new Map<number, Assignment>(),
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
   traceError: false,
@@ -42,17 +45,24 @@ vi.mock("../../src/queries", () => ({
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
-  usePeaks: () => ({ data: state.peaks }),
-  useIndices: () => ({ data: state.indices }),
-  useAssignment: () => ({ data: state.assignment }),
+  useTrace: () => ({
+    data: state.trace, isError: state.traceError, isFetching: state.traceFetching,
+    fetchStatus: state.traceFetching ? "fetching" : "idle", refetch: traceRefetch,
+  }),
+  usePeaks: () => ({ data: state.peaks, fetchStatus: "idle" }),
+  useIndices: () => ({ data: state.indices, fetchStatus: "idle" }),
+  useAssignment: () => ({ data: state.assignment, fetchStatus: "idle" }),
+  useSampleCall: () => ({ data: state.sampleCall }),
+  useFrameAssignments: (ids: number[]) => ids.map((id) => ({ data: state.frameAssignments.get(id) })),
+  useRemoveFramePhase: () => ({
+    mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
+  }),
   useBridges: () => ({ data: state.bridges }),
   useBridgeSamples: recorder("bridge"),
   useUnbridgeSample: recorder("unbridge"),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
-  useSetAssignmentState: recorder("state"),
-  useSelectExposure: recorder("select"),
+  useSetSampleCallState: recorder("state"),
   useSetExposureStatus: recorder("status"),
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
@@ -60,6 +70,13 @@ vi.mock("../../src/queries", () => ({
   useCommitCustomIndex: (boundTo: number) => ({
     mutate: (phase: string, basis: number, ratios: number[]) => calls.push({ hook: "custom", boundTo, arg: { phase, basis, ratios } }),
   }),
+}));
+
+const prefetchTargets: PrefetchTarget[] = [];
+vi.mock("../../src/workspace/prefetch", () => ({
+  usePrefetchNeighbours: (target: PrefetchTarget) => {
+    prefetchTargets.push(target);
+  },
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
@@ -155,6 +172,7 @@ afterEach(() => {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
+  prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
@@ -166,6 +184,8 @@ beforeEach(() => {
   state.exposures = [exposure(100), exposure(101, { selected: true })];
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+  state.sampleCall = undefined;
+  state.frameAssignments = new Map();
   state.trace = undefined;
   state.traceError = false;
   state.traceFetching = false;
@@ -179,6 +199,21 @@ beforeEach(() => {
 });
 
 describe("WorkspacePage", () => {
+  it("prefetches around the open sample in the listed order, once its own data has settled", () => {
+    state.traceFetching = true;
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    const loading = prefetchTargets.at(-1)!;
+    expect(loading.samples.map((s) => s.id)).toEqual([10, 11, 12, 13]);
+    expect(loading.currentId).toBe(11);
+    expect(loading.exposures.map((e) => e.id)).toEqual([100, 101]);
+    expect(loading.shownId).toBe(101);
+    expect(loading.settled).toBe(false);
+
+    state.traceFetching = false;
+    rerender(page("/experiments/1/workspace/11"));
+    expect(prefetchTargets.at(-1)!.settled).toBe(true);
+  });
+
   it("lists only this experiment's samples and marks unreviewed ones", () => {
     renderAt("/experiments/1/workspace/10");
     const list = screen.getByTestId("workspace-samples");
@@ -401,14 +436,11 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("on an unselected frame, adds the phase only after the select succeeds", () => {
+  it("on an unselected frame, adds the phase to that frame without selecting it", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "2" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
-    calls[0]!.callbacks!.onSuccess!();
-    expect(calls[1]).toEqual({ hook: "add", boundTo: 100, arg: 1 });
+    expect(calls).toEqual([{ hook: "add", boundTo: 100, arg: 1 }]);
   });
 
   it("X drops the shown frame and keeps it in view, so a second X restores it", () => {
@@ -446,6 +478,35 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "2" });
     expect(calls).toEqual([]);
     expect(screen.getByText("This frame is dropped. Restore it to call a phase.")).toBeInTheDocument();
+  });
+
+  it("ticks a phase called on another frame and unticks it there, even when that frame is dropped", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.assignment = { exposure_id: 100, state: "indexed", members: [] };
+    state.sampleCall = {
+      sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
+      members: [{ index_id: 7, exposure_id: 101, phase: "Pn3m" }],
+    };
+    renderAt("/experiments/1/workspace/10");
+    expect(currentFrame()).toBe("Frame 1");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[0]).toHaveTextContent("Pn3m");
+    expect(rows[0]).toHaveAttribute("aria-pressed", "true");
+    expect(rows[1]).toHaveAttribute("aria-pressed", "false");
+    fireEvent.keyDown(window, { key: "1" });
+    expect(calls).toEqual([{ hook: "removeFrame", boundTo: 101, arg: 7 }]);
+  });
+
+  it("stops ticking a phase once its member on the other frame is gone from that frame's cache", () => {
+    state.assignment = { exposure_id: 101, state: "indexed", members: [] };
+    state.sampleCall = {
+      sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
+      members: [{ index_id: 7, exposure_id: 100, phase: "Pn3m" }],
+    };
+    state.frameAssignments = new Map([[100, { exposure_id: 100, state: "indexed", members: [] }]]);
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[0]).toHaveAttribute("aria-pressed", "false");
   });
 
   it("ignores shortcuts while typing in the filter", () => {
@@ -637,9 +698,9 @@ describe("WorkspacePage", () => {
   });
 
   it("scales by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
-    const frame = (exposure_id: number, transmitted_counts: number) => ({ exposure_id, transmitted_counts, exposure_time: 15, counting_time: 15.8 });
-    state.trace = { ...makeTrace(1), frames: [frame(101, 6000)] };
-    state.compareTraces = new Map([[11, { ...makeTrace(2), frames: [frame(111, 8000)] }]]);
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
@@ -867,14 +928,13 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("a custom index on an unselected frame selects it first", () => {
+  it("a custom index on an unselected frame lands on that frame without selecting it", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "i" });
     fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
-    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
-    calls[0]!.callbacks!.onSuccess!();
-    expect(calls[1]).toMatchObject({ hook: "custom", boundTo: 100 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ hook: "custom", boundTo: 100 });
   });
 
   it("does not open a custom index on a dropped frame or before a user is set", () => {
@@ -1059,16 +1119,6 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
   });
 
-  it("says so and keeps the custom index open when the frame cannot be selected", () => {
-    renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "ArrowLeft" });
-    fireEvent.keyDown(window, { key: "i" });
-    fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
-    act(() => calls[0]!.callbacks!.onError!());
-    expect(screen.getByRole("alert")).toHaveTextContent("could not be selected");
-    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-    expect(calls.filter((c) => c.hook === "custom")).toEqual([]);
-  });
 
   it("hovering a candidate shows its fit in place of the ticked ones", () => {
     state.trace = makeTrace(1);
@@ -1136,24 +1186,21 @@ describe("WorkspacePage", () => {
     const row = screen.getByTestId("workspace-form-factor");
     expect(row).toHaveAttribute("aria-pressed", "false");
     fireEvent.keyDown(window, { key: "0" });
-    expect(calls).toEqual([{ hook: "state", boundTo: 101, arg: "form_factor" }]);
+    expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "form_factor" }]);
     calls.length = 0;
     state.assignment = { exposure_id: 101, state: "form_factor", members: [] };
     fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Frame 2" }));
     expect(screen.getByTestId("workspace-form-factor")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("workspace-form-factor"));
-    expect(calls).toEqual([{ hook: "state", boundTo: 101, arg: "null" }]);
+    expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "null" }]);
   });
 
-  it("on an unselected frame, marks form factor only after the select succeeds", () => {
+  it("form factor is the sample's call, set the same from any frame", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "0" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
-    calls[0]!.callbacks!.onSuccess!();
-    expect(calls[1]).toEqual({ hook: "state", boundTo: 100, arg: "form_factor" });
+    expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "form_factor" }]);
   });
 
   it("form factor is not offered on a dropped frame or before a user is set", () => {

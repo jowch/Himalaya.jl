@@ -15,6 +15,8 @@ const MIGRATION_RATIO_POSITION_INT = "index_peaks_ratio_position_int_v1"
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
+const MIGRATION_SAMPLE_CALLS = "sample_calls_v1"
+
 # Sentinel marker names for the ingestion-redesign Phase A schema migrations.
 const MIGRATION_LOADS_TABLE             = "loads_table_v1"
 const MIGRATION_EXPOSURES_EXPERIMENT_ID = "exposures_experiment_id_v1"
@@ -241,6 +243,12 @@ CREATE TABLE IF NOT EXISTS assignment_members (
     exposure_id INTEGER NOT NULL REFERENCES exposures(id),
     index_id    INTEGER NOT NULL REFERENCES indices(id) ON DELETE CASCADE,
     PRIMARY KEY (exposure_id, index_id)
+);
+
+CREATE TABLE IF NOT EXISTS sample_calls (
+    sample_id INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+    state     TEXT NOT NULL DEFAULT 'indexed'
+              CHECK (state IN ('indexed', 'form_factor', 'null'))
 );
 
 CREATE TABLE IF NOT EXISTS sample_messages (
@@ -543,6 +551,7 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
+    migrate_sample_calls!(db)
 end
 
 function migrate_sample_bridges!(db::SQLite.DB)
@@ -1663,6 +1672,68 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_HEX_SQRT11, comparison_now_iso()])
     end
+    nothing
+end
+
+function migrate_sample_calls!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLE_CALLS) && return nothing
+    SQLite.transaction(db) do
+        last_event = Dict{Int, Int}()
+        for r in Tables.rowtable(DBInterface.execute(db, """
+                SELECT entity_id AS eid, MAX(id) AS last FROM user_actions
+                 WHERE entity_type = 'exposure'
+                   AND action IN ('assignment_add', 'assignment_remove', 'assignment_set_state')
+                 GROUP BY entity_id"""))
+            last_event[Int(r.eid)] = Int(r.last)
+        end
+        members = Dict{Int, Vector{Int}}()
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id AS eid, index_id AS iid FROM assignment_members ORDER BY index_id"))
+            push!(get!(members, Int(r.eid), Int[]), Int(r.iid))
+        end
+        states = Dict{Int, String}()
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id AS eid, state FROM assignments"))
+            states[Int(r.eid)] = String(r.state)
+        end
+        carries(i) = haskey(members, i) || get(states, i, "indexed") != "indexed"
+        by_sample = Dict{Int, Vector{NamedTuple}}()
+        for e in Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, selected, status FROM exposures
+                  WHERE sample_id IS NOT NULL ORDER BY id"))
+            push!(get!(by_sample, Int(e.sample_id), NamedTuple[]), e)
+        end
+        for sid in sort!(collect(keys(by_sample)))
+            exps = by_sample[sid]
+            candidates = [Int(e.id) for e in exps if carries(Int(e.id))]
+            isempty(candidates) && continue
+            edited = [i for i in candidates if haskey(last_event, i)]
+            rep = representative_exposure_id(exps)
+            keep = !isempty(edited) ? argmax(i -> last_event[i], edited) :
+                   (rep !== nothing && rep in candidates) ? rep : minimum(candidates)
+            for i in candidates, ix in get(members, i, Int[])
+                i == keep && get(states, i, "indexed") == "indexed" && continue
+                _log_migration_event!(db, "assignment_remove", "exposure", i, Dict(:index_id => ix))
+            end
+            _log_migration_event!(db, "sample_call_set_state", "sample", sid,
+                                  Dict(:state => get(states, keep, "indexed")))
+        end
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_SAMPLE_CALLS, comparison_now_iso()])
+    end
+    nothing
+end
+
+function _log_migration_event!(db::SQLite.DB, kind::String, entity_type::String,
+                               entity_id::Int, payload::Dict)
+    payload_json = JSON3.write(payload)
+    res = DBInterface.execute(db,
+        """INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload)
+           VALUES (NULL, ?, ?, ?, ?)""",
+        [kind, entity_type, entity_id, payload_json])
+    update_view_for_event!(db, kind, entity_id, JSON3.read(payload_json),
+                           Int(DBInterface.lastrowid(res)))
     nothing
 end
 
