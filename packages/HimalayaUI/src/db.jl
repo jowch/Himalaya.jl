@@ -10,8 +10,12 @@ const MIGRATION_SPECULATIVE_PEAK_DURABILITY = "speculative_peak_durability"
 # Sentinel marker name for the Hexagonal √11 removal (#304).
 const MIGRATION_HEX_SQRT11 = "hex_sqrt11_removal_v1"
 
+const MIGRATION_RATIO_POSITION_INT = "index_peaks_ratio_position_int_v1"
+
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
+
+const MIGRATION_SAMPLE_CALLS = "sample_calls_v1"
 
 # Sentinel marker names for the ingestion-redesign Phase A schema migrations.
 const MIGRATION_LOADS_TABLE             = "loads_table_v1"
@@ -239,6 +243,12 @@ CREATE TABLE IF NOT EXISTS assignment_members (
     exposure_id INTEGER NOT NULL REFERENCES exposures(id),
     index_id    INTEGER NOT NULL REFERENCES indices(id) ON DELETE CASCADE,
     PRIMARY KEY (exposure_id, index_id)
+);
+
+CREATE TABLE IF NOT EXISTS sample_calls (
+    sample_id INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+    state     TEXT NOT NULL DEFAULT 'indexed'
+              CHECK (state IN ('indexed', 'form_factor', 'null'))
 );
 
 CREATE TABLE IF NOT EXISTS sample_messages (
@@ -539,7 +549,9 @@ function migrate_schema!(db::SQLite.DB)
     # after migrate_speculative_peak_durability! (needs speculative_peak_intents).
     migrate_hex_sqrt11!(db)
 
+    migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
+    migrate_sample_calls!(db)
 end
 
 function migrate_sample_bridges!(db::SQLite.DB)
@@ -1546,10 +1558,10 @@ Three steps, sentinel-gated, in one transaction:
 1. DELETE Hexagonal `index_peaks`. That table is DERIVED — `persist_analysis!`
    wipes it for every kind and rebuilds (auto from `indexpeaks`, speculative from
    `speculative_peak_intents`), so renumbering it would be pointless work. It is
-   also not safely renumberable in SQL: auto rows store `ratio_position` as a
-   serialized `UInt8` BLOB (`findnz` on the `SparseVector{_,UInt8}` in
-   `src/index.jl`), so `ratio_position > 6` is a BLOB-vs-INTEGER affinity
-   comparison that matches every blob row. Until the next analyze the index reads
+   also not safely renumberable in SQL: auto rows written before #308 store
+   `ratio_position` as a serialized `UInt8` BLOB (healed later by
+   `migrate_index_peaks_ratio_int!`), so `ratio_position > 6` is a BLOB-vs-INTEGER
+   affinity comparison that matches every blob row. Until the next analyze the index reads
    as claiming nothing — an already-supported state, and honest.
 2. Renumber `speculative_peak_intents`, the only DURABLE `ratio_position` store
    (analyze reads it and never rewrites it). `p == 6` claimed the √11 that never
@@ -1660,6 +1672,98 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_HEX_SQRT11, comparison_now_iso()])
     end
+    nothing
+end
+
+function migrate_sample_calls!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLE_CALLS) && return nothing
+    SQLite.transaction(db) do
+        last_event = Dict{Int, Int}()
+        for r in Tables.rowtable(DBInterface.execute(db, """
+                SELECT entity_id AS eid, MAX(id) AS last FROM user_actions
+                 WHERE entity_type = 'exposure'
+                   AND action IN ('assignment_add', 'assignment_remove', 'assignment_set_state')
+                 GROUP BY entity_id"""))
+            last_event[Int(r.eid)] = Int(r.last)
+        end
+        members = Dict{Int, Vector{Int}}()
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id AS eid, index_id AS iid FROM assignment_members ORDER BY index_id"))
+            push!(get!(members, Int(r.eid), Int[]), Int(r.iid))
+        end
+        states = Dict{Int, String}()
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id AS eid, state FROM assignments"))
+            states[Int(r.eid)] = String(r.state)
+        end
+        carries(i) = haskey(members, i) || get(states, i, "indexed") != "indexed"
+        by_sample = Dict{Int, Vector{NamedTuple}}()
+        for e in Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, selected, status FROM exposures
+                  WHERE sample_id IS NOT NULL ORDER BY id"))
+            push!(get!(by_sample, Int(e.sample_id), NamedTuple[]), e)
+        end
+        for sid in sort!(collect(keys(by_sample)))
+            exps = by_sample[sid]
+            candidates = [Int(e.id) for e in exps if carries(Int(e.id))]
+            isempty(candidates) && continue
+            edited = [i for i in candidates if haskey(last_event, i)]
+            rep = representative_exposure_id(exps)
+            keep = !isempty(edited) ? argmax(i -> last_event[i], edited) :
+                   (rep !== nothing && rep in candidates) ? rep : minimum(candidates)
+            for i in candidates, ix in get(members, i, Int[])
+                i == keep && get(states, i, "indexed") == "indexed" && continue
+                _log_migration_event!(db, "assignment_remove", "exposure", i, Dict(:index_id => ix))
+            end
+            _log_migration_event!(db, "sample_call_set_state", "sample", sid,
+                                  Dict(:state => get(states, keep, "indexed")))
+        end
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_SAMPLE_CALLS, comparison_now_iso()])
+    end
+    nothing
+end
+
+function _log_migration_event!(db::SQLite.DB, kind::String, entity_type::String,
+                               entity_id::Int, payload::Dict)
+    payload_json = JSON3.write(payload)
+    res = DBInterface.execute(db,
+        """INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload)
+           VALUES (NULL, ?, ?, ?, ?)""",
+        [kind, entity_type, entity_id, payload_json])
+    update_view_for_event!(db, kind, entity_id, JSON3.read(payload_json),
+                           Int(DBInterface.lastrowid(res)))
+    nothing
+end
+
+function migrate_index_peaks_ratio_int!(db::SQLite.DB)
+    _migrated(db, MIGRATION_RATIO_POSITION_INT) && return nothing
+    unknown = SQLite.transaction(db) do
+        rows = Tables.rowtable(DBInterface.execute(db, """
+            SELECT rowid AS rid,
+                   hex(substr(ratio_position, 1, 3)) AS magic,
+                   hex(substr(ratio_position, -1)) AS last
+              FROM index_peaks
+             WHERE typeof(ratio_position) = 'blob'"""))
+        unknown = 0
+        for r in rows
+            if r.magic == "374A4C"
+                DBInterface.execute(db,
+                    "UPDATE index_peaks SET ratio_position = ? WHERE rowid = ?",
+                    [parse(Int, r.last; base = 16), r.rid])
+            else
+                unknown += 1
+            end
+        end
+        if unknown == 0
+            DBInterface.execute(db,
+                "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                [MIGRATION_RATIO_POSITION_INT, comparison_now_iso()])
+        end
+        unknown
+    end
+    unknown > 0 && @warn "migrate_index_peaks_ratio_int!: left index_peaks.ratio_position blobs it could not decode" count = unknown
     nothing
 end
 
@@ -2670,6 +2774,7 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # from inside the migration transaction references a dropped table.
     SQLite.finalize_statements!(db)
     DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+    DBInterface.execute(db, "PRAGMA busy_timeout = 5000")
 
     # WAL lets concurrent readers proceed alongside one writer — load-bearing
     # for parallel request handling (#115). The default rollback journal

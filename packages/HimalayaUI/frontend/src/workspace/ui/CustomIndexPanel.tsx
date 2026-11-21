@@ -9,7 +9,6 @@ interface Props {
   landed: number;
   total: number;
   disabled: boolean;
-  error: string | null;
   onChange: (d: CustomDraft) => void;
   onAdd: () => void;
   onCancel: () => void;
@@ -24,7 +23,7 @@ function parseLattice(text: string, min: number, max: number): number | null {
   return Number.isFinite(v) && v >= min && v <= max ? v : null;
 }
 
-export function CustomIndexPanel({ draft, min, max, landed, total, disabled, error, onChange, onAdd, onCancel }: Props): JSX.Element {
+export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onChange, onAdd, onCancel }: Props): JSX.Element {
   const param = draft.phase === "Lamellar" ? "d" : "a";
   const [text, setText] = useState(draft.lattice.toFixed(1));
   const editing = useRef(false);
@@ -129,11 +128,6 @@ export function CustomIndexPanel({ draft, min, max, landed, total, disabled, err
             {landed} of {total}
           </span>{" "}
           reflections land on a peak
-        </p>
-      )}
-      {error && (
-        <p className="text-caption text-error" role="alert">
-          {error}
         </p>
       )}
       <div className="flex gap-2">
