@@ -75,13 +75,13 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     expect(screen.getByText("13")).toBeInTheDocument();
   });
 
-  it("shows 'up to date' chip when complete", async () => {
+  it("shows the Up to date chip when complete", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([
       EXP({ ingest_status: "complete" }),
     ]);
     renderPage();
     await screen.findByTestId("experiment-card-7");
-    expect(screen.getByText("up to date")).toBeInTheDocument();
+    expect(screen.getByText("Up to date")).toBeInTheDocument();
   });
 
   it("shows a warning chip when the last ingest failed", async () => {
@@ -90,16 +90,16 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     ]);
     renderPage();
     await screen.findByTestId("experiment-card-7");
-    expect(screen.getByText("last ingest failed")).toBeInTheDocument();
+    expect(screen.getByText("Last ingest failed")).toBeInTheDocument();
   });
 
-  it("shows 'scanning…' chip when ingest_status is scanning", async () => {
+  it("shows the Scanning… chip when ingest_status is scanning", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([
       EXP({ ingest_status: "scanning" }),
     ]);
     renderPage();
     await screen.findByTestId("experiment-card-7");
-    expect(screen.getByText("scanning…")).toBeInTheDocument();
+    expect(screen.getByText("Scanning…")).toBeInTheDocument();
   });
 
   it("groups experiments under year headings", async () => {

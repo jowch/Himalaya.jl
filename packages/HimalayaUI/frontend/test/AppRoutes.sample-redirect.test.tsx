@@ -19,7 +19,7 @@ function stubApi(resolveBody?: unknown): void {
     const body = url.includes("/api/resolve")
       ? resolveBody
       : url.endsWith("/api/samples")
-        ? [{ id: 42, experiment_id: 7, name: "A1", notes: null, tags: [], q_units: "A-1" }]
+        ? [{ id: 42, experiment_id: 7, name: "A1", notes: null, q_units: "A-1" }]
         : [];
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body), text: () => Promise.resolve(JSON.stringify(body ?? null)) } as Response);
   });

@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Popover } from "./Popover";
-import { TagPill } from "./TagPill";
 
 const meta = {
   title: "ui/Popover",
@@ -42,26 +41,6 @@ export const Default: Story = {
         <button className="text-ink-soft hover:text-ink text-sm text-left">
           Action two
         </button>
-      </div>
-    ),
-  },
-};
-
-/** The popover can hold real chips (this is what TagList's overflow uses). */
-export const WithTagPills: Story = {
-  args: {
-    label: "More tags",
-    side: "bottom",
-    trigger: (
-      <button className="text-ink-faint text-xs hover:text-ink cursor-pointer">
-        +3 more
-      </button>
-    ),
-    children: (
-      <div className="flex flex-wrap gap-1.5">
-        <TagPill tag={{ key: "buffer", value: "PBS" }} />
-        <TagPill tag={{ key: "lipid", value: "DOPC" }} />
-        <TagPill tag={{ key: "pH", value: "7.4" }} />
       </div>
     ),
   },

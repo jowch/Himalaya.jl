@@ -49,7 +49,7 @@ Add the kind to the `OpKind` union in `lib/queue/types.ts`. TypeScript will tell
 
 **Scope** = closure-injected fields the hook captures from `useAppState`. Typical: `{exposureId, sampleId, username, clientId}`.
 
-**Input** = per-`mutate()` arguments. E.g., `{q: number}` for peak_added, `{key, value}` for add_tag.
+**Input** = per-`mutate()` arguments. E.g., `{q: number}` for peak_added, `{label}` for add_label.
 
 **Payload sent to server** = `{kind, clientOpId, ...scope, ...input}`. The backend route deconstructs whatever it needs.
 
@@ -90,7 +90,7 @@ In `lib/queue/applyRemoteToCache.ts`, add a `case "<kind>":` branch. The branch 
 
 ### 7. Update `mutatorRegistry.ts`
 
-Add the kind → mutator mapping. For dual-scope kinds (sample-vs-exposure-scoped variants of the same kind, like `add_tag`), discriminate via `payload.experimentId !== undefined`.
+Add the kind → mutator mapping in both `resolveMutator` and `resolveMutatorForEvent`, and a row in `mutatorRegistry.test.ts`. Give each kind exactly one mutator; a sample-scoped and an exposure-scoped variant get separate kinds.
 
 ### 8. (Backend) Wrap the route in `with_idempotency` (unless `--readonly-route`)
 

@@ -30,14 +30,10 @@ function register_exposures_routes!()
         sql = "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id"
         exs = Tables.rowtable(DBInterface.execute(db, sql, [id]))
         out = map(exs) do e
-            tags = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, key, value, source FROM exposure_tags
-                 WHERE exposure_id = ? ORDER BY id", [Int(e.id)]))
             srcs = Tables.rowtable(DBInterface.execute(db,
                 "SELECT source_exposure_id, role FROM exposure_sources
                  WHERE averaged_exposure_id = ?", [Int(e.id)]))
             d = row_to_json(e; bool_keys = (:selected,))
-            d[:tags]          = rows_to_json(tags)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
             merge!(d, prp_details(e.prp_path))
@@ -183,62 +179,6 @@ function register_exposures_routes!()
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => id, :selected => true)))
-        end
-    end
-
-    @post "/api/exposures/{id}/tags" function(req::HTTP.Request, id::Int)
-        db    = current_db()
-        body  = json(req)
-        if !haskey(body, :key) || !haskey(body, :value)
-            return HTTP.Response(400,
-                ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing required fields: key, value")))
-        end
-        key   = String(body.key)
-        value = String(body.value)
-        return with_idempotency(db, req) do
-            res   = DBInterface.execute(db,
-                "INSERT INTO exposure_tags (exposure_id, key, value, source)
-                 VALUES (?, ?, ?, 'manual')", [id, key, value])
-            tag_id = Int(DBInterface.lastrowid(res))
-
-            # Look up parent sample_id so frontend can invalidate the right cache key.
-            erows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT sample_id FROM exposures WHERE id = ?", [id]))
-            sample_id = isempty(erows) ? nothing : Int(erows[1].sample_id)
-
-            result = apply_event!(InTransaction(), db, req;
-                kind = "add_tag",
-                entity_type = "exposure", entity_id = id,
-                payload = Dict(:key => key, :value => value,
-                               :tag_id => tag_id, :sample_id => sample_id))
-            _enqueue_broadcast_from_result!(result, "add_tag", "exposure", id)
-
-            # Response shape is `ExposureTag` exactly (id, key, value, source);
-            # parent FK is implicit from the URL.
-            HTTP.Response(201, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:id=>tag_id,
-                                 :key=>key, :value=>value, :source=>"manual")))
-        end
-    end
-
-    @delete "/api/exposures/{id}/tags/{tag_id}" function(req::HTTP.Request, id::Int, tag_id::Int)
-        db = current_db()
-        return with_idempotency(db, req) do
-            # Query parent BEFORE deletion so the event payload carries sample_id.
-            erows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT sample_id FROM exposures WHERE id = ?", [id]))
-            sample_id = isempty(erows) ? nothing : Int(erows[1].sample_id)
-
-            DBInterface.execute(db,
-                "DELETE FROM exposure_tags WHERE id = ? AND exposure_id = ?",
-                [tag_id, id])
-            result = apply_event!(InTransaction(), db, req;
-                kind = "remove_tag",
-                entity_type = "exposure", entity_id = id,
-                payload = Dict(:tag_id => tag_id, :sample_id => sample_id))
-            _enqueue_broadcast_from_result!(result, "remove_tag", "exposure", id)
-            HTTP.Response(204)
         end
     end
 
