@@ -6,10 +6,13 @@ import {
   useAddPeak,
   useCommitCustomIndex,
   useAssignment,
+  useBridgeSamples,
+  useBridges,
   useCorpusSamples,
   useExperiment,
   useExposures,
   useIndices,
+  useLoads,
   usePeaks,
   useRemoveAssignmentPhase,
   useSetAssignmentState,
@@ -18,11 +21,17 @@ import {
   useSetExposureStatus,
   useSetPeakExcluded,
   useTrace,
+  useUnbridgeSample,
+  useTriggerScan,
 } from "../queries";
+import { useScanState } from "../hooks/useScanState";
+import { isIngestStage, stageLabel } from "../lib/ingestStages";
+import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { firstUnreviewed, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
@@ -31,9 +40,10 @@ import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
+import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
-import { PLOT_VIEWS, nextView, usePlotView } from "./plotView";
+import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
@@ -44,11 +54,13 @@ import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
+import { ExperimentNotice } from "./ui/ExperimentNotice";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
-import { Section } from "./ui/Section";
+import { MainSection, SampleHeading, Section } from "./ui/Section";
+import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -56,7 +68,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Move",
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
-        { keys: ["J", "Shift J"], what: "Next or previous unreviewed sample" },
+        { keys: ["Z"], what: "Next unreviewed sample" },
         { keys: ["/"], what: "Filter samples by name" },
       ],
     },
@@ -65,6 +77,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
         { keys: ["X"], what: "Drop or restore the exposure" },
+        { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
     {
@@ -80,10 +93,8 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
-        { keys: ["Z"], what: "Reset the zoom" },
-        { keys: ["L", "Shift L"], what: "Next or previous view: log, linear, log-log, q²I" },
+        { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["C"], what: "Compare with another sample" },
-        { keys: ["R"], what: "Hide or show comparisons" },
       ],
     },
     {
@@ -98,6 +109,21 @@ function helpSections(mod: string): HelpSection[] {
 
 const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 const HELP = helpSections(MOD_KEY);
+
+function latticeParam(phase: string): string {
+  return SYMS[phase]?.param ?? "a";
+}
+
+function exposureRows(e: Exposure): [string, string][] {
+  const rows: [string, string][] = [["File", e.filename ?? "—"]];
+  if (e.kind !== "file") rows.push(["Kind", e.kind === "averaged" ? "Averaged" : "Subtracted"]);
+  if (e.exposure_time != null) rows.push(["Exposure", `${e.exposure_time.toFixed(1)} s`]);
+  const i0 = e.incident_monitor;
+  const i2 = e.transmitted_counts;
+  if (i0 != null) rows.push(["I₀", i0.toLocaleString("en-US", { maximumSignificantDigits: 4 })]);
+  if (i2 != null) rows.push(["I signal", Math.round(i2).toLocaleString("en-US")]);
+  return rows;
+}
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -115,7 +141,26 @@ export function WorkspacePage(): JSX.Element {
   const linkedParam = Number(search.get("exposure"));
   const linkedExposure = Number.isInteger(linkedParam) && linkedParam > 0 ? linkedParam : undefined;
   const username = useAppState((s) => s.username);
+  const clearUsername = useAppState((s) => s.clearUsername);
   const experiment = useExperiment(experimentId);
+  const scan = useScanState(experimentId);
+  const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
+  const triggerScan = useTriggerScan(experimentId);
+  const loads = useLoads(experimentId);
+  const flagged = useMemo(
+    () => (loads.data ?? []).flatMap((l) => l.samples).filter((s) => s.flag !== null).length,
+    [loads.data],
+  );
+  const rescanText = !scan.rescanning
+    ? undefined
+    : isIngestStage(inFlight?.stage)
+      ? `Rescanning: ${stageLabel(inFlight.stage)} ${inFlight.processed} / ${inFlight.total}`
+      : inFlight && inFlight.total > 0
+        ? `Rescanning: ${inFlight.processed} / ${inFlight.total}`
+        : "Rescanning…";
+  const rescanFailed = scan.failed || triggerScan.isError;
+  const showFailure = useCallback(() => navigate(`/experiments/${experimentId}`), [navigate, experimentId]);
+  const reviewGrouping = useCallback(() => navigate(`/experiments/${experimentId}/grouping`), [navigate, experimentId]);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
 
@@ -129,12 +174,17 @@ export function WorkspacePage(): JSX.Element {
   }, [samples, filter]);
 
   const requested = sampleParam === undefined ? undefined : Number(sampleParam);
-  const sample = requested === undefined ? samples[0] : samples.find((s) => s.id === requested);
+  const sample = requested === undefined ? firstUnreviewed(samples) : samples.find((s) => s.id === requested);
   const sampleId = sample?.id;
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
   );
+  useEffect(() => {
+    if (requested !== undefined || sampleId === undefined) return;
+    const qs = search.toString();
+    navigate(`/experiments/${experimentId}/workspace/${sampleId}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [requested, sampleId, search, navigate, experimentId]);
 
   const exposures = useExposures(sampleId);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
@@ -167,10 +217,10 @@ export function WorkspacePage(): JSX.Element {
   const [view, setView] = usePlotView();
   const [refs, setRefs] = useState<number[]>([]);
   const [subChoice, setSubRef] = useState<number | undefined>(undefined);
-  const subRef = subChoice !== undefined && refs.includes(subChoice) ? subChoice : undefined;
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
@@ -179,14 +229,23 @@ export function WorkspacePage(): JSX.Element {
   const draftOpen = draft !== null;
   useEffect(() => setCustomError(null), [draftOpen]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
-  const compareTraces = useCompareTraces(refs);
+  const bridges = useBridges(experimentId);
+  const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
+  const bridgeSamples = useBridgeSamples(experimentId);
+  const unbridgeSample = useUnbridgeSample(experimentId);
+  const [bridging, setBridging] = useState(false);
+  const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
+  const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
+  const compareTraces = useCompareTraces(shownRefs);
 
   const onClickPeak = useCallback(
-    (peakId: number) => {
-      const action = peakClick(peaks.data ?? [], peakId);
+    (ref: PeakRef) => {
+      const action = peakClick(peaks.data ?? [], ref);
       if (!action) return;
-      if (action.kind === "remove") removePeak.mutate(peakId);
-      else setExcluded.mutate({ peakId, excluded: action.excluded });
+      if (action.kind === "remove") removePeak.mutate(ref.id);
+      else setExcluded.mutate({ peakId: ref.id, excluded: action.excluded });
     },
     [peaks.data, removePeak, setExcluded],
   );
@@ -237,7 +296,7 @@ export function WorkspacePage(): JSX.Element {
   }, [candidates, hoverId, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
-  const activeRefs = refs.filter((r) => r !== sampleId);
+  const activeRefs = shownRefs.filter((r) => r !== sampleId);
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
   const scales = useMemo(() => {
@@ -248,14 +307,14 @@ export function WorkspacePage(): JSX.Element {
   }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
-    return refs.flatMap((rid, i) => {
+    return shownRefs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
       if (rid === sampleId || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, refs, compareTraces, scales, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, shownRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
@@ -267,7 +326,24 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
-  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !refs.includes(s.id)), [samples, sampleId, refs]);
+  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
+  const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
+  const openBridge = useCallback(() => {
+    if (username && sampleId !== undefined) setBridging(true);
+  }, [username, sampleId]);
+  const leaveBridges = useCallback(() => {
+    if (username && sampleId !== undefined && bridged.length > 0) unbridgeSample.mutate({ sampleId });
+  }, [username, sampleId, bridged, unbridgeSample]);
+  const onRemoveChip = useCallback(
+    (rid: number) => {
+      if (!bridged.includes(rid)) {
+        removeCompare(rid);
+        return;
+      }
+      if (username) unbridgeSample.mutate({ sampleId: rid });
+    },
+    [bridged, removeCompare, username, unbridgeSample],
+  );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
   const canCall = Boolean(username && exposure && !exposureDropped);
@@ -315,8 +391,8 @@ export function WorkspacePage(): JSX.Element {
     [draft, activePeakQs, setDraftClamped],
   );
   const snapDraftToPeak = useCallback(
-    (peakId: number) => {
-      const p = (peaks.data ?? []).find((pk) => pk.id === peakId);
+    (ref: PeakRef) => {
+      const p = (peaks.data ?? []).find((pk) => samePeak(pk, ref));
       if (p) snapDraft(p.q);
     },
     [peaks.data, snapDraft],
@@ -324,23 +400,30 @@ export function WorkspacePage(): JSX.Element {
   const draftFit = useMemo(() => (draft ? indexFit(draftQs, activePeakQs, xExtent) : null), [draft, draftQs, activePeakQs, xExtent]);
 
   const indexSeries: IndexSeries[] = useMemo(() => {
+    if (!xExtent) return [];
     if (draft && draftFit) {
-      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, r2: draftFit.r2 }];
+      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, param: latticeParam(draft.phase), r2: draftFit.r2 }];
     }
     const hovered = candidates.find((c) => c.id === hoverId);
     const shown = hovered ? [hovered] : candidates.filter((c) => assigned.has(c.id));
     return shown.map((c) => {
       const fit = storedFit(c, xExtent);
-      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, r2: c.r_squared ?? fit.r2 };
+      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, param: latticeParam(c.phase), r2: c.r_squared ?? fit.r2 };
     });
   }, [draft, draftFit, xExtent, candidates, hoverId, assigned]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key === "0" && !isTyping(ev.target) && !inOverlay(ev.target)) {
+        ev.preventDefault();
+        setXDomain(null);
+        return;
+      }
       if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "k") {
         ev.preventDefault();
         setHelpOpen(false);
         setPicking(false);
+        setBridging(false);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -386,22 +469,12 @@ export function WorkspacePage(): JSX.Element {
         case "ArrowUp":
           step(-1);
           break;
-        case "j":
-        case "J": {
-          const nid = nextUnreviewed(visible, sampleId, ev.shiftKey ? -1 : 1);
-          if (nid !== undefined) goSample(nid);
-          break;
-        }
         case "ArrowRight":
         case "ArrowLeft": {
           const eid = stepExposure(exposureList, exposure?.id, ev.key === "ArrowRight" ? 1 : -1);
           if (eid !== undefined) setExposureId(eid);
           break;
         }
-        case "l":
-        case "L":
-          setView(nextView(view, ev.shiftKey ? -1 : 1));
-          break;
         case "c":
         case "C":
           setPicking(true);
@@ -414,12 +487,15 @@ export function WorkspacePage(): JSX.Element {
           setHelpOpen(true);
           break;
         case "z":
-        case "Z":
-          setXDomain(null);
+        case "Z": {
+          const nid = nextUnreviewed(visible, sampleId, 1);
+          if (nid !== undefined) goSample(nid);
           break;
-        case "r":
-        case "R":
-          setRefsOn((v) => !v);
+        }
+        case " ":
+          if (ev.repeat) break;
+          if (exposure && imageUrl(exposure, false)) setBigOpen(true);
+          else handled = false;
           break;
         case "x":
         case "X":
@@ -441,8 +517,9 @@ export function WorkspacePage(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
 
+  const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
+  const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
@@ -456,18 +533,28 @@ export function WorkspacePage(): JSX.Element {
     {
       id: "next-unreviewed",
       label: "Next unreviewed sample",
-      shortcut: "J",
+      shortcut: "Z",
       run: () => {
         const nid = nextUnreviewed(visible, sampleId, 1);
         if (nid !== undefined) goSample(nid);
       },
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
-    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
-    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, shortcut: "L", run: () => setView(o.view) })),
-    { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
+    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
+    ...(username && sample
+      ? [
+          { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
+          ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
+        ]
+      : []),
+    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
+    { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
+    ...(scan.rescanning ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate() }]),
+    { id: "grouping", label: "Review grouping", run: reviewGrouping },
+    { id: "configure", label: "Configure experiment", run: () => navigate(`/experiments/${experimentId}/config`) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
+    { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
     { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
     ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: toggleFormFactor }] : []),
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
@@ -480,47 +567,78 @@ export function WorkspacePage(): JSX.Element {
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {bigOpen && exposure && (
+            <DetectorOverlay
+              exposures={exposureList}
+              currentId={exposure.id}
+              onStep={(dir) => {
+                const eid = stepExposure(exposureList, exposure.id, dir);
+                if (eid !== undefined) setExposureId(eid);
+              }}
+              onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
+              onClose={() => setBigOpen(false)}
+            />
+          )}
           {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
         </>
       }
       header={
         <WorkspaceHeader
-          experimentId={experimentId}
           experimentName={experiment.data?.name ?? `Experiment ${experimentId}`}
           reviewed={reviewed}
           total={samples.length}
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice rescan={rescanText} failed={rescanFailed} flagged={flagged} onReview={reviewGrouping} onFailure={showFailure} />} />}
       main={
         sample ? (
           <>
-            <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
-              <div className="relative mb-2">
-                <CompareBar
-                  chips={activeRefs.map((rid) => ({ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, color: COMPARE_COLORS[refs.indexOf(rid) % COMPARE_COLORS.length]!, scale: scales.get(rid) }))}
-                  subtractId={subRef}
-                  hidden={!refsOn}
-                  onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
-                  onRemove={removeCompare}
-                  onAdd={() => setPicking(true)}
+            <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
+            <div className="relative px-3.5 py-1">
+              <CompareBar
+                chips={activeRefs.map((rid) => ({
+                  id: rid,
+                  name: sampleNames.get(rid) ?? `Sample ${rid}`,
+                  color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
+                  scale: scales.get(rid),
+                  bridged: bridged.includes(rid),
+                }))}
+                subtractId={subRef}
+                hidden={!refsOn}
+                onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
+                onRemove={onRemoveChip}
+                onAdd={() => setPicking(true)}
+              />
+              {picking && (
+                <ComparePicker
+                  samples={pickable}
+                  onPick={(rid) => {
+                    setRefs((r) => addCompare(r, rid));
+                    if (subRef === undefined) setSubRef(rid);
+                    setRefsOn(true);
+                  }}
+                  onClose={() => setPicking(false)}
                 />
-                {picking && (
-                  <ComparePicker
-                    samples={pickable}
-                    onPick={(rid) => {
-                      setRefs((r) => addCompare(r, rid));
-                      if (subRef === undefined) setSubRef(rid);
-                      setRefsOn(true);
-                    }}
-                    onClose={() => setPicking(false)}
-                  />
-                )}
-              </div>
+              )}
+              {bridging && (
+                <ComparePicker
+                  samples={bridgePickable}
+                  label={`Bridge ${sample.name} to a sample`}
+                  inputLabel="Find a sample to bridge to"
+                  onPick={(rid) => {
+                    bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
+                    setRefsOn(true);
+                  }}
+                  onClose={() => setBridging(false)}
+                />
+              )}
+            </div>
+            <div className="mx-3.5">
               <PlotCard>
                 <WorkspacePlot
                   trace={trace.data}
+                  {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}
@@ -545,13 +663,15 @@ export function WorkspacePage(): JSX.Element {
                   />
                 )}
               </PlotCard>
-            </Section>
-            <Section title="Exposures">
+            </div>
+            <MainSection title="Exposures" hint={keptHint}>
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
-            </Section>
+            </MainSection>
           </>
         ) : (
-          <Note>{emptyMessage}</Note>
+          <div className="px-3.5 py-3">
+            <Note>{emptyMessage}</Note>
+          </div>
         )
       }
       tools={
@@ -572,7 +692,7 @@ export function WorkspacePage(): JSX.Element {
               />
             </Section>
           ) : (
-            <Section title="Phase">
+            <Section title="Call">
               {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
               <CandidateList
                 candidates={candidates}
@@ -586,18 +706,11 @@ export function WorkspacePage(): JSX.Element {
             </Section>
           )}
           <Section title="Indexing">
-            <IndexingPlot series={indexSeries} empty="Hover a candidate or tick one to see its fit." />
+            <IndexingPlot series={indexSeries} />
           </Section>
           {exposure && (
-            <Section title="Exposure">
-              <MetaList
-                rows={[
-                  ["File", exposure.filename ?? "—"],
-                  ["Kind", exposure.kind === "file" ? "Raw" : exposure.kind === "averaged" ? "Averaged" : "Subtracted"],
-                  ["Status", exposure.status === "rejected" ? "Dropped" : "Kept"],
-                  ["Peaks", String(activePeaks)],
-                ]}
-              />
+            <Section title="Exposure" aside="← →">
+              <MetaList rows={exposureRows(exposure)} />
             </Section>
           )}
         </>

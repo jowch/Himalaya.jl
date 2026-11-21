@@ -45,11 +45,11 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     expect(screen.getByText("JC plate")).toBeInTheDocument();
   });
 
-  it("routes to the corpus tab on card click", async () => {
+  it("opens the experiment on card click", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({})]);
     renderPage();
     fireEvent.click(await screen.findByTestId("experiment-card-7"));
-    expect(navigate).toHaveBeenCalledWith("/experiments/7/corpus");
+    expect(navigate).toHaveBeenCalledWith("/experiments/7");
   });
 
   it("routes to /experiments/new on the New CTA", async () => {

@@ -3,6 +3,7 @@ const CLOSED = 2;
 export interface LiveStreamOptions {
   listeners: Record<string, (e: MessageEvent) => void>;
   onReconnect: () => void;
+  onStatus?: (status: "open" | "down") => void;
   createSource?: (url: string) => EventSource;
   silentAfterMs?: number;
   checkEveryMs?: number;
@@ -38,6 +39,7 @@ export function openLiveStream(url: string, opts: LiveStreamOptions): () => void
     es.addEventListener("open", () => {
       heard();
       attempt = 0;
+      opts.onStatus?.("open");
       if (openedBefore) opts.onReconnect();
       openedBefore = true;
     });
@@ -46,7 +48,9 @@ export function openLiveStream(url: string, opts: LiveStreamOptions): () => void
       es.addEventListener(type, (e) => { heard(); fn(e as MessageEvent); });
     }
     es.addEventListener("error", () => {
-      if (source !== es || es.readyState !== CLOSED) return;
+      if (source !== es) return;
+      opts.onStatus?.("down");
+      if (es.readyState !== CLOSED) return;
       replace(Math.min(1000 * 2 ** attempt, maxBackoffMs));
       attempt += 1;
     });

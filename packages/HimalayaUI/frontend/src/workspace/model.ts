@@ -1,4 +1,5 @@
 import type { CorpusSample, Exposure, IndexEntry } from "../api";
+import { samePeak, type PeakRef } from "../lib/peakRef";
 
 export type SampleStatus =
   | { kind: "unreviewed" }
@@ -11,6 +12,10 @@ export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase">
   if (s.assignment_state === "form_factor") return { kind: "form_factor" };
   if (s.assignment_state === "indexed" && s.phase) return { kind: "phase", phase: s.phase };
   return { kind: "unreviewed" };
+}
+
+export function firstUnreviewed<T extends Pick<CorpusSample, "assignment_state" | "phase">>(samples: readonly T[]): T | undefined {
+  return samples.find((s) => sampleStatus(s).kind === "unreviewed") ?? samples[0];
 }
 
 export function nextUnreviewed(
@@ -61,10 +66,10 @@ export function imageUrl(e: Pick<Exposure, "id" | "image_path" | "image_version"
 export type PeakClick = { kind: "exclude"; excluded: boolean } | { kind: "remove" };
 
 export function peakClick(
-  peaks: readonly { id: number; source: string; excluded: boolean }[],
-  id: number,
+  peaks: readonly (PeakRef & { excluded: boolean })[],
+  ref: PeakRef,
 ): PeakClick | null {
-  const p = peaks.find((pk) => pk.id === id);
+  const p = peaks.find((pk) => samePeak(pk, ref));
   if (!p) return null;
   return p.source === "auto" ? { kind: "exclude", excluded: !p.excluded } : { kind: "remove" };
 }

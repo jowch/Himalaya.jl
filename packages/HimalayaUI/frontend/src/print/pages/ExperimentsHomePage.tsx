@@ -80,7 +80,7 @@ export function ExperimentsHomePage(): JSX.Element {
 
   const open = (id: number): void => {
     setActiveExperiment(id);
-    navigate(`/experiments/${id}/corpus`);
+    navigate(`/experiments/${id}`);
   };
 
   const list = experiments.data ?? [];

@@ -206,7 +206,7 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
     };
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), [peak]);
     client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
-    const setSpy = vi.spyOn(api, "setPeakExcluded").mockResolvedValueOnce({
+    const setSpy = vi.spyOn(api, "setAutoPeakExcluded").mockResolvedValueOnce({
       ...peak, excluded: false, event_id: 9, view_row_id: 9,
       analysis_inputs_hash: HASH_NEW,
     });

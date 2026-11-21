@@ -1,5 +1,6 @@
 import { useCallback, useId, useRef, useState } from "react";
 import type { Peak, Trace } from "../../api";
+import { peakKey, type PeakRef } from "../../lib/peakRef";
 import { PlotFrame, type PlotDims } from "../../print/plot/PlotFrame";
 import { makeAxis, positiveExtent, type Axis1D, type ScaleType } from "../../print/plot/projection";
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "../../print/plot/interaction";
@@ -34,8 +35,10 @@ interface Props {
   view?: PlotView;
   onXDomain?: (d: [number, number] | null) => void;
   onAddPeak?: (q: number) => void;
-  onClickPeak?: (id: number) => void;
+  onClickPeak?: (peak: PeakRef) => void;
   height?: number;
+  onRetry?: () => void;
+  retrying?: boolean;
 }
 
 interface Geometry {
@@ -84,6 +87,8 @@ export function WorkspacePlot({
   onAddPeak,
   onClickPeak,
   height = PLOT_HEIGHT,
+  onRetry,
+  retrying = false,
 }: Props): JSX.Element {
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
@@ -109,6 +114,17 @@ export function WorkspacePlot({
     [onXDomain],
   );
 
+  if (!trace && onRetry) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 text-base text-ink-soft" style={{ height }} role="alert" data-testid="workspace-trace-error">
+        <span>Couldn't load this sample</span>
+        <button type="button" onClick={onRetry} disabled={retrying} className="rounded-sm border border-hair bg-paper px-2 py-0.5 text-sm text-ink hover:border-hair-strong disabled:text-ink-faint">
+          {retrying ? "Retrying…" : "Retry"}
+        </button>
+      </div>
+    );
+  }
+
   if (!trace || trace.q.length < 2) {
     return <div className="rounded-sm bg-paper-sunk" style={{ height }} data-testid="workspace-trace-empty" />;
   }
@@ -132,7 +148,7 @@ export function WorkspacePlot({
     const q = g.x.invert(p);
     if (!Number.isFinite(q) || q <= 0) return;
     const hit = hitTestPeaks([...shownPeaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX);
-    if (hit && onClickPeak) onClickPeak(hit.id);
+    if (hit && onClickPeak) onClickPeak({ id: hit.id, source: hit.source });
     else if (!hit && onAddPeak && py >= top) onAddPeak(q);
   };
 
@@ -240,12 +256,13 @@ export function WorkspacePlot({
             <g data-role="peak-glyph">
               {shownPeaks.map((p) => (
                 <polygon
-                  key={p.id}
-                  data-peak-id={p.id}
+                  key={peakKey(p)}
+                  data-peak-key={peakKey(p)}
                   data-excluded={p.excluded || undefined}
                   points={peakPoints(x.to(p.q))}
                   fill={peakFill(p)}
                   stroke={p.excluded ? "var(--color-ink-faint)" : "none"}
+                  pointerEvents="all"
                   {...(onClickPeak
                     ? {
                         role: "button",
@@ -256,7 +273,7 @@ export function WorkspacePlot({
                           if (ev.key !== "Enter" && ev.key !== " ") return;
                           ev.preventDefault();
                           ev.stopPropagation();
-                          onClickPeak(p.id);
+                          onClickPeak({ id: p.id, source: p.source });
                         },
                       }
                     : {})}

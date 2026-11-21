@@ -15,3 +15,4 @@ mktempdir() do tmp
     end
 end
 HimalayaUI.main(String[])
+mktempdir(HimalayaUI.run_route_workload)

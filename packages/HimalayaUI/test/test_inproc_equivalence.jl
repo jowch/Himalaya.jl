@@ -109,17 +109,16 @@ end
 
     @testset "DELETE verb parity (404 on missing id, no body)" begin
         # Exercises the DELETE method + a no-body request + an error-response
-        # body, asserting parity. Uses a REAL delete route (/api/peaks/{id},
-        # routes_peaks.jl:348) with a nonexistent id so no mutation/setup is
+        # body, asserting parity. Uses a REAL delete route (/api/peaks/manual/{id}) with a nonexistent id so no mutation/setup is
         # needed and both transports see the identical not-found response.
         mktempdir() do d
             fx = _seed(d)
             hdrs = ["X-Username" => "alice"]
             w  = with_test_server(fx.db) do port, base
-                HTTP.request("DELETE", "$base/api/peaks/99999", hdrs; status_exception=false)
+                HTTP.request("DELETE", "$base/api/peaks/manual/99999", hdrs; status_exception=false)
             end
             ip = with_inproc_routes(fx.db) do call
-                call("DELETE", "/api/peaks/99999"; headers=hdrs)
+                call("DELETE", "/api/peaks/manual/99999"; headers=hdrs)
             end
             _assert_equiv(w, ip; label="delete-404")
         end

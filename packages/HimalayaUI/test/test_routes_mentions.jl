@@ -30,19 +30,6 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         [ix_id, pk_id])
 
     with_inproc_routes(db) do call
-        @testset "GET /api/peaks/:id" begin
-            r = call("GET", "/api/peaks/$pk_id")
-            @test r.status == 200
-            body = JSON3.read(String(r.body))
-            @test body.id == pk_id
-            @test body.q ≈ 1.223
-            @test body.source == "auto"
-            @test body.excluded === false
-
-            r404 = call("GET", "/api/peaks/999999")
-            @test r404.status == 404
-        end
-
         @testset "GET /api/exposures/:id" begin
             r = call("GET", "/api/exposures/$e_id")
             @test r.status == 200

@@ -542,6 +542,18 @@ function migrate_schema!(db::SQLite.DB)
     migrate_hex_sqrt11!(db)
 
     migrate_index_peaks_ratio_int!(db)
+    migrate_sample_bridges!(db)
+end
+
+function migrate_sample_bridges!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_bridges (
+            sample_id INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+            group_id  INTEGER NOT NULL
+        )""")
+    DBInterface.execute(db,
+        "CREATE INDEX IF NOT EXISTS idx_sample_bridges_group ON sample_bridges(group_id)")
+    nothing
 end
 
 # ── Ingestion redesign Phase A migrations ───────────────────────────────────
