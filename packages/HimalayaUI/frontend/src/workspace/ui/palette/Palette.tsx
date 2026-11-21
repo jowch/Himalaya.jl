@@ -2,14 +2,11 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type M
 import { Kbd } from "../Kbd";
 import { Overlay } from "../Overlay";
 import { useListHighlight } from "../useListHighlight";
-import { pageRows, pickable, rootRows, sections, type PaletteGroup, type PaletteItem, type PalettePage, type PaletteRow } from "./model";
+import { pageRows, pickable, rootRows, sections, type PaletteForm, type PaletteGroup, type PaletteItem, type PalettePage, type PaletteRow } from "./model";
 import { PaletteFooter } from "./PaletteFooter";
+import { PaletteFormView } from "./PaletteFormView";
 
-interface Level {
-  page: string;
-  query: string;
-  cursor: number;
-}
+type Level = { query: string; cursor: number } & ({ page: string; form?: undefined } | { form: PaletteForm; page?: undefined });
 
 interface Props {
   groups: readonly PaletteGroup[];
@@ -27,8 +24,10 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   const listId = useId();
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
+  const heldBack = useRef(false);
   const top = stack[stack.length - 1];
-  const page = top ? pages[top.page] : undefined;
+  const form = top?.form;
+  const page = top?.page !== undefined ? pages[top.page] : undefined;
   const rows = useMemo<PaletteRow[]>(() => (page ? pageRows(page, query) : rootRows(groups, pages, query)), [page, groups, pages, query]);
   const picks = useMemo(() => pickable(rows), [rows]);
   const optionId = (i: number): string => `${listId}-${i}`;
@@ -36,27 +35,29 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   const back = (): void => {
     const prev = stack[stack.length - 1];
     if (!prev) return onClose();
+    heldBack.current = true;
     setStack(stack.slice(0, -1));
     setQuery(prev.query);
     highlight.setAt(prev.cursor);
   };
-  const open = (id: string): void => {
-    setStack([...stack, { page: id, query, cursor: highlight.at }]);
+  const open = (next: { page: string } | { form: PaletteForm }): void => {
+    setStack([...stack, { ...next, query, cursor: highlight.at }]);
     setQuery("");
     highlight.setAt(0);
   };
   const choose = (item: PaletteItem | undefined): void => {
     if (!item) return;
-    if (item.page && pages[item.page]) return open(item.page);
+    if (item.page && pages[item.page]) return open({ page: item.page });
+    if (item.form) return open({ form: item.form() });
     if (!item.run) return;
     onClose();
     item.run();
   };
-  const highlight = useListHighlight({ count: picks.length, onCommit: (i) => choose(picks[i]?.item), onEscape: back });
+  const highlight = useListHighlight({ count: picks.length, onCommit: (i) => choose(picks[i]?.item), onEscape: back, enabled: !form });
   const at = highlight.at;
 
   useEffect(() => {
-    const gone = stack.findIndex((l) => pages[l.page] === undefined);
+    const gone = stack.findIndex((l) => l.page !== undefined && pages[l.page] === undefined);
     if (gone < 0) return;
     setStack(stack.slice(0, gone));
     setQuery(stack[gone]!.query);
@@ -69,6 +70,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   useEffect(() => input.current?.focus(), [stack.length]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Backspace" && e.repeat && heldBack.current) return e.preventDefault();
     if (highlight.onKeyDown(e)) return;
     if (e.key === "Backspace" && query === "" && page && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
@@ -76,7 +78,16 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
     }
   };
 
-  const crumbs = stack.slice(0, page?.arg ? -1 : undefined).flatMap((l) => (pages[l.page] ? [pages[l.page]!.title] : []));
+  const crumbs = stack.slice(0, page?.arg ? -1 : undefined).flatMap((l) => (l.page !== undefined && pages[l.page] ? [pages[l.page]!.title] : []));
+  if (form) {
+    return (
+      <Overlay label={form.title} onClose={onClose} closeKeys={[]} testId="workspace-palette">
+        <div onMouseDown={keepFocusInField}>
+          <PaletteFormView key={stack.length} form={form} onBack={back} onDone={onClose} />
+        </div>
+      </Overlay>
+    );
+  }
   const field = (
     <input
       ref={input}
@@ -95,6 +106,9 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
         highlight.setAt(0);
       }}
       onKeyDown={onKeyDown}
+      onKeyUp={() => {
+        heldBack.current = false;
+      }}
       placeholder={page ? (page.placeholder ?? "Type to filter") : "Type a command or a sample"}
       className="h-full min-w-0 flex-1 bg-transparent text-lg text-ink placeholder:text-ink-faint focus:outline-none"
     />
@@ -135,22 +149,33 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
                     id={optionId(i)}
                     role="option"
                     aria-selected={i === at}
-                    aria-label={`${path ? `${path} › ` : ""}${item.label}${item.hint ? `, ${item.hint}` : ""}`}
+                    aria-label={`${path ? `${path} › ` : ""}${item.label}${item.value !== undefined ? `, ${item.value || "None"}` : ""}${item.hint ? `, ${item.hint}` : ""}`}
                     data-palette-item={item.id}
                     onMouseEnter={() => highlight.setAt(i)}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => choose(item)}
                     className={
-                      "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
+                      "grid h-8 cursor-pointer items-center gap-x-3 rounded-sm px-2 text-base " +
+                      (item.value !== undefined ? "grid-cols-[140px_minmax(0,1fr)_auto_minmax(32px,auto)] " : "grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] ") +
                       (i === at ? "bg-row-cursor" : "")
                     }
                   >
-                    <span className={"truncate " + (item.danger ? "text-error" : "")}>
-                      {path && <span className="text-ink-faint">{path} › </span>}
-                      {item.label}
-                    </span>
+                    {item.value !== undefined ? (
+                      <>
+                        <span className="truncate text-ink-soft">{item.label}</span>
+                        <span className={"truncate " + (item.value ? "" : "text-ink-faint")}>{item.value || "None"}</span>
+                      </>
+                    ) : (
+                      <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
+                        {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
+                        <span className="truncate">
+                          {path && <span className="text-ink-faint">{path} › </span>}
+                          {item.label}
+                        </span>
+                      </span>
+                    )}
                     <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
-                    <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page ? "›" : null}</span>
+                    <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
                   </div>
                 ))}
               </div>

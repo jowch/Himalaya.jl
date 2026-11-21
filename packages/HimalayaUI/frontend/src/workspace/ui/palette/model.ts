@@ -2,12 +2,38 @@ export interface PaletteItem {
   id: string;
   label: string;
   name?: string;
+  value?: string | undefined;
   hint?: string | undefined;
   shortcut?: string | undefined;
   page?: string;
+  form?: () => PaletteForm;
   run?: () => void;
+  swatch?: string | undefined;
   danger?: boolean;
   typeOnly?: boolean;
+}
+
+export interface FieldOption {
+  value: string;
+  label: string;
+  swatch?: string | undefined;
+}
+
+export interface FormField {
+  id: string;
+  label: string;
+  kind: "text" | "choice";
+  value: string;
+  placeholder?: string;
+  options?: readonly FieldOption[];
+  check?: (value: string) => string | undefined;
+}
+
+export interface PaletteForm {
+  title: string;
+  verb: string;
+  fields: readonly FormField[];
+  submit: (values: Readonly<Record<string, string>>) => void;
 }
 
 export interface PaletteGroup {
@@ -23,6 +49,7 @@ export interface PalettePage {
   items: readonly PaletteItem[];
   deep?: boolean;
   empty?: string;
+  extra?: (query: string) => readonly PaletteItem[];
 }
 
 export type PaletteRow =
@@ -71,7 +98,24 @@ export function rootRows(groups: readonly PaletteGroup[], pages: Readonly<Record
 
 export function pageRows(page: PalettePage, query: string): PaletteRow[] {
   const q = query.trim();
-  return page.items.filter((i) => !q || matches(i.label, q)).map((item) => ({ kind: "item", item }));
+  const items = [...page.items.filter((i) => !q || matches(i.label, q)), ...(page.extra?.(q) ?? [])];
+  return items.map((item) => ({ kind: "item", item }));
+}
+
+export function fieldErrors(fields: readonly FormField[], values: Readonly<Record<string, string>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of fields) {
+    const why = f.check?.(values[f.id] ?? "");
+    if (why) out[f.id] = why;
+  }
+  return out;
+}
+
+export function cycleOption(options: readonly FieldOption[], value: string, dir: 1 | -1): string {
+  if (options.length === 0) return value;
+  const i = options.findIndex((o) => o.value === value);
+  if (i < 0) return options[dir === 1 ? 0 : options.length - 1]!.value;
+  return options[(i + dir + options.length) % options.length]!.value;
 }
 
 export function pickable(rows: readonly PaletteRow[]): { item: PaletteItem; path?: string }[] {

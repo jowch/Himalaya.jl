@@ -1,5 +1,5 @@
 # packages/HimalayaUI/test/test_experiments_patch.jl
-using Test, JSON3, HimalayaUI
+using Test, JSON3, HimalayaUI, Tables, DBInterface
 if !isdefined(@__MODULE__, :with_inproc_routes)
     include("test_http.jl")
 end
@@ -53,5 +53,43 @@ using HimalayaUI: with_inproc_routes, open_prepared_clone
                 body=Vector{UInt8}(JSON3.write(Dict("data_dir" => "/other"))))
             @test r5.status == 400
         end
+    end
+end
+
+@testset "PATCH /api/experiments/:id logs and broadcasts the change" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        sub = (pending = Channel{String}(64),)
+        hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+        with_inproc_routes(db) do call
+            r = call("POST", "/api/experiments"; headers=hdrs, body=Vector{UInt8}(JSON3.write(Dict("path" => tmp, "name" => "test"))))
+            exp_id = JSON3.read(r.body)["id"]
+            lock(HimalayaUI.SSE_LOCK) do
+                push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+            end
+            @test call("PATCH", "/api/experiments/$exp_id"; headers=hdrs,
+                body=Vector{UInt8}(JSON3.write(Dict("name" => "  renamed  ")))).status == 200
+            @test call("PATCH", "/api/experiments/$exp_id"; headers=hdrs,
+                body=Vector{UInt8}("{\"description\":null}")).status == 200
+            for bad in ("{\"name\":\"\"}", "{\"name\":\"   \"}", "{\"name\":3}")
+                @test call("PATCH", "/api/experiments/$exp_id"; headers=hdrs, body=Vector{UInt8}(bad)).status == 400
+            end
+            @test JSON3.read(call("GET", "/api/experiments/$exp_id").body)["name"] == "renamed"
+
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT entity_type, entity_id, payload FROM user_actions WHERE action = 'experiment_updated' ORDER BY id"))
+            @test length(rows) == 2
+            @test all(r -> r.entity_type == "experiment" && r.entity_id == exp_id, rows)
+            @test JSON3.read(rows[1].payload)["name"] == "renamed"
+            @test JSON3.read(rows[2].payload)["description"] === nothing
+        end
+        frames = String[]
+        while isready(sub.pending)
+            push!(frames, take!(sub.pending))
+        end
+        updated = filter(f -> occursin("experiment_updated", f), frames)
+        @test length(updated) == 2
+        @test occursin("\"name\":\"renamed\"", updated[1])
+        @test occursin("\"description\":null", updated[2])
     end
 end

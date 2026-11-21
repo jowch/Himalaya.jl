@@ -18,12 +18,14 @@ describe("LabelColorMenu", () => {
 
   it("is one tab stop whose arrows, Home and End move through the colours, wrapping", () => {
     render(menu());
-    expect(screen.getAllByRole("radio").map((r) => r.tabIndex)).toEqual([0, -1, -1, -1, -1]);
+    expect(screen.getAllByRole("radio").map((r) => r.tabIndex)).toEqual([-1, -1, 0, -1, -1, -1, -1, -1]);
     const group = screen.getByRole("radiogroup");
     fireEvent.keyDown(group, { key: "ArrowLeft" });
-    expect(screen.getByRole("radio", { name: "Stone" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "Plum" })).toHaveFocus();
     fireEvent.keyDown(group, { key: "Home" });
-    expect(screen.getByRole("radio", { name: "Violet" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "Rose" })).toHaveFocus();
+    fireEvent.keyDown(group, { key: "ArrowLeft" });
+    expect(screen.getByRole("radio", { name: "Stone" })).toHaveFocus();
     fireEvent.keyDown(group, { key: "End" });
     expect(screen.getByRole("radio", { name: "Stone" })).toHaveFocus();
   });

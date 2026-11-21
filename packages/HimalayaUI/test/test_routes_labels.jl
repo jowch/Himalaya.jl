@@ -24,6 +24,15 @@ _add_label(call, sid, label) =
 _remove_label(call, sid, label) =
     call("DELETE", "/api/samples/$sid/labels?label=" * HTTP.escapeuri(label); headers=_LABEL_HEADERS)
 
+_restore_suggestion(call, sid, label) =
+    call("POST", "/api/samples/$sid/labels/suggested"; headers=_LABEL_HEADERS, body=_label_body(label))
+
+_suggest!(db, sid, label) = DBInterface.execute(db,
+    "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'suggested', 'ingest')", [sid, label])
+
+_label_events(db, kind) = length(Tables.rowtable(DBInterface.execute(db,
+    "SELECT id FROM user_actions WHERE action = ?", [kind])))
+
 function _listed(call, exp_id)
     r = call("GET", "/api/experiments/$exp_id/labels")
     @test r.status == 200
@@ -153,6 +162,63 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
         DBInterface.execute(db, "DELETE FROM sample_labels")
         HimalayaUI.rebuild_views_from_log!(db, a; entity_type = "sample")
         @test _label_rows(db) == Set([(a, "buffer", "removed")])
+    end
+
+    @testset "a confirmed or dismissed suggestion goes back to suggested, from the ingest" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b)) = _seed_label_samples(db, 2)
+        _suggest!(db, a, "buffer")
+        _suggest!(db, b, "calibrant")
+        with_inproc_routes(db) do call
+            _add_label(call, a, "Buffer")
+            _remove_label(call, b, "calibrant")
+            r = _restore_suggestion(call, a, "BUFFER")
+            @test r.status == 200
+            @test (a, "buffer", "suggested") in Set((Int(x.sample_id), String(x.label), String(x.state)) for x in JSON3.read(String(r.body)))
+            _restore_suggestion(call, b, "calibrant")
+            @test _listed(call, exp_id) == Set([(a, "buffer", "suggested"), (b, "calibrant", "suggested")])
+        end
+        @test Set(String(r.source) for r in Tables.rowtable(DBInterface.execute(db, "SELECT source FROM sample_labels"))) == Set(["ingest"])
+        @test _label_events(db, "label_suggestion_restored") == 2
+    end
+
+    @testset "restoring a suggestion is a no-op without an event when the label is absent or already suggested" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a,)) = _seed_label_samples(db, 1)
+        _suggest!(db, a, "buffer")
+        with_inproc_routes(db) do call
+            @test _restore_suggestion(call, a, "buffer").status == 200
+            @test _restore_suggestion(call, a, "retake").status == 200
+            @test _restore_suggestion(call, a, "  ").status == 400
+            @test _restore_suggestion(call, 999_999, "buffer").status == 404
+        end
+        @test _label_events(db, "label_suggestion_restored") == 0
+        @test _label_rows(db) == Set([(a, "buffer", "suggested")])
+    end
+
+    @testset "a restored suggestion rebuilds from the log and broadcasts with the experiment" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a,)) = _seed_label_samples(db, 1)
+        _suggest!(db, a, "buffer")
+        sub = (pending = Channel{String}(64),)
+        with_inproc_routes(db) do call
+            _add_label(call, a, "buffer")
+            lock(HimalayaUI.SSE_LOCK) do
+                push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+            end
+            _restore_suggestion(call, a, "buffer")
+        end
+        frames = String[]
+        while isready(sub.pending)
+            push!(frames, take!(sub.pending))
+        end
+        restored = filter(f -> occursin("label_suggestion_restored", f), frames)
+        @test length(restored) == 1
+        @test occursin("\"experiment_id\":$exp_id", only(restored))
+        DBInterface.execute(db, "DELETE FROM sample_labels")
+        HimalayaUI.rebuild_views_from_log!(db, a; entity_type = "sample")
+        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT label, state, source FROM sample_labels"))) ==
+              (label = "buffer", state = "suggested", source = "ingest")
     end
 
     @testset "adding a label broadcasts one SSE frame carrying the experiment" begin

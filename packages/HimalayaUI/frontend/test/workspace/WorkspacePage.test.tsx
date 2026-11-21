@@ -46,7 +46,49 @@ function recorder(hook: string) {
   });
 }
 
+const toasts: string[] = [];
+vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
+
+const server = {
+  indices: new Map<number, IndexEntry[]>(),
+  assignments: new Map<number, Assignment>(),
+  saving: false,
+  saved: undefined as (() => void) | undefined,
+};
+const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
+const editOps = {
+  addPhase: editOp("addPhase"),
+  removePhase: editOp("removePhase"),
+  setCallState: editOp("setCallState"),
+  setStatus: editOp("setStatus"),
+  addPeak: editOp("addPeak"),
+  removePeak: editOp("removePeak"),
+  setPeakExcluded: editOp("setPeakExcluded"),
+  commitCustom: editOp("commitCustom"),
+  deleteIndex: editOp("deleteIndex"),
+  addLabel: editOp("addLabel"),
+  removeLabel: editOp("removeLabel"),
+  restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
+  setLabelColor: editOp("setLabelColor"),
+  bridge: editOp("bridge"),
+  unbridge: editOp("unbridge"),
+  read: {
+    peaks: async () => state.peaks,
+    indices: async (eid: number) => server.indices.get(eid) ?? state.indices,
+    knownIndices: async (eid: number) => server.indices.get(eid) ?? state.indices,
+    assignment: async (eid: number) =>
+      server.assignments.get(eid)
+      ?? (state.assignment?.exposure_id === eid ? state.assignment : state.frameAssignments.get(eid))
+      ?? { exposure_id: eid, state: "null" as const, members: [] },
+    labels: async () => state.labels,
+    bridges: async () => state.bridges,
+  },
+  saving: () => server.saving,
+  whenSaved: () => (server.saving ? new Promise<void>((r) => { server.saved = r; }) : Promise.resolve()),
+};
+
 vi.mock("../../src/queries", () => ({
+  useEditOps: () => editOps,
   useExperimentCorpusSamples: (experimentId: number) => {
     corpusRequests.push(experimentId);
     return { data: state.corpus, isLoading: false };
@@ -54,6 +96,7 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
+  usePatchExperiment: () => ({ mutate: (patch: unknown) => calls.push({ hook: "patchExperiment", boundTo: 1, arg: patch }) }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useDeleteExperiment: (experimentId: number) => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
@@ -192,6 +235,7 @@ afterEach(() => {
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
+  toasts.length = 0;
   prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
@@ -218,6 +262,10 @@ beforeEach(() => {
   state.labelColors = [];
   state.ingest = undefined;
   state.rescanError = false;
+  server.indices = new Map();
+  server.assignments = new Map();
+  server.saving = false;
+  server.saved = undefined;
   rescans.length = 0;
   removals.length = 0;
   opened.length = 0;
@@ -645,6 +693,244 @@ describe("WorkspacePage", () => {
     expect(currentFrame()).toBe("Frame 1");
   });
 
+  describe("undo and redo", () => {
+    const ops = () => calls.filter((c) => c.hook.startsWith("op:")).map((c) => [c.hook.slice(3), ...(c.arg as unknown[])]);
+    const settle = () => act(async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    const press = async (init: KeyboardEventInit) => {
+      fireEvent.keyDown(window, init);
+      await settle();
+    };
+    const undo = () => press({ key: "z", ctrlKey: true });
+    const redo = () => press({ key: "Z", ctrlKey: true, shiftKey: true });
+    const onServer = (eid: number, a: Partial<Assignment>) =>
+      server.assignments.set(eid, { exposure_id: eid, state: "indexed", members: [], ...a });
+
+    it("Ctrl+Z after 0 clears no phase and ticks every phase it wiped, on this frame and others", async () => {
+      state.sampleCall = {
+        sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m", "Im3m"],
+        members: [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }, { index_id: 7, exposure_id: 100, phase: "Im3m" }],
+      };
+      server.indices.set(100, [{ ...index(7, "Im3m", 0.5), exposure_id: 100 }]);
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "0" });
+      expect(calls[0]).toEqual({ hook: "state", boundTo: 10, arg: "form_factor" });
+      onServer(101, { state: "form_factor" });
+      onServer(100, { state: "form_factor" });
+      await undo();
+      expect(ops()).toEqual([["setCallState", 10, "null"], ["addPhase", 101, 2], ["addPhase", 100, 7]]);
+      expect(toasts.at(-1)).toBe("Undone: marked no phase on A1");
+    });
+
+    it("Ctrl+Shift+Z redoes what was undone", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      onServer(101, { members: [] });
+      await undo();
+      onServer(101, { members: [2] });
+      await redo();
+      expect(ops()).toEqual([["addPhase", 101, 2], ["removePhase", 101, 2]]);
+      expect(toasts.at(-1)).toBe("Redone: unticked Pn3m on A1");
+    });
+
+    it("unticks a phase by its lattice after a peak edit renumbered the candidates", async () => {
+      state.assignment = { exposure_id: 101, state: "null", members: [] };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      server.indices.set(101, [{ ...index(33, "Pn3m", 0.9), basis: 0.101 }, index(34, "Im3m", 0.4)]);
+      onServer(101, { members: [33] });
+      await undo();
+      expect(ops()).toEqual([["removePhase", 101, 33]]);
+      onServer(101, { members: [] });
+      await redo();
+      expect(ops()).toEqual([["removePhase", 101, 33], ["addPhase", 101, 33]]);
+    });
+
+    it("says so instead of claiming an undo when the edit is already undone", async () => {
+      state.assignment = { exposure_id: 101, state: "null", members: [] };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: ticked Pn3m on A1");
+    });
+
+    it("waits for the last edit to save before undoing it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      server.saving = true;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Saving your last edit first, then undoing: dropped frame 2 of A1");
+      server.saving = false;
+      server.saved?.();
+      await settle();
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("undoes a drop by restoring the frame", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await press({ key: "z", metaKey: true });
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("ignores a held-down Ctrl+Z", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await press({ key: "z", ctrlKey: true, repeat: true });
+      expect(ops()).toEqual([]);
+      await undo();
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+    });
+
+    it("goes back to the sample the undone edit was made on", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "ArrowDown" });
+      expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
+      await undo();
+      expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/10");
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+    });
+
+    it("undoes peak edits made on the plot, finding each peak by q on the server", async () => {
+      state.trace = makeTrace(1);
+      state.peaks = peakList(101, { auto: [0.1, 0.12], manual: [0.2] });
+      renderAt("/experiments/1/workspace/10");
+      clickPlotAt(0.1);
+      clickPlotAt(0.2);
+      state.peaks = peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] });
+      await undo();
+      expect(ops()).toEqual([["addPeak", 101, 0.2]]);
+      state.peaks = [...peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] }), { ...peak(9, 0.2, "manual") }];
+      await undo();
+      expect(ops()).toEqual([["addPeak", 101, 0.2], ["setPeakExcluded", 101, 1, false]]);
+    });
+
+    it("does not record removing a peak that is still saving", async () => {
+      state.trace = makeTrace(1);
+      state.peaks = [peak(-5, 0.2, "manual")];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(screen.getByRole("button", { name: /Manual peak at q = 0\.2000/ }), { key: "Enter" });
+      expect(calls.filter((c) => c.hook === "removePeak")).toEqual([]);
+      await undo();
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
+    it("leaves Ctrl+Z alone while the custom index is open", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "1" });
+      fireEvent.keyDown(window, { key: "i" });
+      expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Close the custom index first (Esc).");
+    });
+
+    it("leaves Ctrl+Z to a text field being typed in", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      const filter = screen.getByRole("searchbox", { name: "Filter samples" });
+      filter.focus();
+      fireEvent.keyDown(filter, { key: "z", ctrlKey: true });
+      await settle();
+      expect(ops()).toEqual([]);
+    });
+
+    it("says so when there is nothing to undo", async () => {
+      renderAt("/experiments/1/workspace/10");
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
+    it("does not undo before a user is set", async () => {
+      const { rerender } = renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      state.username = undefined;
+      rerender(page("/experiments/1/workspace/10"));
+      await undo();
+      expect(ops()).toEqual([]);
+    });
+
+    it("undoes removing a label from the label row", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Remove label Buffer" }));
+      expect(calls.some((c) => c.hook === "removeLabel")).toBe(true);
+      state.labels = [];
+      await undo();
+      expect(ops()).toEqual([["addLabel", 10, "Buffer"]]);
+    });
+
+    it("undoes a label added from the palette", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("label", "Calibrant");
+      state.labels = [{ id: 1, sample_id: 10, label: "Calibrant", state: "confirmed", source: "user" }];
+      await undo();
+      expect(ops()).toEqual([["removeLabel", 10, "Calibrant"]]);
+      expect(toasts.at(-1)).toBe("Undone: added the label Calibrant on A1");
+    });
+
+    it("undoes confirming a suggested label by putting it back to suggested, not deleting it", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "suggested", source: "ingest" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Confirm label Buffer" }));
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "user" }];
+      await undo();
+      expect(ops()).toEqual([["restoreLabelSuggestion", 10, "Buffer"]]);
+      expect(toasts.at(-1)).toBe("Undone: confirmed the suggested label Buffer on A1");
+    });
+
+    it("undoes creating a coloured label from the palette in one step", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("label", "dehydrated");
+      const form = screen.getByRole("dialog", { name: "New label" });
+      fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Enter" });
+      state.labels = [{ id: 1, sample_id: 10, label: "dehydrated", state: "confirmed", source: "user" }];
+      await undo();
+      expect(ops()).toEqual([["removeLabel", 10, "dehydrated"], ["setLabelColor", "dehydrated", null]]);
+      expect(toasts.at(-1)).toBe("Undone: created the label dehydrated on A1");
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
+    it("undoes removing a bridge from the compare bar", async () => {
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Remove bridge to A2" }));
+      expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 11 } });
+      state.bridges = [];
+      await undo();
+      expect(ops()).toEqual([["bridge", 11, 10]]);
+      expect(toasts.at(-1)).toBe("Undone: unbridged A2");
+    });
+
+    it("Ctrl+K then Enter still goes to the next unreviewed sample when there is something to undo", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+      await settle();
+      expect(ops()).toEqual([]);
+      expect(screen.getByTestId("where")).not.toHaveTextContent("/experiments/1/workspace/10");
+    });
+
+    it("lists the next undo in the command palette", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "undo" } });
+      fireEvent.click(screen.getByRole("option", { name: /Undo: dropped frame 2 of A1/ }));
+      await settle();
+      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+    });
+  });
+
   it("a dropped card offers Restore and the header counts the kept frames", () => {
     state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
     renderAt("/experiments/1/workspace/10");
@@ -748,17 +1034,51 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("the palette opens the label picker, which suggests experiment labels and adds the pick on Enter", () => {
-    state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
+  it("the palette's label page lists experiment labels and toggles one on Enter, and creates a new one with a colour", () => {
+    state.labels = [
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
+    ];
     renderAt("/experiments/1/workspace/10");
     runFromPalette("label");
-    const picker = screen.getByRole("dialog", { name: "Add a label" });
-    expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
-    const input = within(picker).getByLabelText("Label name");
-    fireEvent.change(input, { target: { value: "bufer" } });
+    const page = screen.getByRole("dialog", { name: "Label" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual([
+      "37C, On this sample, Enter removes it",
+      "retake",
+      "Buffer",
+      "Calibrant",
+      "Empty capillary",
+    ]);
+    const input = within(page).getByRole("combobox", { name: "Name" });
+    fireEvent.change(input, { target: { value: "retake" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
-    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "retake" } }]);
+    calls.length = 0;
+    runFromPalette("label", "37c");
+    expect(calls).toEqual([{ hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } }]);
+    calls.length = 0;
+    runFromPalette("label", "dehydrated");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("textbox", { name: "Name" })).toHaveValue("dehydrated");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Tab" });
+    expect(within(form).getByRole("option", { name: "Rose" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(within(form).getByRole("combobox", { name: "Colour" }), { key: "ArrowDown" });
+    fireEvent.keyDown(within(form).getByRole("combobox", { name: "Colour" }), { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([
+      { hook: "setLabelColor", boundTo: 0, arg: { label: "dehydrated", color: "plum" } },
+      { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "dehydrated" } },
+    ]);
+  });
+
+  it("creating a label that already has a colour elsewhere starts on that colour and leaves it alone", () => {
+    state.labelColors = [{ label: "dried", color: "plum" }];
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("label", "Dried");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("combobox", { name: "Colour" })).toHaveTextContent("Plum");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Enter" });
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Dried" } }]);
   });
 
   it("L opens the label picker without typing the L, and Enter confirms a suggestion", () => {
@@ -842,15 +1162,45 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
   });
 
-  it("the palette opens a label's colour menu, which can reset a recoloured label to its default", () => {
-    state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" }];
+  it("the palette's label colour page recolours any label of the experiment through a colour form", () => {
+    state.labels = [
+      { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
+    ];
     state.labelColors = [{ label: "buffer", color: "stone" }];
     renderAt("/experiments/1/workspace/10");
-    runFromPalette("label colour", "buffer");
-    const menu = screen.getByRole("dialog", { name: "Colour of label Buffer" });
-    expect(within(menu).getByRole("radio", { name: "Stone" })).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(within(menu).getByRole("button", { name: "Default colour" }));
-    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
+    runFromPalette("label colour", "retake");
+    const form = screen.getByRole("dialog", { name: "retake" });
+    expect(within(form).getByRole("option", { name: "Violet" })).toHaveAttribute("aria-selected", "true");
+    const colour = within(form).getByRole("combobox", { name: "Colour" });
+    expect(colour).toHaveFocus();
+    fireEvent.click(within(form).getByRole("option", { name: "Green" }));
+    fireEvent.keyDown(colour, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
+  });
+
+  it("the palette's Settings page renames the experiment and sets its description", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("settings", "name");
+    const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+    expect(name).toHaveValue("BL-19");
+    fireEvent.change(name, { target: { value: "BL-20" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+    calls.length = 0;
+    runFromPalette("settings", "description");
+    const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
+    fireEvent.change(description, { target: { value: "Lipid screen" } });
+    fireEvent.keyDown(description, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { description: "Lipid screen" } }]);
+  });
+
+  it("offers no Settings before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(document.querySelector("[data-palette-item='settings']")).toBeNull();
   });
 
   it("offers no colour menu before a user is set", () => {
