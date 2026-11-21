@@ -454,6 +454,20 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         DBInterface.execute(db, "DELETE FROM sample_bridges WHERE sample_id = ?", [Int(entity_id)])
         return nothing
     end
+    if kind == "label_added"
+        DBInterface.execute(db,
+            """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'confirmed', 'user')
+               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'confirmed'""",
+            [Int(entity_id), String(payload.label)])
+        return nothing
+    end
+    if kind == "label_removed"
+        DBInterface.execute(db,
+            """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'removed', 'user')
+               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'removed'""",
+            [Int(entity_id), String(payload.label)])
+        return nothing
+    end
 
     # Speculative index lifecycle: route handlers insert/delete the indices
     # row directly (the speculative create/delete paths in routes_analysis.jl

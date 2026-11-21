@@ -404,6 +404,25 @@ export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthO
 export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
 
+export type SampleLabelState = "suggested" | "confirmed";
+
+export interface SampleLabel {
+  id: number;
+  sample_id: number;
+  label: string;
+  state: SampleLabelState;
+  source: string;
+}
+
+export const listLabels = (experimentId: number): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("GET", `/api/experiments/${experimentId}/labels`);
+
+export const addLabel = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("POST", `/api/samples/${sampleId}/labels`, { label }, opts);
+
+export const removeLabel = (sampleId: number, label: string, opts?: AuthOpts): Promise<SampleLabel[]> =>
+  request<SampleLabel[]>("DELETE", `/api/samples/${sampleId}/labels?label=${encodeURIComponent(label)}`, undefined, opts);
+
 // Exposures
 export interface ExposureTag {
   id: number;

@@ -49,6 +49,8 @@ round-trip test in `test_events.jl`.
 | `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
 | `sample_call_set_state` | UPSERT `sample_calls.state`; clears `assignment_members` on every frame of the sample when state ≠ `indexed` (entity_type=`sample`, payload `{state}`) |
 | `assignment_set_state` | Legacy, no longer emitted. Replays as before and also upserts the frame's sample into `sample_calls` (entity_type=`exposure`, payload `{state}`) |
+| `label_added` | UPSERT `sample_labels` → `state='confirmed'`, unique per sample ignoring case; confirms a suggestion and brings back a removed label (entity_type=`sample`, payload `{label, experiment_id}`) |
+| `label_removed` | UPSERT `sample_labels` → `state='removed'`; the row stays so a rescan never suggests the label again (entity_type=`sample`, payload `{label, experiment_id}`) |
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
