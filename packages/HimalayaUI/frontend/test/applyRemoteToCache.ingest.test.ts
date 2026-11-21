@@ -70,7 +70,7 @@ describe("ingest_* cache arms (Phase E1)", () => {
     expect(calls).toEqual({ trace: 1, peaks: 1, otherPeaks: 1 });
     applyRemoteToCache(run(null, "h1"), qc);
     await vi.waitFor(() => expect(calls).toEqual({ trace: 2, peaks: 2, otherPeaks: 1 }));
-    expect(qc.getQueryState(queryKeys.trace(11))?.status).toBe("success");
+    await vi.waitFor(() => expect(qc.getQueryState(queryKeys.trace(11))?.status).toBe("success"));
     stop.forEach((s) => s());
   });
 

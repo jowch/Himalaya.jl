@@ -91,7 +91,6 @@ export function invalidateIngestFrameCache(
     qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.problems(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.labels(expId) });
-    qc.invalidateQueries({ predicate: (q) => q.queryKey[2] === "trace" && q.state.status === "error" });
   }
 }
 
@@ -273,6 +272,10 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "analyze_run": {
       applyPostState();
+      if (payload?.trace_hash_before !== payload?.trace_hash_after) {
+        qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
+        qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
+      }
       break;
     }
     case "ingest_started":
