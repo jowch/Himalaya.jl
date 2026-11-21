@@ -60,6 +60,8 @@ export interface TracePlotProps {
   /** Multiply the y-domain top by (1 + yHeadroom) so peaks keep headroom below
    *  the ceiling — used by the stacked waterfall. Default 0 (no change). */
   yHeadroom?: number;
+  fitYToX?: boolean;
+  fitYAlso?: readonly YFitSeries[];
   /** Paint the trace LINE in the neutral (gray) colour regardless of phase.
    *  The peak markers/labels keep their phase colour — only the curve degrades
    *  to neutral. Keeps an arbitrary coexistence-phase hue off the trace. */
@@ -80,6 +82,41 @@ export interface TracePlotProps {
    *  surfaces as a nameless img in the a11y tree. Forwarded to PlotFrame as
    *  role="img" + aria-label. */
   figureLabel?: string;
+}
+
+export interface YFitSeries {
+  q: readonly number[];
+  I: readonly number[];
+}
+
+function usable(v: number): boolean {
+  return Number.isFinite(v) && v > 0;
+}
+
+function windowValues(series: YFitSeries, lo: number, hi: number): number[] {
+  const out: number[] = [];
+  let below = -1;
+  let above = -1;
+  let reachesLo = false;
+  let reachesHi = false;
+  series.q.forEach((q, i) => {
+    if (q >= lo) reachesLo = true;
+    if (q <= hi) reachesHi = true;
+    if (q >= lo && q <= hi) out.push(series.I[i]!);
+    else if (q < lo && (below < 0 || q > series.q[below]!)) below = i;
+    else if (q > hi && (above < 0 || q < series.q[above]!)) above = i;
+  });
+  if (below >= 0 && reachesLo) out.push(series.I[below]!);
+  if (above >= 0 && reachesHi) out.push(series.I[above]!);
+  return out.filter(usable);
+}
+
+function fitValues(main: YFitSeries, extra: readonly YFitSeries[], domain: [number, number]): number[] {
+  const lo = Math.min(domain[0], domain[1]);
+  const hi = Math.max(domain[0], domain[1]);
+  const own = windowValues(main, lo, hi);
+  if (own.length < 2) return main.I.filter(usable);
+  return [...own, ...extra.flatMap((s) => windowValues(s, lo, hi))];
 }
 
 // BU-TRACE-DIM: unassigned (form-factor / unindexed) traces read at FULL visual
@@ -118,6 +155,8 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
     show,
     highlightPeakIds,
     yHeadroom = 0,
+    fitYToX = false,
+    fitYAlso = [],
     neutralLine = false,
     onHoverQ,
     hoveredQ,
@@ -129,9 +168,9 @@ export function TracePlot(props: TracePlotProps): JSX.Element {
   const layers = { peaks: true, labels: false, band: true, ...(show ?? {}) };
 
   const xExtent = positiveExtent(trace.trace.q);
-  const rawYExtent = positiveExtent(trace.trace.I);
-  const yExtent: [number, number] = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)];
   const curXDomain = xDomain ?? xExtent;
+  const rawYExtent = positiveExtent(fitYToX ? fitValues(trace.trace, fitYAlso, curXDomain) : trace.trace.I);
+  const yExtent: [number, number] = [rawYExtent[0], rawYExtent[1] * (1 + yHeadroom)];
 
   const margins: Margins = axes
     ? { top: 20, right: 24, bottom: 48, left: 60 }

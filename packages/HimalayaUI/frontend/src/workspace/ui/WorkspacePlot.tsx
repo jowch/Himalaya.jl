@@ -83,6 +83,9 @@ export function WorkspacePlot({
       xType={xType}
       yType={yType}
       yLabel={viewLabel(view)}
+      fitYToX={yType === "linear"}
+      fitYAlso={compares.map((c) => ({ q: c.q, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }))}
+      yHeadroom={yType === "linear" ? 0.08 : 0}
       xDomain={xDomain}
       axes
       paperColor="var(--color-paper)"
