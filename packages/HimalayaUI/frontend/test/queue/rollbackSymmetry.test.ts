@@ -36,6 +36,9 @@ import {
   updateSampleMutator,
   setExposureStatusMutator, selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
+import {
+  addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator,
+} from "../../src/lib/queue/mutators/labels";
 import { queryKeys } from "../../src/queries";
 import type { QueryKey } from "@tanstack/react-query";
 
@@ -281,6 +284,25 @@ const SPECS: Spec[] = [
       ctx.restore();
     },
   },
+  ...([
+    ["addLabel", addLabelMutator, "add_label"],
+    ["removeLabel", removeLabelMutator, "remove_label"],
+    ["restoreLabelSuggestion", restoreLabelSuggestionMutator, "restore_label_suggestion"],
+  ] as const).map(([name, mutator, kind]) => ({
+    name,
+    keys: [queryKeys.labels(1) as unknown as QueryKey],
+    seed: (qc: QueryClient) => qc.setQueryData(queryKeys.labels(1), [
+      { id: 3, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 11, label: "37C", state: "suggested", source: "ingest" },
+    ]),
+    run: (qc: QueryClient) => {
+      const ctx = mutator.onMutate({
+        kind, clientOpId: "op", payload: {},
+        sampleId: 10, label: "Buffer", experimentId: 1, username: "alice", clientId: "tab",
+      } as any, qc);
+      ctx.restore();
+    },
+  })),
 ];
 
 describe("Rollback symmetry — restore() returns cache to prior state for every mutator", () => {

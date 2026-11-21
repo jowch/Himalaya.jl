@@ -53,6 +53,13 @@ export function applyRemoveLabel(list: readonly SampleLabel[], sampleId: number,
   return list.filter((l) => !(l.sample_id === sampleId && sameLabel(l.label, label)));
 }
 
+export function applyRestoreLabelSuggestion(list: readonly SampleLabel[], sampleId: number, label: string): SampleLabel[] {
+  const hit = list.find((l) => l.sample_id === sampleId && sameLabel(l.label, label));
+  if (hit) return list.map((l) => (l === hit ? { ...l, state: "suggested", source: "ingest" } : l));
+  const fresh = Math.min(0, ...list.map((l) => l.id)) - 1;
+  return [...list, { id: fresh, sample_id: sampleId, label: label.trim(), state: "suggested", source: "ingest" }];
+}
+
 export function labelVocabulary(list: readonly SampleLabel[]): string[] {
   const counts = new Map<string, { label: string; n: number }>();
   for (const l of list) {
