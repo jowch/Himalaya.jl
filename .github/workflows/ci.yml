@@ -83,7 +83,7 @@ jobs:
       - name: Test
         env:
           GROUP: ${{ matrix.group }}
-        run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")'
+        run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI"; julia_args=["--threads=4,1"])'
 
   frontend:
     name: Frontend build and Vitest
