@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { FRONTEND } from "./config.mjs";
+import { applyThrottle } from "./throttle.mjs";
 import { UsageError } from "./args.mjs";
 import { commandOf, sleep, waitGone } from "./proc.mjs";
 
@@ -131,6 +132,7 @@ export async function connect(cfg) {
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const pages = context.pages().filter((p) => !p.url().startsWith("devtools://"));
   const page = pages[pages.length - 1] ?? (await context.newPage());
+  await applyThrottle(context, page, cfg.throttle);
   return { browser, context, page };
 }
 

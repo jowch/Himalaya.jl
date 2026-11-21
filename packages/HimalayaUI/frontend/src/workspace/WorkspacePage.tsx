@@ -12,21 +12,27 @@ import {
   useExperiment,
   useExposures,
   useIndices,
+  useLoads,
   usePeaks,
+  useFrameAssignments,
   useRemoveAssignmentPhase,
-  useSetAssignmentState,
+  useRemoveFramePhase,
+  useSampleCall,
+  useSetSampleCallState,
   useRemovePeak,
-  useSelectExposure,
   useSetExposureStatus,
   useSetPeakExcluded,
   useTrace,
   useUnbridgeSample,
+  useTriggerScan,
 } from "../queries";
+import { useScanState } from "../hooks/useScanState";
+import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { firstUnreviewed, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -50,6 +56,7 @@ import { WorkspaceHeader } from "./ui/WorkspaceHeader";
 import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
+import { ExperimentNotice } from "./ui/ExperimentNotice";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
@@ -138,6 +145,24 @@ export function WorkspacePage(): JSX.Element {
   const username = useAppState((s) => s.username);
   const clearUsername = useAppState((s) => s.clearUsername);
   const experiment = useExperiment(experimentId);
+  const scan = useScanState(experimentId);
+  const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
+  const triggerScan = useTriggerScan(experimentId);
+  const loads = useLoads(experimentId);
+  const flagged = useMemo(
+    () => (loads.data ?? []).flatMap((l) => l.samples).filter((s) => s.flag !== null).length,
+    [loads.data],
+  );
+  const rescanText = !scan.rescanning
+    ? undefined
+    : isIngestStage(inFlight?.stage)
+      ? `Rescanning: ${stageLabel(inFlight.stage)} ${inFlight.processed} / ${inFlight.total}`
+      : inFlight && inFlight.total > 0
+        ? `Rescanning: ${inFlight.processed} / ${inFlight.total}`
+        : "Rescanning…";
+  const rescanFailed = scan.failed || triggerScan.isError;
+  const showFailure = useCallback(() => navigate(`/experiments/${experimentId}`), [navigate, experimentId]);
+  const reviewGrouping = useCallback(() => navigate(`/experiments/${experimentId}/grouping`), [navigate, experimentId]);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
 
@@ -151,12 +176,17 @@ export function WorkspacePage(): JSX.Element {
   }, [samples, filter]);
 
   const requested = sampleParam === undefined ? undefined : Number(sampleParam);
-  const sample = requested === undefined ? samples[0] : samples.find((s) => s.id === requested);
+  const sample = requested === undefined ? firstUnreviewed(samples) : samples.find((s) => s.id === requested);
   const sampleId = sample?.id;
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
   );
+  useEffect(() => {
+    if (requested !== undefined || sampleId === undefined) return;
+    const qs = search.toString();
+    navigate(`/experiments/${experimentId}/workspace/${sampleId}${qs ? `?${qs}` : ""}`, { replace: true });
+  }, [requested, sampleId, search, navigate, experimentId]);
 
   const exposures = useExposures(sampleId);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
@@ -169,14 +199,31 @@ export function WorkspacePage(): JSX.Element {
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
-  const assigned = useMemo(() => new Set(assignment.data?.members ?? []), [assignment.data]);
+  const sampleCall = useSampleCall(sampleId);
+  const otherFrames = useMemo(
+    () => [...new Set((sampleCall.data?.members ?? []).map((m) => m.exposure_id))].filter((id) => id !== exposure?.id),
+    [sampleCall.data, exposure?.id],
+  );
+  const otherAssignments = useFrameAssignments(otherFrames);
+  const otherMembers = useMemo(() => {
+    const live = new Map(otherFrames.map((id, i) => [id, otherAssignments[i]?.data?.members]));
+    return (sampleCall.data?.members ?? []).filter(
+      (m) => m.exposure_id !== exposure?.id && (live.get(m.exposure_id) ?? [m.index_id]).includes(m.index_id),
+    );
+  }, [sampleCall.data, otherFrames, otherAssignments, exposure?.id]);
+  const assigned = useMemo(() => {
+    const here = new Set(assignment.data?.members ?? []);
+    const phases = new Set(otherMembers.map((m) => m.phase));
+    for (const c of candidates) if (phases.has(c.phase)) here.add(c.id);
+    return here;
+  }, [assignment.data, otherMembers, candidates]);
   const [hoverId, setHoverId] = useState<number | undefined>(undefined);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
-  const setCallState = useSetAssignmentState(exposure?.id ?? 0);
+  const removeFramePhase = useRemoveFramePhase();
+  const setCallState = useSetSampleCallState(sampleId ?? 0);
   const isFormFactor = assignment.data?.state === "form_factor";
-  const selectExposure = useSelectExposure(sampleId ?? 0);
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
   const exposureDropped = exposure?.status === "rejected";
@@ -196,10 +243,7 @@ export function WorkspacePage(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
-  const [customError, setCustomError] = useState<string | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
-  const draftOpen = draft !== null;
-  useEffect(() => setCustomError(null), [draftOpen]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
@@ -229,29 +273,26 @@ export function WorkspacePage(): JSX.Element {
 
   const toggleCandidate = useCallback(
     (ix: IndexEntry) => {
-      if (!exposure || exposure.status === "rejected") return;
-      if (assigned.has(ix.id)) {
+      if (!exposure) return;
+      if (assignment.data?.members.includes(ix.id)) {
         removePhase.mutate(ix.id);
         return;
       }
-      if (exposure.selected) {
-        addPhase.mutate(ix.id);
+      const elsewhere = otherMembers.filter((m) => m.phase === ix.phase);
+      if (elsewhere.length > 0) {
+        for (const m of elsewhere) removeFramePhase.mutate(m.exposure_id, m.index_id);
         return;
       }
-      selectExposure.mutate(exposure.id, { onSuccess: () => addPhase.mutate(ix.id) });
+      if (exposure.status === "rejected") return;
+      addPhase.mutate(ix.id);
     },
-    [exposure, assigned, addPhase, removePhase, selectExposure],
+    [exposure, assignment.data, otherMembers, addPhase, removePhase, removeFramePhase],
   );
 
   const toggleFormFactor = useCallback(() => {
     if (!exposure || exposure.status === "rejected") return;
-    const next = isFormFactor ? "null" : "form_factor";
-    if (exposure.selected) {
-      setCallState.mutate(next);
-      return;
-    }
-    selectExposure.mutate(exposure.id, { onSuccess: () => setCallState.mutate(next) });
-  }, [exposure, isFormFactor, setCallState, selectExposure]);
+    setCallState.mutate(isFormFactor ? "null" : "form_factor");
+  }, [exposure, isFormFactor, setCallState]);
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
@@ -332,20 +373,9 @@ export function WorkspacePage(): JSX.Element {
     if (!draft || !exposure || !canCall) return;
     const c = draftCommit(draft);
     if (c.ratios.length === 0) return;
-    const commit = (): void => {
-      commitCustom.mutate(c.phase, c.basis, c.ratios);
-      setDraft(null);
-    };
-    if (exposure.selected) {
-      commit();
-      return;
-    }
-    setCustomError(null);
-    selectExposure.mutate(exposure.id, {
-      onSuccess: commit,
-      onError: () => setCustomError("This frame could not be selected, so the index was not added. Try again."),
-    });
-  }, [draft, exposure, canCall, commitCustom, selectExposure]);
+    commitCustom.mutate(c.phase, c.basis, c.ratios);
+    setDraft(null);
+  }, [draft, exposure, canCall, commitCustom]);
   const snapDraft = useCallback(
     (q: number) => {
       if (!draft) return;
@@ -521,6 +551,9 @@ export function WorkspacePage(): JSX.Element {
       : []),
     ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
+    ...(scan.rescanning ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate() }]),
+    { id: "grouping", label: "Review grouping", run: reviewGrouping },
+    { id: "configure", label: "Configure experiment", run: () => navigate(`/experiments/${experimentId}/config`) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
@@ -553,14 +586,13 @@ export function WorkspacePage(): JSX.Element {
       }
       header={
         <WorkspaceHeader
-          experimentId={experimentId}
           experimentName={experiment.data?.name ?? `Experiment ${experimentId}`}
           reviewed={reviewed}
           total={samples.length}
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice rescan={rescanText} failed={rescanFailed} flagged={flagged} onReview={reviewGrouping} onFailure={showFailure} />} />}
       main={
         sample ? (
           <>
@@ -654,8 +686,7 @@ export function WorkspacePage(): JSX.Element {
                 max={draftBounds.max}
                 landed={draftFit?.landed ?? 0}
                 total={draftFit?.points.length ?? 0}
-                disabled={!canCall || selectExposure.isPending}
-                error={customError}
+                disabled={!canCall}
                 onChange={setDraftClamped}
                 onAdd={addCustom}
                 onCancel={() => setDraft(null)}

@@ -189,8 +189,8 @@ end
 
             # form_factor / null state → no representative index (state-gated).
             DBInterface.execute(ctx.db,
-                """INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')
-                   ON CONFLICT(exposure_id) DO UPDATE SET state = 'form_factor'""",
+                """INSERT INTO sample_calls (sample_id, state) SELECT sample_id, 'form_factor' FROM exposures WHERE id = ?
+                   ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state""",
                 [ctx.exposure_id])
             @test HimalayaUI.compute_member_snapshot(
                 ctx.db, ctx.exposure_id)[:confirmed_index] === nothing
@@ -199,7 +199,7 @@ end
             # confirmed_index, and confirmed_index tracks assignment_members (not
             # any legacy group).
             DBInterface.execute(ctx.db,
-                "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?",
+                "DELETE FROM sample_calls WHERE sample_id = (SELECT sample_id FROM exposures WHERE id = ?)",
                 [ctx.exposure_id])
             DBInterface.execute(ctx.db,
                 "DELETE FROM assignment_members WHERE exposure_id = ?", [ctx.exposure_id])
@@ -237,8 +237,8 @@ end
 
             # Drive the member to form_factor via the durable assignment table.
             DBInterface.execute(ctx.db,
-                """INSERT INTO assignments (exposure_id, state) VALUES (?, 'form_factor')
-                   ON CONFLICT(exposure_id) DO UPDATE SET state = 'form_factor'""",
+                """INSERT INTO sample_calls (sample_id, state) SELECT sample_id, 'form_factor' FROM exposures WHERE id = ?
+                   ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state""",
                 [ctx.exposure_id])
             snap_ff = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap_ff[:assignment_state] == "form_factor"
@@ -252,7 +252,8 @@ end
             # And to null — distinct from form_factor though both have a null
             # confirmed_index; also carries no lattice phases.
             DBInterface.execute(ctx.db,
-                "UPDATE assignments SET state = 'null' WHERE exposure_id = ?",
+                """INSERT INTO sample_calls (sample_id, state) SELECT sample_id, 'null' FROM exposures WHERE id = ?
+                   ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state""",
                 [ctx.exposure_id])
             snap_null = HimalayaUI.compute_member_snapshot(ctx.db, ctx.exposure_id)
             @test snap_null[:assignment_state] == "null"
@@ -262,7 +263,7 @@ end
             # ── Coexistence: two distinct-phase assigned indices → two
             #    confirmed_phases, EACH with its own lattice_d, ordered score-desc.
             DBInterface.execute(ctx.db,
-                "UPDATE assignments SET state = 'indexed' WHERE exposure_id = ?",
+                "DELETE FROM sample_calls WHERE sample_id = (SELECT sample_id FROM exposures WHERE id = ?)",
                 [ctx.exposure_id])
             # Clear any migration-backfilled members (from the active auto-group)
             # so this asserts an UNAMBIGUOUS two-phase coexistence, not whatever

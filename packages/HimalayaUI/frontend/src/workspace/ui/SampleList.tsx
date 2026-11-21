@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { CorpusSample } from "../../api";
 import { sampleStatus } from "../model";
 
@@ -9,6 +9,7 @@ interface Props {
   onFilter: (v: string) => void;
   onPick: (id: number) => void;
   bridgeCounts?: ReadonlyMap<number, number>;
+  notice?: ReactNode;
 }
 
 function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
@@ -18,7 +19,7 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
 }
 
-export function SampleList({ samples, currentId, filter, onFilter, onPick, bridgeCounts }: Props): JSX.Element {
+export function SampleList({ samples, currentId, filter, onFilter, onPick, bridgeCounts, notice }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -50,6 +51,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
           className="w-full rounded-sm border border-hair bg-plate px-2 py-[5px] text-base text-ink placeholder:text-ink-faint focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
         />
       </div>
+      {notice}
       <ul className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
         {samples.map((s) => {
           const cur = s.id === currentId;
