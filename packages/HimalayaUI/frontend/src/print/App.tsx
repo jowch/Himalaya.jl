@@ -48,13 +48,6 @@ export function PrintApp(): JSX.Element {
     const onCuration = (e: MessageEvent) => {
       try {
         const parsed = JSON.parse((e as MessageEvent).data as string) as SseEvent;
-        // Ingest progress is broadcast-only (spec §9.3): never an own-op. Handle
-        // it HERE and RETURN — do NOT feed it to handleRemoteEvent, whose queue
-        // reconciliation would roll back + re-run every pending edit on each
-        // progress tick. The store write lives here (Zustand is NOT imported in
-        // applyRemoteToCache, which stays pure); the cache invalidation delegates
-        // to the shared invalidateIngestFrameCache helper (defined + tested in
-        // applyRemoteToCache.ts, Task 18) — no duplication.
         if (parsed.kind === "experiment_deleted") {
           const expId = parsed.entity_id;
           const { navigate: go, pathname } = here.current;
@@ -66,6 +59,13 @@ export function PrintApp(): JSX.Element {
           forgetExperiment(qc, expId);
           return;
         }
+        // Ingest progress is broadcast-only (spec §9.3): never an own-op. Handle
+        // it HERE and RETURN — do NOT feed it to handleRemoteEvent, whose queue
+        // reconciliation would roll back + re-run every pending edit on each
+        // progress tick. The store write lives here (Zustand is NOT imported in
+        // applyRemoteToCache, which stays pure); the cache invalidation delegates
+        // to the shared invalidateIngestFrameCache helper (defined + tested in
+        // applyRemoteToCache.ts, Task 18) — no duplication.
         if (
           parsed.kind === "ingest_started" || parsed.kind === "ingest_progress" ||
           parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed"

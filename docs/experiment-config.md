@@ -68,6 +68,9 @@ picked and compares it against the stored paths as text. It never visits the
 folders of existing experiments, so a stored folder on an unreachable network
 share cannot stall adding a new one. An experiment created before this rule
 under a symlinked path is matched only by that same spelling.
+The experiments home shows that real path, not the spelling that was picked,
+and rescans read it. If a share is reached through a link whose target changes
+between mounts, remove the experiment and add the folder again.
 
 ### File manifest
 

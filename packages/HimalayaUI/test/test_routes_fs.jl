@@ -535,7 +535,7 @@ end
     end
 end
 
-@testset "the duplicate check reads stored folders as text and never visits them" begin
+@testset "the duplicate check matches stored folders as text: a missing one still counts and a stored symlink is not resolved" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         gone = joinpath(tmp, "unmounted-share", "setup1", "data")
