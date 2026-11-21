@@ -8,7 +8,7 @@ import { TopNav } from "./TopNav";
 import { ExperimentShell } from "./ExperimentShell";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
-import { ExperimentCorpusPage } from "../pages/ExperimentCorpusPage";
+import { ExperimentEntry } from "./ExperimentEntry";
 import { ConfigurationPage } from "../pages/ConfigurationPage";
 import { GroupingReviewPage } from "../pages/GroupingReviewPage";
 import { IndexSlugRedirect } from "./IndexSlugRedirect";
@@ -31,11 +31,7 @@ function GroupingReviewRoute(): JSX.Element {
       // stale multi-selection across an experiment switch.
       key={experimentId}
       experimentId={experimentId}
-      // Absolute target: `/grouping` is a top-level takeover route (not nested
-      // under the experiment shell), so a relative `../corpus` resolves to bare
-      // `/corpus` (a 404). Confirm-groups and Back both land on this
-      // experiment's corpus.
-      onBack={() => navigate(`/experiments/${experimentId}/corpus`)}
+      onBack={() => navigate(`/experiments/${experimentId}`)}
     />
   );
 }
@@ -112,8 +108,8 @@ export function AppRoutes(): JSX.Element {
         <Route path="/experiments/new/config" element={<ConfigurationPage />} />
         <Route path="/experiments/:id/grouping" element={<GroupingReviewRoute />} />
         <Route path="/experiments/:id" element={<ExperimentShell />}>
-          <Route index element={<Navigate to="corpus" replace />} />
-          <Route path="corpus" element={<ExperimentCorpusPage />} />
+          <Route index element={<ExperimentEntry />} />
+          <Route path="corpus" element={<Navigate to=".." replace />} />
           <Route path="config" element={<ConfigurationPage />} />
         </Route>
         <Route path="*" element={<PageBody />} />

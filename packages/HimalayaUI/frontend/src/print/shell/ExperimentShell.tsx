@@ -205,10 +205,10 @@ export function ExperimentShell(): JSX.Element {
             </Button>
             {onConfig ? (
               <IconButton
-                label="Back to corpus"
+                label="Back to workspace"
                 tone="ghost"
                 data-testid="experiment-config-back"
-                onClick={() => navigate(`/experiments/${expId}/corpus`)}
+                onClick={() => navigate(`/experiments/${expId}/workspace`)}
               >
                 ←
               </IconButton>
