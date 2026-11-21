@@ -6,6 +6,7 @@ import { makeAxis, positiveExtent, type Axis1D, type ScaleType } from "../../pri
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "../../print/plot/interaction";
 import { viewAxes, viewIntensity, viewLabel, type PlotView } from "../plotView";
 import { fitYDomain, PLOT_MARGINS, ticksFor } from "../plotScale";
+import { differenceAxis } from "../difference";
 
 export interface CombLine {
   id: number;
@@ -20,6 +21,11 @@ export interface CompareLine {
   I: readonly number[];
   color: string;
   emphasis: boolean;
+}
+
+export interface DifferenceLine {
+  q: readonly number[];
+  d: readonly number[];
 }
 
 export const COMPARE_DASH = "5 4";
@@ -41,6 +47,7 @@ interface Props {
   onRetry?: () => void;
   retrying?: boolean;
   emptyMessage?: string;
+  difference?: DifferenceLine;
 }
 
 interface Geometry {
@@ -92,11 +99,13 @@ export function WorkspacePlot({
   onRetry,
   retrying = false,
   emptyMessage,
+  difference,
 }: Props): JSX.Element {
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
   const [hoverQ, setHoverQ] = useState<number | null>(null);
-  const { xType, yType } = viewAxes(view);
+  const { xType, yType: viewYType } = viewAxes(view);
+  const yType = difference ? "linear" : viewYType;
 
   const plotX = (px: number): number | null => {
     const g = geometry.current;
@@ -139,9 +148,12 @@ export function WorkspacePlot({
 
   const xExtent = positiveExtent(trace.q);
   const shownX = xDomain ?? xExtent;
-  const I = trace.I.map((v, i) => viewIntensity(view, trace.q[i]!, v));
-  const shownCompares = compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
-  const yDomain = fitYDomain({ q: trace.q, I }, shownCompares, shownX, yType);
+  const lineQ = difference ? difference.q : trace.q;
+  const viewed = (difference ? difference.d : trace.I).map((v, i) => viewIntensity(view, lineQ[i]!, v));
+  const diffAxis = difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
+  const I = diffAxis ? viewed.map(diffAxis.to) : viewed;
+  const shownCompares = difference ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
+  const yDomain = diffAxis ? diffAxis.domain : fitYDomain({ q: trace.q, I }, shownCompares, shownX, yType);
   const yLabel = viewLabel(view);
 
   const lowX = Math.min(...shownX);
@@ -186,7 +198,7 @@ export function WorkspacePlot({
         const y = makeAxis(yDomain, [dims.plotHeight, 0], yType);
         geometry.current = { x, dims, xDomain: shownX, xExtent, xType };
         const xTicks = ticksFor(shownX, xType, Math.max(3, Math.floor(dims.plotWidth / 90)), false);
-        const yTicks = ticksFor(yDomain, yType, 5, true);
+        const yTicks = diffAxis ? diffAxis.ticks : ticksFor(yDomain, yType, 5, true);
         const inX = (q: number): boolean => q >= lowX && q <= highX;
         return (
           <>
@@ -234,8 +246,11 @@ export function WorkspacePlot({
                   />
                 ))}
               </g>
-              <g data-role="trace-line">
-                <path d={linePath(trace.q, I, x, y)} fill="none" stroke="var(--color-ink)" strokeWidth={1.8} strokeLinejoin="round" />
+              {difference && (
+                <line data-role="zero-line" x1={0} x2={dims.plotWidth} y1={y.to(0)} y2={y.to(0)} stroke="var(--color-hair-strong)" strokeDasharray="3 3" />
+              )}
+              <g data-role={difference ? "difference-line" : "trace-line"}>
+                <path d={linePath(lineQ, I, x, y)} fill="none" stroke={difference ? "var(--color-accent)" : "var(--color-ink)"} strokeWidth={1.8} strokeLinejoin="round" />
               </g>
               <g data-testid="workspace-combs">
                 {combs.map((c) =>

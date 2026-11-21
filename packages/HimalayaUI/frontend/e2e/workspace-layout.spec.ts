@@ -217,6 +217,26 @@ test("three comparisons with long names keep the compare bar on one line", async
   expect(after.plot[0]).toEqual(before.plot[0]);
 });
 
+test("subtracting a comparison, switching to the difference and stopping move nothing", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  const before = await measured(page);
+  await page.keyboard.press("c");
+  await page.keyboard.type(`${LONG}01`);
+  await page.keyboard.press("Enter");
+  const toggle = page.getByTestId("workspace-subtraction-toggle");
+  await expect(toggle).toBeVisible();
+  expect(await measured(page)).toEqual(before);
+  await toggle.getByRole("button", { name: /^Minus / }).click();
+  await expect(page.locator("[data-role=difference-line]")).toHaveCount(1);
+  expect(await measured(page)).toEqual(before);
+  await page.locator("[data-compare-chip] button[aria-pressed]").click({ modifiers: ["ControlOrMeta"] });
+  await expect(toggle).toHaveCount(0);
+  await expect(page.locator("[data-role=trace-line]")).toHaveCount(1);
+  expect(await measured(page)).toEqual(before);
+});
+
 test("on a short window Call and Exposure fold as an accordion, and stay put from sample to sample", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
