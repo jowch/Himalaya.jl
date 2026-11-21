@@ -174,23 +174,6 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
         @test occursin("\"label\":\"37C\"", only(added))
     end
 
-    @testset "merging a sample carries its labels to the survivor, except ones removed there" begin
-        db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b)) = _seed_label_samples(db, 2)
-        with_inproc_routes(db) do call
-            _add_label(call, a, "37C")
-            _add_label(call, b, "37c")
-            _add_label(call, b, "retake")
-            _add_label(call, b, "hot")
-            _add_label(call, a, "hot")
-            _remove_label(call, a, "hot")
-            r = call("POST", "/api/samples/$b/merge"; headers=_LABEL_HEADERS,
-                     body=Vector{UInt8}(JSON3.write(Dict(:survivor_id => a))))
-            @test r.status == 200
-            @test _listed(call, exp_id) == Set([(a, "37C", "confirmed"), (a, "retake", "confirmed")])
-        end
-    end
-
     @testset "deleting the experiment leaves no label rows behind" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a,)) = _seed_label_samples(db, 1)

@@ -134,7 +134,7 @@ async function resolveOne(page, flags) {
 export function parseExpectHttp(values = []) {
   return values.map((raw) => {
     const m = /^([1-5][0-9x]{2}):(.+)$/.exec(raw);
-    if (!m) throw new UsageError(`--expect-http must look like 400:/api/fs/resolve, got ${raw}`, "status digits may use x as a wildcard (4xx); the path is a regular expression");
+    if (!m) throw new UsageError(`--expect-http must look like 400:/api/fs/preview, got ${raw}`, "status digits may use x as a wildcard (4xx); the path is a regular expression");
     let path;
     try {
       path = new RegExp(m[2]);

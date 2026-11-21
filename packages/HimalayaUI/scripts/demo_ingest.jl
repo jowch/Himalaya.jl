@@ -1,8 +1,7 @@
 # Ingest the synthetic demo experiment into a RUNNING HimalayaUI backend, through
-# the same three calls the New-experiment funnel makes:
-#   1. GET  /api/fs/resolve   (layout auto-detect: data_dir, analysis_dir, patterns, setup file)
-#   2. GET  /api/fs/manifest  (file match + geometry derivation with that setup file)
-#   3. POST /api/experiments  (create + async first scan)
+# the same two calls the New-experiment screen makes:
+#   1. GET  /api/fs/preview   (layout, counts and geometry for each setup folder)
+#   2. POST /api/experiments  (create + async first scan)
 # then waits for the scan to finish. `make demo` runs this; `make demo-empty` skips
 # it so the funnel itself can be walked in the browser.
 #
@@ -41,8 +40,10 @@ function ingest_root(root, port, name)
     base = "http://127.0.0.1:$port/api"
     getj(path, q) = JSON3.read(HTTP.get(base * path; query = q).body)
 
-    rs = getj("/fs/resolve", ["path" => root])
-    if any(isnothing, (rs.analysis_dir, rs.image_pattern, rs.metadata_pattern, rs.integration_pattern))
+    setups = getj("/fs/preview", ["path" => root]).setups
+    length(setups) == 1 || error("$root holds $(length(setups)) setups; expected one demo setup folder.")
+    rs = only(setups)
+    if !rs.layout_detected
         error("$root doesn't look like an SSRL-style demo tree (no analysis/.../tot_files " *
               "*_tot.dat found). Regenerate it with `make demo-clean demo-data`.")
     end
@@ -61,19 +62,12 @@ function ingest_root(root, port, name)
         return wait_for_scan(base, e.id)
     end
 
-    mf = getj("/fs/manifest", [
-        "path" => rs.data_dir, "analysis_dir" => rs.analysis_dir,
-        "image_pattern" => rs.image_pattern, "metadata_pattern" => rs.metadata_pattern,
-        "integration_pattern" => rs.integration_pattern,
-        "setup_file" => something(rs.setup_file, ""),
-    ])
-    println("Matched: ", mf.matched)
+    println("Found $(rs.exposures) exposures, $(rs.without_trace) without a trace.")
 
     body = Dict(
         :name => name, :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
-        :patterns => Dict(:image => rs.image_pattern, :metadata => rs.metadata_pattern,
-                          :integration => rs.integration_pattern),
-        :geometry => get(mf, :geometry, Dict()),
+        :patterns => rs.patterns,
+        :geometry => rs.geometry,
     )
     created = JSON3.read(HTTP.post("$base/experiments", ["Content-Type" => "application/json"],
                                    JSON3.write(body)).body)

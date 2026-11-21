@@ -11,42 +11,56 @@ Experiment directories are read-only data sources. Every write goes to the DB.
 
 ## The New-experiment funnel
 
-The funnel is a sequence of read-only filesystem probes followed by one create
-call. The probes live in `routes_fs.jl` and never write to the DB; the create
-and scan live in `routes_experiments.jl` and `ingest.jl`.
+The funnel is one screen. The user picks a folder, Himalaya lists every setup
+under it, and one call per chosen setup creates the experiments. The probes
+live in `routes_fs.jl` and never write to the DB; the create and scan live in
+`routes_experiments.jl` and `ingest.jl`.
 
 | Step | Route | What it does |
 |------|-------|--------------|
-| Pick a directory | `GET /api/fs/suggest?prefix=` | Directory autocomplete (at most 20 subdirectories). |
-| Gate the pick | `GET /api/fs/validate?path=` | `ok: false` if the path is not a directory or another experiment already uses it as `data_dir`. |
-| Resolve | `GET /api/fs/resolve?path=` | Structural auto-discovery of the layout (see [Resolve](#resolve)). |
-| Review | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Previews what a scan would find with the current settings, and derives the geometry (see [File manifest](#file-manifest)). |
-| Approve | `POST /api/experiments` | Creates the row, returns `202`, and starts the first scan in the background. |
+| Pick a folder | `GET /api/fs/suggest?prefix=` | Directory autocomplete (at most 20 subdirectories). |
+| Preview | `GET /api/fs/preview?path=` | Lists the setups under the folder, each with its layout, counts and geometry (see [Preview](#preview)). `400` when the path is not a directory. |
+| Correct a setup | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Recounts one setup after the user edits its layout in Details (see [File manifest](#file-manifest)). |
+| Add | `POST /api/experiments` | One call per chosen setup. Creates the row, returns `202`, and starts the first scan in the background. |
 
-The frontend holds the in-progress values in a draft store
-(`lib/draftExperiment.ts`). `NewExperimentPage` covers the pick, and
-`ConfigurationPage` in first-run mode (`/experiments/new/config`) covers resolve,
-review and approve. After Approve the user lands on the grouping review page
-(`/experiments/:id/grouping`) while the first scan streams progress over SSE.
+`NewExperimentPage` (`/experiments/new`) shows one row per setup: a checkbox,
+an editable name (default `<folder>/<setup>`, e.g. `20261103/setup1`), a
+one-line summary, and a Details panel for the folders, patterns and geometry.
+A setup that is already an experiment is listed but cannot be chosen.
+⌘/Ctrl+Enter adds the chosen setups. One setup opens its workspace straight
+away; several go back to the experiments home. The workspace shows the first
+scan's progress in its status line (see [Problems](#problems)).
 
 "Manifest" here means the funnel's file manifest: a preview of which images,
 metadata files and integration files match the patterns. It is not a lab
 notebook.
 
-### Resolve
+### Preview
 
-`resolve_experiment_layout(root)` returns defaults for the user to correct. It
-stays cheap because it runs interactively over SMB: a handful of shallow
-`readdir` and `isfile` calls, never a deep walk of the raw-image directory.
+`setup_roots(path)` decides what a setup is. If the picked folder's `data_dir`
+(`path/data` if it exists, else `path`) holds `.tif` images, the folder is one
+setup. Otherwise each subdirectory whose `data_dir` holds images is a setup, so
+picking a beamtime date folder lists `setup1`, `setup2`, and so on, and skips
+folders such as `notes`.
+
+For each setup, `resolve_experiment_layout(root)` returns defaults for the user
+to correct. It stays cheap because it runs interactively over SMB: a handful of
+shallow `readdir` and `isfile` calls, never a deep walk of the raw-image
+directory.
 
 | Field | Default |
 |-------|---------|
-| `name` | `basename(root)` |
+| `name` | `<parent>/<setup>`, the setup folder and the folder above it |
 | `data_dir` | `root/data` if it exists, else `root` |
-| `analysis_dir` | The directory that holds the integration `.dat` files, found by probing the stem of the first `*.tif` in `data_dir` against `root/analysis`, its subdirectories, and the subdirectories of `root/analysis/automatic_analysis`. Falls back to `root/analysis`, else `nothing`. |
-| `image_pattern`, `metadata_pattern`, `integration_pattern` | Set together with `analysis_dir` by the same probe (see [File patterns](#file-patterns)). `nothing` when the probe finds no integration file. |
+| `analysis_dir` | The directory that holds the integration `.dat` files. Up to 9 image stems, spread evenly through `data_dir`, are each probed against `root/analysis`, its subdirectories, and the subdirectories of `root/analysis/automatic_analysis`. The most common answer wins (ties go to the first seen), so one image whose trace has not been written yet does not decide the layout. Falls back to `root/analysis`, else `nothing`. |
+| `image_pattern`, `metadata_pattern`, `integration_pattern` | Set together with `analysis_dir` by the same vote (see [File patterns](#file-patterns)). `layout_detected` is `false` when no stem found an integration file. |
 | `setup_file` | The latest `setup_info_*.txt` at the top of `root` or `root/analysis`. |
 | `setup_ambiguous` | `true` when no setup file was found, or when setup files exist in both places. |
+
+Each setup also carries the counts a scan would find (`exposures`,
+`without_metadata`, `without_trace`), the derived geometry with its sources,
+any geometry discrepancies, and `duplicate_of` when an experiment already uses
+its `data_dir`.
 
 ### File manifest
 
@@ -126,9 +140,9 @@ All of these are columns on the `experiments` row.
 [Legacy](#legacy-experimenttoml)). `last_scan_tier` and
 `consecutive_empty_ticks` belonged to the deleted rescan timer and are unused.
 
-The Configuration page in later-edit mode (`/experiments/:id/config`) edits
-these through `PATCH /api/experiments/:id`. A body with no patchable field is a
-`400`.
+`PATCH /api/experiments/:id` edits these. The UI no longer calls it: the
+Configuration page was removed with the one-screen funnel. A body with no
+patchable field is a `400`.
 
 ## File patterns
 
@@ -238,11 +252,17 @@ for them. A thumbnail that isn't warm yet renders on first view. A restart
 during the warm doesn't resume it: the experiment is already `complete`, so the
 next pass with work warms the rest.
 
-The grouping is a suggestion. The grouping review page and the routes in
-`routes_grouping.jl` let the user rename, merge and split samples, and move
-exposures between them. Possible mistakes are flagged when the samples are
-read: a cross-load merge suggestion when a filename label appears in more than
-one load, and a split suggestion when positions inside one sample jump.
+The grouping is not edited in the app. A sample split by mistake (for
+example a reshoot at a new position) is joined with a bridge in the workspace.
+
+### Problems
+
+`GET /api/experiments/:id/problems` returns `ingest_error`, the message of the
+last failed pass (cleared by the next pass that succeeds), and `exposures`:
+each exposure still waiting for its trace (`no_trace`) or whose analysis failed
+(`failed`), with its sample and reason. The workspace notice summarizes these
+(for example "2 exposures waiting for a trace · 1 analysis failed") and its
+Details button opens the list; picking a row opens that sample.
 
 ## Rescans
 
@@ -270,8 +290,7 @@ A pass runs:
   the route answers `200 {status, changed: false}` with the stored
   `ingest_status` and sends no frames; otherwise it answers `202` and runs a
   pass. `{"force": true}` always runs one and also retries every failed
-  analysis. The Rescan palette command and the Configuration page's pattern
-  edit use the same route.
+  analysis. The Rescan palette command uses the same route.
 - **At server start.** `resume_ingests!` runs a pass for every experiment left
   `scanning` by a restart or crash, and every experiment with work, which
   includes re-analysis after an upgrade that bumps `ANALYSIS_VERSION`.

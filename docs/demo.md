@@ -116,8 +116,8 @@ scratch/demo-experiment/
   plain int32 TIFF from Python `tifffile` loads in Julia as `Gray{Q0f31}` with
   the counts intact, and the generator's files read back in `tifffile` as int32.
 
-`make demo` ingests through `scripts/demo_ingest.jl`, which makes the same three
-calls the funnel does (`/api/fs/resolve` → `/api/fs/manifest` → `POST /api/experiments`)
+`make demo` ingests through `scripts/demo_ingest.jl`, which makes the same two
+calls the funnel does (`/api/fs/preview` → `POST /api/experiments`)
 and waits for the first scan. The first browser visit still shows the
 "Who are you?" onboarding; any name works.
 

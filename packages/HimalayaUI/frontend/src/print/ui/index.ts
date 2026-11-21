@@ -11,7 +11,6 @@ export type { KickerTone } from "./Kicker";
 export { CheckCircle } from "./CheckCircle";
 export { RejectOverlay } from "./RejectOverlay";
 export { ProgressBar } from "./ProgressBar";
-export { SegmentedProgressBar } from "./SegmentedProgressBar";
 export { PhaseChip } from "./PhaseChip";
 export type { PhaseChipVariant, PhaseChipSize } from "./PhaseChip";
 export { SegmentedControl } from "./SegmentedControl";

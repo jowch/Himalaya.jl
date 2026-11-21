@@ -16,7 +16,7 @@ import {
   useLabels,
   useAddLabel,
   useRemoveLabel,
-  useLoads,
+  useProblems,
   usePeaks,
   useFrameAssignments,
   useRemoveAssignmentPhase,
@@ -64,6 +64,7 @@ import { Note } from "./ui/Note";
 import { WorkspaceLayout } from "./ui/WorkspaceLayout";
 import { SampleList } from "./ui/SampleList";
 import { ExperimentNotice } from "./ui/ExperimentNotice";
+import { ProblemList } from "./ui/ProblemList";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
@@ -162,21 +163,19 @@ export function WorkspacePage(): JSX.Element {
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   const triggerScan = useTriggerScan(experimentId);
   useCheckForNewFilesOnOpen(experimentId);
-  const loads = useLoads(experimentId);
-  const flagged = useMemo(
-    () => (loads.data ?? []).flatMap((l) => l.samples).filter((s) => s.flag !== null).length,
-    [loads.data],
-  );
-  const rescanText = !scan.rescanning
+  const problems = useProblems(experimentId);
+  const [problemsOpen, setProblemsOpen] = useState(false);
+  const problemRows = problems.data?.exposures ?? [];
+  const waitingForTrace = problemRows.filter((p) => p.problem === "no_trace").length;
+  const failedAnalyses = problemRows.length - waitingForTrace;
+  const ingesting = scan.scanning || scan.rescanning;
+  const count = (n: number): string => n.toLocaleString("en-US");
+  const ingestProgress = !ingesting
     ? undefined
-    : isIngestStage(inFlight?.stage)
-      ? `Rescanning: ${stageLabel(inFlight.stage)} ${inFlight.processed} / ${inFlight.total}`
-      : inFlight && inFlight.total > 0
-        ? `Rescanning: ${inFlight.processed} / ${inFlight.total}`
-        : "Rescanning…";
-  const rescanFailed = scan.failed || triggerScan.isError;
-  const showFailure = useCallback(() => navigate(`/experiments/${experimentId}`), [navigate, experimentId]);
-  const reviewGrouping = useCallback(() => navigate(`/experiments/${experimentId}/grouping`), [navigate, experimentId]);
+    : inFlight && inFlight.total > 0
+      ? `${isIngestStage(inFlight.stage) ? stageLabel(inFlight.stage) : "Ingesting"} ${count(inFlight.processed)} of ${count(inFlight.total)}`
+      : scan.scanning ? "Reading files…" : "Checking for new files…";
+  const ingestFailed = scan.failed || triggerScan.isError;
   const corpus = useExperimentCorpusSamples(experimentId);
   const [filter, setFilter] = useState("");
 
@@ -569,7 +568,7 @@ export function WorkspacePage(): JSX.Element {
     : corpus.isLoading
       ? "Loading samples…"
       : samples.length === 0
-        ? "No samples in this experiment."
+        ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
         : "This sample is not in this experiment.";
 
   const commands: Command[] = [
@@ -593,9 +592,8 @@ export function WorkspacePage(): JSX.Element {
       : []),
     ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
     { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
-    ...(scan.rescanning ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate() }]),
-    { id: "grouping", label: "Review grouping", run: reviewGrouping },
-    { id: "configure", label: "Configure experiment", run: () => navigate(`/experiments/${experimentId}/config`) },
+    ...(ingesting ? [] : [{ id: "rescan", label: "Rescan the data folder", run: () => triggerScan.mutate() }]),
+    ...(problemRows.length > 0 || ingestFailed ? [{ id: "problems", label: "Show ingest problems", run: () => setProblemsOpen(true) }] : []),
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
@@ -611,6 +609,13 @@ export function WorkspacePage(): JSX.Element {
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {problemsOpen && (
+            <ProblemList
+              problems={problems.data}
+              onPick={(sid) => { setProblemsOpen(false); goSample(sid); }}
+              onClose={() => setProblemsOpen(false)}
+            />
+          )}
           {bigOpen && exposure && (
             <DetectorOverlay
               exposures={exposureList}
@@ -634,7 +639,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice rescan={rescanText} failed={rescanFailed} flagged={flagged} onReview={reviewGrouping} onFailure={showFailure} />} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>

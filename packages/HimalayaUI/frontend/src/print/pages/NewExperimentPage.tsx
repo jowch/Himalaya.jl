@@ -1,207 +1,318 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useExperiments } from "../../queries";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../api";
-import { useDraftExperiment } from "../../lib/draftExperiment";
+import { queryKeys } from "../../queries";
 import { PageFrame } from "../components/PageFrame";
 import { DirectoryPickerField } from "../components/DirectoryPickerField";
 import { Button } from "../ui/Button";
+import { Checkbox } from "../ui/Checkbox";
+import { Input } from "../ui/Input";
+import { KbKey } from "../ui/KbKey";
 import { Kicker } from "../ui/Kicker";
-import type { ValidatePathResponse } from "../../api";
 
-/** One inline pre-flight check (mockup p1-new): a green ✓ when satisfied, faint
- *  while pending. A failing GATING check is a red ✗ + reason (role=alert); a
- *  failing ADVISORY check (one that does not block submission) is a muted note
- *  (role=status), so an unrecognized-but-usable directory does not look broken. */
-function PreflightCheck({
-  state,
-  pass,
-  fail,
-  advisory = false,
-}: {
-  state: "pass" | "fail" | "pending";
-  pass: string;
-  fail: string;
-  advisory?: boolean;
-}): JSX.Element {
-  if (state === "pending") {
-    return <span className="text-meta text-ink-faint">◦ {pass}</span>;
-  }
-  if (state === "pass") {
-    return <span className="text-meta font-semibold text-success" role="status">✓ {pass}</span>;
-  }
-  if (advisory) {
-    return <span className="text-meta text-ink-soft" role="status">◦ {fail}</span>;
-  }
-  return <span className="text-meta font-semibold text-error" role="alert">✗ {fail}</span>;
+type Patterns = api.SetupPreview["patterns"];
+type GeometryKey = "flight_path_m" | "beam_center_x" | "beam_center_y" | "energy_kev" | "pixel_size_um";
+type CreateGeometry = NonNullable<api.CreateExperimentBody["geometry"]>;
+
+interface RowEdit {
+  include: boolean;
+  name: string;
+  data_dir: string;
+  analysis_dir: string;
+  setup_file: string;
+  patterns: Patterns;
+  geometry: Partial<Record<GeometryKey, string>>;
 }
 
-/**
- * NewExperimentPage — /experiments/new (spec §8.7, mockup p1-new). Directory
- * picker + suggestions + two pre-flight checks (directory exists · not already
- * an experiment). The primary action commits the validated path to a
- * client-side draft and navigates to /experiments/new/config (first-run
- * Configuration). No DB row is created here — creation happens at Approve.
- *
- * Two-phase funnel handoff (T4.0): "Review →" replaces the old "Scan and
- * create". The dup-dir guard (inline ✗ + disabled submit) is preserved.
- */
+const GEOMETRY_FIELDS: ReadonlyArray<{ key: GeometryKey; label: string }> = [
+  { key: "flight_path_m", label: "Flight path (m)" },
+  { key: "beam_center_x", label: "Beam center x (px)" },
+  { key: "beam_center_y", label: "Beam center y (px)" },
+  { key: "energy_kev", label: "Energy (keV)" },
+  { key: "pixel_size_um", label: "Pixel size (µm)" },
+];
+
+const count = (n: number): string => n.toLocaleString("en-US");
+
+function initialEdit(s: api.SetupPreview): RowEdit {
+  return {
+    include: s.duplicate_of === null && s.exposures > 0,
+    name: s.name,
+    data_dir: s.data_dir,
+    analysis_dir: s.analysis_dir ?? "",
+    setup_file: s.setup_file ?? "",
+    patterns: s.patterns,
+    geometry: {},
+  };
+}
+
+function layoutEdited(s: api.SetupPreview, e: RowEdit): boolean {
+  return e.data_dir !== s.data_dir
+    || e.analysis_dir !== (s.analysis_dir ?? "")
+    || e.setup_file !== (s.setup_file ?? "")
+    || e.patterns.image !== s.patterns.image
+    || e.patterns.metadata !== s.patterns.metadata
+    || e.patterns.integration !== s.patterns.integration;
+}
+
+interface Summary {
+  exposures: number;
+  without_metadata: number;
+  without_trace: number;
+  geometry: api.ManifestGeometry;
+}
+
+function summaryFromManifest(m: api.ManifestResponse, fallback: api.ManifestGeometry): Summary {
+  return {
+    exposures: m.matched.image,
+    without_metadata: m.unmatched.filter((u) => u.miss === "metadata").length,
+    without_trace: m.unmatched.filter((u) => u.miss === "integration").length,
+    geometry: m.geometry ?? fallback,
+  };
+}
+
+function parsedGeometry(e: RowEdit): Partial<Record<GeometryKey, number>> {
+  const out: Partial<Record<GeometryKey, number>> = {};
+  for (const { key } of GEOMETRY_FIELDS) {
+    const raw = e.geometry[key];
+    if (raw === undefined || raw.trim() === "") continue;
+    const v = Number(raw);
+    if (Number.isFinite(v)) out[key] = v;
+  }
+  return out;
+}
+
+function createGeometry(g: api.ManifestGeometry, edits: Partial<Record<GeometryKey, number>>): CreateGeometry | undefined {
+  const out: CreateGeometry = {};
+  for (const { key } of GEOMETRY_FIELDS) {
+    const edited = edits[key];
+    const value = edited ?? g[key];
+    if (value == null) continue;
+    out[key] = value;
+    out[`${key}_source`] = edited !== undefined ? "user" : g[`${key}_source`];
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function summaryLine(s: api.SetupPreview, sum: Summary, setupFile: string): string {
+  const parts = [`${count(sum.exposures)} ${sum.exposures === 1 ? "exposure" : "exposures"}`];
+  const fp = sum.geometry.flight_path_m;
+  if (fp != null) parts.push(`flight path ${fp.toFixed(2)} m`);
+  if (!s.layout_detected) parts.push("integration layout not recognised");
+  if (setupFile === "") parts.push("no setup_info, so geometry needs checking");
+  if (sum.without_metadata > 0) parts.push(`${count(sum.without_metadata)} without a .prp`);
+  if (sum.without_trace > 0) parts.push(`${count(sum.without_trace)} without a trace yet`);
+  return parts.join(" · ");
+}
+
+function DetailsField({ label, value, onChange, placeholder, testId }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string;
+}): JSX.Element {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-caption text-ink-soft">{label}</span>
+      <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId}
+        {...(placeholder !== undefined ? { placeholder } : {})} />
+    </label>
+  );
+}
+
+function SetupRow({ setup, edit, onEdit, error }: {
+  setup: api.SetupPreview;
+  edit: RowEdit;
+  onEdit: (patch: Partial<RowEdit>) => void;
+  error: string | undefined;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const edited = layoutEdited(setup, edit);
+  const manifest = useQuery({
+    queryKey: ["manifest", edit.data_dir, edit.patterns, edit.setup_file, edit.analysis_dir],
+    queryFn: () => api.fetchManifest(edit.data_dir, edit.patterns,
+      edit.setup_file || undefined, edit.analysis_dir || undefined),
+    enabled: edited && edit.data_dir !== "",
+  });
+  const sum: Summary = edited && manifest.data
+    ? summaryFromManifest(manifest.data, setup.geometry)
+    : setup;
+  const g = sum.geometry;
+  const shown = (key: GeometryKey): string => {
+    const v = g[key];
+    return v == null ? "not found" : String(Number(v.toFixed(4)));
+  };
+
+  return (
+    <li data-testid="setup-row" data-root={setup.root} className="flex flex-col gap-2 border-b border-hair py-3">
+      <div className="flex items-center gap-3">
+        <Checkbox
+          checked={edit.include}
+          disabled={setup.duplicate_of !== null}
+          onChange={(include) => onEdit({ include })}
+          aria-label={`Add ${edit.name}`}
+        />
+        <Input value={edit.name} onValueChange={(name) => onEdit({ name })} testId="setup-name"
+          aria-label="Experiment name" className="min-w-0 flex-1" />
+        <Button variant="ghost" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? "Hide details" : "Details"}
+        </Button>
+      </div>
+      <p data-testid="setup-summary" className="text-meta text-ink-soft">
+        {setup.duplicate_of !== null
+          ? `Already added as "${setup.duplicate_of.name}".`
+          : summaryLine(setup, sum, edit.setup_file)}
+      </p>
+      {error !== undefined && <p role="alert" className="text-meta text-error">{error}</p>}
+      {open && (
+        <div data-testid="setup-details" className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <DetailsField label="Data folder" value={edit.data_dir} testId="details-data-dir"
+            onChange={(data_dir) => onEdit({ data_dir })} />
+          <DetailsField label="Integration folder" value={edit.analysis_dir} testId="details-analysis-dir"
+            onChange={(analysis_dir) => onEdit({ analysis_dir })} />
+          <DetailsField label="Setup file" value={edit.setup_file} testId="details-setup-file"
+            onChange={(setup_file) => onEdit({ setup_file })} />
+          <DetailsField label="Image files" value={edit.patterns.image} testId="details-image-pattern"
+            onChange={(image) => onEdit({ patterns: { ...edit.patterns, image } })} />
+          <DetailsField label="Metadata files" value={edit.patterns.metadata} testId="details-metadata-pattern"
+            onChange={(metadata) => onEdit({ patterns: { ...edit.patterns, metadata } })} />
+          <DetailsField label="Integration files" value={edit.patterns.integration} testId="details-integration-pattern"
+            onChange={(integration) => onEdit({ patterns: { ...edit.patterns, integration } })} />
+          {GEOMETRY_FIELDS.map(({ key, label }) => (
+            <DetailsField key={key} label={label} value={edit.geometry[key] ?? ""} testId={`details-${key}`}
+              placeholder={shown(key)}
+              onChange={(v) => onEdit({ geometry: { ...edit.geometry, [key]: v } })} />
+          ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
-  const { setRoot, clear } = useDraftExperiment();
-
-  const { data: experiments } = useExperiments();
-
+  const queryClient = useQueryClient();
   const [path, setPath] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [validation, setValidation] = useState<ValidatePathResponse | null>(null);
-  const [resolved, setResolved] = useState<api.ResolveLayoutResponse | null>(null);
+  const [edits, setEdits] = useState<Record<string, RowEdit>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const picked = useDebounced(path.trim(), 200);
 
-  // The picked path is the experiment ROOT; its data_dir is usually `<root>/data`
-  // (resolved on the next step). One experiment per data_dir, so flag a dup when
-  // either the root itself OR <root>/data already backs an experiment. The create
-  // route enforces the real 409 — this is the up-front courtesy check.
-  const trimmedPath = path.trim();
-  const rootData = trimmedPath.replace(/\/+$/, "") + "/data";
-  const duplicateOf =
-    trimmedPath === ""
-      ? undefined
-      : (experiments ?? []).find((e) => {
-          const d = e.data_dir.trim();
-          return d === trimmedPath || d === rootData;
-        });
-
-  // Debounced suggestion + validation fetch on path change.
   useEffect(() => {
-    if (path.trim() === "") {
-      setSuggestions([]);
-      setValidation(null);
-      setResolved(null);
-      return;
-    }
+    if (picked === "") { setSuggestions([]); return; }
     let live = true;
-    const t = setTimeout(() => {
-      void api.suggestPaths(path).then((r) => { if (live) setSuggestions(r.suggestions); }).catch(() => {});
-      void api.validatePath(path).then((r) => { if (live) setValidation(r); }).catch(() => {});
-      // Structural probe: does this dir look like an experiment (data + analysis
-      // integration layout found)? Cheap, name-based. 400s for a non-dir → clear.
-      void api.resolveLayout(path).then((r) => { if (live) setResolved(r); }).catch(() => { if (live) setResolved(null); });
-    }, 200);
-    return () => { live = false; clearTimeout(t); };
-  }, [path]);
+    void api.suggestPaths(picked).then((r) => { if (live) setSuggestions(r.suggestions); }).catch(() => {});
+    return () => { live = false; };
+  }, [picked]);
 
-  const canSubmit = validation?.ok === true && duplicateOf === undefined && !submitting;
+  const preview = useQuery({
+    queryKey: ["folder-preview", picked],
+    queryFn: () => api.previewFolder(picked),
+    enabled: picked !== "",
+    retry: false,
+  });
+  const setups = useMemo(() => preview.data?.setups ?? [], [preview.data]);
 
-  const handleReview = async (): Promise<void> => {
+  useEffect(() => {
+    setEdits(Object.fromEntries(setups.map((s) => [s.root, initialEdit(s)])));
+    setErrors({});
+  }, [setups]);
+
+  const chosen = setups.filter((s) => edits[s.root]?.include === true);
+  const canSubmit = chosen.length > 0 && !submitting && chosen.every((s) => edits[s.root]!.name.trim() !== "");
+
+  const submit = useCallback(async (): Promise<void> => {
     if (!canSubmit) return;
     setSubmitting(true);
-    try {
-      setRoot(trimmedPath);
-      navigate("/experiments/new/config");
-    } finally {
-      setSubmitting(false);
+    const created: number[] = [];
+    const failed: Record<string, string> = {};
+    for (const s of chosen) {
+      const e = edits[s.root]!;
+      const manifest = layoutEdited(s, e)
+        ? queryClient.getQueryData<api.ManifestResponse>(["manifest", e.data_dir, e.patterns, e.setup_file, e.analysis_dir])
+        : undefined;
+      const geometry = createGeometry(manifest?.geometry ?? s.geometry, parsedGeometry(e));
+      try {
+        const exp = await api.createExperiment({
+          name: e.name.trim(),
+          data_dir: e.data_dir,
+          path: e.data_dir,
+          ...(e.analysis_dir !== "" ? { analysis_dir: e.analysis_dir } : {}),
+          patterns: e.patterns,
+          ...(geometry ? { geometry } : {}),
+        });
+        created.push(exp.id);
+        setEdits((cur) => ({ ...cur, [s.root]: { ...cur[s.root]!, include: false } }));
+      } catch (err) {
+        failed[s.root] = err instanceof Error ? err.message : "Could not add this setup.";
+      }
     }
-  };
+    setErrors(failed);
+    setSubmitting(false);
+    void queryClient.invalidateQueries({ queryKey: queryKeys.experiments });
+    if (Object.keys(failed).length > 0) return;
+    navigate(created.length === 1 ? `/experiments/${created[0]}` : "/experiments");
+  }, [canSubmit, chosen, edits, navigate, queryClient]);
 
-  const handleCancel = (): void => {
-    clear();
-    navigate("/experiments");
-  };
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void submit();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [submit]);
 
-  // Pre-flight check states. Both are "pending" until a path is entered.
-  const existsState: "pass" | "fail" | "pending" =
-    trimmedPath === "" || validation == null ? "pending" : validation.ok ? "pass" : "fail";
-  const uniqueState: "pass" | "fail" | "pending" =
-    trimmedPath === "" ? "pending" : duplicateOf === undefined ? "pass" : "fail";
-  // Structure probe (advisory, never gates): the resolver found the integration
-  // layout (an analysis dir holding `.dat` sidecars) → this really looks like a
-  // SAXS experiment. When it doesn't, we don't block — the next step lets the
-  // user point at the right data/analysis dirs. Pending until the dir resolves.
-  const structureState: "pass" | "fail" | "pending" =
-    trimmedPath === "" || validation == null
-      ? "pending"
-      : resolved?.analysis_dir != null && resolved.integration_pattern != null
-        ? "pass"
-        : "fail";
+  const status = picked === ""
+    ? "Pick a beamtime folder to add every setup in it, or one setup folder."
+    : preview.isError
+      ? "That folder does not exist."
+      : preview.isFetching && setups.length === 0
+        ? "Looking for setups…"
+        : setups.length === 0
+          ? "No images found here or in the folders directly inside it."
+          : setups.length === 1
+            ? "Found 1 setup."
+            : `Found ${setups.length} setups.`;
 
   return (
     <>
       <PageFrame width="home" className="px-6 py-8 pb-28">
-        {/* Intro stays a readable measure; the input card spans the page so a
-            long path has room and the checks can sit alongside it (notes 4/5). */}
-        <div className="max-w-[60ch]">
-          <Kicker tone="accent">New experiment</Kicker>
-          <h1 className="text-display text-ink">Point at a directory</h1>
-          <p className="text-body text-ink-soft mt-2 max-w-[60ch]">
-            Pick the experiment folder (the one holding the data and analysis
-            directories). The next step finds the pieces and lets you review and
-            correct them before anything is created.
-          </p>
-        </div>
-
-        {/* The bar fills the container; the pre-flight checks stack directly
-            below it (no card — the page chrome carries the section). */}
+        <Kicker tone="accent">New experiment</Kicker>
+        <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <Kicker tone="soft" className="mb-2">Directory</Kicker>
-          <DirectoryPickerField
-            value={path}
-            onChange={setPath}
-            suggestions={suggestions}
-            validation={null}
-          />
-          <p className="text-caption text-ink-soft mt-2">
-            Start typing and we suggest matches. Tab completes, ↑↓ choose, ↵ confirms.
-          </p>
-          <div
-            className="mt-3 flex flex-col gap-1.5"
-            data-testid="dirpicker-checks"
-          >
-            <PreflightCheck
-              state={existsState}
-              pass="directory exists"
-              fail={validation?.message ?? "directory not found"}
-            />
-            <PreflightCheck
-              state={uniqueState}
-              pass="not already an experiment"
-              fail={
-                duplicateOf?.name
-                  ? `already an experiment ("${duplicateOf.name}")`
-                  : "already an experiment"
-              }
-            />
-            {/* Advisory: it's fine to proceed even if we don't recognize the
-                layout — Configuration lets the user point at the right dirs. */}
-            <PreflightCheck
-              state={structureState}
-              advisory
-              pass="looks like an experiment (data + analysis found)"
-              fail="no data/analysis layout detected here; you can set it up next"
-            />
-          </div>
+          <DirectoryPickerField value={path} onChange={setPath} suggestions={suggestions} />
+          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{status}</p>
         </div>
+        {setups.length > 0 && (
+          <ul data-testid="setup-list" className="mt-4 flex flex-col">
+            {setups.map((s) => edits[s.root] && (
+              <SetupRow key={s.root} setup={s} edit={edits[s.root]!} error={errors[s.root]}
+                onEdit={(patch) => setEdits((cur) => ({ ...cur, [s.root]: { ...cur[s.root]!, ...patch } }))} />
+            ))}
+          </ul>
+        )}
       </PageFrame>
-
-      {/* Sticky funnel footer (p1-new): reassurance + Cancel/Review. */}
       <footer
         data-testid="funnel-footer"
-        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-4 border-t border-hair bg-paper px-8 py-3"
+        className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-end gap-3 border-t border-hair bg-paper px-8 py-3"
       >
-        <span className="text-meta text-ink-soft">
-          Nothing is created yet. The next step indexes and lets you review.
-        </span>
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={handleCancel}>Cancel</Button>
-          <Button
-            variant="accent"
-            data-testid="create-submit"
-            disabled={!canSubmit}
-            onClick={() => { void handleReview(); }}
-          >
-            Review →
-          </Button>
-        </div>
+        <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
+        <Button variant="accent" data-testid="create-submit" disabled={!canSubmit} onClick={() => { void submit(); }}>
+          {chosen.length > 1 ? `Add ${chosen.length} experiments` : "Add experiment"}
+          <KbKey variant="frost" className="ml-2">⌘↵</KbKey>
+        </Button>
       </footer>
     </>
   );

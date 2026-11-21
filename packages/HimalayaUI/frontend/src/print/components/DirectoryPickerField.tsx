@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "../ui/Input";
 import { Popover } from "../ui/Popover";
-import type { ValidatePathResponse } from "../../api";
 
 export interface DirectoryPickerFieldProps {
   value: string;
@@ -10,8 +9,6 @@ export interface DirectoryPickerFieldProps {
   /** Live autocomplete suggestions for the current `value` (caller fetches via
    *  `suggestPaths`). */
   suggestions: ReadonlyArray<string>;
-  /** Live validation probe result, or null when not yet probed. */
-  validation: ValidatePathResponse | null;
   /** Accessible label for the input. Default "Data directory" (the primary
    *  new-experiment use); set e.g. "Analysis directory" when reused elsewhere. */
   ariaLabel?: string;
@@ -21,7 +18,7 @@ export interface DirectoryPickerFieldProps {
 
 /**
  * DirectoryPickerField — path input + suggestion list (via Popover) +
- * Tab/↑↓/↵ completion + a validation line. No full file browser (spec §8.7).
+ * Tab/↑↓/↵ completion. No full file browser (spec §8.7).
  * Composes `Input`, `Popover`, and design-system token utilities only
  * (no inline appearance); the suggestion list is anchored inside Popover,
  * which provides outside-pointerdown dismiss, Escape close, and focus-return
@@ -38,7 +35,6 @@ export function DirectoryPickerField({
   value,
   onChange,
   suggestions,
-  validation,
   ariaLabel = "Data directory",
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
@@ -144,17 +140,6 @@ export function DirectoryPickerField({
           </ul>
         )}
       </Popover>
-      {validation && (
-        <div
-          data-testid="dirpicker-validation"
-          data-ok={validation.ok ? "true" : "false"}
-          className={"text-sm " + (validation.ok ? "text-ink-soft" : "text-error")}
-        >
-          {validation.ok
-            ? `Matched ${validation.matched} of ${validation.scanned} files`
-            : (validation.message ?? "No exposures found")}
-        </div>
-      )}
     </div>
   );
 }

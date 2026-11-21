@@ -88,11 +88,11 @@ julia --project=/path/to/Himalaya.jl/packages/HimalayaUI \
 
 ## Creating an experiment
 
-Start the server (`himalaya serve`), open the UI, and choose **New experiment**. Pick the beamtime directory. HimalayaUI then:
+Start the server (`himalaya serve`), open the UI, and choose **New experiment**. Pick a beamtime date folder (it lists every setup under it, such as `setup1` and `setup2`) or a single setup folder. For each setup HimalayaUI:
 
-1. **Resolves** the layout: the raw-image directory (`data/` if present), the directory holding the integration `.dat` files, the file patterns, and the `setup_info_*.txt` calibration file.
-2. **Previews** what a scan would find with those settings: how many images, metadata and integration files match, and the geometry derived from the metadata and setup files. Correct anything that is wrong before approving.
-3. **Scans** on Approve: it creates one exposure per image, groups exposures into loads and samples by time and stage position, and runs peak-finding and indexing on each one. You land on the grouping review page while the scan runs.
+1. **Finds** the layout: the raw-image directory (`data/` if present), the directory holding the integration `.dat` files, the file patterns, and the `setup_info_*.txt` calibration file.
+2. **Previews** what a scan would find in one line: how many exposures, how many still lack a trace, and the flight path from the setup file. Open Details to correct a folder, a pattern or a geometry value.
+3. **Scans** when you add it (⌘/Ctrl+Enter): it creates one exposure per image, groups exposures into loads and samples by time and stage position, and runs peak-finding and indexing on each one. Adding one setup opens its workspace, which shows the scan's progress above the sample list.
 
 A typical SSRL directory looks like this:
 
@@ -271,7 +271,7 @@ Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved,
 
 ## Troubleshooting
 
-**Exposures or peaks missing after a scan.** If the scan failed, the experiment opens on a scan-failed page that lists the files that couldn't be paired. Otherwise call `GET /api/fs/manifest?path=<data_dir>&analysis_dir=<analysis_dir>&image_pattern=…&metadata_pattern=…&integration_pattern=…` with the experiment's settings: its `unmatched` list names every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Fix the pattern on the experiment's Configuration page; a pattern edit forces a rescan. Also check that `analysis_dir` points at the directory that actually holds the `.dat` files.
+**Exposures or peaks missing after a scan.** If the scan failed, the workspace notice says so; its Details button shows the error and every exposure still waiting for a trace or whose analysis failed. To find files that couldn't be paired, call `GET /api/fs/manifest?path=<data_dir>&analysis_dir=<analysis_dir>&image_pattern=…&metadata_pattern=…&integration_pattern=…` with the experiment's settings: its `unmatched` list names every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Fix the pattern with `PATCH /api/experiments/:id`; a pattern edit forces a rescan. Also check that `analysis_dir` points at the directory that actually holds the `.dat` files.
 
 **`SKIP (...)` messages during `analyze`.** The analysis of that exposure raised an error (commonly: missing file, unreadable trace, no peaks). Other exposures continue; the error message indicates the cause.
 

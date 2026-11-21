@@ -140,7 +140,6 @@ function register_routes!()
     register_export_routes!()
     register_picker_routes!()
     register_resolve_routes!()
-    register_grouping_routes!()
     register_bridge_routes!()
     register_label_routes!()
     register_fs_routes!()
@@ -191,13 +190,17 @@ end
 
 ingest_running(experiment_id::Int) = islocked(_ingest_lock(experiment_id))
 
-function _set_ingest_status!(db::SQLite.DB, experiment_id::Int, status::AbstractString; scanned::Bool = false)
+function _set_ingest_status!(db::SQLite.DB, experiment_id::Int, status::AbstractString;
+        scanned::Bool = false, error::Union{String,Nothing} = nothing)
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             if scanned
                 DBInterface.execute(db,
-                    "UPDATE experiments SET ingest_status = ?, last_scanned_at = ? WHERE id = ?",
+                    "UPDATE experiments SET ingest_status = ?, ingest_error = NULL, last_scanned_at = ? WHERE id = ?",
                     [status, format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"), experiment_id])
+            elseif error !== nothing
+                DBInterface.execute(db, "UPDATE experiments SET ingest_status = ?, ingest_error = ? WHERE id = ?",
+                    [status, first(error, 2000), experiment_id])
             else
                 DBInterface.execute(db, "UPDATE experiments SET ingest_status = ? WHERE id = ?",
                     [status, experiment_id])
@@ -236,9 +239,10 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
                 :ok
             catch err
                 @warn "ingest failed" experiment_id exception = err
-                _set_ingest_status!(db, experiment_id, "failed")
+                message = sprint(showerror, err)
+                _set_ingest_status!(db, experiment_id, "failed"; error = message)
                 broadcast_progress!(experiment_id; kind = "ingest_failed",
-                    processed = 0, total = 0, error = sprint(showerror, err))
+                    processed = 0, total = 0, error = message)
                 :failed
             end
         end

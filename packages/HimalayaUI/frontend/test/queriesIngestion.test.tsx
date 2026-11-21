@@ -1,8 +1,7 @@
-// test/queriesIngestion.test.tsx
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { queryKeys, useLoads } from "../src/queries";
+import { queryKeys, useProblems } from "../src/queries";
 import * as api from "../src/api";
 
 function wrapper() {
@@ -12,22 +11,16 @@ function wrapper() {
   );
 }
 
-describe("ingestion queryKeys + hooks (Phase E1)", () => {
-  beforeEach(() => vi.restoreAllMocks());
+describe("ingest problems query", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("loads key is distinct from samples key, and `undefined`-tolerant like samples", () => {
-    expect(queryKeys.loads(7)).toEqual(["experiment", 7, "loads"]);
-    expect(queryKeys.samples(7)).toEqual(["experiment", 7, "samples"]);
-    // Mirrors queryKeys.samples' `id ?? "none"` shape (queries.ts:51) so a
-    // disabled (undefined-id) loads query never prefix-collides with an
-    // enabled one.
-    expect(queryKeys.loads(undefined)).toEqual(["experiment", "none", "loads"]);
+  it("keys problems under the experiment", () => {
+    expect(queryKeys.problems(7)).toEqual(["experiment", 7, "problems"]);
   });
 
-  it("useLoads fetches listLoads", async () => {
-    const spy = vi.spyOn(api, "listLoads").mockResolvedValue([]);
-    const { result } = renderHook(() => useLoads(7), { wrapper: wrapper() });
+  it("useProblems fetches listProblems for the experiment", async () => {
+    const spy = vi.spyOn(api, "listProblems").mockResolvedValue({ ingest_error: null, exposures: [] });
+    const { result } = renderHook(() => useProblems(7), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(spy).toHaveBeenCalledWith(7);
   });

@@ -222,51 +222,6 @@ end
     end
 end
 
-@testset "experiment list: review_count" begin
-    tmp = mktempdir()
-    db = open_prepared_clone(tmp)
-    eid = HimalayaUI.init_experiment!(db;
-        name = "ReviewCount", path = tmp,
-        data_dir = joinpath(tmp, "data"),
-        analysis_dir = joinpath(tmp, "analysis"))
-
-    with_inproc_routes(db) do call
-        # CLEAN experiment: one load, one sample, two exposures at the SAME
-        # horizontal_position → no split flag → review_count == 0.
-        l = HimalayaUI.create_load!(db; experiment_id = eid, load_index = 1)
-        s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "Clean",
-            load_id = l, slot_index = 1)
-        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
-            filename = "c1", horizontal_position = 10.0, frame_no = 1)
-        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, load_id = l,
-            filename = "c2", horizontal_position = 10.1, frame_no = 2)  # ~0.1 mm jitter, no flag
-
-        list = JSON3.read(String(call("GET", "/api/experiments").body))
-        row = first(filter(e -> e.id == eid, list))
-        @test haskey(row, :review_count)
-        @test row.review_count == 0
-
-        # FLAGGED experiment: second experiment, one sample, two exposures with
-        # horizontal_position jump > 0.5 mm → SplitFlag → review_count >= 1.
-        eid2 = HimalayaUI.init_experiment!(db;
-            name = "Flagged", path = mktempdir(),
-            data_dir = joinpath(mktempdir(), "data"),
-            analysis_dir = joinpath(mktempdir(), "analysis"))
-        l2 = HimalayaUI.create_load!(db; experiment_id = eid2, load_index = 1)
-        s2 = HimalayaUI.create_sample!(db; experiment_id = eid2, name = "Split",
-            load_id = l2, slot_index = 1)
-        HimalayaUI.create_exposure!(db; experiment_id = eid2, sample_id = s2, load_id = l2,
-            filename = "f1", horizontal_position = 10.0, frame_no = 1)
-        HimalayaUI.create_exposure!(db; experiment_id = eid2, sample_id = s2, load_id = l2,
-            filename = "f2", horizontal_position = 20.0, frame_no = 2)  # 10 mm jump → SplitFlag
-
-        list2 = JSON3.read(String(call("GET", "/api/experiments").body))
-        row2 = first(filter(e -> e.id == eid2, list2))
-        @test haskey(row2, :review_count)
-        @test row2.review_count >= 1
-    end
-end
-
 @testset "POST /api/experiments persists first-run geometry overrides as source='user'" begin
     tmp = mktempdir()
     data_dir = joinpath(tmp, "data"); mkpath(data_dir)   # empty → scan derives nothing

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, SampleCall, SampleLabel, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
@@ -29,7 +29,7 @@ const state = {
   compareTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
   labels: [] as SampleLabel[],
-  loads: [] as { samples: { flag: object | null }[] }[],
+  problems: { ingest_error: null as string | null, exposures: [] as ProblemExposure[] },
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
 };
@@ -50,7 +50,7 @@ vi.mock("../../src/queries", () => ({
     return { data: state.corpus, isLoading: false };
   },
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
-  useLoads: () => ({ data: state.loads }),
+  useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useExposures: () => ({ data: state.exposures }),
@@ -206,7 +206,7 @@ beforeEach(() => {
   state.compareTraces = new Map();
   state.bridges = [];
   state.labels = [];
-  state.loads = [];
+  state.problems = { ingest_error: null, exposures: [] };
   state.ingest = undefined;
   state.rescanError = false;
   rescans.length = 0;
@@ -345,43 +345,70 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("heading", { level: 2, name: "A2" })).toBeInTheDocument();
   });
 
-  it("says when the last rescan failed, and Details opens the failure", () => {
+  it("says when the last ingest failed, and Details lists the error", () => {
     state.ingest = { status: "failed", processed: 0, total: 0 };
+    state.problems = { ingest_error: "SystemError: opening file", exposures: [] };
     renderAt("/experiments/1/workspace/10");
-    const failed = screen.getByTestId("workspace-rescan-failed");
-    expect(failed).toHaveTextContent("The last rescan failed.");
-    fireEvent.click(within(failed).getByRole("button", { name: "Details" }));
-    expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments\/1$/);
+    const notice = screen.getByTestId("workspace-notice");
+    expect(within(notice).getByTestId("workspace-ingest-failed")).toHaveTextContent("The last ingest failed.");
+    fireEvent.click(within(notice).getByRole("button", { name: "Details" }));
+    expect(screen.getByTestId("problems-ingest-error")).toHaveTextContent("SystemError: opening file");
   });
 
-  it("says the rescan failed when the request to start it fails", () => {
+  it("says the ingest failed when the request to start it fails", () => {
     state.rescanError = true;
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-rescan-failed")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-ingest-failed")).toBeInTheDocument();
   });
 
-  it("shows nothing above the list while grouping is settled and no rescan runs", () => {
-    state.loads = [{ samples: [{ flag: null }] }];
+  it("shows nothing above the list when nothing is running and nothing is wrong", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.queryByTestId("workspace-notice")).toBeNull();
   });
 
-  it("says how many samples need a grouping check, and Review opens the grouping review", () => {
-    state.loads = [{ samples: [{ flag: { kind: "merge" } }, { flag: null }, { flag: { kind: "split" } }] }];
+  it("counts exposures waiting for a trace and failed analyses, and a problem opens its sample", () => {
+    state.problems = {
+      ingest_error: null,
+      exposures: [
+        { exposure_id: 1, filename: "A_0_001", sample_id: 11, sample_name: "A2", problem: "no_trace", reason: "no trace" },
+        { exposure_id: 2, filename: "B_0_001", sample_id: 11, sample_name: "A2", problem: "no_trace", reason: "no trace" },
+        { exposure_id: 3, filename: "C_0_001", sample_id: 12, sample_name: "B1", problem: "failed", reason: "bad header" },
+      ],
+    };
     renderAt("/experiments/1/workspace/10");
     const notice = screen.getByTestId("workspace-notice");
-    expect(notice).toHaveTextContent("2 samples need a grouping check.");
-    fireEvent.click(within(notice).getByRole("button", { name: "Review" }));
-    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/grouping");
+    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 exposures waiting for a trace · 1 analysis failed");
+    fireEvent.click(within(notice).getByRole("button", { name: "Details" }));
+    const rows = screen.getAllByTestId("problem-row");
+    expect(rows).toHaveLength(3);
+    expect(rows[2]).toHaveTextContent("bad header");
+    fireEvent.click(within(rows[0]!).getByRole("button"));
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
+    expect(screen.queryByTestId("workspace-problems")).toBeNull();
   });
 
-  it("shows rescan progress and hides the Rescan command while it runs", () => {
-    state.ingest = { status: "analyzing", processed: 5, total: 10 };
+  it("shows ingest progress by stage and hides the Rescan command while it runs", () => {
+    state.ingest = { status: "analyzing", stage: "analyzing", processed: 5, total: 1200 };
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-rescan")).toHaveTextContent("Rescanning: 5 / 10");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("Analyzing 5 of 1,200");
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "rescan" } });
     expect(screen.queryAllByRole("option")).toHaveLength(0);
+  });
+
+  it("says samples are on their way while the first ingest has found none yet", () => {
+    state.corpus = [];
+    state.ingest = { status: "scanning", stage: "discovering", processed: 0, total: 0 };
+    renderAt("/experiments/1/workspace");
+    expect(screen.getByText("No samples yet. They appear as the ingest reads the data folder.")).toBeInTheDocument();
+    expect(screen.queryByText("No samples match.")).toBeNull();
+  });
+
+  it("says no samples match only when a filter is typed", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByText("No samples match.")).toBeNull();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter samples" }), { target: { value: "zzz" } });
+    expect(screen.getByText("No samples match.")).toBeInTheDocument();
   });
 
   it("checks this experiment's folder for new files when it opens", () => {
@@ -391,7 +418,7 @@ describe("WorkspacePage", () => {
     expect(rescans).toEqual([]);
   });
 
-  it("rescans, configures and reviews grouping from the palette", () => {
+  it("rescans from the palette, and offers no configuration or grouping review", () => {
     renderAt("/experiments/1/workspace/10");
     const run = (label: string): void => {
       fireEvent.keyDown(window, { key: "k", ctrlKey: true });
@@ -401,8 +428,11 @@ describe("WorkspacePage", () => {
     };
     run("rescan");
     expect(rescans).toEqual([false]);
-    run("configure experiment");
-    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/config");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "configure" } });
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "grouping" } });
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
   });
 
   it("updates the list and the count when the corpus status changes", () => {

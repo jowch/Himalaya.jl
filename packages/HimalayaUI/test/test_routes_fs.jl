@@ -52,37 +52,6 @@ end
     end
 end
 
-@testset "GET /api/fs/validate gates the picker" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            good = mktempdir()
-            touch(joinpath(good, "x.tif"))
-
-            # existing dir → ok
-            r1 = call("GET", "/api/fs/validate?path=$(HTTP.escapeuri(good))")
-            @test r1.status == 200
-            body1 = JSON3.read(r1.body)
-            @test body1.ok == true
-            @test body1.message === nothing
-
-            # nonexistent path → not ok + message
-            r2 = call("GET", "/api/fs/validate?path=$(HTTP.escapeuri(good * "_nope"))")
-            @test r2.status == 200
-            body2 = JSON3.read(r2.body)
-            @test body2.ok == false
-            @test body2.message !== nothing
-
-            # already-an-experiment → not ok
-            HimalayaUI.create_experiment!(db; name="e", path=good,
-                data_dir=good, analysis_dir=good)
-            r3 = call("GET", "/api/fs/validate?path=$(HTTP.escapeuri(good))")
-            @test r3.status == 200
-            @test JSON3.read(r3.body).ok == false
-        end
-    end
-end
-
 @testset "GET /api/fs/manifest counts by type without writing" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
@@ -394,26 +363,6 @@ end
     end
 end
 
-@testset "GET /api/fs/resolve returns the structural layout" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            root = joinpath(mktempdir(), "1p7m"); mkpath(root)
-            _fs_make_experiment_root(root)
-            resp = call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri(root))")
-            @test resp.status == 200
-            r = JSON3.read(resp.body)
-            @test r.name == "1p7m"
-            @test endswith(String(r.data_dir), "/data")
-            @test endswith(String(r.setup_file), "setup_info_20260425_181705.txt")
-            @test r.setup_ambiguous == false
-            @test r.integration_pattern == "{name}_tot.dat"   # detected tot convention surfaced
-            # 400 for a non-directory.
-            @test call("GET", "/api/fs/resolve?path=$(HTTP.escapeuri("/no/such/xyz"))").status == 400
-        end
-    end
-end
-
 @testset "GET /api/fs/manifest uses an explicit setup_file for geometry" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
@@ -433,6 +382,95 @@ end
             geo = JSON3.read(resp.body).geometry
             @test geo.beam_center_x ≈ 421.409
             @test geo.beam_center_x_source == "setup"
+        end
+    end
+end
+
+function _fs_make_ssrl_setup(root::AbstractString; stems, traced = stems, distance_mm = 1809.5)
+    data = joinpath(root, "data"); mkpath(data)
+    for stem in stems
+        touch(joinpath(data, "$(stem)_0_001.tif"))
+        _fs_write_prp(joinpath(data, "$(stem)_0_001.prp"))
+    end
+    analysis = joinpath(root, "analysis"); mkpath(analysis)
+    _fs_write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"); mean_distance_mm = distance_mm)
+    totdir = joinpath(analysis, "automatic_analysis", "tot_files"); mkpath(totdir)
+    for stem in traced
+        touch(joinpath(totdir, "$(stem)_tot.dat"))
+    end
+    return root
+end
+
+@testset "resolve_experiment_layout outvotes a first image that has no trace" begin
+    mktempdir() do tmp
+        root = joinpath(tmp, "setup1")
+        stems = ["AA_cal", "HA_1_001_S1", "HA_1_002_S2", "HA_1_003_S3"]
+        _fs_make_ssrl_setup(root; stems, traced = stems[2:end])
+        touch(joinpath(root, "analysis", "automatic_analysis", "tot_files", "AA_cal_0_001.dat"))
+        r = HimalayaUI.resolve_experiment_layout(root)
+        @test r.analysis_dir == joinpath(root, "analysis", "automatic_analysis", "tot_files")
+        @test r.image_pattern == "{name}_0_001.tif"
+        @test r.integration_pattern == "{name}_tot.dat"
+    end
+end
+
+@testset "GET /api/fs/preview lists one setup for a setup folder" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            root = joinpath(mktempdir(), "20261103", "setup1")
+            _fs_make_ssrl_setup(root; stems = ["HA_1_001_S1", "HA_1_002_S2"], traced = ["HA_1_001_S1"])
+            resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(root))")
+            @test resp.status == 200
+            setups = JSON3.read(resp.body).setups
+            @test length(setups) == 1
+            s = only(setups)
+            @test s.root == root
+            @test s.name == "20261103/setup1"
+            @test s.data_dir == joinpath(root, "data")
+            @test s.patterns.integration == "{name}_tot.dat"
+            @test s.exposures == 2
+            @test s.without_trace == 1
+            @test s.without_metadata == 0
+            @test s.geometry.flight_path_m_source == "setup"
+            @test s.duplicate_of === nothing
+            @test call("GET", "/api/fs/preview?path=$(HTTP.escapeuri("/no/such/xyz"))").status == 400
+        end
+    end
+end
+
+@testset "GET /api/fs/preview lists every setup under a beamtime folder" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            day = joinpath(mktempdir(), "20261103")
+            _fs_make_ssrl_setup(joinpath(day, "setup2"); stems = ["HB_1_001_S9"], distance_mm = 500.0)
+            _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1", "HA_1_002_S2"])
+            mkpath(joinpath(day, "notes")); touch(joinpath(day, "notes", "plan.txt"))
+            resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(day))")
+            @test resp.status == 200
+            setups = JSON3.read(resp.body).setups
+            @test [s.name for s in setups] == ["20261103/setup1", "20261103/setup2"]
+            @test [s.exposures for s in setups] == [2, 1]
+            @test setups[1].setup_file == joinpath(day, "setup1", "analysis", "setup_info_20260425_181705.txt")
+            @test setups[2].setup_file == joinpath(day, "setup2", "analysis", "setup_info_20260425_181705.txt")
+            @test setups[1].geometry.flight_path_m != setups[2].geometry.flight_path_m
+        end
+    end
+end
+
+@testset "GET /api/fs/preview names the experiment already using a setup" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        day = joinpath(mktempdir(), "20261103")
+        root = _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1"])
+        HimalayaUI.create_experiment!(db; name = "first", path = joinpath(root, "data"),
+            data_dir = joinpath(root, "data"), analysis_dir = root)
+        with_inproc_routes(db) do call
+            s = only(JSON3.read(call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(day))").body).setups)
+            @test s.duplicate_of.name == "first"
+            empty = mktempdir()
+            @test isempty(JSON3.read(call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(empty))").body).setups)
         end
     end
 end
