@@ -236,8 +236,8 @@ delayed further.
 
 ### Known noise
 
-- `npm run e2e` (mocked Playwright) also binds :5173; stop the demo first, or it
-  fails fast on the port (`--strictPort`).
+- `npm run e2e` (mocked Playwright) uses its own port (:5191) and build folder
+  (`dist-e2e/`), so the demo can keep running.
 
 - Vite logs `[boneyard] capture failed: … Executable doesn't exist at /opt/pw-browsers/…`
   in cloud sessions: the boneyard skeleton-capture plugin uses the frontend's own
