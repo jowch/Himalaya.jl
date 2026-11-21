@@ -390,6 +390,43 @@ if isdefined(@__MODULE__, :with_test_server)
         end
     end
 
+    @testset "POST /assignment/members answers 409 for an index the exposure no longer has" begin
+        mktempdir() do dir
+            db = open_prepared_clone(dir)
+            exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
+            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="a")
+            other  = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="b")
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (10, ?, 'Pn3m', 0.1)", [e_id])
+            DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis) VALUES (20, ?, 'Im3m', 0.1)", [other])
+            events_before() = Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'assignment_add'"))[1].n
+
+            with_inproc_routes(db) do call
+                before = events_before()
+                for stale in (999, 20)
+                    r = call("POST", "/api/exposures/$e_id/assignment/members";
+                        headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+                        body = Vector{UInt8}(JSON3.write(Dict(:index_id => stale))))
+                    @test r.status == 409
+                    @test occursin("index", JSON3.read(String(r.body)).error)
+                end
+                @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
+                @test events_before() == before
+
+                op = ["Content-Type" => "application/json", "X-Username" => "alice", "X-Client-Op-Id" => "op-replay"]
+                first_try = call("POST", "/api/exposures/$e_id/assignment/members";
+                    headers = op, body = Vector{UInt8}(JSON3.write(Dict(:index_id => 10))))
+                @test first_try.status == 200
+                DBInterface.execute(db, "DELETE FROM indices WHERE id = 10")
+                retry = call("POST", "/api/exposures/$e_id/assignment/members";
+                    headers = op, body = Vector{UInt8}(JSON3.write(Dict(:index_id => 10))))
+                @test retry.status == 200
+                @test String(retry.body) == String(first_try.body)
+            end
+        end
+    end
+
     @testset "DELETE /assignment/members/{index_id} removes a member (native route)" begin
         mktempdir() do dir
             db = open_prepared_clone(dir)
