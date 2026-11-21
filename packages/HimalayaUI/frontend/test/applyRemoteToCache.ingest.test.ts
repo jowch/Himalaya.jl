@@ -51,20 +51,26 @@ describe("ingest_* cache arms (Phase E1)", () => {
     expect(keys).not.toContain(JSON.stringify(queryKeys.labels(8)));
   });
 
-  it("ingest_complete refetches a trace that was missing, so a late trace replaces the waiting message", async () => {
+  it("an analyze_run whose trace changed refetches that exposure's trace and peaks, so a late trace shows its markers", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    let missing = 0;
-    let present = 0;
-    const watch = (id: number, fn: () => Promise<unknown>) => new QueryObserver(qc, { queryKey: queryKeys.trace(id), queryFn: fn }).subscribe(() => {});
+    const calls = { trace: 0, peaks: 0, otherPeaks: 0 };
+    const watch = (key: readonly unknown[], fn: () => Promise<unknown>) => new QueryObserver(qc, { queryKey: key, queryFn: fn }).subscribe(() => {});
     const stop = [
-      watch(5, () => { missing += 1; return Promise.reject(new Error("404")); }),
-      watch(6, () => { present += 1; return Promise.resolve({ q: [1], I: [1], sigma: [1] }); }),
+      watch(queryKeys.trace(11), () => { calls.trace += 1; return calls.trace === 1 ? Promise.reject(new Error("404")) : Promise.resolve({ q: [1], I: [1], sigma: [1] }); }),
+      watch(queryKeys.peaks(11), () => { calls.peaks += 1; return Promise.resolve([]); }),
+      watch(queryKeys.peaks(12), () => { calls.otherPeaks += 1; return Promise.resolve([]); }),
     ];
-    await vi.waitFor(() => expect(qc.getQueryState(queryKeys.trace(5))?.status).toBe("error"));
-    await vi.waitFor(() => expect(qc.getQueryState(queryKeys.trace(6))?.status).toBe("success"));
-    applyRemoteToCache(ingestFrame("ingest_complete", 7), qc);
-    await vi.waitFor(() => expect(missing).toBe(2));
-    expect(present).toBe(1);
+    await vi.waitFor(() => expect(calls).toEqual({ trace: 1, peaks: 1, otherPeaks: 1 }));
+    const run = (before: string | null, after: string) => ({
+      kind: "analyze_run", entity_id: 11, entity_type: "exposure",
+      payload: { trace_hash_before: before, trace_hash_after: after },
+    }) as unknown as SseEvent;
+    applyRemoteToCache(run("h1", "h1"), qc);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual({ trace: 1, peaks: 1, otherPeaks: 1 });
+    applyRemoteToCache(run(null, "h1"), qc);
+    await vi.waitFor(() => expect(calls).toEqual({ trace: 2, peaks: 2, otherPeaks: 1 }));
+    await vi.waitFor(() => expect(qc.getQueryState(queryKeys.trace(11))?.status).toBe("success"));
     stop.forEach((s) => s());
   });
 
