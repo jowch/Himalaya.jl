@@ -89,7 +89,7 @@ async function layout(page: Page): Promise<Record<string, number[]>> {
       return r ? [Math.round(r.top), Math.round(r.height)] : [];
     };
     const sampleTitle = document.querySelector("main h2");
-    const section = (title: string) => [...document.querySelectorAll("aside section")].find((s) => s.querySelector("h2")?.textContent === title);
+    const section = (title: string) => document.querySelector(`aside section[data-section="${title}"]`);
     return {
       title: box(sampleTitle),
       tags: box(document.querySelector("[data-testid=workspace-tags]")),
@@ -109,15 +109,32 @@ async function measured(page: Page): Promise<Record<string, number[]>> {
   return boxes;
 }
 
+function exposureToggle(page: Page) {
+  return page.locator("aside").getByRole("button", { name: "Exposure" });
+}
+
+function callToggle(page: Page) {
+  return page.locator("aside").getByRole("button", { name: "Call" });
+}
+
+async function exposureOpen(page: Page): Promise<boolean> {
+  const toggle = exposureToggle(page);
+  return (await toggle.count()) === 0 || (await toggle.getAttribute("aria-expanded")) === "true";
+}
+
 async function openSample(page: Page, id: number): Promise<void> {
   await page.locator(`[data-sample-id="${id}"]`).click();
   await expect(page.locator("[data-testid=workspace-samples] [aria-current='true']")).toHaveAttribute("data-sample-id", String(id));
   await expect(page.locator("[data-testid=workspace-trace]")).toBeVisible();
   await expect(page.locator("[data-testid=workspace-indexing] svg")).toBeVisible();
-  await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
-  if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this exposure.")).toBeVisible();
+  if ((await callToggle(page).count()) === 0 || (await callToggle(page).getAttribute("aria-expanded")) === "true") {
+    await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
+    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this exposure.")).toBeVisible();
+  }
   await expect(page.locator("[data-testid=workspace-exposures] > li")).toHaveCount(FRAMES[id] ?? 1);
-  await expect(page.locator("aside").getByText(`JC_S${id}_0_00${FRAMES[id] ?? 1}`)).toBeVisible();
+  const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
+  if (await exposureOpen(page)) await expect(page.locator("aside").getByText(file)).toBeVisible();
+  else await expect(page.locator("[data-testid=workspace-exposures] [aria-current='true']")).toBeVisible();
 }
 
 for (const viewport of VIEWPORTS) {
@@ -193,4 +210,64 @@ test("three comparisons with long names keep the compare bar on one line", async
   const after = await measured(page);
   expect(after.compareBar).toEqual(before.compareBar);
   expect(after.plot[0]).toEqual(before.plot[0]);
+});
+
+test("on a short window Call and Exposure fold as an accordion, and stay put from sample to sample", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  await expect(callToggle(page)).toHaveAttribute("aria-expanded", "true");
+  await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("aside").getByText("JC_S41_0_001")).toHaveCount(0);
+  const aside = page.locator("aside");
+  const fits = () => aside.evaluate((a) => a.scrollHeight <= a.clientHeight);
+  expect(await fits(), "the tools column itself never scrolls").toBe(true);
+
+  await exposureToggle(page).click();
+  await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
+  await expect(callToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("[data-testid=workspace-candidates]")).toHaveCount(0);
+  await expect(page.locator("aside").getByText("JC_S41_0_001")).toBeVisible();
+  expect(await fits()).toBe(true);
+  const first = await measured(page);
+  for (const id of [44, 43, 40, 41]) {
+    await openSample(page, id);
+    await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
+    const { exposures, ...rest } = await measured(page);
+    const { exposures: firstExposures, ...firstRest } = first;
+    expect({ ...rest, exposuresTop: exposures[0] }, `layout on sample ${id}`).toEqual({ ...firstRest, exposuresTop: firstExposures[0] });
+  }
+
+  await page.keyboard.press("i");
+  await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
+  await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Escape");
+  await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
+});
+
+test("on a medium window the Call list scrolls inside a column that never scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 820 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  await expect(exposureToggle(page)).toHaveCount(0);
+  const state = await page.evaluate(() => {
+    const aside = document.querySelector("aside")!;
+    const middle = document.querySelector("[data-testid=workspace-tools-middle]") as HTMLElement;
+    return { asideFits: aside.scrollHeight <= aside.clientHeight, middleScrolls: middle.scrollHeight > middle.clientHeight };
+  });
+  expect(state).toEqual({ asideFits: true, middleScrolls: true });
+});
+
+test("on a very short window the open Exposure section scrolls inside a column that never scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 520 });
+  await page.goto("/experiments/17/workspace/44");
+  await openSample(page, 44);
+  await exposureToggle(page).click();
+  await expect(page.locator("aside").getByText("JC_S44_0_007")).toBeVisible();
+  const state = await page.evaluate(() => {
+    const aside = document.querySelector("aside")!;
+    const exposure = aside.querySelector("section[data-section=Exposure]") as HTMLElement;
+    return { asideFits: aside.scrollHeight <= aside.clientHeight, exposureScrolls: exposure.scrollHeight > exposure.clientHeight };
+  });
+  expect(state).toEqual({ asideFits: true, exposureScrolls: true });
 });
