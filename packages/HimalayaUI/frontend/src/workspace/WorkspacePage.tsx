@@ -343,10 +343,11 @@ export function WorkspacePage(): JSX.Element {
   const toggleDrop = useCallback(
     (e: Exposure) => {
       const dropping = e.status !== "rejected";
-      setExposureId(dropping ? (nearestKeptExposure(exposureList, e.id) ?? e.id) : e.id);
+      if (!dropping) setExposureId(e.id);
+      else if (e.id === exposure?.id) setExposureId(nearestKeptExposure(exposureList, e.id) ?? e.id);
       setStatus.mutate({ exposureId: e.id, status: dropping ? "rejected" : null });
     },
-    [setStatus, exposureList],
+    [setStatus, exposureList, exposure],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -575,6 +576,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "x":
         case "X":
+          if (ev.repeat) break;
           if (exposure && username) toggleDrop(exposure);
           break;
         case "0":

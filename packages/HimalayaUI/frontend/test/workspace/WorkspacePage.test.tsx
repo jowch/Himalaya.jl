@@ -317,6 +317,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
     expect(caption).toHaveTextContent("Frame 1 of 3");
     fireEvent.keyDown(dialog, { key: "x" });
+    fireEvent.keyDown(dialog, { key: "x", repeat: true });
     expect(calls.filter((c) => c.hook === "status").map((c) => c.arg)).toEqual([{ exposureId: 100, status: "rejected" }]);
     expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
     expect(caption).toHaveTextContent("Frame 2 of 3");
@@ -624,11 +625,32 @@ describe("WorkspacePage", () => {
     expect(currentFrame()).toBe("Frame 2");
   });
 
-  it("every exposure card has its own Drop button, which drops that frame and shows the nearest kept one", () => {
+  it("a card's Drop button drops that frame and leaves the view on the shown one", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
     renderAt("/experiments/1/workspace/10");
+    expect(currentFrame()).toBe("Frame 3");
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
     fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 3");
+  });
+
+  it("the shown frame's own Drop button moves to the nearest kept frame", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
+    fireEvent.click(within(cards[2]!).getByRole("button", { name: "Drop" }));
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 102, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 2");
+  });
+
+  it("holding X drops only the shown frame, not a run of frames", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "x" });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(1);
     expect(currentFrame()).toBe("Frame 2");
   });
 
