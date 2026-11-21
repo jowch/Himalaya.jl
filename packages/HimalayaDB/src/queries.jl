@@ -91,7 +91,7 @@ A non-empty result is NOT by itself proof of an explicit human decision: Himalay
 D-10 migration backfills the auto group's pick into `assignment_members` at
 `state='indexed'` for already-analyzed exposures, so on upgraded databases this can
 return an auto-seeded index. To tell an auto seed from a curator's choice, read the
-assignment state — mirroring HimalayaUI's own guidance (comparisons.jl).
+assignment state.
 
 Mirrors HimalayaUI's confirmed-index read: `assignment_members` JOIN `indices`, gated
 by `assignments.state = 'indexed'` (the `COALESCE` keeps the no-row default faithful).

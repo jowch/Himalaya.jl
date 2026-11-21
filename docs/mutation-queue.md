@@ -75,10 +75,9 @@ flat payload before any callback runs. Mutator code never has to cast.
 `mutatorRegistry.ts` exposes two dispatchers, and they disagree on
 `add_tag` *by design*:
 
-- `resolveMutator` (rehydrate path, by op-payload shape) is **4-arm** for
-  `add_tag`: scopeSeries / addExposureTag / addSampleTag /
-  addCorpusSampleTag, peeled apart by the `tags` array, then `exposureId`,
-  then `experimentId`.
+- `resolveMutator` (rehydrate path, by op-payload shape) is **3-arm** for
+  `add_tag`: addExposureTag / addSampleTag / addCorpusSampleTag, peeled
+  apart by `exposureId`, then `experimentId`.
 - `resolveMutatorForEvent` (the `synthesizeResponseFromSse` path, by event
   kind + entity_type) is **2-arm**: sample vs exposure only.
 
@@ -158,12 +157,9 @@ frame lands FIRST — the first write's first event — so `mutation.data`
 becomes the first write's confirmation, not the second's, and the second
 write's frame falls into the foreign-event path and double-applies on the
 originating tab. Multi-step gestures chain *separate* ops, sequenced by
-page-level state, not by a compound mutator. This is why the abandoned
-`scopeAndCreateSeries` (one op: tag-write then create-write) was split into
-the current `scopeSeriesMutator` + `createSeriesMutator`: each single-write
-op has exactly one own-op SSE frame on its op-id, so its deferred reliably
-resolves with the right payload. Evidence:
-`lib/queue/mutators/createSeries.ts:30-51`.
+page-level state, not by a compound mutator. Each single-write op has
+exactly one own-op SSE frame on its op-id, so its deferred reliably resolves
+with the right payload.
 
 ### The one sanctioned two-frame route: `custom-index`
 

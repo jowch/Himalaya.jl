@@ -116,9 +116,6 @@ export interface AppState {
   setNavModalStep: (step: NavModalStep) => void;
   clearUsername: () => void;
 
-
-  // Compare-page Phase 9 review-mode UI actions (annotation toggles only)
-
   // Permalink URL handling actions (spec §4.4 + §6)
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
   recoverFromStaleUrl: (opts: RecoverOpts) => void;
@@ -150,8 +147,6 @@ export const useAppState = create<AppState>()(
         navModalOpen: false,
         navModalStep: "experiment",
         helpOverlayOpen: false,
-
-        // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
 
         // Permalink URL handling — ephemeral, default empty.
         staleUrlContext: null,
@@ -202,8 +197,6 @@ export const useAppState = create<AppState>()(
         closeHelpOverlay: () => set({ helpOverlayOpen: false }),
         setNavModalStep: (navModalStep) => set({ navModalStep }),
         clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
-
-        // Phase 9 — annotation toggle actions
 
         // Permalink URL handling actions (spec §4.4 + §6).
         // `recoverFromStaleUrl` is atomic: clears stale + sets active ids +

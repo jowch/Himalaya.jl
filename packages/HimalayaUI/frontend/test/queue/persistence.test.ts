@@ -11,6 +11,7 @@ import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { makeFakeMutation } from "./helpers";
 import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
+import { addCorpusSampleTagMutator } from "../../src/lib/queue/mutators/trivial";
 
 describe("persistence: mirrorToSessionStorage", () => {
   beforeEach(() => {
@@ -312,5 +313,25 @@ describe("persistence: stale-schemaVersion op drop", () => {
     expect(result.dropped).toBe(1);
     expect(result.replayed).toBe(0);
     expect(result.failed).toBe(0);
+  });
+
+  it("drops a version-5 Series scoping add_tag op ({key, tags}) instead of replaying it as a corpus tag", async () => {
+    const requestSpy = vi.spyOn(addCorpusSampleTagMutator, "request");
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          schemaVersion: 5,
+          kind: "add_tag",
+          clientOpId: "op-scoping",
+          payload: { key: "temperature", tags: [{ sample_id: 10, value: "25" }] },
+        },
+      ]),
+    );
+    const result = await rehydrate(new QueryClient(), resolveMutator);
+    expect(result.dropped).toBe(1);
+    expect(result.replayed).toBe(0);
+    expect(requestSpy).not.toHaveBeenCalled();
+    requestSpy.mockRestore();
   });
 });

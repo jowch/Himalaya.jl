@@ -302,6 +302,14 @@ see during `rebuild_views_from_log!`. This eliminates the Symbol-key vs
 String-key footgun: `JSON3.Object` supports both `obj.q` and `obj[:q]` /
 `obj["q"]`. Branch code accesses fields uniformly via `payload.q` style.
 """
+const RETIRED_EVENT_KINDS = (
+    "comparison_created", "comparison_deleted", "comparison_pinned",
+    "comparison_submitted", "comparison_unpinned",
+    "series_created", "series_deleted", "series_pinned", "series_plate_committed",
+    "series_recipe_updated", "series_unpinned",
+    "post_message",
+)
+
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # R4.2 dispatcher branches — one per view-producing curation kind.
     # All writes happen inside the transaction opened by apply_event!.
@@ -361,6 +369,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # sentinel and re-running migrate_assignments!. Post-Plan-A confirmations
     # ride assignment_add and DO round-trip through the log.
     (kind == "index_confirmed" || kind == "index_unconfirmed") && return nothing
+    kind in RETIRED_EVENT_KINDS && return nothing
 
     # Plotting redesign Plan A: durable per-exposure assignment kinds. Sole
     # writer to assignments/assignment_members. entity_id is the exposure id.

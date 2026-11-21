@@ -324,10 +324,6 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
     safeScrollIntoView(document.querySelector('[data-cursored="true"]'));
   }, [cursor.cursorId]);
 
-  // Scope focus: grant keyboard focus once when data lands. Guard on !scanning
-  // (during scanning there is no stable list to focus into). The scope div
-  // attaches while data may still be loading, so defer to an isLoading-keyed
-  // effect.
   const scopeEl = useRef<HTMLDivElement | null>(null);
   const focusedRef = useRef<boolean>(false);
   const scopeRef = useCallback((el: HTMLDivElement | null) => { scopeEl.current = el; }, []);
@@ -496,10 +492,6 @@ export function GroupingReviewPage({ experimentId, onBack, onConfirm, className 
           <EmptyState title="No samples in this experiment" />
         )
       ) : (
-        // Scope container: holds keyboard focus for ↑/↓ cursor navigation.
-        // Plain Arrow moves cursor; !e.shiftKey lets Shift+Arrow bubble to
-        // the keyboard layer for prevFlagged/nextFlagged.
-        // Focused once after isLoading+scanning resolves.
         <div
           ref={scopeRef}
           tabIndex={-1}

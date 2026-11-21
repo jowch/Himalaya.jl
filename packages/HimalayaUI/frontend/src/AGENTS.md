@@ -108,7 +108,7 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 ## Query layer gotchas
 
-- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (`queries.ts:73-78`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["index-entity", id]`, `["exposure-entity", id]`, …) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates. (Same discipline elsewhere: `["series", id]` detail vs `["series-list"]` listing are distinct roots.)
+- **`queryKeys` namespace isolation — single-entity keys must NOT share the collection prefix** (`queries.ts:73-78`). Collection keys (`["exposure", id, "peaks"]`, `…, "indices"`, `…, "assignment"`) and single-entity keys (`["index-entity", id]`, `["exposure-entity", id]`, …) are disjoint on purpose. Mutators fire targeted `invalidateQueries(["exposure", id])`, which prefix-matches and blasts everything under that root — so the `-entity` suffix is the **only mechanical barrier** keeping a per-entity query from being over-invalidated. A new per-entity query placed under `["exposure", …]` silently over-invalidates.
 
 
 ## Multi-layer contract testing

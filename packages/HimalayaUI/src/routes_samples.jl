@@ -99,8 +99,6 @@ function register_samples_routes!()
                          WHERE exposure_id IN ($rp)", rep_ids))
                     state_by_exp[Int(r.exposure_id)] = String(r.state)
                 end
-                # Dominant phase: the top-scored assigned index's phase per
-                # exposure.
                 best_score = Dict{Int, Float64}()
                 for r in Tables.rowtable(DBInterface.execute(db,
                         "SELECT m.exposure_id AS eid, i.phase AS phase, i.score AS score
