@@ -32,6 +32,27 @@ using ImageCore.FixedPointNumbers: Q0f31
     end
 end
 
+@testset "a flat dark-floor frame (beam off) renders and encodes" begin
+    counts = fill(Int32(3), 64, 64)
+    counts[1, 1] = Int32(-1)
+    counts[2, 2] = Int32(40)
+    img = Gray.(reinterpret.(Q0f31, counts))
+    path = tempname() * ".tiff"
+    save(path, img)
+    try
+        for out in (HimalayaUI.load_and_lognormalize(path), HimalayaUI.load_and_lognormalize_thumb(path, 16))
+            arr = Float32.(channelview(out))
+            @test all(0f0 .<= arr .<= 1f0)
+            @test !isempty(HimalayaUI.encode_png(out))
+        end
+        arr = Float32.(channelview(HimalayaUI.load_and_lognormalize(path)))
+        @test arr[5, 5] == 0f0
+        @test arr[2, 2] == 1f0
+    finally
+        rm(path; force=true)
+    end
+end
+
 # ---------------------------------------------------------------------------
 # Issue #261 (H) — thumb downscale-before-lognormalize + disk cache + prewarm
 # ---------------------------------------------------------------------------
@@ -108,6 +129,59 @@ end
             rm(path; force=true)
             b2 = HimalayaUI.ensure_thumb_cached(disk, 42, path; token=token)
             @test b2 == b1
+        finally
+            rm(path; force=true)
+        end
+    end
+end
+
+@testset "ensure_full_cached: a miss renders and stores, a hit keeps the raw size without the source" begin
+    mktempdir() do tmp
+        disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
+        path = _make_detector_tiff(256)
+        try
+            token = HimalayaUI.image_version_token(path)
+            first = HimalayaUI.ensure_full_cached(disk, 42, path; token=token)
+            @test first.raw_h == 256 && first.raw_w == 256
+            @test first.bytes == HimalayaUI.encode_png(HimalayaUI.load_and_lognormalize(path))
+            @test isfile(HimalayaUI.full_cache_path(disk, 42, token))
+            @test HimalayaUI.full_cache_path(disk, 42, token) != HimalayaUI.thumb_cache_path(disk, 42, token)
+
+            rm(path; force=true)
+            again = HimalayaUI.ensure_full_cached(disk, 42, path; token=token)
+            @test again == first
+        finally
+            rm(path; force=true)
+        end
+    end
+    mem = SQLite.DB()
+    path = _make_detector_tiff(64)
+    try
+        @test HimalayaUI.full_cache_path(mem, 1, "v3-1") === nothing
+        @test HimalayaUI.ensure_full_cached(mem, 1, path).raw_w == 64
+    finally
+        rm(path; force=true)
+    end
+end
+
+@testset "ensure_full_cached: a new token replaces the old entry, and a broken entry renders again" begin
+    mktempdir() do tmp
+        disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
+        path = _make_detector_tiff(64)
+        try
+            old = HimalayaUI.full_cache_path(disk, 5, "v0-1")
+            HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-1")
+            HimalayaUI.ensure_full_cached(disk, 6, path; token="v0-1")
+            @test isfile(old)
+            fresh = HimalayaUI.full_cache_path(disk, 5, "v0-2")
+            HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-2")
+            @test sort(readdir(dirname(fresh))) == sort(basename.([fresh, HimalayaUI._full_size_path(fresh)]))
+            @test isfile(HimalayaUI.full_cache_path(disk, 6, "v0-1"))
+
+            rm(fresh)
+            @test HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-2").raw_w == 64
+            write(HimalayaUI._full_size_path(fresh), "garbage")
+            @test HimalayaUI.ensure_full_cached(disk, 5, path; token="v0-2").raw_h == 64
         finally
             rm(path; force=true)
         end
