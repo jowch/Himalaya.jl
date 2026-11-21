@@ -80,6 +80,14 @@ function peakPoints(px: number): string {
   return pts.map(([a, b]) => `${a.toFixed(1)},${b}`).join(" ");
 }
 
+function keyboardFocus(el: Element): boolean {
+  try {
+    return el.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 function peakFill(p: Peak): string {
   if (p.excluded) return "none";
   return p.source === "manual" ? "var(--color-accent)" : "var(--color-ink)";
@@ -104,6 +112,7 @@ export function WorkspacePlot({
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
   const [hoverQ, setHoverQ] = useState<number | null>(null);
+  const [focusedPeak, setFocusedPeak] = useState<string | null>(null);
   const { xType, yType: viewYType } = viewAxes(view);
   const yType = difference ? "linear" : viewYType;
 
@@ -291,7 +300,11 @@ export function WorkspacePlot({
                         role: "button",
                         tabIndex: 0,
                         "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
-                        className: "cursor-pointer outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
+                        className: "cursor-pointer outline-none",
+                        onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
+                          if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
+                        },
+                        onBlur: () => setFocusedPeak(null),
                         onKeyDown: (ev: React.KeyboardEvent) => {
                           if (ev.key !== "Enter" && ev.key !== " ") return;
                           ev.preventDefault();
@@ -300,6 +313,21 @@ export function WorkspacePlot({
                         },
                       }
                     : {})}
+                />
+              ))}
+              {shownPeaks.filter((p) => peakKey(p) === focusedPeak).map((p) => (
+                <rect
+                  key="focus"
+                  data-role="peak-focus"
+                  x={x.to(p.q) - 7}
+                  y={-11}
+                  width={14}
+                  height={13}
+                  rx={3}
+                  fill="none"
+                  stroke="var(--color-ink-soft)"
+                  strokeWidth={1.5}
+                  pointerEvents="none"
                 />
               ))}
             </g>

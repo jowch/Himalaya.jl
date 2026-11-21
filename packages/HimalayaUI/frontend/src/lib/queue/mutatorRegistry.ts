@@ -21,7 +21,7 @@ import {
 import { customIndexMutator } from "./mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
 import { patchComparesMutator } from "./mutators/compares";
-import { addLabelMutator, removeLabelMutator } from "./mutators/labels";
+import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./mutators/labels";
 import { setLabelColorMutator } from "./mutators/labelColors";
 import { patchExperimentMutator } from "./mutators/experiment";
 
@@ -82,6 +82,7 @@ export function resolveMutator(
     case "patch_compares":         return patchComparesMutator;
     case "add_label":              return addLabelMutator;
     case "remove_label":           return removeLabelMutator;
+    case "restore_label_suggestion": return restoreLabelSuggestionMutator;
     case "set_tag_color":          return setLabelColorMutator;
     case "patch_experiment":       return patchExperimentMutator;
     default:
@@ -121,6 +122,7 @@ export function resolveMutatorForEvent(
     case "compares_changed":         return patchComparesMutator;
     case "label_added":              return addLabelMutator;
     case "label_removed":            return removeLabelMutator;
+    case "label_suggestion_restored": return restoreLabelSuggestionMutator;
     case "tag_color_set":            return setLabelColorMutator;
     case "experiment_updated":       return patchExperimentMutator;
     // Event kinds with no queue mutator fall through here (handled entirely by

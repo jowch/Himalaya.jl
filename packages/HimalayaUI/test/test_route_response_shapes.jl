@@ -403,3 +403,29 @@ end
         end
     end
 end
+
+@testset "Route response shapes: sample labels" begin
+    mktempdir() do tmp
+        ctx = _setup_analyzed_exposure(tmp)
+        sid = Int(only(Tables.rowtable(DBInterface.execute(ctx.db,
+            "SELECT sample_id FROM exposures WHERE id = ?", [ctx.exposure_id]))).sample_id)
+        DBInterface.execute(ctx.db,
+            "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, 'buffer', 'suggested', 'ingest')", [sid])
+        headers = ["Content-Type" => "application/json", "X-Username" => "alice"]
+        body(label) = Vector{UInt8}(JSON3.write(Dict(:label => label)))
+        with_inproc_routes(ctx.db) do call
+            responses = [
+                call("POST", "/api/samples/$sid/labels"; body = body("37C"), headers),
+                call("POST", "/api/samples/$sid/labels"; body = body("buffer"), headers),
+                call("POST", "/api/samples/$sid/labels/suggested"; body = body("buffer"), headers),
+                call("DELETE", "/api/samples/$sid/labels?label=buffer"; headers),
+            ]
+            for r in responses
+                @test r.status == 200
+                rows = JSON3.read(String(r.body))
+                @test rows isa JSON3.Array && !isempty(rows)
+                foreach(row -> assert_keys(row, [:id, :sample_id, :label, :state, :source]), rows)
+            end
+        end
+    end
+end

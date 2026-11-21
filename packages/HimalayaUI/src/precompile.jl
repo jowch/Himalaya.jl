@@ -71,6 +71,7 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "PATCH", "/api/samples/$sample/compares", Dict(:remove => [other]))
     _workload_call(send, "GET", "/api/experiments/$experiment/labels")
     _workload_call(send, "POST", "/api/samples/$sample/labels", Dict(:label => "precompile"))
+    _workload_call(send, "POST", "/api/samples/$sample/labels/suggested", Dict(:label => "precompile"))
     _workload_call(send, "DELETE", "/api/samples/$sample/labels?label=precompile")
     _workload_call(send, "GET", "/api/label-colors")
     _workload_call(send, "PUT", "/api/label-colors", Dict(:label => "precompile", :color => "teal"))

@@ -340,9 +340,10 @@ labels, label colours, bridges). An entry stores what the edit touched by a
 stable identity (a phase and its lattice basis, a peak's q, a sample pair), not
 by server ids, because a peak edit re-numbers the auto indices. Undo waits for
 the queue to finish saving, reads the server fresh, and queues only the edits
-needed to put that state back. Undo refuses to reverse confirming or dismissing a
-label suggestion (there is no "back to suggested" route yet), rather than
-deleting the label. Other users' edits are never
+needed to put that state back. Undoing a confirmed or dismissed label suggestion
+puts it back to suggested (`label_suggestion_restored`), never deletes it, and
+one gesture that writes several things (Create a label with a colour) is one
+undo step. Other users' edits are never
 undone, and a reload clears the history. Versioning and a durable history built
 from `user_actions` are still open.
 

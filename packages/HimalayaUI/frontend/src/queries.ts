@@ -22,9 +22,9 @@ import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { patchComparesMutator } from "./lib/queue/mutators/compares";
-import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
+import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
-import { patchExperimentMutator } from "./lib/queue/mutators/experiment";
+import { patchExperimentMutator, type ExperimentPatch } from "./lib/queue/mutators/experiment";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -357,6 +357,7 @@ export interface EditReads {
   assignment: (exposureId: number) => Promise<api.Assignment>;
   labels: () => Promise<api.SampleLabel[]>;
   bridges: () => Promise<api.SampleBridge[]>;
+  experiment: () => Promise<api.Experiment>;
 }
 
 export interface EditOps {
@@ -371,7 +372,9 @@ export interface EditOps {
   deleteIndex: (exposureId: number, indexId: number) => void;
   addLabel: (sampleId: number, label: string) => void;
   removeLabel: (sampleId: number, label: string) => void;
+  restoreLabelSuggestion: (sampleId: number, label: string) => void;
   setLabelColor: (label: string, color: api.LabelColor | null) => void;
+  patchExperiment: (patch: ExperimentPatch) => void;
   bridge: (sampleId: number, toSampleId: number) => void;
   unbridge: (sampleId: number) => void;
   read: EditReads;
@@ -411,7 +414,9 @@ export function useEditOps(experimentId: number): EditOps {
   const labelScope = { ...who, experimentId };
   const addLabel = useQueueMutation(addLabelMutator, labelScope);
   const removeLabel = useQueueMutation(removeLabelMutator, labelScope);
+  const restoreSuggestion = useQueueMutation(restoreLabelSuggestionMutator, labelScope);
   const labelColor = useQueueMutation(setLabelColorMutator, who);
+  const experiment = useQueueMutation(patchExperimentMutator, labelScope);
   const bridge = useQueueMutation(bridgeSamplesMutator, labelScope);
   const unbridge = useQueueMutation(unbridgeSampleMutator, labelScope);
   const fresh = <T,>(queryKey: readonly unknown[], queryFn: () => Promise<T>): Promise<T> =>
@@ -429,7 +434,9 @@ export function useEditOps(experimentId: number): EditOps {
     deleteIndex: (exposureId, indexId) => deleteIndex.mutateIn({ ...who, exposureId }, { indexId }),
     addLabel: (sampleId, label) => addLabel.mutate({ sampleId, label }),
     removeLabel: (sampleId, label) => removeLabel.mutate({ sampleId, label }),
+    restoreLabelSuggestion: (sampleId, label) => restoreSuggestion.mutate({ sampleId, label }),
     setLabelColor: (label, color) => labelColor.mutate({ label, color }),
+    patchExperiment: (patch) => experiment.mutate(patch),
     bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),
     read: {
@@ -440,6 +447,7 @@ export function useEditOps(experimentId: number): EditOps {
       assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
       labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
       bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+      experiment: () => fresh(queryKeys.experiment(experimentId), () => api.getExperiment(experimentId)),
     },
     whenSaved: () => whenQueueIdle(qc),
     saving: () => queueBusy(qc),
@@ -485,11 +493,6 @@ export function useTriggerScan(experimentId: number) {
     ...inner,
     mutate: (force = false) => inner.mutate(force),
   };
-}
-
-export function usePatchExperiment(experimentId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(patchExperimentMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 export function useDeleteExperiment(experimentId: number) {

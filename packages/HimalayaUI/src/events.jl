@@ -478,6 +478,13 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
             [Int(entity_id), String(payload.label)])
         return nothing
     end
+    if kind == "label_suggestion_restored"
+        DBInterface.execute(db,
+            """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'suggested', 'ingest')
+               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'suggested', source = 'ingest'""",
+            [Int(entity_id), String(payload.label)])
+        return nothing
+    end
     if kind == "tag_color_set"
         color = get(payload, :color, nothing)
         if color === nothing
