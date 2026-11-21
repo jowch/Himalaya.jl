@@ -104,4 +104,44 @@ describe("DirectoryPickerField (Phase E1)", () => {
     fireEvent.click(opt);
     expect(onChange).toHaveBeenCalledWith("/Users/me/projects/himalaya-devdata/mini-1p7m/");
   });
+
+  it("Shift+Enter with nothing highlighted neither completes nor submits", () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/a/o" onChange={onChange} onSubmit={onSubmit} suggestions={["/a/one", "/a/two"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    const errors: unknown[] = [];
+    const onError = (e: ErrorEvent): void => {
+      errors.push(e.error);
+      e.preventDefault();
+    };
+    window.addEventListener("error", onError);
+    try {
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      fireEvent.keyDown(input, { key: "Enter", altKey: true });
+    } catch (e) {
+      errors.push(e);
+    } finally {
+      window.removeEventListener("error", onError);
+    }
+    expect(errors).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("Tab leaves the field when the typed folder is complete and the list only holds its subfolders", () => {
+    const onChange = vi.fn();
+    render(<DirectoryPickerField value="/b/day1/setup2" onChange={onChange} suggestions={["/b/day1/setup2/analysis", "/b/day1/setup2/data"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Enter that confirms an IME composition does not submit", () => {
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/a/o" onChange={() => {}} onSubmit={onSubmit} suggestions={[]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

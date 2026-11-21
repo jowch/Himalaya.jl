@@ -166,15 +166,30 @@ describe("NewExperimentPage", () => {
     expect(input).toHaveValue("/b/20261103/setup1");
   });
 
-  it("plain Enter adds nothing while no setup has been found", async () => {
-    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/empty", setups: [] });
+  it("Enter right after picking a subfolder adds only that subfolder's setup, once its own preview has arrived", async () => {
+    vi.mocked(api.suggestPaths).mockImplementation(async (p) => ({
+      suggestions: p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"],
+    }));
+    vi.spyOn(api, "previewFolder").mockImplementation(async (p) =>
+      p.includes("setup1")
+        ? { path: p, setups: [setup("/b/day1/setup1")] }
+        : { path: p, setups: [setup("/b/day1/setup1"), setup("/b/day1/setup2")] },
+    );
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/empty");
-    await screen.findByText("No images found here or in the folders directly inside it.");
-    fireEvent.keyDown(screen.getByTestId("dirpicker-input").querySelector("input")!, { key: "Enter" });
-    await new Promise((r) => setTimeout(r, 50));
+    pick("/b/day1/");
+    await waitFor(() => expect(screen.getAllByTestId("setup-row")).toHaveLength(2));
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: "setup1" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("/b/day1/setup1/");
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(create).not.toHaveBeenCalled();
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]![0]).toMatchObject({ data_dir: "/b/day1/setup1/data" });
   });
 
   it("leaves ⌘/Ctrl+Enter to an open dialog such as the palette", async () => {

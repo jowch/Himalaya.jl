@@ -18,8 +18,9 @@ export interface DirectoryPickerFieldProps {
 }
 
 /**
- * DirectoryPickerField — path input + suggestion list (via Popover) +
- * Tab/↑↓/↵ completion. No full file browser (spec §8.7).
+ * DirectoryPickerField — path input + suggestion list (via Popover).
+ * Tab completes a partly typed folder name, ↑↓ then ↵ picks a suggestion,
+ * and a plain ↵ with nothing highlighted submits. No full file browser (spec §8.7).
  * Composes `Input`, `Popover`, and design-system token utilities only
  * (no inline appearance); the suggestion list is anchored inside Popover,
  * which provides outside-pointerdown dismiss, Escape close, and focus-return
@@ -66,16 +67,20 @@ export function DirectoryPickerField({
     return seg === "" ? p : seg;
   };
 
+  const folder = value.endsWith("/") ? value : `${value}/`;
+  const partial = suggestions.some((s) => !s.startsWith(folder));
+  const highlighted = active >= 0 ? suggestions[active] : undefined;
+
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !suggestions[active]) {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && highlighted === undefined) {
       e.preventDefault();
       onSubmit?.();
       return;
     }
     if (suggestions.length === 0) return;
     if (e.key === "Tab") {
-      // Tab completes the TOP suggestion (spec §8.7). preventDefault so focus
-      // doesn't leave the field on the completing keystroke.
+      if (e.shiftKey || !partial) return;
       e.preventDefault();
       complete(suggestions[0]!);
     } else if (e.key === "ArrowDown") {
@@ -84,9 +89,9 @@ export function DirectoryPickerField({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActive((i) => Math.max(i - 1, -1));
-    } else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+    } else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && highlighted !== undefined) {
       e.preventDefault();
-      complete(suggestions[active]!);
+      complete(highlighted);
     }
   };
 

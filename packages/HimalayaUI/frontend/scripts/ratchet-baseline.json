@@ -55,7 +55,7 @@
     "frontend/src/lib/toast.ts": 11,
     "frontend/src/lib/url/parseLocation.ts": 7,
     "frontend/src/print/App.tsx": 28,
-    "frontend/src/print/components/DirectoryPickerField.tsx": 40,
+    "frontend/src/print/components/DirectoryPickerField.tsx": 39,
     "frontend/src/print/components/PageFrame.tsx": 3,
     "frontend/src/print/components/SourcesCard.tsx": 14,
     "frontend/src/print/components/Thumbnail.tsx": 39,
