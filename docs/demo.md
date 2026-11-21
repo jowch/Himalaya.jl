@@ -172,6 +172,32 @@ with a median of 4 frames. Performance work needs real scale and a real network
 (the app is usually reached through an SSH tunnel), so test it with the
 `--large` option below and a throttled browser.
 
+### Large mode
+
+`make demo-large-data` (generate only, into `scratch/demo-large/`) or
+`make demo-large` (generate if missing, ingest every experiment into its own DB at
+`scratch/demo-large-db/`, start the app) writes realistic scale for performance
+work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
+`make_demo_data.jl [out_dir] --large [--experiments N] [--samples M] [--seed S] [--no-images]`
+(defaults 10 experiments of 300 samples).
+
+- One complete beamtime tree per experiment, `out_dir/large_01/` onward, each with
+  its own `TRUTH.csv` (same columns; `auto` is empty because nothing is pinned),
+  start date and flight path (0.8 m or 1.7 m setups). Sample labels are `L01_N0001`.
+- Per sample: 4 frames about 82% of the time, with short, long and very long
+  series in the tail; about 40% have no Bragg peaks; the rest have one phase
+  (85%) or two (15%), weighted towards Lamellar, Im3m and Square; peak height and
+  width are log-normal at the real medians; about 6% of frames are bad (flare,
+  missed, beam off). Holders of 10-16 samples sit more than an hour apart, so
+  grouping recovers the loads and samples.
+- **Images come from a pool.** Each experiment renders about 24 frames (no-peak,
+  weak and strong examples of each phase, flare, missed, beam off) and every
+  exposure's `.tif` is a hardlink to one of them. A frame's image therefore does
+  not match its own trace; use large mode for scale, not for checking images
+  against traces. `--no-images` writes empty `.tif` files instead.
+- Cost, measured with the defaults: about 35 s, 1.4 GB on disk (12,000 `.tif`
+  names, 240 distinct files), 3,000 samples and 12,000 exposures.
+
 ### Driving it from an agent
 
 `bin/verify` wraps all of this for agents: `bin/verify seed` brings the demo up in

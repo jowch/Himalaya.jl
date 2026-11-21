@@ -8,12 +8,14 @@
 #
 # Usage:
 #   julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/demo_ingest.jl \
-#       <experiment_root> [--port 8080]
+#       <experiment_root>... [--port 8080]
+# Several roots are ingested one after another (`make demo-large`); each experiment
+# is named after its directory then.
 
 using HTTP, JSON3
 
 function main(args = ARGS)
-    root = "scratch/demo-experiment"; port = 8080
+    roots = String[]; port = 8080
     i = 1
     while i <= length(args)
         if args[i] == "--port"
@@ -22,11 +24,17 @@ function main(args = ARGS)
         elseif startswith(args[i], "-")
             error("unknown option $(args[i]) (usage: demo_ingest.jl [root] [--port N])")
         else
-            root = args[i]
+            push!(roots, args[i])
         end
         i += 1
     end
-    root = abspath(root)
+    isempty(roots) && push!(roots, "scratch/demo-experiment")
+    for root in roots
+        ingest_root(abspath(root), port, length(roots) == 1 ? "Demo (synthetic)" : "Demo " * basename(abspath(root)))
+    end
+end
+
+function ingest_root(root, port, name)
     base = "http://127.0.0.1:$port/api"
     getj(path, q) = JSON3.read(HTTP.get(base * path; query = q).body)
 
@@ -41,7 +49,7 @@ function main(args = ARGS)
     for e in JSON3.read(HTTP.get("$base/experiments").body)
         get(e, :data_dir, nothing) == rs.data_dir || continue
         if get(e, :ingest_status, "") == "complete"
-            println("Demo experiment already ingested (id $(e.id)); nothing to do.")
+            println("$name already ingested (id $(e.id)); nothing to do.")
             return
         end
         println("Demo experiment $(e.id) is '$(get(e, :ingest_status, ""))'; rescanning.")
@@ -59,7 +67,7 @@ function main(args = ARGS)
     println("Matched: ", mf.matched)
 
     body = Dict(
-        :name => "Demo (synthetic)", :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
+        :name => name, :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
         :patterns => Dict(:image => rs.image_pattern, :metadata => rs.metadata_pattern,
                           :integration => rs.integration_pattern),
         :geometry => get(mf, :geometry, Dict()),

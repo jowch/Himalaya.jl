@@ -10,6 +10,9 @@
 # Usage (from the repo root; `make demo-data` wraps this):
 #   julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl \
 #       [out_dir] [--seed 7] [--no-images]
+# `--large [--experiments 10] [--samples 300]` instead writes <out>/large_NN/ trees at
+# realistic scale (`make demo-large-data`); see docs/demo.md "Large mode". There each
+# .tif is a hardlink to one of ~24 pooled frames, not rendered from its own trace.
 #
 # Layout written (what routes_fs.jl `resolve_experiment_layout` auto-detects);
 # <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample, a few of
@@ -26,7 +29,7 @@
 # Output is deterministic for a given seed and Julia version (Xoshiro streams are
 # stable within a Julia release, not guaranteed across releases).
 
-using Himalaya: Phase, Lamellar, Hexagonal, Pn3m, Im3m, Ia3d, phaseratios
+using Himalaya: Phase, Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, phaseratios
 using FileIO, TiffImages, ColorTypes
 using ImageCore.FixedPointNumbers: Q0f31
 using Dates, Printf, Random
@@ -53,6 +56,7 @@ const Q = collect(range(5.824246e-3, 4.044763e-1; length = 919))
 const REL = Dict{Type{<:Phase},Vector{Float64}}(
     Lamellar  => [1.0, 0.18, 0.05, 0.02, 0.008, 0.004],
     Hexagonal => [1.0, 0.22, 0.14, 0.05, 0.03, 0.012, 0.01],
+    Square    => [1.0, 0.40, 0.20, 0.12, 0.06, 0.04, 0.03, 0.02, 0.015, 0.01],
     Pn3m      => [1.0, 0.75, 0.12, 0.10, 0.06, 0.05, 0.03, 0.02, 0.015],
     Im3m      => [1.0, 0.55, 0.30, 0.10, 0.06, 0.035, 0.02],
     Ia3d      => [1.0, 0.65, 0.06, 0.08, 0.04, 0.03, 0.02],
@@ -61,6 +65,7 @@ const REL = Dict{Type{<:Phase},Vector{Float64}}(
 "q of the first allowed reflection for lattice parameter `a` (Å)."
 first_peak_q(::Type{Lamellar}, a) = 2π / a                    # a = d-spacing
 first_peak_q(::Type{Hexagonal}, a) = 4π / (sqrt(3) * a)       # a = rod spacing
+first_peak_q(::Type{Square}, a) = 2π / a                      # a = cell edge; (1,0) reflection
 first_peak_q(::Type{P}, a) where {P<:Phase} = 2π * first(phaseratios(P)) / a  # cubic: 2π√N/a
 
 # (phase, lattice parameter Å, peak height relative to background at q1, peak sigma)
@@ -265,14 +270,14 @@ function gap_mask()
 end
 
 "Per-pixel q (Å⁻¹) and beam-relative (dx, dy) in y-up pixel coordinates."
-function q_map()
+function q_map(distance_mm = MEAN_DISTANCE_MM)
     qm = Matrix{Float64}(undef, DET_H, DET_W)
     dx = similar(qm); dy = similar(qm)
     for c in 1:DET_W, r in 1:DET_H
         x = c - 1; yup = DET_H - r
         dx[r, c] = x - BEAM_X; dy[r, c] = yup - BEAM_Y
         rm = hypot(dx[r, c], dy[r, c]) * PIXEL_UM * 1e-6
-        tth = atan(rm / (MEAN_DISTANCE_MM * 1e-3))
+        tth = atan(rm / (distance_mm * 1e-3))
         qm[r, c] = 4π * sin(tth / 2) / WAVELENGTH_A
     end
     qm, dx, dy
@@ -314,7 +319,7 @@ end
 # raw Int32 bits as Q0f31 produces the same on-disk format as the beamline.
 write_tif(path, counts::Matrix{Int32}) = save(path, Gray.(reinterpret.(Q0f31, counts)))
 
-function write_prp(path, ts; exposure_time = 15, horiz = 58.9, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
+function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LENGTH_MM, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
     stem = splitext(basename(path))[1]
     counting = exposure_time + 0.8
     transmitted = APD_PER_VOLT * I0_VOLTS * i0 * transmission * counting / 15.8 * (1 + 0.003 * randn(rng))
@@ -333,7 +338,7 @@ function write_prp(path, ts; exposure_time = 15, horiz = 58.9, i0 = 1.0, transmi
         println(io, "Counting time=$counting")
         println(io, "i1 dark counts=$APD_DARK_RATE per sec")
         println(io, "Beam energy=$ENERGY_EV eV")
-        println(io, "Pipe length=$PIPE_LENGTH_MM mm")
+        println(io, "Pipe length=$pipe_mm mm")
         println(io, "Scan motor=motor\nScan range=delta mm")
         println(io, "Horizontal position=$horiz mm")
         println(io, "Vertical position=26.55 mm\ndispx position=9.8 mm\ndispy position=35.9 mm")
@@ -343,7 +348,7 @@ function write_prp(path, ts; exposure_time = 15, horiz = 58.9, i0 = 1.0, transmi
     end
 end
 
-function write_setup_info(path)
+function write_setup_info(path; distance_mm = MEAN_DISTANCE_MM)
     open(path, "w") do io
         print(io, "File used for calibration:\n../data/agbe_1p7m_S1958_0_001.tif\n\n")
         print(io, "Beam center is at ($BEAM_X, $BEAM_Y)\n\n")
@@ -352,67 +357,128 @@ function write_setup_info(path)
             @printf(io, "Ring %d:\t pixel %.2f:\t %s mm\n", i, 247.82 * i, d)
         end
         println(io, "-"^58)
-        println(io, "Mean distance:\t\t $MEAN_DISTANCE_MM mm")
+        println(io, "Mean distance:\t\t $distance_mm mm")
     end
 end
 
 csvq(s) = occursin(r"[,\"]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s
 
+const USAGE = "usage: make_demo_data.jl [out_dir] [--seed N] [--no-images] " *
+              "[--large [--experiments N] [--samples M]]"
+
 function parse_args(args)
     out = joinpath(dirname(dirname(dirname(@__DIR__))), "scratch", "demo-experiment")
-    seed = 7; images = true
+    o = (seed = 7, images = true, large = false, experiments = 10, samples = 300)
     i = 1
+    intopt(name) = (i < length(args) || error("$name needs a value"); parse(Int, args[i+1]))
     while i <= length(args)
         a = args[i]
         if a == "--seed"
-            i < length(args) || error("--seed needs a value")
-            seed = parse(Int, args[i+1]); i += 1
+            o = merge(o, (seed = intopt(a),)); i += 1
+        elseif a == "--experiments"
+            o = merge(o, (experiments = intopt(a),)); i += 1
+        elseif a == "--samples"
+            o = merge(o, (samples = intopt(a),)); i += 1
         elseif a == "--no-images"
-            images = false
+            o = merge(o, (images = false,))
+        elseif a == "--large"
+            o = merge(o, (large = true,))
         elseif startswith(a, "-")
-            error("unknown option $a (usage: make_demo_data.jl [out_dir] [--seed N] [--no-images])")
+            error("unknown option $a ($USAGE)")
         else
             out = a
         end
         i += 1
     end
-    abspath(out), seed, images
+    merge(o, (out = abspath(out),))
 end
 
 """
 Refuse to write into a directory that already holds something other than a demo
-tree, so a mistyped DEMO_DIR can't scatter synthetic files into real data.
+tree, so a mistyped DEMO_DIR can't scatter synthetic files into real data. A large
+tree is a directory of experiment directories, each with its own TRUTH.csv.
 """
 function check_target(out)
     isdir(out) || return
     entries = filter(!startswith("."), readdir(out))
     isempty(entries) || isfile(joinpath(out, "TRUTH.csv")) ||
+        all(e -> isfile(joinpath(out, e, "TRUTH.csv")), entries) ||
         error("$out is not empty and has no TRUTH.csv, so it is not a demo tree; refusing to write into it")
 end
 
-function main(args = ARGS)
-    out, seed, images = parse_args(args)
-    check_target(out)
+const TRUTH_HEADER = "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"
+const T0_DEFAULT = DateTime(2026, 4, 26, 18, 0, 0)
+
+"""
+Reset an experiment tree and return its (data, analysis, tot) directories. Files
+from an earlier generation are removed so a re-run can't leave strays.
+"""
+function prepare_tree(out)
+    data = joinpath(out, "data")
+    analysis = joinpath(out, "analysis")
+    tot = joinpath(analysis, "automatic_analysis", "tot_files")
+    for d in (data, tot)
+        isdir(d) && foreach(f -> rm(joinpath(d, f)), readdir(d))
+    end
+    mkpath(data); mkpath(tot)
+    data, analysis, tot
+end
+
+"""
+Write one exposure's `.dat`, `.prp` and `.tif` and return the time after it.
+`emit_tif(path, ring, flux)` writes the frame; `ring` is the radial profile a
+rendered frame would show. RNG draws happen in a fixed order (measure, beam,
+exposure gap, slot jitter, monitors) that the default demo's output depends on.
+"""
+function write_scan!(rng, rng_beam, dirs, base, label, kind, model, t, t0, slot, emit_tif;
+                     pipe_mm = PIPE_LENGTH_MM)
+    I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
+    b = beam(rng_beam, label, kind, Dates.value(t - t0) / 60_000)
+    flux = kind === :beam_off ? 1.0 : b.i0 * b.t / 0.86
+    ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
+    I = I .* flux; sig = sig .* flux
+    open(joinpath(dirs.tot, "$(base)_tot.dat"), "w") do io
+        for j in eachindex(Q)
+            Q[j] <= get(Q_MAX, label, Inf) || continue
+            @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
+        end
+    end
+    stem = base * "_0_001"
+    t += Second(rand(rng, 100:160))
+    # Each sample sits in its own capillary slot: HimalayaUI groups exposures
+    # into samples by horizontal-position jumps (grouping.jl _cluster_slots).
+    horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.05 * randn(rng); digits = 3)
+    write_prp(joinpath(dirs.data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS");
+              horiz, pipe_mm, i0 = b.i0, transmission = b.t, rng = rng_beam)
+    emit_tif(joinpath(dirs.data, stem * ".tif"), ring, flux, kind === :flare)
+    t
+end
+
+truth_row(label, bases, comps, peaks, auto, images, drops, flares, note) =
+    join([label, join(bases, " "),
+          isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+"),
+          join((@sprintf("%g", c[2]) for c in comps), "+"), auto,
+          join(("$p:$q" for (p, q) in peaks), " "),
+          string(images), join(drops, " "), join(flares, " "), csvq(note)], ",")
+
+function main_curated(o)
+    out, seed, images = o.out, o.seed, o.images
     # Separate streams: traces/positions must not depend on whether frames are
     # drawn, so `--no-images` yields the same .dat files `make demo` serves.
     rng = Xoshiro(seed)
     rng_img = Xoshiro(seed + 1)
     rng_beam = Xoshiro(seed + 2)
-    data = joinpath(out, "data")
-    analysis = joinpath(out, "analysis")
-    tot = joinpath(analysis, "automatic_analysis", "tot_files")
-    # Remove files from an earlier generation so a re-run can't leave strays.
-    for d in (data, tot)
-        isdir(d) && foreach(f -> rm(joinpath(d, f)), readdir(d))
-    end
-    mkpath(data); mkpath(tot)
+    data, analysis, tot = prepare_tree(out)
+    dirs = (data = data, tot = tot)
     write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"))
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)
     gaps = gap_mask()
-    truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"]
+    emit_tif(tif, ring, flux, flare) =
+        images ? write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, flux; flare)) : touch(tif)
+    truth = String[TRUTH_HEADER]
     scan = FIRST_SCAN
-    t = DateTime(2026, 4, 26, 18, 0, 0)
+    t = T0_DEFAULT
     for (k, (label, nscans, comps, auto, note)) in enumerate(SAMPLES)
         # Holder 2 goes in after a >1 h break, so load segmentation finds 2 loads.
         k == LOAD_SPLIT + 1 && (t += Minute(75))
@@ -426,37 +492,207 @@ function main(args = ARGS)
             kind = get(bad, n, nothing)
             kind === nothing || push!(drops, base)
             kind === :flare && push!(flares, base)
-            I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
-            b = beam(rng_beam, label, kind, Dates.value(t - DateTime(2026, 4, 26, 18, 0, 0)) / 60_000)
-            flux = kind === :beam_off ? 1.0 : b.i0 * b.t / 0.86
-            ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
-            I = I .* flux; sig = sig .* flux
-            open(joinpath(tot, "$(base)_tot.dat"), "w") do io
-                for j in eachindex(Q)
-                    Q[j] <= get(Q_MAX, label, Inf) || continue
-                    @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
-                end
-            end
-            stem = base * "_0_001"
-            t += Second(rand(rng, 100:160))
-            # Each sample sits in its own capillary slot: HimalayaUI groups exposures
-            # into samples by horizontal-position jumps (grouping.jl _cluster_slots).
-            horiz = round(SLOT0_MM + SLOT_PITCH_MM * (slot - 1) + 0.05 * randn(rng); digits = 3)
-            write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS");
-                      horiz, i0 = b.i0, transmission = b.t, rng = rng_beam)
-            tif = joinpath(data, stem * ".tif")
-            images ? write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, flux; flare = kind === :flare)) : touch(tif)
+            t = write_scan!(rng, rng_beam, dirs, base, label, kind, model, t, T0_DEFAULT, slot, emit_tif)
         end
-        phases = isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+")
-        lattice = join((@sprintf("%g", c[2]) for c in comps), "+")
-        qs = join(("$p:$q" for (p, q) in peaks), " ")
-        push!(truth, join([label, join(bases, " "), phases, lattice, auto, qs,
-                           string(images), join(drops, " "), join(flares, " "), csvq(note)], ","))
+        push!(truth, truth_row(label, bases, comps, peaks, auto, images, drops, flares, note))
     end
     write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
     println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",
             images ? "" : ", no images", ")")
     out
+end
+
+# ---- large mode ----------------------------------------------------------------
+# Realistic scale for performance work: several experiments of hundreds of samples.
+# Mix targets are aggregate figures from real beamtimes (no real names or values).
+
+# Phase weights among samples that have peaks (renormalised on use).
+const LARGE_PHASE_WEIGHTS = [(Lamellar, 0.27), (Im3m, 0.16), (Square, 0.13), (Pn3m, 0.06),
+                             (Hexagonal, 0.03), (Ia3d, 0.015)]
+# Typical lattice parameter (Å) per phase; each sample spreads ±15% around it.
+const LARGE_LATTICE = Dict{Type{<:Phase},Float64}(Lamellar => 63.0, Hexagonal => 74.0, Square => 80.0,
+                                                  Pn3m => 100.0, Im3m => 140.0, Ia3d => 150.0)
+const LARGE_FLIGHT_PATHS_MM = (800, 1700)
+const NO_PEAK_FRACTION = 0.40
+const TWO_PHASE_FRACTION = 0.15
+const BAD_FRAME_FRACTION = 0.06
+const POOL_SIZE = 24
+
+"Draw from `pairs` of (value, weight)."
+function weighted(rng, pairs)
+    r = rand(rng) * sum(last, pairs)
+    for (v, w) in pairs
+        (r -= w) <= 0 && return v
+    end
+    first(last(pairs))
+end
+
+"Frames per sample: 4 mostly, with a tail of short, long and very long series."
+function draw_nframes(rng)
+    r = rand(rng)
+    r < 0.82 && return 4
+    r < 0.91 && return 2
+    r < 0.93 && return 1
+    r < 0.96 && return 5
+    r < 0.99 && return rand(rng, 8:10)
+    rand(rng, 15:30)
+end
+
+# Heights: median 0.4, 90th percentile 8 (σ_ln = ln(20)/1.2816). Sigmas: median
+# 3.4e-3, 10th percentile 1.2e-3 (σ_ln = ln(3.4/1.2)/1.2816).
+draw_height(rng) = 0.4 * exp(2.337 * randn(rng))
+draw_sigma(rng) = 3.4e-3 * exp(0.8127 * randn(rng))
+
+function draw_component(rng, P)
+    a = LARGE_LATTICE[P] * (1 + 0.15 * (2rand(rng) - 1))
+    (P, a, draw_height(rng), draw_sigma(rng))::Component
+end
+
+"Components of one large-mode sample: none, one phase or two distinct phases."
+function draw_components(rng)
+    rand(rng) < NO_PEAK_FRACTION && return Component[]
+    P1 = weighted(rng, LARGE_PHASE_WEIGHTS)
+    comps = Component[draw_component(rng, P1)]
+    if rand(rng) < TWO_PHASE_FRACTION
+        P2 = weighted(rng, filter(p -> first(p) != P1, LARGE_PHASE_WEIGHTS))
+        push!(comps, draw_component(rng, P2))
+    end
+    comps
+end
+
+"Bad kind for one frame, or `nothing`: mostly flares, some missed capillaries and beam-off."
+function draw_bad(rng)
+    rand(rng) < BAD_FRAME_FRACTION || return nothing
+    weighted(rng, [(:flare, 0.7), (:missed, 0.2), (:beam_off, 0.1)])
+end
+
+"Slot count of the next holder."
+draw_holder_size(rng) = rand(rng, 10:16)
+
+"""
+Pool of rendered frames: no-peak (some with the vesicle hump), weak and strong
+examples of each phase, plus flare, missed and beam-off frames. Returns
+`Dict(key => path)` with keys `:none`, `:flare`, `:missed`, `:beam_off` and phase
+names, each mapping to a vector of paths.
+"""
+function render_pool(rng, rng_img, dir, qm, dx, dy, gaps)
+    mkpath(dir)
+    pool = Dict{Symbol,Vector{String}}()
+    n = 0
+    function add!(key, label, comps; kind = nothing)
+        model, _ = model_trace(rng, label, comps)
+        ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model :
+               kind === nothing ? model : bad_trace(kind, model)
+        counts = make_frame(rng_img, ring, qm, dx, dy, gaps, 1.0; flare = kind === :flare)
+        path = joinpath(dir, @sprintf("pool_%02d.tif", n += 1))
+        write_tif(path, counts)
+        push!(get!(pool, key, String[]), path)
+    end
+    strong(P) = Component[(P, LARGE_LATTICE[P], 3.0, 2.5e-3)]
+    weak(P) = Component[(P, LARGE_LATTICE[P], 0.25, 3.4e-3)]
+    for P in first.(LARGE_PHASE_WEIGHTS)
+        add!(Symbol(phase_name(P)), "pool", strong(P))
+        add!(Symbol(phase_name(P)), "pool", weak(P))
+    end
+    for i in 1:5
+        add!(:none, i <= 2 ? "vesicles_pool" : "pool", Component[])
+    end
+    add!(:flare, "pool", strong(Lamellar); kind = :flare)
+    add!(:flare, "pool", Component[]; kind = :flare)
+    add!(:missed, "pool", Component[]; kind = :missed)
+    add!(:beam_off, "pool", Component[]; kind = :beam_off)
+    for P in (Im3m, Lamellar, Square)
+        add!(Symbol(phase_name(P)), "pool", Component[(P, LARGE_LATTICE[P] * 1.08, 1.0, 3.0e-3)])
+    end
+    @assert n == POOL_SIZE
+    pool
+end
+
+"Hardlink `src` to `dst`, copying where the filesystem refuses."
+function hardlink(src, dst)
+    try
+        Base.hardlink(src, dst)
+    catch
+        cp(src, dst)
+    end
+end
+
+"Pool frame for an exposure: matched to its failure kind, else to the sample's first phase."
+function pool_frame(rng, pool, kind, comps)
+    key = kind !== nothing ? kind :
+          isempty(comps) ? :none : Symbol(phase_name(first(comps)[1]))
+    rand(rng, pool[key])
+end
+
+"One large-mode experiment `e` of `nsamples` samples written under `out`."
+function write_large_experiment(out, e, nsamples, seed, images)
+    # A stream per experiment, so experiment e is the same whatever N is.
+    rng = Xoshiro(hash((seed, e)))
+    rng_img = Xoshiro(hash((seed, e, :img)))
+    rng_beam = Xoshiro(hash((seed, e, :beam)))
+    rng_pick = Xoshiro(hash((seed, e, :pick)))
+    pipe_mm = rand(rng, LARGE_FLIGHT_PATHS_MM)
+    distance_mm = MEAN_DISTANCE_MM - (PIPE_LENGTH_MM - pipe_mm)
+    t0 = DateTime(2026, 1, 5, 9, 0, 0) + Day(9 * (e - 1) + rand(rng, 0:3))
+    tag = @sprintf("L%02d", e)
+    data, analysis, tot = prepare_tree(out)
+    dirs = (data = data, tot = tot)
+    write_setup_info(joinpath(analysis, "setup_info_$(Dates.format(t0, "yyyymmdd"))_090000.txt"); distance_mm)
+
+    pooldir = joinpath(out, ".pool")
+    pool = nothing
+    if images
+        qm, dx, dy = q_map(distance_mm)
+        pool = render_pool(rng, rng_img, pooldir, qm, dx, dy, gap_mask())
+    end
+    emit_tif(pk) = (tif, _, _, _) -> images ? hardlink(pk(), tif) : touch(tif)
+
+    truth = String[TRUTH_HEADER]
+    scan = FIRST_SCAN
+    t = t0
+    slot = 0; holder_size = draw_holder_size(rng)
+    for k in 1:nsamples
+        if slot == holder_size                       # next holder after a >1 h break
+            t += Minute(rand(rng, 70:120)); slot = 0; holder_size = draw_holder_size(rng)
+        end
+        slot += 1
+        label = @sprintf("%s_N%04d", tag, k)
+        comps = draw_components(rng)
+        model, peaks = model_trace(rng, label, comps)
+        bases = String[]; drops = String[]; flares = String[]
+        for _ in 1:draw_nframes(rng)
+            base = "$(label)_S$(scan)"; scan += 1
+            push!(bases, base)
+            kind = draw_bad(rng)
+            kind === nothing || push!(drops, base)
+            kind === :flare && push!(flares, base)
+            pk = () -> pool_frame(rng_pick, pool, kind, comps)
+            t = write_scan!(rng, rng_beam, dirs, base, label, kind, model, t, t0, slot, emit_tif(pk); pipe_mm)
+        end
+        note = isempty(comps) ? "no Bragg peaks" : "generated phases"
+        push!(truth, truth_row(label, bases, comps, peaks, "", images, drops, flares, note))
+    end
+    isdir(pooldir) && rm(pooldir; recursive = true)
+    write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
+    (samples = nsamples, pipe_mm)
+end
+
+function main_large(o)
+    mkpath(o.out)
+    for e in 1:o.experiments
+        name = @sprintf("large_%02d", e)
+        r = write_large_experiment(joinpath(o.out, name), e, o.samples, o.seed, o.images)
+        println("  $name: $(r.samples) samples, flight path $(r.pipe_mm) mm")
+    end
+    println("Wrote $(o.experiments) large synthetic experiments to $(o.out) (seed $(o.seed)",
+            o.images ? ", images shared from a pool" : ", no images", ")")
+    o.out
+end
+
+function main(args = ARGS)
+    o = parse_args(args)
+    check_target(o.out)
+    o.large ? main_large(o) : main_curated(o)
 end
 
 abspath(PROGRAM_FILE) == (@__FILE__) && main()
