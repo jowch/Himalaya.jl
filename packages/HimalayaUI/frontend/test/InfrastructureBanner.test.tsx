@@ -15,6 +15,7 @@ function withQC(qc: QueryClient) {
 interface AddOpts {
   status?: "pending" | "success" | "error" | "idle";
   submittedAt?: number;
+  meta?: Record<string, unknown>;
 }
 
 function addMutation(qc: QueryClient, opts: AddOpts = {}): Mutation {
@@ -30,7 +31,7 @@ function addMutation(qc: QueryClient, opts: AddOpts = {}): Mutation {
       failureReason: null,
       isPaused: false,
     },
-    options: {},
+    options: opts.meta ? { meta: opts.meta } : {},
   } as unknown as Mutation;
   qc.getMutationCache().add(m);
   return m;
@@ -70,6 +71,15 @@ describe("InfrastructureBanner", () => {
     const banner = screen.getByTestId("infrastructure-banner");
     expect(banner).toHaveAttribute("data-state", "showing");
     expect(banner).toHaveTextContent(/Saving your changes/);
+  });
+
+  it("ignores a pending request that saves nothing, such as the check for new files when a workspace opens", () => {
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 2000, meta: { savesWork: false } });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByTestId("infrastructure-banner")).not.toBeInTheDocument();
   });
 
   it("after 30s says how many changes are not saved yet and that it keeps trying, without asking for a refresh", () => {

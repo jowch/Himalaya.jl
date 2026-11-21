@@ -130,20 +130,21 @@ export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onC
           reflections land on a peak
         </p>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-1.5">
         <button
           type="button"
           onClick={onAdd}
           disabled={!canAdd}
-          className="flex flex-1 items-center justify-between rounded-sm bg-accent px-3 py-1.5 text-body font-semibold text-paper disabled:opacity-50"
+          className="flex w-full items-center justify-between gap-2 rounded-sm bg-accent px-3 py-2 text-body font-semibold text-paper disabled:opacity-50"
         >
-          <span>
+          <span className="min-w-0 truncate">
             Add {draft.phase} {(typed ?? draft.lattice).toFixed(1)} Å
           </span>
           <Kbd>Enter</Kbd>
         </button>
-        <button type="button" onClick={onCancel} className="inline-flex items-center gap-1 rounded-sm border border-hair px-3 py-1.5 text-body">
-          Cancel <Kbd>Esc</Kbd>
+        <button type="button" onClick={onCancel} className="flex w-full items-center justify-between gap-2 rounded-sm border border-hair bg-paper px-3 py-1.5 text-body">
+          <span>Cancel</span>
+          <Kbd>Esc</Kbd>
         </button>
       </div>
     </div>

@@ -24,7 +24,7 @@ export function InfrastructureBanner(): JSX.Element | null {
   const streamDownSince = useConnection((s) => s.streamDownSince);
 
   const pendingSubmittedAts = useMutationState({
-    filters: { status: "pending" },
+    filters: { status: "pending", predicate: (m) => m.options.meta?.savesWork !== false },
     select: (m) => m.state.submittedAt,
   });
 
