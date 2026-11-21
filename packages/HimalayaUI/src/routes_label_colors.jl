@@ -1,12 +1,17 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 const LABEL_COLORS = ("rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone")
+const SYSTEM_LABEL_COLORS = Dict("Buffer" => "blue", "Calibrant" => "ochre", "Empty capillary" => "stone")
+const USER_LABEL_COLORS = Tuple(c for c in LABEL_COLORS if !(c in values(SYSTEM_LABEL_COLORS)))
 const LABEL_COLOR_ENTITY_ID = 0
+
+_is_system_label(label) = any(r -> lowercase(r) == lowercase(label), ROLE_LABELS)
 
 function label_colors_list(db)
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT label, color FROM label_colors ORDER BY label COLLATE NOCASE"))
-    [Dict(:label => String(r.label), :color => String(r.color)) for r in rows]
+    [Dict(:label => String(r.label), :color => String(r.color)) for r in rows
+     if !_is_system_label(String(r.label)) && String(r.color) in USER_LABEL_COLORS]
 end
 
 function _label_color(db, label::String)
@@ -38,12 +43,12 @@ function register_label_color_routes!()
         body isa AbstractDict || return _json_error(400, "body must be an object")
         label = normalize_label(get(body, "label", nothing))
         label === nothing && return _json_error(400, "label must be 1 to $MAX_LABEL_LENGTH characters on one line")
-        any(r -> lowercase(r) == lowercase(label), ROLE_LABELS) &&
+        _is_system_label(label) &&
             return _json_error(400, "$(join(ROLE_LABELS, ", ")) have fixed colours")
         haskey(body, "color") || return _json_error(400, "color is required; send null to reset")
         raw = get(body, "color", nothing)
-        (raw === nothing || (raw isa AbstractString && raw in LABEL_COLORS)) ||
-            return _json_error(400, "color must be one of $(join(LABEL_COLORS, ", ")) or null")
+        (raw === nothing || (raw isa AbstractString && raw in USER_LABEL_COLORS)) ||
+            return _json_error(400, "color must be one of $(join(USER_LABEL_COLORS, ", ")) or null")
         color = raw === nothing ? nothing : String(raw)
 
         return with_idempotency(db, req) do

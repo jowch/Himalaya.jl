@@ -1,5 +1,5 @@
-import { LABEL_COLORS, type CorpusSample, type IndexEntry, type LabelColor } from "../api";
-import { cleanLabel, labelColorIsFixed, sameLabel } from "../lib/labels";
+import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
+import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
 import type { WorkspaceTheme } from "./theme";
@@ -55,8 +55,8 @@ export function candidateName(ix: Pick<IndexEntry, "phase" | "lattice_d">): stri
   return ix.lattice_d !== null ? `${ix.phase}, ${latticeParam(ix.phase)} ${ix.lattice_d.toFixed(1)} Å` : ix.phase;
 }
 
-const COLOR_OPTIONS: readonly FieldOption[] = LABEL_COLORS.map((c) => ({ value: c, label: LABEL_SWATCH[c].name, swatch: LABEL_SWATCH[c].solid }));
-const asColor = (v: string): LabelColor => LABEL_COLORS.find((c) => c === v) ?? LABEL_COLORS[0];
+const COLOR_OPTIONS: readonly FieldOption[] = USER_LABEL_COLORS.map((c) => ({ value: c, label: LABEL_SWATCH[c].name, swatch: LABEL_SWATCH[c].solid }));
+const asColor = (v: string): LabelColor => USER_LABEL_COLORS.find((c) => c === v) ?? USER_LABEL_COLORS[0]!;
 
 function newLabelForm(name: string, p: WorkspacePaletteInput): PaletteForm {
   return {

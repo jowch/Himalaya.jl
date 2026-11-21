@@ -46,11 +46,33 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
         m = match(r"export const LABEL_COLORS = \[([^\]]*)\]", api)
         @test m !== nothing
         @test Tuple(String(x.captures[1]) for x in eachmatch(r"\"([a-z]+)\"", m.captures[1])) == HimalayaUI.LABEL_COLORS
-        for c in HimalayaUI.LABEL_COLORS
-            db = open_prepared_clone(mktempdir())
-            with_inproc_routes(db) do call
+    end
+
+    @testset "blue, ochre and stone are kept for the system labels, matching the frontend" begin
+        labels = read(joinpath(@__DIR__, "..", "frontend", "src", "lib", "labels.ts"), String)
+        m = match(r"STANDARD_LABEL_COLORS[^=]*= \{([^}]*)\}"s, labels)
+        @test m !== nothing
+        frontend = Dict(String(x.captures[1]) => String(x.captures[2])
+                        for x in eachmatch(r"\"?([A-Za-z][A-Za-z ]*?)\"?: \"([a-z]+)\"", m.captures[1]))
+        @test frontend == HimalayaUI.SYSTEM_LABEL_COLORS
+        @test Set(keys(HimalayaUI.SYSTEM_LABEL_COLORS)) == Set(HimalayaUI.ROLE_LABELS)
+        @test HimalayaUI.USER_LABEL_COLORS == ("rose", "plum", "violet", "teal", "green")
+        db = open_prepared_clone(mktempdir())
+        with_inproc_routes(db) do call
+            for c in HimalayaUI.USER_LABEL_COLORS
                 @test _set_color(call, "37C", c).status == 200
             end
+            for c in values(HimalayaUI.SYSTEM_LABEL_COLORS)
+                @test _set_color(call, "37C", c).status == 400
+            end
+        end
+    end
+
+    @testset "rows stored before the system colours were fixed never reach the wire" begin
+        db = open_prepared_clone(mktempdir())
+        DBInterface.execute(db, "INSERT INTO label_colors (label, color) VALUES ('buffer', 'rose'), ('retake', 'blue'), ('37C', 'teal')")
+        with_inproc_routes(db) do call
+            @test _colors(call) == Dict("37C" => "teal")
         end
     end
 
@@ -88,10 +110,10 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
             _set_color(call, "Dried", "rose")
             _set_color(call, "retake", "rose")
             _set_color(call, "retake", nothing)
-            _set_color(call, "37C", "stone")
+            _set_color(call, "37C", "green")
         end
         live = _color_rows(db)
-        @test live == Dict("37C" => "stone", "Dried" => "rose")
+        @test live == Dict("37C" => "green", "Dried" => "rose")
         DBInterface.execute(db, "DELETE FROM label_colors")
         HimalayaUI.rebuild_views_from_log!(db, HimalayaUI.LABEL_COLOR_ENTITY_ID; entity_type = "tag")
         @test _color_rows(db) == live

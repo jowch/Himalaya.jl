@@ -1119,7 +1119,7 @@ describe("WorkspacePage", () => {
     expect(row.querySelector("[data-testid='workspace-label-chips'] [data-label]")).toBeNull();
   });
 
-  it("colours each label from the shared map, built-ins blue and other labels violet by default", () => {
+  it("colours each label from the shared map, system labels their system colour and other labels violet by default", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },

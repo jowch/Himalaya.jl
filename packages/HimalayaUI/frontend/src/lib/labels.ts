@@ -10,7 +10,7 @@ export function sameLabel(a: string, b: string): boolean {
   return labelKey(a) === labelKey(b);
 }
 
-export function standardLabel(label: string): string | undefined {
+export function standardLabel(label: string): (typeof STANDARD_LABELS)[number] | undefined {
   return STANDARD_LABELS.find((t) => sameLabel(t, label));
 }
 
@@ -124,30 +124,35 @@ export const STANDARD_LABEL_COLORS: Readonly<Record<(typeof STANDARD_LABELS)[num
   "Empty capillary": "stone",
 };
 
+const SYSTEM_COLORS: readonly LabelColor[] = Object.values(STANDARD_LABEL_COLORS);
+export const USER_LABEL_COLORS: readonly LabelColor[] = LABEL_COLORS.filter((c) => !SYSTEM_COLORS.includes(c));
+
 export function labelColorIsFixed(label: string): boolean {
   return standardLabel(label) !== undefined;
 }
 
 export function defaultLabelColor(label: string): LabelColor {
   const standard = standardLabel(label);
-  return standard ? STANDARD_LABEL_COLORS[standard as keyof typeof STANDARD_LABEL_COLORS] : "violet";
+  return standard ? STANDARD_LABEL_COLORS[standard] : "violet";
 }
 
 export function labelColor(colors: readonly LabelColorEntry[], label: string): LabelColor {
   if (labelColorIsFixed(label)) return defaultLabelColor(label);
-  return colors.find((e) => sameLabel(e.label, label))?.color ?? defaultLabelColor(label);
+  const stored = colors.find((e) => sameLabel(e.label, label))?.color;
+  return stored !== undefined && USER_LABEL_COLORS.includes(stored) ? stored : defaultLabelColor(label);
 }
 
 export function labelColorIsDefault(colors: readonly LabelColorEntry[], label: string): boolean {
-  return labelColorIsFixed(label) || !colors.some((e) => sameLabel(e.label, label));
+  return labelColorIsFixed(label) || !colors.some((e) => sameLabel(e.label, label) && USER_LABEL_COLORS.includes(e.color));
 }
 
 export function firstUnusedColor(colors: readonly LabelColorEntry[], labels: readonly string[]): LabelColor {
-  const uses = new Map<LabelColor, number>(LABEL_COLORS.map((c) => [c, 0]));
+  const uses = new Map<LabelColor, number>(USER_LABEL_COLORS.map((c) => [c, 0]));
   for (const l of labels) {
+    if (labelColorIsFixed(l)) continue;
     const c = labelColor(colors, l);
     uses.set(c, (uses.get(c) ?? 0) + 1);
   }
   const least = Math.min(...uses.values());
-  return LABEL_COLORS.find((c) => uses.get(c) === least)!;
+  return USER_LABEL_COLORS.find((c) => uses.get(c) === least)!;
 }

@@ -4,7 +4,8 @@ import { renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { CorpusSample, Exposure } from "../../src/api";
 
-vi.mock("../../src/api", () => ({
+vi.mock("../../src/api", async () => ({
+  LABEL_COLORS: (await vi.importActual<typeof import("../../src/api")>("../../src/api")).LABEL_COLORS,
   listExposures: vi.fn(),
   getTrace: vi.fn(),
   listPeaks: vi.fn(),
