@@ -10,7 +10,7 @@ import {
 import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { makeFakeMutation } from "./helpers";
 import { resolveMutator } from "../../src/lib/queue/mutatorRegistry";
-import { saveSeriesMutator } from "../../src/lib/queue/mutators/saveSeries";
+import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
 
 describe("persistence: mirrorToSessionStorage", () => {
   beforeEach(() => {
@@ -265,30 +265,22 @@ describe("persistence: rehydrate", () => {
   });
 });
 
-// Stale-schemaVersion drop guard. A persisted op carrying an old SCHEMA_VERSION
-// must DROP at the version guard on rehydrate — NOT replay into its (still
-// registered) mutator and fire a request that may 404 against a moved/dead
-// route. Retargeted from the retired `comparison_save` cluster onto the
-// surviving `series_save` save-create/submit mutator, which exercises the same
-// generic persistence/version-guard mechanism.
 describe("persistence: stale-schemaVersion op drop", () => {
   beforeEach(() => {
     sessionStorage.clear();
   });
 
-  it("drops a stale (mismatched schemaVersion) series_save op without replaying it", async () => {
-    // Spy so we can prove the registered series_save mutator's request is never
-    // fired — the op must drop at the version guard, not replay.
-    const requestSpy = vi.spyOn(saveSeriesMutator, "request");
+  it("drops a stale (mismatched schemaVersion) op without replaying it", async () => {
+    const requestSpy = vi.spyOn(peakAddMutator, "request");
 
     sessionStorage.setItem(
       STORAGE_KEY,
       JSON.stringify([
         {
           schemaVersion: SCHEMA_VERSION - 1, // stale; current SCHEMA_VERSION is newer
-          kind: "series_save",
-          clientOpId: "op-stale-series",
-          payload: { title: "stale draft", samples: [] },
+          kind: "peak_added",
+          clientOpId: "op-stale-peak",
+          payload: { exposureId: 7, q: 0.1 },
         },
       ]),
     );
@@ -304,13 +296,21 @@ describe("persistence: stale-schemaVersion op drop", () => {
     requestSpy.mockRestore();
   });
 
-  it("keeps the series_save mutator resolvable", () => {
-    // A current series_save op still resolves to its mutator. Cheapest possible
-    // regression guard against an over-eager future deletion of the machinery.
-    const mutator = resolveMutator({
-      kind: "series_save",
-      payload: { title: "x", samples: [] },
-    });
-    expect(mutator).toBe(saveSeriesMutator);
+  it("drops a persisted op of a deleted kind (series_save) without replaying it", async () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          schemaVersion: SCHEMA_VERSION,
+          kind: "series_save",
+          clientOpId: "op-series",
+          payload: { title: "draft", samples: [] },
+        },
+      ]),
+    );
+    const result = await rehydrate(new QueryClient(), resolveMutator);
+    expect(result.dropped).toBe(1);
+    expect(result.replayed).toBe(0);
+    expect(result.failed).toBe(0);
   });
 });

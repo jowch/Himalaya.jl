@@ -922,7 +922,7 @@ falls back to the per-acquisition name with the trailing `_<rep>_<frame>` suffix
 dropped: the real beamline `_tot.dat` total integration is named by the
 acquisition stem and shared across that acquisition's per-frame exposures. The
 migration rewrites `exposures.filename` to the full per-frame stem (for rescan
-dedup), so every `.dat` consumer — analyze, the trace route, series traces — must
+dedup), so every `.dat` consumer — analyze and the trace route — must
 resolve through here. Returns the path if found, else `nothing`.
 """
 function resolve_trace_path(analysis_dir::AbstractString,

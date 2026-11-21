@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Assignment, Series } from "../../api";
+import type { Assignment } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -42,11 +42,6 @@ export type OpKind =
   | "post_message" | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
-  // Series (#166/#167/#168). `series_save` covers create (POST /api/series)
-  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates.
-  // `series_commit` → `series_plate_committed`.
-  // `series_delete` → `series_deleted`.
-  | "series_save" | "series_commit" | "series_delete"
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
   // native assignment event kinds. `affectsExposurePeaks: () => false` for all
   // three — they touch only the assignment cache, never the peak set.
@@ -149,10 +144,8 @@ export interface AssignmentPostState {
  *
  * Optional `post_state` carries an enriched snapshot for replay-without-
  * refetch. Its shape depends on `kind`: curation events (peak_*, analyze_run)
- * carry a `CurationPostState`; the series-commit event
- * (`series_plate_committed`) carries the full `Series` projection — the same
- * shape `fetch_series_with_plate` / `GET /api/series/:id` returns. Consumers
- * narrow by `kind` and cast.
+ * carry a `CurationPostState`; assignment events carry an
+ * `AssignmentPostState`. Consumers narrow by `kind` and cast.
  */
 export interface SseEvent {
   id: number;
@@ -164,7 +157,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | AssignmentPostState | Series;
+  post_state?: CurationPostState | AssignmentPostState;
 }
 
 /**

@@ -88,14 +88,6 @@ export interface AppState {
   helpOverlayOpen: boolean;
 
 
-  /**
-   * Compare-page review-mode annotation toggles (Plan §Phase 9, Task 9.3).
-   * Both default to `true`. Per-tab viewing preference — neither persisted
-   * on the comparison nor in storage. Hidden in edit mode (everything
-   * renders so the user can edit).
-   */
-  showPeakTicks: boolean;
-  showPeakLabels: boolean;
 
   /**
    * Permalink URL handling slot (spec §4.4 + §6).
@@ -126,8 +118,6 @@ export interface AppState {
 
 
   // Compare-page Phase 9 review-mode UI actions (annotation toggles only)
-  setShowPeakTicks: (show: boolean) => void;
-  setShowPeakLabels: (show: boolean) => void;
 
   // Permalink URL handling actions (spec §4.4 + §6)
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
@@ -162,8 +152,6 @@ export const useAppState = create<AppState>()(
         helpOverlayOpen: false,
 
         // Phase 9 — review-mode UI defaults. All per-tab; not persisted.
-        showPeakTicks: true,
-        showPeakLabels: true,
 
         // Permalink URL handling — ephemeral, default empty.
         staleUrlContext: null,
@@ -216,8 +204,6 @@ export const useAppState = create<AppState>()(
         clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
 
         // Phase 9 — annotation toggle actions
-        setShowPeakTicks: (showPeakTicks) => set({ showPeakTicks }),
-        setShowPeakLabels: (showPeakLabels) => set({ showPeakLabels }),
 
         // Permalink URL handling actions (spec §4.4 + §6).
         // `recoverFromStaleUrl` is atomic: clears stale + sets active ids +

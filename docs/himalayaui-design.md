@@ -184,10 +184,6 @@ These are the concrete choices in the current build. They are not
   the experiment is context (the container) and the sample is the leaf the
   user is actively working on. De-emphasising the parent draws the eye to
   the sample without hiding the experiment path.
-- **Series stage** (`/series`): the former Compare page was retired and
-  folded into Series, which renders multi-trace overlays through a
-  folio / scoping / builder set of pages. Deep `/compare*` links redirect to
-  `/series`.
 
 ### 2.2 Typography
 
@@ -395,7 +391,7 @@ machines starts them over (intentional — server doesn't know about
   replay of its own write. Two tabs of the same user are distinct subscribers
   (the guard is per-tab, not per-username).
 - **Conflict resolution was cancelled (2026-06-03).** The `If-Match` +
-  409-retry path (R5b) and the Series conflict-resolution modal were both
+  409-retry path (R5b) and the conflict-resolution modal were both
   dropped — there is no conflict UI. Last-write-wins is permanent; the
   conflict story is instead being addressed by edit-tracking → undo/redo →
   versioning (designed in Layer 4). See

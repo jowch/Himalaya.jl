@@ -277,20 +277,12 @@ The compromise: `applyPostStateOnly(remote, qc)` and return early. The
 indices cache and `analysis_inputs_hash` are propagated; the per-kind body
 is skipped because it already ran in `onSuccess`.
 
-### Why `applyPostStateOnly` must guard against id collision
+### Why `applyPostStateOnly` checks the post_state shape
 
 `applyPostStateOnly` runs unconditionally for ALL SSE kinds on both own-tab
-paths (SSE-wins deferred-match + self-echo), so a `series_plate_committed`
-frame reaches it too — and that frame's `remote.post_state` is a full
-Series projection, not a `CurationPostState`. Series ids and exposure ids
-share the SQLite integer namespace, so without the `Array.isArray(ps.indices)`
-bail-out the `as CurationPostState` cast would read `indices` /
-`analysis_inputs_hash` as `undefined` off a Series and clobber
-`queryKeys.exposure(entity_id)` for any cached exposure whose id collides
-with the committed series — wiping that exposure's `analysis_inputs_hash`
-(spurious stale-indices alert, or a broken expected-hash check on its next
-peak op). The guard returns early unless `post_state.indices` is an array.
-Evidence: `lib/queue/applyRemoteToCache.ts:56-72`.
+paths (SSE-wins deferred-match + self-echo), so it also sees assignment frames,
+whose `post_state` is an `AssignmentPostState` with no `indices`. It writes the
+curation caches only when `post_state.indices` is an array.
 
 ---
 
@@ -552,7 +544,7 @@ discipline and the canonical paired test files.
 | `lib/queue/mutatorRegistry.ts` | Discovery / lookup of mutators by kind |
 | `lib/queue/optimisticId.ts` | Negative-id minting helper |
 | `lib/queue/peakQTol.ts` | Tolerance for matching peak rows by q value |
-| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / series / assignment / trivial / reanalyze) |
+| `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / assignment / grouping / bridges / trivial / reanalyze) |
 | `lib/clientId.ts` | Per-tab UUID (sessionStorage) |
 | `lib/clientOpId.ts` | Per-mutation UUID (`crypto.randomUUID` per call) |
 | `print/shell/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |

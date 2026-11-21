@@ -15,7 +15,7 @@ _want(g) = GROUP == "All" || GROUP == g
 # Pass-sum invariant across buckets holds. The seen-set dedup keeps it included once
 # per process.)
 const GROUPS = [
-    ("db",       ["test_http.jl","test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+    ("db",       ["test_http.jl","test_config.jl","test_db.jl",
                   "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
                   "test_ingestion_schema.jl"]),
     ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
@@ -26,18 +26,16 @@ const GROUPS = [
                   "test_routes_samples.jl","test_routes_exposures.jl","test_routes_image.jl",
                   "test_routes_peaks.jl","test_routes_trace.jl","test_routes_export.jl",
                   "test_routes_mentions.jl","test_route_response_shapes.jl",
-                  "test_routes_series.jl","test_routes_fs.jl"]),
+                  "test_routes_fs.jl"]),
     ("routes2",  ["test_http.jl","test_routes_users.jl","test_ingestion_scan_api.jl",
                   "test_routes_messages.jl","test_routes_analysis.jl","test_speculative.jl",
-                  "test_route_validation_routing.jl","test_picker_routes.jl",
-                  "test_picker_samples_route.jl","test_routes_resolve.jl",
+                  "test_route_validation_routing.jl","test_routes_resolve.jl",
                   "test_inproc_equivalence.jl","test_routes_bridges.jl"]),
     ("events",   ["test_http.jl","test_actions.jl","test_events.jl","test_assignment_reattach.jl",
                   "test_ingestion_structural_events.jl",
                   "test_assignments.jl","test_fast_skip.jl","test_idempotency.jl",
                   "test_idempotency_replay_invariant.jl","test_concurrent_writes.jl",
-                  "test_idempotency_sse_suppression.jl","test_comparisons.jl",
-                  "test_comparison_pins.jl"]),
+                  "test_idempotency_sse_suppression.jl"]),
     ("wire",     ["test_http.jl","test_routes_health.jl","test_routes_status.jl",
                   "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl",
                   "test_precompile_workload.jl"]),
@@ -49,7 +47,7 @@ GROUP == "All" || GROUP in first.(GROUPS) ||
 
 # Single source of truth for the serial bisect order — the exact historical
 # runtests include order. The buckets above must partition this same set.
-const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_series.jl",
+const ALL_ORDER = ["test_config.jl","test_db.jl",
                    "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
                    "test_ingestion_schema.jl",
                    "test_datfile.jl","test_hash.jl",
@@ -71,10 +69,8 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_route_response_shapes.jl","test_route_validation_routing.jl",
                    "test_idempotency.jl","test_idempotency_replay_invariant.jl",
                    "test_concurrent_writes.jl","test_idempotency_sse_suppression.jl",
-                   "test_comparisons.jl","test_routes_series.jl","test_picker_routes.jl",
-                   "test_picker_samples_route.jl","test_routes_resolve.jl","test_routes_bridges.jl",
+                   "test_routes_resolve.jl","test_routes_bridges.jl",
                    "test_routes_fs.jl",
-                   "test_comparison_pins.jl",
                    "test_spa_fallback.jl","test_precompile_workload.jl","test_migration_upgrade.jl"]
 
 # Drift guard: the buckets and ALL_ORDER must cover the identical file set, so a
