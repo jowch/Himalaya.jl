@@ -330,8 +330,8 @@ end
                         on_progress = nothing) -> NamedTuple
 
 Populate the on-disk thumbnail cache for every exposure with a non-NULL
-`image_path`. Run from `init` and `reingest` (issue #261) so the very first
-contact-sheet visit on a freshly-prepared corpus is fast (no cold-load stagger).
+`image_path`. Run after each ingest pass (issue #261) so the very first
+workspace visit on a freshly ingested experiment is fast (no cold-load stagger).
 
 The exposure list is materialized via `Tables.rowtable` *before* the parallel
 loop so the threaded workers touch only the filesystem — never the shared DB
@@ -345,7 +345,7 @@ because `work` runs under `@threads`: an uncaught throw there aborts the rest of
 the batch, silently leaving every later exposure unwarmed. Returns
 `(warmed, skipped)` counts.
 
-`experiment_id` restricts the warm to one experiment. `scan_and_group!` passes
+`experiment_id` restricts the warm to one experiment. `prewarm_after_ingest!` passes
 its own id: the whole-DB default walks EVERY exposure in EVERY experiment on
 every scan, which is O(corpus) per ingest and a long silent tail after the last
 progress tick — the bar sits at 100% while an unrelated experiment's thumbnails

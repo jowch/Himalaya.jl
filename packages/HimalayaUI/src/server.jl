@@ -221,7 +221,7 @@ is `"rescan"` for every pass after the first.
 function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Nothing} = nothing, force::Bool = false)
     lk = _ingest_lock(experiment_id)
     lock(lk)
-    try
+    result = try
         with_background_db(db) do db
             extra = phase === nothing ? (;) : (; phase)
             _set_ingest_status!(db, experiment_id, "scanning")
@@ -245,6 +245,23 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
     finally
         unlock(lk)
     end
+    result === :ok && prewarm_after_ingest!(db, experiment_id)
+    result
+end
+
+const THUMB_PREWARMS = Dict{Int,Task}()
+const _THUMB_PREWARMS_LOCK = ReentrantLock()
+
+function prewarm_after_ingest!(db::SQLite.DB, experiment_id::Int)
+    task = Threads.@spawn try
+        with_background_db(db) do bg
+            prewarm_thumbnails!(bg; threads = false, overwrite = false, experiment_id)
+        end
+    catch e
+        @warn "thumbnail prewarm failed" experiment_id exception = e
+    end
+    lock(() -> THUMB_PREWARMS[experiment_id] = task, _THUMB_PREWARMS_LOCK)
+    task
 end
 
 function _ingest_phase(db::SQLite.DB, experiment_id::Int)

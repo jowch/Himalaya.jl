@@ -171,7 +171,7 @@
     "src/hash.jl": 26,
     "src/idempotency.jl": 135,
     "src/image.jl": 159,
-    "src/ingest.jl": 166,
+    "src/ingest.jl": 152,
     "src/json.jl": 16,
     "src/pipeline.jl": 430,
     "src/prp.jl": 28,
