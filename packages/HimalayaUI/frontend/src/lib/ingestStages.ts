@@ -19,14 +19,13 @@
  */
 
 /** Wire values emitted by `on_progress`, in execution order. */
-export const INGEST_STAGES = ["discovery", "analyzing", "thumbnails"] as const;
+export const INGEST_STAGES = ["discovery", "analyzing"] as const;
 
 export type IngestStage = (typeof INGEST_STAGES)[number];
 
 const STAGE_LABELS: Record<IngestStage, string> = {
   discovery: "Reading files",
   analyzing: "Analyzing",
-  thumbnails: "Thumbnails",
 };
 
 export function isIngestStage(v: string | undefined): v is IngestStage {

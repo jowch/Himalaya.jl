@@ -223,7 +223,7 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
     lk = _ingest_lock(experiment_id)
     lock(lk)
     try
-        with_background_db(db) do db
+        result = with_background_db(db) do db
             extra = phase === nothing ? (;) : (; phase)
             _set_ingest_status!(db, experiment_id, "scanning")
             broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, extra...)
@@ -243,9 +243,39 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
                 :failed
             end
         end
+        result === :ok && prewarm_after_ingest!(db, experiment_id)
+        result
     finally
         unlock(lk)
     end
+end
+
+const THUMB_PREWARMS = Dict{Int,Task}()
+const _THUMB_PREWARMS_LOCK = ReentrantLock()
+const _THUMB_PREWARM_GATE = Ref{Union{Nothing,Channel{Nothing}}}(nothing)
+
+function prewarm_after_ingest!(db::SQLite.DB, experiment_id::Int)
+    thumb_cache_dir(db) === nothing && return nothing
+    gate = _THUMB_PREWARM_GATE[]
+    lock(_THUMB_PREWARMS_LOCK) do
+        previous = get(THUMB_PREWARMS, experiment_id, nothing)
+        task = Threads.@spawn try
+            previous === nothing || wait(previous)
+            gate === nothing || take!(gate)
+            with_background_db(db) do bg
+                prewarm_thumbnails!(bg; threads = false, overwrite = false, experiment_id)
+            end
+        catch e
+            @warn "thumbnail prewarm failed" experiment_id exception = e
+        end
+        THUMB_PREWARMS[experiment_id] = task
+    end
+end
+
+function wait_prewarm(experiment_id::Int)
+    task = lock(() -> get(THUMB_PREWARMS, experiment_id, nothing), _THUMB_PREWARMS_LOCK)
+    task === nothing || wait(task)
+    nothing
 end
 
 function _ingest_phase(db::SQLite.DB, experiment_id::Int)

@@ -1245,6 +1245,25 @@ describe("WorkspacePage", () => {
     expect(text).toContain("I signal7,798");
   });
 
+  it("lists the shown exposure's acquisition time, flight tube, energy and detector from the .prp", () => {
+    state.exposures = [exposure(100), exposure(101, {
+      selected: true, timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
+    })];
+    renderAt("/experiments/1/workspace/10");
+    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const text = section.textContent ?? "";
+    expect(text).toContain("Acquired2026-04-26 18:20:27");
+    expect(text).toContain("Flight tube700 mm");
+    expect(text).toContain("Energy11.000 keV");
+    expect(text).toContain("DetectorArea detector");
+  });
+
+  it("keeps the new .prp rows with a dash when the frame has no .prp", () => {
+    renderAt("/experiments/1/workspace/10");
+    const text = screen.getByRole("heading", { name: "Exposure" }).closest("section")!.textContent ?? "";
+    for (const k of ["Acquired", "Flight tube", "Energy", "Detector"]) expect(text).toContain(`${k}—`);
+  });
+
   it("the indexing plot follows the custom index while it is open", () => {
     state.trace = makeTrace(1);
     const a = (2 * Math.PI * Math.SQRT2) / 0.1;

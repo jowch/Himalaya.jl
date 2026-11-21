@@ -57,7 +57,7 @@ end
 # Issue #261 (H) — thumb downscale-before-lognormalize + disk cache + prewarm
 # ---------------------------------------------------------------------------
 
-using SQLite, DBInterface
+using SQLite, DBInterface, Tables, JSON3
 
 """
 Build a synthetic detector TIFF: a `dim`×`dim` faint background with a BROAD
@@ -378,6 +378,59 @@ end
         finally
             rm(good; force=true)
             rm(bad;  force=true)
+        end
+    end
+end
+
+@testset "an ingest pass completes before its thumbnails are warmed" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        data = joinpath(tmp, "data"); mkpath(data)
+        tiff = _make_detector_tiff(256)
+        cp(tiff, joinpath(data, "A_S0001_0_001.tif"))
+        rm(tiff; force = true)
+        exp = HimalayaUI.create_experiment!(db; name = "thumbs", path = tmp, data_dir = data, analysis_dir = data)
+        pending = Channel{String}(256)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        gate = Channel{Nothing}(1)
+        HimalayaUI._THUMB_PREWARM_GATE[] = gate
+        try
+            @test HimalayaUI.run_ingest!(db, exp) === :ok
+            stages = String[]
+            kinds = String[]
+            while isready(pending)
+                frame = take!(pending)
+                lines = filter(l -> startswith(l, "data: "), split(frame, '\n'))
+                isempty(lines) && continue
+                obj = JSON3.read(replace(first(lines), r"^data: " => ""))
+                haskey(obj, :kind) && push!(kinds, String(obj.kind))
+                haskey(obj, :payload) && haskey(obj.payload, :stage) && push!(stages, String(obj.payload.stage))
+            end
+            @test "ingest_complete" in kinds
+            @test "analyzing" in stages
+            @test !("thumbnails" in stages)
+            @test first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT ingest_status FROM experiments WHERE id = ?", [exp]))).ingest_status == "complete"
+
+            e = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, image_path FROM exposures WHERE experiment_id = ?", [exp])))
+            thumb = HimalayaUI.thumb_cache_path(db, Int(e.id), HimalayaUI.image_version_token(String(e.image_path)))
+            @test !isfile(thumb)
+
+            put!(gate, nothing)
+            HimalayaUI.wait_prewarm(exp)
+            @test isfile(thumb)
+        finally
+            HimalayaUI._THUMB_PREWARM_GATE[] = nothing
+            isready(gate) || put!(gate, nothing)
+            HimalayaUI.wait_prewarm(exp)
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
         end
     end
 end
