@@ -47,7 +47,7 @@ export function SubtractionStrip({ q, d: raw, label, xDomain, xExtent, peakQs, v
                 </clipPath>
               </defs>
               <line x1={0} x2={dims.plotWidth} y1={y.to(0)} y2={y.to(0)} stroke="var(--color-hair-strong)" strokeDasharray="3 3" />
-              <path data-role="difference-line" d={linePath(q, d, x, y)} fill="none" stroke="var(--color-ink)" strokeWidth={1.2} clipPath={`url(#${clipId})`} />
+              <path data-role="difference-line" d={linePath(q, d, x, y)} fill="none" stroke="var(--color-accent)" strokeWidth={1.4} clipPath={`url(#${clipId})`} />
               <text x={6} y={8} className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke">{label}</text>
             </>
           );

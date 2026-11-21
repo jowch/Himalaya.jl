@@ -17,12 +17,12 @@ export interface CompareLine {
   name: string;
   q: readonly number[];
   I: readonly number[];
-  dash: string;
+  color: string;
   emphasis: boolean;
 }
 
-export const COMPARE_DASHES = ["5 4", "2 3", "9 3 2 3"] as const;
-export const COMPARE_COLOR = "color-mix(in oklch, var(--color-ink-soft) 55%, var(--color-ink-faint))";
+export const COMPARE_DASH = "5 4";
+export const COMPARE_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--color-compare-${n})`);
 export const PLOT_HEIGHT = 330;
 
 interface Props {
@@ -63,11 +63,14 @@ export function linePath(q: readonly number[], I: readonly number[], x: Axis1D, 
   return d;
 }
 
-function peakPoints(px: number, manual: boolean): string {
-  const pts: [number, number][] = manual
-    ? [[px, -10], [px + 4, -5], [px, 0], [px - 4, -5]]
-    : [[px - 4, -8], [px + 4, -8], [px, -1]];
+function peakPoints(px: number): string {
+  const pts: [number, number][] = [[px - 4, -8], [px + 4, -8], [px, -1]];
   return pts.map(([a, b]) => `${a.toFixed(1)},${b}`).join(" ");
+}
+
+function peakFill(p: Peak): string {
+  if (p.excluded) return "none";
+  return p.source === "manual" ? "var(--color-accent)" : "var(--color-ink)";
 }
 
 export function WorkspacePlot({
@@ -208,9 +211,9 @@ export function WorkspacePlot({
                     data-compare={c.id}
                     d={linePath(c.q, c.I, x, y)}
                     fill="none"
-                    stroke={COMPARE_COLOR}
+                    stroke={c.color}
                     strokeWidth={c.emphasis ? 1.6 : 1.1}
-                    strokeDasharray={c.dash}
+                    strokeDasharray={COMPARE_DASH}
                   />
                 ))}
               </g>
@@ -240,8 +243,8 @@ export function WorkspacePlot({
                   key={p.id}
                   data-peak-id={p.id}
                   data-excluded={p.excluded || undefined}
-                  points={peakPoints(x.to(p.q), p.source === "manual")}
-                  fill={p.excluded ? "none" : "var(--color-ink)"}
+                  points={peakPoints(x.to(p.q))}
+                  fill={peakFill(p)}
                   stroke={p.excluded ? "var(--color-ink-faint)" : "none"}
                   {...(onClickPeak
                     ? {

@@ -240,9 +240,13 @@ These are the concrete choices in the current build. They are not
 - **Click** inside the plot area adds a manual peak at the exact q; a click
   within `PEAK_HIT_PX` of a drawn peak triangle toggles or removes it. Only
   peaks inside the window are drawn or hit.
-- **Peak markers** are triangles in a row above the plot (diamonds for
-  manual peaks, outlines when off). Each is a `role="button"` tab stop that
-  Enter or Space toggles, so peaks can be edited without a mouse.
+- **Peak markers** are triangles in a row above the plot: ink for auto
+  peaks, filled accent for manual ones, an ink-faint outline when off. Each
+  is a `role="button"` tab stop that Enter or Space toggles, so peaks can be
+  edited without a mouse.
+- **Comparisons** each get their own colour (`--color-compare-1…5`, the
+  mock-up's `REF_COL`) with the same `5 4` dash; the subtracted one is
+  thicker. The difference strip is an accent line on a dashed zero line.
 - **Predicted-q combs** show only for the hovered candidate or the open
   custom index.
 

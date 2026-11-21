@@ -69,7 +69,7 @@ describe("WorkspacePlot on real SSRL traces", () => {
   it("keeps a stronger comparison inside the plot in q²I", () => {
     const main = fixture("form-factor");
     const ref = fixture("cubic");
-    const compare = { id: 9, name: "cubic", q: ref.q, I: ref.I.map((v) => v * 3), dash: "5 4", emphasis: false };
+    const compare = { id: 9, name: "cubic", q: ref.q, I: ref.I.map((v) => v * 3), color: "var(--color-compare-1)", emphasis: false };
     render(<WorkspacePlot trace={main} peaks={[]} combs={[]} compares={[compare]} view="kratky" xDomain={[0.12, 0.16]} />);
     const c = ys('[data-compare="9"]');
     expect(Math.min(...c)).toBeGreaterThanOrEqual(0);
@@ -84,7 +84,7 @@ describe("WorkspacePlot on real SSRL traces", () => {
       return Number(top);
     };
     const base = alone();
-    const early = { id: 4, name: "early", q: main.q.filter((q) => q < 0.05), I: main.I.filter((_, i) => main.q[i]! < 0.05).map((v) => v * 10), dash: "5 4", emphasis: false };
+    const early = { id: 4, name: "early", q: main.q.filter((q) => q < 0.05), I: main.I.filter((_, i) => main.q[i]! < 0.05).map((v) => v * 10), color: "var(--color-compare-1)", emphasis: false };
     render(<WorkspacePlot trace={main} peaks={[]} combs={[]} compares={[early]} view="linear" xDomain={[0.1, 0.15]} />);
     expect(Number(labels("axis-left").at(-1))).toBe(base);
   });

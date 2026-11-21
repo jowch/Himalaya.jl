@@ -126,7 +126,14 @@
    * rings) to the light variant. The dark default + the `:root.theme-light`
    * override are gone.
    */
-  :root { color-scheme: light; }
+  :root {
+    color-scheme: light;
+    --color-compare-1: #8a8178;
+    --color-compare-2: #5f86a8;
+    --color-compare-3: #a57c45;
+    --color-compare-4: #7c6a9e;
+    --color-compare-5: #5d8f7a;
+  }
   body {
     background: var(--color-paper);
     color: var(--color-ink);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent, screen } from "@testing-library/react";
-import { PLOT_HEIGHT, WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
+import { COMPARE_COLORS, PLOT_HEIGHT, WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
 import { PLOT_MARGINS } from "../../src/workspace/plotScale";
 import { SubtractionStrip } from "../../src/workspace/ui/SubtractionStrip";
 
@@ -15,7 +15,7 @@ describe("WorkspacePlot", () => {
   });
 
   it("skips non-positive comparison points on a log scale but draws them on linear", () => {
-    const compare = { id: 3, name: "buf", q: [0.05, 0.1, 0.15], I: [1, 0, 2], dash: "6 4", emphasis: false };
+    const compare = { id: 3, name: "buf", q: [0.05, 0.1, 0.15], I: [1, 0, 2], color: "var(--color-compare-1)", emphasis: false };
     const { rerender } = render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} compares={[compare]} />);
     const d = (): string => screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!;
     expect(d().match(/[ML]/g)).toHaveLength(2);
@@ -24,7 +24,7 @@ describe("WorkspacePlot", () => {
   });
 
   it("labels the q²I view and draws comparisons multiplied by q²", () => {
-    const compare = { id: 3, name: "buf", q: [0.05, 0.1, 0.15], I: [400, 100, 100], dash: "6 4", emphasis: false };
+    const compare = { id: 3, name: "buf", q: [0.05, 0.1, 0.15], I: [400, 100, 100], color: "var(--color-compare-1)", emphasis: false };
     const { rerender } = render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} compares={[compare]} view="linear" />);
     const d = (): string => screen.getByTestId("workspace-compares").querySelector("path")!.getAttribute("d")!;
     const ys = (): number[] => d().split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
@@ -76,7 +76,7 @@ describe("WorkspacePlot", () => {
 
   it("fits a stronger comparison into the window, after the view transform", () => {
     const flat = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
-    const compare = { id: 3, name: "ref", q: flat.q, I: [5, 5, 5, 5, 5], dash: "6 4", emphasis: false };
+    const compare = { id: 3, name: "ref", q: flat.q, I: [5, 5, 5, 5, 5], color: "var(--color-compare-1)", emphasis: false };
     for (const view of ["linear", "kratky"] as const) {
       const { unmount } = render(<WorkspacePlot trace={flat} peaks={[]} combs={[]} compares={[compare]} view={view} xDomain={[0.1, 0.2]} />);
       const ys = comparePoints().map(([, y]) => y);
@@ -88,14 +88,14 @@ describe("WorkspacePlot", () => {
 
   it("ignores a comparison that ends before the window", () => {
     const flat = { q: [0.05, 0.1, 0.3, 0.35, 0.4], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
-    const short = { id: 4, name: "short", q: [0.02, 0.05, 0.08], I: [100, 100, 100], dash: "6 4", emphasis: false };
+    const short = { id: 4, name: "short", q: [0.02, 0.05, 0.08], I: [100, 100, 100], color: "var(--color-compare-1)", emphasis: false };
     render(<WorkspacePlot trace={flat} peaks={[]} combs={[]} compares={[short]} view="linear" xDomain={[0.32, 0.4]} />);
     expect(Math.max(...yTicks())).toBeLessThan(5);
   });
 
   it("ignores a comparison that starts after the window", () => {
     const flat = { q: [0.05, 0.1, 0.15, 0.3, 0.4], I: [1, 1, 1, 1, 1], sigma: [0, 0, 0, 0, 0] };
-    const late = { id: 5, name: "late", q: [0.3, 0.35, 0.4], I: [100, 100, 100], dash: "6 4", emphasis: false };
+    const late = { id: 5, name: "late", q: [0.3, 0.35, 0.4], I: [100, 100, 100], color: "var(--color-compare-1)", emphasis: false };
     render(<WorkspacePlot trace={flat} peaks={[]} combs={[]} compares={[late]} view="linear" xDomain={[0.05, 0.16]} />);
     expect(Math.max(...yTicks())).toBeLessThan(5);
   });
@@ -170,7 +170,9 @@ describe("WorkspacePlot", () => {
     for (const id of [1, 2, 3]) expect(Math.max(...glyphYs(id))).toBeLessThanOrEqual(0);
     expect(glyph(1).getAttribute("fill")).toBe("var(--color-ink)");
     expect(glyph(2).getAttribute("fill")).toBe("none");
-    expect(glyph(3).getAttribute("points")!.split(" ")).toHaveLength(4);
+    expect(glyph(2).getAttribute("stroke")).toBe("var(--color-ink-faint)");
+    expect(glyph(3).getAttribute("points")!.split(" ")).toHaveLength(3);
+    expect(glyph(3).getAttribute("fill")).toBe("var(--color-accent)");
   });
 
   it("shows q and d under the cursor and nothing once it leaves", () => {
@@ -230,5 +232,23 @@ describe("WorkspacePlot", () => {
     const frame = screen.getByTestId("workspace-trace").parentElement!;
     fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + 100, clientY: PLOT_HEIGHT - 3 });
     expect(screen.getByTestId("workspace-trace").querySelector('[data-role="q-readout"]')).toBeNull();
+  });
+
+  it("gives each comparison its own colour with the mock-up's single dash", () => {
+    const a = { id: 3, name: "a", q: trace.q, I: trace.I, color: COMPARE_COLORS[0], emphasis: true };
+    const b = { id: 4, name: "b", q: trace.q, I: trace.I, color: COMPARE_COLORS[1], emphasis: false };
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} compares={[a, b]} />);
+    const path = (id: number): Element => screen.getByTestId("workspace-compares").querySelector(`[data-compare="${id}"]`)!;
+    expect(path(3).getAttribute("stroke")).not.toBe(path(4).getAttribute("stroke"));
+    expect(path(3).getAttribute("stroke-dasharray")).toBe("5 4");
+    expect(path(4).getAttribute("stroke-dasharray")).toBe("5 4");
+    expect(path(3).getAttribute("stroke-width")).toBe("1.6");
+  });
+
+  it("draws the difference in the accent colour", () => {
+    render(<SubtractionStrip q={[0.05, 0.1, 0.2]} d={[0, 10, 10]} label="minus buf" xDomain={null} xExtent={[0.05, 0.2]} peakQs={[]} />);
+    const line = screen.getByTestId("workspace-subtraction").querySelector('[data-role="difference-line"]')!;
+    expect(line.getAttribute("stroke")).toBe("var(--color-accent)");
+    expect(line.getAttribute("stroke-width")).toBe("1.4");
   });
 });
