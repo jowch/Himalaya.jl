@@ -10,7 +10,7 @@ interface NoticePillProps {
 }
 
 
-/** A compact 10px pill for a short status notice.
+/** A compact 12px pill for a short status notice.
  *
  * Two tones:
  *   - `"new"`   — accent-tinted "+N new match" (recipe found new matching samples).
@@ -37,9 +37,8 @@ export function NoticePill({
         data-tone="new"
         className={cx(baseClasses, "text-print-accent", className)}
         style={{
-          fontSize: "10px",
-          lineHeight: "15px",
-          letterSpacing: "0.03em",
+          fontSize: "12px",
+          lineHeight: "17px",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-accent) 14%, transparent)",
         }}
@@ -56,9 +55,8 @@ export function NoticePill({
         data-tone="success"
         className={cx(baseClasses, "text-success border border-success", className)}
         style={{
-          fontSize: "10px",
-          lineHeight: "15px",
-          letterSpacing: "0.03em",
+          fontSize: "12px",
+          lineHeight: "17px",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-success) 10%, transparent)",
         }}
@@ -75,9 +73,8 @@ export function NoticePill({
         data-tone="warning"
         className={cx(baseClasses, "text-warning border border-warning", className)}
         style={{
-          fontSize: "10px",
-          lineHeight: "15px",
-          letterSpacing: "0.03em",
+          fontSize: "12px",
+          lineHeight: "17px",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-warning) 10%, transparent)",
         }}
@@ -94,9 +91,8 @@ export function NoticePill({
         data-tone="scanning"
         className={cx(baseClasses, "text-print-accent border border-accent", className)}
         style={{
-          fontSize: "10px",
-          lineHeight: "15px",
-          letterSpacing: "0.03em",
+          fontSize: "12px",
+          lineHeight: "17px",
           padding: "2px 8px",
           background: "color-mix(in oklab, var(--color-accent) 10%, transparent)",
         }}
@@ -117,9 +113,8 @@ export function NoticePill({
         className,
       )}
       style={{
-        fontSize: "10px",
-        lineHeight: "15px",
-        letterSpacing: "0.03em",
+        fontSize: "12px",
+        lineHeight: "17px",
         padding: "2px 8px",
       }}
     >
