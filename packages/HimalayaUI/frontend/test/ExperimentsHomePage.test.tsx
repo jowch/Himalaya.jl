@@ -142,4 +142,37 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     await screen.findByTestId("experiment-card-7");
     expect(screen.getByText("indexing…")).toBeInTheDocument();
   });
+
+  it("moves between experiment cards with the arrow keys", async () => {
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "JC plate" }), EXP({ id: 9, name: "Third" })]);
+    renderPage();
+    const first = await screen.findByTestId("experiment-card-7");
+    const second = screen.getByTestId("experiment-card-8");
+    const third = screen.getByTestId("experiment-card-9");
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(third);
+    fireEvent.keyDown(third, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(third);
+    fireEvent.keyDown(third, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(first);
+  });
+
+  it("leaves arrow keys alone while a dialog is open", async () => {
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({})]);
+    renderPage();
+    await screen.findByTestId("experiment-card-7");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.appendChild(dialog);
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(document.body);
+    dialog.remove();
+  });
 });
