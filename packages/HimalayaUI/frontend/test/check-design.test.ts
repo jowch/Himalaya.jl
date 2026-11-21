@@ -35,10 +35,6 @@ describe("check-design guard — ban rules (spec §4)", () => {
   it("passes a shadow-[…rgba…] Plate-Lift literal (rule #3 excludes shadow-)", () => {
     expect(rulesFor('<div className="shadow-[0_8px_26px_-10px_rgba(60,52,40,.34)]" />')).not.toContain("no-raw-color-utility");
   });
-  it("excludes the print/export/ render layer entirely — color authored by prefix", () => {
-    const v = scanContent("print/export/cleanFigureSvg.ts", '<div className="bg-[oklch(0.15_0.01_55)]" />');
-    expect(v).toHaveLength(0);
-  });
 
   // Rule #5 — raw color literal anywhere; var(--color-*) stripped first
   it("passes a var-only color-mix string literal", () => {
@@ -150,12 +146,3 @@ describe("isExcluded via scanContent — print/detector authoring", () => {
   });
 });
 
-describe("isExcluded via scanContent — print/comb authoring", () => {
-  it("excludes src/print/comb from appearance rules", () => {
-    expect(scanContent("print/comb/CombChart.tsx", `<circle stroke="oklch(0.57 0.15 58)" />`)).toEqual([]);
-    expect(scanContent("print/comb/CombScaffold.tsx", `<text fontSize={9.5} fill="var(--color-ink-faint)" />`)).toEqual([]);
-  });
-  it("still ENFORCES print/components (placement-only composites)", () => {
-    expect(scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`).length).toBeGreaterThan(0);
-  });
-});

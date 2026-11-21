@@ -255,9 +255,6 @@ export interface CreateExperimentBody {
 export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
   request<Experiment>("POST", "/api/experiments", body, opts);
 
-export const deleteExperiment = (id: number, opts?: AuthOpts) =>
-  request<void>("DELETE", `/api/experiments/${id}`, undefined, opts);
-
 /** Rescan: cheap change-check then additive ingest of new files. Idempotent.
  *  Pass `force = true` to bypass the cheap change-check and always run a full
  *  scan — used when a pattern field edit changes what files are discovered. */
@@ -603,25 +600,7 @@ export const listIndices = (exposure_id: number, opts?: { signal?: AbortSignal }
 export const deleteIndex = (id: number, opts?: AuthOpts) =>
   request<{ deleted: number }>("DELETE", `/api/indices/${id}`, undefined, opts);
 
-// Speculative indices (user-built, sub-minpeaks). Anchor + snap UX.
-export interface SpeculativeSnap {
-  ratio_position: number;
-  predicted_q: number;
-  suggested_peak_id: number | null;
-  suggested_q: number | null;
-  suggested_residual: number | null;
-  is_anchor: boolean;
-}
-
-export const getSpeculativeSnap = (
-  exposure_id: number,
-  phase: string,
-  anchor_peak_id: number,
-  anchor_ratio: number,
-) => {
-  const qs = `?phase=${encodeURIComponent(phase)}&anchor_peak_id=${anchor_peak_id}&anchor_ratio=${anchor_ratio}`;
-  return request<SpeculativeSnap[]>("GET", `/api/exposures/${exposure_id}/speculative-snap${qs}`);
-};
+// Speculative indices (user-built, sub-minpeaks).
 
 export interface SpeculativeAdditional { ratio_position: number; peak_id: number }
 
@@ -722,12 +701,6 @@ export interface ReanalyzeResponse {
 }
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
-
-// Single-entity fetchers for mention resolution
-export const getIndex    = (id: number) => request<IndexEntry>("GET", `/api/indices/${id}`);
-export const getExposure = (id: number) => request<Exposure>("GET", `/api/exposures/${id}`);
-export const getSample   = (id: number) => request<Sample>("GET", `/api/samples/${id}`);
-
 
 /** Per-pair shape returned by `GET /api/sample-tags` (corpus) and
  *  the experiment-scoped `/api/experiments/:eid/sample-tags`.

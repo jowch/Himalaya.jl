@@ -26,7 +26,7 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 - **Phase serialization:** `string(nameof(P))` not `string(P)` — the latter returns `"Himalaya.Pn3m"`, breaking SQLite roundtrips.
 - **Detector TIFFs are Q0f31 fixed-point.** `Float32.(channelview(raw))` divides by 2³¹ and silently breaks log1p. Use `reinterpret.(Int32, channelview(raw))` to recover photon counts. Check any new image-processing code.
 - **Image route uses `Cache-Control: private, max-age=31536000, immutable`** in `routes_exposures.jl`, with URL-based invalidation: the frontend appends `?v=<image_version_token>` (IMAGE_PROCESSING_VERSION + TIFF mtime) so the URL is the cache key. When rendered bytes change, bump `IMAGE_PROCESSING_VERSION` (`image.jl`) rather than lengthening max-age.
-- **Index scoring formula:** `score = coverage × consistency`. R² is NOT in the score — it's computed by `fit(index)` (`src/index.jl`), stored per-index in the `r_squared` column, and surfaced informationally as a "fit R²" readout in the comb/residual chart (`print/comb/ResidualChart.tsx`). The old `r_squared < 0.98` hard UI gate no longer exists. Guard `cv` against zero mean.
+- **Index scoring formula:** `score = coverage × consistency`. R² is NOT in the score — it's computed by `fit(index)` (`src/index.jl`), stored per-index in the `r_squared` column, and surfaced informationally as the R² readout in the workspace phase rail (`workspace/WorkspacePage.tsx`). The old `r_squared < 0.98` hard UI gate no longer exists. Guard `cv` against zero mean.
 
 ### Frontend — TS strict / Zustand / TanStack Query / Plot
 

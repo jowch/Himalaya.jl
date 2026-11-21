@@ -28,7 +28,7 @@ node_modules/.bin/playwright test --grep "batch-reject"
 
 ## Seeding Zustand state
 
-There is no `data-exposure-id`, and `data-sample-id` only exists on the cold-assign panel rows (`ColdAssignPanel`), not on the main sample navigation surfaces. To navigate to a specific sample/exposure, seed Zustand state in `localStorage` before `page.goto("/")`:
+The workspace sample list rows carry `data-sample-id` and the detector overlay carries `data-exposure-id`, but to land on a specific sample/exposure, seed Zustand state in `localStorage` before `page.goto("/")`:
 
 ```ts
 await page.addInitScript((state) => {

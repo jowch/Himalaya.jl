@@ -65,7 +65,6 @@ function makeMutator(
       qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
         old ? { ...old, analysis_inputs_hash: meta.analysis_inputs_hash ?? null } : old);
     },
-    affectsExposurePeaks: () => true,
     synthesizeFromSse: (remote, base) => {
       const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
       if (payload.auto_peak_id === undefined) return undefined;

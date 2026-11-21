@@ -31,12 +31,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             body = Vector{UInt8}(JSON3.write(Dict(:name => "E1-renamed"))))
         @test r.status == 200
 
-        # POST analyze
-        r = call("POST", "/api/experiments/$exp_id/analyze";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 200
-        body = JSON3.read(String(r.body))
-        @test body.analyzed == 1
+        for sm in HimalayaUI.get_samples(db, exp_id), ex in HimalayaUI.get_exposures(db, Int(sm.id))
+            HimalayaUI.analyze_exposure!(db, Int(ex.id))
+        end
 
         peak_count = Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM auto_peaks"))[1].c

@@ -13,11 +13,11 @@ const SNAP_TOL = 0.0025
 """
 Tolerance used when a CLIENT-FITTED custom index claims its peaks at commit.
 
-Deliberately looser than `SNAP_TOL`: the custom-index modal draws its comb by
-eye and reports "N of M reflections land" using `landsOn`'s `relTol` in
-`frontend/src/lib/customIndex.ts`. Committing at `SNAP_TOL` (9× tighter) would
-claim fewer peaks than the modal just showed the user — a second tolerance
-regime disagreeing with the surface they fitted on. MUST equal that `relTol`.
+Deliberately looser than `SNAP_TOL`: the workspace draws its comb by eye and
+claims peaks with `claimPeaks` in `frontend/src/workspace/indexing.ts`, whose
+default tolerance is `CUSTOM_SNAP_TOL` in `frontend/src/lib/customIndex.ts`.
+Committing at `SNAP_TOL` (9× tighter) would claim fewer peaks than the
+workspace just showed the user. MUST equal that constant.
 """
 const CUSTOM_SNAP_TOL = 0.022
 
@@ -89,7 +89,7 @@ caller supplies one (`_effective_peak_rows` does). `auto_peaks` and
 `peak_curations` are independent AUTOINCREMENT namespaces, so a bare
 `suggested_peak_id` does NOT identify a peak on its own — consumers that
 persist the result must key on the (id, kind) PAIR. Rows without the field
-(the /speculative-snap route builds its own) yield `nothing` and behave as before.
+(e.g. from a unit test) yield `nothing`.
 """
 function compute_snap(peak_rows, phase::Type{P}, anchor_q::Real, anchor_ratio::Int;
                      tol::Real = SNAP_TOL,

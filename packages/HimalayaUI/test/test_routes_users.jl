@@ -76,15 +76,6 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
                 body = Vector{UInt8}(JSON3.write(Dict(:username => bad))))
             @test r.status == 400
         end
-
-        # Empty audit trail
-        r = call("GET", "/api/users/alice/actions")
-        @test r.status == 200
-        @test JSON3.read(String(r.body)) == []
-
-        # 404 for unknown user
-        r = call("GET", "/api/users/nobody/actions")
-        @test r.status == 404
     end
 end
 
