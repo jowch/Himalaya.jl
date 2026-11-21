@@ -318,7 +318,7 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} suggestions={suggestions} />
+          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => { if (canSubmit) void submit(); }} suggestions={suggestions} />
           <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{status}</p>
         </div>
         {setups.length > 0 && (

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "../ui/Input";
 import { Popover } from "../ui/Popover";
@@ -6,6 +6,7 @@ import { Popover } from "../ui/Popover";
 export interface DirectoryPickerFieldProps {
   value: string;
   onChange: (path: string) => void;
+  onSubmit?: (() => void) | undefined;
   /** Live autocomplete suggestions for the current `value` (caller fetches via
    *  `suggestPaths`). */
   suggestions: ReadonlyArray<string>;
@@ -34,11 +35,14 @@ export interface DirectoryPickerFieldProps {
 export function DirectoryPickerField({
   value,
   onChange,
+  onSubmit,
   suggestions,
   ariaLabel = "Data directory",
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(-1);
+  const suggestionsKey = suggestions.join("\n");
+  useEffect(() => setActive(-1), [suggestionsKey]);
   // Ref to the inner <input>. Popover's open-effect focuses its panel by
   // default; for this search-first combobox we redirect that focus back to the
   // input (initialFocusRef) so a click that opens the suggestion popover keeps
@@ -47,8 +51,8 @@ export function DirectoryPickerField({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const complete = (path: string): void => {
-    onChange(path);
-    setActive(0);
+    onChange(path.endsWith("/") ? path : `${path}/`);
+    setActive(-1);
   };
 
   // The dropdown shows each suggestion's basename (last path segment) — the only
@@ -63,6 +67,11 @@ export function DirectoryPickerField({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !suggestions[active]) {
+      e.preventDefault();
+      onSubmit?.();
+      return;
+    }
     if (suggestions.length === 0) return;
     if (e.key === "Tab") {
       // Tab completes the TOP suggestion (spec §8.7). preventDefault so focus
@@ -74,10 +83,10 @@ export function DirectoryPickerField({
       setActive((i) => Math.min(i + 1, suggestions.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
+      setActive((i) => Math.max(i - 1, -1));
+    } else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      complete(suggestions[active] ?? suggestions[0]!);
+      complete(suggestions[active]!);
     }
   };
 
