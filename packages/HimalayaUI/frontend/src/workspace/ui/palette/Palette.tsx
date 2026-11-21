@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { Kbd } from "../Kbd";
 import { Overlay } from "../Overlay";
 import { useListHighlight } from "../useListHighlight";
@@ -12,6 +12,10 @@ interface Props {
   groups: readonly PaletteGroup[];
   pages: Readonly<Record<string, PalettePage>>;
   onClose: () => void;
+}
+
+export function keepFocusInField(e: MouseEvent): void {
+  if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
 }
 
 export function Palette({ groups, pages, onClose }: Props): JSX.Element {
@@ -75,7 +79,9 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   if (form) {
     return (
       <Overlay label={form.title} onClose={onClose} closeKeys={[]} testId="workspace-palette">
-        <PaletteFormView key={stack.length} form={form} onBack={back} onDone={onClose} />
+        <div onMouseDown={keepFocusInField}>
+          <PaletteFormView key={stack.length} form={form} onBack={back} onDone={onClose} />
+        </div>
       </Overlay>
     );
   }
@@ -103,66 +109,68 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
   );
   return (
     <Overlay label={page ? page.title : "Commands"} onClose={onClose} closeKeys={[]} testId="workspace-palette">
-      <div className="flex h-12 items-center gap-2 overflow-hidden border-b border-hair px-3" data-testid="workspace-palette-bar">
-        {crumbs.map((t, i) => (
-          <span key={i} className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-sm bg-paper-sunk px-2 text-base text-ink-soft">
-            {t} ›
-          </span>
-        ))}
-        {page?.arg ? (
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="whitespace-nowrap text-lg font-semibold">{page.title}</span>
-            <span className="inline-flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm bg-plate px-2 shadow-[inset_0_0_0_1px_var(--color-accent)]">
-              <span className="shrink-0 text-xs text-ink-faint">{page.arg}</span>
-              {field}
+      <div onMouseDown={keepFocusInField}>
+        <div className="flex h-12 items-center gap-2 overflow-hidden border-b border-hair px-3" data-testid="workspace-palette-bar">
+          {crumbs.map((t, i) => (
+            <span key={i} className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-sm bg-paper-sunk px-2 text-base text-ink-soft">
+              {t} ›
             </span>
-          </div>
-        ) : (
-          field
-        )}
-      </div>
-      <div ref={list} className="max-h-[50vh] overflow-y-auto p-1">
-        <div id={listId} role="listbox" aria-label={page ? page.title : "Matching commands"}>
-          {sections(rows).map((sec, si) => (
-            <div key={si} role="group" aria-labelledby={sec.title ? `${listId}-g${si}` : undefined} aria-label={sec.title ? undefined : page?.title}>
-              {sec.title && (
-                <div id={`${listId}-g${si}`} role="presentation" className="px-2 pb-1 pt-2.5 text-xs text-ink-faint">
-                  {sec.title}
-                </div>
-              )}
-              {sec.rows.map(({ item, path, index: i }) => (
-                <div
-                  key={`${path ?? ""}${item.id}`}
-                  id={optionId(i)}
-                  role="option"
-                  aria-selected={i === at}
-                  aria-label={`${path ? `${path} › ` : ""}${item.label}${item.hint ? `, ${item.hint}` : ""}`}
-                  data-palette-item={item.id}
-                  onMouseEnter={() => highlight.setAt(i)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => choose(item)}
-                  className={
-                    "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
-                    (i === at ? "bg-row-cursor" : "")
-                  }
-                >
-                  <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
-                    {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
-                    <span className="truncate">
-                      {path && <span className="text-ink-faint">{path} › </span>}
-                      {item.label}
-                    </span>
-                  </span>
-                  <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
-                  <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
-                </div>
-              ))}
-            </div>
           ))}
+          {page?.arg ? (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="whitespace-nowrap text-lg font-semibold">{page.title}</span>
+              <span className="inline-flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm bg-plate px-2 shadow-[inset_0_0_0_1px_var(--color-accent)]">
+                <span className="shrink-0 text-xs text-ink-faint">{page.arg}</span>
+                {field}
+              </span>
+            </div>
+          ) : (
+            field
+          )}
         </div>
-        {picks.length === 0 && <p className="px-2 py-2 text-xs text-ink-faint">{page?.empty ?? "No match."}</p>}
+        <div ref={list} className="max-h-[50vh] overflow-y-auto p-1">
+          <div id={listId} role="listbox" aria-label={page ? page.title : "Matching commands"}>
+            {sections(rows).map((sec, si) => (
+              <div key={si} role="group" aria-labelledby={sec.title ? `${listId}-g${si}` : undefined} aria-label={sec.title ? undefined : page?.title}>
+                {sec.title && (
+                  <div id={`${listId}-g${si}`} role="presentation" className="px-2 pb-1 pt-2.5 text-xs text-ink-faint">
+                    {sec.title}
+                  </div>
+                )}
+                {sec.rows.map(({ item, path, index: i }) => (
+                  <div
+                    key={`${path ?? ""}${item.id}`}
+                    id={optionId(i)}
+                    role="option"
+                    aria-selected={i === at}
+                    aria-label={`${path ? `${path} › ` : ""}${item.label}${item.hint ? `, ${item.hint}` : ""}`}
+                    data-palette-item={item.id}
+                    onMouseEnter={() => highlight.setAt(i)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => choose(item)}
+                    className={
+                      "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
+                      (i === at ? "bg-row-cursor" : "")
+                    }
+                  >
+                    <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
+                      {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
+                      <span className="truncate">
+                        {path && <span className="text-ink-faint">{path} › </span>}
+                        {item.label}
+                      </span>
+                    </span>
+                    <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
+                    <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          {picks.length === 0 && <p className="px-2 py-2 text-xs text-ink-faint">{page?.empty ?? "No match."}</p>}
+        </div>
+        <PaletteFooter keys={[["↵", page ? "pick" : "run"], ["Tab", "move"], ["Esc", page ? "back" : "close"]]} />
       </div>
-      <PaletteFooter keys={[["↵", page ? "pick" : "run"], ["Tab", "move"], ["Esc", page ? "back" : "close"]]} />
     </Overlay>
   );
 }

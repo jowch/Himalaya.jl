@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { decideOrient } from "../../lib/detectorOrient";
-import type { DetectorLutVariant } from "./detectorLut";
+import { detectorLutFilter, type DetectorLutVariant } from "./detectorLut";
 
 interface Props {
   /** Image URL to fetch + paint; null -> frame-window placeholder. Caller builds
@@ -153,8 +153,7 @@ export function DetectorImage({ src, size, lutVariant = "neutral", className, on
   }
 
   const imgStyle: CSSProperties = {
-    // GPU colormap (DetectorLutFilters must be mounted app-wide / in Storybook).
-    filter: `url(#detector-lut-${lutVariant})`,
+    filter: detectorLutFilter(lutVariant),
     imageRendering: "pixelated",
     ...(layout.orient === "landscape" && layout.caps
       ? { maxWidth: `${layout.caps.maxW}px`, maxHeight: `${layout.caps.maxH}px`,
