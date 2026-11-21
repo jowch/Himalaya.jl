@@ -321,6 +321,9 @@ export function WorkspacePage(): JSX.Element {
   const unbridgeSample = useUnbridgeSample(experimentId);
   const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
+  useEffect(() => {
+    setHiddenRefs((h) => ([...h].every((r) => shownRefs.includes(r)) ? h : new Set([...h].filter((r) => shownRefs.includes(r)))));
+  }, [shownRefs]);
   const compareTraces = useCompareTraces(shownRefs);
 
   const onClickPeak = useCallback(
@@ -364,7 +367,6 @@ export function WorkspacePage(): JSX.Element {
 
   const removeCompare = useCallback((rid: number) => {
     setRefs((r) => r.filter((x) => x !== rid));
-    setHiddenRefs((h) => withoutRef(h, rid));
     setSubRef((cur) => (cur === rid ? undefined : cur));
   }, []);
 
@@ -802,9 +804,12 @@ export function WorkspacePage(): JSX.Element {
 
   const addReference = (rid: number): void => {
     setRefs((r) => addCompare(r, rid));
-    setHiddenRefs((h) => withoutRef(h, rid));
     if (subRef === undefined) setSubRef(rid);
     setRefsOn(true);
+  };
+  const toggleSubtract = (rid: number): void => {
+    setRefsOn(true);
+    setSubRef((cur) => (cur === rid ? undefined : rid));
   };
   const toggleCompare = (rid: number): void => {
     if (rid === sampleId || bridged.includes(rid)) return;
@@ -824,6 +829,9 @@ export function WorkspacePage(): JSX.Element {
       pick: addReference,
       compared: refs.filter((r) => r !== sampleId && !bridged.includes(r)).flatMap((r) => samples.filter((x) => x.id === r)),
       remove: removeCompare,
+      subtractable: activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
+      subtracted: subRef,
+      subtract: toggleSubtract,
     },
     bridge: {
       samples: bridgePickable,
@@ -937,7 +945,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={refsOn ? hiddenRefs : new Set(shownRefs)} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>
@@ -982,7 +990,7 @@ export function WorkspacePage(): JSX.Element {
                   setRefsOn(true);
                   setHiddenRefs((h) => (refsOn && !h.has(rid) ? new Set([...h, rid]) : withoutRef(h, rid)));
                 }}
-                onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
+                onSubtract={toggleSubtract}
                 onRemove={onRemoveChip}
                 onAdd={() => setPicking(true)}
               />

@@ -18,7 +18,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     sampleName: "A1",
     canEdit: true,
     nextUnreviewed: noop,
-    compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop },
+    compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
     bridge: { samples: [], pick: noop, bridged: false, leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },

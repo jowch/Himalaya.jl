@@ -34,10 +34,11 @@ describe("SampleList comparisons", () => {
   it("marks compared rows", () => {
     Element.prototype.scrollIntoView = vi.fn();
     render(
-      <SampleList samples={[sample(1, "JC001"), sample(2, "JC002")]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} compareColors={new Map([[2, "red"]])} />,
+      <SampleList samples={[sample(1, "JC001"), sample(2, "JC002")]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} compareColors={new Map([[1, "blue"], [2, "red"]])} hiddenCompares={new Set([2])} />,
     );
+    expect(screen.getByRole("img", { name: "Compared, hidden" }).getAttribute("class")).toMatch(/opacity-45/);
+    expect(screen.getByRole("img", { name: "Compared" }).getAttribute("class")).not.toMatch(/opacity-45/);
     expect(screen.getByRole("button", { name: /JC002/ })).toHaveAttribute("data-compared");
-    expect(screen.getByRole("button", { name: /JC001/ })).not.toHaveAttribute("data-compared");
   });
 
   it("a modifier click toggles the comparison instead of opening the sample", () => {

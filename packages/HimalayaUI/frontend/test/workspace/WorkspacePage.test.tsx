@@ -1451,9 +1451,72 @@ describe("WorkspacePage", () => {
     fireEvent.click(row(), { ctrlKey: true });
     expect(screen.queryByRole("button", { name: "Remove A2" })).toBeNull();
     expect(row()).not.toHaveAttribute("data-compared");
-    const current = screen.getByTestId("workspace-samples").querySelector<HTMLElement>("[data-sample-id='10']")!;
-    fireEvent.click(current, { ctrlKey: true });
-    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+  });
+
+  it("Ctrl/Cmd-clicking the open sample's row never makes it a comparison, even after moving on", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[10, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByTestId("workspace-samples").querySelector<HTMLElement>("[data-sample-id='10']")!, { ctrlKey: true });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.queryByRole("button", { name: "Remove A1" })).toBeNull();
+  });
+
+  it("Ctrl/Cmd-clicking a bridged row leaves it to the bridge, so it is not compared on unbridged samples", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByTestId("workspace-samples").querySelector<HTMLElement>("[data-sample-id='12']")!, { metaKey: true });
+    expect(screen.getByRole("button", { name: "Remove bridge to A3" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.queryByRole("button", { name: "Remove A3" })).toBeNull();
+  });
+
+  it("a hidden comparison shows again when it is removed and added back", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    const lines = (): number => screen.getByTestId("workspace-compares").querySelectorAll("[data-compare='11']").length;
+    runFromPalette("compare with a sample", "a2");
+    fireEvent.click(screen.getByRole("button", { name: "A2" }));
+    expect(lines()).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
+    runFromPalette("compare with a sample", "a2");
+    expect(lines()).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "A2" }));
+    const row = screen.getByTestId("workspace-samples").querySelector<HTMLElement>("[data-sample-id='11']")!;
+    fireEvent.click(row, { ctrlKey: true });
+    fireEvent.click(row, { ctrlKey: true });
+    expect(lines()).toBe(1);
+  });
+
+  it("clicking a chip while comparisons are hidden shows them all again", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample", "a2");
+    runFromPalette("compare with a sample", "a3");
+    runFromPalette("Hide comparisons");
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
+    const ids = Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare"));
+    expect(ids).toEqual(["11", "12"]);
+  });
+
+  it("the palette subtracts a comparison and stops, so keyboard users can pick the background", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample", "a2");
+    runFromPalette("compare with a sample", "a3");
+    expect(screen.getByText("minus A2")).toBeInTheDocument();
+    runFromPalette("subtract a comparison", "a3");
+    expect(screen.getByText("minus A3")).toBeInTheDocument();
+    runFromPalette("subtract a comparison", "a3");
+    expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
   });
 
   it("the palette stops comparing with a sample, and offers that only while there is one", () => {
