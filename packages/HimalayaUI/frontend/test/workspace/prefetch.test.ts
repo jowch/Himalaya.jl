@@ -245,6 +245,27 @@ describe("usePrefetchNeighbours", () => {
     expect(traced()).not.toContain(42);
   });
 
+  it("keeps the sibling prefetch going when a frame step puts the plot back into its loading state", async () => {
+    const { rerender } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    rerender(target(3, { shownId: 32, settled: false }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(traced()).toContain(33);
+    rerender(target(3, { shownId: 33, settled: false }));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS + SIBLING_DWELL_MS);
+    expect(vi.mocked(api.listExposures)).toHaveBeenCalledTimes(3);
+    expect(traced().filter((id) => id === 33)).toHaveLength(1);
+  });
+
+  it("waits again for the next sample to settle before prefetching around it", async () => {
+    const { rerender } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    rerender(target(4, { settled: false }));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS * 4);
+    expect(traced()).not.toContain(42);
+    expect(api.listExposures).not.toHaveBeenCalledWith(3, expect.anything());
+  });
+
   it("starts the sibling frames at once when the user steps to another frame", async () => {
     const { rerender } = setup(target(3));
     await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);

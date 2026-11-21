@@ -193,13 +193,16 @@ export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, 
   const shownUrl = useRef<string | undefined>(undefined);
   shownUrl.current = (shown && imageUrl(shown, false)) ?? undefined;
   const runRef = useRef<{ run: PrefetchRun; shown: number | undefined } | undefined>(undefined);
+  const settledFor = useRef<number | undefined>(undefined);
+  if (settled && currentId !== undefined) settledFor.current = currentId;
+  const ready = currentId !== undefined && settledFor.current === currentId;
 
   useEffect(() => {
     if (runRef.current && runRef.current.shown !== shownId) runRef.current.run.stepped();
   }, [shownId]);
 
   useEffect(() => {
-    if (currentId === undefined || !settled) return;
+    if (currentId === undefined || !ready) return;
     const run = new PrefetchRun(qc);
     runRef.current = { run, shown: shownIdRef.current };
     const timer = setTimeout(() => {
@@ -217,5 +220,5 @@ export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, 
       clearTimeout(timer);
       run.cancel();
     };
-  }, [qc, currentId, settled, neighbourKey, framesKey, exposureIds]);
+  }, [qc, currentId, ready, neighbourKey, framesKey, exposureIds]);
 }
