@@ -116,6 +116,7 @@ function scan_and_group!(
     db           ::SQLite.DB,
     experiment_id::Int;
     analyze      ::Bool   = true,
+    retry_failed ::Bool   = false,
     on_progress  ::Union{Function,Nothing} = nothing,
 )
     # Resolve data_dir, analysis_dir, and per-experiment pattern overrides from the row.
@@ -144,6 +145,7 @@ function scan_and_group!(
         dat_pattern = dat_pattern,
         on_progress = on_progress)
 
+    any(m -> m.prp !== nothing, metas) && filter!(m -> m.prp !== nothing, metas)
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
 
     # -----------------------------------------------------------------------
@@ -193,6 +195,7 @@ function scan_and_group!(
                     [experiment_id])))
 
             for gl in grouping.loads
+                any(ge -> !(ge.stem in existing_filenames), (ge for gs in gl.samples for ge in gs.exposures)) || continue
                 # Dedup the load row by (experiment_id, load_index). The loads table
                 # has only a NON-unique index (loads_experiment_idx), so an
                 # unconditional INSERT would mint a fresh load_id on every rescan —
@@ -218,6 +221,7 @@ function scan_and_group!(
                 end
 
                 for gs in gl.samples
+                    any(ge -> !(ge.stem in existing_filenames), gs.exposures) || continue
                     # Sample dedup by (experiment_id, load_id, slot_index). Reuse the
                     # existing row on rescan rather than re-inserting (also avoids
                     # tripping the samples_unique_name UNIQUE index).
@@ -269,7 +273,9 @@ function scan_and_group!(
     #    as cli_init_with_db!: a crash mid-analyze must not roll back ingest).
     # -----------------------------------------------------------------------
     if analyze
-        n_new = length(new_exposure_ids)
+        to_analyze = vcat(new_exposure_ids,
+            setdiff(pending_analysis_ids(db, experiment_id; retry_failed), new_exposure_ids))
+        n_new = length(to_analyze)
         # The "analyzing" segment reports against n_new, its OWN denominator — the
         # segmented bar gives each stage its own track, so stages no longer have to
         # share one scale (which is what forced the old cross-stage bookkeeping here).
@@ -282,12 +288,8 @@ function scan_and_group!(
         # Saturation is reduced, not eliminated — correctness under saturation
         # rests on _fanout_frame! (events.jl) closing an evicted subscriber.
         step = max(1, n_new ÷ 100)
-        for (i, eid) in enumerate(new_exposure_ids)
-            try
-                analyze_exposure!(db, eid)
-            catch e
-                @warn "scan_and_group!: analyze_exposure! failed" exposure_id=eid exception=e
-            end
+        for (i, eid) in enumerate(to_analyze)
+            analyze_or_record!(db, eid, analysis_dir)
             # Progress fires OUTSIDE the structural txn (already committed above).
             if on_progress !== nothing && (i % step == 0 || i == n_new)
                 on_progress(i, n_new, "analyzing")
@@ -329,519 +331,125 @@ function scan_and_group!(
     )
 end
 
-"""
-    _DryRunRollback
+const NO_TRACE = "no trace"
 
-Private sentinel thrown at the end of `regroup_experiment!`'s write transaction
-when `dry_run=true`. SQLite.transaction rolls back on any throw, so all DB
-writes in that transaction are undone. The sentinel is caught by the outer
-`try/catch` in `regroup_experiment!` itself and swallowed (only real errors
-propagate). The counters declared OUTSIDE the transaction closure survive the
-rollback and are returned unchanged, so the caller sees what WOULD have
-happened without any persistent effect.
-"""
-struct _DryRunRollback <: Exception end
-
-"""
-    regroup_experiment!(db, experiment_id; dry_run=false) -> NamedTuple
-
-Retrofit-persist: make a pre-rework experiment's `loads`/`samples`/`exposures`
-rows match the NEW auto-grouping partition (`scan_directory` → `group_into_samples`)
-*while preserving curation*. The goal is a result indistinguishable from a fresh
-`scan_and_group!` of the same directory. It ADOPTS existing rows where they map to
-the partition: relinks existing exposures (keeping their ids → all exposure-keyed
-curation survives; rewriting `filename` to the full scan stem so future rescans
-dedup correctly), greedily reuses existing sample rows (keeping their human
-names/notes), and for derived cells with NO existing row it INSERTS exposures +
-creates samples exactly as `scan_and_group!` would (un-manifested files become
-real, analyzed samples). Displaced-sample metadata is carried onto the absorbing
-owner, then the now-empty displaced rows are deleted.
-
-**No existing exposure is ever deleted** — adopted rows are `UPDATE`/relinked,
-un-manifested files are `INSERT`ed (then analyzed outside the write transaction,
-unless `analyze=false`). The only sample deletes are genuinely-displaced empty
-rows, whose metadata is carried first (dedup-then-repoint, mirroring the merge
-route §9.3). Idempotent: a second run is a no-op (loads dedup on
-`(experiment_id, load_index)`, owners already claimed by lowest id, inserted
-files now have rows so they relink, every UPDATE re-writes the same value).
-
-When `dry_run=true` the transaction is rolled back via `_DryRunRollback` after
-all writes — the DB is left untouched but the returned summary reflects what a
-real run would have done.
-
-Returns a NamedTuple summary:
-`(status, loads_created, cells, samples_retrofitted, samples_created,
-  samples_displaced, exposures_relinked, exposures_inserted, exposures_no_file,
-  reshoots, geometry, discrepancies)` where `reshoots` = old samples split across
-≥2 cells and `exposures_inserted` = un-manifested files newly ingested.
-On an empty scan returns `(status=:empty, …)` and
-writes nothing.
-"""
-function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = false, analyze::Bool = true)
-    # -----------------------------------------------------------------------
-    # 1. Derive (read-only) — mirror scan_and_group! lines 68-98.
-    # -----------------------------------------------------------------------
-    exp_row = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern FROM experiments WHERE id = ?", [experiment_id])))
-    data_dir = String(exp_row.data_dir)
-
-    # Resolve analysis_dir + file patterns + setup from DISK with the SAME resolver
-    # the funnel runs at create (resolve_experiment_layout), so a migrated row is
-    # indistinguishable from a freshly-ingested one. A pre-rework row arrives with
-    # NULL patterns + a manifest-era analysis_dir; without this the migration falls
-    # back to {name}.* defaults — which name the wrong integration files ({name}.dat
-    # vs the real {name}_tot.dat) and produce full-stem filenames where a fresh scan
-    # produces short ones. FILL-ONLY: a value already set on the row (a prior run /
-    # user edit) wins over detection. Persisted at 3e′ so a rescan reuses them.
-    # ponytail: this resolves one exposure per acquisition (single-frame, the
-    # detected {name}_0_001.* pattern). Multi-frame is out of scope by design.
-    _pick(rowval, detected, default) =
-        (rowval === missing || rowval === nothing) ? something(detected, default) : String(rowval)
-    dd     = rstrip(data_dir, '/')
-    root   = basename(dd) == "data" ? dirname(dd) : dd
-    layout = resolve_experiment_layout(root)
-    analysis_dir = something(layout.analysis_dir, String(exp_row.analysis_dir))
-    tif_pattern  = _pick(exp_row.image_pattern,       layout.image_pattern,       "{name}.tif")
-    prp_pattern  = _pick(exp_row.metadata_pattern,    layout.metadata_pattern,    "{name}.prp")
-    dat_pattern  = _pick(exp_row.integration_pattern, layout.integration_pattern, "{name}.dat")
-
-    metas = scan_directory(data_dir, analysis_dir;
-        tif_pattern = tif_pattern, prp_pattern = prp_pattern, dat_pattern = dat_pattern)
-
-    isempty(metas) && return (
-        status = :empty, loads_created = 0, cells = 0, samples_retrofitted = 0,
-        samples_created = 0, samples_displaced = 0, exposures_relinked = 0,
-        exposures_inserted = 0, exposures_no_file = 0, reshoots = 0,
-        geometry = nothing, discrepancies = String[])
-
-    # Reuse the PRPs scan_directory already parsed, same as scan_and_group! — the
-    # path-based derive_geometry would re-read and re-parse every one. NamedTuple[]
-    # element type is required (ExposureMeta.prp is Union{NamedTuple,Nothing}, so
-    # an all-nothing filter would collect to Vector{Any} and match no method).
-    parsed_prps = NamedTuple[m.prp for m in metas if m.prp !== nothing]
-    setup_files = layout.setup_file === nothing ? String[] : String[layout.setup_file]
-    geo, disc = derive_geometry(parsed_prps, setup_files)
-
-    result = group_into_samples(metas)
-
-    # -----------------------------------------------------------------------
-    # 2. Build the cell list + byfile map (keyed on ge.stem == exposures.filename).
-    # -----------------------------------------------------------------------
-    cells = NamedTuple[]  # (load_index, slot_index, name, name_source, grouping_source, frame_count, stems)
-    byfile = Dict{String, NamedTuple}()
-    load_meta = Dict{Int, NamedTuple}()  # load_index => (frame_count, start_time, end_time)
-    for gl in result.loads
-        load_meta[gl.load_index] = (frame_count = gl.frame_count,
-                                    start_time = gl.start_time, end_time = gl.end_time,
-                                    session_index = gl.session_index)
-        for gs in gl.samples
-            push!(cells, (load_index = gl.load_index, slot_index = gs.slot_index,
-                          name = gs.name, name_source = gs.name_source,
-                          grouping_source = gs.grouping_source,
-                          stems = String[ge.stem for ge in gs.exposures]))
-            for ge in gs.exposures
-                byfile[ge.stem] = (load_index = gl.load_index, slot_index = gs.slot_index,
-                    tif_path = ge.tif_path, prp_path = ge.prp_path, timestamp = ge.timestamp,
-                    exposure_time = ge.exposure_time_s,
-                    horizontal_position = ge.horizontal_position_mm,
-                    transmitted_counts = ge.transmitted_counts,
-                    incident_monitor = ge.incident_monitor,
-                    counting_time = ge.counting_time_s,
-                    scan_id = ge.scan_id, frame_no = ge.frame_no)
+function _file_finder(base::AbstractString, pattern::AbstractString; strip_acquisition::Bool = false)
+    pattern_dir = dirname(pattern)
+    if occursin("{name}", pattern_dir)
+        return function (stem)
+            p = joinpath(base, replace(pattern, "{name}" => stem))
+            isfile(p) ? p : nothing
+        end
+    end
+    dir = joinpath(base, pattern_dir)
+    names = try
+        Set(readdir(dir))
+    catch
+        Set{String}()
+    end
+    leaf = basename(pattern)
+    function (stem)
+        candidate = replace(leaf, "{name}" => stem)
+        candidate in names && return joinpath(dir, candidate)
+        if strip_acquisition
+            stripped = acquisition_stem(stem)
+            if stripped != stem
+                alt = replace(leaf, "{name}" => stripped)
+                alt in names && return joinpath(dir, alt)
             end
         end
+        nothing
     end
-    # Deterministic, stable claim order: (load_index, slot_index).
-    sort!(cells; by = c -> (c.load_index, c.slot_index))
+end
 
-    # Match each scan stem to the DB filename that represents it. The manifest-era
-    # pipeline stored `exposures.filename` as the on-disk stem with the trailing
-    # `_<rep>_<frame>` suffix STRIPPED (real dev-db: scan stem minus `_0_001`);
-    # scan_directory keeps the suffix. A row may therefore be stored under the full
-    # stem (a fresh scan or a prior post-fix re-run) OR its truncated form (manifest
-    # era) — match either. On relink (3c) we rewrite `filename` to the full stem so
-    # future rescans dedup on the same `(experiment_id, filename)` key.
-    # ponytail: assumes one DB row per scan stem (curated dev-db is uniform
-    # single-frame, verified 1:1). Multi-frame collapse (several full stems →
-    # one truncated key) would need per-frame disambiguation; add when real data shows it.
-    manifest_key(s) = replace(s, r"_\d+_\d+$" => "")
-    existing_fn = Set(String(r.filename) for r in Tables.rowtable(DBInterface.execute(db,
-        "SELECT DISTINCT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
-        [experiment_id])))
-    dbkey_of_stem = Dict{String, String}()  # scan stem => DB filename, only for stems with a row
-    claimed_dk    = Dict{String, String}()  # DB filename => the scan stem that claimed it
-    for s in keys(byfile)
-        dk = (s in existing_fn) ? s :
-             (manifest_key(s) in existing_fn ? manifest_key(s) : nothing)
-        dk === nothing && continue
-        # Fail loudly on a multi-frame collapse (two distinct full stems truncating
-        # to one manifest key) rather than silently relinking only one frame and
-        # dropping the other. Single-frame is the supported case (verified 1:1);
-        # this is the fail-fast tripwire for when multi-frame data first appears.
-        prior = get(claimed_dk, dk, nothing)
-        prior === nothing || error("regroup_experiment!: scan stems \"$prior\" and " *
-            "\"$s\" both map to DB filename \"$dk\" (multi-frame collapse); per-frame " *
-            "relink is unsupported — single-frame only.")
-        claimed_dk[dk] = s
-        dbkey_of_stem[s] = dk
-    end
+_trace_finder(db::SQLite.DB, experiment_id::Int, analysis_dir::AbstractString) =
+    _file_finder(analysis_dir, integration_pattern_for(db, experiment_id); strip_acquisition = true)
 
-    # Reshoot count (read-only): old samples whose stems span ≥2 derived cells — a
-    # specimen the fresh-scan partition splits across loads. This is the
-    # operator-eyeball metric (≈28 on the dev-db), NOT the total-load count.
-    cell_of_dbkey = Dict{String, Int}()   # DB filename => cell index (via dbkey_of_stem)
-    for (ci, cell) in enumerate(cells), s in cell.stems
-        dk = get(dbkey_of_stem, s, nothing)
-        dk === nothing || (cell_of_dbkey[dk] = ci)
-    end
-    old_cells = Dict{Int, Set{Int}}()   # old sample_id => set of cell indices its stems touch
-    if !isempty(cell_of_dbkey)
-        ph = join(fill("?", length(cell_of_dbkey)), ", ")
-        for r in Tables.rowtable(DBInterface.execute(db,
-                "SELECT filename, sample_id FROM exposures " *
-                "WHERE experiment_id = ? AND sample_id IS NOT NULL AND filename IN ($ph)",
-                vcat(Any[experiment_id], collect(keys(cell_of_dbkey)))))
-            ci = get(cell_of_dbkey, String(r.filename), 0)
-            ci == 0 && continue
-            push!(get!(old_cells, Int(r.sample_id), Set{Int}()), ci)
+function _stat_signature(path::AbstractString)
+    st = stat(path)
+    string(st.size, ":", st.mtime)
+end
+
+function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::AbstractString)
+    row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename, experiment_id FROM exposures WHERE id = ?", [exposure_id])))
+    trace = resolve_trace_path(analysis_dir, integration_pattern_for(db, Int(row.experiment_id)), String(row.filename))
+    error_text = if trace === nothing
+        NO_TRACE
+    else
+        try
+            analyze_exposure!(db, exposure_id, String(analysis_dir))
+            nothing
+        catch e
+            @warn "analyze_exposure! failed" exposure_id exception = e
+            sprint(showerror, e)
         end
     end
-    reshoots = count(cs -> length(cs) > 1, values(old_cells))
-
-    # -----------------------------------------------------------------------
-    # 3. Retrofit persist — all writes in ONE lock + transaction (atomic rollback).
-    # -----------------------------------------------------------------------
-    samples_retrofitted = 0
-    samples_created     = 0
-    samples_displaced   = 0
-    exposures_relinked  = 0
-    exposures_inserted  = 0
-    exposures_no_file   = 0
-    loads_created       = 0
-    new_exposure_ids    = Int[]   # un-manifested files inserted this run (analyzed post-txn)
-
-    try
+    error_text === nothing && return true
+    signature = error_text == NO_TRACE ? nothing : (try _stat_signature(trace) catch; nothing end)
     lock(_DB_WRITE_LOCK) do
-        SQLite.transaction(db) do
-            # 3a. Loads — dedup on (experiment_id, load_index); reuse on re-run.
-            # Persist frame_count + start/end times so a migrated load is identical
-            # to a freshly-scanned one (scan_and_group! sets the same fields).
-            fmt(t) = ismissing(t) ? nothing : Dates.format(t, "yyyy-mm-ddTHH:MM:SS")
-            load_id_of = Dict{Int, Int}()
-            for (li, m) in load_meta
-                st = fmt(m.start_time); et = fmt(m.end_time)
-                existing = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id FROM loads WHERE experiment_id = ? AND load_index = ?",
-                    [experiment_id, li]))
-                if isempty(existing)
-                    lid = create_load!(db; experiment_id = experiment_id,
-                                       load_index = li, frame_count = m.frame_count,
-                                       start_time = st, end_time = et,
-                                       session_id = m.session_index)
-                    loads_created += 1
-                else
-                    lid = Int(first(existing).id)
-                    # Keep derived values fresh (idempotent re-write).
-                    DBInterface.execute(db,
-                        "UPDATE loads SET frame_count = ?, start_time = ?, end_time = ?, session_id = ? WHERE id = ?",
-                        [m.frame_count, st, et, m.session_index, lid])
-                end
-                load_id_of[li] = lid
-            end
-
-            # 3b. Assign each cell a sample row — greedy reuse, lowest-id owner.
-            claimed     = Set{Int}()
-            cell_owner  = Vector{Int}(undef, length(cells))
-            for (ci, cell) in enumerate(cells)
-                lid = load_id_of[cell.load_index]
-                # Distinct existing sample_ids of this cell's stems, minus claimed.
-                # Match on the DB filename each stem maps to (full or truncated).
-                candidates = Int[]
-                cell_dbkeys = String[dbkey_of_stem[s] for s in cell.stems if haskey(dbkey_of_stem, s)]
-                if !isempty(cell_dbkeys)
-                    placeholders = join(fill("?", length(cell_dbkeys)), ", ")
-                    rows = Tables.rowtable(DBInterface.execute(db,
-                        "SELECT DISTINCT sample_id FROM exposures " *
-                        "WHERE experiment_id = ? AND sample_id IS NOT NULL AND filename IN ($placeholders)",
-                        vcat([experiment_id], cell_dbkeys)))
-                    candidates = sort(Int[Int(r.sample_id) for r in rows if !(Int(r.sample_id) in claimed)])
-                end
-                if !isempty(candidates)
-                    owner = first(candidates)  # lowest id
-                    push!(claimed, owner)
-                    # Stamp name_source='user' ONLY on a genuine first adoption — a
-                    # pre-rework manifest sample carries a human label and has load_id
-                    # NULL (no loads existed before regroup). A sample THIS migration
-                    # auto-created on a prior run already has load_id set; re-claiming it
-                    # must NOT flip its 'auto' label to 'user' (idempotency). SQLite reads
-                    # the pre-update load_id in the CASE, so this is the right discriminator.
-                    # Re-derive grouping_source too (symmetric with the create branch
-                    # below) so a retrofitted sample is indistinguishable from a fresh one.
-                    DBInterface.execute(db,
-                        "UPDATE samples SET load_id = ?, slot_index = ?, grouping_source = ?, " *
-                        "name_source = CASE WHEN load_id IS NULL THEN 'user' ELSE name_source END " *
-                        "WHERE id = ?",
-                        [lid, cell.slot_index, cell.grouping_source, owner])
-                    samples_retrofitted += 1
-                else
-                    # Mirror scan_and_group! exactly (incl. name_source) so a created
-                    # cell is indistinguishable from a freshly-scanned one.
-                    owner = create_sample!(db; experiment_id = experiment_id,
-                        name = cell.name, grouping_source = cell.grouping_source,
-                        name_source = cell.name_source,
-                        load_id = lid, slot_index = cell.slot_index)
-                    push!(claimed, owner)
-                    samples_created += 1
-                end
-                cell_owner[ci] = owner
-            end
-
-            # Stem → owner lookup for the relink.
-            owner_of_stem = Dict{String, Int}()
-            for (ci, cell) in enumerate(cells)
-                for s in cell.stems
-                    owner_of_stem[s] = cell_owner[ci]
-                end
-            end
-
-            # 3c. Relink exposures. Capture old_sample_id → absorbing-owner tally
-            # BEFORE sample_id is overwritten (it can't be reconstructed after).
-            absorb_tally = Dict{Int, Dict{Int, Int}}()  # old_sid => (owner => count)
-            for stem in keys(byfile)
-                bf  = byfile[stem]
-                own = owner_of_stem[stem]
-                dk = get(dbkey_of_stem, stem, nothing)
-                if dk === nothing
-                    # Scanned file with no pre-rework row — INSERT it so it becomes a
-                    # real sample (ingest-everything), exactly as scan_and_group! would.
-                    eid = create_exposure!(db; experiment_id = experiment_id,
-                        sample_id = own, filename = stem, image_path = bf.tif_path,
-                        prp_path = ismissing(bf.prp_path) ? nothing : bf.prp_path,
-                        timestamp = ismissing(bf.timestamp) ? nothing : Dates.format(bf.timestamp, "yyyy-mm-ddTHH:MM:SS"),
-                        exposure_time = ismissing(bf.exposure_time) ? nothing : bf.exposure_time,
-                        horizontal_position = ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
-                        scan_id = ismissing(bf.scan_id) ? nothing : bf.scan_id,
-                        frame_no = ismissing(bf.frame_no) ? nothing : bf.frame_no,
-                        load_id = load_id_of[bf.load_index],
-                        transmitted_counts = _nothing_if_missing(bf.transmitted_counts),
-                        incident_monitor = _nothing_if_missing(bf.incident_monitor),
-                        counting_time = _nothing_if_missing(bf.counting_time))
-                    push!(new_exposure_ids, eid)
-                    exposures_inserted += 1
-                    continue
-                end
-                # Old sample_id(s) currently on this stem's exposures (pre-overwrite).
-                olds = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id, sample_id FROM exposures WHERE experiment_id = ? AND filename = ?",
-                    [experiment_id, dk]))
-                for r in olds
-                    if r.sample_id !== missing && r.sample_id !== nothing
-                        osid = Int(r.sample_id)
-                        if osid != own
-                            d = get!(absorb_tally, osid, Dict{Int, Int}())
-                            d[own] = get(d, own, 0) + 1
-                        end
-                    end
-                end
-                # Rewrite filename to the full scan stem so future rescans dedup on
-                # the same (experiment_id, filename) key (manifest era stored it truncated).
-                DBInterface.execute(db, """
-                    UPDATE exposures SET sample_id = ?, load_id = ?, filename = ?, prp_path = ?,
-                        timestamp = ?, exposure_time = ?, horizontal_position = ?,
-                        scan_id = ?, frame_no = ?, transmitted_counts = ?,
-                        incident_monitor = ?, counting_time = ?, monitors_read = ?
-                    WHERE experiment_id = ? AND filename = ?
-                """, [own, load_id_of[bf.load_index], stem,
-                      ismissing(bf.prp_path) ? nothing : bf.prp_path,
-                      ismissing(bf.timestamp) ? nothing : Dates.format(bf.timestamp, "yyyy-mm-ddTHH:MM:SS"),
-                      ismissing(bf.exposure_time) ? nothing : bf.exposure_time,
-                      ismissing(bf.horizontal_position) ? nothing : bf.horizontal_position,
-                      ismissing(bf.scan_id) ? nothing : bf.scan_id,
-                      ismissing(bf.frame_no) ? nothing : bf.frame_no,
-                      _nothing_if_missing(bf.transmitted_counts),
-                      _nothing_if_missing(bf.incident_monitor),
-                      _nothing_if_missing(bf.counting_time),
-                      Int(!ismissing(bf.prp_path) && bf.prp_path !== nothing),
-                      experiment_id, dk])
-                exposures_relinked += length(olds)
-            end
-
-            # Exposures with a row but no on-disk file: leave, count. Relinked rows
-            # now carry the full scan stem (== a byfile key); only truly-gone files
-            # keep a non-matching filename.
-            allrows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL",
-                [experiment_id]))
-            exposures_no_file = count(r -> !haskey(byfile, String(r.filename)), allrows)
-
-            # 3d. Displaced old samples — those whose every exposure was absorbed by a
-            # lower-id sibling (so they now hold none). Restrict to ids we actually
-            # absorbed FROM (a row emptied by some other cause is not ours to reap).
-            now_empty = Set(Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
-                """SELECT id FROM samples
-                   WHERE experiment_id = ? AND merged_into_id IS NULL
-                     AND id NOT IN (SELECT DISTINCT sample_id FROM exposures
-                                    WHERE sample_id IS NOT NULL)""", [experiment_id])))
-            for (old_sid, owners) in absorb_tally
-                (old_sid in now_empty) || continue
-                # Absorbing owner = the one that took the most of this old sample's exposures.
-                owner = first(sort(collect(owners); by = p -> (-p.second, p.first))).first
-                # Carry metadata (dedup-then-repoint, mirroring routes_grouping.jl:150-203).
-                # sample_tags: drop displaced tag where owner already holds the key.
-                DBInterface.execute(db,
-                    """DELETE FROM sample_tags
-                       WHERE sample_id = ?
-                         AND key IN (SELECT key FROM sample_tags WHERE sample_id = ?)""",
-                    [old_sid, owner])
-                # Re-point the survivors of the dedup.
-                DBInterface.execute(db,
-                    "UPDATE sample_tags SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
-                # notes (a column on the samples row — NOT touched by the block above).
-                dnote = first(Tables.rowtable(DBInterface.execute(db,
-                    "SELECT notes FROM samples WHERE id = ?", [old_sid]))).notes
-                if dnote !== missing && dnote !== nothing
-                    DBInterface.execute(db,
-                        "UPDATE samples SET notes = COALESCE(notes, ?) WHERE id = ?", [dnote, owner])
-                end
-                # Delete the now-empty displaced row.
-                DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [old_sid])
-                samples_displaced += 1
-            end
-
-            # 3d′. Reap dedup-orphaned ghosts. A same-image_path collision deleted by
-            # migrate_exposures_experiment_id! (schema migration) can empty a sample
-            # whose sole exposure was the non-survivor frame. That row is empty but
-            # never in absorb_tally (its exposure was deleted, not absorbed) and never
-            # relinked (no stem left to match), so it would linger as a ghost (load_id
-            # NULL, 0 exposures) — invisible in load rollups but counted by
-            # _experiment_stats and listed by /api/samples (both key on experiment_id),
-            # over-reporting the migrated experiment. Reap any still-empty, never-grouped
-            # row, dropping its sample-keyed children first (FK enforcement is ON).
-            for r in Tables.rowtable(DBInterface.execute(db,
-                    """SELECT id FROM samples
-                       WHERE experiment_id = ? AND merged_into_id IS NULL AND load_id IS NULL
-                         AND id NOT IN (SELECT DISTINCT sample_id FROM exposures
-                                        WHERE sample_id IS NOT NULL)""", [experiment_id]))
-                gid = Int(r.id)
-                DBInterface.execute(db, "DELETE FROM sample_tags    WHERE sample_id = ?", [gid])
-                DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [gid])
-                # Not counted as `displaced` — a reaped dedup-orphan was never part of
-                # the new partition (no exposures to absorb), a distinct concept from a
-                # sample whose frames were absorbed by a sibling.
-            end
-
-            # 3e. Geometry (never-clobber 'user').
-            _fill_unset_geometry!(db, experiment_id, geo)
-
-            # 3e′. Persist the file-resolved analysis_dir + patterns (FILL-ONLY via
-            # COALESCE — a value already set is never clobbered) so the migrated row
-            # is indistinguishable from a fresh ingest and later rescans reuse them.
-            DBInterface.execute(db,
-                """UPDATE experiments SET
-                       analysis_dir        = COALESCE(analysis_dir, ?),
-                       image_pattern       = COALESCE(image_pattern, ?),
-                       metadata_pattern    = COALESCE(metadata_pattern, ?),
-                       integration_pattern = COALESCE(integration_pattern, ?)
-                   WHERE id = ?""",
-                [layout.analysis_dir, layout.image_pattern, layout.metadata_pattern,
-                 layout.integration_pattern, experiment_id])
-
-            # 3f. Mark the experiment complete.
-            DBInterface.execute(db,
-                "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
-                [Dates.format(Dates.now(), "yyyy-mm-ddTHH:MM:SS"), experiment_id])
-
-            # Dry-run rollback: throw the sentinel AFTER all writes so the
-            # transaction rolls back everything, but the counters (declared
-            # outside this closure) are already populated for the return value.
-            dry_run && throw(_DryRunRollback())
-        end
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_error = ?, analysis_version = ?, analysis_trace_stat = ? WHERE id = ?",
+            [first(error_text, 500), error_text == NO_TRACE ? nothing : ANALYSIS_VERSION, signature, exposure_id])
     end
-    catch e
-        e isa _DryRunRollback || rethrow()
-    end
+    false
+end
 
-    # Analyze inserted exposures OUTSIDE the write transaction (same contract as
-    # scan_and_group!: a crash mid-analyze must not roll back the retrofit). Skipped
-    # on dry-run — those inserts were rolled back, so the ids no longer exist.
-    if analyze && !dry_run
-        for eid in new_exposure_ids
-            try
-                analyze_exposure!(db, eid)
-            catch e
-                @warn "regroup_experiment!: analyze_exposure! failed" exposure_id=eid exception=e
-            end
-        end
+function pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = false)
+    exp_row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
+    rows = Tables.rowtable(DBInterface.execute(db, """
+        SELECT id, filename, analysis_error, analysis_version, analysis_trace_stat FROM exposures
+         WHERE experiment_id = ?2 AND filename IS NOT NULL
+           AND (trace_hash IS NULL OR analysis_version IS NULL OR analysis_version != ?1)
+         ORDER BY id""", [ANALYSIS_VERSION, experiment_id]))
+    isempty(rows) && return Int[]
+    find_trace = _trace_finder(db, experiment_id, String(exp_row.analysis_dir))
+    function due(r)
+        ismissing(r.analysis_error) && return true
+        trace = find_trace(String(r.filename))
+        r.analysis_error == NO_TRACE && return trace !== nothing
+        coalesce(r.analysis_version, "") != ANALYSIS_VERSION && return true
+        trace === nothing && return false
+        retry_failed && return true
+        signature = try _stat_signature(trace) catch; nothing end
+        signature !== nothing && signature != coalesce(r.analysis_trace_stat, "")
     end
+    Int[Int(r.id) for r in rows if due(r)]
+end
 
-    return (
-        status              = :ok,
-        loads_created       = loads_created,
-        cells               = length(cells),
-        samples_retrofitted = samples_retrofitted,
-        samples_created     = samples_created,
-        samples_displaced   = samples_displaced,
-        exposures_relinked  = exposures_relinked,
-        exposures_inserted  = exposures_inserted,
-        exposures_no_file   = exposures_no_file,
-        reshoots            = reshoots,
-        geometry            = geo,
-        discrepancies       = disc,
-    )
+function _insertable_stems(db::SQLite.DB, experiment_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT data_dir, image_pattern, metadata_pattern FROM experiments WHERE id = ?", [experiment_id]))
+    isempty(rows) && return String[]
+    r = first(rows)
+    data_dir = String(r.data_dir)
+    listing = try
+        tif_listing(data_dir, coalesce(r.image_pattern, "{name}.tif"))
+    catch
+        nothing
+    end
+    listing === nothing && return String[]
+    _, tif_files, tif_suffix = listing
+    stems = String[f[1:end-length(tif_suffix)] for f in tif_files]
+    known = Set(String(x.filename) for x in Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL", [experiment_id])))
+    find_prp = _file_finder(data_dir, coalesce(r.metadata_pattern, "{name}.prp"))
+    has_prp(stem) = find_prp(stem) !== nothing
+    any_prp = any(has_prp, stems)
+    String[stem for stem in stems if !(stem in known) && (!any_prp || has_prp(stem))]
 end
 
 """
-    cheap_change_check(db, experiment_id) -> Bool
+    ingest_has_work(db, experiment_id) -> Bool
 
-Cheap "has the directory changed since the last ingest?" probe for the Phase-C
-auto-rescan scheduler and the `POST /api/experiments/{id}/scan` route.
-
-Returns `true` when the data directory appears to hold files not yet persisted
-(so a `scan_and_group!` is warranted), `false` when it looks unchanged (the
-scheduler tick can stay quiet / back off — spec §9.4).
-
-**Cheapness contract:** this does NOT parse PRP files or run grouping. It counts
-matching image files in the experiment's `data_dir` (a single `readdir` + suffix
-filter) and compares against `COUNT(*)` of already-persisted exposures. Additive
-ingest dedups on `(experiment_id, filename)`, so "more files on disk than rows in
-the DB" is exactly "there is new data to ingest". The image suffix is read from
-the experiment row's `image_pattern` column (same source `scan_and_group!` uses).
-
-**Bias:** any ambiguity returns `true` (an extra scan is a harmless no-op via the
-insert-only dedup; a missed scan would silently drop data). The only `false`
-shortcuts are (a) a vanished/unreadable data dir — nothing to ingest, and a
-scheduler tick must never crash on a missing volume — and (b) on-disk count ≤
-persisted count.
+True when a pass would change something: a tif (with its prp, when the folder
+has prps) that has no exposure row yet, or an exposure `pending_analysis_ids`
+returns. A few directory reads plus a stat per failed exposure, so it is cheap
+enough to run inside a request.
 """
-function cheap_change_check(
-    db::SQLite.DB,
-    experiment_id::Int,
-)::Bool
-    # Resolve the experiment's data_dir and image_pattern (the authoritative scan root + suffix).
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir, image_pattern FROM experiments WHERE id = ?", [experiment_id]))
-    isempty(rows) && return true   # unknown experiment: let the caller's scan surface the error
-    exp_row = first(rows)
-    data_dir = String(exp_row.data_dir)
-
-    isdir(data_dir) || return false  # vanished/unreadable dir: nothing to ingest, never crash
-
-    # Cheap on-disk count: number of files whose name matches the image suffix.
-    # image_pattern is "{name}<suffix>"; everything after "{name}" is the literal suffix.
-    # Read from the experiment row — same source scan_and_group! uses.
-    image_pattern = coalesce(exp_row.image_pattern, "{name}.tif")
-    suffix = replace(image_pattern, "{name}" => "")
-    on_disk = try
-        count(f -> endswith(f, suffix), readdir(data_dir))
-    catch
-        return true   # readdir failed for any reason: assume changed (safe direction)
-    end
-
-    # Persisted count.
-    persisted = Int(first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ?", [experiment_id]))).n)
-
-    return on_disk > persisted
+function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
+    !isempty(_insertable_stems(db, experiment_id)) || !isempty(pending_analysis_ids(db, experiment_id))
 end
 
 """

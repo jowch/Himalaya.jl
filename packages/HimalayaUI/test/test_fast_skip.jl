@@ -462,7 +462,7 @@ end
     db = open_db(joinpath(tmp, "h.db"))
     seeded = seed_experiment!(db, tmp; name = "E", analysis_dir = analysis_dir,
         stems  = ["HA_5_010_S1965_0_001"],
-        config = "[files]\nintegration = \"{name}_tot.dat\"\n")
+        integration_pattern = "{name}_tot.dat")
     eid = seeded.exposure_ids[1]
 
     analyze_exposure!(db, eid, analysis_dir)

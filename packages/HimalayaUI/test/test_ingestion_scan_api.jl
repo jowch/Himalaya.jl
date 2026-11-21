@@ -20,7 +20,7 @@ function scan_test_db()
     (db, dir, exp_id)
 end
 
-@testset "ingestion scan API + SSE + scheduler (Phase C)" begin
+@testset "ingestion scan API + SSE" begin
     @testset "broadcast_progress! emits curation frame with no user_actions row" begin
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
@@ -290,120 +290,6 @@ end
         SQLite.close(db)
     end
 
-    @testset "rescan timer start/stop lifecycle (unit)" begin
-        # This test never opens a real DB — it only exercises the timer registry.
-        # start_rescan_scheduler! requires a db for the tick body; we pass a temp one.
-        mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-            exp_id = HimalayaUI.create_experiment!(db;
-                name = "T", path = dir, data_dir = dir, analysis_dir = dir)
-
-            # Real Timers are armed below; guarantee they are all closed and the DB
-            # is shut even if an assertion throws mid-test (otherwise a leaked Timer
-            # keeps firing against a closed DB and poisons later testsets).
-            try
-                # Starting a scheduler registers a timer
-                HimalayaUI.start_rescan_scheduler!(db, exp_id;
-                    tick_interval_seconds = 3600)
-                @test haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
-
-                # Stopping it removes the entry
-                HimalayaUI.stop_rescan_scheduler!(exp_id)
-                @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
-
-                # Stopping a non-existent id is a no-op
-                @test_nowarn HimalayaUI.stop_rescan_scheduler!(exp_id)
-
-                # stop_all_rescan_timers! clears all entries
-                HimalayaUI.start_rescan_scheduler!(db, exp_id; tick_interval_seconds = 3600)
-                HimalayaUI.stop_all_rescan_timers!()
-                @test isempty(HimalayaUI.RESCAN_TIMERS)
-            finally
-                HimalayaUI.stop_all_rescan_timers!()
-                SQLite.close(db)
-            end
-        end
-    end
-
-    @testset "rearm_rescan_schedulers! arms only completed experiments on boot (6c-2)" begin
-        mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-            done_id = HimalayaUI.create_experiment!(db;
-                name = "done", path = dir, data_dir = dir, analysis_dir = dir)
-            busy_id = HimalayaUI.create_experiment!(db;
-                name = "busy", path = dir, data_dir = dir, analysis_dir = dir)
-            DBInterface.execute(db,
-                "UPDATE experiments SET ingest_status = 'complete' WHERE id = ?", [done_id])
-            DBInterface.execute(db,
-                "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [busy_id])
-            try
-                HimalayaUI.stop_all_rescan_timers!()    # clean slate
-                HimalayaUI.rearm_rescan_schedulers!(db)
-                @test haskey(HimalayaUI.RESCAN_TIMERS, done_id)   # completed → armed
-                @test !haskey(HimalayaUI.RESCAN_TIMERS, busy_id)  # mid-scan → skipped
-            finally
-                HimalayaUI.stop_all_rescan_timers!()
-                SQLite.close(db)
-            end
-        end
-    end
-
-    @testset "the first rescan tick fires after first_tick_seconds, not the full interval" begin
-        mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-            exp_id = HimalayaUI.create_experiment!(db;
-                name = "early", path = dir, data_dir = dir, analysis_dir = dir)
-            checks = Threads.Atomic{Int}(0)
-            try
-                HimalayaUI.start_rescan_scheduler!(db, exp_id;
-                    tick_interval_seconds = 86400.0, first_tick_seconds = 0.2,
-                    cheap_check_fn = (_, _) -> (Threads.atomic_add!(checks, 1); false))
-                quiet_ticks() = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT consecutive_empty_ticks FROM experiments WHERE id = ?", [exp_id]))[1].consecutive_empty_ticks
-                @test timedwait(() -> quiet_ticks() == 1, 10.0) === :ok
-                @test checks[] == 1
-            finally
-                HimalayaUI.stop_all_rescan_timers!()
-                lock(() -> nothing, HimalayaUI._rescan_lock(exp_id))
-                SQLite.close(db)
-            end
-        end
-    end
-
-    @testset "a restart resumes each experiment at its persisted rescan tier" begin
-        mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-            exp_id = HimalayaUI.create_experiment!(db;
-                name = "quiet", path = dir, data_dir = dir, analysis_dir = dir)
-            DBInterface.execute(db,
-                "UPDATE experiments SET ingest_status = 'complete' WHERE id = ?", [exp_id])
-            quiet_tick() = HimalayaUI._rescan_tick!(db, exp_id;
-                cheap_check_fn = (_, _) -> false, ticks_before_daily = 2, ticks_before_stop = 2)
-            restart!() = (HimalayaUI.stop_all_rescan_timers!(); HimalayaUI.rearm_rescan_schedulers!(db))
-            try
-                restart!()
-                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["fast"]
-
-                quiet_tick(); quiet_tick()
-                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["daily"]
-                restart!()
-                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["daily"]
-                @testset "a server restarted more often than daily still checks a daily experiment" begin
-                    @test HimalayaUI.RESCAN_TIMERS[exp_id].first_tick == HimalayaUI.RESCAN_TIER_INTERVALS["fast"]
-                end
-
-                quiet_tick(); quiet_tick()
-                @test HimalayaUI.rescan_interval(exp_id) === nothing
-                restart!()
-                @test HimalayaUI.rescan_interval(exp_id) === nothing
-                @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
-            finally
-                HimalayaUI.stop_all_rescan_timers!()
-                SQLite.close(db)
-            end
-        end
-    end
-
     @testset "DELETE /api/experiments/{id} removes experiment + cascade" begin
         db, dir, exp_id = scan_test_db()
         lid = HimalayaUI.create_load!(db; experiment_id = exp_id, load_index = 1, frame_count = 2)
@@ -438,75 +324,7 @@ end
         SQLite.close(db)
     end
 
-    @testset "_rescan_tick! tiered backoff persists to DB" begin
-        mktempdir() do dir
-            db = HimalayaUI.open_db(joinpath(dir, "h.db"))
-            exp_id = HimalayaUI.create_experiment!(db;
-                name = "BT", path = dir, data_dir = dir, analysis_dir = dir)
-
-            # The "change" branch below calls set_rescan_tier!, which arms a REAL
-            # Timer. Wrap the whole body so that timer (and any other) is always closed
-            # and the DB shut even if an assertion throws — a leaked Timer would keep
-            # firing against a closed DB.
-            try
-                ticks_before_daily = 3   # configurable in the call below
-
-                # Inject the change decision so tier transitions are deterministic without
-                # filesystem fixtures. No scan stub is needed: on a "change" the real
-                # scan_and_group! runs against the EMPTY temp dir (no matching triplets) —
-                # a harmless no-op.
-                no_change  = (_, _) -> false
-                has_change = (_, _) -> true
-
-                # Run ticks_before_daily empty ticks; should stay in 'fast' tier until threshold
-                for _ in 1:ticks_before_daily
-                    HimalayaUI._rescan_tick!(db, exp_id;
-                        cheap_check_fn = no_change,
-                        fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
-                        ticks_before_stop = 2)
-                end
-                row = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id=?",
-                    [exp_id]))[1]
-                # After exactly ticks_before_daily empty ticks, tier advances to daily
-                @test row.last_scan_tier == "daily"
-                @test row.consecutive_empty_ticks == 0  # reset on tier transition
-
-                # One more empty daily tick → not yet stopped (need ticks_before_stop=2 more)
-                HimalayaUI._rescan_tick!(db, exp_id;
-                    cheap_check_fn = no_change,
-                    fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
-                    ticks_before_stop = 2)
-                row2 = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id=?",
-                    [exp_id]))[1]
-                @test row2.last_scan_tier == "daily"
-                @test row2.consecutive_empty_ticks == 1
-
-                # Simulate a change: re-arms back to fast. cheap_check_fn returns true, then
-                # the real scan_and_group! runs against the EMPTY temp dir — a harmless no-op.
-                HimalayaUI._rescan_tick!(db, exp_id;
-                    cheap_check_fn = has_change,
-                    fast_interval = 3600.0, ticks_before_daily = ticks_before_daily,
-                    ticks_before_stop = 2)
-                row3 = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id=?",
-                    [exp_id]))[1]
-                @test row3.last_scan_tier == "fast"
-                @test row3.consecutive_empty_ticks == 0
-            finally
-                # The change-branch re-armed a fast-tier Timer; close it before the DB.
-                HimalayaUI.stop_rescan_scheduler!(exp_id)
-                HimalayaUI.stop_all_rescan_timers!()
-                SQLite.close(db)
-            end
-        end
-    end
-
-    @testset "_rescan_tick! emits rescan-phase ingest frames on a detected change" begin
-        # The auto-rescan scheduler is the real rescan trigger (no manual UI rescan
-        # by spec). On a detected change it must drive the corpus "analyzing" surface:
-        # ingest_started(phase=rescan) → … → a terminal frame so the surface clears.
+    @testset "a rescan pass emits rescan-phase ingest frames and a terminal frame" begin
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))
             exp_id = HimalayaUI.create_experiment!(db;
@@ -517,9 +335,7 @@ end
                 push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
             end
             try
-                HimalayaUI._rescan_tick!(db, exp_id;
-                    cheap_check_fn = (_, _) -> true,
-                    fast_interval = 3600.0, ticks_before_daily = 3, ticks_before_stop = 2)
+                @test HimalayaUI.run_ingest!(db, exp_id; phase = "rescan") === :ok
 
                 kinds  = String[]
                 phases = String[]
@@ -531,70 +347,106 @@ end
                     haskey(obj.payload, :phase) && push!(phases, String(obj.payload.phase))
                 end
                 @test "ingest_started" in kinds
-                @test "ingest_complete" in kinds    # terminal → frontend clears the surface
-                @test "rescan" in phases            # tagged rescan → maps to "analyzing"
+                @test "ingest_complete" in kinds
+                @test "rescan" in phases
             finally
                 lock(HimalayaUI.SSE_LOCK) do
                     filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
                 end
                 close(pending)
                 HimalayaUI.SSE_SUBSCRIBERS[] = []
-                HimalayaUI.stop_rescan_scheduler!(exp_id)
-                HimalayaUI.stop_all_rescan_timers!()
                 SQLite.close(db)
             end
         end
     end
 
-    @testset "POST /api/experiments/{id}/scan no-change is idempotent" begin
+    @testset "POST /api/experiments/{id}/scan answers each case of its contract" begin
         db, dir, exp_id = scan_test_db()
-
-        with_test_server(db) do port, base
-            # First scan on empty dir: no files, should return 200 + changed=false
-            # (since scan_and_group! is Phase B and may not be present in test env,
-            #  the route must not crash when the directory has no matching files;
-            #  test the HTTP contract, not the full scan logic)
-            r = HTTP.post("$base/api/experiments/$exp_id/scan";
-                headers = ["X-Username" => "alice"],
-                status_exception = false)
-            # 200 or 202 are both acceptable (implementation may vary)
-            @test r.status in (200, 202)
-            body = JSON3.read(String(r.body))
-            @test haskey(body, :status)
-
-            # 404 for unknown experiment
-            r2 = HTTP.post("$base/api/experiments/999999/scan";
-                headers = ["X-Username" => "alice"],
-                status_exception = false)
-            @test r2.status == 404
+        pending = Channel{String}(256)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
         end
-        SQLite.close(db)
-    end
-
-    @testset "POST /api/experiments/{id}/scan with force=true returns 200/202 (HTTP contract)" begin
-        # Verifies that passing force=true in the JSON body is accepted and the route
-        # returns the expected status. The scan itself runs async so we test the HTTP
-        # contract only (same pattern as the no-change idempotent test above).
-        db, dir, exp_id = scan_test_db()
-        with_test_server(db) do port, base
-            r = HTTP.post("$base/api/experiments/$exp_id/scan";
-                body    = JSON3.write(Dict(:force => true)),
-                headers = ["Content-Type" => "application/json",
-                           "X-Username"   => "alice"],
-                status_exception = false)
-            @test r.status in (200, 202)
-            body_json = JSON3.read(String(r.body))
-            @test haskey(body_json, :status)
-            @test body_json.status == "scanning"
-
-            # force=false (explicit) also works
-            r2 = HTTP.post("$base/api/experiments/$exp_id/scan";
-                body    = JSON3.write(Dict(:force => false)),
-                headers = ["Content-Type" => "application/json"],
-                status_exception = false)
-            @test r2.status in (200, 202)
+        kinds() = begin
+            out = String[]
+            while isready(pending)
+                frame = take!(pending)
+                lines = filter(l -> startswith(l, "data: "), split(frame, '\n'))
+                isempty(lines) && continue
+                obj = JSON3.read(replace(first(lines), r"^data: " => ""))
+                haskey(obj, :kind) && push!(out, String(obj.kind))
+            end
+            out
         end
-        SQLite.close(db)
+        wait_until(f; timeout = 30) = begin
+            t0 = time()
+            while !f() && time() - t0 < timeout
+                sleep(0.05)
+            end
+            f()
+        end
+        post(body = nothing) = HTTP.post(base_url[] * "/api/experiments/$exp_id/scan";
+            body = body === nothing ? UInt8[] : JSON3.write(body),
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            status_exception = false)
+        status_of() = first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT ingest_status FROM experiments WHERE id = ?", [exp_id]))).ingest_status
+        base_url = Ref("")
+        try
+            with_test_server(db) do port, base
+                base_url[] = base
+                DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'complete' WHERE id = ?", [exp_id])
+                kinds()
+
+                r = post()
+                @test r.status == 200
+                body = JSON3.read(String(r.body))
+                @test body.status == "complete"
+                @test body.changed == false
+                sleep(0.5)
+                @test !("ingest_started" in kinds())
+
+                DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
+                r = post()
+                @test r.status == 200
+                @test JSON3.read(String(r.body)).status == "failed"
+                sleep(0.5)
+                @test !("ingest_started" in kinds())
+
+                write(joinpath(dir, "NEW_S0001_0_001.tif"), "fake tif")
+                r = post()
+                @test r.status == 202
+                @test JSON3.read(String(r.body)).status == "scanning"
+                @test wait_until(() -> status_of() == "complete")
+                seen = kinds()
+                @test "ingest_started" in seen
+                @test "ingest_complete" in seen
+
+                r = post()
+                @test r.status == 200
+                sleep(0.5)
+                @test !("ingest_started" in kinds())
+
+                r = post(Dict(:force => true))
+                @test r.status == 202
+                @test JSON3.read(String(r.body)).status == "scanning"
+                @test wait_until(() -> status_of() == "complete")
+                @test "ingest_started" in kinds()
+
+                r = post(Dict(:force => false))
+                @test r.status == 200
+
+                r404 = HTTP.post("$base/api/experiments/999999/scan";
+                    headers = ["X-Username" => "alice"], status_exception = false)
+                @test r404.status == 404
+            end
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+            SQLite.close(db)
+        end
     end
 
     @testset "a plain rescan with no new files still backfills missing beam monitors" begin
@@ -608,7 +460,6 @@ end
             HimalayaUI.create_exposure!(db; experiment_id = exp_id, filename = stem,
                 prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
         end
-        @test !HimalayaUI.cheap_change_check(db, exp_id)
         monitors() = Tables.rowtable(DBInterface.execute(db,
             "SELECT transmitted_counts, counting_time FROM exposures WHERE experiment_id = ? ORDER BY filename",
             [exp_id]))
@@ -620,56 +471,29 @@ end
                     body = JSON3.write(Dict(:force => false)),
                     headers = ["Content-Type" => "application/json"],
                     status_exception = false)
-                @test r.status == 202
-                @test timedwait(() -> status() == "complete", 30.0) === :ok
+                @test r.status in (200, 202)
+                @test timedwait(() -> all(!ismissing(m.counting_time) for m in monitors()) &&
+                                      status() != "scanning", 30.0) === :ok
             end
             @test [m.transmitted_counts for m in monitors()] ≈ [7001.0, 7002.0]
             @test all(m.counting_time ≈ 15.8 for m in monitors())
         finally
-            HimalayaUI.stop_all_rescan_timers!()
             SQLite.close(db)
         end
     end
 
-    @testset "a quiet scheduler tick backfills missing beam monitors" begin
+    @testset "an ingest pass backfills missing beam monitors" begin
         db, dir, exp_id = scan_test_db()
         stem = "TICK_S0001_0_001"
         write(joinpath(dir, "$stem.prp"), "I_signal=6500.0\nExposure time=15\nCounting time=15.8\n")
         HimalayaUI.create_exposure!(db; experiment_id = exp_id, filename = stem,
             prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
         try
-            HimalayaUI._rescan_tick!(db, exp_id; cheap_check_fn = (_, _) -> false)
+            HimalayaUI.run_ingest!(db, exp_id)
             r = Tables.rowtable(DBInterface.execute(db,
                 "SELECT transmitted_counts FROM exposures WHERE experiment_id = ?", [exp_id]))[1]
             @test r.transmitted_counts ≈ 6500.0
         finally
-            HimalayaUI.stop_all_rescan_timers!()
-            SQLite.close(db)
-        end
-    end
-
-    @testset "a manual rescan that finds new files resets the backoff to the fast tier" begin
-        db, dir, exp_id = scan_test_db()
-        DBInterface.execute(db, """
-            UPDATE experiments SET ingest_status = 'complete', last_scan_tier = 'stopped',
-                                   consecutive_empty_ticks = 2 WHERE id = ?""", [exp_id])
-        status() = Tables.rowtable(DBInterface.execute(db,
-            "SELECT ingest_status, last_scan_tier, consecutive_empty_ticks FROM experiments WHERE id = ?",
-            [exp_id]))[1]
-        try
-            with_test_server(db) do port, base
-                r = HTTP.post("$base/api/experiments/$exp_id/scan";
-                    body    = JSON3.write(Dict(:force => true)),
-                    headers = ["Content-Type" => "application/json"],
-                    status_exception = false)
-                @test r.status == 202
-                @test timedwait(() -> status().ingest_status == "complete", 30.0) === :ok
-                @test HimalayaUI.rescan_interval(exp_id) == HimalayaUI.RESCAN_TIER_INTERVALS["fast"]
-            end
-            @test status().last_scan_tier == "fast"
-            @test status().consecutive_empty_ticks == 0
-        finally
-            HimalayaUI.stop_all_rescan_timers!()
             SQLite.close(db)
         end
     end
@@ -788,15 +612,7 @@ end
     end
 end
 
-@testset "_rescan_tick! ingests a NON-empty directory (3-arg on_progress)" begin
-    # Regression for the auto-rescan scheduler: server.jl's on_progress lambda was
-    # left at 2 args when scan_and_group! moved to (processed, total, stage), so
-    # every scheduled rescan MethodError'd on the FIRST discovered file — swallowed
-    # into a @warn + ingest_failed frame, then re-armed to fail again.
-    #
-    # The existing _rescan_tick! tests all run against an EMPTY mktempdir, where the
-    # discovery loop never executes and the callback is never invoked, so they stayed
-    # green. One TIF+PRP pair is the whole difference.
+@testset "an ingest pass ingests a NON-empty directory (3-arg on_progress)" begin
     mktempdir() do dir
         db = open_prepared_clone(dir)
         data_dir = mktempdir()
@@ -806,11 +622,8 @@ end
         id = HimalayaUI.create_experiment!(db; name = "rescan-nonempty", path = data_dir,
                                           data_dir = data_dir, analysis_dir = data_dir,
                                           ingest_status = "complete")
-        HimalayaUI._rescan_tick!(db, id;
-            cheap_check_fn = (_, _) -> true,
-            fast_interval = 3600.0, ticks_before_daily = 5, ticks_before_stop = 2)
+        HimalayaUI.run_ingest!(db, id; phase = "rescan")
 
-        # The exposure actually landed — pre-fix this was 0 with a silent @warn.
         n = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) c FROM exposures WHERE experiment_id = ?", [id]))).c
         @test n == 1

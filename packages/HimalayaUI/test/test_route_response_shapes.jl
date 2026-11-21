@@ -291,6 +291,7 @@ end
                     :horizontal_position, :scan_id, :frame_no, :load_id,
                     :content_fingerprint,
                     :transmitted_counts, :incident_monitor, :counting_time, :monitors_read,
+                    :analysis_version, :analysis_error, :analysis_trace_stat,
                     :tags, :sources, :image_version,
                 ]
                 assert_keys(body, expected)
