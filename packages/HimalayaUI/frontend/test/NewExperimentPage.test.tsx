@@ -150,6 +150,33 @@ describe("NewExperimentPage", () => {
     expect(input).toHaveValue("/b/20261103");
   });
 
+  it("plain Enter in the path field adds the found setup rather than entering its first subfolder", async () => {
+    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"] });
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103/setup1", setups: [setup("/b/20261103/setup1")] });
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/20261103/setup1");
+    await screen.findAllByTestId("setup-row");
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: "analysis" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(input).toHaveValue("/b/20261103/setup1");
+  });
+
+  it("plain Enter adds nothing while no setup has been found", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/empty", setups: [] });
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/empty");
+    await screen.findByText("No images found here or in the folders directly inside it.");
+    fireEvent.keyDown(screen.getByTestId("dirpicker-input").querySelector("input")!, { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("leaves ⌘/Ctrl+Enter to an open dialog such as the palette", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
