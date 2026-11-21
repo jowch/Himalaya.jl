@@ -192,7 +192,9 @@ waiting. With `--ui` it also checks the plot: a held frame says "Waiting for
 this frame's trace." and every other frame draws its trace. `make verify-truth`
 (CI's "Demo check-truth" job) runs this sequence first, and delivers the traces
 while the workspace is open on `MO_lowH2O`. It then waits, without a reload,
-for the plot to draw the trace and its peak markers.
+for the plot to draw the trace and its peak markers. That step is the only guard for a trace
+that lands while its sample is open: `plot_matches_trace` cannot see a stale
+plot, because each sample click remounts the plot and refetches a failed trace.
 
 ### Large mode
 
