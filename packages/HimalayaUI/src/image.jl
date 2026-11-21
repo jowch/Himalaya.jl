@@ -57,12 +57,6 @@ function load_and_lognormalize(path::String)
     colorview(Gray, _clip_normalize(lv))
 end
 
-"""
-    _clip_normalize(lv) -> Matrix{Float32}
-
-Map log-counts onto [0, 1] between the low and high percentiles of the positive
-pixels.
-"""
 function _clip_normalize(lv::AbstractMatrix{Float32})
     pos = sort!(filter(>(0f0), vec(lv)))
     isempty(pos) && return lv
@@ -208,13 +202,6 @@ function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
     bytes
 end
 
-"""
-    full_cache_path(db, exposure_id, token) -> Union{String, Nothing}
-
-Cache file for one exposure's full (display-capped) image, in
-`<db_dir>/cache/full-1536/`, keyed like [`thumb_cache_path`](@ref). Its raw
-detector size sits beside it in a `.size` file. `nothing` for `:memory:` DBs.
-"""
 function full_cache_path(db::SQLite.DB, exposure_id::Integer, token::AbstractString)
     dir = thumb_cache_dir(db)
     dir === nothing && return nothing
@@ -231,16 +218,6 @@ function _read_full_cached(cache_path::String)
     (bytes = read(cache_path), raw_h = dims[1], raw_w = dims[2])
 end
 
-"""
-    ensure_full_cached(db, exposure_id, path; token = image_version_token(path))
-        -> (bytes, raw_h, raw_w)
-
-The full image route's PNG, capped at 1536 px on its longest side, plus the raw
-detector size the ring overlay calibrates against. A hit reads the disk cache
-and never opens the TIFF. A miss renders at full resolution, then stores the
-size before the PNG, so a PNG on disk always has its size beside it. A
-`:memory:` DB renders every time.
-"""
 function ensure_full_cached(db::SQLite.DB, exposure_id::Integer, path::String;
                             token::AbstractString = image_version_token(path))
     cache_path = full_cache_path(db, exposure_id, token)
