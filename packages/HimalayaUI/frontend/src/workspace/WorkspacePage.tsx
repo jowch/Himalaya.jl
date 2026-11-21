@@ -49,7 +49,7 @@ import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, l
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { MAX_CANDIDATES, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { MAX_CANDIDATES, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, withoutRef, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -102,7 +102,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Exposures",
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
-        { keys: ["X"], what: "Drop or restore the exposure" },
+        { keys: ["X"], what: "Drop the exposure and show the nearest kept one, or restore a dropped one" },
         { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
@@ -417,16 +417,17 @@ export function WorkspacePage(): JSX.Element {
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
-      setExposureId(e.id);
       const prev = e.status;
       const next = prev === "rejected" ? null : "rejected";
+      if (next === null) setExposureId(e.id);
+      else if (e.id === exposure?.id) setExposureId(nearestKeptExposure(exposureList, e.id) ?? e.id);
       setStatus.mutate({ exposureId: e.id, status: next });
       if (sampleId === undefined) return;
       history.record(dropEntry(ops, {
         label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, prev, next,
       }));
     },
-    [setStatus, sampleId, history, ops, frameName],
+    [setStatus, sampleId, history, ops, frameName, exposureList, exposure],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -807,6 +808,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "x":
         case "X":
+          if (ev.repeat) break;
           if (exposure && username) toggleDrop(exposure);
           break;
         case "0":

@@ -349,7 +349,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
   });
 
-  it("flips through frames inside the enlarged view and drops one without closing it", () => {
+  it("flips through frames inside the enlarged view, and dropping one moves to the nearest kept frame without closing it", () => {
     state.exposures = [
       exposure(100, { image_path: "/a.tif" }),
       exposure(101, { selected: true, image_path: "/b.tif" }),
@@ -368,9 +368,11 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
     expect(caption).toHaveTextContent("Frame 1 of 3");
     fireEvent.keyDown(dialog, { key: "x" });
+    fireEvent.keyDown(dialog, { key: "x", repeat: true });
     expect(calls.filter((c) => c.hook === "status").map((c) => c.arg)).toEqual([{ exposureId: 100, status: "rejected" }]);
     expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
-    expect(currentFrame()).toBe("Frame 1");
+    expect(caption).toHaveTextContent("Frame 2 of 3");
+    expect(currentFrame()).toBe("Frame 2");
   });
 
   it("does not drop from the enlarged view before a user is set", () => {
@@ -677,23 +679,62 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "add", boundTo: 100, arg: 1 }]);
   });
 
-  it("X drops the shown frame and keeps it in view, so a second X restores it", () => {
+  it("X drops the shown frame and shows the nearest kept frame, so a phase key calls there", () => {
     const { rerender } = renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "x" });
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
     state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
     rerender(page("/experiments/1/workspace/10"));
-    expect(currentFrame()).toBe("Frame 2, dropped");
-    fireEvent.keyDown(window, { key: "x" });
-    expect(calls[1]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
+    expect(currentFrame()).toBe("Frame 1");
+    fireEvent.keyDown(window, { key: "2" });
+    expect(calls[1]).toEqual({ hook: "add", boundTo: 100, arg: 1 });
   });
 
-  it("every exposure card has its own Drop button, which drops that frame and shows it", () => {
+  it("X on a dropped frame restores it and keeps it in view", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+    fireEvent.keyDown(window, { key: "x" });
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+  });
+
+  it("X keeps the dropped frame in view when no other frame is kept", () => {
+    state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "x" });
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 2");
+  });
+
+  it("a card's Drop button drops that frame and leaves the view on the shown one", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    expect(currentFrame()).toBe("Frame 3");
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
     fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
-    expect(currentFrame()).toBe("Frame 1");
+    expect(currentFrame()).toBe("Frame 3");
+  });
+
+  it("the shown frame's own Drop button moves to the nearest kept frame", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
+    fireEvent.click(within(cards[2]!).getByRole("button", { name: "Drop" }));
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 102, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 2");
+  });
+
+  it("holding X drops only the shown frame, not a run of frames", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "x" });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(1);
+    expect(currentFrame()).toBe("Frame 2");
   });
 
   describe("undo and redo", () => {
