@@ -121,3 +121,34 @@ test("only a 404 on a held frame's trace is the app's expected answer while the 
   assert.equal(heldTrace404(e("/api/exposures/11/trace", 500), held), false);
   assert.equal(heldTrace404(e("/api/exposures/11/peaks"), held), false);
 });
+
+test("check-truth --ui tells the reader every held frame, since a neighbour's prefetch can ask for its trace", async () => {
+  const { checkTruth } = await import("../truth.mjs");
+  const demoDir = demoTree({ held: ["B_S2"] });
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"),
+    "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note\nA,A_S1,none,,none,,true,,,\nB,B_S2,none,,none,,true,,,\n");
+  const stub = await stubBackend({
+    "/api/experiments": [{ id: 4, data_dir: path.join(demoDir, "data"), ingest_status: "complete" }],
+    "/api/samples?experiment_id=4": [
+      { id: 10, name: "A_S1 (S01P01)", assignment_state: "indexed", phase: null, representative_exposure_id: 1 },
+      { id: 11, name: "B_S2 (S01P02)", assignment_state: "indexed", phase: null, representative_exposure_id: 2 },
+    ],
+    "/api/experiments/4/export": [
+      { name: "A_S1 (S01P01)", exposures: [{ filename: "A_S1", indices: [] }] },
+      { name: "B_S2 (S01P02)", exposures: [{ filename: "B_S2", indices: [] }] },
+    ],
+    "/api/experiments/4/problems": { ingest_error: null, exposures: [waiting("B_S2")] },
+    "/api/samples/10/exposures": [{ id: 1, filename: "A_S1", status: null, selected: false, sample_id: 10 }],
+    "/api/samples/11/exposures": [{ id: 2, filename: "B_S2", status: null, selected: false, sample_id: 11 }],
+    "/api/exposures/1/assignment": { exposure_id: 1, state: "indexed", members: [] },
+    "/api/exposures/2/assignment": { exposure_id: 2, state: "indexed", members: [] },
+  });
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const asked = [];
+  try {
+    await checkTruth(cfg, { ui: true }, { views: async (_c, _e, samples) => { asked.push(...samples); return new Map(); } });
+    assert.deepEqual(asked.map((s) => s.heldIds), [[2], [2]]);
+  } finally {
+    await stub.close();
+  }
+});
