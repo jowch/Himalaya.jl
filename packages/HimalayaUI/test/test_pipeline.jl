@@ -230,6 +230,35 @@ end
     @test length(get_groups_for_exposure(db, e_id))  == 1
 end
 
+@testset "analyze_exposure! stores every value in its declared SQL storage class (#308)" begin
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    count_of(sql) = only(Tables.rowtable(DBInterface.execute(db, sql))).n
+    @test count_of("SELECT count(*) AS n FROM index_peaks") > 0
+    allowed = Dict("INTEGER" => ("integer", "null"), "REAL" => ("real", "integer", "null"))
+    tables = [String(r.name) for r in DBInterface.execute(db,
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
+    misfiled = String[]
+    for t in tables, c in Tables.rowtable(DBInterface.execute(db, "SELECT name, type FROM pragma_table_info(?)", [t]))
+        ok = get(allowed, uppercase(String(c.type)), nothing)
+        ok === nothing && continue
+        col = String(c.name)
+        n = count_of("SELECT count(*) AS n FROM \"$t\" WHERE typeof(\"$col\") NOT IN ($(join(("'$x'" for x in ok), ", ")))")
+        n > 0 && push!(misfiled, "$t.$col ($n rows)")
+    end
+    @test misfiled == String[]
+end
+
 @testset "analyze_exposure! incorporates manual peaks into candidate indices" begin
     # Regression: manual peaks live in the DB but `Himalaya.indexpeaks` was
     # previously called with only fresh `findpeaks` output, so a manual peak
@@ -497,6 +526,28 @@ let
             name = name, analysis_dir = analysis_dir,
             sample_name = name, stems = stems,
             experiment_type = "simple")
+    end
+
+    @testset "cli_show prints an index whose score and R² are still NULL (#305)" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir     = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(db, dir; name="ExpShow", stems=["ST001"])
+            cli_analyze(["-e", dir])
+            DBInterface.execute(db, "UPDATE indices SET score = NULL, r_squared = NULL")
+            DBInterface.execute(db, "UPDATE auto_peaks SET prominence = NULL, sharpness = NULL")
+            out = mktemp() do path, io
+                redirect_stdout(io) do
+                    cli_show(["-e", dir, "-s", "ExpShow"])
+                end
+                close(io)
+                read(path, String)
+            end
+            @test occursin("score=n/a", out)
+            @test occursin("R²=n/a", out)
+            @test occursin("prom=n/a", out)
+        end
     end
 
     @testset "cli_analyze --experiment selects the right experiment" begin
