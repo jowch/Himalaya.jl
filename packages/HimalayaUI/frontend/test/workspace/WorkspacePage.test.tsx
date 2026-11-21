@@ -54,6 +54,7 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
+  usePatchExperiment: () => ({ mutate: (patch: unknown) => calls.push({ hook: "patchExperiment", boundTo: 1, arg: patch }) }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useDeleteExperiment: (experimentId: number) => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },

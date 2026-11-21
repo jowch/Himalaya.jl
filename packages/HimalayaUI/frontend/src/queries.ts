@@ -369,6 +369,19 @@ export function useTriggerScan(experimentId: number) {
   };
 }
 
+export function usePatchExperiment(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { name?: string; description?: string | null }) =>
+      api.patchExperiment(experimentId, patch, buildAuthOpts(username, CLIENT_ID)),
+    onSuccess: (exp) => {
+      qc.setQueryData(queryKeys.experiment(experimentId), exp);
+      void qc.invalidateQueries({ queryKey: queryKeys.experiments });
+    },
+  });
+}
+
 export function useDeleteExperiment(experimentId: number) {
   const username = useAppState((s) => s.username);
   const qc = useQueryClient();
