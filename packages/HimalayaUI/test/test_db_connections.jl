@@ -233,3 +233,76 @@ end
         end
     end
 end
+
+@testset "a reader left mid-query by one GET still sees later commits in the next" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        bind_db!(db)
+        try
+            for name in ("a", "b", "c")
+                DBInterface.execute(db, "INSERT INTO users (username) VALUES (?)", [name])
+            end
+            first_reader = _through_middleware("GET") do
+                first(DBInterface.execute(current_db(), "SELECT username FROM users ORDER BY username"))
+                current_db()
+            end
+            DBInterface.execute(db, "INSERT INTO users (username) VALUES ('d')")
+            reader, n = _through_middleware("GET") do
+                (current_db(), Tables.rowtable(DBInterface.execute(current_db(), "SELECT COUNT(*) AS n FROM users"))[1].n)
+            end
+            @test reader === first_reader
+            @test n == 4
+        finally
+            HimalayaUI.unbind_db!()
+            DBInterface.close!(db)
+        end
+    end
+end
+
+@testset "one GET reads one snapshot, even across a commit" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        bind_db!(db)
+        try
+            counts = _through_middleware("GET") do
+                count() = Tables.rowtable(DBInterface.execute(current_db(), "SELECT COUNT(*) AS n FROM users"))[1].n
+                before = count()
+                DBInterface.execute(db, "INSERT INTO users (username) VALUES ('late')")
+                (before, count())
+            end
+            @test counts == (0, 0)
+        finally
+            HimalayaUI.unbind_db!()
+            DBInterface.close!(db)
+        end
+    end
+end
+
+@testset "HEAD requests read through the pool like GET" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        bind_db!(db)
+        try
+            conn, held = _through_middleware("HEAD") do
+                (current_db(), islocked(HimalayaUI._DB_WRITE_LOCK))
+            end
+            @test conn !== db
+            @test !held
+        finally
+            HimalayaUI.unbind_db!()
+            DBInterface.close!(db)
+        end
+    end
+end
+
+
+@testset "the singleton waits for another writer instead of failing at once" begin
+    mktempdir() do tmp
+        db = open_db(joinpath(tmp, "test.db"))
+        try
+            @test Tables.rowtable(DBInterface.execute(db, "PRAGMA busy_timeout"))[1].timeout == 5000
+        finally
+            DBInterface.close!(db)
+        end
+    end
+end
