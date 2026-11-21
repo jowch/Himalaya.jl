@@ -169,13 +169,6 @@ export function useSamples(experimentId: number) {
   });
 }
 
-/**
- * Corpus-wide sample list — every sample across all experiments, each with
- * its tags and a q_units from the owning experiment's config. Backs the
- * Phase 1 contact sheet (#160) and sample loupe (#161). Distinct from the
- * per-experiment useSamples(experimentId): no parameter, so no `enabled`
- * gate — the fetch runs unconditionally.
- */
 export function useCorpusSamples({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.corpusSamples,
@@ -188,6 +181,7 @@ export function useExperimentCorpusSamples(experimentId: number) {
   return useQuery({
     queryKey: queryKeys.experimentCorpusSamples(experimentId),
     queryFn: () => api.listCorpusSamples(experimentId),
+    enabled: Number.isInteger(experimentId) && experimentId > 0,
   });
 }
 
