@@ -138,11 +138,10 @@ function register_routes!()
     register_trace_routes!()
     register_analysis_routes!()
     register_export_routes!()
-    register_picker_routes!()
     register_resolve_routes!()
     register_bridge_routes!()
     register_label_routes!()
-    register_tag_color_routes!()
+    register_label_color_routes!()
     register_fs_routes!()
 end
 

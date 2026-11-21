@@ -1,13 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/mutatorRegistry";
 import {
-  addSampleTagMutator,
-  removeSampleTagMutator,
-  addExposureTagMutator,
-  removeExposureTagMutator,
-  addCorpusSampleTagMutator,
-  removeCorpusSampleTagMutator,
-  editCorpusSampleTagMutator,
   updateSampleMutator,
   setExposureStatusMutator,
   selectExposureMutator,
@@ -23,60 +16,6 @@ import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpe
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 
 describe("resolveMutator", () => {
-  it("dispatches add_tag based on payload experimentId presence", () => {
-    expect(
-      resolveMutator({
-        kind: "add_tag",
-        payload: { experimentId: 1, sampleId: 10, key: "k", value: "v" },
-      }),
-    ).toBe(addSampleTagMutator);
-    expect(
-      resolveMutator({
-        kind: "add_tag",
-        payload: { sampleId: 10, exposureId: 99, key: "k", value: "v" },
-      }),
-    ).toBe(addExposureTagMutator);
-  });
-
-  it("dispatches remove_tag the same way", () => {
-    expect(
-      resolveMutator({
-        kind: "remove_tag",
-        payload: { experimentId: 1, sampleId: 10, tagId: 7 },
-      }),
-    ).toBe(removeSampleTagMutator);
-    expect(
-      resolveMutator({
-        kind: "remove_tag",
-        payload: { sampleId: 10, exposureId: 99, tagId: 7 },
-      }),
-    ).toBe(removeExposureTagMutator);
-  });
-
-  it("dispatches a corpus sample-tag op (no experimentId, no exposureId) to the corpus mutator", () => {
-    expect(
-      resolveMutator({
-        kind: "add_tag",
-        payload: { sampleId: 10, key: "k", value: "v" },
-      }),
-    ).toBe(addCorpusSampleTagMutator);
-    expect(
-      resolveMutator({
-        kind: "remove_tag",
-        payload: { sampleId: 10, tagId: 7 },
-      }),
-    ).toBe(removeCorpusSampleTagMutator);
-  });
-
-  it("dispatches a sampleId-only edit_tag op to the corpus edit mutator", () => {
-    expect(
-      resolveMutator({
-        kind: "edit_tag",
-        payload: { sampleId: 10, tagId: 7, key: "dose", value: "12" },
-      }),
-    ).toBe(editCorpusSampleTagMutator);
-  });
-
   it("returns the canonical mutator for non-dual kinds", () => {
     expect(resolveMutator({ kind: "peak_added", payload: {} })).toBe(
       peakAddMutator,
@@ -116,78 +55,44 @@ describe("resolveMutator", () => {
     ).toBeUndefined();
   });
 
-  it("tolerates undefined/null payload by treating add_tag as corpus-scoped", () => {
-    // No exposureId and no experimentId → corpus fallthrough. Must not throw.
-    expect(
-      resolveMutator({ kind: "add_tag", payload: undefined }),
-    ).toBe(addCorpusSampleTagMutator);
-    expect(resolveMutator({ kind: "add_tag", payload: null })).toBe(
-      addCorpusSampleTagMutator,
-    );
-  });
 });
 
 describe("resolveMutatorForEvent", () => {
   it("routes peak_added to peakAddMutator", () => {
-    expect(resolveMutatorForEvent("peak_added", "exposure")).toBe(peakAddMutator);
+    expect(resolveMutatorForEvent("peak_added")).toBe(peakAddMutator);
   });
 
   it("routes peak_excluded and peak_unexcluded to their dedicated mutators", () => {
-    expect(resolveMutatorForEvent("peak_excluded",   "exposure")).toBe(peakExcludeMutator);
-    expect(resolveMutatorForEvent("peak_unexcluded", "exposure")).toBe(peakUnexcludeMutator);
-  });
-
-  it("splits add_tag by entity_type", () => {
-    expect(resolveMutatorForEvent("add_tag", "sample"))  .toBe(addSampleTagMutator);
-    expect(resolveMutatorForEvent("add_tag", "exposure")).toBe(addExposureTagMutator);
-  });
-
-  it("splits remove_tag by entity_type", () => {
-    expect(resolveMutatorForEvent("remove_tag", "sample"))  .toBe(removeSampleTagMutator);
-    expect(resolveMutatorForEvent("remove_tag", "exposure")).toBe(removeExposureTagMutator);
-  });
-
-  it("routes edit_tag to the corpus edit mutator (sample-only kind)", () => {
-    expect(resolveMutatorForEvent("edit_tag", "sample")).toBe(editCorpusSampleTagMutator);
+    expect(resolveMutatorForEvent("peak_excluded")).toBe(peakExcludeMutator);
+    expect(resolveMutatorForEvent("peak_unexcluded")).toBe(peakUnexcludeMutator);
   });
 
   it("routes analyze_run to reanalyzeExposure", () => {
-    expect(resolveMutatorForEvent("analyze_run", "exposure")).toBe(reanalyzeExposureMutator);
+    expect(resolveMutatorForEvent("analyze_run")).toBe(reanalyzeExposureMutator);
   });
 
   it("returns undefined for unknown event kinds", () => {
-    expect(resolveMutatorForEvent("not_a_kind", "exposure")).toBeUndefined();
+    expect(resolveMutatorForEvent("not_a_kind")).toBeUndefined();
   });
 });
 
 describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
-  // Cross-check: for each mutator, every (eventKind, entityType) pair that
-  // resolveMutatorForEvent's switch maps to it must round-trip back to the
-  // same mutator instance. Catches drift if someone adds a mutator + updates
-  // resolveMutator but forgets resolveMutatorForEvent (or vice versa).
   const cases = [
-    { mutator: peakAddMutator,          eventKind: "peak_added",          entityType: "exposure"   },
-    { mutator: peakRemoveMutator,       eventKind: "peak_removed",        entityType: "exposure"   },
-    { mutator: peakExcludeMutator,      eventKind: "peak_excluded",       entityType: "exposure"   },
-    { mutator: peakUnexcludeMutator,    eventKind: "peak_unexcluded",     entityType: "exposure"   },
-    { mutator: deleteIndexMutator,      eventKind: "speculative_deleted", entityType: "exposure"   },
-    { mutator: createSpeculativeMutator, eventKind: "speculative_created", entityType: "exposure"  },
-    { mutator: reanalyzeExposureMutator, eventKind: "analyze_run",        entityType: "exposure"   },
-    { mutator: addSampleTagMutator,     eventKind: "add_tag",             entityType: "sample"     },
-    { mutator: addExposureTagMutator,   eventKind: "add_tag",             entityType: "exposure"   },
-    { mutator: removeSampleTagMutator,  eventKind: "remove_tag",          entityType: "sample"     },
-    { mutator: removeExposureTagMutator, eventKind: "remove_tag",         entityType: "exposure"   },
-    { mutator: updateSampleMutator,     eventKind: "update_sample",       entityType: "sample"     },
-    { mutator: setExposureStatusMutator, eventKind: "set_exposure_status", entityType: "exposure"  },
-    { mutator: selectExposureMutator,   eventKind: "select_exposure",     entityType: "exposure"   },
+    { mutator: peakAddMutator,          eventKind: "peak_added" },
+    { mutator: peakRemoveMutator,       eventKind: "peak_removed" },
+    { mutator: peakExcludeMutator,      eventKind: "peak_excluded" },
+    { mutator: peakUnexcludeMutator,    eventKind: "peak_unexcluded" },
+    { mutator: deleteIndexMutator,      eventKind: "speculative_deleted" },
+    { mutator: createSpeculativeMutator, eventKind: "speculative_created" },
+    { mutator: reanalyzeExposureMutator, eventKind: "analyze_run" },
+    { mutator: updateSampleMutator,     eventKind: "update_sample" },
+    { mutator: setExposureStatusMutator, eventKind: "set_exposure_status" },
+    { mutator: selectExposureMutator,   eventKind: "select_exposure" },
   ];
 
-  // Use forEach + it() instead of it.each($mutator.kind) — dot-property
-  // interpolation in it.each titles is Vitest-2.1+ but the codebase has no
-  // prior example; a template-literal title is unambiguous.
-  cases.forEach(({ mutator, eventKind, entityType }) => {
-    it(`${eventKind} / ${entityType} resolves to ${mutator.kind}`, () => {
-      expect(resolveMutatorForEvent(eventKind, entityType)).toBe(mutator);
+  cases.forEach(({ mutator, eventKind }) => {
+    it(`${eventKind} resolves to ${mutator.kind}`, () => {
+      expect(resolveMutatorForEvent(eventKind)).toBe(mutator);
     });
   });
 });

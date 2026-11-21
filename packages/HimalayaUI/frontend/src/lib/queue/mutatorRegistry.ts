@@ -1,13 +1,6 @@
 import type { OpKind, Mutator } from "./types";
 import {
   updateSampleMutator,
-  addSampleTagMutator,
-  removeSampleTagMutator,
-  addExposureTagMutator,
-  removeExposureTagMutator,
-  addCorpusSampleTagMutator,
-  removeCorpusSampleTagMutator,
-  editCorpusSampleTagMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./mutators/trivial";
@@ -28,7 +21,7 @@ import {
 import { customIndexMutator } from "./mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./mutators/labels";
-import { setTagColorMutator } from "./mutators/tagColors";
+import { setLabelColorMutator } from "./mutators/labelColors";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -41,12 +34,7 @@ export interface PersistedOpForResolution {
 }
 
 /**
- * Map a persisted op to the right Mutator. Most kinds have a 1:1 mapping;
- * `add_tag` and `remove_tag` are dual-scope kinds whose dispatch depends on
- * the payload shape — sample-scoped ops carry an `experimentId`, while
- * exposure-scoped ops carry only `sampleId` + `exposureId`. The discriminator
- * here mirrors how `useQueueMutation` flat-spreads `scope` into the payload
- * (see `queries.ts::useAddSampleTag` vs `useAddExposureTag`).
+ * Map a persisted op to the right Mutator.
  *
  * Returns `undefined` when the kind has no outbound mutator (currently only
  * `speculative_deleted`, which is server-driven via SSE — the frontend never
@@ -56,32 +44,9 @@ export interface PersistedOpForResolution {
 export function resolveMutator(
   op: PersistedOpForResolution,
 ): Mutator<any, any, any> | undefined {
-  const p = op.payload as
-    | {
-        experimentId?: number; sampleId?: number;
-        exposureId?: number;
-      }
-    | undefined;
   switch (op.kind) {
     case "update_sample":
       return updateSampleMutator;
-    case "add_tag":
-      // An exposure-tag op carries {sampleId, exposureId} and —
-      // like a corpus-tag op — has no experimentId, so the two collide unless
-      // exposureId is tested before the experimentId split.
-      if (p?.exposureId !== undefined) return addExposureTagMutator;
-      return p?.experimentId !== undefined
-        ? addSampleTagMutator
-        : addCorpusSampleTagMutator;
-    case "remove_tag":
-      if (p?.exposureId !== undefined) return removeExposureTagMutator;
-      return p?.experimentId !== undefined
-        ? removeSampleTagMutator
-        : removeCorpusSampleTagMutator;
-    case "edit_tag":
-      // edit_tag is corpus-only (no experiment-scoped or exposure-scoped path).
-      // sampleId-only scope routes here, mirroring the corpus add_tag/remove_tag fallthrough.
-      return editCorpusSampleTagMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
     case "select_exposure":
@@ -114,7 +79,7 @@ export function resolveMutator(
     case "unbridge_sample":        return unbridgeSampleMutator;
     case "add_label":              return addLabelMutator;
     case "remove_label":           return removeLabelMutator;
-    case "set_tag_color":          return setTagColorMutator;
+    case "set_tag_color":          return setLabelColorMutator;
     default:
       return undefined;
   }
@@ -124,16 +89,11 @@ export function resolveMutator(
  * Resolve the mutator that owns a given SSE event kind. Used by the replay
  * coordinator to dispatch `synthesizeFromSse` per event kind.
  *
- * `entity_type` is required because two event kinds (`add_tag`,
- * `remove_tag`) are shared across mutators that differ only
- * by the entity scope they operate on.
- *
  * Returns undefined for unknown event kinds — replayCoordinator will fall
  * back to the generic `{ ...base, ...payload }` shape.
  */
 export function resolveMutatorForEvent(
   eventKind: string,
-  entityType: string,
 ): Mutator<any, any, any> | undefined {
   switch (eventKind) {
     case "peak_added":          return peakAddMutator;
@@ -152,32 +112,11 @@ export function resolveMutatorForEvent(
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
     case "select_exposure":     return selectExposureMutator;
-    // add_tag / remove_tag stay 2-arm here — deliberately NOT tri-scope like
-    // resolveMutator above. Verified (#159): a corpus-originated and an
-    // experiment-originated sample tag are byte-identical on the SSE wire
-    // (same entity_type="sample", same payload — the route always resolves
-    // experiment_id from the sample row). There is no corpus-vs-experiment
-    // discriminator to key on, and none is needed: this function only picks a
-    // synthesizeFromSse for the own-op SSE-confirmation *response shape*.
-    // addSampleTagMutator.synthesizeFromSse yields a SampleTag, which the
-    // corpus mutator's own onSuccess consumes; the cache patch is done by the
-    // pending mutation's own onSuccess (the corpus mutator). A literal third
-    // arm would be unreachable dead code. This is a conscious, plan-aware
-    // deviation from the literal "convert both to tri-scope" wording of #159
-    // / master plan §11. See
-    // docs/mutation-queue.md.
-    case "add_tag":
-      return entityType === "sample" ? addSampleTagMutator : addExposureTagMutator;
-    case "remove_tag":
-      return entityType === "sample" ? removeSampleTagMutator : removeExposureTagMutator;
-    case "edit_tag":
-      // edit_tag is sample-scoped only. The corpus mutator owns synthesizeFromSse.
-      return editCorpusSampleTagMutator;
     case "sample_bridged":           return bridgeSamplesMutator;
     case "sample_unbridged":         return unbridgeSampleMutator;
     case "label_added":              return addLabelMutator;
     case "label_removed":            return removeLabelMutator;
-    case "tag_color_set":            return setTagColorMutator;
+    case "tag_color_set":            return setLabelColorMutator;
     // Event kinds with no queue mutator fall through here (handled entirely by
     // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".

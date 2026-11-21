@@ -71,32 +71,6 @@ end
         end
     end
 
-    @testset "POST/DELETE /api/samples/:id/tags → add_tag/remove_tag frames" begin
-        tmp    = mktempdir()
-        db     = open_prepared_clone(tmp)
-        exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-            data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-
-        _with_sub() do pending
-            with_test_server(db) do port, base
-                r = HTTP.post("$base/api/samples/$s_id/tags";
-                    body = JSON3.write(Dict(:key => "k", :value => "v")),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                @test r.status == 201
-                tag_id = JSON3.read(String(r.body)).id
-
-                r2 = HTTP.delete("$base/api/samples/$s_id/tags/$tag_id";
-                    headers = ["X-Username" => "alice"])
-                @test r2.status == 204
-            end
-            kinds = _frame_kinds(_drain_frames(pending))
-            @test "add_tag" in kinds
-            @test "remove_tag" in kinds
-        end
-    end
-
     @testset "PATCH /api/exposures/:id/status → set_exposure_status frame" begin
         tmp    = mktempdir()
         db     = open_prepared_clone(tmp)
@@ -220,30 +194,4 @@ end
         end
     end
 
-    @testset "POST/DELETE /api/exposures/:id/tags → add_tag/remove_tag frames" begin
-        tmp    = mktempdir()
-        db     = open_prepared_clone(tmp)
-        exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-            data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
-
-        _with_sub() do pending
-            with_test_server(db) do port, base
-                r = HTTP.post("$base/api/exposures/$e_id/tags";
-                    body = JSON3.write(Dict(:key => "k", :value => "v")),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                @test r.status == 201
-                tag_id = JSON3.read(String(r.body)).id
-
-                r2 = HTTP.delete("$base/api/exposures/$e_id/tags/$tag_id";
-                    headers = ["X-Username" => "alice"])
-                @test r2.status == 204
-            end
-            kinds = _frame_kinds(_drain_frames(pending))
-            @test "add_tag" in kinds
-            @test "remove_tag" in kinds
-        end
-    end
 end

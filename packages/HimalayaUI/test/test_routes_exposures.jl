@@ -31,7 +31,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(list) == 2
         @test list[1].filename == "example_tot"
         @test list[1].selected === false
-        @test list[1].tags     == []
+        @test !haskey(list[1], :tags)
         @test list[1].sources  == []
         @test list[1].transmitted_counts ≈ 7365.0
         @test list[1].incident_monitor ≈ 1.5007
@@ -74,23 +74,6 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[sel].selected === true
         other = findfirst(x -> x.id == e1, list)
         @test list[other].selected === false
-
-        # Add tag to e1
-        r = call("POST", "/api/exposures/$e1/tags";
-            headers = ["Content-Type"=>"application/json", "X-Username"=>"alice"],
-            body = Vector{UInt8}(JSON3.write(Dict(:key=>"flag", :value=>"good"))))
-        @test r.status == 201
-        tag_id = JSON3.read(String(r.body)).id
-
-        r    = call("GET", "/api/samples/$s_id/exposures")
-        list = JSON3.read(String(r.body))
-        other = findfirst(x -> x.id == e1, list)
-        @test length(list[other].tags) == 1
-
-        # Delete tag
-        r = call("DELETE", "/api/exposures/$e1/tags/$tag_id";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 204
 
         # Analyze single exposure
         r = call("POST", "/api/exposures/$e1/analyze";

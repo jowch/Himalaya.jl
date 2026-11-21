@@ -33,7 +33,7 @@ export function nextUnreviewed(
   return undefined;
 }
 
-export function rankCandidates(indices: readonly IndexEntry[] | undefined): IndexEntry[] {
+export function rankCandidates(indices: readonly IndexEntry[] | undefined, limit = MAX_CANDIDATES): IndexEntry[] {
   return (indices ?? [])
     .filter((ix) => ix.kind === "speculative" || ix.score !== null)
     .sort((a, b) => {
@@ -41,7 +41,7 @@ export function rankCandidates(indices: readonly IndexEntry[] | undefined): Inde
       if (custom !== 0) return custom;
       return a.kind === "speculative" ? b.id - a.id : (b.score ?? 0) - (a.score ?? 0);
     })
-    .slice(0, MAX_CANDIDATES);
+    .slice(0, limit);
 }
 
 export function stepExposure(

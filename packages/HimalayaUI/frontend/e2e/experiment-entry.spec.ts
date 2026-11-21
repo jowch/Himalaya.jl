@@ -23,7 +23,6 @@ function makeSamples(n: number): object[] {
     experiment_id: EXPERIMENT_ID,
     name: `Sample ${i + 1}`,
     notes: null,
-    tags: [],
   }));
 }
 
@@ -99,13 +98,11 @@ async function mockExperiment(
     await page.route(`**/api/samples/${sample.sample_id}/exposures`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exposures) }));
   }
-  await page.route("**/api/sample-tags", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/events*", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route(`**/api/experiments/${opts.id}/bridges`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/tag-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/label-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route(`**/api/experiments/${opts.id}/scan`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "complete", experiment_id: opts.id, changed: false }) }));
   await page.route(`**/api/experiments/${opts.id}/labels`, (r) =>

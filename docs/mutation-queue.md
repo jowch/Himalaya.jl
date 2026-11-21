@@ -68,25 +68,14 @@ flat payload before any callback runs. Mutator code never has to cast.
 `OpKind` describes the *user gesture*; the event name describes the
 *durable mutation*.
 
-### Two resolvers, two arm counts — `add_tag` is asymmetric on purpose
+### Two resolvers
 
-`mutatorRegistry.ts` exposes two dispatchers, and they disagree on
-`add_tag` *by design*:
-
-- `resolveMutator` (rehydrate path, by op-payload shape) is **3-arm** for
-  `add_tag`: addExposureTag / addSampleTag / addCorpusSampleTag, peeled
-  apart by `exposureId`, then `experimentId`.
-- `resolveMutatorForEvent` (the `synthesizeResponseFromSse` path, by event
-  kind + entity_type) is **2-arm**: sample vs exposure only.
-
-The event resolver gets away with two arms because a corpus-originated and
-an experiment-originated sample-tag event are byte-identical on the SSE wire
-(same `entity_type="sample"`, same payload — the route always resolves
-`experiment_id` off the sample row), so a third arm would be unreachable
-dead code: it only picks a `synthesizeFromSse` for the own-op confirmation
-*response shape*, and the cache patch is the pending mutation's own
-`onSuccess`. **Don't copy the 4-arm shape into the event resolver.**
-Evidence: `lib/queue/mutatorRegistry.ts:178-195`.
+`mutatorRegistry.ts` exposes two dispatchers: `resolveMutator` (rehydrate
+path, by op-payload shape) and `resolveMutatorForEvent` (the
+`synthesizeResponseFromSse` path, by event kind alone). Every kind maps to
+one mutator, so both agree; `test/queue/mutatorRegistry.test.ts` checks
+the round trip for the queue's core mutators (peaks, indices, exposure
+status, sample updates).
 
 ---
 

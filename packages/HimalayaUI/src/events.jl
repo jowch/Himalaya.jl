@@ -298,6 +298,7 @@ const RETIRED_EVENT_KINDS = (
     "series_recipe_updated", "series_unpinned",
     "post_message",
     "sample_renamed", "sample_created", "sample_split", "grouping_flag_dismissed",
+    "add_tag", "remove_tag", "edit_tag",
 )
 
 """
@@ -430,9 +431,6 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # exhaustiveness so the rebuild_views_from_log! property test treats
     # them as known kinds rather than silently falling through.
     kind == "update_sample" && return nothing
-    kind == "add_tag" && return nothing
-    kind == "remove_tag" && return nothing
-    kind == "edit_tag" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 
@@ -457,10 +455,10 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     if kind == "tag_color_set"
         color = get(payload, :color, nothing)
         if color === nothing
-            DBInterface.execute(db, "DELETE FROM tag_colors WHERE label = ? COLLATE NOCASE", [String(payload.label)])
+            DBInterface.execute(db, "DELETE FROM label_colors WHERE label = ? COLLATE NOCASE", [String(payload.label)])
         else
             DBInterface.execute(db,
-                """INSERT INTO tag_colors (label, color) VALUES (?, ?)
+                """INSERT INTO label_colors (label, color) VALUES (?, ?)
                    ON CONFLICT(label COLLATE NOCASE) DO UPDATE SET color = excluded.color""",
                 [String(payload.label), String(color)])
         end

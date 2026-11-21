@@ -14,6 +14,18 @@ describe("WorkspacePlot", () => {
     expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("This frame's trace has no points.");
   });
 
+  it("puts the q label in the tick row, below the data, without a tick label under it", () => {
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} />);
+    const svg = screen.getByTestId("workspace-trace").closest("div")!.querySelector("svg")!;
+    const label = [...svg.querySelectorAll("text")].find((t) => t.textContent === "q (Å⁻¹)")!;
+    const plotHeight = PLOT_HEIGHT - PLOT_MARGINS.top - PLOT_MARGINS.bottom;
+    expect(Number(label.getAttribute("y"))).toBeGreaterThan(plotHeight);
+    const labelX = Number(label.getAttribute("x"));
+    const ticks = [...svg.querySelectorAll('[data-role="axis-bottom"] text')].filter((t) => t !== label);
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const t of ticks) expect(Number(t.getAttribute("x"))).toBeLessThan(labelX - 56);
+  });
+
   it("double-click does not reset the zoom", () => {
     const onXDomain = vi.fn();
     render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} xDomain={[0.1, 0.2]} onXDomain={onXDomain} />);

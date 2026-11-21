@@ -42,6 +42,9 @@ const MIGRATION_LABEL_SUGGESTIONS = "label_suggestions_v1"
 # `schema_migrations` table.
 _migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
     "SELECT 1 FROM schema_migrations WHERE name = ?", [name])))
+_table_exists(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [name])))
+
 _record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db,
     "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)", [name, now_iso()])
 
@@ -113,14 +116,6 @@ CREATE TABLE IF NOT EXISTS samples (
     name_source      TEXT DEFAULT 'auto'
 );
 
-CREATE TABLE IF NOT EXISTS sample_tags (
-    id        INTEGER PRIMARY KEY,
-    sample_id INTEGER REFERENCES samples(id),
-    key       TEXT NOT NULL,
-    value     TEXT NOT NULL,
-    source    TEXT DEFAULT 'manual'
-);
-
 CREATE TABLE IF NOT EXISTS exposures (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_id            INTEGER REFERENCES samples(id),
@@ -154,14 +149,6 @@ CREATE TABLE IF NOT EXISTS exposure_sources (
     source_exposure_id   INTEGER REFERENCES exposures(id),
     role                 TEXT DEFAULT 'signal',
     PRIMARY KEY (averaged_exposure_id, source_exposure_id)
-);
-
-CREATE TABLE IF NOT EXISTS exposure_tags (
-    id          INTEGER PRIMARY KEY,
-    exposure_id INTEGER REFERENCES exposures(id),
-    key         TEXT NOT NULL,
-    value       TEXT NOT NULL,
-    source      TEXT DEFAULT 'manual'
 );
 
 CREATE TABLE IF NOT EXISTS indices (
@@ -434,16 +421,13 @@ function migrate_schema!(db::SQLite.DB)
     migrate_pk_to_autoincrement!(db)
     # Heal corrupted FKs from prior runs: a DB migrated before the helper
     # was generalized may still have FK refs to `_migrate_old_*` on tables
-    # like sample_tags/exposure_tags/etc. Idempotent — no-op when clean.
+    # like exposure_sources/index_groups/etc. Idempotent — no-op when clean.
     _fix_fk_references_after_autoincrement_migration!(db)
     # Run AFTER `_fix_fk_references_after_autoincrement_migration!` so the
     # AUTOINCREMENT rebuild has settled and the index attaches to the rebuilt
     # `exposures` table — placing it earlier would have it dropped along with
     # `_migrate_old_exposures` during `migrate_pk_to_autoincrement!`.
     migrate_exposures_unique_filename!(db)
-    # Heal + enforce one-tag-per-key on samples (TAG-DEDUP-MODEL). Order-free
-    # relative to the exposures/peak migrations — it only touches sample_tags.
-    migrate_sample_tags_unique_key!(db)
     migrate_r2_widen_index_peaks_pk!(db)  # rebuild with widened PK first
     migrate_r2_split_peaks!(db)            # then repoint manual-peak refs
 
@@ -520,20 +504,26 @@ function migrate_schema!(db::SQLite.DB)
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
     migrate_sample_labels!(db)
-    migrate_tag_colors!(db)
+    migrate_label_colors!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
     migrate_label_suggestions!(db)
 end
 
-function migrate_tag_colors!(db::SQLite.DB)
+function migrate_label_colors!(db::SQLite.DB)
+    has(t) = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t])))
+    if has("tag_colors") && !has("label_colors")
+        DBInterface.execute(db, "ALTER TABLE tag_colors RENAME TO label_colors")
+    end
+    DBInterface.execute(db, "DROP INDEX IF EXISTS idx_tag_colors_label")
     DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS tag_colors (
+        CREATE TABLE IF NOT EXISTS label_colors (
             label TEXT NOT NULL,
             color TEXT NOT NULL
         )""")
     DBInterface.execute(db,
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_colors_label ON tag_colors(label COLLATE NOCASE)")
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_label_colors_label ON label_colors(label COLLATE NOCASE)")
     nothing
 end
 
@@ -554,7 +544,7 @@ end
 const RETIRED_TABLES = (
     "series_pins", "series_messages", "series_samples", "series_members", "series",
     "comparison_pins", "comparison_messages", "comparison_members", "comparisons",
-    "sample_messages",
+    "sample_messages", "sample_tags", "exposure_tags",
 )
 
 function migrate_drop_retired_tables!(db::SQLite.DB)
@@ -703,7 +693,7 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
                 DELETE FROM exposure_sources
                  WHERE averaged_exposure_id IN ($idset)
                     OR source_exposure_id IN ($idset)""")
-            DBInterface.execute(db,
+            _table_exists(db, "exposure_tags") && DBInterface.execute(db,
                 "DELETE FROM exposure_tags WHERE exposure_id IN ($idset)")
             # finally the non-survivor exposure rows themselves.
             DBInterface.execute(db,
@@ -1448,10 +1438,10 @@ hits a stale reference).
 
 The previous version of this function only rebuilt empty tables it knew
 were freshly created (`auto_peaks`, `peak_curations`). That missed
-populated tables like `sample_tags`, `exposure_tags`,
+populated tables like the since-dropped `sample_tags` and `exposure_tags`,
 `exposure_sources`, `index_groups`, `index_group_members` whose FKs had
 the same corruption. A real prod DB at `/tmp/himalaya-dev.db` with rows
-in `sample_tags` and the since-deleted `sample_messages` exhibited the bug — caught only by
+in the since-dropped `sample_tags` and `sample_messages` exhibited the bug — caught only by
 running the actual server (smoke checklist), not by the test suite which
 uses freshly-built DBs that don't go through this exact sequence.
 
@@ -1655,52 +1645,6 @@ function migrate_exposures_unique_filename!(db::SQLite.DB)
 
         DBInterface.execute(db,
             "CREATE UNIQUE INDEX IF NOT EXISTS exposures_unique_filename ON exposures(sample_id, filename)")
-    end
-    nothing
-end
-
-"""
-    migrate_sample_tags_unique_key!(db)
-
-Enforce the single-valued-key invariant on `sample_tags`: a sample carries **at
-most one tag per key** (TAG-DEDUP-MODEL). Before the batch route's upsert landed,
-a series-scoping write could insert a `source='scoping'` row on top of an
-identical `source='manual'` row with the same `(sample_id, key)`, leaving two
-byte-identical chips on the contact sheet and in the loupe. The forward-write bug
-is closed (the batch route now upserts on `(sample_id, key)`), but legacy DBs
-still hold the duplicate rows and nothing structurally prevents a new one.
-
-This heal collapses each duplicate `(sample_id, key)` group to its **oldest row**
-(lowest id — the same winner the batch upsert's `ORDER BY id LIMIT 1` picks, so
-the manual tag, typically written first, survives), deletes the rest, then
-installs a UNIQUE index so the invariant holds at the DB layer for every future
-write. No event is emitted: this is a one-time data heal, not a user action
-(mirrors `migrate_exposures_unique_filename!`).
-
-Idempotent: a clean DB has no duplicate groups and `CREATE UNIQUE INDEX IF NOT
-EXISTS` is a no-op on a second run.
-"""
-function migrate_sample_tags_unique_key!(db::SQLite.DB)
-    SQLite.transaction(db) do
-        dups = Tables.rowtable(DBInterface.execute(db, """
-            SELECT sample_id, key FROM sample_tags
-            WHERE sample_id IS NOT NULL
-            GROUP BY sample_id, key HAVING COUNT(*) > 1"""))
-
-        for d in dups
-            ids = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM sample_tags WHERE sample_id = ? AND key = ? ORDER BY id ASC",
-                [d.sample_id, d.key]))
-            for (i, row) in enumerate(ids)
-                i == 1 && continue  # oldest row wins; matches the batch upsert
-                @warn "Removed duplicate sample tag" sample_id=d.sample_id key=d.key id=row.id
-                DBInterface.execute(db,
-                    "DELETE FROM sample_tags WHERE id = ?", [row.id])
-            end
-        end
-
-        DBInterface.execute(db,
-            "CREATE UNIQUE INDEX IF NOT EXISTS sample_tags_unique_key ON sample_tags(sample_id, key)")
     end
     nothing
 end

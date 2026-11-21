@@ -145,7 +145,10 @@ export function stripRange(
   const from = Number.isFinite(firstPeak)
     ? Math.max(domain[0], firstPeak - 2 * PEAK_MASK)
     : domain[0] + (domain[1] - domain[0]) * LOW_Q_SKIP;
-  return robustRange(d.filter((_, i) => q[i]! >= from && q[i]! <= domain[1]));
+  const inView = d.filter((_, i) => q[i]! >= from && q[i]! <= domain[1]);
+  const [lo, hi] = robustRange(inView);
+  const top = Math.max(hi, ...inView.filter(Number.isFinite));
+  return [lo, top];
 }
 
 export function clampDomain(

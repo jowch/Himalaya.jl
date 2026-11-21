@@ -14,7 +14,7 @@ const RESOLVE_RE = /\/api\/resolve\?/;
 
 const SAMPLE = {
   id: 42, experiment_id: 17, display_name: "D1", name: "JC001",
-  notes: null, tags: [], q_units: "A-1",
+  notes: null, q_units: "A-1",
 };
 
 async function seedSession(page: Page): Promise<void> {
@@ -49,7 +49,7 @@ test.beforeEach(async ({ page }) => {
         analysis_dir: "", manifest_path: null, created_at: "", q_units: null }) }));
   await page.route("**/api/experiments/17/bridges", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/tag-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/label-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/scan", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "complete", experiment_id: 17, changed: false }) }));
   await page.route("**/api/experiments/17/labels", (r) =>

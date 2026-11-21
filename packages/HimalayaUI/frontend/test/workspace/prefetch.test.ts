@@ -17,13 +17,13 @@ import { queryKeys } from "../../src/queries";
 import { neighbourSamples, PREFETCH_DWELL_MS, usePrefetchNeighbours, type PrefetchTarget } from "../../src/workspace/prefetch";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
-  return { id, experiment_id: 1, name: `S${id}`, notes: null, tags: [], q_units: "A^-1", representative_exposure_id: id * 10 + 1, ...over };
+  return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", representative_exposure_id: id * 10 + 1, ...over };
 }
 
 function exposure(id: number, sampleId: number): Exposure {
   return {
     id, sample_id: sampleId, filename: `f${id}.tif`, kind: "file", selected: false, status: null, exposure_time: 1,
-    image_path: "x.tif", image_version: "v1", tags: [], sources: [], trace_hash: null, analysis_inputs_hash: null,
+    image_path: "x.tif", image_version: "v1", sources: [], trace_hash: null, analysis_inputs_hash: null,
     counting_time: null, transmitted_counts: null, incident_monitor: null,
   };
 }

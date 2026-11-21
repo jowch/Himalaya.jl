@@ -79,7 +79,7 @@ Frontend (TS):
 
 - **`applyRemoteToCache` peak-merge uses `peakQTol`.** Same q-tolerance discipline as point 3 above.
 
-- **`mutatorRegistry.ts` discriminates dual-scope kinds via payload shape.** `add_tag` / `remove_tag` exist as both sample-scoped and exposure-scoped mutators sharing one OpKind. The resolver checks `exposureId` first, then `payload.experimentId !== undefined` distinguishes sample- vs corpus-scope (a corpus-tag op with no `experimentId` would otherwise collide). New dual-scope kinds need a similar discriminator.
+- **`mutatorRegistry.ts` maps each kind to one mutator.** `resolveMutator` (rehydrate, by persisted op) and `resolveMutatorForEvent` (by SSE event kind) must agree; `mutatorRegistry.test.ts` pins the round trip. A kind that would need two mutators (say, sample- and exposure-scoped) should get two kinds instead.
 
 - **`attachPersistence` returns the unsubscribe.** `App.tsx` uses it as the `useEffect` cleanup. Re-mounting without cleanup leaks subscriptions.
 
