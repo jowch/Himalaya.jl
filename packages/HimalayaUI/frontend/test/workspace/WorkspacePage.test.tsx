@@ -911,6 +911,22 @@ describe("WorkspacePage", () => {
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
   });
 
+  it("the indexing plot waits for the trace before counting reflections", () => {
+    state.trace = undefined;
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
+    state.indices = [
+      {
+        ...index(2, "Pn3m", 0.9),
+        peaks: [
+          { peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 },
+          { peak_id: 8, ratio_position: 2, residual: 0, q_observed: 0.14 },
+        ],
+      },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-indexing-fit")).toBeNull();
+  });
+
   it("draws empty indexing axes before any candidate is hovered or ticked", () => {
     state.assignment = { exposure_id: 101, state: "indexed", members: [] };
     renderAt("/experiments/1/workspace/10");
@@ -942,8 +958,8 @@ describe("WorkspacePage", () => {
     state.indices = [{ ...index(2, "Pn3m", 0.9), lattice_d: a }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 6");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/6 on peaks");
+    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 9");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/9 on peaks");
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });

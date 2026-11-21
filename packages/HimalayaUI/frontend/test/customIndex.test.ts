@@ -3,6 +3,7 @@ import {
   customRefls, basisFor, landsOn, snapValues, snapTo, latticeForFirstOrderOnPeak,
   latticeBounds, SYMS,
 } from "../src/lib/customIndex";
+import phaseRatioIndices from "../src/lib/phaseRatioIndices.json";
 
 describe("customIndex physics (Plan D-9)", () => {
   it("cubic refls follow 2π√N/a", () => {
@@ -145,5 +146,20 @@ describe("latticeBounds — widen-only q-window bounds", () => {
   it("a q-window well inside the envelope leaves the slider at the envelope", () => {
     // Square [0.1, 0.5] → derived a ∈ [12.6, 62.8], both inside [10, 500] → no widening.
     expect(latticeBounds("Square", [0.1, 0.5])).toEqual({ min: SYMS.Square!.min, max: SYMS.Square!.max });
+  });
+});
+
+describe("custom index reflections follow core phaseratios", () => {
+  it("draws every reflection the auto indexer uses", () => {
+    for (const [phase, Ms] of Object.entries(phaseRatioIndices)) {
+      expect(SYMS[phase]?.Ms, phase).toEqual(Ms);
+    }
+    expect(Object.keys(SYMS).sort()).toEqual(Object.keys(phaseRatioIndices).sort());
+  });
+
+  it("reaches high q for a hexagonal lattice", () => {
+    const qs = customRefls("Hexagonal", 70).map((r) => r.q);
+    expect(qs).toHaveLength(13);
+    expect(Math.max(...qs)).toBeCloseTo(((4 * Math.PI) / (Math.sqrt(3) * 70)) * Math.sqrt(28), 6);
   });
 });

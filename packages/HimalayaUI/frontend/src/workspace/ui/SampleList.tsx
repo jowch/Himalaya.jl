@@ -32,6 +32,20 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
           type="search"
           value={filter}
           onChange={(e) => onFilter(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              const first = samples[0];
+              if (first) {
+                e.currentTarget.blur();
+                onPick(first.id);
+              }
+            }
+          }}
           placeholder="Filter  /"
           aria-label="Filter samples"
           className="w-full rounded-sm border border-hair bg-plate px-2 py-[5px] text-base text-ink placeholder:text-ink-faint focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
