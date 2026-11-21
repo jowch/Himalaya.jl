@@ -68,14 +68,14 @@ end
         end
     end
 
-    @testset "PATCH /api/peaks/:id → PeakUpdatedResponse (extends Peak)" begin
+    @testset "PATCH /api/peaks/auto/:id → PeakUpdatedResponse (extends Peak)" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             auto = first(Tables.rowtable(DBInterface.execute(ctx.db,
                 "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
                 [ctx.exposure_id])))
             with_inproc_routes(ctx.db) do call
-                r = call("PATCH", "/api/peaks/$(auto.id)";
+                r = call("PATCH", "/api/peaks/auto/$(auto.id)";
                     body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
@@ -96,7 +96,7 @@ end
         end
     end
 
-    @testset "DELETE /api/peaks/:id (manual) → PeakRemoveResponse" begin
+    @testset "DELETE /api/peaks/manual/:id → PeakRemoveResponse" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             with_inproc_routes(ctx.db) do call
@@ -107,7 +107,7 @@ end
                                "X-Username"   => "alice"])
                 manual_id = JSON3.read(String(r.body)).id
 
-                r2 = call("DELETE", "/api/peaks/$manual_id";
+                r2 = call("DELETE", "/api/peaks/manual/$manual_id";
                     headers = ["X-Username" => "alice"])
                 @test r2.status == 200
                 body = JSON3.read(String(r2.body))
@@ -320,7 +320,7 @@ end
 
     @testset "GET /api/exposures/:id/peaks → Peak[] (full shape including nullable fields)" begin
         # Pre-fix peakAdd POST omitted intensity/prominence/sharpness (issue
-        # #17). The list endpoint includes them via _effective_peak_row, but
+        # #17). The list endpoint includes them, but
         # contract-test it explicitly so a future LIST regression that
         # tightens the SELECT and forgets to keep nullables is caught.
         mktempdir() do tmp
@@ -337,25 +337,6 @@ end
                 for p in peaks
                     assert_keys(p, expected)
                 end
-            end
-        end
-    end
-
-    @testset "GET /api/peaks/:id → single Peak full shape" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            auto_id = first(Tables.rowtable(DBInterface.execute(ctx.db,
-                "SELECT id FROM auto_peaks WHERE exposure_id = ? LIMIT 1",
-                [ctx.exposure_id]))).id
-            with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/peaks/$auto_id")
-                @test r.status == 200
-                body = JSON3.read(String(r.body))
-                expected = [
-                    :id, :exposure_id, :q, :intensity, :prominence, :sharpness,
-                    :source, :excluded,
-                ]
-                assert_keys(body, expected)
             end
         end
     end

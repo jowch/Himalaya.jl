@@ -37,7 +37,7 @@ describe("refresh after the live-update stream reconnects", () => {
     let server = [peak(7), peak(8)];
     vi.spyOn(api, "listPeaks").mockImplementation(async () => server.map((p) => ({ ...p })));
     let finishRemove!: (r: PeakRemoveResponse) => void;
-    vi.spyOn(api, "removePeak").mockImplementation(() => new Promise((resolve) => { finishRemove = resolve; }));
+    vi.spyOn(api, "removeManualPeak").mockImplementation(() => new Promise((resolve) => { finishRemove = resolve; }));
 
     const qc = makeClient();
     const wrapper = ({ children }: { children: ReactNode }) => (

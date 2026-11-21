@@ -48,3 +48,17 @@ test("after the proxy answers 500 while the backend is down, the app opens a new
   await expect.poll(app.connections).toBeGreaterThanOrEqual(3);
   await expect(page.getByText("Renamed while the stream was down")).toBeVisible();
 });
+
+test("while the backend refuses connections the app says the connection is lost, and clears it once the stream opens", async ({ page }) => {
+  let refusing = true;
+  await mockApp(page, []);
+  await page.route("**/api/events", (r) =>
+    refusing ? r.abort("connectionrefused") : r.fulfill(KEEP_QUIET),
+  );
+  await page.goto("/experiments");
+  const banner = page.getByTestId("infrastructure-banner");
+  await expect(banner).toHaveAttribute("data-state", "offline", { timeout: 15_000 });
+  await expect(banner).toContainText("Connection lost. Retrying");
+  refusing = false;
+  await expect(banner).toBeHidden({ timeout: 10_000 });
+});

@@ -42,7 +42,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test length(manual) == 1
 
         # DELETE peak
-        r = call("DELETE", "/api/peaks/$peak_id";
+        r = call("DELETE", "/api/peaks/manual/$peak_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
         del_body = JSON3.read(String(r.body))
@@ -58,7 +58,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test !any(p -> p.source == "manual", list)
 
         # 404 delete
-        r = call("DELETE", "/api/peaks/99999";
+        r = call("DELETE", "/api/peaks/manual/99999";
             headers = ["X-Username" => "alice"])
         @test r.status == 404
 
@@ -69,7 +69,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         auto_id = Int(all_peaks[1].id)
 
         # Toggle excluded=true
-        r = call("PATCH", "/api/peaks/$auto_id";
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
             body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
@@ -79,7 +79,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test body.source   == "auto"
 
         # Toggle back to false
-        r = call("PATCH", "/api/peaks/$auto_id";
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
             body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
@@ -87,20 +87,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         body = JSON3.read(String(r.body))
         @test body.excluded == false
 
-        # PATCHing a manual peak's excluded → 400 (manual peaks delete instead)
-        r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.42))),
-            headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
-        manual_id = JSON3.read(String(r.body)).id
-        r = call("PATCH", "/api/peaks/$manual_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
-            headers = ["Content-Type" => "application/json",
-                       "X-Username"   => "alice"])
-        @test r.status == 400
-
         # PATCH unknown peak → 404
-        r = call("PATCH", "/api/peaks/99999";
+        r = call("PATCH", "/api/peaks/auto/99999";
             body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
@@ -108,7 +96,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # ── Reanalysis preserves excluded state ──────────────────────────
         # Re-mark the auto peak as excluded, then re-run analysis.
-        r = call("PATCH", "/api/peaks/$auto_id";
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
             body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
@@ -226,7 +214,7 @@ end
         auto_q  = Float64(auto_rows[1].q)
 
         # Exclude it
-        r = call("PATCH", "/api/peaks/$auto_id";
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
             body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r.status == 200
@@ -239,7 +227,7 @@ end
         @test length(excl) == 1
 
         # Un-exclude it
-        r = call("PATCH", "/api/peaks/$auto_id";
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
             body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r.status == 200
@@ -274,7 +262,7 @@ end
 
         # Two consecutive PATCH { excluded: true }
         for _ in 1:2
-            r = call("PATCH", "/api/peaks/$auto_id";
+            r = call("PATCH", "/api/peaks/auto/$auto_id";
                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
             @test r.status == 200
@@ -310,7 +298,7 @@ end
         manual_id = JSON3.read(String(r.body)).id
 
         # Delete it
-        r = call("DELETE", "/api/peaks/$manual_id";
+        r = call("DELETE", "/api/peaks/manual/$manual_id";
             headers = ["X-Username" => "carol"])
         @test r.status == 200
         del_body = JSON3.read(String(r.body))
@@ -376,7 +364,7 @@ end
     end
 end
 
-@testset "DELETE auto peak returns 400" begin
+@testset "auto and manual peaks that share an id are addressed by source" begin
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
@@ -388,15 +376,82 @@ end
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
     HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    auto_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))).id)
+    align_next_curation_id!(db, auto_id)
+    hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+    listed(call) = JSON3.read(String(call("GET", "/api/exposures/$e_id/peaks").body))
+    twins(call) = filter(p -> p.id == auto_id, listed(call))
 
     with_inproc_routes(db) do call
-        auto_rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))
-        auto_id = Int(auto_rows[1].id)
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))), headers = hdrs)
+        @test r.status == 201
+        @test JSON3.read(String(r.body)).id == auto_id
+        @test sort([String(p.source) for p in twins(call)]) == ["auto", "manual"]
 
-        r = call("DELETE", "/api/peaks/$auto_id";
-            headers = ["X-Username" => "alice"])
-        @test r.status == 400
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))), headers = hdrs)
+        @test r.status == 200
+        body = JSON3.read(String(r.body))
+        @test body.source == "auto"
+        @test body.excluded === true
+        @test Dict(String(p.source) => p.excluded for p in twins(call)) ==
+              Dict("auto" => true, "manual" => false)
+
+        r = call("DELETE", "/api/peaks/manual/$auto_id"; headers = hdrs)
+        @test r.status == 200
+        @test [(String(p.source), p.excluded) for p in twins(call)] == [("auto", true)]
+
+        r = call("DELETE", "/api/peaks/manual/$auto_id"; headers = hdrs)
+        @test r.status == 404
+
+        r = call("PATCH", "/api/peaks/auto/$auto_id";
+            body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))), headers = hdrs)
+        @test r.status == 200
+        @test [(String(p.source), p.excluded) for p in twins(call)] == [("auto", false)]
+    end
+end
+
+@testset "custom index on a manual peak keeps claiming it across re-analysis when its id collides" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    autos = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e_id]))
+    qs   = [Float64(a.q) for a in autos]
+    gaps = [(qs[i+1] - qs[i], i) for i in 1:length(qs)-1]
+    _, gi = maximum(gaps)
+    manual_q = (qs[gi] + qs[gi+1]) / 2
+    twin_id  = Int(autos[end].id)
+    align_next_curation_id!(db, twin_id)
+    hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+    claimed(ix) = [(Int(r.peak_id), String(r.peak_kind)) for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT peak_id, peak_kind FROM index_peaks WHERE index_id = ?", [ix]))]
+
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => manual_q))), headers = hdrs)
+        @test JSON3.read(String(r.body)).id == twin_id
+        r = call("POST", "/api/exposures/$e_id/custom-index";
+            body = Vector{UInt8}(JSON3.write(Dict(:phase => "Lamellar", :basis => manual_q, :ratios => [1.0]))),
+            headers = hdrs)
+        @test r.status == 200
+        ix = Int(JSON3.read(String(r.body)).id)
+        @test claimed(ix) == [(twin_id, "curation")]
+
+        DBInterface.execute(db,
+            "UPDATE exposures SET trace_hash = NULL, analysis_inputs_hash = NULL WHERE id = ?", [e_id])
+        HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+        @test claimed(ix) == [(twin_id, "curation")]
     end
 end
 
@@ -550,7 +605,7 @@ end
             hash_before = HimalayaUI.read_inputs_hash(db, e_id)
             _drain_curation_frames(pending; timeout=0.05)
 
-            r = call("PATCH", "/api/peaks/$auto_id";
+            r = call("PATCH", "/api/peaks/auto/$auto_id";
                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
@@ -572,7 +627,7 @@ end
             @test occursin("\"post_state\"", excl[1])
 
             # Retry returns cached body, no second event.
-            r2 = call("PATCH", "/api/peaks/$auto_id";
+            r2 = call("PATCH", "/api/peaks/auto/$auto_id";
                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
@@ -605,7 +660,7 @@ end
             manual_id = JSON3.read(String(r.body)).id
             _drain_curation_frames(pending; timeout=0.1)
 
-            r = call("DELETE", "/api/peaks/$manual_id";
+            r = call("DELETE", "/api/peaks/manual/$manual_id";
                 headers = ["X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-del"])
             @test r.status == 200

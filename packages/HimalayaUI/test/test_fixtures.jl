@@ -94,3 +94,13 @@ function _setup_for_resolve(tmp::String)
             sample_id = ctx.sample_id,
             exposure_id = ctx.exposure_id)
 end
+
+function align_next_curation_id!(db, id::Integer)
+    taken = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT COALESCE(MAX(id), 0) AS m FROM peak_curations"))).m
+    taken < id || error("peak_curations already holds id $(taken) ≥ $(id)")
+    DBInterface.execute(db, "DELETE FROM sqlite_sequence WHERE name = 'peak_curations'")
+    DBInterface.execute(db,
+        "INSERT INTO sqlite_sequence (name, seq) VALUES ('peak_curations', ?)", [id - 1])
+    nothing
+end
