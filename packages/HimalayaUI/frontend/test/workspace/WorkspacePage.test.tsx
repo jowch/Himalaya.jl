@@ -941,6 +941,20 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='11']")?.getAttribute("d")).toMatch(/^M/);
   });
 
+  it("the compare picker lists buffers first, marks which are only suggested, and picks nothing by itself", () => {
+    state.labels = [
+      { id: 1, sample_id: 13, label: "Buffer", state: "suggested", source: "ingest" },
+      { id: 2, sample_id: 12, label: "buffer", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByText(/^minus /)).toBeNull();
+    fireEvent.keyDown(window, { key: "c" });
+    const rows = within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button");
+    expect(rows.map((r) => r.textContent)).toEqual(["A3Buffer", "A4Suggested buffer", "A2"]);
+    expect(rows.map((r) => r.getAttribute("aria-current"))).toEqual(["true", null, null]);
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+  });
+
   it("the picker only adds: samples already compared are not offered", () => {
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");

@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { SampleLabel } from "../../src/api";
 import {
   applyAddLabel,
+  bufferRole,
+  buffersFirst,
   applyRemoveLabel,
   applyTagColor,
   defaultTagColor,
@@ -111,5 +113,24 @@ describe("tag colours", () => {
     const list = [{ label: "37C", color: "teal" as const }];
     expect(applyTagColor(list, " 37c ", "rose")).toEqual([{ label: "37c", color: "rose" }]);
     expect(applyTagColor(list, "37c", null)).toEqual([]);
+  });
+});
+
+describe("buffers first", () => {
+  const label = (sample_id: number, l: string, state: "confirmed" | "suggested"): SampleLabel =>
+    ({ id: sample_id * 10, sample_id, label: l, state, source: state === "suggested" ? "ingest" : "user" });
+  const samples = [1, 2, 3, 4, 5].map((id) => ({ id, name: `S${id}` }));
+  const labels = [label(2, "buffer", "suggested"), label(4, "Buffer", "confirmed"), label(5, "Calibrant", "confirmed"), label(3, "37C", "confirmed")];
+
+  it("puts confirmed buffers, then suggested buffers, ahead of every other sample, keeping list order within each", () => {
+    expect(buffersFirst(samples, labels).map((s) => s.id)).toEqual([4, 2, 1, 3, 5]);
+  });
+
+  it("leaves the order alone when no sample is tagged Buffer", () => {
+    expect(buffersFirst(samples, [label(5, "Calibrant", "confirmed")]).map((s) => s.id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("says whether a sample's Buffer tag is confirmed or only suggested", () => {
+    expect([1, 2, 4].map((id) => bufferRole(labels, id))).toEqual([undefined, "suggested", "confirmed"]);
   });
 });

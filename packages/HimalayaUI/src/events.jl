@@ -450,7 +450,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     if kind == "label_added"
         DBInterface.execute(db,
             """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'confirmed', 'user')
-               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'confirmed'""",
+               ON CONFLICT(sample_id, label COLLATE NOCASE) DO UPDATE SET state = 'confirmed', source = 'user'""",
             [Int(entity_id), String(payload.label)])
         return nothing
     end

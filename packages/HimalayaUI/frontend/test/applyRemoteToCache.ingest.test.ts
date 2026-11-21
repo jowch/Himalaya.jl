@@ -41,6 +41,16 @@ describe("ingest_* cache arms (Phase E1)", () => {
     expect(keys).toContain(JSON.stringify(queryKeys.experimentCorpusSamples(7)));
   });
 
+  it("ingest_complete refetches the experiment's labels, so role suggestions made at ingest show up", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyRemoteToCache(ingestFrame("ingest_complete", 7), qc);
+    invalidateIngestFrameCache(qc, 8, false, "persist");
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(queryKeys.labels(7)));
+    expect(keys).not.toContain(JSON.stringify(queryKeys.labels(8)));
+  });
+
   it("ingest_failed invalidates the experiment detail and its problems, so Details shows the error", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
