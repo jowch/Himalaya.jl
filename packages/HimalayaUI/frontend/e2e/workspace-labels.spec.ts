@@ -147,3 +147,19 @@ test("Tab and Shift+Tab move the picker's highlight, focus stays in the field, a
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toMatchObject({ label: options[1] });
 });
+
+test("on a narrow window labels fold into +N before the sample name truncates", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  const name = "buffer_blank_S2424 (S02P05)";
+  await page.route((url) => url.pathname === "/api/samples", (r) =>
+    r.fulfill(json([{ id: 42, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" }])));
+  await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(
+    ["Buffer", "37C", "heated twice", "retake"].map((label, i) => ({ id: i + 1, sample_id: 42, label, state: "confirmed", source: "user" })))));
+  await page.goto("/experiments/17/workspace/42");
+  const title = page.getByRole("heading", { level: 2, name });
+  await expect(title).toBeVisible();
+  await expect(page.getByTestId("workspace-labels-more")).toBeVisible();
+  expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expect(page.getByRole("button", { name: "+ Label L" })).toBeVisible();
+});

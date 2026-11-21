@@ -51,7 +51,7 @@ export function SampleHeading({ name, meta, aside }: { name: string; meta?: Reac
         <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink" title={name}>{name}</h2>
         {meta && <span className="shrink-0 whitespace-nowrap text-base text-ink-faint">{meta}</span>}
       </div>
-      {aside && <div className="flex min-w-48 flex-1 justify-end">{aside}</div>}
+      {aside && <div className="flex min-w-36 flex-1 basis-0 justify-end">{aside}</div>}
     </div>
   );
 }

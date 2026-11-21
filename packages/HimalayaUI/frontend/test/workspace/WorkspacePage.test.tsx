@@ -504,7 +504,7 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it("J, L and R are no longer shortcuts", () => {
+  it("J and R are no longer shortcuts", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -512,7 +512,6 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("dialog").querySelector("[data-sample-id='11']")!);
     expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "j" });
-    fireEvent.keyDown(window, { key: "l" });
     fireEvent.keyDown(window, { key: "r" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
     expect(currentView()).toBe("Log");

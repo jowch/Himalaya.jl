@@ -59,7 +59,8 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press x                                  # drop the shown frame; x again restores it (writes to the DB)
   bin/verify press /                                  # focus the filter; Esc leaves it and keeps the text, Enter opens the first match
   bin/verify press c                                  # open the compare picker (dialog "Compare with a sample"); type, Enter adds; it subtracts too when nothing else is
-  bin/verify press Control+0                          # reset the zoom (⌘0 on a Mac); the palette's "Hide comparisons" and "Plot …" replace the old R and L keys
+  bin/verify press Control+0                          # reset the zoom (⌘0 on a Mac); the palette's "Hide comparisons" and "Plot …" replace the old R and view-cycling L keys
+  bin/verify press l                                  # open the label picker under + Label (dialog "Add a label", field focused and empty); type, Tab/Shift+Tab or ↑/↓ move the highlight, Enter adds (writes to the DB), Esc closes
   bin/verify press Space                              # enlarge the shown frame's detector image (Space or Escape closes)
   bin/verify press i                                  # custom index in the tools pane (region "workspace-custom-index"): symmetry buttons, lattice slider and field; ← → nudge (Shift: ×10), a click on the plot puts the first order on the nearest peak, Enter adds to the call (writes to the DB), Esc cancels. While it is open the other single-key shortcuts do nothing, except ?
   bin/verify press ?                                  # shortcut list (dialog "Keyboard shortcuts"); also the ? button in the header
