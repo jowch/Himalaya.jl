@@ -60,7 +60,7 @@ step 6-reindex log env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
     stale = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL", [id, "rejected"]))).n
     stale == 0 || error("$stale kept exposures were not re-indexed")'
-step 7-after-reindex json bin/verify check-truth --ui --expect triaged
+step 7-after-reindex json bin/verify check-truth --ui --reload --expect triaged
 step 8-reindex-changed-nothing json node "$HELP" unchanged "$OUT/5-confirmed.json" "$OUT/7-after-reindex.json"
 step 10-custom-index log bash -c '
   set -e

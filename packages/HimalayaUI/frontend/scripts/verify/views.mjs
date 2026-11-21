@@ -46,7 +46,8 @@ async function settledGoto(page, cfg, route) {
   failedRequests(settle, route);
 }
 
-export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId) {
+export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId, { reload = false } = {}) {
+  if (reload) return { reuse: false, route: WORKSPACE_ROUTE(experimentId, firstSampleId) };
   let url;
   try {
     url = new URL(currentUrl);
@@ -117,10 +118,10 @@ async function plotMessage(page, timeoutMs = 5000) {
   }
 }
 
-export async function readWorkspace(page, cfg, experimentId, samples) {
+export async function readWorkspace(page, cfg, experimentId, samples, { reload = false } = {}) {
   const out = new Map();
   if (!samples.length) return out;
-  const start = workspaceStart(page.url(), cfg.uiBase, experimentId, samples[0].id);
+  const start = workspaceStart(page.url(), cfg.uiBase, experimentId, samples[0].id, { reload });
   if (!start.reuse) await settledGoto(page, cfg, start.route);
   const filter = page.getByLabel("Filter samples");
   if ((await filter.count()) && (await filter.inputValue())) {
@@ -151,7 +152,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
   return out;
 }
 
-export async function readViews(cfg, experimentId, samples) {
+export async function readViews(cfg, experimentId, samples, { reload = false } = {}) {
   if (!(await reachable(cfg.uiBase, "/"))) {
     throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the workspace in the browser; run `bin/verify seed`");
   }
@@ -160,7 +161,7 @@ export async function readViews(cfg, experimentId, samples) {
   const out = new Map();
   try {
     await prepareUser(session.page, cfg, { username: "verify", onboarding: false });
-    const workspace = await readWorkspace(session.page, cfg, experimentId, samples);
+    const workspace = await readWorkspace(session.page, cfg, experimentId, samples, { reload });
     for (const s of samples) out.set(s.id, workspace.get(s.id) ?? {});
   } finally {
     await session.browser.close().catch(() => undefined);

@@ -173,6 +173,25 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
   }
 });
 
+test("check-truth --ui --reload asks for a fresh workspace load, and plain --ui does not", async () => {
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);
+  const stub = await stubBackend(routes(demoDir));
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const asked = [];
+  const views = async (_cfg, _id, _samples, opts) => {
+    asked.push(opts);
+    return new Map();
+  };
+  try {
+    await checkTruth(cfg, { ui: true, reload: true }, { views });
+    await checkTruth(cfg, { ui: true }, { views });
+    assert.deepEqual(asked, [{ reload: true }, { reload: false }]);
+  } finally {
+    await stub.close();
+  }
+});
+
 test("check-truth --ui fails when the workspace list, read in place after a write, lags the API", async () => {
   const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
   fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);

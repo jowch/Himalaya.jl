@@ -353,7 +353,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   let opened = null;
   if (flags.ui) {
     const heldIds = app.flatMap((s) => s.frames).filter((f) => heldSet.has(f.filename)).map((f) => f.id);
-    opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder, heldIds })));
+    opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder, heldIds })), { reload: Boolean(flags.reload) });
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
