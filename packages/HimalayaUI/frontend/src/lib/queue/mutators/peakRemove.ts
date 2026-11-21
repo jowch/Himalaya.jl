@@ -67,19 +67,8 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
     qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
       old ? { ...old, analysis_inputs_hash: response.analysis_inputs_hash } : old);
   },
-  affectsExposurePeaks: () => true,
   // 404 = "already gone" → desired end state. Without this, a 5xx-then-retry
   // can land a 404 on a peak the first attempt already deleted, and rollback
   // re-inserts a phantom row visible until the next refetch.
-  //
-  // Stale-hash window: TanStack does not fire `onSuccess` on a rejected
-  // `mutationFn`, so the `analysis_inputs_hash` write above is skipped on the
-  // 404 path. The fresh hash normally arrives via the original op's SSE
-  // `post_state` frame, and `useExposureHasPendingPeakOps` masks
-  // the stale-indices alert until the mutation settles. Edge case: if the user
-  // disconnects across both the original HTTP response *and* its SSE frame,
-  // the cache hash stays stale until the next refetch — the banner could
-  // briefly read "stale" once `useExposureHasPendingPeakOps` un-masks. This
-  // is an acceptable trade vs the phantom-row desync this flag prevents.
   treats404AsSuccess: true,
 };

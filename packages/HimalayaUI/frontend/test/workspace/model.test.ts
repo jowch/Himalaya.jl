@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
@@ -128,5 +128,30 @@ describe("peakClick", () => {
   });
   it("ignores an unknown peak", () => {
     expect(peakClick(peaks, { id: 3, source: "auto" })).toBeNull();
+  });
+});
+
+describe("traceIsDark", () => {
+  it("is true when the median count is under one", () => {
+    expect(traceIsDark({ I: [0, 0, 0.002, 0, 40] })).toBe(true);
+  });
+
+  it("is false for a dim but real frame, an empty trace and no trace", () => {
+    expect(traceIsDark({ I: [8, 12, 15, 0, 0] })).toBe(false);
+    expect(traceIsDark({ I: [] })).toBe(false);
+    expect(traceIsDark(undefined)).toBe(false);
+  });
+});
+
+describe("i0BelowZero", () => {
+  const f = (incident_monitor: number | null) => ({ incident_monitor });
+
+  it("is true at or below zero", () => {
+    for (const i0 of [-0.1, -0.005, 0]) expect(i0BelowZero(f(i0))).toBe(true);
+  });
+
+  it("is false for any positive reading and an unknown one", () => {
+    for (const i0 of [0.004, 0.09, 1.5]) expect(i0BelowZero(f(i0))).toBe(false);
+    expect(i0BelowZero(f(null))).toBe(false);
   });
 });

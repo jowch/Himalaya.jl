@@ -19,7 +19,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "../test-utils";
 import {
-  useRemovePeak, useDeleteIndex, useRemoveSampleTag,
+  useRemovePeak, useRemoveSampleTag,
   queryKeys,
 } from "../../src/queries";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
@@ -29,6 +29,7 @@ import {
 } from "../../src/lib/queue/mutators/trivial";
 import { setToastImpl } from "../../src/lib/toast";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
+import { useQueueMutation } from "../../src/lib/queue/useQueueMutation";
 import type { Peak, IndexEntry, Sample } from "../../src/api";
 
 describe("treats404AsSuccess flag — set on idempotent remove mutators", () => {
@@ -126,7 +127,7 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     );
   }
 
-  it("useDeleteIndex: optimistic removal sticks in the indices cache on 404", async () => {
+  it("deleteIndex: optimistic removal sticks in the indices cache on 404", async () => {
     const EXPOSURE_ID = 5;
     const INDEX: IndexEntry = {
       id: 10, exposure_id: EXPOSURE_ID, phase: "Pn3m", basis: 0.1, score: 0.9,
@@ -139,8 +140,11 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
     mockFetch404();
-    const { result } = renderHook(() => useDeleteIndex(EXPOSURE_ID), { wrapper });
-    act(() => { result.current.mutate(10); });
+    const { result } = renderHook(
+      () => useQueueMutation(deleteIndexMutator, { exposureId: EXPOSURE_ID, username: "alice", clientId: "tab-1" }),
+      { wrapper },
+    );
+    act(() => { result.current.mutate({ indexId: 10 }); });
     await waitFor(() => expect(result.current.isPending).toBe(false));
     expect(client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID))).toEqual([]);
   });

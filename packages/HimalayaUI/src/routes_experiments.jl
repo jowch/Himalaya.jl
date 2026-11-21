@@ -28,46 +28,6 @@ _flag_json(f::SplitFlag) = Dict(:kind => "split",
     :split_at_index => f.split_at_index, :jump_from => f.jump_from, :jump_to => f.jump_to)
 
 """
-    _beamline_from_config(cfg_text) -> NamedTuple
-
-Extract the render-only `[beamline]` fields from an experiment's stored config
-TOML: `q_units` (String, default "A-1") and `beam_center_x`, `beam_center_y`,
-`pixel_size_um` (each `Float64` or `nothing`). A bare integer in the TOML is
-coerced to `Float64` to match the REAL-column behaviour of energy_kev.
-
-Defensive by design: a non-string, empty, malformed, or non-numeric value all
-fall back to the all-default tuple — one experiment's bad config must never 500
-a list endpoint. The numeric coercion lives INSIDE the try so a value like
-`beam_center_x = "oops"` throws into the fallback rather than out of the route.
-"""
-function _beamline_from_config(cfg_text)
-    default = (q_units = "A-1", beam_center_x = nothing,
-               beam_center_y = nothing, pixel_size_um = nothing)
-    if cfg_text isa AbstractString && !isempty(cfg_text)
-        try
-            bl = get(TOML.parse(cfg_text), "beamline", Dict())
-            num(k) = (v = get(bl, k, nothing); v === nothing ? nothing : Float64(v))
-            # Guard the q_units String contract: a non-string TOML value (e.g.
-            # `q_units = 5`) would otherwise satisfy the NamedTuple but throw at
-            # the shim's `::String` annotation — OUTSIDE this try — and 500 the
-            # samples list route. Coerce to the default here so the docstring's
-            # "never 500 a list endpoint" holds for q_units too.
-            qu = get(bl, "q_units", "A-1")
-            return (q_units       = qu isa AbstractString ? qu : "A-1",
-                    beam_center_x = num("beam_center_x"),
-                    beam_center_y = num("beam_center_y"),
-                    pixel_size_um = num("pixel_size_um"))
-        catch
-            return default
-        end
-    end
-    return default
-end
-
-# Back-compat shim: routes_samples.jl still calls this for its per-sample q_units.
-_q_units_from_config(cfg_text)::String = _beamline_from_config(cfg_text).q_units
-
-"""
     _experiment_stats(db, exp_id) -> NamedTuple
 
 Cheap roll-up of counts for the shared experiment header stat ledger and the
@@ -117,43 +77,11 @@ end
 """
     _experiment_row_to_json(row, db) -> Dict
 
-Serialize an experiments row to the wire format. Reads typed geometry columns
-from Phase A directly (no TOML overlay). Falls back to `_beamline_from_config`
-for legacy rows that still have their geometry only in the TOML `config` blob
-(experiments ingested before Phase A).
+Serialize an experiments row to the wire format.
 """
 function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} = nothing)
     d = row_to_json(row)
-    # Prefer typed columns (Phase A); fall back to the TOML blob ONLY for legacy
-    # rows that carry NO typed geometry at all. Checking every typed field (not
-    # just beam_center_x / energy_kev) means a q_units-only override — e.g. a
-    # Configuration PATCH on a geometry-less experiment — is honored instead of
-    # being masked by the blob's default "A-1".
-    has_typed = !isnothing(get(d, :beam_center_x, nothing)) ||
-                !isnothing(get(d, :beam_center_y, nothing)) ||
-                !isnothing(get(d, :flight_path_m, nothing)) ||
-                !isnothing(get(d, :pixel_size_um, nothing)) ||
-                !isnothing(get(d, :energy_kev, nothing)) ||
-                !isnothing(get(d, :q_units, nothing))
-    if !has_typed
-        bl = _beamline_from_config(get(d, :config, nothing))
-        d[:q_units]              = bl.q_units
-        d[:beam_center_x]        = bl.beam_center_x
-        d[:beam_center_y]        = bl.beam_center_y
-        d[:pixel_size_um]        = bl.pixel_size_um
-        # energy_kev / flight_path_m are real columns even pre-Phase-A
-        # (live create_experiment! writes them); surface their VALUE keys too so
-        # the wire shape is identical to the typed path (a legacy row simply
-        # reports whatever those columns hold — possibly nothing — never absent).
-        d[:energy_kev]           = get(d, :energy_kev, nothing)
-        d[:flight_path_m]        = get(d, :flight_path_m, nothing)
-        d[:beam_center_x_source] = "default"
-        d[:beam_center_y_source] = "default"
-        d[:pixel_size_um_source] = "default"
-        d[:energy_kev_source]    = "default"
-        d[:flight_path_m_source] = "default"
-        d[:q_units_source]       = "default"
-    end
+    delete!(d, :config)
     # q_units is a unit convention, never derived from the data files (geometry.jl
     # `derive_geometry` produces no q_units). Default it to the SAXS convention
     # "A-1" whenever the column is unset — including the typed path above, where a
@@ -258,38 +186,7 @@ function register_experiments_routes!()
             end
         end
 
-        broadcast_progress!(exp_id; kind = "ingest_started", processed = 0, total = 0)
-
-        # Kick off first scan asynchronously.
-        Threads.@spawn with_background_db(db) do db
-            try
-                # scan_and_group! (Phase B, ingest.jl) resolves data_dir from the row
-                # and is idempotent (dedup INSERT keys), so first-scan == rescan.
-                scan_and_group!(db, exp_id;
-                    on_progress = (p, t, stage) -> broadcast_progress!(exp_id;
-                        kind = "ingest_progress", processed = p, total = t,
-                        stage = stage))
-                lock(_DB_WRITE_LOCK) do
-                    SQLite.transaction(db) do
-                        DBInterface.execute(db,
-                            "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
-                            [format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"), exp_id])
-                    end
-                end
-                broadcast_progress!(exp_id; kind = "ingest_complete", processed = 0, total = 0)
-                set_rescan_tier!(db, exp_id, "fast")
-            catch err
-                @warn "first scan failed" experiment_id = exp_id exception = err
-                lock(_DB_WRITE_LOCK) do
-                    SQLite.transaction(db) do
-                        DBInterface.execute(db,
-                            "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
-                    end
-                end
-                broadcast_progress!(exp_id; kind = "ingest_failed",
-                    processed = 0, total = 0, error = sprint(showerror, err))
-            end
-        end
+        Threads.@spawn run_ingest!(db, exp_id)
 
         log_action!(db, req; action = "experiment_created",
             entity_type = "experiment", entity_id = exp_id)
@@ -432,107 +329,29 @@ function register_experiments_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
     end
 
-    @post "/api/experiments/{id}/analyze" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        # Verify the experiment exists before iterating its samples.
-        exists = !isempty(Tables.rowtable(DBInterface.execute(db,
-            "SELECT 1 FROM experiments WHERE id = ?", [id])))
-        exists || return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
-
-        samples   = get_samples(db, id)
-        analyzed  = 0
-        skipped   = String[]
-        for sm in samples
-            for ex in get_exposures(db, Int(sm.id))
-                try
-                    analyze_exposure!(db, Int(ex.id))
-                    analyzed += 1
-                catch e
-                    push!(skipped, "$(sm.name)/$(ex.filename): $(sprint(showerror, e))")
-                end
-            end
-        end
-
-        log_action!(db, req; action = "analyze",
-            entity_type = "experiment", entity_id = id,
-            note = "analyzed=$analyzed skipped=$(length(skipped))")
-
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:analyzed => analyzed, :skipped => skipped)))
-    end
-
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id FROM experiments WHERE id = ?", [id]))
+            "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
 
-        # Mark as scanning immediately so the frontend header can show progress.
-        lock(_DB_WRITE_LOCK) do
-            SQLite.transaction(db) do
-                DBInterface.execute(db,
-                    "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [id])
-            end
-        end
-
-        # phase="rescan" tags every pre-terminal frame so the frontend maps this to
-        # the "analyzing" surface (inline ProgressBar over the existing table), not
-        # the initial-scan "scanning" surface (GroupingReviewPage). The create route
-        # omits phase → "scanning".
-        broadcast_progress!(id; kind = "ingest_started", processed = 0, total = 0, phase = "rescan")
-
-        # Parse optional `force` flag from the request body. When true, bypass the
-        # cheap file-count check and always run a full scan. Used after pattern-field
-        # edits where the glob changes which files get discovered.
         req_body = isempty(req.body) ? Dict{String,Any}() : try
             JSON3.read(req.body)
         catch
             Dict{String,Any}()
         end
-        force_scan = get(req_body, :force, get(req_body, "force", false))
-
-        # Run the cheap change-check + additive scan on a @spawn'd task so this request
-        # returns immediately; progress streams over SSE. Both Phase B functions
-        # (cheap_change_check, scan_and_group!) resolve the experiment's data_dir from
-        # the row themselves, and return gracefully on an empty directory.
-        Threads.@spawn with_background_db(db) do db
-            try_backfill_monitors!(db, id)
-            try
-                changed = force_scan || cheap_change_check(db, id)
-                if changed
-                    scan_and_group!(db, id;
-                        on_progress = (p, t, stage) -> broadcast_progress!(id;
-                            kind = "ingest_progress", processed = p, total = t,
-                            phase = "rescan", stage = stage))
-                    set_rescan_tier!(db, id, "fast")
-                end
-
-                lock(_DB_WRITE_LOCK) do
-                    SQLite.transaction(db) do
-                        DBInterface.execute(db,
-                            "UPDATE experiments SET ingest_status = 'complete', last_scanned_at = ? WHERE id = ?",
-                            [format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"), id])
-                    end
-                end
-                broadcast_progress!(id; kind = "ingest_complete",
-                    processed = 0, total = 0, changed = changed)
-            catch err
-                @warn "scan failed" experiment_id = id exception = err
-                lock(_DB_WRITE_LOCK) do
-                    SQLite.transaction(db) do
-                        DBInterface.execute(db,
-                            "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [id])
-                    end
-                end
-                broadcast_progress!(id; kind = "ingest_failed",
-                    processed = 0, total = 0,
-                    error = sprint(showerror, err))
-            end
+        force_scan = get(req_body, :force, get(req_body, "force", false)) === true
+        Threads.@spawn with_background_db(bg -> try_backfill_monitors!(bg, id), db)
+        if !(force_scan || ingest_running(id) || ingest_has_work(db, id))
+            return HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:status => coalesce(first(rows).ingest_status, "complete"),
+                                 :experiment_id => id, :changed => false)))
         end
+        phase = _ingest_phase(db, id)
+        _set_ingest_status!(db, id, "scanning")
+        Threads.@spawn run_ingest!(db, id; phase, force = force_scan)
 
         log_action!(db, req; action = "scan",
             entity_type = "experiment", entity_id = id)
@@ -549,10 +368,6 @@ function register_experiments_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
 
-        # Stop the rescan timer BEFORE the DB delete so the timer callback cannot
-        # fire against a non-existent row. stop_rescan_scheduler! is defined in server.jl
-        # and is a no-op when no timer is running for this id.
-        stop_rescan_scheduler!(id)
 
         # Live schema (db.jl:32-152, confirmed 2026-06-18) keys a DEEP tree of
         # structural tables off exposures/samples/indices, and almost none of those
@@ -618,6 +433,9 @@ function register_experiments_routes!()
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         DELETE FROM sample_bridges WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_labels WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         DELETE FROM sample_calls WHERE sample_id IN

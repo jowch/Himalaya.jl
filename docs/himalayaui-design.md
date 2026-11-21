@@ -269,8 +269,7 @@ stories render without real geometry wired (`:63-83`).
 interactive layer had to reverse-engineer the projection back out of Plot's
 rendered DOM (`plotEl.scale('x')`), forcing a ~420-line imperative bridge
 (`Plot.plot()` → `replaceChildren`). The owned engine exports the projection
-(`print/plot/projection.ts` — `makeProjection`/`makeAxis`, backed by
-`d3-scale`), so every layer reads the same scale declaratively.
+(`print/plot/projection.ts`, backed by `d3-scale`), so every layer reads the same scale declaratively.
 
 **Why cross-sample / cross-experiment overlay is physically valid.** The
 q-axis is in *absolute* Å⁻¹ (a real reciprocal-space coordinate, not a

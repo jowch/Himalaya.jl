@@ -33,6 +33,8 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 
+const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
 _migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
@@ -137,7 +139,10 @@ CREATE TABLE IF NOT EXISTS exposures (
     transmitted_counts   REAL,
     incident_monitor     REAL,
     counting_time        REAL,
-    monitors_read        INTEGER NOT NULL DEFAULT 0
+    monitors_read        INTEGER NOT NULL DEFAULT 0,
+    analysis_version     TEXT,
+    analysis_error       TEXT,
+    analysis_trace_stat  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -494,6 +499,7 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_drop_scan_signature!(db)
     migrate_exposures_beam_monitors!(db)
+    migrate_exposures_ingest_state!(db)
 
     # Speculative peak durability (2026-07-14 spec): intents table + legacy
     # basis rescale + heal trigger. Must run last — see the function docstring
@@ -508,8 +514,23 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
+    migrate_sample_labels!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
+end
+
+function migrate_sample_labels!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_labels (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            label     TEXT NOT NULL,
+            state     TEXT NOT NULL CHECK (state IN ('suggested', 'confirmed', 'removed')),
+            source    TEXT NOT NULL DEFAULT 'user'
+        )""")
+    DBInterface.execute(db,
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_labels_unique ON sample_labels(sample_id, label COLLATE NOCASE)")
+    nothing
 end
 
 const RETIRED_TABLES = (
@@ -793,6 +814,21 @@ function migrate_exposures_beam_monitors!(db::SQLite.DB)
                 "ALTER TABLE exposures ADD COLUMN $name $decl")
         end
         _record_migration!(db, MIGRATION_EXPOSURES_BEAM_MONITORS)
+    end
+    nothing
+end
+
+function migrate_exposures_ingest_state!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_INGEST_STATE) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        for name in ("analysis_version", "analysis_error", "analysis_trace_stat")
+            name in existing || DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN $name TEXT")
+        end
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_version = ? WHERE trace_hash IS NOT NULL AND analysis_version IS NULL",
+            [ANALYSIS_VERSION])
+        _record_migration!(db, MIGRATION_EXPOSURES_INGEST_STATE)
     end
     nothing
 end

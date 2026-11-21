@@ -148,7 +148,7 @@ function derive_geometry(
     # inferred return is a non-concrete NamedTuple{names,<:Tuple{...}}, so an
     # EMPTY prp_paths collects to Vector{Any} and matches neither method ->
     # MethodError, where this used to return an all-"default" geometry. Reachable
-    # from routes_fs.jl (a directory with TIFs and no PRPs) and regroup_experiment!.
+    # from routes_fs.jl (a directory with TIFs and no PRPs).
     derive_geometry(NamedTuple[parse_prp(p) for p in prp_paths], setup_files)
 end
 
@@ -162,7 +162,7 @@ that has already read the PRPs does not read them a second time.
 method above then re-read and re-parsed all of them — two full passes over every
 PRP in the experiment per ingest. Over SMB each parse is a network round trip, so
 on an ~1100-exposure experiment that was ~1100 avoidable file reads. The ingest
-paths (`scan_and_group!`, `regroup_experiment!`) pass `m.prp` straight through;
+path (`scan_and_group!`) passes `m.prp` straight through;
 the funnel preview (`routes_fs.jl`) has only paths and still uses the method
 above.
 """

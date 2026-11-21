@@ -1,10 +1,10 @@
+import { useEffect } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
-  updateSampleMutator,
   addSampleTagMutator,
   removeSampleTagMutator,
   addCorpusSampleTagMutator,
@@ -20,21 +20,18 @@ import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
 import {
   peakExcludeMutator, peakUnexcludeMutator,
 } from "./lib/queue/mutators/peakSetExcluded";
-import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
-import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative";
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
   setSampleCallStateMutator,
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
-import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
 import {
   moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
   splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
 } from "./lib/queue/mutators/grouping";
-import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
+import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -50,6 +47,8 @@ export const queryKeys = {
     ["experiment", experimentId ?? "none", "samples"] as const,
   bridges:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "bridges"] as const,
+  labels:     (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "labels"] as const,
   loads:      (id: number | undefined) =>
     ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -64,17 +63,9 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "assignment"] as const,
   sampleCall: (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "call"] as const,
-  speculativeSnap: (
-    exposureId: number | undefined,
-    phase: string | undefined,
-    anchorPeakId: number | undefined,
-    anchorRatio: number,
-  ) => ["exposure", exposureId ?? "none", "speculative-snap",
-        phase ?? "", anchorPeakId ?? -1, anchorRatio] as const,
   // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
   // collisions with the existing collection keys (e.g., a future
   // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
-  index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
   sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
   corpusSampleTags:    ["corpus-sample-tags"] as const,
@@ -142,6 +133,24 @@ export function useUnbridgeSample(experimentId: number) {
   return useQueueMutation(unbridgeSampleMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
+export function useLabels(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.labels(experimentId),
+    queryFn: () => api.listLabels(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
+export function useAddLabel(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(addLabelMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useRemoveLabel(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
 export function useLoads(id: number, refetchWhileScanning = false) {
   return useQuery({
     queryKey: queryKeys.loads(id),
@@ -181,54 +190,12 @@ export function useExposures(sampleId: number | undefined) {
   });
 }
 
-/**
- * Bulk contact-sheet hook (#207, R2-M14). Replaces the per-row
- * `useExposures(sample.id)` fan-out from `ContactSheetRow` — a single
- * observer in `SamplesPage` runs all N queries through `useQueries`, sharing
- * the same `queryKeys.exposures(id)` cache rows. The cache key matches
- * `useExposures(id)`, so any later loupe / mutator read picks up these rows
- * with no double-fetch.
- *
- * Why not one bulk HTTP route: a backend extension is out of scope for #207.
- * The hook consolidates N per-row observer trees into a single `useQueries`
- * call in `SamplesPage`; per-row `useExposures(undefined)` calls in the bulk
- * path stay disabled and don't add a fetch. The HTTP request count stays N,
- * but the *concurrent* fetch fan-out — the major contributor to the live
- * `ERR_INSUFFICIENT_RESOURCES` — is now bounded by `useQueries`' shared
- * scheduling, and the *image* fan-out (the other major contributor) is
- * bounded by `DetectorImage`'s `IntersectionObserver` gate.
- *
- * Returns `{ byId, isLoading }`:
- *   - `byId.get(sampleId)` is `Exposure[] | undefined`. `undefined` reads as
- *     "not yet fetched" (the row shows its skeleton); an empty array reads
- *     as "fetched, no exposures" (the row paints with the empty-strip state).
- *   - `isLoading` is true while ANY underlying query is in its cold-loading
- *     state (boneyard `isLoading`, not `isPending` — disabled queries / bg
- *     refetches stay quiet).
- */
-export function useCorpusExposures(
-  samples: readonly api.CorpusSample[],
-): { byId: Map<number, api.Exposure[]>; isLoading: boolean } {
-  const queries = useQueries({
-    queries: samples.map((s) => ({
-      queryKey: queryKeys.exposures(s.id),
-      queryFn: () => api.listExposures(s.id),
-    })),
-  });
-  const byId = new Map<number, api.Exposure[]>();
-  for (let i = 0; i < samples.length; i++) {
-    const d = queries[i]?.data;
-    if (d !== undefined) byId.set(samples[i]!.id, d);
-  }
-  const isLoading = queries.some((q) => q.isLoading);
-  return { byId, isLoading };
-}
-
 export function useTrace(exposureId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
+    retry: (failures, error) => !(error instanceof api.ApiError && error.status === 404) && failures < 1,
   });
 }
 
@@ -295,14 +262,6 @@ export function useSetPeakExcluded(exposureId: number) {
     error: exclude.error ?? unexclude.error,
     reset: () => { exclude.reset(); unexclude.reset(); },
   };
-}
-
-export function useReanalyzeExposure(exposureId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    reanalyzeExposureMutator,
-    { exposureId, username, clientId: CLIENT_ID },
-  );
 }
 
 // Plan D: the assignment cart data layer. The source of the active phase set;
@@ -386,55 +345,6 @@ export function useCommitCustomIndex(exposureId: number) {
 }
 
 
-// Speculative-snap is a query keyed on (exposureId, phase, anchorPeakId, anchorRatio).
-// The hook is enabled-gated because the builder calls it after a phase + anchor
-// are both chosen — never on partial input. M2.4 also gates on
-// `useExposureHasPendingPeakOps`: while a peak-affecting op is in flight the
-// snap response would reflect a stale peak set, so we suspend the query and
-// the SpeculativeBuilder keeps showing the last good snap with an "updating"
-// indicator until the op settles.
-export function useSpeculativeSnap(
-  exposureId: number | undefined,
-  phase: string | undefined,
-  anchorPeakId: number | undefined,
-  anchorRatio: number,
-) {
-  const blocked = useExposureHasPendingPeakOps(exposureId);
-  return useQuery({
-    queryKey: queryKeys.speculativeSnap(exposureId, phase, anchorPeakId, anchorRatio),
-    queryFn: () => api.getSpeculativeSnap(exposureId as number, phase as string, anchorPeakId as number, anchorRatio),
-    enabled: exposureId !== undefined && phase !== undefined && anchorPeakId !== undefined && !blocked,
-  });
-}
-
-export function useCreateSpeculative(exposureId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    createSpeculativeMutator,
-    { exposureId, username, clientId: CLIENT_ID },
-  );
-}
-
-export function useDeleteIndex(exposureId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    deleteIndexMutator,
-    { exposureId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (indexId: number) => inner.mutate({ indexId }),
-  };
-}
-
-export function useUpdateSample(experimentId: number, sampleId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    updateSampleMutator,
-    { experimentId, sampleId, username, clientId: CLIENT_ID },
-  );
-}
-
 export function useAddSampleTag(experimentId: number, sampleId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(
@@ -502,28 +412,6 @@ export function useSetExposureStatus(sampleId: number) {
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
 }
 
-/** Batch/cross-sample exposure-status setter for the contact-sheet cull.
- *  Unlike useSetExposureStatus (one bound sample), the sampleId rides in the
- *  per-call input and overrides the placeholder scope (useQueueMutation spreads
- *  input over scope: payload = {kind, clientOpId, ...scope, ...input}), so one
- *  hook dispatches reject/restore to ANY sample. Each mutate() mints its own
- *  client_op_id and patches queryKeys.exposures(sampleId). */
-export function useSetExposureStatusBatch() {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(setExposureStatusMutator, {
-    sampleId: 0, username, clientId: CLIENT_ID,
-  });
-  return {
-    ...inner,
-    mutate: (v: { sampleId: number; exposureId: number; status: "accepted" | "rejected" | null }) =>
-      // sampleId rides in the input position → payload.sampleId === v.sampleId,
-      // overriding the placeholder scope.sampleId (0). The cast is required
-      // because SetExposureStatusInput doesn't declare sampleId; the runtime
-      // payload merge is what carries it.
-      inner.mutate(v as unknown as { exposureId: number; status: "accepted" | "rejected" | null }),
-  };
-}
-
 export function useSelectExposure(sampleId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
@@ -554,33 +442,6 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
     ...inner,
     mutate: (tagId: number) => inner.mutate({ tagId }),
   };
-}
-
-export function useIndex(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.index(id),
-    queryFn: () => api.getIndex(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
-}
-
-export function useExposure(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.exposure(id),
-    queryFn: () => api.getExposure(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
-}
-
-export function useSampleById(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.sample(id),
-    queryFn: () => api.getSample(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
 }
 
 /** Corpus distinct tag pairs — scoping reads these to propose the ordering
@@ -651,6 +512,20 @@ export function useTriggerScan(experimentId: number) {
     ...inner,
     mutate: (force = false) => inner.mutate(force),
   };
+}
+
+export function useCheckForNewFilesOnOpen(experimentId: number): void {
+  const username = useAppState((s) => s.username);
+  const qc = useQueryClient();
+  const { mutate } = useMutation({
+    mutationFn: () => api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), false),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
+  });
+  useEffect(() => {
+    if (experimentId > 0) mutate();
+  }, [experimentId, mutate]);
 }
 
 /** Geometry/name override for the Configuration tab (spec §9.6 — E1 ships only
