@@ -108,35 +108,17 @@ export function PrintApp(): JSX.Element {
     });
   }, [qc, mc, setIngestProgress, clearIngestProgress]); // stable selector results; EventSource lifetime unchanged
 
-  // Mirror pending mutation queue to sessionStorage so a tab reload can
-  // rehydrate it. attach is safe to mount unconditionally; subscription is
-  // cheap.
   useEffect(() => {
-    return attachPersistence(mc);
-  }, [mc]);
-
-  // On mount, replay any persisted ops left over from a previous tab
-  // session through their matching mutators. Server-side request-level
-  // idempotency (X-Client-Op-Id) makes this safe even if the original op
-  // already landed. Surfacing dropped/failed counts as toasts so the user
-  // knows when edits couldn't be restored.
-  useEffect(() => {
-    void rehydrate(qc, resolveMutator).then(({ dropped, failed }) => {
-      if (dropped > 0) {
+    void rehydrate(qc, resolveMutator).then(({ dropped, lost }) => {
+      if (dropped + lost > 0) {
         showToast(
-          `${dropped} edits from a previous session couldn't be restored`,
+          `${dropped + lost} edits from a previous session couldn't be restored`,
           "warning",
         );
       }
-      if (failed > 0) {
-        showToast(
-          `${failed} edits failed to replay; please retry`,
-          "error",
-        );
-      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate runs once at mount; qc is stable
-  }, []);
+    return attachPersistence(mc);
+  }, [qc, mc]);
 
   return (
     <>
