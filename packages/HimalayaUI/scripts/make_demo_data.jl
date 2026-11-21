@@ -425,13 +425,13 @@ end
 const TRUTH_HEADER = "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"
 const T0_DEFAULT = DateTime(2026, 4, 26, 18, 0, 0)
 
+const LATE_TRACE_SAMPLE = "MO_lowH2O"
+late_dir(out) = joinpath(out, "late")
+
 """
 Reset an experiment tree and return its (data, analysis, tot) directories. Files
 from an earlier generation are removed so a re-run can't leave strays.
 """
-const LATE_TRACE_SAMPLE = "MO_lowH2O"
-late_dir(out) = joinpath(out, "late")
-
 function prepare_tree(out)
     data = joinpath(out, "data")
     analysis = joinpath(out, "analysis")
