@@ -140,6 +140,7 @@ function register_routes!()
     register_grouping_routes!()
     register_bridge_routes!()
     register_label_routes!()
+    register_tag_color_routes!()
     register_fs_routes!()
 end
 

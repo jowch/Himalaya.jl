@@ -509,8 +509,20 @@ function migrate_schema!(db::SQLite.DB)
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
     migrate_sample_labels!(db)
+    migrate_tag_colors!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
+end
+
+function migrate_tag_colors!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS tag_colors (
+            label TEXT NOT NULL,
+            color TEXT NOT NULL
+        )""")
+    DBInterface.execute(db,
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_colors_label ON tag_colors(label COLLATE NOCASE)")
+    nothing
 end
 
 function migrate_sample_labels!(db::SQLite.DB)
