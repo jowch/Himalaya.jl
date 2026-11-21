@@ -295,6 +295,35 @@ end
         SQLite.close(db)
     end
 
+    @testset "DELETE /api/experiments/{id} tells other clients the experiment is gone" begin
+        db, dir, exp_id = scan_test_db()
+        pending = Channel{String}(64)
+        sub = (pending = pending,)
+        lock(HimalayaUI.SSE_LOCK) do
+            push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+        end
+        try
+            with_inproc_routes(db) do call
+                @test call("DELETE", "/api/experiments/$exp_id").status == 200
+            end
+            frames = String[]
+            while isready(pending)
+                push!(frames, take!(pending))
+            end
+            objs = [JSON3.read(replace(first(filter(l -> startswith(l, "data: "), split(f, '\n'))), r"^data: " => "")) for f in frames]
+            deleted = filter(o -> o.kind == "experiment_deleted", objs)
+            @test length(deleted) == 1
+            @test only(deleted).entity_type == "experiment"
+            @test only(deleted).entity_id == exp_id
+        finally
+            lock(HimalayaUI.SSE_LOCK) do
+                filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+            end
+            close(pending)
+        end
+        SQLite.close(db)
+    end
+
     @testset "a rescan pass emits rescan-phase ingest frames and a terminal frame" begin
         mktempdir() do dir
             db = HimalayaUI.open_db(joinpath(dir, "h.db"))

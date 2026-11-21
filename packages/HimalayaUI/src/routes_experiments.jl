@@ -95,6 +95,7 @@ function register_experiments_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "path does not exist or is not a directory",
                              :path  => data_dir)))
+        data_dir = _canonical_dir(data_dir)
 
         existing = experiment_using_dir(db, data_dir)
         existing === nothing || return HTTP.Response(409,

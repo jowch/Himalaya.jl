@@ -62,6 +62,16 @@ Each setup also carries the counts a scan would find (`exposures`,
 any geometry discrepancies, and `duplicate_of` when an experiment already uses
 its `data_dir`.
 
+A new experiment stores the real path of its `data_dir` (symlinks resolved,
+trailing slash dropped). The duplicate check resolves only the folder being
+picked and compares it against the stored paths as text. It never visits the
+folders of existing experiments, so a stored folder on an unreachable network
+share cannot stall adding a new one. An experiment created before this rule
+under a symlinked path is matched only by that same spelling.
+The experiments home shows that real path, not the spelling that was picked,
+and rescans read it. If a share is reached through a link whose target changes
+between mounts, remove the experiment and add the folder again.
+
 ### File manifest
 
 `GET /api/fs/manifest` answers "what would a scan of these settings find?"
@@ -339,7 +349,8 @@ himalaya serve [--port N] [--host H]
     can create the first experiment through the funnel.
 ```
 
-`-e` takes an id, a name or a path. When it is left out, `analyze` and `show`
+`-e` takes an id, a name or a path. A path matches the experiment's folder whether
+it is typed through a symlink or with a trailing slash. When it is left out, `analyze` and `show`
 use the only registered experiment and fail with a list if there are several.
 
 ## Further reading
