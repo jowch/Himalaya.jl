@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
   useExposureHasPendingPeakOps,
-  useQueueOpStatus,
 } from "../../src/lib/queue/hooks";
 import { makeFakeMutation } from "./helpers";
 
@@ -83,53 +82,3 @@ describe("useExposureHasPendingPeakOps", () => {
   });
 });
 
-describe("useQueueOpStatus", () => {
-  let qc: QueryClient;
-  beforeEach(() => {
-    qc = new QueryClient();
-  });
-
-  it("returns 'pending' when a matching kind is in flight (scoped by exposureId)", () => {
-    qc.getMutationCache().add(makeFakeMutation({
-      status: "pending",
-      variables: { kind: "reanalyze_exposure", exposureId: 42, clientOpId: "op-r", payload: {} },
-    }));
-    const { result } = renderHook(() => useQueueOpStatus("reanalyze_exposure", 42), {
-      wrapper: withQueryClient(qc),
-    });
-    expect(result.current).toBe("pending");
-  });
-
-  it("returns 'idle' for a non-matching kind", () => {
-    qc.getMutationCache().add(makeFakeMutation({
-      status: "pending",
-      variables: { kind: "peak_added", exposureId: 42, clientOpId: "op-1", payload: { q: 1.0 } },
-    }));
-    const { result } = renderHook(() => useQueueOpStatus("reanalyze_exposure", 42), {
-      wrapper: withQueryClient(qc),
-    });
-    expect(result.current).toBe("idle");
-  });
-
-  it("ignores exposureId scope when not provided", () => {
-    qc.getMutationCache().add(makeFakeMutation({
-      status: "pending",
-      variables: { kind: "reanalyze_exposure", exposureId: 999, clientOpId: "op-r", payload: {} },
-    }));
-    const { result } = renderHook(() => useQueueOpStatus("reanalyze_exposure"), {
-      wrapper: withQueryClient(qc),
-    });
-    expect(result.current).toBe("pending");
-  });
-
-  it("returns 'idle' for kind+exposureId mismatch", () => {
-    qc.getMutationCache().add(makeFakeMutation({
-      status: "pending",
-      variables: { kind: "reanalyze_exposure", exposureId: 99, clientOpId: "op-r", payload: {} },
-    }));
-    const { result } = renderHook(() => useQueueOpStatus("reanalyze_exposure", 42), {
-      wrapper: withQueryClient(qc),
-    });
-    expect(result.current).toBe("idle");
-  });
-});

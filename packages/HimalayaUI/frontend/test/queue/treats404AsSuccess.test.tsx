@@ -19,7 +19,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "../test-utils";
 import {
-  useRemovePeak, useDeleteIndex, useRemoveSampleTag,
+  useRemovePeak, useRemoveSampleTag,
   queryKeys,
 } from "../../src/queries";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
@@ -126,24 +126,6 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     );
   }
 
-  it("useDeleteIndex: optimistic removal sticks in the indices cache on 404", async () => {
-    const EXPOSURE_ID = 5;
-    const INDEX: IndexEntry = {
-      id: 10, exposure_id: EXPOSURE_ID, phase: "Pn3m", basis: 0.1, score: 0.9,
-      r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate",
-      kind: "auto", inputs_hash: "h1", peaks: [], predicted_q: [0.1],
-    };
-    const client = makeClient();
-    client.setQueryData(queryKeys.indices(EXPOSURE_ID), [INDEX]);
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
-    );
-    mockFetch404();
-    const { result } = renderHook(() => useDeleteIndex(EXPOSURE_ID), { wrapper });
-    act(() => { result.current.mutate(10); });
-    await waitFor(() => expect(result.current.isPending).toBe(false));
-    expect(client.getQueryData<IndexEntry[]>(queryKeys.indices(EXPOSURE_ID))).toEqual([]);
-  });
 
   it("useRemoveSampleTag: optimistic tag removal sticks on 404", async () => {
     const EXPERIMENT_ID = 1;

@@ -265,72 +265,6 @@ function register_analysis_routes!()
         end
     end
 
-    @get "/api/exposures/{id}/speculative-snap" function(req::HTTP.Request, id::Int)
-        db = current_db()
-        params = HTTP.queryparams(HTTP.URI(req.target))
-        phase_name    = get(params, "phase", "")
-        anchor_pid_s  = get(params, "anchor_peak_id", "")
-        anchor_rp_s   = get(params, "anchor_ratio", "1")
-
-        P = resolve_phase(phase_name)
-        P === nothing && return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "unknown phase: $phase_name")))
-
-        anchor_peak_id = tryparse(Int, anchor_pid_s)
-        anchor_ratio   = something(tryparse(Int, anchor_rp_s), 1)
-        anchor_peak_id === nothing && return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "missing or invalid anchor_peak_id")))
-
-        peak_rows = Tables.rowtable(DBInterface.execute(db, """
-            SELECT a.id, a.q, a.sharpness
-            FROM auto_peaks a
-            WHERE a.exposure_id = ?
-              AND NOT EXISTS (
-                  SELECT 1 FROM peak_curations c
-                  WHERE c.exposure_id = a.exposure_id AND c.kind = 'exclude'
-                    AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
-              )
-            UNION ALL
-            SELECT id, q, NULL AS sharpness
-            FROM peak_curations
-            WHERE exposure_id = ? AND kind = 'add'
-        """, [id, id]))
-        anchor = nothing
-        for pr in peak_rows
-            if Int(pr.id) == anchor_peak_id
-                anchor = pr
-                break
-            end
-        end
-        anchor === nothing && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "anchor peak not found in exposure")))
-
-        ratios = Himalaya.phaseratios(P; normalize = true)
-        (1 <= anchor_ratio <= length(ratios)) || return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "anchor_ratio out of range for phase")))
-
-        # Exclude the anchor itself from the candidate set so it doesn't
-        # snap to a different ratio position than the user requested.
-        non_anchor = filter(pr -> Int(pr.id) != anchor_peak_id, peak_rows)
-        snaps = compute_snap(non_anchor, P, Float64(anchor.q), anchor_ratio)
-
-        out = map(snaps) do s
-            Dict(
-                :ratio_position     => s.ratio_position,
-                :predicted_q        => s.predicted_q,
-                :suggested_peak_id  => s.suggested_peak_id,
-                :suggested_q        => s.suggested_q,
-                :suggested_residual => s.suggested_residual,
-                :is_anchor          => s.ratio_position == anchor_ratio,
-            )
-        end
-        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
-    end
-
     @post "/api/exposures/{id}/speculative" function(req::HTTP.Request, id::Int)
         db = current_db()
         body = json(req)
@@ -618,30 +552,5 @@ function register_analysis_routes!()
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:deleted => id)))
         end
-    end
-
-    @get "/api/indices/{id}" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
-                  status, kind, inputs_hash
-           FROM indices WHERE id = ?""", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "index not found")))
-        ix        = rows[1]
-        peak_rows = Tables.rowtable(DBInterface.execute(db,
-            """SELECT ip.peak_id, ip.ratio_position, ip.residual,
-                      COALESCE(ap.q, pc.q) AS q_observed
-               FROM index_peaks ip
-               LEFT JOIN auto_peaks ap     ON ap.id = ip.peak_id AND ip.peak_kind = 'auto'
-               LEFT JOIN peak_curations pc ON pc.id = ip.peak_id AND ip.peak_kind = 'curation'
-               WHERE ip.index_id = ? ORDER BY ip.ratio_position""", [id]))
-        predicted = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
-        d               = row_to_json(ix)
-        d[:peaks]       = rows_to_json(peak_rows)
-        d[:predicted_q] = predicted
-        d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
-        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
     end
 end

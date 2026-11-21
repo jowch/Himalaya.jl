@@ -6,8 +6,6 @@
 
 /** Click within this many pixels of a peak to act on it. (PlotSurface #180.) */
 export const PEAK_HIT_PX = 10;
-/** Drags shorter than this are treated as clicks, not brushes. */
-export const BRUSH_DEADZONE_PX = 4;
 /** Refuse zooms narrower than this fraction of the full extent. */
 export const MIN_SPAN_FRAC = 1e-4;
 

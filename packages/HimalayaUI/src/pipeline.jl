@@ -1057,7 +1057,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # into a single tx); now all four sit in one outer tx. Route callers that
     # already wrap in `with_idempotency` see this as a SAVEPOINT inside their
     # outer tx — the explicit `defer_broadcast=true` they pass keeps the
-    # broadcast contract unchanged. CLI / `POST /api/experiments/{id}/analyze`
+    # broadcast contract unchanged. CLI
     # callers (no enclosing tx) get all-or-nothing atomicity. `findpeaks`
     # itself is pure compute and stays outside the tx to keep the critical
     # section short.

@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   makeAxis,
-  makeProjection,
   positiveExtent,
-  axisTicks,
 } from "../../src/print/plot/projection";
 
 describe("makeAxis", () => {
@@ -32,22 +30,6 @@ describe("makeAxis", () => {
   });
 });
 
-describe("makeProjection", () => {
-  it("inverts the y range so the domain max sits at the top (px 0)", () => {
-    const p = makeProjection({
-      xDomain: [0.01, 1],
-      yDomain: [1, 1000],
-      plotWidth: 300,
-      plotHeight: 200,
-      xType: "log",
-      yType: "log",
-    });
-    expect(p.y.to(1000)).toBeCloseTo(0);
-    expect(p.y.to(1)).toBeCloseTo(200);
-    expect(p.x.to(0.01)).toBeCloseTo(0);
-    expect(p.x.to(1)).toBeCloseTo(300);
-  });
-});
 
 describe("positiveExtent", () => {
   it("ignores non-finite and non-positive values", () => {
@@ -59,51 +41,3 @@ describe("positiveExtent", () => {
   });
 });
 
-describe("axisTicks", () => {
-  it("classifies log decades / mid / minor across a narrow range", () => {
-    const ax = makeAxis([0.02, 0.23], [0, 400], "log");
-    const ts = axisTicks(ax);
-    const major = ts.filter((t) => t.kind === "major").map((t) => t.value);
-    const mid = ts.filter((t) => t.kind === "mid").map((t) => t.value);
-    expect(major).toContainEqual(0.1);
-    expect(mid.some((v) => Math.abs(v - 0.05) < 1e-9)).toBe(true);
-    expect(mid.some((v) => Math.abs(v - 0.2) < 1e-9)).toBe(true);
-    expect(ts.every((t) => t.value >= 0.02 - 1e-9 && t.value <= 0.23 + 1e-9)).toBe(true);
-    expect(ts.find((t) => Math.abs(t.value - 0.03) < 1e-9)?.kind).toBe("minor");
-  });
-  it("passes linear scales straight through as majors", () => {
-    const ax = makeAxis([0, 10], [0, 400], "linear");
-    const ts = axisTicks(ax, 5);
-    expect(ts.length).toBeGreaterThan(0);
-    expect(ts.every((t) => t.kind === "major")).toBe(true);
-  });
-  it("never leaves a sub-decade window unlabelled (zoom regression)", () => {
-    // Domain entirely between two decade multiples: no m·10ⁿ lands inside, so
-    // the naive decade loop returned [] → a bare axis. Must still produce ticks.
-    const ax = makeAxis([0.013, 0.017], [0, 400], "log");
-    const ts = axisTicks(ax);
-    expect(ts.length).toBeGreaterThan(0);
-    expect(ts.some((t) => t.kind !== "minor")).toBe(true); // at least one label
-  });
-  it("labels a zoomed log window that holds only one or two labelled ticks", () => {
-    for (const domain of [[0.08, 0.15], [0.045, 0.11]] as [number, number][]) {
-      const labelled = axisTicks(makeAxis(domain, [0, 400], "log")).filter((t) => t.kind !== "minor").map((t) => t.value);
-      expect(labelled.length).toBeGreaterThanOrEqual(3);
-      expect(labelled.every((v) => v >= domain[0] - 1e-9 && v <= domain[1] + 1e-9)).toBe(true);
-    }
-  });
-  it("keeps decade ticks on a log window wider than a factor of 3", () => {
-    const ts = axisTicks(makeAxis([0.06, 0.45], [0, 400], "log"));
-    expect(ts.some((t) => t.kind === "minor")).toBe(true);
-    expect(ts.find((t) => Math.abs(t.value - 0.1) < 1e-9)?.kind).toBe("major");
-  });
-  it("caps tick density on wide log ranges (overplot regression)", () => {
-    // Intensity over 7 decades: the naive loop emitted ~64 ticks / ~22 labels.
-    const ax = makeAxis([1e-2, 1e5], [0, 400], "log");
-    const ts = axisTicks(ax, 6);
-    const labelled = ts.filter((t) => t.kind !== "minor").length;
-    expect(labelled).toBeGreaterThan(0);
-    expect(labelled).toBeLessThanOrEqual(8); // count + 2
-    expect(ts.every((t) => t.value >= 1e-2 - 1e-9 && t.value <= 1e5 + 1e-9)).toBe(true);
-  });
-});

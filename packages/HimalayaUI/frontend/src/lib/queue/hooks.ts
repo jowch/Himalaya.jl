@@ -39,27 +39,3 @@ export function useExposureHasPendingPeakOps(
   return pending.length > 0;
 }
 
-/**
- * Returns 'pending' when a queued op of `kind` is in flight, optionally
- * scoped to `exposureId`. Returns 'idle' otherwise.
- *
- * Used for per-kind UI affordances (e.g., reanalyze button spinner). For
- * cross-kind aggregate state, use `useExposureHasPendingPeakOps` instead.
- */
-export function useQueueOpStatus(
-  kind: OpKind,
-  exposureId?: number,
-): "idle" | "pending" {
-  const pending = useMutationState({
-    filters: {
-      predicate: (m) => {
-        if (m.state.status !== "pending") return false;
-        const op = m.state.variables as OpPayload | undefined;
-        if (!op || op.kind !== kind) return false;
-        if (exposureId !== undefined && op.exposureId !== exposureId) return false;
-        return true;
-      },
-    },
-  });
-  return pending.length > 0 ? "pending" : "idle";
-}
