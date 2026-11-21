@@ -22,7 +22,7 @@ import {
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
@@ -31,6 +31,7 @@ import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
+import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
 import { PLOT_VIEWS, nextView, usePlotView } from "./plotView";
@@ -57,6 +58,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Move",
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
+        { keys: ["Z"], what: "Next unreviewed sample" },
         { keys: ["J", "Shift J"], what: "Next or previous unreviewed sample" },
         { keys: ["/"], what: "Filter samples by name" },
       ],
@@ -66,6 +68,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
         { keys: ["X"], what: "Drop or restore the exposure" },
+        { keys: ["Space"], what: "Enlarge its detector image" },
       ],
     },
     {
@@ -81,7 +84,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
-        { keys: ["Z"], what: "Reset the zoom" },
+        { keys: ["Shift Z"], what: "Reset the zoom" },
         { keys: ["L", "Shift L"], what: "Next or previous view: log, linear, log-log, q²I" },
         { keys: ["C"], what: "Compare with another sample" },
         { keys: ["R"], what: "Hide or show comparisons" },
@@ -188,6 +191,7 @@ export function WorkspacePage(): JSX.Element {
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
@@ -432,7 +436,15 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "z":
         case "Z":
-          setXDomain(null);
+          if (ev.shiftKey) setXDomain(null);
+          else {
+            const nid = nextUnreviewed(visible, sampleId, 1);
+            if (nid !== undefined) goSample(nid);
+          }
+          break;
+        case " ":
+          if (exposure && imageUrl(exposure, false)) setBigOpen(true);
+          else handled = false;
           break;
         case "r":
         case "R":
@@ -474,7 +486,7 @@ export function WorkspacePage(): JSX.Element {
     {
       id: "next-unreviewed",
       label: "Next unreviewed sample",
-      shortcut: "J",
+      shortcut: "Z",
       run: () => {
         const nid = nextUnreviewed(visible, sampleId, 1);
         if (nid !== undefined) goSample(nid);
@@ -483,7 +495,7 @@ export function WorkspacePage(): JSX.Element {
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
     ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, shortcut: "L", run: () => setView(o.view) })),
-    { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
+    { id: "zoom", label: "Reset zoom", shortcut: "Shift Z", run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
@@ -499,6 +511,9 @@ export function WorkspacePage(): JSX.Element {
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {bigOpen && exposure && imageUrl(exposure, false) && (
+            <DetectorOverlay src={imageUrl(exposure, false)!} caption={`${exposure.filename ?? `Exposure ${exposure.id}`} · Esc to close`} onClose={() => setBigOpen(false)} />
+          )}
           {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
         </>
       }

@@ -187,6 +187,26 @@ describe("WorkspacePage", () => {
     expect(traceRefetch).toHaveBeenCalledTimes(1);
   });
 
+  it("Space enlarges the shown frame's detector image, and Space or Esc closes it", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, image_path: "/x.tif", image_version: "7" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    const dialog = screen.getByRole("dialog", { name: "Detector image" });
+    expect(dialog.querySelector("img")!.getAttribute("src")).toBe("/api/exposures/101/image?v=7");
+    expect(dialog).toHaveTextContent("f101.dat · Esc to close");
+    fireEvent.keyDown(dialog, { key: " " });
+    expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+  });
+
+  it("Space does nothing on a frame without a detector image", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+  });
+
   it("links the Himalaya brand back to the corpus", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments/1/corpus");
@@ -199,6 +219,12 @@ describe("WorkspacePage", () => {
     const row = within(screen.getByTestId("workspace-samples")).getByRole("button", { current: true });
     expect(within(row).getByTestId("workspace-status")).toHaveTextContent("Im3m");
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("3 of 4 reviewed");
+  });
+
+  it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "z" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
   it("J jumps to the next unreviewed sample and Shift+J goes back", () => {
@@ -556,7 +582,7 @@ describe("WorkspacePage", () => {
     const full = xTicks();
     for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 500 });
     expect(xTicks()).not.toBe(full);
-    fireEvent.keyDown(window, { key: "z" });
+    fireEvent.keyDown(window, { key: "Z", shiftKey: true });
     expect(xTicks()).toBe(full);
     for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 540 });
     const q = Array.from({ length: 21 }, (_, i) => 0.01 + i * 0.002);
@@ -609,7 +635,7 @@ describe("WorkspacePage", () => {
     const input = screen.getByRole("combobox", { name: "Command or sample" });
     fireEvent.change(input, { target: { value: "reset zoom" } });
     const option = screen.getByRole("option", { name: /Reset zoom/ });
-    expect(option.querySelector("kbd")?.textContent).toBe("Z");
+    expect(option.querySelector("kbd")?.textContent).toBe("Shift Z");
     expect(input.getAttribute("aria-activedescendant")).toBe(option.id);
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.keyDown(input, { key: "ArrowDown" });
