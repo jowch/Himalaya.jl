@@ -180,8 +180,6 @@ async function mockGrouping(
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/sample-tags", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/series", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route(/\/api\/exposures\/\d+\/image\?thumb=1$/, (r) =>
     r.fulfill({ status: 200, contentType: "image/png", body: PIXEL_PNG }));
 }

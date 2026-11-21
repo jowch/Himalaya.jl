@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Assignment, SampleCall, Series } from "../../api";
+import type { Assignment, SampleCall } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -39,14 +39,9 @@ export type OpKind =
   | "speculative_created" | "speculative_deleted"
   | "set_exposure_status" | "select_exposure"
   | "add_tag" | "remove_tag" | "edit_tag"
-  | "post_message" | "update_sample"
+  | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"
-  // Series (#166/#167/#168). `series_save` covers create (POST /api/series)
-  // AND recipe edit (PATCH /api/series/:id) — `payload.id` discriminates.
-  // `series_commit` → `series_plate_committed`.
-  // `series_delete` → `series_deleted`.
-  | "series_save" | "series_commit" | "series_delete"
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
   // native assignment event kinds. `affectsExposurePeaks: () => false` for all
   // three — they touch only the assignment cache, never the peak set.
@@ -66,7 +61,8 @@ export type OpKind =
   | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag"
   // Symmetric undo of dismiss: re-shows the flag so the sample re-enters review.
   | "undo_dismiss_grouping_flag"
-  | "bridge_samples" | "unbridge_sample";
+  | "bridge_samples" | "unbridge_sample"
+  | "add_label" | "remove_label";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style
@@ -153,10 +149,8 @@ export interface SampleCallPostState {
  *
  * Optional `post_state` carries an enriched snapshot for replay-without-
  * refetch. Its shape depends on `kind`: curation events (peak_*, analyze_run)
- * carry a `CurationPostState`; the series-commit event
- * (`series_plate_committed`) carries the full `Series` projection — the same
- * shape `fetch_series_with_plate` / `GET /api/series/:id` returns. Consumers
- * narrow by `kind` and cast.
+ * carry a `CurationPostState`; assignment events carry an
+ * `AssignmentPostState`. Consumers narrow by `kind` and cast.
  */
 export interface SseEvent {
   id: number;
@@ -168,7 +162,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | AssignmentPostState | SampleCallPostState | Series;
+  post_state?: CurationPostState | AssignmentPostState | SampleCallPostState;
 }
 
 /**

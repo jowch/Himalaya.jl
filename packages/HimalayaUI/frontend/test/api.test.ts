@@ -145,24 +145,6 @@ describe("api", () => {
     expect(indices[0]!.peaks[0]!.q_observed).toBeCloseTo(0.71);
   });
 
-  it("postSampleMessage posts {body} with X-Username and returns parsed message", async () => {
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({
-        id: 7, sample_id: 3, author_id: 1, author: "alice", body: "hello", created_at: "2026-04-24 10:00:00",
-      }), { status: 201 }),
-    );
-    const msg = await api.postSampleMessage(3, "hello", { username: "alice", clientId: "tab-xyz" });
-    expect(msg.id).toBe(7);
-    expect(msg.author).toBe("alice");
-    expect(msg.body).toBe("hello");
-    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
-    expect(url).toBe("/api/samples/3/messages");
-    expect(init.method).toBe("POST");
-    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
-    expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
-    expect(init.body).toBe(JSON.stringify({ body: "hello" }));
-  });
-
   it("threads X-Client-Op-Id on POST mutations", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({

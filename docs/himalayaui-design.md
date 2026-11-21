@@ -184,10 +184,6 @@ These are the concrete choices in the current build. They are not
   the experiment is context (the container) and the sample is the leaf the
   user is actively working on. De-emphasising the parent draws the eye to
   the sample without hiding the experiment path.
-- **Series stage** (`/series`): the former Compare page was retired and
-  folded into Series, which renders multi-trace overlays through a
-  folio / scoping / builder set of pages. Deep `/compare*` links redirect to
-  `/series`.
 
 ### 2.2 Typography
 
@@ -368,10 +364,6 @@ machines starts them over (intentional — server doesn't know about
   are written exclusively by the dispatcher in `events.jl`. See
   [`docs/event-log.md`](event-log.md) for the dispatcher contract,
   hash memoization, and SSE multiplayer.
-- **Chat (`sample_messages`).** FK `author_id → users.id` with
-  `ON DELETE SET NULL`. Persists as a parked data plane — the chat
-  presentation (ChatCard / @-mention subsystem) was retired 2026-05-29 and
-  there is no UI on top of it.
 - Exposure, tag, and notes endpoints are intact even though the UI
   doesn't surface them right now (see §1.9).
 
@@ -395,7 +387,7 @@ machines starts them over (intentional — server doesn't know about
   replay of its own write. Two tabs of the same user are distinct subscribers
   (the guard is per-tab, not per-username).
 - **Conflict resolution was cancelled (2026-06-03).** The `If-Match` +
-  409-retry path (R5b) and the Series conflict-resolution modal were both
+  409-retry path (R5b) and the conflict-resolution modal were both
   dropped — there is no conflict UI. Last-write-wins is permanent; the
   conflict story is instead being addressed by edit-tracking → undo/redo →
   versioning (designed in Layer 4). See
@@ -440,11 +432,10 @@ Things we know we don't yet have a good answer for:
   channel (ticks) and shape channel (Miller dots) could make the phase
   distinction redundant with hue. Not done.
 - **Chat threads / mentions / reactions.** The chat UI was retired
-  2026-05-29 (presentation deleted, including the @-mention subsystem); only
-  the parked `sample_messages` data plane remains. The original experiment —
-  per-sample conversation — never gathered enough evidence that scientists
-  want it. The open question is whether to revive it at all before layering
-  threads / mentions / reactions on top.
+  2026-05-29 and its data plane (`sample_messages`, `/api/samples/{id}/messages`)
+  was deleted 2026-11-21. The original experiment — per-sample conversation —
+  never gathered enough evidence that scientists want it. Any revival is a
+  fresh design.
 
 See [`docs/future-feature-ideas.md`](future-feature-ideas.md) for the
 running list of deferred work, including these and analysis-engine ideas

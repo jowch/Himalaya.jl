@@ -1,4 +1,3 @@
-import { useMemo, useRef } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as api from "./api";
 import { useAppState } from "./state";
@@ -30,17 +29,13 @@ import {
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
-import { scopeSeriesMutator } from "./lib/queue/mutators/scopeSeries";
-import { createSeriesMutator } from "./lib/queue/mutators/createSeries";
-import { saveSeriesMutator } from "./lib/queue/mutators/saveSeries";
-import { commitSeriesPlateMutator } from "./lib/queue/mutators/commitSeriesPlate";
-import { deleteSeriesMutator } from "./lib/queue/mutators/deleteSeries";
 import {
   moveExposureMutator, renameSampleMutator, mergeSamplesMutator,
   splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
 } from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
+import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -56,6 +51,8 @@ export const queryKeys = {
     ["experiment", experimentId ?? "none", "samples"] as const,
   bridges:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "bridges"] as const,
+  labels:     (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "labels"] as const,
   loads:      (id: number | undefined) =>
     ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -70,8 +67,6 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "assignment"] as const,
   sampleCall: (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "call"] as const,
-  messages:   (sampleId: number | undefined) =>
-    ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
     exposureId: number | undefined,
     phase: string | undefined,
@@ -85,24 +80,7 @@ export const queryKeys = {
   index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
   sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
-  // Series (#166/#167/#168). Detail root `["series", id]`, listing root
-  // `["series-list"]` — distinct roots so a listing invalidation never
-  // clobbers a detail entry. Read hooks (useSeriesList / useSeries) — see
-  // below (I3.3).
-  series:     (id: number | undefined) => ["series", id ?? "none"] as const,
-  // Nested under the series-detail prefix on purpose — `queryKeys.series(id)`
-  // invalidations (rename / member reorder / commit / SSE replay) prefix-match
-  // and re-pull the trace batch, which is the desired refresh-on-member-change
-  // behavior.
-  seriesTraces: (id: number | undefined) =>
-    ["series", id ?? "none", "traces"] as const,
-  seriesList: ["series-list"] as const,
-  // Corpus scoping reads (I3.4 #174): the ordering-variable proposal source
-  // and the corpus picker projection. Foreign add_tag replay invalidates both
-  // (applyRemoteToCache add_tag/sample branch) so a peer's scoping write
-  // refreshes the /series/new proposal.
   corpusSampleTags:    ["corpus-sample-tags"] as const,
-  corpusPickerSamples: ["corpus-picker-samples"] as const,
   // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
   // ["corpus", ...] namespace so corpus add_tag (#159) patches and
   // invalidations never collide with the per-experiment
@@ -165,6 +143,24 @@ export function useBridgeSamples(experimentId: number) {
 export function useUnbridgeSample(experimentId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(unbridgeSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useLabels(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.labels(experimentId),
+    queryFn: () => api.listLabels(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
+export function useAddLabel(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(addLabelMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useRemoveLabel(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 export function useLoads(id: number, refetchWhileScanning = false) {
@@ -254,89 +250,8 @@ export function useTrace(exposureId: number | undefined) {
     queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
+    retry: (failures, error) => !(error instanceof api.ApiError && error.status === 404) && failures < 1,
   });
-}
-
-/**
- * Run a parallel `useQueries` over a list of ids and return a stable
- * `Map<id, T>`. Stability is load-bearing: TanStack reuses `query.data` refs
- * when underlying rows don't change, so we hash on `(id, dataRef)` and only
- * mint a new Map when some pair actually changed. Without this, every parent
- * re-render produces a new Map and downstream `useCallback`s that depend on
- * it tear down + replot — wheel/brush smoothness in MultiTracePlot depends
- * on this invariant.
- *
- * Used by the three `useMember*` hooks below (traces, exposures, samples)
- * so any future tweak to the identity-comparison logic is applied once.
- */
-function useStableQueryMap<T>(
-  ids: number[],
-  buildOptions: (id: number) => { queryKey: readonly unknown[]; queryFn: () => Promise<T> },
-): Map<number, T> {
-  const queries = useQueries({
-    queries: ids.map((id) => buildOptions(id)),
-  });
-  // Collapse (ids, data refs) into a single fixed-length string so `useMemo`'s
-  // deps comparison stays well-defined — variable-length deps arrays break
-  // memoisation when the previous length was 0 (React's elementwise loop
-  // terminates early and returns the stale cached value). A per-hook-instance
-  // WeakMap assigns each fresh data object a stable nonce so the signature
-  // tracks REF identity (TanStack reuses `q.data` refs when nothing changed),
-  // which is what wheel-/brush-smoothness in MultiTracePlot depends on. The
-  // WeakMap write is idempotent (`set(k, n)` with the same `n`), so this is
-  // StrictMode- and Concurrent-render-safe.
-  const refTable = useRef<{ map: WeakMap<object, number>; next: number } | null>(null);
-  if (refTable.current === null) refTable.current = { map: new WeakMap(), next: 0 };
-  const t = refTable.current;
-  const nonceOf = (v: unknown): string => {
-    if (v === undefined) return "_";
-    if (v === null || typeof v !== "object") return `p${String(v)}`;
-    const obj = v as object;
-    let n = t.map.get(obj);
-    if (n === undefined) {
-      n = t.next++;
-      t.map.set(obj, n);
-    }
-    return `o${n}`;
-  };
-  const signature = ids.map((id, i) => `${id}:${nonceOf(queries[i]?.data)}`).join("|");
-  return useMemo(() => {
-    const m = new Map<number, T>();
-    for (let i = 0; i < ids.length; i++) {
-      const d = queries[i]?.data;
-      if (d !== undefined) m.set(ids[i]!, d as T);
-    }
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on content signature so the Map is stable while data is unchanged
-  }, [signature]);
-}
-
-/**
- * Fetch live `(q, I)` traces for a variable list of exposure ids in parallel.
- * Used by the Compare page MultiTracePlot — one trace per member. Returns a
- * `Map<exposure_id, Trace>` for compose-time consumption by `MultiTracePlot`.
- *
- * Cache keys mirror `useTrace` exactly so single-exposure pages and Compare
- * share the same cache row (no double-fetching across pages).
- */
-export function useMemberTraces(exposureIds: number[]): Map<number, api.Trace> {
-  return useStableQueryMap(exposureIds, (id) => ({
-    queryKey: queryKeys.trace(id),
-    queryFn: () => api.getTrace(id),
-  }));
-}
-
-/**
- * Sibling of `useMemberTraces`: fetch candidate indices for a variable list of
- * exposure ids in parallel for the scoping worksheet's phase reads (sparkline
- * colour + preview strip). Cache keys mirror `useIndices` so single-exposure
- * pages and scoping share one cache row. Returns `Map<exposure_id, IndexEntry[]>`.
- */
-export function useMemberIndices(exposureIds: number[]): Map<number, api.IndexEntry[]> {
-  return useStableQueryMap(exposureIds, (id) => ({
-    queryKey: queryKeys.indices(id),
-    queryFn: () => api.listIndices(id),
-  }));
 }
 
 export function usePeaks(exposureId: number | undefined) {
@@ -690,117 +605,12 @@ export function useSampleById(id: number | undefined) {
   });
 }
 
-/**
- * Corpus-wide series listing — every saved series across all experiments,
- * sorted by recency (backend `last_event_at DESC`). Backs the series folio
- * (#173 / I3.3). No parameter, so no `enabled` gate — fetches unconditionally,
- * exactly like useCorpusSamples().
- */
-export function useSeriesList() {
-  return useQuery({
-    queryKey: queryKeys.seriesList,
-    queryFn: () => api.listSeries(),
-  });
-}
-
 /** Corpus distinct tag pairs — scoping reads these to propose the ordering
  *  variable. May be empty on a cold corpus (accepted by design, #174). */
 export function useCorpusSampleTags() {
   return useQuery({
     queryKey: queryKeys.corpusSampleTags,
     queryFn: () => api.getCorpusSampleTags(),
-  });
-}
-
-/** Corpus picker projection — scoping's candidate member samples. */
-export function useCorpusPickerSamples() {
-  return useQuery({
-    queryKey: queryKeys.corpusPickerSamples,
-    queryFn: () => api.getCorpusPickerSamples(),
-  });
-}
-
-/** Scoping confirm-and-build write: one batch of (key,value) sample_tags with
- *  source='scoping', through the queue (no-op optimistic; SSE-confirmed). */
-export function useScopeSeries() {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(scopeSeriesMutator, { username, clientId: CLIENT_ID });
-  return {
-    ...inner,
-    mutate: (input: { key: string; tags: { sampleId: number; value: string }[] }) =>
-      inner.mutate(input),
-  };
-}
-
-/**
- * Series CREATE (M-A: Op B of the scoping scope→create chain). A SINGLE-write
- * queue op — `series_save` → POST /api/series (no id ⇒ create). Split out from
- * the tag write (useScopeSeries, Op A) because the queue resolves an op's
- * deferred with whichever lands first (HTTP return OR own-op SSE frame); a
- * compound two-write op had its `add_tag` frame resolve the deferred before the
- * create returned, so `mutation.data` was the tag confirmation, not the Series.
- * As a single write, this op's only own-op frame is `series_created`, so
- * `data` is reliably the created Series (like useSaveSeries, which the builder
- * reads `.data.members` from). The page chains scopeSeries.mutate →
- * createSeries.mutate via a ref state machine, then navigates to /series/:id.
- */
-export function useCreateSeries() {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(createSeriesMutator, { username, clientId: CLIENT_ID });
-}
-
-/**
- * Series recipe-save (I3.5b). `series_save` → POST /api/series (create) or
- * PATCH /api/series/:id (recipe edit; `payload.id` discriminates). Optimistic
- * surface is the `seriesDraft`; the mutator does no optimistic cache write.
- * Recipe save never 409s (PATCH does not read `expected_content_hash`).
- */
-export function useSaveSeries() {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(saveSeriesMutator, { username, clientId: CLIENT_ID });
-}
-
-/**
- * Series plate-commit (I3.5b). `series_commit` → POST /api/series/:id/commit.
- * Spinner (no optimistic write). The commit route is last-write-wins (Plan 6a):
- * the backend no longer 409s on a stale hash and the body carries no
- * `expected_content_hash`, so there is no conflict surface here.
- */
-export function useCommitSeriesPlate() {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(commitSeriesPlateMutator, { username, clientId: CLIENT_ID });
-}
-
-/** Series delete (I3.5b). `series_delete` → DELETE /api/series/:id. */
-export function useDeleteSeries() {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(deleteSeriesMutator, { username, clientId: CLIENT_ID });
-}
-
-/**
- * One series' full nested detail (members + samples). Gated on a defined id
- * so an undefined route param doesn't fire GET /api/series/undefined. Backs
- * the builder (#175) and any folio→detail prefetch.
- */
-export function useSeries(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.series(id),
-    queryFn: () => api.getSeries(id as number),
-    enabled: id !== undefined,
-    // A missing/draft series should error fast rather than retry 3× — the
-    // I3.5a builder reuses this.
-    retry: false,
-  });
-}
-
-/** Batch member traces for a series (one request, `exposure_id → Trace`). Feeds
- *  the greenfield folio via `toWaterfallRows(members, tracesById)` (Plan 4b wires
- *  `SeriesCard`→`CardFigure`); avoids the O(N×M) per-exposure fan-out. */
-export function useSeriesTraces(seriesId: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.seriesTraces(seriesId),
-    queryFn: () => api.getSeriesTraces(seriesId as number),
-    enabled: seriesId !== undefined,
   });
 }
 

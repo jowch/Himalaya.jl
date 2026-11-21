@@ -144,39 +144,6 @@ end
         end
     end
 
-    @testset "POST /api/samples/:id/messages (post_message)" begin
-        mktempdir() do tmp
-            db = open_prepared_clone(tmp)
-            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-
-            with_inproc_routes(db) do call
-                op_id = "replay-test-msg-$(rand(UInt32))"
-                headers = ["Content-Type" => "application/json",
-                           "X-Username"   => "alice",
-                           "X-Client-Id"  => "tab-1",
-                           "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:body => "hello"))
-
-                pre_count = _count_actions(db, "post_message")
-                r1 = nothing; r2 = nothing
-                frames = _capture_sse_during("post_message") do
-                    r1 = call("POST", "/api/samples/$s_id/messages";
-                        headers = headers, body = Vector{UInt8}(body_json))
-                    r2 = call("POST", "/api/samples/$s_id/messages";
-                        headers = headers, body = Vector{UInt8}(body_json))
-                end
-                @test r1.status == 201
-                @test r2.status == 201
-                @test String(r2.body) == String(r1.body)
-                post_count = _count_actions(db, "post_message")
-                @test post_count - pre_count == 1
-                @test length(frames) == 1
-            end
-        end
-    end
-
     @testset "PATCH /api/samples/:id (update_sample)" begin
         mktempdir() do tmp
             db = open_prepared_clone(tmp)
@@ -209,21 +176,5 @@ end
             end
         end
     end
-
-    # I3.6 (#177): the comparison replay-invariant testsets (comparison_created
-    # / _submitted / _deleted / comparison_message / pinned / unpinned + the
-    # 409-retry) drove the invariant through the deleted /api/comparisons*
-    # routes. Those routes are retired with the Compare page; the invariant
-    # itself stays covered by the surviving kinds above (peak_added,
-    # assignment_add, post_message, update_sample). The kept comparison_*
-    # dispatcher branches' fold is covered by test_events.jl.
-    # comparison replay invariants (retired with the Compare routes, #177);
-    # routes deleted in I3.6; invariant covered by surviving kinds above.
 end
 
-# I3.6 (#177): the "SSE frame includes view_* on comparison_submitted (A-6)"
-# testset drove the deleted POST /api/comparisons + /submit routes to assert
-# the SSE post_state envelope. The routes are retired with the Compare page;
-# the kept `comparison_submitted` dispatcher branch's fold is covered by
-# test_events.jl, and the general SSE-fanout-per-op invariant by the surviving
-# kinds in the replay-invariant testset above.

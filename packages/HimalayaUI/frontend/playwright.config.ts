@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const E2E_PORT = 5191;
+
 export default defineConfig({
   testDir: "./e2e",
   // Live-server integration tests live under `e2e/live/` and need a real
@@ -11,14 +13,14 @@ export default defineConfig({
   retries: 0,
   reporter: process.env["CI"] ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: `http://127.0.0.1:${E2E_PORT}`,
     browserName: "chromium",
     headless: true,
   },
   webServer: {
-    command: "vite build && vite preview --host 127.0.0.1 --port 5173 --strictPort",
-    url: "http://127.0.0.1:5173",
-    reuseExistingServer: !process.env["CI"],
+    command: `vite build --outDir dist-e2e && vite preview --outDir dist-e2e --host 127.0.0.1 --port ${E2E_PORT} --strictPort`,
+    url: `http://127.0.0.1:${E2E_PORT}`,
+    reuseExistingServer: false,
     stdout: "pipe",
     stderr: "pipe",
   },

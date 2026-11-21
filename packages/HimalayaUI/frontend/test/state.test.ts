@@ -142,30 +142,4 @@ describe("useAppState", () => {
     expect(raw).not.toContain("hoveredPeakId");
   });
 
-  // ── compare-page review-mode annotation toggles (Phase 9) ────────────────
-
-  it("showPeakTicks defaults to true and can be set", () => {
-    expect(useAppState.getState().showPeakTicks).toBe(true);
-    useAppState.getState().setShowPeakTicks(false);
-    expect(useAppState.getState().showPeakTicks).toBe(false);
-    useAppState.getState().setShowPeakTicks(true);
-    expect(useAppState.getState().showPeakTicks).toBe(true);
-  });
-
-  it("showPeakLabels defaults to true and can be set", () => {
-    expect(useAppState.getState().showPeakLabels).toBe(true);
-    useAppState.getState().setShowPeakLabels(false);
-    expect(useAppState.getState().showPeakLabels).toBe(false);
-  });
-
-  it("annotation toggles are NOT persisted", () => {
-    useAppState.getState().setShowPeakTicks(false);
-    useAppState.getState().setShowPeakLabels(false);
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("showPeakTicks");
-    expect(raw).not.toContain("showPeakLabels");
-  });
-
-  // I5.3 (#184): the compareXDomains field + setCompareXDomain action were
-  // removed (Compare-only; the series builder holds xDomain in local useState).
 });

@@ -15,7 +15,7 @@ HIMALAYA_DB_PATH=/path/to/experiment/himalaya.db bin/himalaya serve --port 8080
 cd packages/HimalayaUI/frontend && npm run dev -- --host 127.0.0.1
 ```
 
-Vite reads `VITE_API_PORT` (defaults to `8080`) at config time — see `vite.config.ts`. The `--host 127.0.0.1` flag matters: `playwright.config.ts` expects `http://127.0.0.1:5173`, not `localhost`, and a default-`localhost` Vite will hang Playwright tests for 60 s before failing.
+Vite reads `VITE_API_PORT` (defaults to `8080`) at config time — see `vite.config.ts`. The mocked Playwright suite doesn't use this server: it builds and serves its own bundle on `127.0.0.1:5191`.
 
 ## Side-by-side pair (live prod already on :8080, or two worktrees in parallel)
 
