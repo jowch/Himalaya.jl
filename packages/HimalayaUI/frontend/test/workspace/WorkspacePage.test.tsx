@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, TagColorEntry, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
@@ -30,7 +30,7 @@ const state = {
   bridges: [] as SampleBridge[],
   labels: [] as SampleLabel[],
   problems: { ingest_error: null as string | null, exposures: [] as ProblemExposure[] },
-  tagColors: [] as TagColorEntry[],
+  labelColors: [] as LabelColorEntry[],
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
 };
@@ -78,8 +78,8 @@ vi.mock("../../src/queries", () => ({
   useLabels: () => ({ data: state.labels }),
   useAddLabel: recorder("addLabel"),
   useRemoveLabel: recorder("removeLabel"),
-  useTagColors: () => ({ data: state.tagColors }),
-  useSetTagColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setTagColor", boundTo: 0, arg }) }),
+  useLabelColors: () => ({ data: state.labelColors }),
+  useSetLabelColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setLabelColor", boundTo: 0, arg }) }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
@@ -115,19 +115,19 @@ function peak(id: number, q: number, source: "auto" | "manual", excluded = false
 
 function currentView(): string {
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-  const input = screen.getByLabelText("Command or sample");
-  fireEvent.change(input, { target: { value: "current view" } });
-  const option = screen.getAllByRole("option").find((o) => /current view/.test(o.textContent ?? ""));
-  const name = /Plot (.+), current view/.exec(option?.textContent ?? "")?.[1] ?? "";
-  fireEvent.keyDown(input, { key: "Escape" });
+  const row = screen.getByRole("dialog").querySelector("[data-palette-item='view']");
+  const name = row?.children[1]?.textContent ?? "";
+  fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Escape" });
   return name;
 }
 
-function pickView(label: string): void {
+function runFromPalette(...steps: string[]): void {
   fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-  const input = screen.getByLabelText("Command or sample");
-  fireEvent.change(input, { target: { value: label } });
-  fireEvent.keyDown(input, { key: "Enter" });
+  for (const step of steps) {
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: step } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
 }
 
 function clickPlotAt(q: number, detail = 1): void {
@@ -215,7 +215,7 @@ beforeEach(() => {
   state.bridges = [];
   state.labels = [];
   state.problems = { ingest_error: null, exposures: [] };
-  state.tagColors = [];
+  state.labelColors = [];
   state.ingest = undefined;
   state.rescanError = false;
   rescans.length = 0;
@@ -255,7 +255,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const input = screen.getByLabelText("Command or sample");
     fireEvent.change(input, { target: { value: "switch user" } });
-    expect(screen.getAllByRole("option").some((o) => /Switch user, signed in as jc/.test(o.textContent ?? ""))).toBe(true);
+    expect(screen.getAllByRole("option")[0]).toHaveAccessibleName("Switch user, jc");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(clearUsername).toHaveBeenCalledTimes(1);
   });
@@ -401,6 +401,16 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments$/);
   });
 
+  it("lists removing the experiment only once it is typed, and goes back to all experiments from the palette", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("option", { name: "Remove this experiment" })).toBeNull();
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "back to all" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments$/);
+  });
+
   it("offers no remove command while an ingest runs", () => {
     state.ingest = { status: "analyzing", stage: "analyzing", processed: 1, total: 2 };
     renderAt("/experiments/1/workspace/10");
@@ -504,7 +514,7 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it("J, L and R are no longer shortcuts", () => {
+  it("J and R are no longer shortcuts", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -512,7 +522,6 @@ describe("WorkspacePage", () => {
     fireEvent.click(screen.getByRole("dialog").querySelector("[data-sample-id='11']")!);
     expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "j" });
-    fireEvent.keyDown(window, { key: "l" });
     fireEvent.keyDown(window, { key: "r" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
     expect(currentView()).toBe("Log");
@@ -565,6 +574,29 @@ describe("WorkspacePage", () => {
   it("says a frame has no integrated trace without guessing when I₀ is unknown", () => {
     state.traceError = true;
     state.traceErr = new ApiError(404, ".dat file not found", null);
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
+  });
+
+  it("says a frame is waiting for its trace when ingest reports it pending, matching the notice", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 101, filename: "f101", sample_id: 10, sample_name: "S", problem: "no_trace", reason: "no trace" },
+    ] };
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 exposure waiting for a trace");
+  });
+
+  it("keeps saying no integrated trace when only another frame is pending", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true })];
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 999, filename: "f999", sample_id: 11, sample_name: "T", problem: "no_trace", reason: "no trace" },
+    ] };
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
   });
@@ -690,53 +722,72 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("shows the sample's tags under its heading, with suggestions dashed and confirmed by a click", () => {
+  it("shows the sample's labels under its heading, with suggestions dashed and confirmed by a click", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
       { id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" },
     ];
     renderAt("/experiments/1/workspace/10");
-    const row = screen.getByTestId("workspace-tags");
-    const chips = screen.getByTestId("workspace-tag-chips");
-    expect([...chips.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-state")])).toEqual([
+    const row = screen.getByTestId("workspace-labels");
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect([...chips.querySelectorAll("[data-label]")].map((c) => [c.getAttribute("data-label"), c.getAttribute("data-label-state")])).toEqual([
       ["37C", "confirmed"],
       ["buffer", "suggested"],
     ]);
-    const buffer = chips.querySelector<HTMLElement>("[data-tag='buffer']")!;
-    expect(buffer).toHaveAttribute("data-tag-standard", "true");
+    const buffer = chips.querySelector<HTMLElement>("[data-label='buffer']")!;
+    expect(buffer).toHaveAttribute("data-label-standard", "true");
     expect(within(buffer).getByText("Buffer")).toBeInTheDocument();
-    expect(within(chips.querySelector<HTMLElement>("[data-tag='37C']")!).queryByText(", suggested")).toBeNull();
-    expect(chips.querySelector("[data-tag='37C']")).not.toHaveAttribute("data-tag-standard");
-    fireEvent.click(within(row).getByRole("button", { name: "Confirm tag Buffer" }));
-    fireEvent.click(within(row).getByRole("button", { name: "Remove tag 37C" }));
+    expect(within(chips.querySelector<HTMLElement>("[data-label='37C']")!).queryByText(", suggested")).toBeNull();
+    expect(chips.querySelector("[data-label='37C']")).not.toHaveAttribute("data-label-standard");
+    fireEvent.click(within(row).getByRole("button", { name: "Confirm label Buffer" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Remove label 37C" }));
     expect(calls).toEqual([
       { hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "buffer" } },
       { hook: "removeLabel", boundTo: 1, arg: { sampleId: 10, label: "37C" } },
     ]);
   });
 
-  it("the palette opens the tag picker, which suggests experiment tags and adds the pick on Enter", () => {
+  it("the palette opens the label picker, which suggests experiment labels and adds the pick on Enter", () => {
     state.labels = [{ id: 3, sample_id: 11, label: "retake", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Add tag to A1");
-    const picker = screen.getByRole("dialog", { name: "Add a tag" });
+    runFromPalette("label");
+    const picker = screen.getByRole("dialog", { name: "Add a label" });
     expect(within(picker).getAllByRole("button").map((b) => b.textContent)).toEqual(["retake", "Buffer", "Calibrant", "Empty capillary"]);
-    const input = within(picker).getByLabelText("Tag name");
+    const input = within(picker).getByLabelText("Label name");
     fireEvent.change(input, { target: { value: "bufer" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.queryByRole("dialog", { name: "Add a tag" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
     expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
   });
 
-  it("a new tag needs the Create row, and Backspace in the empty picker removes the last confirmed tag, never a suggestion", () => {
+  it("L opens the label picker without typing the L, and Enter confirms a suggestion", () => {
+    state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "l" });
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "buf" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
+  });
+
+  it("L does nothing before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "L" });
+    expect(screen.queryByRole("dialog", { name: "Add a label" })).toBeNull();
+  });
+
+  it("a new label needs the Create row, and Backspace in the empty picker removes the last confirmed label, never a suggestion", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
     ];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.click(screen.getByRole("button", { name: "+ Tag" }));
-    const input = within(screen.getByRole("dialog", { name: "Add a tag" })).getByLabelText("Tag name");
+    fireEvent.click(screen.getByRole("button", { name: "+ Label L" }));
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
     fireEvent.keyDown(input, { key: "Backspace" });
     fireEvent.change(input, { target: { value: "heated" } });
     expect(screen.getByRole("button", { name: "Create “heated”" })).toBeInTheDocument();
@@ -747,7 +798,7 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("the sample filter matches tags as well as names", () => {
+  it("the sample filter matches labels as well as names", () => {
     state.labels = [{ id: 1, sample_id: 13, label: "empty capillary", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.change(screen.getByLabelText("Filter samples"), { target: { value: "capill" } });
@@ -756,67 +807,67 @@ describe("WorkspacePage", () => {
     expect(within(list).getByText("A4")).toBeInTheDocument();
   });
 
-  it("keeps the tag row mounted with no tags and no user, so the plot below never moves", () => {
+  it("keeps the label row mounted with no labels and no user, so the plot below never moves", () => {
     state.username = undefined;
     renderAt("/experiments/1/workspace/11");
-    const row = screen.getByTestId("workspace-tags");
-    expect(row.querySelector("[data-testid='workspace-tag-chips'] [data-tag]")).toBeNull();
+    const row = screen.getByTestId("workspace-labels");
+    expect(row.querySelector("[data-testid='workspace-label-chips'] [data-label]")).toBeNull();
   });
 
-  it("colours each tag from the shared map, built-ins blue and other tags violet by default", () => {
+  it("colours each label from the shared map, built-ins blue and other labels violet by default", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
       { id: 3, sample_id: 10, label: "retake", state: "suggested", source: "ingest" },
     ];
-    state.tagColors = [{ label: "RETAKE", color: "rose" }];
+    state.labelColors = [{ label: "RETAKE", color: "rose" }];
     renderAt("/experiments/1/workspace/10");
-    const chips = screen.getByTestId("workspace-tag-chips");
-    expect([...chips.querySelectorAll("[data-tag]")].map((c) => [c.getAttribute("data-tag"), c.getAttribute("data-tag-color")])).toEqual([
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect([...chips.querySelectorAll("[data-label]")].map((c) => [c.getAttribute("data-label"), c.getAttribute("data-label-color")])).toEqual([
       ["37C", "violet"],
       ["buffer", "blue"],
       ["retake", "rose"],
     ]);
   });
 
-  it("right-clicking a tag opens its colour menu, and a pick sets the colour for that name", () => {
+  it("right-clicking a label opens its colour menu, and a pick sets the colour for that name", () => {
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.contextMenu(screen.getByTestId("workspace-tag-chips").querySelector("[data-tag='37C']")!);
-    const menu = screen.getByRole("dialog", { name: "Colour of tag 37C" });
+    fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+    const menu = screen.getByRole("dialog", { name: "Colour of label 37C" });
     expect(within(menu).getByRole("radio", { name: "Violet" })).toHaveAttribute("aria-checked", "true");
     expect(within(menu).queryByRole("button", { name: "Default colour" })).toBeNull();
     fireEvent.click(within(menu).getByRole("radio", { name: "Teal" }));
-    expect(screen.queryByRole("dialog", { name: "Colour of tag 37C" })).toBeNull();
-    expect(calls).toEqual([{ hook: "setTagColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
+    expect(screen.queryByRole("dialog", { name: "Colour of label 37C" })).toBeNull();
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "37C", color: "teal" } }]);
   });
 
-  it("the palette opens a tag's colour menu, which can reset a recoloured tag to its default", () => {
+  it("the palette opens a label's colour menu, which can reset a recoloured label to its default", () => {
     state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" }];
-    state.tagColors = [{ label: "buffer", color: "stone" }];
+    state.labelColors = [{ label: "buffer", color: "stone" }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Set colour of tag Buffer");
-    const menu = screen.getByRole("dialog", { name: "Colour of tag Buffer" });
+    runFromPalette("label colour", "buffer");
+    const menu = screen.getByRole("dialog", { name: "Colour of label Buffer" });
     expect(within(menu).getByRole("radio", { name: "Stone" })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(within(menu).getByRole("button", { name: "Default colour" }));
-    expect(calls).toEqual([{ hook: "setTagColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
+    expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "buffer", color: null } }]);
   });
 
   it("offers no colour menu before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.contextMenu(screen.getByTestId("workspace-tag-chips").querySelector("[data-tag='37C']")!);
-    expect(screen.queryByRole("dialog", { name: "Colour of tag 37C" })).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+    expect(screen.queryByRole("dialog", { name: "Colour of label 37C" })).toBeNull();
   });
 
-  it("offers no tag editing before a user is set", () => {
+  it("offers no label editing before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
     renderAt("/experiments/1/workspace/10");
-    const row = screen.getByTestId("workspace-tags");
+    const row = screen.getByTestId("workspace-labels");
     expect(within(row).queryAllByRole("button")).toHaveLength(0);
-    expect(row.querySelector("[data-tag='37C']")).not.toBeNull();
+    expect(row.querySelector("[data-label='37C']")).not.toBeNull();
   });
 
   it("filters the sample list by name", () => {
@@ -894,15 +945,15 @@ describe("WorkspacePage", () => {
         .join(" ");
     const logTicks = ticks();
     expect(currentView()).toBe("Log");
-    pickView("Plot Linear");
+    runFromPalette("plot linear");
     expect(currentView()).toBe("Linear");
     expect(ticks()).not.toBe(logTicks);
-    pickView("Plot Log-log");
+    runFromPalette("plot log-log");
     expect(currentView()).toBe("Log-log");
-    pickView("Plot q²I");
+    runFromPalette("plot q²I");
     expect(currentView()).toBe("q²I (Kratky)");
     expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
-    pickView("Plot Log");
+    runFromPalette("plot view", "log");
     expect(currentView()).toBe("Log");
     expect(ticks()).toBe(logTicks);
   });
@@ -916,10 +967,10 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     const strip = (): string => screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!;
     const log = strip();
-    pickView("Plot Log-log");
+    runFromPalette("plot log-log");
     const loglog = strip();
     expect(loglog).not.toBe(log);
-    pickView("Plot q²I");
+    runFromPalette("plot q²I");
     expect(strip()).not.toBe(log);
     expect(strip()).not.toBe(loglog);
   });
@@ -1024,11 +1075,11 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
-    pickView("Hide comparisons");
+    runFromPalette("Hide comparisons");
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
-    pickView("Show comparisons");
+    runFromPalette("Show comparisons");
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
@@ -1151,6 +1202,21 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
   });
 
+  it("typing a sample's exact name and Enter goes there rather than comparing with it", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("A3");
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+    expect(calls).toEqual([]);
+  });
+
+  it("Ctrl+K closes the palette from inside a page", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample");
+    const page = screen.getByRole("combobox", { name: "Sample" });
+    fireEvent.keyDown(page, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("Ctrl+K toggles the palette, and a command runs the same action as its key", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
@@ -1162,34 +1228,35 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
     expect(currentView()).toBe("q²I (Kratky)");
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "plot" } });
-    expect(screen.getByRole("option", { name: /q²I \(Kratky\), current view/ })).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Escape" });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "plot view" } });
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    expect(screen.getByRole("option", { name: "q²I (Kratky), Current" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "View" }), { key: "Escape" });
+    expect(screen.getByRole("combobox", { name: "Command or sample" })).toHaveValue("plot view");
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("the palette switches the workspace to dark and back, remembers it, and can follow the system again", () => {
+  it("the palette's theme page switches the workspace to dark and back, remembers it, and can follow the system again", () => {
     const { unmount } = renderAt("/experiments/1/workspace/10");
     const root = screen.getByTestId("workspace");
     expect(root).toHaveAttribute("data-workspace-theme", "system");
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "dark theme" } });
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    runFromPalette("theme", "dark");
     expect(root).toHaveAttribute("data-workspace-theme", "dark");
     unmount();
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "dark");
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "light theme" } });
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    runFromPalette("theme");
+    expect(screen.getByRole("option", { name: "Dark, Current" })).toBeInTheDocument();
+    const input = screen.getByRole("combobox", { name: "Theme" });
+    fireEvent.change(input, { target: { value: "light" } });
+    fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "light");
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
-    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
+    runFromPalette("theme", "system");
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
     expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
-    fireEvent.keyDown(window, { key: "k", metaKey: true });
-    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "system theme" } });
-    expect(screen.queryByRole("option")).toBeNull();
+    runFromPalette("theme");
+    expect(screen.getByRole("option", { name: "Follow the system, Current" })).toBeInTheDocument();
   });
 
   it("I opens a custom index on the top candidate; arrows nudge the lattice and Enter adds it", () => {
@@ -1595,14 +1662,13 @@ describe("WorkspacePage", () => {
     expect(screen.queryByText(/^minus /)).toBeNull();
   });
 
-  it("the palette opens a bridge picker that leaves out this sample and its bridges, and Enter bridges to the pick", () => {
+  it("the palette's bridge page leaves out this sample and its bridges, and Enter bridges to the pick", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Bridge A1 to a sample");
-    const picker = screen.getByRole("dialog", { name: "Bridge A1 to a sample" });
-    expect(within(picker).queryByText("A1")).toBeNull();
-    expect(within(picker).queryByText("A3")).toBeNull();
-    const input = within(picker).getByLabelText("Find a sample to bridge to");
+    runFromPalette("bridge to a sample");
+    const page = screen.getByRole("dialog", { name: "Bridge to" });
+    expect(within(page).getAllByRole("option").map((o) => o.textContent)).toEqual(["A2", "A4"]);
+    const input = within(page).getByRole("combobox", { name: "Sample" });
     fireEvent.change(input, { target: { value: "a4" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -1614,7 +1680,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Take A1 out of its bridges");
+    runFromPalette("out of its bridges");
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 10 } });
     fireEvent.click(screen.getByRole("button", { name: "Remove bridge to A3" }));
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 12 } });
@@ -1635,12 +1701,9 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    pickView("Hide comparisons");
+    runFromPalette("Hide comparisons");
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
-    pickView("Bridge A1 to a sample");
-    const input = within(screen.getByRole("dialog")).getByLabelText("Find a sample to bridge to");
-    fireEvent.change(input, { target: { value: "a4" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    runFromPalette("bridge to a sample", "a4");
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(1);
   });
 
@@ -1648,16 +1711,16 @@ describe("WorkspacePage", () => {
     const options = (): string[] => {
       fireEvent.keyDown(window, { key: "k", ctrlKey: true });
       fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "bridge" } });
-      const labels = screen.queryAllByRole("option").map((o) => o.textContent ?? "");
+      const ids = screen.queryAllByRole("option").map((o) => o.getAttribute("data-palette-item") ?? "");
       fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-      return labels;
+      return ids.filter((id) => !id.startsWith("bridge-"));
     };
     const first = renderAt("/experiments/1/workspace/11");
     fireEvent.keyDown(window, { key: "b" });
     fireEvent.keyDown(window, { key: "B", shiftKey: true });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls.filter((c) => c.hook === "unbridge")).toHaveLength(0);
-    expect(options()).toEqual(["Bridge A2 to a sample"]);
+    expect(options()).toEqual(["bridge"]);
     first.unmount();
     state.username = undefined;
     renderAt("/experiments/1/workspace/11");

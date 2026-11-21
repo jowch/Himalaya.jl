@@ -272,6 +272,10 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "analyze_run": {
       applyPostState();
+      if (payload?.trace_hash_before !== payload?.trace_hash_after) {
+        qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
+        qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
+      }
       break;
     }
     case "ingest_started":
@@ -295,7 +299,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "tag_color_set":
-      qc.invalidateQueries({ queryKey: queryKeys.tagColors() });
+      qc.invalidateQueries({ queryKey: queryKeys.labelColors() });
       break;
     case "label_added":
     case "label_removed": {

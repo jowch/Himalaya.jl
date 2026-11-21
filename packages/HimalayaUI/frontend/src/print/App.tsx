@@ -130,8 +130,6 @@ export function PrintApp(): JSX.Element {
       <ToastContainer />
       <LiveRegion />
       <InfrastructureBanner />
-      {/* Shared GPU colormap filters for every DetectorImage (Focus/Loupe/thumbs).
-          Mounted once here so `filter: url(#detector-lut-…)` resolves app-wide. */}
       <DetectorLutFilters />
     </>
   );

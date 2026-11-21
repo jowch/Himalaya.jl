@@ -1,22 +1,24 @@
-// The Print detector colormap. SAXS images arrive log-normalized grayscale; this
-// maps intensity → an OKLCH ramp, converted to sRGB in code (Ottosson) so the LUT
-// is pure + JSDOM-testable.
-//
-// TWO variants:
-//  - "neutral" (DEFAULT): a warm-GRAY ink ramp (near-zero chroma, black → warm
-//    paper-cream). The detector image is raw MEASUREMENT, so it stays neutral and
-//    the phase-coloured ring overlay owns all the hue — maximises ring legibility
-//    for alignment / missing-peak judgement, is colour-vision-deficiency safe
-//    (the image carries luminance only), and follows the Print's "colour = meaning"
-//    rule. This is what the alignment panel uses.
-//  - "warm": a saturated terracotta ramp (black → umber → terracotta → gold →
-//    cream) — a film-exposure "beauty" look for an un-annotated detector view.
-//    Kept available but NOT the default, because saturated warm data clashes with
-//    the (often warm-hued) phase rings.
-
 export interface LutStop { t: number; L: number; C: number; h: number } // OKLCH
 
-export type DetectorLutVariant = "neutral" | "warm";
+export type DetectorLutVariant = "neutral" | "warm" | "magma";
+
+export const MAGMA_SRGB_STOPS: readonly (readonly [number, number, number])[] = [
+  [0, 0, 4], [40, 11, 84], [101, 21, 110], [159, 42, 99],
+  [212, 72, 66], [245, 125, 21], [250, 193, 39], [252, 255, 164],
+];
+
+function buildSrgbRamp(stops: readonly (readonly [number, number, number])[]): Uint8ClampedArray {
+  const lut = new Uint8ClampedArray(256 * 3);
+  const n = stops.length - 1;
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 255) * n;
+    const k = Math.min(n - 1, Math.floor(x));
+    const f = x - k;
+    const a = stops[k]!, b = stops[k + 1]!;
+    for (let c = 0; c < 3; c++) lut[i * 3 + c] = Math.round(a[c]! + f * (b[c]! - a[c]!));
+  }
+  return lut;
+}
 
 // Warm-GRAY ink ramp: lightness rises monotonically; chroma is tiny (~0.005–0.009)
 // so it reads as a warm neutral, leaving the colour channel to the rings.
@@ -72,11 +74,20 @@ function oklchToSrgb(L: number, C: number, h: number): [number, number, number] 
 
 const cache: Partial<Record<DetectorLutVariant, Uint8ClampedArray>> = {};
 
-/** Build (and memoize) the 256×RGB Print detector LUT. Defaults to the neutral
- *  warm-gray ramp; pass "warm" for the saturated beauty ramp. */
+export const DETECTOR_LUT_VARIANTS: readonly DetectorLutVariant[] = ["neutral", "warm", "magma"];
+
+export function detectorLutFilterId(variant: DetectorLutVariant): string {
+  return `detector-lut-${variant}`;
+}
+
+export function detectorLutFilter(variant: DetectorLutVariant): string {
+  return `url(#${detectorLutFilterId(variant)})`;
+}
+
 export function buildPrintDetectorLut(variant: DetectorLutVariant = "neutral"): Uint8ClampedArray {
   const hit = cache[variant];
   if (hit) return hit;
+  if (variant === "magma") return (cache.magma = buildSrgbRamp(MAGMA_SRGB_STOPS));
   const lut = new Uint8ClampedArray(256 * 3);
   const stops = stopsFor(variant);
   for (let i = 0; i < 256; i++) {

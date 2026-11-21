@@ -1,20 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { SampleLabel } from "../../src/api";
-import { TagRow } from "../../src/workspace/ui/TagRow";
+import { LabelRow } from "../../src/workspace/ui/LabelRow";
 
-function tag(id: number, label: string, state: SampleLabel["state"] = "confirmed"): SampleLabel {
+function chip(id: number, label: string, state: SampleLabel["state"] = "confirmed"): SampleLabel {
   return { id, sample_id: 1, label, state, source: "user" };
 }
 
 const NO_COLORS = { colors: [], coloring: undefined, onOpenColor: () => {}, onCloseColor: () => {}, onSetColor: () => {} };
 
-const TAGS = [tag(1, "37C"), tag(2, "heated"), tag(3, "retake"), tag(4, "buffer", "suggested"), tag(5, "dilute")];
+const LABELS = [chip(1, "37C"), chip(2, "heated"), chip(3, "retake"), chip(4, "buffer", "suggested"), chip(5, "dilute")];
 
 function renderRow(onAdd = vi.fn(), onRemove = vi.fn()): void {
   render(
-    <TagRow
-      tags={TAGS}
+    <LabelRow
+      labels={LABELS}
       vocabulary={[]}
       editable
       adding={false}
@@ -27,69 +27,69 @@ function renderRow(onAdd = vi.fn(), onRemove = vi.fn()): void {
   );
 }
 
-describe("TagRow overflow", () => {
+describe("LabelRow overflow", () => {
   beforeEach(() => {
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
-      return this.parentElement?.dataset.testid === "workspace-tag-ruler" ? 60 : 0;
+      return this.parentElement?.dataset.testid === "workspace-label-ruler" ? 60 : 0;
     });
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
-      return this.dataset.testid === "workspace-tag-chips" ? 200 : 0;
+      return this.dataset.testid === "workspace-label-chips" ? 200 : 0;
     });
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("shows the tags that fit and a +N chip that lists the rest, which stay editable", () => {
+  it("shows the labels that fit and a +N chip that lists the rest, which stay editable", () => {
     const onAdd = vi.fn();
     const onRemove = vi.fn();
     renderRow(onAdd, onRemove);
-    const chips = screen.getByTestId("workspace-tag-chips");
-    expect([...chips.querySelectorAll("[data-tag]")].map((c) => c.getAttribute("data-tag"))).toEqual(["37C", "heated"]);
-    fireEvent.click(screen.getByRole("button", { name: "3 more tags" }));
-    const more = screen.getByRole("dialog", { name: "More tags" });
-    expect([...more.querySelectorAll("[data-tag]")].map((c) => c.getAttribute("data-tag"))).toEqual(["retake", "buffer", "dilute"]);
-    fireEvent.click(within(more).getByRole("button", { name: "Confirm tag Buffer" }));
-    fireEvent.click(within(more).getByRole("button", { name: "Remove tag dilute" }));
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect([...chips.querySelectorAll("[data-label]")].map((c) => c.getAttribute("data-label"))).toEqual(["37C", "heated"]);
+    fireEvent.click(screen.getByRole("button", { name: "3 more labels" }));
+    const more = screen.getByRole("dialog", { name: "More labels" });
+    expect([...more.querySelectorAll("[data-label]")].map((c) => c.getAttribute("data-label"))).toEqual(["retake", "buffer", "dilute"]);
+    fireEvent.click(within(more).getByRole("button", { name: "Confirm label Buffer" }));
+    fireEvent.click(within(more).getByRole("button", { name: "Remove label dilute" }));
     expect(onAdd).toHaveBeenCalledWith("buffer");
     expect(onRemove).toHaveBeenCalledWith("dilute");
     fireEvent.keyDown(more, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "More tags" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "More labels" })).toBeNull();
   });
 
   it("reads a suggestion as suggested when it can't be confirmed", () => {
     render(
-      <TagRow tags={[tag(4, "buffer", "suggested")]} vocabulary={[]} editable={false} adding={false}
+      <LabelRow labels={[chip(4, "buffer", "suggested")]} vocabulary={[]} editable={false} adding={false}
         onOpenAdd={() => {}} onCloseAdd={() => {}} onAdd={() => {}} onRemove={() => {}} {...NO_COLORS} />,
     );
-    expect(within(screen.getByTestId("workspace-tag-chips")).getByText(", suggested")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workspace-label-chips")).getByText(", suggested")).toBeInTheDocument();
   });
 });
 
-describe("TagRow colours", () => {
+describe("LabelRow colours", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  function colorRow(over: Partial<Parameters<typeof TagRow>[0]> = {}) {
+  function colorRow(over: Partial<Parameters<typeof LabelRow>[0]> = {}) {
     return (
-      <TagRow tags={TAGS} vocabulary={[]} editable adding={false} onOpenAdd={() => {}} onCloseAdd={() => {}}
+      <LabelRow labels={LABELS} vocabulary={[]} editable adding={false} onOpenAdd={() => {}} onCloseAdd={() => {}}
         onAdd={() => {}} onRemove={() => {}} {...NO_COLORS} {...over} />
     );
   }
 
-  it("right-clicking a tag in the +N list closes the list and opens that tag's colour menu", () => {
+  it("right-clicking a label in the +N list closes the list and opens that label's colour menu", () => {
     vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
-      return this.parentElement?.dataset.testid === "workspace-tag-ruler" ? 60 : 0;
+      return this.parentElement?.dataset.testid === "workspace-label-ruler" ? 60 : 0;
     });
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
-      return this.dataset.testid === "workspace-tag-chips" ? 200 : 0;
+      return this.dataset.testid === "workspace-label-chips" ? 200 : 0;
     });
     const onOpenColor = vi.fn();
     render(colorRow({ onOpenColor }));
-    fireEvent.click(screen.getByRole("button", { name: "3 more tags" }));
-    fireEvent.contextMenu(screen.getByRole("dialog", { name: "More tags" }).querySelector("[data-tag='dilute']")!);
+    fireEvent.click(screen.getByRole("button", { name: "3 more labels" }));
+    fireEvent.contextMenu(screen.getByRole("dialog", { name: "More labels" }).querySelector("[data-label='dilute']")!);
     expect(onOpenColor).toHaveBeenCalledWith("dilute");
-    expect(screen.queryByRole("dialog", { name: "More tags" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "More labels" })).toBeNull();
   });
 
-  it("picking a tag's default colour clears the override instead of storing it", () => {
+  it("picking a label's default colour clears the override instead of storing it", () => {
     const onSetColor = vi.fn();
     render(colorRow({ coloring: "buffer", colors: [{ label: "buffer", color: "teal" }], onSetColor }));
     fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
@@ -97,7 +97,7 @@ describe("TagRow colours", () => {
     expect(onSetColor.mock.calls).toEqual([["buffer", null], ["buffer", "rose"]]);
   });
 
-  it("closing hands focus back to what opened the menu, never to a tag's remove button", () => {
+  it("closing hands focus back to what opened the menu, never to a label's remove button", () => {
     const { rerender } = render(<><button type="button">opener</button>{colorRow()}</>);
     screen.getByRole("button", { name: "opener" }).focus();
     rerender(<><button type="button">opener</button>{colorRow({ coloring: "37C" })}</>);
@@ -105,18 +105,18 @@ describe("TagRow colours", () => {
     rerender(<><button type="button">opener</button>{colorRow({ coloring: undefined })}</>);
     expect(screen.getByRole("button", { name: "opener" })).toHaveFocus();
 
-    screen.getByRole("button", { name: "Remove tag 37C" }).focus();
+    screen.getByRole("button", { name: "Remove label 37C" }).focus();
     rerender(<><button type="button">opener</button>{colorRow({ coloring: "37C" })}</>);
     fireEvent.click(screen.getByRole("radio", { name: "Rose" }));
     rerender(<><button type="button">opener</button>{colorRow({ coloring: undefined })}</>);
-    expect(screen.getByRole("button", { name: "Remove tag 37C" })).not.toHaveFocus();
-    expect(screen.getByRole("button", { name: "+ Tag" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Remove label 37C" })).not.toHaveFocus();
+    expect(screen.getByRole("button", { name: "+ Label L" })).toHaveFocus();
   });
 
-  it("falls back to + Tag when the opener is gone, as after the palette closes", () => {
+  it("falls back to + Label when the opener is gone, as after the palette closes", () => {
     const { rerender } = render(colorRow({ coloring: "37C" }));
     fireEvent.keyDown(screen.getByRole("radio", { name: "Violet" }), { key: "Escape" });
     rerender(colorRow({ coloring: undefined }));
-    expect(screen.getByRole("button", { name: "+ Tag" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "+ Label L" })).toHaveFocus();
   });
 });

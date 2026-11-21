@@ -15,7 +15,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
     out = Dict[]
     for sm in samples
         sid  = Int(sm.id)
-        tags = [String(r.label) for r in Tables.rowtable(DBInterface.execute(db,
+        labels = [String(r.label) for r in Tables.rowtable(DBInterface.execute(db,
             "SELECT label FROM sample_labels WHERE sample_id = ? AND state = 'confirmed' ORDER BY id", [sid]))]
 
         exposures = Tables.rowtable(DBInterface.execute(db,
@@ -55,7 +55,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
         push!(out, Dict(
             :name         => sm.name,
             :notes        => sm.notes isa Missing ? nothing : sm.notes,
-            :tags         => tags,
+            :labels       => labels,
             :exposures    => ex_out,
         ))
     end
@@ -64,12 +64,12 @@ end
 
 function _export_csv(summary)
     header = ["sample_name","exposure_filename",
-              "phases","lattice_ds","r_squareds","scores","tags"]
+              "phases","lattice_ds","r_squareds","scores","labels"]
     rows = Vector{Vector{Any}}()
     for sm in summary
-        tag_str = join(sm[:tags], ";")
+        label_str = join(sm[:labels], ";")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], "", "", "", "", "", tag_str])
+            push!(rows, [sm[:name], "", "", "", "", "", label_str])
             continue
         end
         for ex in sm[:exposures]
@@ -78,7 +78,7 @@ function _export_csv(summary)
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
             push!(rows, [sm[:name], ex[:filename],
-                         phases, lds, r2s, scs, tag_str])
+                         phases, lds, r2s, scs, label_str])
         end
     end
     io = IOBuffer()
