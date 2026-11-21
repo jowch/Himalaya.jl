@@ -405,10 +405,25 @@ durable count of "nothing happened" offers no observability value).
 ## 8. Persistence across reload
 
 Pending mutations are mirrored into `sessionStorage` via
-`lib/queue/persistence.ts`. On reload, the queue rehydrates the pending
-set and resumes (HTTP retries pick up where they left off; SSE frames
-that landed during the reload window have their `client_op_id` matched
-against the rehydrated registry).
+`lib/queue/persistence.ts`. On reload, `rehydrate` reads and clears the
+stored ops before `attachPersistence` writes its first mirror, then builds
+each op into the `MutationCache` with the live queue's options
+(`queueMutationOptions`). A replayed op therefore keeps its `client_op_id`,
+its place in the single `"queue"` scope, and the same retry policy as a fresh
+edit. It is visible to the outage banner and to the mirror, so a second
+reload keeps it too. `PrintApp` runs both steps in one effect, in that order.
+`rehydrate` skips a stored op whose `client_op_id` is already pending in the
+cache, so StrictMode's second effect run and an ErrorBoundary remount don't
+replay it twice. A stored entry this build can't apply (a malformed entry, or
+one whose `onMutate` throws because the payload shape changed in a deploy)
+counts as `lost` without stopping the rest, and `PrintApp` shows the same
+"couldn't be restored" toast as a schema mismatch. A replayed op that the
+server rejects counts as `failed` and gets no extra toast, since the queue's
+own error toast already reports it.
+
+Reconnect refresh also covers a reload during an outage. `liveStream` counts
+the first open as a reconnect when an earlier attempt in the same page failed,
+so queries that errored while the server was down refetch once it returns.
 
 `schemaVersion` mismatch between the persisted shape and the current
 build drops the queue with a toast — the alternative (silent type drift)
@@ -454,8 +469,8 @@ and the user sees a toast. The mutation's `state` ends in `error`.
 
 An unreachable server never makes an edit terminal. The optimistic effect
 stays visible and the edit keeps retrying with the same `client_op_id`, so a
-backend restart or deploy during triage loses nothing (#343). A reload during
-the outage does not yet keep these edits safe (#353).
+backend restart or deploy during triage loses nothing (#343), and neither
+does a reload during the outage (#353, §8).
 Other 5xx are treated as a server bug: after 5 failures the mutation lands in
 `error`, the optimistic effect rolls back, and the global handler toasts, so
 no consumer can leave a silent rollback.
