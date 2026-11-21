@@ -15,6 +15,13 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot",
         exposure_time=15.0, transmitted_counts=7365.0, incident_monitor=1.5007, counting_time=15.8)
     e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="other")
+    prp = joinpath(tmp, "with_prp.prp")
+    write(prp, "Time this file was written: 26 Apr 2026 18:20:27\nBeam energy=9000.5 eV\nPipe length=1700 mm\nDetector=Pilatus 1M\n")
+    s2_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2")
+    e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id, filename="with_prp",
+        prp_path=prp, timestamp="2026-04-26T18:20:27")
+    e4 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id, filename="prp_gone",
+        prp_path=joinpath(tmp, "missing.prp"))
 
     with_inproc_routes(db) do call
         # List
@@ -31,6 +38,30 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].counting_time ≈ 15.8
         @test list[1].exposure_time ≈ 15.0
         @test list[2].transmitted_counts === nothing
+        @test list[1].beam_energy_ev === nothing
+        @test list[1].pipe_length_m === nothing
+        @test list[1].detector === nothing
+
+        r = call("GET", "/api/samples/$s2_id/exposures")
+        @test r.status == 200
+        withprp = JSON3.read(String(r.body))
+        @test withprp[1].id == e3
+        @test withprp[1].timestamp == "2026-04-26T18:20:27"
+        @test withprp[1].beam_energy_ev ≈ 9000.5
+        @test withprp[1].pipe_length_m ≈ 1.7
+        @test withprp[1].detector == "Pilatus 1M"
+        @test withprp[2].id == e4
+        @test withprp[2].beam_energy_ev === nothing
+        @test withprp[2].pipe_length_m === nothing
+        @test withprp[2].detector === nothing
+
+        write(prp, "Beam energy=1.0 eV\nPipe length=1 mm\nDetector=rewritten\n")
+        write(joinpath(tmp, "missing.prp"), "Beam energy=11000 eV\nDetector=late\n")
+        again = JSON3.read(String(call("GET", "/api/samples/$s2_id/exposures").body))
+        @test again[1].beam_energy_ev ≈ 9000.5
+        @test again[1].detector == "Pilatus 1M"
+        @test again[2].beam_energy_ev ≈ 11000
+        @test again[2].detector == "late"
 
         # Select e2
         r = call("PATCH", "/api/exposures/$e2/select";
@@ -129,4 +160,12 @@ end
             "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'select_exposure'"))).c
         @test n_events == 0
     end
+end
+
+@testset "prp_details: a failed parse is not cached" begin
+    path = joinpath(mktempdir(), "flaky.prp")
+    write(path, "Beam energy=8000 eV\n")
+    @test (@test_logs (:warn, r"could not read") match_mode=:any HimalayaUI.prp_details(path; parse = _ -> error("unreadable")))[:beam_energy_ev] === nothing
+    @test HimalayaUI.prp_details(path)[:beam_energy_ev] ≈ 8000
+    @test HimalayaUI.prp_details(path; parse = _ -> error("not called"))[:beam_energy_ev] ≈ 8000
 end

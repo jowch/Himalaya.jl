@@ -131,7 +131,11 @@ function exposureRows(e: Exposure): [string, string][] {
   rows.push(["Kind", e.kind === "averaged" ? "Averaged" : e.kind === "background_subtracted" ? "Subtracted" : "Single"]);
   const i0 = e.incident_monitor;
   const i2 = e.transmitted_counts;
+  rows.push(["Acquired", e.timestamp ? e.timestamp.replace("T", " ").slice(0, 19) : "—"]);
   rows.push(["Exposure", e.exposure_time != null ? `${e.exposure_time.toFixed(1)} s` : "—"]);
+  rows.push(["Flight tube", e.pipe_length_m != null ? `${Math.round(e.pipe_length_m * 1000)} mm` : "—"]);
+  rows.push(["Energy", e.beam_energy_ev != null ? `${(e.beam_energy_ev / 1000).toFixed(3)} keV` : "—"]);
+  rows.push(["Detector", e.detector || "—"]);
   rows.push(["I₀", i0 != null ? i0.toLocaleString("en-US", { maximumSignificantDigits: 4 }) : "—"]);
   rows.push(["I signal", i2 != null ? Math.round(i2).toLocaleString("en-US") : "—"]);
   return rows;
