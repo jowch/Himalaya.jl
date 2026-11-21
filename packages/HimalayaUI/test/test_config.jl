@@ -10,7 +10,7 @@ function _pattern_db(; kwargs...)
 end
 
 @testset "integration_pattern_for" begin
-    @testset "defaults to {name}.dat when the column and the blob are unset" begin
+    @testset "defaults to {name}.dat when the column is unset" begin
         db, id = _pattern_db()
         @test HimalayaUI.integration_pattern_for(db, id) == "{name}.dat"
     end
@@ -20,31 +20,8 @@ end
         @test HimalayaUI.integration_pattern_for(db, id) == "{name}_tot.dat"
     end
 
-    @testset "falls back to [files].integration in a legacy config blob" begin
-        db, id = _pattern_db(config = "[files]\nintegration = \"integrated/{name}.dat\"\n")
-        @test HimalayaUI.integration_pattern_for(db, id) == "integrated/{name}.dat"
-    end
-
-    @testset "the column wins over the legacy blob" begin
-        db, id = _pattern_db(integration_pattern = "{name}_tot.dat",
-                             config = "[files]\nintegration = \"{name}.dat\"\n")
-        @test HimalayaUI.integration_pattern_for(db, id) == "{name}_tot.dat"
-    end
-
-    @testset "a column without {name} falls through to the legacy blob" begin
-        db, id = _pattern_db(integration_pattern = "trace.dat",
-                             config = "[files]\nintegration = \"integrated/{name}.dat\"\n")
-        @test HimalayaUI.integration_pattern_for(db, id) == "integrated/{name}.dat"
-    end
-
     @testset "ignores values without {name}" begin
-        db, id = _pattern_db(integration_pattern = "trace.dat",
-                             config = "[files]\nintegration = \"also.dat\"\n")
-        @test HimalayaUI.integration_pattern_for(db, id) == "{name}.dat"
-    end
-
-    @testset "tolerates a malformed legacy blob" begin
-        db, id = _pattern_db(config = "not [ valid toml")
+        db, id = _pattern_db(integration_pattern = "trace.dat")
         @test HimalayaUI.integration_pattern_for(db, id) == "{name}.dat"
     end
 

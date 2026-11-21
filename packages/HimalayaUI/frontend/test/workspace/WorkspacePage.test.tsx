@@ -33,6 +33,7 @@ const state = {
   rescanError: false,
 };
 const rescans: boolean[] = [];
+const opened: number[] = [];
 
 function recorder(hook: string) {
   return (boundTo: number) => ({
@@ -47,6 +48,7 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
+  useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useExposures: () => ({ data: state.exposures }),
   useTrace: () => ({
     data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching,
@@ -204,6 +206,7 @@ beforeEach(() => {
   state.ingest = undefined;
   state.rescanError = false;
   rescans.length = 0;
+  opened.length = 0;
 });
 
 describe("WorkspacePage", () => {
@@ -373,6 +376,13 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "rescan" } });
     expect(screen.queryAllByRole("option")).toHaveLength(0);
+  });
+
+  it("checks this experiment's folder for new files when it opens", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(opened.length).toBeGreaterThan(0);
+    expect(new Set(opened)).toEqual(new Set([1]));
+    expect(rescans).toEqual([]);
   });
 
   it("rescans, configures and reviews grouping from the palette", () => {

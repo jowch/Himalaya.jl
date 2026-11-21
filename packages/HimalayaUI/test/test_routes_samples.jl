@@ -728,11 +728,7 @@ end
     e2 = HimalayaUI.init_experiment!(db; name="E2", path="/e2",
         data_dir="/e2/d", analysis_dir="/e2/a")
 
-    # Distinct q_units per experiment, written straight into the config blob.
-    # e1 gets an explicit nm-1; e2 is left config-less so it falls back to A-1.
-    DBInterface.execute(db,
-        "UPDATE experiments SET config = ? WHERE id = ?",
-        ["[beamline]\nq_units = \"nm-1\"\n", e1])
+    DBInterface.execute(db, "UPDATE experiments SET q_units = 'nm-1' WHERE id = ?", [e1])
 
     s1 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A1")
     s2 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A2")
@@ -756,7 +752,7 @@ end
         # q_units sourced from each sample's owning experiment.
         @test by_name["A1"].q_units == "nm-1"
         @test by_name["A2"].q_units == "nm-1"
-        @test by_name["B1"].q_units == "A-1"   # e2 has no config → default
+        @test by_name["B1"].q_units == "A-1"
 
         # tags bundled in the projection.
         @test length(by_name["A1"].tags) == 1
@@ -782,20 +778,17 @@ end
     end
 end
 
-@testset "corpus samples route prefers the typed q_units column over the blob (6e)" begin
+@testset "corpus samples route reads q_units from the typed column only" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
 
-    # Redesign-style experiment: q_units in the TYPED COLUMN, config blob NULL.
     e_typed = HimalayaUI.create_experiment!(db; name="ET", path="/et",
         data_dir="/et/d", analysis_dir="/et/a", q_units="nm^-1")
-    # Legacy experiment: q_units only in the deprecated TOML blob, column NULL.
     e_blob = HimalayaUI.init_experiment!(db; name="EB", path="/eb",
         data_dir="/eb/d", analysis_dir="/eb/a")
     DBInterface.execute(db,
         "UPDATE experiments SET config = ? WHERE id = ?",
         ["[beamline]\nq_units = \"um^-1\"\n", e_blob])
-    # Belt-and-braces: a typed column STILL wins even when a stale blob disagrees.
     e_both = HimalayaUI.create_experiment!(db; name="EX", path="/ex",
         data_dir="/ex/d", analysis_dir="/ex/a", q_units="A^-1")
     DBInterface.execute(db,
@@ -810,9 +803,9 @@ end
         r = call("GET", "/api/samples")
         @test r.status == 200
         by_name = Dict(String(s.name) => s for s in JSON3.read(String(r.body)))
-        @test by_name["T1"].q_units == "nm^-1"   # typed column (blob NULL)
-        @test by_name["L1"].q_units == "um^-1"    # legacy fallback to the blob
-        @test by_name["X1"].q_units == "A^-1"     # typed column wins over a stale blob
+        @test by_name["T1"].q_units == "nm^-1"   
+        @test by_name["L1"].q_units == "A-1"
+        @test by_name["X1"].q_units == "A^-1"     
     end
 end
 
