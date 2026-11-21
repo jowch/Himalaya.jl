@@ -1,6 +1,6 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
-const TAG_COLORS = ("violet", "blue", "teal", "olive", "rose", "slate")
+const TAG_COLORS = ("violet", "blue", "teal", "rose", "stone")
 const TAG_COLOR_ENTITY_ID = 0
 
 function tag_colors_list(db)

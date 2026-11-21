@@ -35,7 +35,7 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
     @testset "null resets a tag to its default colour" begin
         db = open_prepared_clone(mktempdir())
         with_inproc_routes(db) do call
-            _set_color(call, "Buffer", "olive")
+            _set_color(call, "Buffer", "rose")
             @test _set_color(call, "buffer", nothing).status == 200
             @test _colors(call) == Dict()
         end
@@ -67,13 +67,13 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
         db = open_prepared_clone(mktempdir())
         with_inproc_routes(db) do call
             _set_color(call, "37C", "teal")
-            _set_color(call, "Buffer", "olive")
+            _set_color(call, "Buffer", "rose")
             _set_color(call, "retake", "rose")
             _set_color(call, "retake", nothing)
-            _set_color(call, "37C", "slate")
+            _set_color(call, "37C", "stone")
         end
         live = _color_rows(db)
-        @test live == Dict("37C" => "slate", "Buffer" => "olive")
+        @test live == Dict("37C" => "stone", "Buffer" => "rose")
         DBInterface.execute(db, "DELETE FROM tag_colors")
         HimalayaUI.rebuild_views_from_log!(db, HimalayaUI.TAG_COLOR_ENTITY_ID; entity_type = "tag")
         @test _color_rows(db) == live

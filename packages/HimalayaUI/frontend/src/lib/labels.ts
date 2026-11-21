@@ -1,4 +1,4 @@
-import type { SampleLabel } from "../api";
+import type { SampleLabel, TagColor, TagColorEntry } from "../api";
 
 export const STANDARD_TAGS = ["Buffer", "Calibrant", "Empty capillary"] as const;
 export const MAX_TAG_LENGTH = 64;
@@ -96,4 +96,17 @@ export function sampleMatchesFilter(name: string, labels: readonly SampleLabel[]
   const f = fold(filter);
   if (f.length === 0) return true;
   return name.toLowerCase().includes(f) || labels.some((l) => l.label.toLowerCase().includes(f));
+}
+
+export function applyTagColor(list: readonly TagColorEntry[], label: string, color: TagColor | null): TagColorEntry[] {
+  const rest = list.filter((e) => !sameLabel(e.label, label));
+  return color === null ? rest : [...rest, { label: label.trim(), color }];
+}
+
+export function tagColor(colors: readonly TagColorEntry[], label: string): TagColor {
+  return colors.find((e) => sameLabel(e.label, label))?.color ?? (standardTag(label) ? "blue" : "violet");
+}
+
+export function tagColorIsDefault(colors: readonly TagColorEntry[], label: string): boolean {
+  return !colors.some((e) => sameLabel(e.label, label));
 }
