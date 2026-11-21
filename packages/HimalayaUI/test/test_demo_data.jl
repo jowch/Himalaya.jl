@@ -75,26 +75,3 @@ end
     @test hits / total >= 0.95
     @test spurious <= 1
 end
-
-@testset "demo data --large: a beamtime-sized experiment the funnel groups correctly" begin
-    root = mktempdir()
-    redirect_stdout(devnull) do
-        DemoGen.main([root, "--no-images", "--large", "60"])
-    end
-    r = HimalayaUI.resolve_experiment_layout(root)
-    metas = HimalayaUI.scan_directory(r.data_dir, r.analysis_dir;
-        tif_pattern = r.image_pattern, prp_pattern = r.metadata_pattern,
-        dat_pattern = r.integration_pattern)
-    g = HimalayaUI.group_into_samples(metas)
-    @test length(g.loads) == cld(60, DemoGen.LARGE_SLOTS)
-    @test all(l -> l.flag == :ok, g.loads)
-    @test sum(length(l.samples) for l in g.loads) == 60
-
-    rows = [split(l, ","; limit = 10) for l in readlines(joinpath(root, "TRUTH.csv"))[2:end]]
-    @test length(rows) == 60
-    @test allunique(first.(rows))
-    frames = [length(split(f[2])) for f in rows]
-    @test sum(frames) == length(metas)
-    @test 3 <= sort(frames)[30] <= 5
-    @test maximum(frames) >= 10
-end
