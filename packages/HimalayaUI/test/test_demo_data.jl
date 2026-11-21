@@ -4,7 +4,7 @@
 # what the demo walkthroughs show. This runs the generator (traces only, ~1 MB) and
 # checks the funnel's layout detection, the sample grouping, and that the pipeline's
 # auto_group call matches TRUTH's `auto` column often enough across seeds.
-using Test, HimalayaUI, Himalaya
+using Test, HimalayaUI, Himalaya, Statistics, Random
 
 module DemoGen
     include(joinpath(@__DIR__, "..", "scripts", "make_demo_data.jl"))
@@ -74,4 +74,42 @@ end
     # Raise deliberately.
     @test hits / total >= 0.95
     @test spurious <= 1
+end
+
+# Realism floors for what the demo serves. Before 2026-11-21 the demo was far
+# from the beamline: frames had a median of 3 counts per pixel, traces had 14%
+# point-to-point scatter at high q, and the low-q rise reached 26000× the high-q
+# floor. Those made images ~2/3 the size of real ones and peak finding see noise
+# real data never has. Targets are aggregate figures from SSRL 1M frames: about
+# 100 counts per pixel far from the beam, ~0.35% scatter at high q, a low-q rise
+# of ~100× the floor, a beamstop shadow ~10 px in radius and no saturated pixels.
+@testset "demo data: frames and traces look like the beamline's" begin
+    root = mktempdir()
+    redirect_stdout(devnull) do
+        DemoGen.main([root, "--no-images", "--seed", "7"])
+    end
+    rows = Dict(begin f = split(l, ","; limit = 10); f[1] => (bases = split(f[2]), drop = Set(split(f[8]))) end
+                for l in readlines(joinpath(root, "TRUTH.csv"))[2:end])
+    tot = joinpath(root, "analysis", "automatic_analysis", "tot_files")
+    scatter = Float64[]; rise = Float64[]
+    for (label, r) in rows, base in r.bases
+        base in r.drop && continue
+        q, I, _ = HimalayaUI.load_dat(joinpath(tot, base * "_tot.dat"))
+        q[end] > 0.38 || continue
+        at(x) = I[argmin(abs.(q .- x))]
+        push!(scatter, median(abs(I[k] - (I[k-1] + I[k+1]) / 2) / I[k] for k in 2:length(I)-1 if q[k] > 0.3))
+        push!(rise, at(0.006) / at(0.38))
+    end
+    @test median(scatter) <= 0.01
+    @test median(rise) <= 500
+
+    qm, dx, dy = DemoGen.q_map()
+    model, _ = DemoGen.model_trace(Xoshiro(1), "MO_H2O", DemoGen.SAMPLES[1][3])
+    counts = DemoGen.make_frame(Xoshiro(2), model, qm, dx, dy, DemoGen.gap_mask(), 1.0)
+    live = counts[counts .>= 0]
+    @test median(live) >= 50
+    @test count(==(0), live) / length(live) <= 0.03
+    @test count(>=(DemoGen.PILATUS_MAX_COUNTS), counts) == 0
+    ring = [counts[i] for i in eachindex(counts) if 12 <= hypot(dx[i], dy[i]) <= 18 && counts[i] >= 0]
+    @test median(ring) > 0
 end
