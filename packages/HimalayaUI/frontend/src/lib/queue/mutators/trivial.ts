@@ -45,9 +45,7 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
   kind: "update_sample",
   onMutate: (p, qc): RollbackContext => {
     const samplesKey = queryKeys.samples(p.experimentId);
-    const sampleKey = queryKeys.sample(p.sampleId);
     const prevList = qc.getQueryData<Sample[]>(samplesKey);
-    const prevSingle = qc.getQueryData<Sample>(sampleKey);
     const patch = patchOf(p);
 
     if (prevList) {
@@ -55,13 +53,9 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
         s.id === p.sampleId ? { ...s, ...patch } : s,
       ));
     }
-    if (prevSingle && prevSingle.id === p.sampleId) {
-      qc.setQueryData<Sample>(sampleKey, { ...prevSingle, ...patch });
-    }
     return {
       restore: () => {
         if (prevList !== undefined) qc.setQueryData(samplesKey, prevList);
-        if (prevSingle !== undefined) qc.setQueryData(sampleKey, prevSingle);
       },
     };
   },
@@ -79,7 +73,6 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     // unpatched fields are `undefined` on the response. Skip undefined
     // fields below so they don't clobber existing values.
     const samplesKey = queryKeys.samples(p.experimentId);
-    const sampleKey = queryKeys.sample(p.sampleId);
     const patch: Partial<Sample> = {};
     if (response.name !== undefined) patch.name = response.name;
     if (response.notes !== undefined) patch.notes = response.notes;
@@ -87,10 +80,6 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
     if (list) {
       qc.setQueryData<Sample[]>(samplesKey, list.map((s) =>
         s.id === p.sampleId ? { ...s, ...patch } : s));
-    }
-    const prevSingle = qc.getQueryData<Sample>(sampleKey);
-    if (prevSingle && prevSingle.id === p.sampleId) {
-      qc.setQueryData<Sample>(sampleKey, { ...prevSingle, ...patch });
     }
   },
 };
@@ -428,17 +417,7 @@ export const setExposureStatusMutator: Mutator<
         e.id === p.exposureId ? { ...e, status: p.status } : e,
       ),
     );
-    const exposureKey = queryKeys.exposure(p.exposureId);
-    const prevSingle = qc.getQueryData<Exposure>(exposureKey);
-    if (prevSingle && prevSingle.id === p.exposureId) {
-      qc.setQueryData<Exposure>(exposureKey, { ...prevSingle, status: p.status });
-    }
-    return {
-      restore: () => {
-        restoreExposures();
-        if (prevSingle !== undefined) qc.setQueryData(exposureKey, prevSingle);
-      },
-    };
+    return { restore: restoreExposures };
   },
   request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
   onSuccess: (_p, _r, qc) => {

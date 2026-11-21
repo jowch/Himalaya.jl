@@ -87,24 +87,4 @@ describe("renameSampleMutator", () => {
     const keys = inv.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
     expect(keys).toContain(JSON.stringify(queryKeys.corpusSamples));
   });
-
-  it("onSuccess surgically patches sample(id) cache with new name (mirrors applyRemoteToCache sample_renamed setQueryData)", () => {
-    const qc = new QueryClient();
-    seedLoads(qc, 7);
-    // Pre-seed the sample-entity cache so the setQueryData old=>new merge has something to mutate
-    const existing: Sample = { id: 10, name: "OldName", notes: "some note", experiment_id: 7, tags: [] };
-    qc.setQueryData(queryKeys.sample(10), existing);
-
-    renameSampleMutator.onSuccess(
-      { experimentId: 7, sampleId: 10, name: "NewName" } as never,
-      { id: 10, name: "NewName" } as Partial<Sample> as never, qc);
-
-    // The surgical patch must update the sample-entity cache immediately (not just
-    // after the background invalidate refetch) so the sample-detail page converges.
-    const patched = qc.getQueryData<Sample>(queryKeys.sample(10));
-    expect(patched?.name).toBe("NewName");
-    // Other fields must be preserved — not stomped to undefined
-    expect(patched?.notes).toBe("some note");
-    expect(patched?.experiment_id).toBe(7);
-  });
 });

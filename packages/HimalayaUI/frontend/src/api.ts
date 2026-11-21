@@ -508,11 +508,6 @@ export interface Peak {
 }
 
 /**
- * Backend response for POST /api/exposures/:id/peaks. Carries the inserted
- * peak plus event metadata + the post-state hash so the client can mark the
- * exposure cache fresh without a refetch round-trip.
- */
-/**
  * Backend response for POST /api/exposures/:id/peaks. The peak fields are
  * inlined (matches `routes_peaks.jl` which JSON3.writes a flat Dict). Earlier
  * draft typed this as `{peak: Peak, ...}` and mutators read `response.peak.id`
@@ -537,12 +532,6 @@ export interface PeakUpdatedResponse extends Peak {
   analysis_inputs_hash: string;
 }
 
-/**
- * Backend response for DELETE /api/peaks/manual/:id. Carries the post-state hash so
- * the client can mark the exposure cache fresh inline with the optimistic
- * delete and avoid a transient stale-indices alert flash before the SSE frame
- * arrives.
- */
 export interface PeakRemoveResponse {
   event_id: number;
   view_row_id: number | null;
@@ -695,8 +684,6 @@ export const removeAssignmentPhase = (
 export interface ReanalyzeResponse {
   id: number;
   analyzed: boolean;
-  /** New post-analyze hash. Used to clear the stale-indices alert inline with
-   *  the HTTP response, before the SSE post_state arrives. */
   analysis_inputs_hash: string;
 }
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>

@@ -63,7 +63,7 @@ Required fields:
 - `kind: OpKind` — must match backend `apply_event!`
 - `onMutate(payload, qc): RollbackContext` — write optimistic effect, snapshot prior cache, return `{restore}` closure
 - `request(payload, signal): Promise<TResponse>` — call `api.<route>(...)` with `authOpts(payload.username, payload.clientId, payload.clientOpId)`
-- `onSuccess(payload, response, qc)` — replace placeholders with server-assigned ids, write `analysis_inputs_hash` if peak-affecting
+- `onSuccess(payload, response, qc)` — replace placeholders with server-assigned ids. Indices arrive via SSE `post_state`, so don't write them here
 
 **Cross-cutting invariants** (regression-tested; don't violate):
 - **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/queue/optimisticId.ts` — shared monotonic counter across mutators, no collisions.
@@ -124,7 +124,6 @@ Create `packages/HimalayaUI/frontend/test/queries-<topic>.test.tsx` (or extend a
 1. **Optimistic effect lands** — never-resolving fetch mock, assert cache mutates synchronously after `mutate(...)`.
 2. **HTTP success replaces optimistic with server response** — mock with response body, wait for settle, assert real id replaces placeholder.
 3. **HTTP error rolls back** — 4xx mock, assert cache returns to seeded state.
-4. (For peak-affecting) **`analysis_inputs_hash` written to exposure cache** on success.
 
 Use `withClient` + `mockOnce` from existing test files; `pendingDeferreds.clear()` in `beforeEach`.
 

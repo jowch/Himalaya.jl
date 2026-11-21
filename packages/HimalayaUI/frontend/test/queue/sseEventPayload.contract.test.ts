@@ -179,8 +179,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(peaks[0]!.q).toBe(0.5);  // auto peak survives despite shared id
   });
 
-  it("analyze_run with post_state writes indices and updates exposure hash", () => {
-    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+  it("analyze_run with post_state writes indices", () => {
     qc.setQueryData(queryKeys.indices(5), []);
     const evt: SseEvent = {
       id: 99, kind: "analyze_run", entity_type: "exposure", entity_id: 5,
@@ -191,8 +190,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash)
-      .toBe("h-new");
     const indices = qc.getQueryData<unknown[]>(queryKeys.indices(5))!;
     expect(indices).toHaveLength(1);
   });
@@ -207,8 +204,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   // test_route_response_shapes.jl (route emit).
   // -------------------------------------------------------------------------
 
-  it("peak_excluded with the W1 envelope writes indices + hash + assignment cache (no invalidate)", () => {
-    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
+  it("peak_excluded with the W1 envelope writes indices + assignment cache (no invalidate)", () => {
     qc.setQueryData(queryKeys.indices(5), []);
     qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
       { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
@@ -227,8 +223,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash)
-      .toBe("h-new");
     expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toHaveLength(1);
     expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(
       { exposure_id: 5, state: "indexed", members: [10] });
@@ -254,7 +248,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   it("peak frame WITHOUT the assignment envelope (old backend) leaves the assignment cache untouched", () => {
-    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
     qc.setQueryData(queryKeys.indices(5), []);
     qc.setQueryData<Assignment>(queryKeys.assignment(5),
       { exposure_id: 5, state: "indexed", members: [10, 42] });
@@ -336,10 +329,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   it("applyPostStateOnly is a NO-OP on an assignment frame (finding #5a)", () => {
-    // The single highest-value test: an assignment frame reaching the own-tab
-    // applyPostStateOnly path must NOT clobber the exposure hash (the {assignment}
-    // post_state has no `indices` array, so the guard bails).
-    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
     qc.setQueryData(queryKeys.indices(5), [{ id: 1 }]);
     const evt: SseEvent = {
       id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
@@ -347,8 +336,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
       post_state: { assignment: { state: "indexed", members: [42] } },
     };
     applyPostStateOnly(evt, qc);
-    // Exposure hash untouched; indices cache untouched.
-    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.analysis_inputs_hash).toBe("h0");
     expect(qc.getQueryData<unknown[]>(queryKeys.indices(5))).toEqual([{ id: 1 }]);
   });
 
@@ -417,15 +404,14 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   // Exposure-scoped events
   // -------------------------------------------------------------------------
 
-  it("set_exposure_status writes status onto the exposure entity", () => {
-    qc.setQueryData<Exposure>(queryKeys.exposure(5), FULL_EXPOSURE);
-    // Mirrors routes_exposures.jl PATCH: payload is {status}.
+  it("set_exposure_status writes status onto the cached exposure list", () => {
+    qc.setQueryData<Exposure[]>(queryKeys.exposures(1), [FULL_EXPOSURE]);
     const evt: SseEvent = {
       id: 99, kind: "set_exposure_status", entity_type: "exposure", entity_id: 5,
       payload: { status: "rejected" },
     };
     applyRemoteToCache(evt, qc);
-    expect(qc.getQueryData<Exposure>(queryKeys.exposure(5))!.status).toBe("rejected");
+    expect(qc.getQueryData<Exposure[]>(queryKeys.exposures(1))![0]!.status).toBe("rejected");
   });
 
   it("select_exposure invalidates the exposure list AND the picker projection", () => {
@@ -446,21 +432,34 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   // Sample/message events
   // -------------------------------------------------------------------------
 
-  it("update_sample spreads payload onto the sample entity", () => {
+  it("update_sample spreads payload onto the cached samples list", () => {
     const sample: Sample = {
       id: 10, experiment_id: 1, name: "old", notes: "n", tags: [],
     };
-    qc.setQueryData(queryKeys.sample(10), sample);
+    qc.setQueryData<Sample[]>(queryKeys.samples(1), [sample]);
     // Mirrors routes_samples.jl PATCH: payload is the patched fields directly.
     const evt: SseEvent = {
       id: 99, kind: "update_sample", entity_type: "sample", entity_id: 10,
       payload: { name: "new" },
     };
     applyRemoteToCache(evt, qc);
-    const after = qc.getQueryData<Sample>(queryKeys.sample(10))!;
+    const after = qc.getQueryData<Sample[]>(queryKeys.samples(1))![0]!;
     expect(after.name).toBe("new");
     expect(after.notes).toBe("n");  // unpatched fields preserved
     expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
+  });
+
+  it("update_sample invalidates the corpus samples list the workspace reads", () => {
+    const invalidated: unknown[] = [];
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidated.push(arg.queryKey); return Promise.resolve();
+    }) as typeof qc.invalidateQueries;
+    const evt: SseEvent = {
+      id: 99, kind: "update_sample", entity_type: "sample", entity_id: 10,
+      payload: { name: "new" },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(invalidated).toEqual([queryKeys.corpusSamples]);
   });
 
   it("add_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
@@ -613,9 +612,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   //   (b.ii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
-  //          Plus mutators whose SSE-wins-and-then-resolve has no cache
-  //          effect beyond `analysis_inputs_hash` (analyze_run, peak_removed
-  //          — peakRemove.onSuccess is a no-op beyond the hash write).
   const noSynth: Array<{ kind: string; entity_type: string }> = [
     // (b.i) forward-scaffolded
     { kind: "set_exposure_status", entity_type: "exposure"           },

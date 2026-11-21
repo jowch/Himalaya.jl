@@ -41,11 +41,6 @@ export interface HimalayaTestHelpers {
                                { exposureId: number; username: string | undefined; clientId: string }>): Promise<unknown>;
   injectSse(frame: SseEvent): void;
   getPeaks(exposureId: number): unknown;
-  getExposure(exposureId: number): unknown;
-  /** Seed the exposure cache so mutators with `old ? {...old, ...} : old`
-   *  guards have something to update against. Pre-fetching via api.* in
-   *  tests is racy; this lets the test stage the cache deterministically. */
-  seedExposure(exposureId: number, exposure: unknown): void;
   clientId(): string;
   newClientOpId(): string;
 }
@@ -88,9 +83,6 @@ export function exposeTestHelpers(qc: QueryClient, mc: MutationCache): void {
     }) as HimalayaTestHelpers["runMutator"],
     injectSse: (frame) => handleRemoteEvent(frame, qc, mc),
     getPeaks: (exposureId) => qc.getQueryData(queryKeys.peaks(exposureId)),
-    getExposure: (exposureId) => qc.getQueryData(queryKeys.exposure(exposureId)),
-    seedExposure: (exposureId, exposure) =>
-      qc.setQueryData(queryKeys.exposure(exposureId), exposure),
     clientId: () => getClientId(),
     newClientOpId: () => newClientOpId(),
   };

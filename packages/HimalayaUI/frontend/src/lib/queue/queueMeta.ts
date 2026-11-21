@@ -1,16 +1,5 @@
 import type { QueueResponseMeta } from "./types";
 
-/**
- * Split a queue mutator response into its framework-owned metadata and
- * the mutator-specific payload. Use in `onSuccess` so the per-mutator
- * cache write doesn't have to spell out every framework field by hand —
- * and a new field added to `QueueResponseMeta` later flows through
- * automatically.
- *
- *   const { meta, payload } = stripQueueMetadata(response);
- *   qc.setQueryData(...payload row...)
- *   writeExposureHash(qc, exposureId, meta.analysis_inputs_hash);
- */
 export function stripQueueMetadata<T extends object>(
   response: T,
 ): { meta: QueueResponseMeta; payload: Omit<T, keyof QueueResponseMeta> } {

@@ -1150,6 +1150,40 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
   });
 
+  it("puts the indexing plot first in the tools column, above the phase list", () => {
+    renderAt("/experiments/1/workspace/10");
+    const tools = screen.getByRole("complementary", { name: "Tools" });
+    const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
+    expect(headings).toEqual(["Indexing", "Call", "Exposure"]);
+  });
+
+  it("the Custom index button in the indexing section opens a custom index", () => {
+    renderAt("/experiments/1/workspace/10");
+    const button = screen.getByRole("button", { name: /Custom index/ });
+    expect(button).toHaveTextContent("Custom index I");
+    fireEvent.click(button);
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveTextContent("Custom index Esc");
+  });
+
+  it("disables the Custom index button before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("button", { name: /Custom index/ })).toBeDisabled();
+  });
+
+  it("lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const text = section.textContent ?? "";
+    expect(text).toContain("KindSingle");
+    expect(text).toContain("Exposure—");
+    expect(text).toContain("I₀—");
+    expect(text).toContain("I signal—");
+  });
+
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
