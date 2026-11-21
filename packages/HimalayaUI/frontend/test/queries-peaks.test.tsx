@@ -8,28 +8,10 @@ import {
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
 import * as api from "../src/api";
-import type { Peak, Exposure } from "../src/api";
+import type { Peak } from "../src/api";
 
 const EXPOSURE_ID = 42;
-const HASH_OLD = "old0000000000000000000000000000000000000000000000000000000000000";
 const HASH_NEW = "new0000000000000000000000000000000000000000000000000000000000000";
-
-function makeExposure(): Exposure {
-  return {
-    id: EXPOSURE_ID,
-    sample_id: 1,
-    filename: "ex",
-    kind: "file",
-    selected: true,
-    status: null,
-    image_path: null,
-    image_version: "",
-    tags: [],
-    sources: [],
-    trace_hash: HASH_OLD,
-    analysis_inputs_hash: HASH_OLD,
-  };
-}
 
 function withClient() {
   const client = makeClient();
@@ -77,7 +59,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
   it("useAddPeak replaces the placeholder with the server peak on success", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), []);
-    client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
     // Flat shape (matches `routes_peaks.jl` JSON3.write Dict). Earlier
     // version of this fixture wrapped under `peak: {...}`, which matched
     // a stale `PeakAddResponse.peak: Peak` type but NOT the actual server
@@ -98,8 +79,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
       expect(list).toHaveLength(1);
       expect(list[0].id).toBe(99);
     });
-    const exp = client.getQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID));
-    expect(exp?.analysis_inputs_hash).toBe(HASH_NEW);
   });
 
   it("useAddPeak rolls back the optimistic placeholder on error", async () => {
@@ -132,14 +111,13 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
     });
   });
 
-  it("useRemovePeak writes the new hash to the exposure cache on success", async () => {
+  it("useRemovePeak drops the peak on success", async () => {
     const { client, wrapper } = withClient();
     const peak: Peak = {
       id: 5, exposure_id: EXPOSURE_ID, q: 0.1, intensity: null,
       prominence: null, sharpness: null, source: "manual", excluded: false,
     };
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), [peak]);
-    client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
     mockOnce(200, {
       event_id: 99,
       view_row_id: 99,
@@ -150,8 +128,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
     await waitFor(() => expect(result.current.isPending).toBe(false));
     const list = client.getQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID)) ?? [];
     expect(list).toHaveLength(0);
-    const exp = client.getQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID));
-    expect(exp?.analysis_inputs_hash).toBe(HASH_NEW);
   });
 
   it("useRemovePeak rolls back on error", async () => {
@@ -180,7 +156,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
       prominence: null, sharpness: null, source: "auto", excluded: false,
     };
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), [peak]);
-    client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
     mockOnce(200, {
       ...peak,
       excluded: true,
@@ -194,8 +169,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
       const list = client.getQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID)) ?? [];
       expect(list[0].excluded).toBe(true);
     });
-    const exp = client.getQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID));
-    expect(exp?.analysis_inputs_hash).toBe(HASH_NEW);
   });
 
   it("useSetPeakExcluded(false) routes through the unexclude mutator", async () => {
@@ -205,7 +178,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
       prominence: null, sharpness: null, source: "auto", excluded: true,
     };
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), [peak]);
-    client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
     const setSpy = vi.spyOn(api, "setAutoPeakExcluded").mockResolvedValueOnce({
       ...peak, excluded: false, event_id: 9, view_row_id: 9,
       analysis_inputs_hash: HASH_NEW,
@@ -244,7 +216,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
   it("does not call POST /analyze on peak add (backend handles reanalyze synchronously)", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), []);
-    client.setQueryData<Exposure>(queryKeys.exposure(EXPOSURE_ID), makeExposure());
     const reanalyzeSpy = vi.spyOn(api, "reanalyzeExposure");
     mockOnce(201, {
       id: 99, exposure_id: EXPOSURE_ID, q: 0.5, intensity: null,

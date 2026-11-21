@@ -120,15 +120,6 @@ export interface CurationPostState {
   assignment_dropped?: string[];
 }
 
-/**
- * Assignment-frame `post_state`: the {state, members} snapshot threaded onto
- * `assignment_*` SSE frames so `applyRemoteToCache` can patch the assignment
- * cache directly without a refetch. CRUCIALLY this has NO top-level `indices`
- * key — that absence is what lets `applyPostStateOnly`'s
- * `Array.isArray(ps.indices)` guard skip an assignment frame (so it never
- * clobbers the exposure's analysis_inputs_hash with undefined). Mirrors the
- * Julia route's `post_state = Dict(:assignment => Dict(:state, :members))`.
- */
 export interface AssignmentPostState {
   assignment: Pick<Assignment, "state" | "members">;
 }
