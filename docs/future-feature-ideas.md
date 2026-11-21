@@ -383,8 +383,8 @@ support both review and onboarding ("show me what alice has been doing").
 
 ### Chat: mentions, threads, reactions
 
-The chat card presentation was retired 2026-05-29 (the @-mention subsystem
-deleted, the message data plane parked). If chat is revived, it would be a
+The chat card presentation was retired 2026-05-29 and its data plane was
+deleted 2026-11-21. If chat is revived, it gets a fresh design, likely a
 flat per-sample list; wait for usage data before adding `@user`, threading,
 or emoji reactions — these are expensive to design well and easy to design
 badly.

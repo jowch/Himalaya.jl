@@ -2,7 +2,7 @@
 # produces the SAME HTTP.Response as a real socket request, for the shapes most
 # likely to diverge. This is the single load-bearing equivalence proof (spec
 # §5.1). Keep it green permanently.
-using Test, HTTP, SQLite, JSON3, DBInterface
+using Test, HTTP, SQLite, JSON3, DBInterface, Tables
 using FileIO, ImageCore, TiffImages   # for the binary-PNG contract row
 using HimalayaUI
 
@@ -94,15 +94,15 @@ end
         mktempdir() do d
             fx = _seed(d)
             hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
-            bodyj = JSON3.write(Dict(:body => "orphan"))
+            bodyj = JSON3.write(Dict(:q => 0.05))
             w = with_test_server(fx.db) do port, base
-                HTTP.post("$base/api/samples/99999/messages"; body=bodyj, headers=hdrs, status_exception=false)
+                HTTP.post("$base/api/exposures/99999/peaks"; body=bodyj, headers=hdrs, status_exception=false)
             end
             ip = with_inproc_routes(fx.db) do call
-                call("POST", "/api/samples/99999/messages";
+                call("POST", "/api/exposures/99999/peaks";
                      headers=hdrs, body=Vector{UInt8}(bodyj))
             end
-            @test w.status >= 400
+            @test w.status == 500
             _assert_equiv(w, ip; label="fk-throw")
         end
     end
@@ -125,33 +125,35 @@ end
     end
 
     @testset "idempotency replay: identical body, per-transport DB" begin
-        # Each transport gets its OWN seeded DB + its OWN op_id, so neither
-        # replays the other's cached row (idempotency.jl:108-110).
+        _manual_adds(db, e_id) = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM peak_curations WHERE exposure_id = ? AND kind = 'add'",
+            [e_id]))).n
         function _replay(call_with, opid)
             hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice",
                     "X-Client-Id"=>"tab-1", "X-Client-Op-Id"=>opid]
-            bodyj = JSON3.write(Dict(:body => "hello"))
+            bodyj = JSON3.write(Dict(:q => 0.0731))
             call_with(hdrs, bodyj)
         end
         wire_bodies = mktempdir() do d
             fx = _seed(d)
             with_test_server(fx.db) do port, base
-                r1 = _replay((h,b)->HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=b, headers=h), "op-wire")
-                r2 = _replay((h,b)->HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=b, headers=h), "op-wire")
-                (r1.status, _body(r1), _body(r2))
+                r1 = _replay((h,b)->HTTP.post("$base/api/exposures/$(fx.e_id)/peaks"; body=b, headers=h), "op-wire")
+                r2 = _replay((h,b)->HTTP.post("$base/api/exposures/$(fx.e_id)/peaks"; body=b, headers=h), "op-wire")
+                (r1.status, _body(r1), _body(r2), _manual_adds(fx.db, fx.e_id))
             end
         end
         inproc_bodies = mktempdir() do d
             fx = _seed(d)
             with_inproc_routes(fx.db) do call
-                r1 = _replay((h,b)->call("POST", "/api/samples/$(fx.s_id)/messages"; headers=h, body=Vector{UInt8}(b)), "op-ip")
-                r2 = _replay((h,b)->call("POST", "/api/samples/$(fx.s_id)/messages"; headers=h, body=Vector{UInt8}(b)), "op-ip")
-                (r1.status, _body(r1), _body(r2))
+                r1 = _replay((h,b)->call("POST", "/api/exposures/$(fx.e_id)/peaks"; headers=h, body=Vector{UInt8}(b)), "op-ip")
+                r2 = _replay((h,b)->call("POST", "/api/exposures/$(fx.e_id)/peaks"; headers=h, body=Vector{UInt8}(b)), "op-ip")
+                (r1.status, _body(r1), _body(r2), _manual_adds(fx.db, fx.e_id))
             end
         end
-        @test wire_bodies[1] == inproc_bodies[1]          # same status
-        @test wire_bodies[2] == wire_bodies[3]            # wire: replay identical
-        @test inproc_bodies[2] == inproc_bodies[3]        # in-process: replay identical
+        @test wire_bodies[1] == inproc_bodies[1] == 201
+        @test wire_bodies[2] == wire_bodies[3]
+        @test inproc_bodies[2] == inproc_bodies[3]
+        @test wire_bodies[4] == inproc_bodies[4] == 1
     end
 
     @testset "GET numeric-array JSON body (trace) — serialization parity" begin
@@ -185,15 +187,15 @@ end
                 end
                 close(pending)
             end
-            count(f -> !startswith(f, ":") && occursin("post_message", f), collect(pending))
+            count(f -> !startswith(f, ":") && occursin("set_exposure_status", f), collect(pending))
         end
         hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice"]
-        bodyj = JSON3.write(Dict(:body => "hi"))
+        bodyj = JSON3.write(Dict(:status => "rejected"))
         wire_n = mktempdir() do d
             fx = _seed(d)
             _count_frames() do
                 with_test_server(fx.db) do port, base
-                    HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=bodyj, headers=hdrs)
+                    HTTP.request("PATCH", "$base/api/exposures/$(fx.e_id)/status", hdrs, bodyj)
                     sleep(0.3)   # wire broadcast fires off-task; allow the drain
                 end
             end
@@ -202,7 +204,7 @@ end
             fx = _seed(d)
             _count_frames() do
                 with_inproc_routes(fx.db) do call
-                    call("POST", "/api/samples/$(fx.s_id)/messages"; headers=hdrs, body=Vector{UInt8}(bodyj))
+                    call("PATCH", "/api/exposures/$(fx.e_id)/status"; headers=hdrs, body=Vector{UInt8}(bodyj))
                 end  # synchronous flush — frame already on the channel
             end
         end

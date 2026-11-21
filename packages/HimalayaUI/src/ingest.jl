@@ -696,8 +696,6 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                 # Re-point the survivors of the dedup.
                 DBInterface.execute(db,
                     "UPDATE sample_tags SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
-                DBInterface.execute(db,
-                    "UPDATE sample_messages SET sample_id = ? WHERE sample_id = ?", [owner, old_sid])
                 # notes (a column on the samples row — NOT touched by the block above).
                 dnote = first(Tables.rowtable(DBInterface.execute(db,
                     "SELECT notes FROM samples WHERE id = ?", [old_sid]))).notes
@@ -726,7 +724,6 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
                                         WHERE sample_id IS NOT NULL)""", [experiment_id]))
                 gid = Int(r.id)
                 DBInterface.execute(db, "DELETE FROM sample_tags    WHERE sample_id = ?", [gid])
-                DBInterface.execute(db, "DELETE FROM sample_messages WHERE sample_id = ?", [gid])
                 DBInterface.execute(db, "DELETE FROM samples WHERE id = ?", [gid])
                 # Not counted as `displaced` — a reaped dedup-orphan was never part of
                 # the new partition (no exposures to absorb), a distinct concept from a
