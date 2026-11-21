@@ -34,7 +34,7 @@ import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
-import { PLOT_VIEWS, nextView, usePlotView } from "./plotView";
+import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
@@ -59,7 +59,6 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
         { keys: ["Z"], what: "Next unreviewed sample" },
-        { keys: ["J", "Shift J"], what: "Next or previous unreviewed sample" },
         { keys: ["/"], what: "Filter samples by name" },
       ],
     },
@@ -84,10 +83,8 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
-        { keys: ["Shift Z"], what: "Reset the zoom" },
-        { keys: ["L", "Shift L"], what: "Next or previous view: log, linear, log-log, q²I" },
+        { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["C"], what: "Compare with another sample" },
-        { keys: ["R"], what: "Hide or show comparisons" },
       ],
     },
     {
@@ -358,6 +355,11 @@ export function WorkspacePage(): JSX.Element {
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key === "0" && !isTyping(ev.target) && !inOverlay(ev.target)) {
+        ev.preventDefault();
+        setXDomain(null);
+        return;
+      }
       if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "k") {
         ev.preventDefault();
         setHelpOpen(false);
@@ -407,22 +409,12 @@ export function WorkspacePage(): JSX.Element {
         case "ArrowUp":
           step(-1);
           break;
-        case "j":
-        case "J": {
-          const nid = nextUnreviewed(visible, sampleId, ev.shiftKey ? -1 : 1);
-          if (nid !== undefined) goSample(nid);
-          break;
-        }
         case "ArrowRight":
         case "ArrowLeft": {
           const eid = stepExposure(exposureList, exposure?.id, ev.key === "ArrowRight" ? 1 : -1);
           if (eid !== undefined) setExposureId(eid);
           break;
         }
-        case "l":
-        case "L":
-          setView(nextView(view, ev.shiftKey ? -1 : 1));
-          break;
         case "c":
         case "C":
           setPicking(true);
@@ -435,20 +427,14 @@ export function WorkspacePage(): JSX.Element {
           setHelpOpen(true);
           break;
         case "z":
-        case "Z":
-          if (ev.shiftKey) setXDomain(null);
-          else {
-            const nid = nextUnreviewed(visible, sampleId, 1);
-            if (nid !== undefined) goSample(nid);
-          }
+        case "Z": {
+          const nid = nextUnreviewed(visible, sampleId, 1);
+          if (nid !== undefined) goSample(nid);
           break;
+        }
         case " ":
           if (exposure && imageUrl(exposure, false)) setBigOpen(true);
           else handled = false;
-          break;
-        case "r":
-        case "R":
-          setRefsOn((v) => !v);
           break;
         case "x":
         case "X":
@@ -493,9 +479,9 @@ export function WorkspacePage(): JSX.Element {
       },
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
-    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
-    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, shortcut: "L", run: () => setView(o.view) })),
-    { id: "zoom", label: "Reset zoom", shortcut: "Shift Z", run: () => setXDomain(null) },
+    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
+    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
+    { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },

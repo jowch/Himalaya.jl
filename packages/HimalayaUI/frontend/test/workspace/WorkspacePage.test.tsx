@@ -227,12 +227,14 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it("J jumps to the next unreviewed sample and Shift+J goes back", () => {
+  it("J, L and R are no longer shortcuts", () => {
+    state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "j" });
-    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
-    fireEvent.keyDown(window, { key: "J", shiftKey: true });
-    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/13");
+    fireEvent.keyDown(window, { key: "l" });
+    fireEvent.keyDown(window, { key: "r" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+    expect(currentView()).toBe("Log");
   });
 
   it("arrow down steps to the next sample in the list", () => {
@@ -322,7 +324,7 @@ describe("WorkspacePage", () => {
     dialog.appendChild(button);
     document.body.appendChild(dialog);
     fireEvent.keyDown(button, { key: "x" });
-    fireEvent.keyDown(button, { key: "j" });
+    fireEvent.keyDown(button, { key: "z" });
     expect(calls).toEqual([]);
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
     dialog.remove();
@@ -402,7 +404,7 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("L steps through log, linear, log-log and q²I, Shift L steps back, and the palette picks one", () => {
+  it("the palette steps through log, linear, log-log and q²I", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
     const ticks = (): string =>
@@ -411,16 +413,14 @@ describe("WorkspacePage", () => {
         .join(" ");
     const logTicks = ticks();
     expect(currentView()).toBe("Log");
-    fireEvent.keyDown(window, { key: "l" });
+    pickView("Plot Linear");
     expect(currentView()).toBe("Linear");
     expect(ticks()).not.toBe(logTicks);
-    fireEvent.keyDown(window, { key: "l" });
+    pickView("Plot Log-log");
     expect(currentView()).toBe("Log-log");
-    fireEvent.keyDown(window, { key: "l" });
+    pickView("Plot q²I");
     expect(currentView()).toBe("q²I (Kratky)");
     expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
-    fireEvent.keyDown(window, { key: "L", shiftKey: true });
-    expect(currentView()).toBe("Log-log");
     pickView("Plot Log");
     expect(currentView()).toBe("Log");
     expect(ticks()).toBe(logTicks);
@@ -519,7 +519,7 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveTextContent("×0.500 matched");
   });
 
-  it("clicking the subtracted chip stops subtracting, R hides comparisons, and × removes one", () => {
+  it("clicking the subtracted chip stops subtracting, the palette hides comparisons, and × removes one", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -529,11 +529,11 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "r" });
+    pickView("Hide comparisons");
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "r" });
+    pickView("Show comparisons");
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
@@ -582,7 +582,7 @@ describe("WorkspacePage", () => {
     const full = xTicks();
     for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 500 });
     expect(xTicks()).not.toBe(full);
-    fireEvent.keyDown(window, { key: "Z", shiftKey: true });
+    fireEvent.keyDown(window, { key: "0", ctrlKey: true });
     expect(xTicks()).toBe(full);
     for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 540 });
     const q = Array.from({ length: 21 }, (_, i) => 0.01 + i * 0.002);
@@ -608,7 +608,7 @@ describe("WorkspacePage", () => {
     const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     expect(document.activeElement).toBe(help);
     fireEvent.keyDown(help, { key: "x" });
-    fireEvent.keyDown(help, { key: "j" });
+    fireEvent.keyDown(help, { key: "z" });
     fireEvent.keyDown(help, { key: "ArrowDown" });
     expect(calls).toEqual([]);
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
@@ -635,7 +635,7 @@ describe("WorkspacePage", () => {
     const input = screen.getByRole("combobox", { name: "Command or sample" });
     fireEvent.change(input, { target: { value: "reset zoom" } });
     const option = screen.getByRole("option", { name: /Reset zoom/ });
-    expect(option.querySelector("kbd")?.textContent).toBe("Shift Z");
+    expect(option.querySelector("kbd")?.textContent).toBe("Ctrl 0");
     expect(input.getAttribute("aria-activedescendant")).toBe(option.id);
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.keyDown(input, { key: "ArrowDown" });
