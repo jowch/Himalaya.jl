@@ -54,6 +54,7 @@ const server = {
   assignments: new Map<number, Assignment>(),
   saving: false,
   saved: undefined as (() => void) | undefined,
+  experiment: { name: "BL-19", description: null as string | null },
 };
 const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
 const editOps = {
@@ -70,6 +71,7 @@ const editOps = {
   removeLabel: editOp("removeLabel"),
   restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
   setLabelColor: editOp("setLabelColor"),
+  patchExperiment: editOp("patchExperiment"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
   read: {
@@ -82,6 +84,7 @@ const editOps = {
       ?? { exposure_id: eid, state: "null" as const, members: [] },
     labels: async () => state.labels,
     bridges: async () => state.bridges,
+    experiment: async () => ({ id: 1, ...server.experiment }),
   },
   saving: () => server.saving,
   whenSaved: () => (server.saving ? new Promise<void>((r) => { server.saved = r; }) : Promise.resolve()),
@@ -96,7 +99,6 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
-  usePatchExperiment: () => ({ mutate: (patch: unknown) => calls.push({ hook: "patchExperiment", boundTo: 1, arg: patch }) }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useDeleteExperiment: (experimentId: number) => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
@@ -266,6 +268,7 @@ beforeEach(() => {
   server.assignments = new Map();
   server.saving = false;
   server.saved = undefined;
+  server.experiment = { name: "BL-19", description: null };
   rescans.length = 0;
   removals.length = 0;
   opened.length = 0;
@@ -925,6 +928,68 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: confirmed the suggested label Buffer on A1");
     });
 
+    it("undoes and redoes renaming the experiment and changing its description from the palette", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "BL-20" } });
+      fireEvent.keyDown(name, { key: "Enter" });
+      runFromPalette("settings", "description");
+      const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
+      fireEvent.change(description, { target: { value: "Lipid screen" } });
+      fireEvent.keyDown(description, { key: "Enter" });
+      server.experiment = { name: "BL-20", description: "Lipid screen" };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchExperiment", { description: null }]]);
+      expect(toasts.at(-1)).toBe("Undone: changed the experiment description");
+      server.experiment = { name: "BL-20", description: null };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchExperiment", { name: "BL-19" }]]);
+      expect(toasts.at(-1)).toBe("Undone: renamed the experiment to BL-20");
+      server.experiment = { name: "BL-19", description: null };
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([["patchExperiment", { name: "BL-20" }]]);
+      expect(toasts.at(-1)).toBe("Redone: renamed the experiment to BL-20");
+    });
+
+    const renameTo = (value: string) => {
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value } });
+      fireEvent.keyDown(name, { key: "Enter" });
+    };
+
+    it("leaves a newer rename by someone else alone when undoing a rename", async () => {
+      renderAt("/experiments/1/workspace/10");
+      renameTo("BL-20");
+      server.experiment = { name: "BL-21", description: null };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: renamed the experiment to BL-20");
+    });
+
+    it("sends nothing when the server already holds the name the undo would restore", async () => {
+      renderAt("/experiments/1/workspace/10");
+      renameTo("BL-20");
+      server.experiment = { name: "BL-19", description: null };
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: renamed the experiment to BL-20");
+    });
+
+    it("records nothing for a Settings save that leaves the name unchanged", async () => {
+      renderAt("/experiments/1/workspace/10");
+      renameTo("BL-19");
+      expect(ops()).toEqual([]);
+      await undo();
+      expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
     it("undoes creating a coloured label from the palette in one step", async () => {
       renderAt("/experiments/1/workspace/10");
       runFromPalette("label", "dehydrated");
@@ -1228,13 +1293,13 @@ describe("WorkspacePage", () => {
     fireEvent.change(name, { target: { value: "BL-20" } });
     fireEvent.keyDown(name, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+    expect(calls).toEqual([{ hook: "op:patchExperiment", boundTo: 0, arg: [{ name: "BL-20" }] }]);
     calls.length = 0;
     runFromPalette("settings", "description");
     const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
     fireEvent.change(description, { target: { value: "Lipid screen" } });
     fireEvent.keyDown(description, { key: "Enter" });
-    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { description: "Lipid screen" } }]);
+    expect(calls).toEqual([{ hook: "op:patchExperiment", boundTo: 0, arg: [{ description: "Lipid screen" }] }]);
   });
 
   it("offers no Settings before a user is set", () => {

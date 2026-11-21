@@ -32,14 +32,13 @@ import {
   useTrace,
   useUnbridgeSample,
   useTriggerScan,
-  usePatchExperiment,
   useCheckForNewFilesOnOpen,
   useEditOps,
 } from "../queries";
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
+  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -87,6 +86,7 @@ import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { LabelRow } from "./ui/LabelRow";
+import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -176,7 +176,6 @@ export function WorkspacePage(): JSX.Element {
   const scan = useScanState(experimentId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   const triggerScan = useTriggerScan(experimentId);
-  const patchExperiment = usePatchExperiment(experimentId);
   useCheckForNewFilesOnOpen(experimentId);
   const problems = useProblems(experimentId);
   const [problemsOpen, setProblemsOpen] = useState(false);
@@ -566,6 +565,20 @@ export function WorkspacePage(): JSX.Element {
     },
     [sampleId, history, labelRecolor],
   );
+  const editExperiment = useCallback(
+    (next: ExperimentPatch) => {
+      const cur = experiment.data;
+      if (!cur) return;
+      const prev: ExperimentPatch = {};
+      if (next.name !== undefined) prev.name = cur.name ?? "";
+      if (next.description !== undefined) prev.description = cur.description ?? null;
+      ops.patchExperiment(next);
+      if (sampleId === undefined) return;
+      const label = next.name !== undefined ? `renamed the experiment to ${next.name}` : "changed the experiment description";
+      history.record(experimentEntry(ops, { label, sampleId, exposureId: undefined, prev, next }));
+    },
+    [experiment.data, ops, sampleId, history],
+  );
   const createLabel = useCallback(
     (name: string, color: LabelColor) => {
       if (sampleId === undefined) return;
@@ -868,7 +881,7 @@ export function WorkspacePage(): JSX.Element {
     comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
     settings:
       username && experiment.data
-        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: (patch) => patchExperiment.mutate(patch) }
+        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: editExperiment }
         : undefined,
     rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
     problems: problemRows.length > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
