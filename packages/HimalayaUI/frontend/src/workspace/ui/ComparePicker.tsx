@@ -5,9 +5,17 @@ interface Props {
   samples: readonly CorpusSample[];
   onPick: (id: number) => void;
   onClose: () => void;
+  label?: string;
+  inputLabel?: string;
 }
 
-export function ComparePicker({ samples, onPick, onClose }: Props): JSX.Element {
+export function ComparePicker({
+  samples,
+  onPick,
+  onClose,
+  label = "Compare with a sample",
+  inputLabel = "Find a sample to compare",
+}: Props): JSX.Element {
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement | null>(null);
@@ -34,7 +42,7 @@ export function ComparePicker({ samples, onPick, onClose }: Props): JSX.Element 
     <div
       ref={root}
       role="dialog"
-      aria-label="Compare with a sample"
+      aria-label={label}
       data-keys-trap
       data-testid="workspace-compare-picker"
       className="absolute left-0 top-full z-20 mt-1 w-72 rounded-sm border border-hair bg-plate shadow-lg"
@@ -60,7 +68,7 @@ export function ComparePicker({ samples, onPick, onClose }: Props): JSX.Element 
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Find a sample"
-        aria-label="Find a sample to compare"
+        aria-label={inputLabel}
         className="w-full border-b border-hair bg-plate px-2 py-1 text-body placeholder:text-ink-faint focus:outline-none"
       />
       <ul className="max-h-64 overflow-y-auto py-1">

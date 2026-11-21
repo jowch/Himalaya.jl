@@ -65,7 +65,8 @@ export type OpKind =
   // and a merge emits NO sample_merged kind (it fans out as exposure_moved).
   | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag"
   // Symmetric undo of dismiss: re-shows the flag so the sample re-enters review.
-  | "undo_dismiss_grouping_flag";
+  | "undo_dismiss_grouping_flag"
+  | "bridge_samples" | "unbridge_sample";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

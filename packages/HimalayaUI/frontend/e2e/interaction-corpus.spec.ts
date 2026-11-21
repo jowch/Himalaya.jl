@@ -104,6 +104,8 @@ async function mockCorpus(page: Page, sampleCount = 3): Promise<void> {
   // Loads: empty → grouping-review-banner renders with data-state="clear".
   await page.route(`**/api/experiments/${EXPERIMENT_ID}/loads`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route(`**/api/experiments/${EXPERIMENT_ID}/bridges`, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
   await page.route("**/api/sample-tags", (r) =>

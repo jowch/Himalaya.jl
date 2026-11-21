@@ -387,6 +387,20 @@ export const dismissGroupingFlag = (sampleId: number, body: DismissGroupingFlagB
 export const undoDismissGroupingFlag = (sampleId: number, opts?: AuthOpts): Promise<void> =>
   request<void>("POST", `/api/samples/${sampleId}/dismiss-flag/undo`, {}, opts);
 
+export interface SampleBridge {
+  sample_id: number;
+  group_id: number;
+}
+
+export const listBridges = (experimentId: number): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("GET", `/api/experiments/${experimentId}/bridges`);
+
+export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("POST", `/api/samples/${sampleId}/bridge`, { to_sample_id: toSampleId }, opts);
+
+export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
+
 // Exposures
 export interface ExposureTag {
   id: number;
