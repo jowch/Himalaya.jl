@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean verify-truth lint
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo-data-large demo demo-empty demo-clean verify-truth lint
 
 all: frontend sysimage
 
@@ -77,6 +77,11 @@ DEMO_DIR    ?= scratch/demo-experiment
 DEMO_DB_DIR ?= scratch/demo
 demo-data:
 	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
+
+LARGE_DIR     ?= scratch/demo-large
+LARGE_SAMPLES ?= 300
+demo-data-large:
+	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(LARGE_DIR) --large $(LARGE_SAMPLES)
 
 # Backend + Vite with the demo experiment ingested (through the same API calls
 # the New-experiment funnel makes). Generates the data first if it is missing.

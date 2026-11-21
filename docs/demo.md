@@ -111,6 +111,27 @@ scratch/demo-experiment/
   plain int32 TIFF from Python `tifffile` loads in Julia as `Gray{Q0f31}` with
   the counts intact, and the generator's files read back in `tifffile` as int32.
 
+### A beamtime-sized demo
+
+`make demo-data-large` (or `make_demo_data.jl <dir> --large [N]`, default 300
+samples) writes a demo the size of a real beamtime, into `scratch/demo-large`.
+Samples are cycled from the 12 templates above under unique labels (`MO_H2O_017`),
+16 slots per holder, with a 75-minute gap between holders. Frame counts per sample
+are drawn from a distribution shaped like a real beamtime: median 4, a tail to 30.
+Detector frames are hard links per template, so 300 samples (about 1,560
+exposures) take about 140 MB. `TRUTH.csv` uses the template's answers. Every
+sample draws fresh noise, so those answers hold to the regression floor rather
+than exactly. On the 300-sample default, `check-truth` passes 282 of 300 on the
+auto gate (2026-11-21). Of the misses, 13 are MO_AMP_10's known extra Pn3m, and
+5 are single misses on other templates. Use it for speed and scale, not as an
+exact gate. Run it with
+`DEMO_DIR=scratch/demo-large DEMO_DB_DIR=scratch/demo-large-db bin/verify seed`.
+The default demo is byte-identical with or without this option.
+
+It is one experiment. A DB with many experiments (the prod case behind #348's
+slow `/api/experiments`) is not reproduced: on the large demo that request takes
+35 ms.
+
 `make demo` ingests through `scripts/demo_ingest.jl`, which makes the same three
 calls the funnel does (`/api/fs/resolve` → `/api/fs/manifest` → `POST /api/experiments`)
 and waits for the first scan. The first browser visit still shows the

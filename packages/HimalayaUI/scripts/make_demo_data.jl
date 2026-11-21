@@ -9,7 +9,14 @@
 #
 # Usage (from the repo root; `make demo-data` wraps this):
 #   julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl \
-#       [out_dir] [--seed 7] [--no-images]
+#       [out_dir] [--seed 7] [--no-images] [--large [N]]
+#
+# `--large [N]` (default N = 300) writes a beamtime-sized experiment instead of the
+# 13-sample screen: N samples cycled from SAMPLES, in holders of up to 16 slots,
+# with frames per sample drawn to match real SSRL data (median 4, a tenth at 10,
+# a few at 15 and 30). Frames that share a sample template and bad-frame kind are
+# hard links to one TIFF, so the tree stays small on disk while every exposure
+# still has its own file for the server to render and cache.
 #
 # Layout written (what routes_fs.jl `resolve_experiment_layout` auto-detects);
 # <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample, a few of
@@ -140,6 +147,30 @@ radius_px(q) = MEAN_DISTANCE_MM * 1e-3 * tan(2 * asin(q * WAVELENGTH_A / (4π)))
 flare_average(q) = flare_streak(q) * FLARE_HALF_WIDTH_PX / (sqrt(π) * radius_px(q))
 const LOAD_SPLIT = 6        # samples 1..6 in holder 1, the rest in holder 2
 const FIRST_SCAN = 2401
+const LARGE_DEFAULT = 300
+const LARGE_SLOTS = 16
+const LARGE_FRAMES = [(1, 2), (2, 10), (3, 20), (4, 25), (5, 12), (6, 8), (8, 8), (10, 10), (15, 3), (30, 2)]
+
+function draw_frames(rng)
+    r = rand(rng, 1:sum(last, LARGE_FRAMES))
+    for (n, w) in LARGE_FRAMES
+        r <= w && return n
+        r -= w
+    end
+    first(last(LARGE_FRAMES))
+end
+
+function sample_plan(large::Int, seed::Int)
+    large == 0 && return [(label = l, template = l, nscans = n, comps = c, auto = a, note = no,
+                           load = k <= LOAD_SPLIT ? 1 : 2, slot = k <= LOAD_SPLIT ? k : k - LOAD_SPLIT)
+                          for (k, (l, n, c, a, no)) in enumerate(SAMPLES)]
+    rng = Xoshiro(seed + 3)
+    map(1:large) do k
+        l, _, c, a, no = SAMPLES[mod1(k, length(SAMPLES))]
+        (label = @sprintf("%s_%03d", l, k), template = l, nscans = draw_frames(rng), comps = c, auto = a,
+         note = no, load = cld(k, LARGE_SLOTS), slot = mod1(k, LARGE_SLOTS))
+    end
+end
 
 phase_name(::Type{P}) where {P<:Phase} = string(nameof(P))
 
@@ -337,7 +368,7 @@ csvq(s) = occursin(r"[,\"]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s
 
 function parse_args(args)
     out = joinpath(dirname(dirname(dirname(@__DIR__))), "scratch", "demo-experiment")
-    seed = 7; images = true
+    seed = 7; images = true; large = 0
     i = 1
     while i <= length(args)
         a = args[i]
@@ -346,14 +377,21 @@ function parse_args(args)
             seed = parse(Int, args[i+1]); i += 1
         elseif a == "--no-images"
             images = false
+        elseif a == "--large"
+            if i < length(args) && !startswith(args[i+1], "-") && tryparse(Int, args[i+1]) !== nothing
+                large = parse(Int, args[i+1]); i += 1
+            else
+                large = LARGE_DEFAULT
+            end
+            large > 0 || error("--large needs a positive sample count")
         elseif startswith(a, "-")
-            error("unknown option $a (usage: make_demo_data.jl [out_dir] [--seed N] [--no-images])")
+            error("unknown option $a (usage: make_demo_data.jl [out_dir] [--seed N] [--no-images] [--large [N]])")
         else
             out = a
         end
         i += 1
     end
-    abspath(out), seed, images
+    abspath(out), seed, images, large
 end
 
 """
@@ -368,7 +406,9 @@ function check_target(out)
 end
 
 function main(args = ARGS)
-    out, seed, images = parse_args(args)
+    out, seed, images, large = parse_args(args)
+    plan = sample_plan(large, seed)
+    shared_tif = Dict{Tuple{String,Union{Symbol,Nothing}},String}()
     check_target(out)
     # Separate streams: traces/positions must not depend on whether frames are
     # drawn, so `--no-images` yields the same .dat files `make demo` serves.
@@ -390,12 +430,13 @@ function main(args = ARGS)
     truth = String["sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"]
     scan = FIRST_SCAN
     t = DateTime(2026, 4, 26, 18, 0, 0)
-    for (k, (label, nscans, comps, auto, note)) in enumerate(SAMPLES)
-        # Holder 2 goes in after a >1 h break, so load segmentation finds 2 loads.
-        k == LOAD_SPLIT + 1 && (t += Minute(75))
-        slot = k <= LOAD_SPLIT ? k : k - LOAD_SPLIT
-        model, peaks = model_trace(rng, label, comps)
-        bad = get(BAD_SCANS, label, Dict{Int,Symbol}())
+    for (k, smp) in enumerate(plan)
+        (; label, template, nscans, comps, auto, note, slot) = smp
+        # Each holder after the first goes in after a >1 h break, so load segmentation
+        # finds one load per holder.
+        k > 1 && smp.load != plan[k-1].load && (t += Minute(75))
+        model, peaks = model_trace(rng, template, comps)
+        bad = get(BAD_SCANS, template, Dict{Int,Symbol}())
         bases = String[]; drops = String[]; flares = String[]
         for n in 1:nscans
             base = "$(label)_S$(scan)"; scan += 1
@@ -404,13 +445,13 @@ function main(args = ARGS)
             kind === nothing || push!(drops, base)
             kind === :flare && push!(flares, base)
             I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
-            b = beam(rng_beam, label, kind, Dates.value(t - DateTime(2026, 4, 26, 18, 0, 0)) / 60_000)
+            b = beam(rng_beam, template, kind, Dates.value(t - DateTime(2026, 4, 26, 18, 0, 0)) / 60_000)
             flux = kind === :beam_off ? 1.0 : b.i0 * b.t / 0.86
             ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
             I = I .* flux; sig = sig .* flux
             open(joinpath(tot, "$(base)_tot.dat"), "w") do io
                 for j in eachindex(Q)
-                    Q[j] <= get(Q_MAX, label, Inf) || continue
+                    Q[j] <= get(Q_MAX, template, Inf) || continue
                     @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
                 end
             end
@@ -422,7 +463,14 @@ function main(args = ARGS)
             write_prp(joinpath(data, stem * ".prp"), Dates.format(t, "dd u yyyy HH:MM:SS");
                       horiz, i0 = b.i0, transmission = b.t, rng = rng_beam)
             tif = joinpath(data, stem * ".tif")
-            images ? write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, flux; flare = kind === :flare)) : touch(tif)
+            if !images
+                touch(tif)
+            elseif large > 0 && haskey(shared_tif, (template, kind))
+                hardlink(shared_tif[(template, kind)], tif)
+            else
+                write_tif(tif, make_frame(rng_img, ring, qm, dx, dy, gaps, flux; flare = kind === :flare))
+                shared_tif[(template, kind)] = tif
+            end
         end
         phases = isempty(comps) ? "none" : join((phase_name(c[1]) for c in comps), "+")
         lattice = join((@sprintf("%g", c[2]) for c in comps), "+")
@@ -431,7 +479,7 @@ function main(args = ARGS)
                            string(images), join(drops, " "), join(flares, " "), csvq(note)], ","))
     end
     write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
-    println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",
+    println("Wrote synthetic demo experiment to $out ($(length(plan)) samples, seed $seed",
             images ? "" : ", no images", ")")
     out
 end
