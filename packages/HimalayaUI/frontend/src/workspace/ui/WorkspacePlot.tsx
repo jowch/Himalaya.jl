@@ -25,6 +25,7 @@ export interface CompareLine {
 export const COMPARE_DASH = "5 4";
 export const COMPARE_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--color-compare-${n})`);
 export const PLOT_HEIGHT = 330;
+const Q_LABEL_ROOM = 70;
 
 interface Props {
   trace: Trace | undefined;
@@ -203,11 +204,14 @@ export function WorkspacePlot({
               ))}
             </g>
             <g data-role="axis-bottom" className="fill-ink-faint text-caption" textAnchor="middle" aria-hidden="true">
-              {xTicks.map((t) => (
-                <text key={t.value} x={x.to(t.value)} y={dims.plotHeight + 15} {...(x.to(t.value) > dims.plotWidth - 16 ? { textAnchor: "end" } : {})}>
+              {xTicks.filter((t) => x.to(t.value) < dims.plotWidth - Q_LABEL_ROOM).map((t) => (
+                <text key={t.value} x={x.to(t.value)} y={dims.plotHeight + 15}>
                   {t.label}
                 </text>
               ))}
+              <text x={dims.plotWidth} y={dims.plotHeight + 15} textAnchor="end">
+                q (Å⁻¹)
+              </text>
             </g>
             <g data-role="axis-left" className="fill-ink-faint text-caption" textAnchor="end" aria-hidden="true">
               {yTicks.map((t) => (
@@ -251,9 +255,6 @@ export function WorkspacePlot({
               </g>
             </g>
             <g data-role="axis-title" className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke" aria-hidden="true">
-              <text x={dims.plotWidth} y={dims.plotHeight - 6} textAnchor="end">
-                q (Å⁻¹)
-              </text>
               {yLabel && (
                 <text x={6} y={12}>
                   {yLabel}
