@@ -1,13 +1,33 @@
 import type { ReactNode } from "react";
 
-export function Section({ title, aside, className, children }: { title: string; aside?: ReactNode; className?: string; children: ReactNode }): JSX.Element {
+interface Collapsible {
+  open: boolean;
+  onOpen?: (() => void) | undefined;
+}
+
+export function Section({ title, aside, className, collapsible, children }: { title: string; aside?: ReactNode; className?: string; collapsible?: Collapsible | undefined; children: ReactNode }): JSX.Element {
+  const open = collapsible?.open ?? true;
   return (
-    <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")}>
-      <header className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
-        {aside && <span className="text-xs text-ink-faint">{aside}</span>}
+    <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")} data-section={title} data-collapsed={open ? undefined : "true"}>
+      <header className={(open ? "mb-2 " : "") + "flex items-baseline justify-between gap-2"}>
+        {collapsible?.onOpen ? (
+          <h2 className="text-sm font-semibold text-ink-soft">
+            <button type="button" aria-expanded={open} onClick={collapsible.onOpen} className="inline-flex items-baseline gap-1 hover:text-ink">
+              <span aria-hidden="true" className="inline-block w-2.5 text-ink-faint">{open ? "▾" : "▸"}</span>
+              {title}
+            </button>
+          </h2>
+        ) : collapsible ? (
+          <h2 className="inline-flex items-baseline gap-1 text-sm font-semibold text-ink-faint">
+            <span aria-hidden="true" className="inline-block w-2.5">{open ? "▾" : "▸"}</span>
+            {title}
+          </h2>
+        ) : (
+          <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
+        )}
+        {aside && open && <span className="text-xs text-ink-faint">{aside}</span>}
       </header>
-      {children}
+      {open && children}
     </section>
   );
 }

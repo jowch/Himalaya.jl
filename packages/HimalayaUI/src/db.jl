@@ -36,6 +36,7 @@ const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
 const MIGRATION_EXPERIMENTS_INGEST_ERROR = "experiments_ingest_error_v1"
+const MIGRATION_LABEL_SUGGESTIONS = "label_suggestions_v1"
 
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
@@ -506,6 +507,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_tag_colors!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
+    migrate_label_suggestions!(db)
 end
 
 function migrate_tag_colors!(db::SQLite.DB)

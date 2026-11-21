@@ -90,6 +90,7 @@ export function invalidateIngestFrameCache(
   if (isComplete) {
     qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.problems(expId) });
+    qc.invalidateQueries({ queryKey: queryKeys.labels(expId) });
   }
 }
 

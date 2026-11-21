@@ -941,6 +941,20 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='11']")?.getAttribute("d")).toMatch(/^M/);
   });
 
+  it("the compare picker lists buffers first, marks which are only suggested, and picks nothing by itself", () => {
+    state.labels = [
+      { id: 1, sample_id: 13, label: "Buffer", state: "suggested", source: "ingest" },
+      { id: 2, sample_id: 12, label: "buffer", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByText(/^minus /)).toBeNull();
+    fireEvent.keyDown(window, { key: "c" });
+    const rows = within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button");
+    expect(rows.map((r) => r.textContent)).toEqual(["A3Buffer", "A4Suggested buffer", "A2"]);
+    expect(rows.map((r) => r.getAttribute("aria-current"))).toEqual(["true", null, null]);
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+  });
+
   it("the picker only adds: samples already compared are not offered", () => {
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -1279,6 +1293,30 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
+  });
+
+  it("folds Call and Exposure as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt("/experiments/1/workspace/10");
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      const call = within(tools).getByRole("button", { name: /Call/ });
+      const exposure = within(tools).getByRole("button", { name: /Exposure/ });
+      expect(call).toHaveAttribute("aria-expanded", "true");
+      expect(exposure).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).queryByText("File")).toBeNull();
+      fireEvent.click(exposure);
+      expect(exposure).toHaveAttribute("aria-expanded", "true");
+      expect(within(tools).getByRole("button", { name: /Call/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).getByText("File")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
+      expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /Exposure/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /Exposure/ })).toBeInTheDocument();
+      expect(within(tools).queryByText("File")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("puts the indexing plot first in the tools column, above the phase list", () => {

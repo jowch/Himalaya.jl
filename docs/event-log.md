@@ -54,6 +54,15 @@ round-trip test in `test_events.jl`.
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
+`label_added` also sets `source='user'`, so a confirmed suggestion reads the same
+live and after a rebuild. Suggested labels are the one `sample_labels` write
+outside the log. `suggest_labels!` (`label_suggestions.jl`) inserts
+`state='suggested', source='ingest'` rows directly at the end of each ingest
+pass and once on open (the `label_suggestions_v1` migration). They have no
+`user_actions` row, so `rebuild_views_from_log!` drops them, and
+`suggest_labels_for_experiment!` puts them back. A suggestion never overwrites a
+row, so a user's confirm or remove always wins.
+
 **Route through `apply_event!` for entity-type discipline, but no view write:**
 `peak_removed`, `speculative_created`, `speculative_deleted`. Using
 `apply_event!` (with `entity_type='exposure'`) keeps these visible to

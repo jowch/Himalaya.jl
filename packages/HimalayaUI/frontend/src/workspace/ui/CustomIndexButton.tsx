@@ -16,7 +16,7 @@ export function CustomIndexButton({ open, disabled, onClick }: Props): JSX.Eleme
       title={open ? "Close the custom index" : undefined}
       className={
         "inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-caption disabled:opacity-50 " +
-        (open ? "border-accent bg-accent-wash text-ink" : "border-dashed border-hair-strong text-ink-soft hover:text-ink")
+        (open ? "border-ink-soft bg-paper-sunk text-ink" : "border-dashed border-hair-strong text-ink-soft hover:text-ink")
       }
     >
       Custom index <Kbd>{open ? "Esc" : "I"}</Kbd>

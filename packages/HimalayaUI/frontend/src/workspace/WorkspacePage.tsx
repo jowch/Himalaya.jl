@@ -35,9 +35,10 @@ import {
   useCheckForNewFilesOnOpen,
 } from "../queries";
 import { useScanState } from "../hooks/useScanState";
+import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -144,6 +145,8 @@ function exposureRows(e: Exposure): [string, string][] {
   rows.push(["I signal", i2 != null ? Math.round(i2).toLocaleString("en-US") : "—"]);
   return rows;
 }
+
+const SHORT_WINDOW = "(max-height: 860px)";
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -382,7 +385,18 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
-  const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
+  const pickable = useMemo(
+    () => buffersFirst(samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), labelList),
+    [samples, sampleId, shownRefs, labelList],
+  );
+  const bufferNotes = useMemo(() => {
+    const notes = new Map<number, string>();
+    for (const s of samples) {
+      const role = bufferRole(labelList, s.id);
+      if (role) notes.set(s.id, role === "confirmed" ? "Buffer" : "Suggested buffer");
+    }
+    return notes;
+  }, [samples, labelList]);
   const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
   useEffect(() => {
     setTagging(false);
@@ -414,6 +428,10 @@ export function WorkspacePage(): JSX.Element {
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
   const canCall = Boolean(username && exposure && !exposureDropped);
   const draftBounds = draft ? latticeBounds(draft.phase, xExtent) : null;
+  const shortWindow = useMediaQuery(SHORT_WINDOW);
+  const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
+  const callOpen = !shortWindow || openPanel === "call" || draft !== null;
+  const exposureOpen = !shortWindow || (openPanel === "exposure" && draft === null);
   const openCustom = useCallback(() => {
     if (!canCall) return;
     setDraft((d) => d ?? initialDraft(candidates[0]));
@@ -559,13 +577,18 @@ export function WorkspacePage(): JSX.Element {
           if (exposure && username) toggleDrop(exposure);
           break;
         case "0":
-          if (username) toggleFormFactor();
+          if (username) {
+            setOpenPanel("call");
+            toggleFormFactor();
+          }
           break;
         default: {
           const n = Number(ev.key);
           const c = Number.isInteger(n) && n >= 1 ? candidates[n - 1] : undefined;
-          if (c && username) toggleCandidate(c);
-          else handled = false;
+          if (c && username) {
+            setOpenPanel("call");
+            toggleCandidate(c);
+          } else handled = false;
         }
       }
       if (handled) ev.preventDefault();
@@ -615,7 +638,7 @@ export function WorkspacePage(): JSX.Element {
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
     { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
     { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
-    ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: toggleFormFactor }] : []),
+    ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: () => { setOpenPanel("call"); toggleFormFactor(); } }] : []),
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
     ...samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, hint: "Sample", run: () => goSample(s.id) })),
   ];
@@ -707,6 +730,7 @@ export function WorkspacePage(): JSX.Element {
               {picking && (
                 <ComparePicker
                   samples={pickable}
+                  notes={bufferNotes}
                   onPick={(rid) => {
                     setRefs((r) => addCompare(r, rid));
                     if (subRef === undefined) setSubRef(rid);
@@ -780,7 +804,7 @@ export function WorkspacePage(): JSX.Element {
           >
             <IndexingPlot series={indexSeries} />
           </Section>
-          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-tools-middle">
+          <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
             {draft && draftBounds ? (
               <Section title="Custom index">
                 <CustomIndexPanel
@@ -796,7 +820,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </Section>
             ) : (
-              <Section title="Call">
+              <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
                 {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   candidates={candidates}
@@ -811,7 +835,12 @@ export function WorkspacePage(): JSX.Element {
             )}
           </div>
           {exposure && (
-            <Section title="Exposure" aside="← →" className="shrink-0">
+            <Section
+              title="Exposure"
+              aside="← →"
+              className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
+              collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
+            >
               <MetaList rows={exposureRows(exposure)} />
             </Section>
           )}
