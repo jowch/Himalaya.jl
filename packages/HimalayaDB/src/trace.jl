@@ -28,10 +28,9 @@ going through `samples` would miss it). The candidate path is
 where `pat` is the `pattern` keyword if given, else the experiment's
 `integration_pattern` column, else `"{name}.dat"` when that column is NULL.
 
-Mirrors `HimalayaUI.resolve_trace_path` (pipeline.jl): tries the exact per-frame
-name first, then falls back to the per-acquisition name with the trailing
-`_<rep>_<frame>` suffix stripped — the shared `_tot.dat` total integration is
-named by the acquisition stem, not the per-frame stem.
+Mirrors `HimalayaUI.resolve_trace_path` (pipeline.jl): tries the exact name
+first, then falls back to the name with the trailing `_0_001` suffix stripped.
+Each exposure has its own `_tot.dat`, named by the stem without that suffix.
 
 Pass `pattern=` to override (e.g. `"{name}_tot.dat"`). The file-not-found error
 names the path(s) it tried, which reveals a pattern mismatch.
@@ -53,9 +52,6 @@ function load_trace(db::SQLite.DB, exposure_id::Integer;
     dir = String(row.analysis_dir)
     fname = String(row.filename)
 
-    # Mirror HimalayaUI.resolve_trace_path (pipeline.jl): exact per-frame name,
-    # then the per-acquisition name with the trailing _<rep>_<frame> suffix
-    # stripped — the shared _tot.dat is named by the acquisition stem.
     exact = joinpath(dir, replace(pat, "{name}" => fname))
     isfile(exact) && return load_dat(exact)
     stripped = replace(fname, r"_\d+_\d+$" => "")

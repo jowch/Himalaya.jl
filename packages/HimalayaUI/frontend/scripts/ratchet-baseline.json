@@ -200,7 +200,7 @@
     "src/routes_experiments.jl": 167,
     "src/routes_export.jl": 7,
     "src/routes_exposures.jl": 72,
-    "src/routes_fs.jl": 116,
+    "src/routes_fs.jl": 113,
     "src/routes_grouping.jl": 86,
     "src/routes_messages.jl": 19,
     "src/routes_peaks.jl": 63,
@@ -208,9 +208,8 @@
     "src/routes_resolve.jl": 28,
     "src/routes_samples.jl": 88,
     "src/routes_series.jl": 85,
-    "src/routes_trace.jl": 4,
     "src/routes_users.jl": 3,
-    "src/series.jl": 131,
+    "src/series.jl": 130,
     "src/server.jl": 173,
     "src/speculative.jl": 239
   }
