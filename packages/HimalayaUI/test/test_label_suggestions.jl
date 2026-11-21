@@ -34,6 +34,13 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
         @test all(state == "suggested" && source == "ingest" for (_, _, state, source) in _rows(db))
     end
 
+    @testset "a long digit run in a solvent sample name matches quickly and never throws" begin
+        for n in (16, 22, 40, 200)
+            @test HimalayaUI.suggested_role("PBS_" * "1"^n * "x") === nothing
+            @test HimalayaUI.suggested_role(HimalayaUI._auto_name("PBS_" * "1"^n, 1, 1)) == "Buffer"
+        end
+    end
+
     @testset "never touches a sample that already carries a role, in any state" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b, c)) = _seed_named_samples(db, ["buffer_A", "buffer_B", "buffer_C"])
@@ -92,5 +99,16 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
         DBInterface.execute(db, "DELETE FROM sample_labels")
         HimalayaUI.migrate_schema!(db)
         @test isempty(_rows(db))
+    end
+
+    @testset "a failed suggestion step on open never blocks the database from opening" begin
+        db = open_prepared_clone(mktempdir())
+        (_, (a,)) = _seed_named_samples(db, ["buffer_A"])
+        (_, (b,)) = _seed_named_samples(db, ["PBS"])
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_LABEL_SUGGESTIONS])
+        DBInterface.execute(db, """CREATE TRIGGER fail_one BEFORE INSERT ON sample_labels
+            WHEN NEW.sample_id = $a BEGIN SELECT RAISE(ABORT, 'boom'); END""")
+        @test_logs (:warn, "label suggestions failed") match_mode=:any HimalayaUI.migrate_schema!(db)
+        @test _rows(db) == Set([(b, "Buffer", "suggested", "ingest")])
     end
 end
