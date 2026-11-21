@@ -85,8 +85,9 @@ function clickPlotAt(q: number, detail = 1): void {
   fireEvent.click(screen.getByTestId("workspace-trace"), { clientX: px, clientY: 100, detail });
 }
 
+const clearUsername = vi.fn();
 vi.mock("../../src/state", () => ({
-  useAppState: (sel: (s: { username: string | undefined }) => unknown) => sel({ username: state.username }),
+  useAppState: (sel: (s: { username: string | undefined; clearUsername: () => void }) => unknown) => sel({ username: state.username, clearUsername }),
 }));
 
 function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): CorpusSample {
@@ -161,6 +162,17 @@ describe("WorkspacePage", () => {
     expect(within(list).queryByText("other")).toBeNull();
     expect(within(list).getAllByRole("img", { name: "Unreviewed" })).toHaveLength(2);
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("2 of 4 reviewed");
+  });
+
+  it("switches user from the palette, which names who is signed in", () => {
+    clearUsername.mockClear();
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "switch user" } });
+    expect(screen.getAllByRole("option").some((o) => /Switch user, signed in as jc/.test(o.textContent ?? ""))).toBe(true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(clearUsername).toHaveBeenCalledTimes(1);
   });
 
   it("links the Himalaya brand back to the corpus", () => {

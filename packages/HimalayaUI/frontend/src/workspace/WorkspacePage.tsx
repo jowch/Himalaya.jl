@@ -131,6 +131,7 @@ export function WorkspacePage(): JSX.Element {
   const linkedParam = Number(search.get("exposure"));
   const linkedExposure = Number.isInteger(linkedParam) && linkedParam > 0 ? linkedParam : undefined;
   const username = useAppState((s) => s.username);
+  const clearUsername = useAppState((s) => s.clearUsername);
   const experiment = useExperiment(experimentId);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
@@ -485,6 +486,7 @@ export function WorkspacePage(): JSX.Element {
     { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
+    { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
     { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
     ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: toggleFormFactor }] : []),
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
