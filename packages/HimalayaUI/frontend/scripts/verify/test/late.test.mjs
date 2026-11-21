@@ -111,3 +111,13 @@ test("seed --late-trace needs --reset, and the plan regenerates the demo with it
   assert.equal(await main(["seed", "--reset", "--late-trace", "--dry-run"], { cfg, out: plan }), 0);
   assert.ok(plan.json().steps.some((s) => s.includes("--late-trace")), JSON.stringify(plan.json().steps));
 });
+
+test("only a 404 on a held frame's trace is the app's expected answer while the trace is late", async () => {
+  const { heldTrace404 } = await import("../views.mjs");
+  const e = (url, status = 404, method = "GET") => ({ url: `http://127.0.0.1:5173${url}`, status, method });
+  const held = new Set([11]);
+  assert.equal(heldTrace404(e("/api/exposures/11/trace"), held), true);
+  assert.equal(heldTrace404(e("/api/exposures/12/trace"), held), false);
+  assert.equal(heldTrace404(e("/api/exposures/11/trace", 500), held), false);
+  assert.equal(heldTrace404(e("/api/exposures/11/peaks"), held), false);
+});

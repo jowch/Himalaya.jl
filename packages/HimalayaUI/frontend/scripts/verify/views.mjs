@@ -13,9 +13,15 @@ export function statusFromText(text) {
   return "phase";
 }
 
-function failedRequests(settle, where) {
-  if (!settle.httpErrors.length) return;
-  const list = settle.httpErrors.map((e) => `${e.method} ${new URL(e.url).pathname} ${e.status}`).join(", ");
+export function heldTrace404(e, heldIds) {
+  const m = /^\/api\/exposures\/(\d+)\/trace$/.exec(new URL(e.url).pathname);
+  return e.method === "GET" && e.status === 404 && m !== null && heldIds.has(Number(m[1]));
+}
+
+function failedRequests(settle, where, heldIds = new Set()) {
+  const failed = settle.httpErrors.filter((e) => !heldTrace404(e, heldIds));
+  if (!failed.length) return;
+  const list = failed.map((e) => `${e.method} ${new URL(e.url).pathname} ${e.status}`).join(", ");
   throw new Error(`${where} loaded with failed requests (${list}); the view it shows can't be trusted`);
 }
 
@@ -117,7 +123,7 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
       await row.click();
       const settle = await tracker.wait({ timeoutMs: 20000 });
       if (!settle.settled) throw new Error(`the workspace did not settle on sample ${s.id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-      failedRequests(settle, `the workspace on sample ${s.id}`);
+      failedRequests(settle, `the workspace on sample ${s.id}`, new Set(s.heldIds ?? []));
       frame = await currentWorkspaceFrame(page, s.frameOrder);
       kept = await workspaceKept(page);
       rail = await workspaceRail(page);

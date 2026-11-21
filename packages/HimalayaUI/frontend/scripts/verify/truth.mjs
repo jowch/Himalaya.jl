@@ -2,6 +2,7 @@ import { getJson, request } from "./http.mjs";
 import { findDemoExperiment, readTruth } from "./demo.mjs";
 import { UsageError, intFlag } from "./args.mjs";
 import { readViews, statusFromText } from "./views.mjs";
+import { heldTraces } from "./late.mjs";
 
 export function normalizeCall(phases) {
   const list = (Array.isArray(phases) ? phases : String(phases ?? "").split("+"))
@@ -136,7 +137,27 @@ function withinCall(call, allowed) {
   return call.split("+").every((p) => parts.has(p));
 }
 
-export function compareTruth(truthRows, appSamples, { strict = false, expect = null } = {}) {
+export const TRACES_RULE = "Exactly the frames whose trace is held back in late/ are reported as waiting for a trace, and no analysis failed.";
+
+export function compareTraces(held, problems) {
+  const heldSet = new Set(held);
+  const waiting = problems.filter((p) => p.problem === "no_trace").map((p) => p.filename).sort();
+  const waitingSet = new Set(waiting);
+  const failed = problems.filter((p) => p.problem !== "no_trace").map((p) => ({ frame: p.filename, reason: p.reason }));
+  const stillWaiting = waiting.filter((f) => !heldSet.has(f));
+  const notReported = [...heldSet].filter((f) => !waitingSet.has(f)).sort();
+  return {
+    rule: TRACES_RULE,
+    ok: stillWaiting.length === 0 && notReported.length === 0 && failed.length === 0,
+    held: [...heldSet].sort(),
+    waiting,
+    still_waiting: stillWaiting,
+    not_reported: notReported,
+    failed,
+  };
+}
+
+export function compareTruth(truthRows, appSamples, { strict = false, expect = null, held = new Set() } = {}) {
   const ownerOf = new Map();
   for (const row of truthRows) for (const base of words(row.bases)) ownerOf.set(base, row.sample);
   const appByTruth = new Map();
@@ -168,7 +189,9 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
     const missing = expectedFrames.filter((b) => !seen.includes(b));
     const kept = frames.filter(isKept);
     if (matches.length && missing.length) problems.push(`missing frames: ${missing.join(" ")}`);
-    const autoCalls = frames.map((f) => (flared.has(f.filename)
+    const autoCalls = frames.map((f) => (held.has(f.filename)
+      ? { frame: f.filename, call: normalizeCall(f.autoPhases), expected: "none", trace: "held" }
+      : flared.has(f.filename)
       ? { frame: f.filename, call: normalizeCall(f.autoPhases), expected: `within ${expectedAuto}` }
       : { frame: f.filename, call: normalizeCall(f.autoPhases), expected: empty.has(f.filename) ? "none" : expectedAuto }));
     const wrongAuto = autoCalls.filter((c) => (c.expected.startsWith("within ") ? !withinCall(c.call, expectedAuto) : c.call !== c.expected));
@@ -304,9 +327,14 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const expect = flags.expect ?? null;
   if (expect !== null && !(expect in EXPECTATIONS)) throw new UsageError(`unknown --expect ${expect}`, `use one of ${Object.keys(EXPECTATIONS).join(", ")}`);
   const app = await collectApp(cfg, experimentId);
+  const held = heldTraces(cfg);
+  const heldSet = new Set(held);
   let workspaceRead = null;
   if (flags.ui) {
-    const opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder })));
+    const opened = await views(cfg, experimentId, app.map((s) => ({
+      id: s.id, name: s.name, frameOrder: s.frameOrder,
+      heldIds: s.frames.filter((f) => heldSet.has(f.filename)).map((f) => f.id),
+    })));
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
@@ -318,7 +346,10 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     }
   }
   for (const s of app) delete s.frameOrder;
-  const result = { experiment_id: experimentId, ...compareTruth(truth, app, { strict: Boolean(flags.strict), expect }) };
+  const problems = await getJson(cfg.apiBase, `/api/experiments/${experimentId}/problems`);
+  const traces = compareTraces(held, problems.exposures ?? []);
+  const compared = compareTruth(truth, app, { strict: Boolean(flags.strict), expect, held: heldSet });
+  const result = { experiment_id: experimentId, ...compared, ok: compared.ok && traces.ok, traces };
   if (flags.ui) result.workspace_read = workspaceRead;
   return result;
 }

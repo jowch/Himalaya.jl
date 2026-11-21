@@ -23,9 +23,20 @@ step() {
 }
 
 trap 'bin/verify stop > /dev/null 2>&1 || true; bin/verify close > /dev/null 2>&1 || true' EXIT
-bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
+bin/verify seed --reset --late-trace > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
 
+step 1-held json bin/verify check-truth --ui --expect fresh
+step 1-deliver json bin/verify deliver-late
+step 1-rescan log bash -c '
+  set -e
+  bin/verify open /experiments/1
+  for _ in $(seq 1 60); do
+    bin/verify api GET /api/experiments/1/problems > "$1/1-problems.json"
+    grep -q "no_trace" "$1/1-problems.json" || exit 0
+    sleep 1
+  done
+  echo "opening the experiment never analyzed the delivered traces"; cat "$1/1-problems.json"; exit 1' _ "$OUT"
 step 1-fresh json bin/verify check-truth --ui --expect fresh
 step 2-triage json bin/verify triage
 step 3-triaged json bin/verify check-truth --ui --expect triaged

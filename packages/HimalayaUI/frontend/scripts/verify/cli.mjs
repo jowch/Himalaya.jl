@@ -6,6 +6,7 @@ import { open, click, fill, press, snapshot, screenshot, settle } from "./page.m
 import { closeBrowser } from "./browser.mjs";
 import { api } from "./api.mjs";
 import { checkTruth, triage } from "./truth.mjs";
+import { deliverLate } from "./late.mjs";
 
 const TARGET = ["role", "name", "label", "text", "testid", "selector", "within", "nth", "timeout"];
 
@@ -17,9 +18,9 @@ export const COMMANDS = {
     run: (cfg) => doctor(cfg),
   },
   seed: {
-    usage: "seed [--empty] [--reset] [--dry-run] [--timeout <ms>]",
-    summary: "Bring the demo up (generate, backend, ingest, Vite) in the background and wait until doctor passes. No-op when already up. --reset deletes the demo DBs and data first.",
-    spec: { booleans: ["empty", "reset", "dry-run"], strings: ["timeout"] },
+    usage: "seed [--empty] [--reset [--late-trace]] [--dry-run] [--timeout <ms>]",
+    summary: "Bring the demo up (generate, backend, ingest, Vite) in the background and wait until doctor passes. No-op when already up. --reset deletes the demo DBs and data first. --late-trace generates the demo with one sample's traces held back in late/, as if the integration pipeline had not written them yet (see deliver-late).",
+    spec: { booleans: ["empty", "reset", "dry-run", "late-trace"], strings: ["timeout"] },
     run: (cfg, f) => seed(cfg, f),
   },
   stop: {
@@ -87,9 +88,15 @@ export const COMMANDS = {
     args: 2,
     run: (cfg, f, [method, p]) => api(cfg, method, p, f),
   },
+  "deliver-late": {
+    usage: "deliver-late",
+    summary: "Move the traces `seed --reset --late-trace` held back into the demo's tot_files, with a fresh mtime, as the integration pipeline would. Then open the experiment so a pass picks them up, and run check-truth.",
+    spec: {},
+    run: (cfg) => deliverLate(cfg),
+  },
   "check-truth": {
     usage: "check-truth [--strict] [--ui] [--expect fresh|triaged] [--truth <TRUTH.csv>] [--experiment <id>]",
-    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also checks an `invariants` block (status matches the confirmed call, representative never a dropped frame, views agree); a broken one fails the exit code. --ui opens each sample in the workspace and reads which frame it opens on and the status it shows. --expect fresh fails if any frame is dropped; --expect triaged fails if any frame in TRUTH's drop column is still kept. A flared frame's auto call may lose phases but must not add one.",
+    summary: "Compare what the app shows with the demo TRUTH.csv: per-frame auto calls, frame counts, and the corpus status (read from GET /api/samples, the data the corpus renders). Fails on any regression against TRUTH's `auto` column; --strict also fails where the auto call misses the generated phases. Also checks an `invariants` block (status matches the confirmed call, representative never a dropped frame, views agree); a broken one fails the exit code. --ui opens each sample in the workspace and reads which frame it opens on and the status it shows. --expect fresh fails if any frame is dropped; --expect triaged fails if any frame in TRUTH's drop column is still kept. A flared frame's auto call may lose phases but must not add one. A `traces` block fails unless exactly the frames held back in late/ are reported as waiting for a trace (GET /api/experiments/<id>/problems) and no analysis failed; a held frame must have no auto call yet.",
     spec: { booleans: ["strict", "ui"], strings: ["truth", "experiment", "expect"] },
     run: (cfg, f) => checkTruth(cfg, f),
   },
