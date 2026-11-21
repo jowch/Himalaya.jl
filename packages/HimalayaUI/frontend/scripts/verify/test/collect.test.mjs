@@ -24,6 +24,7 @@ function routes(demoDir) {
       { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", representative_exposure_id: 1 },
       { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", representative_exposure_id: 3 },
     ],
+    "/api/experiments/4/problems": { ingest_error: null, exposures: [] },
     "/api/experiments/4/export": [
       { name: "MO_H2O_S1 (S01P01)", exposures: [
         { filename: "MO_H2O_S1", selected: false, active_group_kind: "auto", indices: [{ phase: "Pn3m", basis: 0.087 }] },
@@ -161,7 +162,7 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
   try {
     const r = await checkTruth(cfg, { ui: true }, { views });
     assert.equal(asked[0].experimentId, 4);
-    assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"] });
+    assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"], heldIds: [] });
     assert.equal(r.ok, false);
     assert.deepEqual(r.summary.invariants_failed, ["representative_kept", "views_agree"]);
     assert.equal(r.invariants.views_agree.checked, true);

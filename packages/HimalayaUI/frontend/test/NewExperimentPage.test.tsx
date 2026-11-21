@@ -59,6 +59,11 @@ describe("NewExperimentPage", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("puts the cursor in the folder field on arrival", () => {
+    renderPage();
+    expect(document.activeElement).toBe(screen.getByTestId("dirpicker-input").querySelector("input"));
+  });
+
   it("keeps the add button disabled until a folder with setups is picked", () => {
     renderPage();
     expect(screen.getByTestId("create-submit")).toBeDisabled();
@@ -148,6 +153,48 @@ describe("NewExperimentPage", () => {
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
     expect(input).toHaveValue("/b/20261103");
+  });
+
+  it("plain Enter in the path field adds the found setup rather than entering its first subfolder", async () => {
+    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"] });
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103/setup1", setups: [setup("/b/20261103/setup1")] });
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/20261103/setup1");
+    await screen.findAllByTestId("setup-row");
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: "analysis" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(input).toHaveValue("/b/20261103/setup1");
+  });
+
+  it("Enter right after picking a subfolder adds only that subfolder's setup, once its own preview has arrived", async () => {
+    vi.mocked(api.suggestPaths).mockImplementation(async (p) => ({
+      suggestions: p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"],
+    }));
+    vi.spyOn(api, "previewFolder").mockImplementation(async (p) =>
+      p.includes("setup1")
+        ? { path: p, setups: [setup("/b/day1/setup1")] }
+        : { path: p, setups: [setup("/b/day1/setup1"), setup("/b/day1/setup2")] },
+    );
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/day1/");
+    await waitFor(() => expect(screen.getAllByTestId("setup-row")).toHaveLength(2));
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: "setup1" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("/b/day1/setup1/");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(create).not.toHaveBeenCalled();
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0]![0]).toMatchObject({ data_dir: "/b/day1/setup1/data" });
   });
 
   it("leaves ⌘/Ctrl+Enter to an open dialog such as the palette", async () => {

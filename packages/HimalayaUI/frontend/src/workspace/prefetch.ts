@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query";
 import * as api from "../api";
 import type { CorpusSample, Exposure } from "../api";
-import { queryKeys, traceRetry } from "../queries";
+import { queryKeys, retryUnlessMissing } from "../queries";
 import { imageUrl, nextUnreviewed } from "./model";
 
 export const PREFETCH_DWELL_MS = 150;
@@ -62,7 +62,7 @@ class PrefetchRun {
 
   exposureData(id: number): Promise<unknown> {
     return Promise.all([
-      this.query(queryKeys.trace(id), (signal) => api.getTrace(id, { signal }), traceRetry),
+      this.query(queryKeys.trace(id), (signal) => api.getTrace(id, { signal }), retryUnlessMissing),
       this.query(queryKeys.peaks(id), (signal) => api.listPeaks(id, { signal })),
       this.query(queryKeys.indices(id), (signal) => api.listIndices(id, { signal })),
       this.query(queryKeys.assignment(id), (signal) => api.getAssignment(id, { signal })),

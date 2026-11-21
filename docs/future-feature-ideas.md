@@ -285,17 +285,6 @@ good / bad / maybe rating. The current Index page auto-picks the first
 exposure by id; this page would let the user curate which exposure the
 analysis runs on.
 
-### Tag editing — known gaps
-
-A full tag-editing UI now exists (`TagEditor`, `TagList`, `TagPill`,
-`TagSuggest` primitives + the `ManageTagsModal` composite; routes nested
-under `routes_samples.jl`). The remaining work is coherence + bug-fixes
-across the three surfaces it appears on:
-
-- **Modal add-row ignores Enter (A1).** In `ManageTagsModal` the `onCommit`
-  on the key/value `TagSuggest` fields only updates local state — it never
-  calls `handleAdd`; the user must click **Add**. Enter should commit.
-
 ### Stale-indices banner
 
 Detect when peak edits have happened since the last reanalysis and surface
@@ -317,7 +306,7 @@ CSV/JSON.
 
 ### Cross-experiment sample comparison
 
-Query `sample_tags` and analysis results across multiple experiment
+Query sample labels and analysis results across multiple experiment
 databases to compare samples with similar compositions (e.g., same
 lipid/peptide system across beamtimes). The SQLite-per-experiment schema
 is migration-friendly: a thin aggregation layer can open multiple DBs and
@@ -344,6 +333,19 @@ saves, how the existing `user_actions` event log seeds the history, and what
 this means for the backend commit contract (the `expected_content_hash` gate
 likely relaxes). This is its own sub-project: spec → plan → implementation, not
 part of the figure-export build.
+
+**Shipped 2026-11-21 (PR #403): per-tab undo/redo in the workspace.** ⌘Z keeps
+an in-memory history of this tab's edits (calls, drops, peaks, custom index,
+labels, label colours, bridges). An entry stores what the edit touched by a
+stable identity (a phase and its lattice basis, a peak's q, a sample pair), not
+by server ids, because a peak edit re-numbers the auto indices. Undo waits for
+the queue to finish saving, reads the server fresh, and queues only the edits
+needed to put that state back. Undoing a confirmed or dismissed label suggestion
+puts it back to suggested (`label_suggestion_restored`), never deletes it, and
+one gesture that writes several things (Create a label with a colour) is one
+undo step. Other users' edits are never
+undone, and a reload clears the history. Versioning and a durable history built
+from `user_actions` are still open.
 
 ### Cross-tab SSE URL invalidation — live integration coverage
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, screen } from "@testing-library/react";
+import { act, render, fireEvent, screen } from "@testing-library/react";
 import { COMPARE_COLORS, PLOT_HEIGHT, WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
 import { PLOT_MARGINS } from "../../src/workspace/plotScale";
 import { SubtractionStrip } from "../../src/workspace/ui/SubtractionStrip";
@@ -12,6 +12,18 @@ describe("WorkspacePlot", () => {
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("");
     rerender(<WorkspacePlot trace={{ q: [], I: [], sigma: [] } as never} peaks={[]} combs={[]} />);
     expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("This frame's trace has no points.");
+  });
+
+  it("puts the q label in the tick row, below the data, without a tick label under it", () => {
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} />);
+    const svg = screen.getByTestId("workspace-trace").closest("div")!.querySelector("svg")!;
+    const label = [...svg.querySelectorAll("text")].find((t) => t.textContent === "q (Å⁻¹)")!;
+    const plotHeight = PLOT_HEIGHT - PLOT_MARGINS.top - PLOT_MARGINS.bottom;
+    expect(Number(label.getAttribute("y"))).toBeGreaterThan(plotHeight);
+    const labelX = Number(label.getAttribute("x"));
+    const ticks = [...svg.querySelectorAll('[data-role="axis-bottom"] text')].filter((t) => t !== label);
+    expect(ticks.length).toBeGreaterThan(0);
+    for (const t of ticks) expect(Number(t.getAttribute("x"))).toBeLessThan(labelX - 56);
   });
 
   it("double-click does not reset the zoom", () => {
@@ -209,6 +221,22 @@ describe("WorkspacePlot", () => {
     fireEvent.keyDown(auto, { key: "Enter" });
     fireEvent.keyDown(manual, { key: " " });
     expect(onClickPeak.mock.calls).toEqual([[{ id: 1, source: "auto" }], [{ id: 1, source: "manual" }]]);
+  });
+
+  it("rings the keyboard-focused peak without recolouring it", () => {
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={() => {}} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const ring = (): Element | null => svg.querySelector('[data-role="peak-focus"]');
+    const auto = screen.getByRole("button", { name: "Auto peak at q = 0.1000 Å⁻¹" });
+    expect(ring()).toBeNull();
+    act(() => (auto as unknown as HTMLElement).focus());
+    expect(ring()).not.toBeNull();
+    expect(ring()!.getAttribute("fill")).toBe("none");
+    expect(["var(--color-accent)", "var(--color-ink)"]).not.toContain(ring()!.getAttribute("stroke"));
+    expect(auto.getAttribute("fill")).toBe("var(--color-ink)");
+    expect(auto.getAttribute("stroke")).toBe("none");
+    act(() => (auto as unknown as HTMLElement).blur());
+    expect(ring()).toBeNull();
   });
 
   it("renders an auto and a manual peak that share an id without a duplicate key", () => {

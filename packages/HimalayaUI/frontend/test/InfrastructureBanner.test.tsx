@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Mutation } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { InfrastructureBanner } from "../src/print/shell/InfrastructureBanner";
-import { useFloatingDock } from "../src/print/shell/floatingDock";
 import { useConnection } from "../src/lib/connection";
 
 function withQC(qc: QueryClient) {
@@ -16,6 +15,7 @@ function withQC(qc: QueryClient) {
 interface AddOpts {
   status?: "pending" | "success" | "error" | "idle";
   submittedAt?: number;
+  meta?: Record<string, unknown>;
 }
 
 function addMutation(qc: QueryClient, opts: AddOpts = {}): Mutation {
@@ -31,7 +31,7 @@ function addMutation(qc: QueryClient, opts: AddOpts = {}): Mutation {
       failureReason: null,
       isPaused: false,
     },
-    options: {},
+    options: opts.meta ? { meta: opts.meta } : {},
   } as unknown as Mutation;
   qc.getMutationCache().add(m);
   return m;
@@ -47,8 +47,6 @@ describe("InfrastructureBanner", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
-    // Reset the shared dock lane so one test's occupancy never leaks.
-    useFloatingDock.setState({ centerLaneOccupied: false });
     useConnection.setState({ streamDownSince: null });
   });
 
@@ -73,6 +71,15 @@ describe("InfrastructureBanner", () => {
     const banner = screen.getByTestId("infrastructure-banner");
     expect(banner).toHaveAttribute("data-state", "showing");
     expect(banner).toHaveTextContent(/Saving your changes/);
+  });
+
+  it("ignores a pending request that saves nothing, such as the check for new files when a workspace opens", () => {
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 2000, meta: { savesWork: false } });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByTestId("infrastructure-banner")).not.toBeInTheDocument();
   });
 
   it("after 30s says how many changes are not saved yet and that it keeps trying, without asking for a refresh", () => {
@@ -132,27 +139,6 @@ describe("InfrastructureBanner", () => {
     expect(banner.querySelector('[aria-label="Not saved"]')).not.toBeNull();
     expect(banner).toHaveTextContent("1 change not saved yet. Still trying.");
     expect(banner.textContent ?? "").not.toContain("—");
-  });
-
-  it("docks centre by default (no page action bar occupies the lane)", () => {
-    addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
-    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
-    expect(screen.getByTestId("infrastructure-banner")).toHaveAttribute(
-      "data-dock",
-      "center",
-    );
-  });
-
-  it("steps aside to the corner while a bottom-centre action bar occupies the lane (LA-COLLIDE)", () => {
-    // The contact sheet's opaque CullBar/ComposeBar sit in the same bottom-
-    // centre lane at a higher z; without stepping aside the banner is occluded.
-    useFloatingDock.setState({ centerLaneOccupied: true });
-    addMutation(qc, { status: "pending", submittedAt: Date.now() - 1000 });
-    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
-    expect(screen.getByTestId("infrastructure-banner")).toHaveAttribute(
-      "data-dock",
-      "aside",
-    );
   });
 
   it("disappears when the mutation settles", () => {

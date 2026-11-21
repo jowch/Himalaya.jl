@@ -230,6 +230,15 @@ export async function snapshot(cfg, flags) {
   });
 }
 
+export async function count(cfg, flags) {
+  if (!flags.selector) throw new UsageError("count needs --selector <css>");
+  return withPage(cfg, async (page) => {
+    const els = page.locator(flags.selector);
+    const texts = await els.evaluateAll((nodes) => nodes.slice(0, 20).map((n) => (n.textContent ?? "").trim()));
+    return { url: page.url(), selector: flags.selector, count: await els.count(), texts };
+  });
+}
+
 export async function screenshot(cfg, file, flags) {
   return withPage(cfg, async (page) => {
     const out = path.resolve(file ?? path.join(cfg.stateDir, "shots", `${new Date().toISOString().replace(/[:.]/g, "-")}.png`));

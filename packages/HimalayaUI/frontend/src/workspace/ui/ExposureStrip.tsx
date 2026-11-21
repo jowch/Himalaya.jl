@@ -1,5 +1,8 @@
 import type { Exposure } from "../../api";
 import { imageUrl } from "../model";
+import { detectorLutFilter } from "../../print/detector/detectorLut";
+
+const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
 interface Props {
   exposures: readonly Exposure[];
@@ -32,7 +35,7 @@ export function ExposureStrip({ exposures, currentId, onPick, onToggleDrop }: Pr
               className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge"
             >
               {src ? (
-                <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                <img src={src} alt="" loading="lazy" style={DETECTOR_COLOUR} className="h-full w-full object-cover" />
               ) : (
                 <span className="text-xs text-frame-tag">No image</span>
               )}

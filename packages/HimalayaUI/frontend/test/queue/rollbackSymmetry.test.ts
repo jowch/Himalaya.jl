@@ -34,11 +34,11 @@ import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
-  addSampleTagMutator, removeSampleTagMutator,
-  addCorpusSampleTagMutator, removeCorpusSampleTagMutator,
-  addExposureTagMutator, removeExposureTagMutator,
   setExposureStatusMutator, selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
+import {
+  addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator,
+} from "../../src/lib/queue/mutators/labels";
 import { queryKeys } from "../../src/queries";
 import type { QueryKey } from "@tanstack/react-query";
 
@@ -50,11 +50,10 @@ const PEAK = {
 const EXPOSURE = {
   id: 5, sample_id: 1, filename: null, kind: "file" as const, selected: true,
   status: null, image_path: null, image_version: "",
-  trace_hash: null, analysis_inputs_hash: "h0", tags: [], sources: [],
+  trace_hash: null, analysis_inputs_hash: "h0", sources: [],
 };
 const SAMPLE = {
   id: 10, experiment_id: 1, display_name: "D1", name: "n", notes: null,
-  tags: [{ id: 1, key: "k", value: "v", source: "manual" }],
 };
 const ASSIGNMENT = {
   exposure_id: 5, state: "indexed" as const, members: [10] as number[],
@@ -255,93 +254,6 @@ const SPECS: Spec[] = [
     },
   },
   {
-    name: "addSampleTag",
-    keys: [queryKeys.samples(1)],
-    seed: (qc) => qc.setQueryData(queryKeys.samples(1), [SAMPLE]),
-    run: (qc) => {
-      const ctx = addSampleTagMutator.onMutate({
-        kind: "add_tag", clientOpId: "op",
-        payload: { key: "x", value: "y" },
-        sampleId: 10, experimentId: 1, username: "alice", clientId: "tab",
-        key: "x", value: "y",
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "removeSampleTag",
-    keys: [queryKeys.samples(1)],
-    seed: (qc) => qc.setQueryData(queryKeys.samples(1), [SAMPLE]),
-    run: (qc) => {
-      const ctx = removeSampleTagMutator.onMutate({
-        kind: "remove_tag", clientOpId: "op",
-        payload: { tagId: 1 },
-        sampleId: 10, experimentId: 1, username: "alice", clientId: "tab",
-        tagId: 1,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "addCorpusSampleTag",
-    keys: [queryKeys.corpusSamples],
-    seed: (qc) => qc.setQueryData(queryKeys.corpusSamples, [SAMPLE]),
-    run: (qc) => {
-      const ctx = addCorpusSampleTagMutator.onMutate({
-        kind: "add_tag", clientOpId: "op",
-        payload: { key: "x", value: "y" },
-        sampleId: 10, username: "alice", clientId: "tab",
-        key: "x", value: "y",
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "removeCorpusSampleTag",
-    keys: [queryKeys.corpusSamples],
-    seed: (qc) => qc.setQueryData(queryKeys.corpusSamples, [SAMPLE]),
-    run: (qc) => {
-      const ctx = removeCorpusSampleTagMutator.onMutate({
-        kind: "remove_tag", clientOpId: "op",
-        payload: { tagId: 1 },
-        sampleId: 10, username: "alice", clientId: "tab",
-        tagId: 1,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "addExposureTag",
-    keys: [EXP_LIST_KEY as unknown as QueryKey],
-    seed: (qc) => qc.setQueryData(EXP_LIST_KEY as unknown as QueryKey, [EXPOSURE]),
-    run: (qc) => {
-      const ctx = addExposureTagMutator.onMutate({
-        kind: "add_tag", clientOpId: "op",
-        payload: { key: "x", value: "y" },
-        sampleId: 1, exposureId: 5, username: "alice", clientId: "tab",
-        key: "x", value: "y",
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "removeExposureTag",
-    keys: [EXP_LIST_KEY as unknown as QueryKey],
-    seed: (qc) => qc.setQueryData(
-      EXP_LIST_KEY as unknown as QueryKey,
-      [{ ...EXPOSURE, tags: [{ id: 99, key: "k", value: "v", source: "manual" }] }],
-    ),
-    run: (qc) => {
-      const ctx = removeExposureTagMutator.onMutate({
-        kind: "remove_tag", clientOpId: "op",
-        payload: { tagId: 99 },
-        sampleId: 1, exposureId: 5, username: "alice", clientId: "tab",
-        tagId: 99,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
     name: "setExposureStatus",
     keys: [EXP_LIST_KEY as unknown as QueryKey],
     seed: (qc) => {
@@ -372,6 +284,25 @@ const SPECS: Spec[] = [
       ctx.restore();
     },
   },
+  ...([
+    ["addLabel", addLabelMutator, "add_label"],
+    ["removeLabel", removeLabelMutator, "remove_label"],
+    ["restoreLabelSuggestion", restoreLabelSuggestionMutator, "restore_label_suggestion"],
+  ] as const).map(([name, mutator, kind]) => ({
+    name,
+    keys: [queryKeys.labels(1) as unknown as QueryKey],
+    seed: (qc: QueryClient) => qc.setQueryData(queryKeys.labels(1), [
+      { id: 3, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 4, sample_id: 11, label: "37C", state: "suggested", source: "ingest" },
+    ]),
+    run: (qc: QueryClient) => {
+      const ctx = mutator.onMutate({
+        kind, clientOpId: "op", payload: {},
+        sampleId: 10, label: "Buffer", experimentId: 1, username: "alice", clientId: "tab",
+      } as any, qc);
+      ctx.restore();
+    },
+  })),
 ];
 
 describe("Rollback symmetry — restore() returns cache to prior state for every mutator", () => {

@@ -25,6 +25,7 @@ export interface CompareLine {
 export const COMPARE_DASH = "5 4";
 export const COMPARE_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--color-compare-${n})`);
 export const PLOT_HEIGHT = 330;
+const Q_LABEL_ROOM = 70;
 
 interface Props {
   trace: Trace | undefined;
@@ -72,6 +73,14 @@ function peakPoints(px: number): string {
   return pts.map(([a, b]) => `${a.toFixed(1)},${b}`).join(" ");
 }
 
+function keyboardFocus(el: Element): boolean {
+  try {
+    return el.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 function peakFill(p: Peak): string {
   if (p.excluded) return "none";
   return p.source === "manual" ? "var(--color-accent)" : "var(--color-ink)";
@@ -95,6 +104,7 @@ export function WorkspacePlot({
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
   const [hoverQ, setHoverQ] = useState<number | null>(null);
+  const [focusedPeak, setFocusedPeak] = useState<string | null>(null);
   const { xType, yType } = viewAxes(view);
 
   const plotX = (px: number): number | null => {
@@ -203,11 +213,14 @@ export function WorkspacePlot({
               ))}
             </g>
             <g data-role="axis-bottom" className="fill-ink-faint text-caption" textAnchor="middle" aria-hidden="true">
-              {xTicks.map((t) => (
-                <text key={t.value} x={x.to(t.value)} y={dims.plotHeight + 15} {...(x.to(t.value) > dims.plotWidth - 16 ? { textAnchor: "end" } : {})}>
+              {xTicks.filter((t) => x.to(t.value) < dims.plotWidth - Q_LABEL_ROOM).map((t) => (
+                <text key={t.value} x={x.to(t.value)} y={dims.plotHeight + 15}>
                   {t.label}
                 </text>
               ))}
+              <text x={dims.plotWidth} y={dims.plotHeight + 15} textAnchor="end">
+                q (Å⁻¹)
+              </text>
             </g>
             <g data-role="axis-left" className="fill-ink-faint text-caption" textAnchor="end" aria-hidden="true">
               {yTicks.map((t) => (
@@ -215,16 +228,6 @@ export function WorkspacePlot({
                   {t.label}
                 </text>
               ))}
-            </g>
-            <g data-role="axis-title" className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke" aria-hidden="true">
-              <text x={dims.plotWidth} y={dims.plotHeight - 6} textAnchor="end">
-                q (Å⁻¹)
-              </text>
-              {yLabel && (
-                <text x={6} y={12}>
-                  {yLabel}
-                </text>
-              )}
             </g>
             <g clipPath={`url(#${clipId})`} pointerEvents="none">
               <g data-testid="workspace-compares">
@@ -260,6 +263,13 @@ export function WorkspacePlot({
                 )}
               </g>
             </g>
+            <g data-role="axis-title" className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke" aria-hidden="true">
+              {yLabel && (
+                <text x={6} y={12}>
+                  {yLabel}
+                </text>
+              )}
+            </g>
             <g data-role="peak-glyph">
               {shownPeaks.map((p) => (
                 <polygon
@@ -275,7 +285,11 @@ export function WorkspacePlot({
                         role: "button",
                         tabIndex: 0,
                         "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
-                        className: "cursor-pointer outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
+                        className: "cursor-pointer outline-none",
+                        onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
+                          if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
+                        },
+                        onBlur: () => setFocusedPeak(null),
                         onKeyDown: (ev: React.KeyboardEvent) => {
                           if (ev.key !== "Enter" && ev.key !== " ") return;
                           ev.preventDefault();
@@ -284,6 +298,21 @@ export function WorkspacePlot({
                         },
                       }
                     : {})}
+                />
+              ))}
+              {shownPeaks.filter((p) => peakKey(p) === focusedPeak).map((p) => (
+                <rect
+                  key="focus"
+                  data-role="peak-focus"
+                  x={x.to(p.q) - 7}
+                  y={-11}
+                  width={14}
+                  height={13}
+                  rx={3}
+                  fill="none"
+                  stroke="var(--color-ink-soft)"
+                  strokeWidth={1.5}
+                  pointerEvents="none"
                 />
               ))}
             </g>

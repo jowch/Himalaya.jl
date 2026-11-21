@@ -44,10 +44,34 @@ function remove_label!(db, req, sample_id::Int, label::String, exp_id::Int)
     _emit_label_event!(db, req, "label_removed", sample_id, label, exp_id)
 end
 
+function restore_label_suggestion!(db, req, sample_id::Int, label::String, exp_id::Int)
+    state = _label_state(db, sample_id, label)
+    (state === nothing || state == "suggested") && return
+    _emit_label_event!(db, req, "label_suggestion_restored", sample_id, label, exp_id)
+end
+
 function _live_sample_experiment(db, sample_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT experiment_id FROM samples WHERE id = ? AND merged_into_id IS NULL", [sample_id]))
     isempty(rows) || ismissing(rows[1].experiment_id) ? nothing : Int(rows[1].experiment_id)
+end
+
+function _apply_body_label(apply!, req, sample_id::Int)
+    db = current_db()
+    body = try
+        json(req)
+    catch
+        return _json_error(400, "body must be JSON")
+    end
+    label = normalize_label(body isa AbstractDict ? get(body, "label", nothing) : nothing)
+    label === nothing && return _json_error(400, "label must be 1 to $MAX_LABEL_LENGTH characters on one line")
+    exp_id = _live_sample_experiment(db, sample_id)
+    exp_id === nothing && return _json_error(404, "sample not found")
+
+    return with_idempotency(db, req) do
+        apply!(db, req, sample_id, label, exp_id)
+        _json_ok(labels_for_experiment(db, exp_id))
+    end
 end
 
 function register_label_routes!()
@@ -56,21 +80,11 @@ function register_label_routes!()
     end
 
     @post "/api/samples/{id}/labels" function(req::HTTP.Request, id::Int)
-        db = current_db()
-        body = try
-            json(req)
-        catch
-            return _json_error(400, "body must be JSON")
-        end
-        label = normalize_label(body isa AbstractDict ? get(body, "label", nothing) : nothing)
-        label === nothing && return _json_error(400, "label must be 1 to $MAX_LABEL_LENGTH characters on one line")
-        exp_id = _live_sample_experiment(db, id)
-        exp_id === nothing && return _json_error(404, "sample not found")
+        _apply_body_label(add_label!, req, id)
+    end
 
-        return with_idempotency(db, req) do
-            add_label!(db, req, id, label, exp_id)
-            _json_ok(labels_for_experiment(db, exp_id))
-        end
+    @post "/api/samples/{id}/labels/suggested" function(req::HTTP.Request, id::Int)
+        _apply_body_label(restore_label_suggestion!, req, id)
     end
 
     @delete "/api/samples/{id}/labels" function(req::HTTP.Request, id::Int)

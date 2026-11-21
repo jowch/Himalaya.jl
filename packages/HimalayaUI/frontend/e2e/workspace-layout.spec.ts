@@ -7,7 +7,7 @@ const SAMPLES = [
   { id: 42, name: `${LONG}01` },
   { id: 43, name: `${LONG}02_${LONG}_${LONG}` },
   { id: 44, name: `${LONG}03` },
-].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, tags: [], q_units: "A-1" }));
+].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, q_units: "A-1" }));
 
 const q = Array.from({ length: 200 }, (_, i) => 0.02 + i * 0.0015);
 const trace = { q, I: q.map((x) => 1 / (x * x) + 50 * Math.exp(-(((x - 0.1) / 0.002) ** 2))), sigma: q.map(() => 1) };
@@ -16,7 +16,7 @@ function exposureOf(sampleId: number, monitors: boolean, frame = 0, averaged = f
   return {
     id: sampleId * 10 + frame, sample_id: sampleId, filename: `JC_S${sampleId}_0_00${frame + 1}`,
     kind: averaged ? "averaged" : "file", selected: true, status: null,
-    image_path: null, image_version: "", tags: [], sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
+    image_path: null, image_version: "", sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
     exposure_time: monitors ? 15 : null, counting_time: monitors ? 15 : null,
     transmitted_counts: monitors ? 7000 : null, incident_monitor: monitors ? 1.5 : null,
     timestamp: monitors ? "2026-04-26T18:20:27" : null, beam_energy_ev: monitors ? 11000 : null,
@@ -34,10 +34,10 @@ function indicesOf(exposureId: number, n: number) {
 
 const CANDIDATES: Record<number, number> = { 40: 1, 41: 6, 42: 3, 43: 0, 44: 2 };
 const FRAMES: Record<number, number> = { 44: 7 };
-const TAGS = ["buffer", "37C", "heated twice", "retake", "dilute 1 to 10", "cloudy", "after spin", "second capillary", "check flare", "low counts"];
+const NAMES = ["buffer", "37C", "heated twice", "retake", "dilute 1 to 10", "cloudy", "after spin", "second capillary", "check flare", "low counts"];
 const LABELS = [
-  ...TAGS.slice(0, 2).map((label, i) => ({ id: i + 1, sample_id: 42, label, state: "confirmed", source: "user" })),
-  ...TAGS.map((label, i) => ({ id: i + 11, sample_id: 44, label, state: i === 0 ? "suggested" : "confirmed", source: "user" })),
+  ...NAMES.slice(0, 2).map((label, i) => ({ id: i + 1, sample_id: 42, label, state: "confirmed", source: "user" })),
+  ...NAMES.map((label, i) => ({ id: i + 11, sample_id: 44, label, state: i === 0 ? "suggested" : "confirmed", source: "user" })),
 ];
 const VIEWPORTS = [
   { width: 1440, height: 900 },
@@ -57,7 +57,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/problems", (r) => r.fulfill(json({ ingest_error: null, exposures: [] })));
-  await page.route("**/api/tag-colors", (r) => r.fulfill(json([])));
+  await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(LABELS)));
   await page.route("**/api/experiments/17/scan", (r) => r.fulfill(json({ status: "complete", experiment_id: 17, changed: false })));
   await page.route(/\/api\/samples\/\d+\/call$/, (r) => {
@@ -97,7 +97,7 @@ async function layout(page: Page): Promise<Record<string, number[]>> {
     const section = (title: string) => document.querySelector(`aside section[data-section="${title}"]`);
     return {
       title: box(sampleTitle),
-      tags: box(document.querySelector("[data-testid=workspace-tags]")),
+      labels: box(document.querySelector("[data-testid=workspace-labels]")),
       compareBar: box(document.querySelector("[data-testid=workspace-compare-bar]")),
       plot: box(document.querySelector("[data-testid=workspace-trace]")),
       exposures: box(document.querySelector("[data-testid=workspace-exposures]")),
@@ -313,4 +313,29 @@ for (const viewport of [...VIEWPORTS, { width: 1024, height: 700 }]) {
       expect(b!.x, `frame ${i + 1} button left edge`).toBeGreaterThanOrEqual(card!.x - 0.5);
     }
   });
+}
+
+for (const width of [1024, 1280]) {
+  for (const name of ["DOPC_DOPE_1to1_S2417 (S02P02)", "buffer_blank_S2424 (S02P05)"]) {
+    for (const id of [42, 43]) {
+      test(`at ${width} px "${name}" stays whole on the title row ${id === 42 ? "with two labels" : "with no labels"}`, async ({ page }) => {
+        const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+        await page.setViewportSize({ width, height: 760 });
+        await page.route((url) => url.pathname === "/api/samples", (r) =>
+          r.fulfill(json([{ id, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" }])));
+        await page.goto(`/experiments/17/workspace/${id}`);
+        const title = page.getByRole("heading", { level: 2, name });
+        await expect(page.locator("[data-testid=workspace-exposures] > li").first()).toBeVisible();
+        const meta = page.getByText("Frame 1 of 1", { exact: true });
+        if (width === 1280) await expect(meta).toBeVisible();
+        expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+        const add = page.getByRole("button", { name: "+ Label L" });
+        await expect(add).toBeVisible();
+        const heading = (await title.evaluate((el) => el.parentElement!.parentElement!.getBoundingClientRect().toJSON())) as DOMRect;
+        const btn = (await add.boundingBox())!;
+        expect(btn.x + btn.width).toBeLessThanOrEqual(heading.x + heading.width);
+        if (id === 42) await expect(page.getByTestId("workspace-label-chips").locator("[data-label], [data-testid=workspace-labels-more]").first()).toBeVisible();
+      });
+    }
+  }
 }

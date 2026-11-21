@@ -3,7 +3,7 @@ import { cx } from "../../lib/cx";
 
 interface WordmarkProps {
   children: ReactNode;
-  /** Optional faint tail after a middle dot, e.g. "SAXS" -> "HIMALAYA · SAXS". */
+  /** Optional faint tail after a middle dot, e.g. "SAXS" -> "Himalaya · SAXS". */
   tail?: ReactNode;
   className?: string;
 }
@@ -12,7 +12,7 @@ export function Wordmark({ children, tail, className = "" }: WordmarkProps): JSX
   return (
     <span
       data-testid="wordmark"
-      className={cx("font-sans font-bold uppercase tracking-[0.16em] text-ink text-xs", className)}
+      className={cx("text-lg font-semibold text-ink", className)}
     >
       {children}
       {tail && (

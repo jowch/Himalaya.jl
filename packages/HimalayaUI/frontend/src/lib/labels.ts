@@ -1,7 +1,7 @@
-import type { SampleLabel, TagColor, TagColorEntry } from "../api";
+import { LABEL_COLORS, type SampleLabel, type LabelColor, type LabelColorEntry } from "../api";
 
-export const STANDARD_TAGS = ["Buffer", "Calibrant", "Empty capillary"] as const;
-export const MAX_TAG_LENGTH = 64;
+export const STANDARD_LABELS = ["Buffer", "Calibrant", "Empty capillary"] as const;
+export const MAX_LABEL_LENGTH = 64;
 
 const fold = (s: string): string => s.trim().toLowerCase();
 const labelKey = (s: string): string => s.trim().replace(/[A-Z]+/g, (m) => m.toLowerCase());
@@ -10,17 +10,17 @@ export function sameLabel(a: string, b: string): boolean {
   return labelKey(a) === labelKey(b);
 }
 
-export function standardTag(label: string): string | undefined {
-  return STANDARD_TAGS.find((t) => sameLabel(t, label));
+export function standardLabel(label: string): string | undefined {
+  return STANDARD_LABELS.find((t) => sameLabel(t, label));
 }
 
-export function displayTag(label: string): string {
-  return standardTag(label) ?? label;
+export function displayLabel(label: string): string {
+  return standardLabel(label) ?? label;
 }
 
-export function cleanTag(raw: string): string | undefined {
+export function cleanLabel(raw: string): string | undefined {
   const t = raw.trim();
-  if (t.length === 0 || t.length > MAX_TAG_LENGTH || /[\r\n]/.test(t)) return undefined;
+  if (t.length === 0 || t.length > MAX_LABEL_LENGTH || /[\r\n]/.test(t)) return undefined;
   return t;
 }
 
@@ -53,16 +53,23 @@ export function applyRemoveLabel(list: readonly SampleLabel[], sampleId: number,
   return list.filter((l) => !(l.sample_id === sampleId && sameLabel(l.label, label)));
 }
 
-export function tagVocabulary(list: readonly SampleLabel[]): string[] {
+export function applyRestoreLabelSuggestion(list: readonly SampleLabel[], sampleId: number, label: string): SampleLabel[] {
+  const hit = list.find((l) => l.sample_id === sampleId && sameLabel(l.label, label));
+  if (hit) return list.map((l) => (l === hit ? { ...l, state: "suggested", source: "ingest" } : l));
+  const fresh = Math.min(0, ...list.map((l) => l.id)) - 1;
+  return [...list, { id: fresh, sample_id: sampleId, label: label.trim(), state: "suggested", source: "ingest" }];
+}
+
+export function labelVocabulary(list: readonly SampleLabel[]): string[] {
   const counts = new Map<string, { label: string; n: number }>();
   for (const l of list) {
     if (l.state !== "confirmed") continue;
     const k = labelKey(l.label);
     const cur = counts.get(k);
-    counts.set(k, { label: cur?.label ?? displayTag(l.label), n: (cur?.n ?? 0) + 1 });
+    counts.set(k, { label: cur?.label ?? displayLabel(l.label), n: (cur?.n ?? 0) + 1 });
   }
   const used = [...counts.values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label)).map((c) => c.label);
-  return [...used, ...STANDARD_TAGS.filter((t) => !counts.has(labelKey(t)))];
+  return [...used, ...STANDARD_LABELS.filter((t) => !counts.has(labelKey(t)))];
 }
 
 function editDistance(a: string, b: string): number {
@@ -77,8 +84,8 @@ function editDistance(a: string, b: string): number {
   return prev[b.length]!;
 }
 
-function closeness(tag: string, query: string): number | undefined {
-  const t = fold(tag);
+function closeness(label: string, query: string): number | undefined {
+  const t = fold(label);
   if (t.startsWith(query)) return 0;
   if (t.includes(query)) return 1;
   if (query.length < 3) return undefined;
@@ -87,12 +94,12 @@ function closeness(tag: string, query: string): number | undefined {
   return Math.min(editDistance(head, query), editDistance(t, query)) <= allowed ? 2 : undefined;
 }
 
-export interface TagOptions {
+export interface LabelOptions {
   matches: string[];
   create: string | undefined;
 }
 
-export function tagOptions(vocabulary: readonly string[], query: string, onSample: readonly string[]): TagOptions {
+export function labelOptions(vocabulary: readonly string[], query: string, onSample: readonly string[]): LabelOptions {
   const taken = (t: string): boolean => onSample.some((s) => sameLabel(s, t));
   const free = vocabulary.filter((t) => !taken(t));
   const q = fold(query);
@@ -102,7 +109,7 @@ export function tagOptions(vocabulary: readonly string[], query: string, onSampl
     .filter((r): r is { t: string; i: number; c: number } => r.c !== undefined)
     .sort((a, b) => a.c - b.c || a.i - b.i)
     .map((r) => r.t);
-  const typed = cleanTag(query);
+  const typed = cleanLabel(query);
   const known = typed !== undefined && (vocabulary.some((t) => sameLabel(t, typed)) || taken(typed));
   return { matches: ranked, create: typed !== undefined && !known ? typed : undefined };
 }
@@ -113,19 +120,29 @@ export function sampleMatchesFilter(name: string, labels: readonly SampleLabel[]
   return name.toLowerCase().includes(f) || labels.some((l) => l.label.toLowerCase().includes(f));
 }
 
-export function applyTagColor(list: readonly TagColorEntry[], label: string, color: TagColor | null): TagColorEntry[] {
+export function applyLabelColor(list: readonly LabelColorEntry[], label: string, color: LabelColor | null): LabelColorEntry[] {
   const rest = list.filter((e) => !sameLabel(e.label, label));
   return color === null ? rest : [...rest, { label: label.trim(), color }];
 }
 
-export function defaultTagColor(label: string): TagColor {
-  return standardTag(label) ? "blue" : "violet";
+export function defaultLabelColor(label: string): LabelColor {
+  return standardLabel(label) ? "blue" : "violet";
 }
 
-export function tagColor(colors: readonly TagColorEntry[], label: string): TagColor {
-  return colors.find((e) => sameLabel(e.label, label))?.color ?? defaultTagColor(label);
+export function labelColor(colors: readonly LabelColorEntry[], label: string): LabelColor {
+  return colors.find((e) => sameLabel(e.label, label))?.color ?? defaultLabelColor(label);
 }
 
-export function tagColorIsDefault(colors: readonly TagColorEntry[], label: string): boolean {
+export function labelColorIsDefault(colors: readonly LabelColorEntry[], label: string): boolean {
   return !colors.some((e) => sameLabel(e.label, label));
+}
+
+export function firstUnusedColor(colors: readonly LabelColorEntry[], labels: readonly string[]): LabelColor {
+  const uses = new Map<LabelColor, number>(LABEL_COLORS.map((c) => [c, 0]));
+  for (const l of labels) {
+    const c = labelColor(colors, l);
+    uses.set(c, (uses.get(c) ?? 0) + 1);
+  }
+  const least = Math.min(...uses.values());
+  return LABEL_COLORS.find((c) => uses.get(c) === least)!;
 }
