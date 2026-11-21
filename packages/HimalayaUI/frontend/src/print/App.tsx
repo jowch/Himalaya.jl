@@ -91,10 +91,10 @@ export function PrintApp(): JSX.Element {
   }, [qc, mc, setIngestProgress, clearIngestProgress]); // stable selector results; EventSource lifetime unchanged
 
   useEffect(() => {
-    void rehydrate(qc, resolveMutator).then(({ dropped }) => {
-      if (dropped > 0) {
+    void rehydrate(qc, resolveMutator).then(({ dropped, lost }) => {
+      if (dropped + lost > 0) {
         showToast(
-          `${dropped} edits from a previous session couldn't be restored`,
+          `${dropped + lost} edits from a previous session couldn't be restored`,
           "warning",
         );
       }

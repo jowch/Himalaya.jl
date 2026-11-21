@@ -80,6 +80,7 @@ export interface RehydrateResult {
   dropped: number;
   replayed: number;
   failed: number;
+  lost: number;
 }
 
 export async function rehydrate(
@@ -87,7 +88,7 @@ export async function rehydrate(
   mutators: Map<OpKind, Mutator<any, any, any>> | MutatorResolver,
 ): Promise<RehydrateResult> {
   const raw = sessionStorage.getItem(STORAGE_KEY);
-  if (!raw) return { dropped: 0, replayed: 0, failed: 0 };
+  if (!raw) return { dropped: 0, replayed: 0, failed: 0, lost: 0 };
   sessionStorage.removeItem(STORAGE_KEY);
 
   let ops: PersistedOp[] = [];
@@ -95,7 +96,7 @@ export async function rehydrate(
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) ops = parsed as PersistedOp[];
   } catch {
-    return { dropped: 0, replayed: 0, failed: 0 };
+    return { dropped: 0, replayed: 0, failed: 0, lost: 0 };
   }
 
   const lookup = (op: PersistedOp): Mutator<any, any, any> | undefined =>
@@ -106,6 +107,7 @@ export async function rehydrate(
   let dropped = 0;
   let replayed = 0;
   let failed = 0;
+  let lost = 0;
   const fires: Promise<unknown>[] = [];
   const mc = qc.getMutationCache();
   const inFlight = new Set(
@@ -126,18 +128,34 @@ export async function rehydrate(
         dropped++;
         continue;
       }
-      const mutation = mc.build(qc, queueMutationOptions(mutator, qc));
+      const options = queueMutationOptions(mutator, qc);
+      let unappliable = false;
+      const onMutate = options.onMutate!;
+      const mutation = mc.build(qc, {
+        ...options,
+        onMutate: (payload, ctx) => {
+          try {
+            return onMutate(payload, ctx);
+          } catch (err) {
+            unappliable = true;
+            throw err;
+          }
+        },
+      });
       fires.push(
         mutation
           .execute(op.payload as Record<string, unknown> & { kind: string; clientOpId: string })
           .then(() => { replayed++; })
-          .catch(() => { failed++; }),
+          .catch(() => {
+            if (unappliable) lost++;
+            else failed++;
+          }),
       );
     } catch {
-      failed++;
+      lost++;
     }
   }
 
   await Promise.all(fires);
-  return { dropped, replayed, failed };
+  return { dropped, replayed, failed, lost };
 }

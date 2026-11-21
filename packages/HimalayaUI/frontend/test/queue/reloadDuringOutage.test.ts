@@ -93,7 +93,7 @@ describe("an edit queued when the page reloads during an outage", () => {
     expect(restore).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(40_000);
-    await expect(done).resolves.toEqual({ dropped: 0, replayed: 1, failed: 0 });
+    await expect(done).resolves.toEqual({ dropped: 0, replayed: 1, failed: 0, lost: 0 });
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(restore).not.toHaveBeenCalled();
     const ids = request.mock.calls.map((c) => (c[0] as { clientOpId: string }).clientOpId);
@@ -137,7 +137,22 @@ describe("an edit queued when the page reloads during an outage", () => {
     }]));
     const { mutator, onSuccess } = mutatorWith(vi.fn(async () => ({ ok: true })));
     const result = await rehydrate(qc, new Map([["set_exposure_status" as OpKind, mutator]]));
-    expect(result).toEqual({ dropped: 0, replayed: 1, failed: 1 });
+    expect(result).toEqual({ dropped: 0, replayed: 1, failed: 0, lost: 1 });
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts an edit this build can no longer apply as lost, apart from one the server rejected", async () => {
+    storeOps("op-stale", "op-rejected");
+    const request = vi.fn(async () => {
+      throw Object.assign(new Error("rejected"), { status: 422 });
+    });
+    const { mutator } = mutatorWith(request);
+    mutator.onMutate = vi.fn((payload: { clientOpId: string }) => {
+      if (payload.clientOpId === "op-stale") throw new Error("shape changed");
+      return { restore: vi.fn() };
+    });
+    const result = await rehydrate(qc, new Map([["set_exposure_status" as OpKind, mutator]]));
+    expect(result).toEqual({ dropped: 0, replayed: 0, failed: 1, lost: 1 });
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

@@ -414,8 +414,12 @@ edit. It is visible to the outage banner and to the mirror, so a second
 reload keeps it too. `PrintApp` runs both steps in one effect, in that order.
 `rehydrate` skips a stored op whose `client_op_id` is already pending in the
 cache, so StrictMode's second effect run and an ErrorBoundary remount don't
-replay it twice. A stored entry that can't be replayed counts as failed
-without stopping the rest.
+replay it twice. A stored entry this build can't apply (a malformed entry, or
+one whose `onMutate` throws because the payload shape changed in a deploy)
+counts as `lost` without stopping the rest, and `PrintApp` shows the same
+"couldn't be restored" toast as a schema mismatch. A replayed op that the
+server rejects counts as `failed` and gets no extra toast, since the queue's
+own error toast already reports it.
 
 Reconnect refresh also covers a reload during an outage. `liveStream` counts
 the first open as a reconnect when an earlier attempt in the same page failed,

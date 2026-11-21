@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { PrintApp } from "../src/print/App";
 import * as api from "../src/api";
+import * as toast from "../src/lib/toast";
 import { STORAGE_KEY, SCHEMA_VERSION } from "../src/lib/queue/persistence";
 
 class FakeES {
@@ -57,5 +58,19 @@ describe("PrintApp mounting after a reload during an outage", () => {
     const stored = JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? "[]");
     expect(stored.map((o: { clientOpId: string }) => o.clientOpId)).toEqual(["op-before-reload"]);
     expect(qc.getMutationCache().getAll().filter((m) => m.state.status === "pending")).toHaveLength(1);
+  });
+
+  it("tells the user when a saved edit can't be replayed", async () => {
+    const shown = vi.spyOn(toast, "showToast").mockImplementation(() => {});
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([null]));
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      render(
+        <QueryClientProvider client={qc}>
+          <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    expect(shown).toHaveBeenCalledWith("1 edits from a previous session couldn't be restored", "warning");
   });
 });
