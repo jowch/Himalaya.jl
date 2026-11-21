@@ -203,7 +203,7 @@
     "src/routes_samples.jl": 89,
     "src/routes_trace.jl": 4,
     "src/routes_users.jl": 3,
-    "src/server.jl": 182,
+    "src/server.jl": 173,
     "src/speculative.jl": 239
   }
 }
