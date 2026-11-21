@@ -48,6 +48,8 @@ round-trip test in `test_events.jl`.
 | `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_set_state` | UPSERT `assignments.state`; clears `assignment_members` when state ≠ `indexed` (entity_type=`exposure`, payload `{state}`) |
+| `label_added` | UPSERT `sample_labels` → `state='confirmed'`, unique per sample ignoring case; confirms a suggestion and brings back a removed label (entity_type=`sample`, payload `{label, experiment_id}`) |
+| `label_removed` | `UPDATE sample_labels SET state='removed'`; the row stays so a rescan never suggests the label again (entity_type=`sample`, payload `{label, experiment_id}`) |
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
 `peak_removed`, `speculative_created`, `speculative_deleted`. Using
