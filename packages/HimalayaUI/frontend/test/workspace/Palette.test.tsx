@@ -244,6 +244,16 @@ describe("Palette", () => {
     expect(screen.getByRole("dialog", { name: "Label" })).toBeInTheDocument();
   });
 
+  it("keeps focus in the field when the footer, a group head or the empty space is clicked", () => {
+    open();
+    const footer = screen.getByText("move");
+    expect(fireEvent.mouseDown(footer)).toBe(false);
+    expect(fireEvent.mouseDown(screen.getByText("This sample"))).toBe(false);
+    expect(fireEvent.mouseDown(field())).toBe(true);
+    expect(field()).toHaveFocus();
+    fireEvent.keyDown(field(), { key: "Escape" });
+  });
+
   it("ignores a held Enter, so opening a page never also runs its first row", () => {
     const { onClose } = open();
     fireEvent.change(field(), { target: { value: "compare" } });

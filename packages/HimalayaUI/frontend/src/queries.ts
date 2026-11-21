@@ -178,8 +178,12 @@ export function useTrace(exposureId: number | undefined) {
     queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
-    retry: (failures, error) => !(error instanceof api.ApiError && error.status === 404) && failures < 1,
+    retry: retryUnlessMissing,
   });
+}
+
+export function retryUnlessMissing(failures: number, error: unknown): boolean {
+  return !(error instanceof api.ApiError && error.status === 404) && failures < 1;
 }
 
 export function usePeaks(exposureId: number | undefined) {

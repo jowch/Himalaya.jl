@@ -579,6 +579,29 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
   });
 
+  it("says a frame is waiting for its trace when ingest reports it pending, matching the notice", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 101, filename: "f101", sample_id: 10, sample_name: "S", problem: "no_trace", reason: "no trace" },
+    ] };
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 exposure waiting for a trace");
+  });
+
+  it("keeps saying no integrated trace when only another frame is pending", () => {
+    state.traceError = true;
+    state.traceErr = new ApiError(404, ".dat file not found", null);
+    state.exposures = [exposure(101, { selected: true })];
+    state.problems = { ingest_error: null, exposures: [
+      { exposure_id: 999, filename: "f999", sample_id: 11, sample_name: "T", problem: "no_trace", reason: "no trace" },
+    ] };
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
+  });
+
   it("opens on the representative frame", () => {
     renderAt("/experiments/1/workspace/10");
     expect(currentFrame()).toBe("Frame 2");
