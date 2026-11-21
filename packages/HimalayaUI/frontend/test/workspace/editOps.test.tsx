@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { Assignment, IndexEntry, Peak, SampleBridge, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
 import { useUndoHistory } from "../../src/workspace/undo";
-import { bridgeEntry, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
+import { bridgeEntry, CANNOT_UNDO, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
 const server = {
@@ -203,13 +203,28 @@ describe("undo against the server", () => {
   it("puts back a removed label and removes an added one", async () => {
     const { result } = setup();
     act(() => result.current.history.record(labelEntry(result.current.ops, {
-      label: "removed Buffer", sampleId: 11, exposureId: undefined, tag: "Buffer", added: false,
+      label: "removed Buffer", sampleId: 11, exposureId: undefined, tag: "Buffer", added: false, prev: "confirmed",
     })));
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.addLabel)).toEqual([[11, "Buffer"]]);
     server.labels = [{ id: 1, sample_id: 11, label: "buffer", state: "confirmed", source: "user" }];
     await act(async () => { await result.current.history.redo()!.done; });
     expect(firstArgs(api.removeLabel)).toEqual([[11, "Buffer"]]);
+  });
+
+  it("never deletes a label to undo confirming or dismissing a suggestion", async () => {
+    const { result } = setup();
+    server.labels = [{ id: 1, sample_id: 11, label: "Buffer", state: "confirmed", source: "suggested" }];
+    for (const added of [true, false]) {
+      act(() => result.current.history.record(labelEntry(result.current.ops, {
+        label: "suggestion", sampleId: 11, exposureId: undefined, tag: "Buffer", added, prev: "suggested",
+      })));
+      let sent = 0;
+      await act(async () => { sent = await result.current.history.undo()!.done; });
+      expect(sent).toBe(CANNOT_UNDO);
+    }
+    expect(api.removeLabel).not.toHaveBeenCalled();
+    expect(api.addLabel).not.toHaveBeenCalled();
   });
 
   it("splits a bridge back into the two groups it joined", async () => {

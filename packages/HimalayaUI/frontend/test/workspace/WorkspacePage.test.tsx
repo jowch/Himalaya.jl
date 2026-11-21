@@ -831,6 +831,18 @@ describe("WorkspacePage", () => {
       expect(ops()).toEqual([["addLabel", 10, "Buffer"]]);
     });
 
+    it("refuses to undo confirming a suggested label instead of deleting it", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "suggested", source: "suggested" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Confirm tag Buffer" }));
+      state.labels = [{ id: 1, sample_id: 10, label: "Buffer", state: "confirmed", source: "suggested" }];
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe(
+        "Can't undo: confirmed the suggested label Buffer on A1. A label can't go back to suggested, so it was left as it is.",
+      );
+    });
+
     it("undoes removing a bridge from the compare bar", async () => {
       state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
       renderAt("/experiments/1/workspace/10");

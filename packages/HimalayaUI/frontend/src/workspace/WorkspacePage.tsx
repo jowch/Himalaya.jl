@@ -37,7 +37,7 @@ import {
 } from "../queries";
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
-  bridgeEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, CANNOT_UNDO, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   tagColorEntry, tickEntry, unbridgeEntry, untickEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
@@ -521,13 +521,15 @@ export function WorkspacePage(): JSX.Element {
   const editLabel = useCallback(
     (tag: string, added: boolean) => {
       if (sampleId === undefined) return;
+      const prev = labelList.find((l) => l.sample_id === sampleId && sameLabel(l.label, tag))?.state;
       (added ? addLabel : removeLabel).mutate({ sampleId, label: tag });
+      const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
       history.record(labelEntry(ops, {
-        label: `${added ? "added" : "removed"} the label ${displayTag(tag)} on ${sample?.name ?? "this sample"}`,
-        sampleId, exposureId: undefined, tag, added,
+        label: `${verb} label ${displayTag(tag)} on ${sample?.name ?? "this sample"}`,
+        sampleId, exposureId: undefined, tag, added, prev,
       }));
     },
-    [sampleId, sample?.name, addLabel, removeLabel, history, ops],
+    [sampleId, sample?.name, labelList, addLabel, removeLabel, history, ops],
   );
   const recolorTag = useCallback(
     (tag: string, color: TagColor | null) => {
@@ -629,7 +631,11 @@ export function WorkspacePage(): JSX.Element {
       const verb = dir === "undo" ? "Undone" : "Redone";
       if (saving) showToast(`Saving your last edit first, then ${dir === "undo" ? "undoing" : "redoing"}: ${entry.label}`);
       step.done.then(
-        (sent) => showToast(sent > 0 ? `${verb}: ${entry.label}` : `Already that way, nothing to ${dir}: ${entry.label}`),
+        (sent) => showToast(
+          sent === CANNOT_UNDO
+            ? `Can't undo: ${entry.label}. A label can't go back to suggested, so it was left as it is.`
+            : sent > 0 ? `${verb}: ${entry.label}` : `Already that way, nothing to ${dir}: ${entry.label}`,
+        ),
         () => showToast(`Couldn't ${dir}: ${entry.label}. The server can't be reached.`, "error"),
       );
     },

@@ -1,4 +1,4 @@
-import type { Exposure, IndexEntry, Peak, SampleBridge, TagColor } from "../api";
+import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, TagColor } from "../api";
 import type { EditOps } from "../queries";
 import { bridgedWith } from "../lib/bridges";
 import { sameLabel } from "../lib/labels";
@@ -179,7 +179,12 @@ export function customIndexEntry(
   };
 }
 
-export function labelEntry(ops: EditOps, at: Where & { label: string; tag: string; added: boolean }): UndoEntry {
+export const CANNOT_UNDO = -1;
+
+export function labelEntry(
+  ops: EditOps,
+  at: Where & { tag: string; added: boolean; prev: SampleLabelState | undefined },
+): UndoEntry {
   const set = async (present: boolean): Promise<number> => {
     const has = (await ops.read.labels()).some((l) => l.sample_id === at.sampleId && sameLabel(l.label, at.tag));
     if (has === present) return 0;
@@ -187,7 +192,12 @@ export function labelEntry(ops: EditOps, at: Where & { label: string; tag: strin
     else ops.removeLabel(at.sampleId, at.tag);
     return 1;
   };
-  return { ...at, undo: () => set(!at.added), redo: () => set(at.added) };
+  const suggestion = at.prev === "suggested";
+  return {
+    ...at,
+    undo: async () => (suggestion ? CANNOT_UNDO : set(!at.added)),
+    redo: () => set(at.added),
+  };
 }
 
 export function tagColorEntry(
