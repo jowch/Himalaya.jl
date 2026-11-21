@@ -453,9 +453,8 @@ end
                 entity_id   = 1,
                 payload     = Dict(:ping => true))
 
-            # Collect the curation frame (up to 1s).
             curation_frame = nothing
-            for _ in 1:20
+            for _ in 1:200
                 if isready(received)
                     curation_frame = take!(received)
                     break
@@ -463,12 +462,10 @@ end
                 sleep(0.05)
             end
 
+            @test curation_frame !== nothing
             if curation_frame !== nothing
                 @test occursin("event: curation", curation_frame)
                 @test occursin("\"kind\":\"sse_network_test\"", curation_frame)
-            else
-                # Network test is best-effort in CI — skip rather than fail hard.
-                @test_skip "curation frame not received within 1s (network timing)"
             end
 
             # Clean up the streaming task.
