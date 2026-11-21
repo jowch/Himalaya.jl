@@ -1666,17 +1666,6 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
     nothing
 end
 
-"""
-    migrate_index_peaks_ratio_int!(db)
-
-#308: before the fix, `persist_analysis!` bound `ratio_position` as a `UInt8`, which
-SQLite.jl stores as a serialized BLOB. Re-analysis cannot heal those rows, because
-it is gated on the trace and analysis-input hashes, so this rewrites them as
-integers. The value is read from the blob's last byte rather than deserialized, so
-it still works after a Julia upgrade changes the serialization header. A blob
-without SQLite.jl's header is left alone, and the sentinel is not written, so a
-later version can still deal with it.
-"""
 function migrate_index_peaks_ratio_int!(db::SQLite.DB)
     _migrated(db, MIGRATION_RATIO_POSITION_INT) && return nothing
     unknown = SQLite.transaction(db) do
