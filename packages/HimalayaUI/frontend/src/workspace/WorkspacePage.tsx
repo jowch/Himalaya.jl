@@ -699,24 +699,29 @@ export function WorkspacePage(): JSX.Element {
       main={
         sample ? (
           <>
-            <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
-            <LabelRow
-              labels={sampleLabels}
-              vocabulary={vocabulary}
-              editable={Boolean(username)}
-              adding={labeling}
-              onOpenAdd={openLabeling}
-              onCloseAdd={() => setLabeling(false)}
-              colors={labelColors.data ?? []}
-              coloring={coloringLabel}
-              onOpenColor={(label) => {
-                setLabeling(false);
-                setColoringLabel(label);
-              }}
-              onCloseColor={() => setColoringLabel(undefined)}
-              onSetColor={(label, color) => setLabelColor.mutate({ label, color })}
-              onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
-              onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
+            <SampleHeading
+              name={sample.name}
+              meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
+              aside={
+                <LabelRow
+                  labels={sampleLabels}
+                  vocabulary={vocabulary}
+                  editable={Boolean(username)}
+                  adding={labeling}
+                  onOpenAdd={openLabeling}
+                  onCloseAdd={() => setLabeling(false)}
+                  colors={labelColors.data ?? []}
+                  coloring={coloringLabel}
+                  onOpenColor={(label) => {
+                    setLabeling(false);
+                    setColoringLabel(label);
+                  }}
+                  onCloseColor={() => setColoringLabel(undefined)}
+                  onSetColor={(label, color) => setLabelColor.mutate({ label, color })}
+                  onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
+                  onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
+                />
+              }
             />
             <div className="relative px-3.5 py-1">
               <CompareBar

@@ -102,3 +102,17 @@ test("L opens the label picker with an empty, focused field, and Enter confirms 
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toMatchObject({ label: "Buffer" });
 });
+
+test("labels share the title row, and the picker opens under + Label", async ({ page }) => {
+  await page.goto("/experiments/17/workspace/41");
+  const title = (await page.getByRole("heading", { level: 2, name: "JC002" }).boundingBox())!;
+  const row = (await page.getByTestId("workspace-labels").boundingBox())!;
+  expect(row.y + row.height / 2).toBeGreaterThan(title.y);
+  expect(row.y + row.height / 2).toBeLessThan(title.y + title.height);
+  expect(row.x).toBeGreaterThan(title.x + title.width);
+  const add = (await page.getByRole("button", { name: "+ Label L" }).boundingBox())!;
+  await page.keyboard.press("l");
+  const picker = (await page.getByRole("dialog", { name: "Add a label" }).boundingBox())!;
+  expect(Math.abs(picker.x + picker.width - (add.x + add.width))).toBeLessThan(2);
+  expect(picker.y).toBeGreaterThanOrEqual(add.y + add.height);
+});

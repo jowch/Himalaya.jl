@@ -42,7 +42,7 @@ export function LabelPicker({ vocabulary, onSample, onPick, onRemoveLast, onClos
       aria-label="Add a label"
       data-keys-trap
       data-testid="workspace-label-picker"
-      className="absolute left-0 top-full z-20 mt-1 w-64 rounded-sm border border-hair bg-plate shadow-lg"
+      className="absolute right-0 top-full z-20 mt-1 w-64 rounded-sm border border-hair bg-plate shadow-lg"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.preventDefault();

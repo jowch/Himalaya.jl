@@ -189,8 +189,8 @@ export function LabelRow({
   }, [moreOpen]);
 
   return (
-    <div className="relative flex h-7 flex-nowrap items-center gap-1.5 px-3.5" data-testid="workspace-labels">
-      <div ref={box} className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden" data-testid="workspace-label-chips">
+    <div className="relative flex h-6 w-full min-w-0 flex-nowrap items-center justify-end gap-1.5" data-testid="workspace-labels">
+      <div ref={box} className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-1.5 overflow-hidden" data-testid="workspace-label-chips">
         {labels.slice(0, shown).map((t) => (
           <Chip key={t.id} {...chipProps(t)} />
         ))}
@@ -220,7 +220,7 @@ export function LabelRow({
           type="button"
           ref={addButton}
           onClick={onOpenAdd}
-          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-dashed border-hair-strong py-px pl-2.5 pr-1 text-caption text-ink-soft hover:text-ink"
+          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-dashed border-hair-strong pl-2.5 pr-1 text-caption text-ink-soft hover:text-ink"
         >
           + Label <Kbd>L</Kbd>
         </button>
@@ -232,7 +232,7 @@ export function LabelRow({
           aria-label="More labels"
           data-keys-trap
           data-testid="workspace-labels-overflow"
-          className="absolute right-3.5 top-full z-20 mt-1 flex max-w-80 flex-wrap gap-1.5 rounded-sm border border-hair bg-plate p-2 shadow-lg"
+          className="absolute right-0 top-full z-20 mt-1 flex max-w-80 flex-wrap gap-1.5 rounded-sm border border-hair bg-plate p-2 shadow-lg"
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
