@@ -32,31 +32,6 @@ function writeAssignmentFromPostState(
   });
 }
 
-/**
- * Write `post_state.indices` into the local cache without applying any
- * per-kind body. Used by the foreign-event path (via `applyRemoteToCache`)
- * AND by the own-op confirmation paths in `replayCoordinator` — own ops need
- * post_state propagation too, otherwise the indices cache stays frozen at the
- * pre-mutation `inputs_hash` until a hard refetch.
- *
- * F-WIPE W2: this is ALSO where the W1 assignment envelope on peak_* frames
- * is consumed, deliberately. Every curation frame is processed by exactly
- * one of three mutually-exclusive paths per tab, and ALL of them funnel
- * through this function:
- *
- *   1. Own-op SSE-wins (replayCoordinator Case 1, deferred match) — calls
- *      applyPostStateOnly directly, then resolves the deferred (the HTTP
- *      request is aborted; its response is never processed).
- *   2. Own-op HTTP-wins (self-echo guard: client_id matches, deferred
- *      already cleared) — calls applyPostStateOnly directly. The mutator's
- *      onSuccess (HTTP path) never reads post_state, so nothing double-fires.
- *   3. Foreign frame — applyRemoteToCache's peak_* and analyze_run branches
- *      call applyPostState() → here.
- *
- * Placing the assignment write AND the assignment_dropped announcement here
- * therefore guarantees exactly-once semantics for both the editing tab and
- * foreign tabs, with no per-branch duplication.
- */
 export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!remote.post_state) return;
   const ps = remote.post_state as CurationPostState;
@@ -303,6 +278,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           ? list.map((s) => (s.id === id ? { ...s, ...(payload ?? {}) } : s))
           : list,
       );
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     case "select_exposure": {

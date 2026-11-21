@@ -1,14 +1,3 @@
-/**
- * reanalyze_exposure mutator (M2.5). No UI sends it today; the registry keeps
- * it so a persisted op still rehydrates. There is no real optimistic effect — the server runs
- * analysis and the resulting indices arrive via SSE post_state on the
- * analyze_run frame (handled by applyRemoteToCache.ts). The onMutate returns
- * a no-op restore.
- *
- * Migrated from a legacy useMutation so it composes with M0 fast-skip
- * (no double round-trip when peak ops just produced the latest hash) and
- * preserves FIFO ordering with peak ops via MutationCache iteration order.
- */
 import * as api from "../../../api";
 import type { AuthOpts, ReanalyzeResponse } from "../../../api";
 import { authOpts } from "../../authOpts";
@@ -32,7 +21,6 @@ export const reanalyzeExposureMutator: Mutator<
   ReanalyzeResponse
 > = {
   kind: "reanalyze_exposure",
-  // Null optimistic effect: no cache write, restore is a no-op.
   onMutate: (): RollbackContext => ({ restore: () => {} }),
   request: (p) => api.reanalyzeExposure(p.exposureId, buildAuthOpts(p)),
   onSuccess: () => {},

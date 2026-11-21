@@ -296,7 +296,6 @@ describe("handleRemoteEvent", () => {
       post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5, inputs_hash: "new-hash" }] },
     }, qc, qc.getMutationCache());
     await d.promise;
-    // Without this propagation the indices stay frozen at "old-hash".
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
   });
 
@@ -318,9 +317,6 @@ describe("handleRemoteEvent", () => {
       payload: { q: 1.7, peak_curation_id: 999 },
       post_state: { analysis_inputs_hash: "new-hash", indices: [{ id: 5, inputs_hash: "new-hash" }] },
     }, qc, qc.getMutationCache());
-    // Self-echo guard short-circuits the per-kind body (mutator already wrote
-    // peaks), but post_state must still propagate to indices — mutator
-    // onSuccess paths don't write indices.
     expect(qc.getQueryData(["exposure", 42, "indices"])).toEqual([{ id: 5, inputs_hash: "new-hash" }]);
   });
 

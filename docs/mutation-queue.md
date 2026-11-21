@@ -109,7 +109,7 @@ A successful mutation flows through eight steps:
      d. Tx commits → _flush_post_commit_broadcasts!() fires SSE frame
 6. SSE frame arrives at all subscribed tabs (including the originating one)
 7. Originating tab: handleRemoteEvent matches client_op_id →
-     a. applyPostStateOnly(remote, qc) — refresh indices + analysis_inputs_hash
+     a. applyPostStateOnly(remote, qc) — refresh indices
      b. deferred.resolve(synthesizeResponseFromSse(remote))
      c. deferred.controller.abort() — kill the redundant in-flight HTTP
 8. mutationFn awakens → mutator.onSuccess writes canonical cache state
@@ -127,8 +127,8 @@ empty registry).
 If we awaited HTTP directly and triggered `onSuccess` from the response, the
 indices cache wouldn't update until the next `post_state` SSE frame landed
 in the *foreign-event* path — but that path skips when `client_id` matches.
-The stale-indices indicator would then stick at the pre-mutation hash until a
-polling refetch (or page navigation) replaced it. Resolving the deferred
+The indices would then stay at the pre-mutation hash until a polling
+refetch (or page navigation) replaced them. Resolving the deferred
 from SSE — and applying `post_state` *before* resolving — closes that
 window deterministically.
 
@@ -268,7 +268,7 @@ for `peak_added`). Falling into nothing would skip the `post_state` indices
 update.
 
 The compromise: `applyPostStateOnly(remote, qc)` and return early. The
-indices cache and `analysis_inputs_hash` are propagated; the per-kind body
+indices cache is propagated; the per-kind body
 is skipped because it already ran in `onSuccess`.
 
 ### Why `applyPostStateOnly` checks the post_state shape
@@ -380,9 +380,8 @@ under concurrent load. Evidence: `server.jl:21-28`.
 Peak `add` / `remove` / `exclude` routes pass `trace_known_unchanged=true`
 to `analyze_exposure!` so it skips `findpeaks` (the .dat file hasn't
 changed since the trace hash was recorded) but still recomputes
-`analysis_inputs_hash` and the index set. The route returns the new hash
-in the response body, and the queue mutator's `onSuccess` writes it into
-the exposure cache directly.
+`analysis_inputs_hash` and the index set. The new indices reach every tab,
+the originating one included, through the SSE frame's `post_state`.
 
 **Caveat — `kind='add'` curations defeat the no-file-I/O fast path.** The
 `findpeaks` skip is only fully file-free when every curation is
@@ -393,9 +392,8 @@ add-curation sharpness must be sampled from it via `Himalaya.sharpness(I)`
 peak-*add* route still recomputes hashes/indices cheaply but is not the
 microsecond, zero-I/O path that pure exclude/remove routes get.
 
-The result: no refetch round-trip, no stale-indices flicker. New
-curation routes should follow this pattern; otherwise the stale-indices
-indicator spuriously fires until a polling refetch lands.
+The result: no refetch round-trip. New curation routes should follow this
+pattern.
 
 The `analyze_run` no-op fast path also suppresses both the SSE frame and
 the durable `user_actions` row when both `findpeaks_skipped` and

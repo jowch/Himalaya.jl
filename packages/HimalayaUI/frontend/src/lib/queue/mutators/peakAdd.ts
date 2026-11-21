@@ -1,8 +1,3 @@
-/**
- * peak_added mutator (M2.2). Optimistic effect inserts a manual Peak with a
- * negative placeholder id; onSuccess swaps in the server's authoritative row. Indices are not invalidated here — they arrive via SSE
- * `post_state` through `applyRemoteToCache` (replay-without-refetch).
- */
 import * as api from "../../../api";
 import type { Peak, PeakAddResponse, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
@@ -49,12 +44,9 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
   },
   request: (p) => api.addPeak(p.exposureId, p.q, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
-    // Strip queue-framework metadata before treating the response as a Peak.
     const { payload: serverPeak } = stripQueueMetadata(response);
     const peaksKey = queryKeys.peaks(p.exposureId);
     qc.setQueryData<Peak[]>(peaksKey, (old) =>
-      // Dedup is scoped to MANUAL peaks: auto_peaks.id and peak_curations.id
-      // share a wire namespace, so an auto peak with the same id must survive.
       replacePlaceholder(
         old ?? [],
         serverPeak,

@@ -329,9 +329,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
   });
 
   it("applyPostStateOnly is a NO-OP on an assignment frame (finding #5a)", () => {
-    // An assignment frame reaching the own-tab applyPostStateOnly path must not
-    // touch the indices cache (the {assignment} post_state has no `indices`
-    // array, so the guard bails).
     qc.setQueryData(queryKeys.indices(5), [{ id: 1 }]);
     const evt: SseEvent = {
       id: 99, kind: "assignment_add", entity_type: "exposure", entity_id: 5,
@@ -450,6 +447,19 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(after.name).toBe("new");
     expect(after.notes).toBe("n");  // unpatched fields preserved
     expect(after.tags).toEqual([]); // tags survive (deep-scan #2)
+  });
+
+  it("update_sample invalidates the corpus samples list the workspace reads", () => {
+    const invalidated: unknown[] = [];
+    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
+      invalidated.push(arg.queryKey); return Promise.resolve();
+    }) as typeof qc.invalidateQueries;
+    const evt: SseEvent = {
+      id: 99, kind: "update_sample", entity_type: "sample", entity_id: 10,
+      payload: { name: "new" },
+    };
+    applyRemoteToCache(evt, qc);
+    expect(invalidated).toEqual([queryKeys.corpusSamples]);
   });
 
   it("add_tag (sample) invalidates the experiment + corpus samples lists AND the corpus tag pairs", () => {
@@ -602,9 +612,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   //   (b.ii) Active mutators whose onSuccess relies on the `looksFull`
   //          detector to invalidate when the synth shape is incomplete
   //          (createSpeculative, both indexGroup variants, deleteIndex).
-  //          Plus mutators whose SSE-wins-and-then-resolve has no cache
-  //          effect beyond `analysis_inputs_hash` (analyze_run, peak_removed
-  //          — peakRemove.onSuccess is a no-op beyond the hash write).
   const noSynth: Array<{ kind: string; entity_type: string }> = [
     // (b.i) forward-scaffolded
     { kind: "set_exposure_status", entity_type: "exposure"           },
