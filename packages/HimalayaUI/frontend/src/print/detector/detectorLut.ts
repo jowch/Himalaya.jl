@@ -1,19 +1,3 @@
-// The Print detector colormap. SAXS images arrive log-normalized grayscale; this
-// maps intensity → an OKLCH ramp, converted to sRGB in code (Ottosson) so the LUT
-// is pure + JSDOM-testable.
-//
-// TWO variants:
-//  - "neutral" (DEFAULT): a warm-GRAY ink ramp (near-zero chroma, black → warm
-//    paper-cream). The detector image is raw MEASUREMENT, so it stays neutral and
-//    the phase-coloured ring overlay owns all the hue — maximises ring legibility
-//    for alignment / missing-peak judgement, is colour-vision-deficiency safe
-//    (the image carries luminance only), and follows the Print's "colour = meaning"
-//    rule. This is what the alignment panel uses.
-//  - "warm": a saturated terracotta ramp (black → umber → terracotta → gold →
-//    cream) — a film-exposure "beauty" look for an un-annotated detector view.
-//    Kept available but NOT the default, because saturated warm data clashes with
-//    the (often warm-hued) phase rings.
-
 export interface LutStop { t: number; L: number; C: number; h: number } // OKLCH
 
 export type DetectorLutVariant = "neutral" | "warm" | "magma";
@@ -90,8 +74,16 @@ function oklchToSrgb(L: number, C: number, h: number): [number, number, number] 
 
 const cache: Partial<Record<DetectorLutVariant, Uint8ClampedArray>> = {};
 
-/** Build (and memoize) the 256×RGB Print detector LUT. Defaults to the neutral
- *  warm-gray ramp; pass "warm" for the saturated beauty ramp. */
+export const DETECTOR_LUT_VARIANTS: readonly DetectorLutVariant[] = ["neutral", "warm", "magma"];
+
+export function detectorLutFilterId(variant: DetectorLutVariant): string {
+  return `detector-lut-${variant}`;
+}
+
+export function detectorLutFilter(variant: DetectorLutVariant): string {
+  return `url(#${detectorLutFilterId(variant)})`;
+}
+
 export function buildPrintDetectorLut(variant: DetectorLutVariant = "neutral"): Uint8ClampedArray {
   const hit = cache[variant];
   if (hit) return hit;

@@ -1,5 +1,8 @@
 import type { Exposure } from "../../api";
-import { DETECTOR_COLOUR, imageUrl } from "../model";
+import { imageUrl } from "../model";
+import { detectorLutFilter } from "../../print/detector/detectorLut";
+
+const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
 interface Props {
   exposures: readonly Exposure[];

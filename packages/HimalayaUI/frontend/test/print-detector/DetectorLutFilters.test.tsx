@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { DetectorLutFilters } from "../../src/print/detector/DetectorLutFilters";
-import { detectorLutTableValues } from "../../src/print/detector/detectorLut";
+import { detectorLutFilterId, detectorLutTableValues } from "../../src/print/detector/detectorLut";
 
 // Guards the provider wiring DetectorImage references via `filter: url(#…)`. The
 // moved "LUT non-inverting" test covers the table MATH; this covers that the
@@ -10,7 +10,7 @@ import { detectorLutTableValues } from "../../src/print/detector/detectorLut";
 test("mounts every colormap filter with sRGB and all three channel ramps", () => {
   const { container } = render(<DetectorLutFilters />);
   for (const variant of ["neutral", "warm", "magma"] as const) {
-    const filter = container.querySelector(`#detector-lut-${variant}`);
+    const filter = container.querySelector(`#${detectorLutFilterId(variant)}`);
     expect(filter, `#detector-lut-${variant} present`).not.toBeNull();
     // sRGB is load-bearing (default linearRGB would gamma-shift the LUT).
     expect(filter!.getAttribute("color-interpolation-filters")).toBe("sRGB");
