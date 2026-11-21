@@ -45,7 +45,7 @@ test-parallel:
 	@pids=""; rc=0; \
 	for g in $(GROUPS); do \
 		( GROUP=$$g HIMALAYA_SUITE_PARALLEL=1 julia --project=packages/HimalayaUI \
-			-e 'using Pkg; Pkg.test("HimalayaUI")' > build/test-$$g.log 2>&1 ) & \
+			-e 'using Pkg; Pkg.test("HimalayaUI"; julia_args=["--threads=4,1"])' > build/test-$$g.log 2>&1 ) & \
 		pids="$$pids $$!"; \
 	done; \
 	for p in $$pids; do wait $$p || rc=1; done; \
