@@ -72,7 +72,7 @@
     "frontend/src/print/interaction/useKeyboardLayer.ts": 35,
     "frontend/src/print/interaction/useListCursor.ts": 15,
     "frontend/src/print/interaction/usePageActions.ts": 9,
-    "frontend/src/print/main.tsx": 15,
+    "frontend/src/print/main.tsx": 7,
     "frontend/src/print/pages/ExperimentsHomePage.tsx": 28,
     "frontend/src/print/plot/AcquisitionChart.tsx": 15,
     "frontend/src/print/plot/PlotFrame.tsx": 10,

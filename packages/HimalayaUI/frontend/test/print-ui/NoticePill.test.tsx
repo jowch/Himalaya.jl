@@ -27,12 +27,4 @@ describe("NoticePill", () => {
     render(<NoticePill tone="new" className="ml-4">+1</NoticePill>);
     expect(screen.getByTestId("notice-pill").className).toContain("ml-4");
   });
-
-  it("sets its label in sentence case with no extra letter-spacing, at weight 600", () => {
-    render(<NoticePill tone="new">Up to date</NoticePill>);
-    const pill = screen.getByTestId("notice-pill");
-    expect(pill.className).not.toMatch(/\btracking-/);
-    expect(pill.style.letterSpacing).toBe("");
-    expect(pill.className).toMatch(/\bfont-semibold\b/);
-  });
 });

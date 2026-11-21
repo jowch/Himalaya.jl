@@ -55,7 +55,7 @@ import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
-import { useWorkspaceTheme } from "./theme";
+import { useWorkspaceTheme } from "../lib/theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";

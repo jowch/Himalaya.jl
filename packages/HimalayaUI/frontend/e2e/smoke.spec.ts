@@ -114,3 +114,23 @@ test("a deleted /compare URL shows the stale-URL page", async ({ page }) => {
   await page.goto("/experiments/1/compare");
   await expect(page.getByTestId("stale-url-page")).toBeVisible();
 });
+
+test("the experiments home follows a dark pick from the workspace, and its status pill has no extra letter-spacing", async ({ page }) => {
+  await mockCore(page);
+  await seedState(page, {});
+  await page.addInitScript(() => { localStorage.setItem("himalaya-ui:workspace-theme", "dark"); });
+  await page.goto("/experiments");
+  const pill = page.getByTestId("notice-pill").filter({ hasText: "Up to date" });
+  await expect(pill).toBeVisible();
+  const look = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.color = "oklch(0.165 0.005 280)";
+    document.body.appendChild(probe);
+    const darkPaper = getComputedStyle(probe).color;
+    probe.remove();
+    const pillEl = document.querySelector('[data-testid="notice-pill"]')!;
+    return { body: getComputedStyle(document.body).backgroundColor, darkPaper, spacing: getComputedStyle(pillEl).letterSpacing };
+  });
+  expect(look.body).toBe(look.darkPaper);
+  expect(look.spacing).toBe("normal");
+});

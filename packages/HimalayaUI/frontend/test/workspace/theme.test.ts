@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { effectiveTheme } from "../../src/workspace/theme";
+import { effectiveTheme } from "../../src/lib/theme";
 import { cssBlock, stylesCss } from "../helpers/cssBlocks";
 
 const css = stylesCss;

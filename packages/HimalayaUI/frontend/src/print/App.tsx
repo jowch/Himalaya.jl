@@ -21,7 +21,7 @@ import { useAppState } from "../state";
 import { forgetExperiment } from "../queries";
 import { getClientId } from "../lib/clientId";
 import type { SseEvent } from "../lib/queue/types";
-import { useDocumentTheme } from "../workspace/theme";
+import { useDocumentTheme } from "../lib/theme";
 
 /**
  * PrintApp — root of "The Print", the sole production app
