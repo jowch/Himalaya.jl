@@ -22,6 +22,10 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/loads", (r) => r.fulfill(json([])));
+  await page.route(/\/api\/samples\/\d+\/call$/, (r) => {
+    const id = Number(/samples\/(\d+)\//.exec(r.request().url())![1]);
+    return r.fulfill(json({ sample_id: id, state: "indexed", phase: null, call_phases: [], members: [] }));
+  });
   await page.route("**/api/samples/*/exposures*", (r) => r.fulfill(json([])));
   await page.route("**/api/events", (r) =>
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
