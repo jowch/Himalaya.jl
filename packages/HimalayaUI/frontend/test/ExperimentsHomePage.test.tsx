@@ -158,6 +158,7 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     fireEvent.keyDown(third, { key: "ArrowDown" });
     expect(document.activeElement).toBe(third);
     fireEvent.keyDown(third, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(second);
     fireEvent.keyDown(second, { key: "ArrowLeft" });
     expect(document.activeElement).toBe(first);
   });

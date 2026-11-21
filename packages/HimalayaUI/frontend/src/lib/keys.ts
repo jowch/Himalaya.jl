@@ -26,9 +26,8 @@
  *    before the modal's focus trap engages.
  *
  * Modifier-key chords (⌘/Ctrl/Alt) are deliberately NOT handled here: some
- * callers bind chords themselves (the shell keys own ⌘K), so each call site
- * keeps its own
- * `if (e.metaKey || e.ctrlKey || e.altKey) return;` line where appropriate.
+ * callers bind chords themselves (the shell keys own ⌘K), so each call site keeps
+ * its own `if (e.metaKey || e.ctrlKey || e.altKey) return;` line where appropriate.
  *
  * The contenteditable check pairs the spec'd `isContentEditable` property
  * (the browser source of truth, covers inheritance + designMode) with an
