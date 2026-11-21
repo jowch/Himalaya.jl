@@ -244,6 +244,9 @@ describe("undo against the server", () => {
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.restoreLabelSuggestion)).toEqual([[12, "Calibrant"]]);
     expect(api.removeLabel).not.toHaveBeenCalled();
+    server.labels = [{ id: 2, sample_id: 12, label: "Calibrant", state: "suggested", source: "ingest" }];
+    await act(async () => { await result.current.history.redo()!.done; });
+    expect(firstArgs(api.removeLabel)).toEqual([[12, "Calibrant"]]);
   });
 
   it("says a suggestion is already back when the server shows it suggested", async () => {
