@@ -884,6 +884,24 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
   });
 
+  it("the palette's Settings page renames the experiment and clears its description", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("settings", "name");
+    const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+    expect(name).toHaveValue("BL-19");
+    fireEvent.change(name, { target: { value: "BL-20" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+  });
+
+  it("offers no Settings before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(document.querySelector("[data-palette-item='settings']")).toBeNull();
+  });
+
   it("offers no colour menu before a user is set", () => {
     state.username = undefined;
     state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
