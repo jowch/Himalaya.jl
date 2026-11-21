@@ -8,6 +8,7 @@ interface Props {
   filter: string;
   onFilter: (v: string) => void;
   onPick: (id: number) => void;
+  bridgeCounts?: ReadonlyMap<number, number>;
 }
 
 function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
@@ -17,7 +18,7 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
 }
 
-export function SampleList({ samples, currentId, filter, onFilter, onPick }: Props): JSX.Element {
+export function SampleList({ samples, currentId, filter, onFilter, onPick, bridgeCounts }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -52,6 +53,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick }: Pro
       <ul className="min-h-0 flex-1 overflow-y-auto py-1" data-testid="workspace-samples">
         {samples.map((s) => {
           const cur = s.id === currentId;
+          const bridges = bridgeCounts?.get(s.id) ?? 0;
           return (
             <li key={s.id}>
               <button
@@ -65,7 +67,15 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick }: Pro
                   (cur ? "bg-row-cursor font-semibold" : "hover:bg-paper-sunk")
                 }
               >
-                <span className="truncate">{s.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{s.name}</span>
+                  {bridges > 0 && (
+                    <span data-bridged title={bridges === 1 ? "1 bridge" : `${bridges} bridges`} className="shrink-0 text-xs text-ink-faint tabular-nums">
+                      <span aria-hidden="true">⇄{bridges}</span>
+                      <span className="sr-only">{bridges === 1 ? "1 bridge" : `${bridges} bridges`}</span>
+                    </span>
+                  )}
+                </span>
                 <StatusMark s={s} />
               </button>
             </li>

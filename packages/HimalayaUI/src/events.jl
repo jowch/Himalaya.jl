@@ -427,6 +427,17 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "sample_created" && return nothing
     kind == "sample_split" && return nothing
     kind == "grouping_flag_dismissed" && return nothing
+    if kind == "sample_bridged"
+        DBInterface.execute(db,
+            """INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, ?)
+               ON CONFLICT(sample_id) DO UPDATE SET group_id = excluded.group_id""",
+            [Int(entity_id), Int(payload.group_id)])
+        return nothing
+    end
+    if kind == "sample_unbridged"
+        DBInterface.execute(db, "DELETE FROM sample_bridges WHERE sample_id = ?", [Int(entity_id)])
+        return nothing
+    end
 
     # Speculative index lifecycle: route handlers insert/delete the indices
     # row directly (the speculative create/delete paths in routes_analysis.jl

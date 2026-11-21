@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean verify-truth lint
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
 
 all: frontend sysimage
 
@@ -77,6 +77,17 @@ DEMO_DIR    ?= scratch/demo-experiment
 DEMO_DB_DIR ?= scratch/demo
 demo-data:
 	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
+
+# Realistic scale: DEMO_LARGE_DIR/large_01 ... large_10, 300 samples each, with
+# images shared from a pool (docs/demo.md "Large mode"). Takes ~35 s, ~1.4 GB.
+DEMO_LARGE_DIR    ?= scratch/demo-large
+DEMO_LARGE_DB_DIR ?= scratch/demo-large-db
+demo-large-data:
+	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_LARGE_DIR) --large
+
+# Generate (if missing) and ingest every large experiment, then start the app.
+demo-large:
+	DEMO_DIR=$(DEMO_LARGE_DIR) DEMO_DB_DIR=$(DEMO_LARGE_DB_DIR) packages/HimalayaUI/scripts/demo.sh --large
 
 # Backend + Vite with the demo experiment ingested (through the same API calls
 # the New-experiment funnel makes). Generates the data first if it is missing.

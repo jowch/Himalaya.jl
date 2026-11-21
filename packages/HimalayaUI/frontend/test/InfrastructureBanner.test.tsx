@@ -5,6 +5,7 @@ import type { Mutation } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { InfrastructureBanner } from "../src/print/shell/InfrastructureBanner";
 import { useFloatingDock } from "../src/print/shell/floatingDock";
+import { useConnection } from "../src/lib/connection";
 
 function withQC(qc: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
@@ -48,6 +49,7 @@ describe("InfrastructureBanner", () => {
     vi.useRealTimers();
     // Reset the shared dock lane so one test's occupancy never leaks.
     useFloatingDock.setState({ centerLaneOccupied: false });
+    useConnection.setState({ streamDownSince: null });
   });
 
   it("renders nothing when no pending mutations", () => {
@@ -73,13 +75,35 @@ describe("InfrastructureBanner", () => {
     expect(banner).toHaveTextContent(/Saving your changes/);
   });
 
-  it("upgrades to stuck state after 30s", () => {
+  it("after 30s says how many changes are not saved yet and that it keeps trying, without asking for a refresh", () => {
     addMutation(qc, { status: "pending", submittedAt: Date.now() - 31000 });
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 2000 });
     render(<InfrastructureBanner />, { wrapper: withQC(qc) });
     const banner = screen.getByTestId("infrastructure-banner");
     expect(banner).toHaveAttribute("data-state", "stuck");
-    expect(banner).toHaveTextContent(/Couldn.t save/);
-    expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
+    expect(banner).toHaveTextContent("2 changes not saved yet. Still trying.");
+    expect(screen.queryByRole("button", { name: /refresh/i })).not.toBeInTheDocument();
+  });
+
+  it("says the connection is lost once the live stream has been down for 5s, with no edits pending", () => {
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    act(() => { useConnection.getState().setStreamDown(); });
+    expect(screen.queryByTestId("infrastructure-banner")).not.toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(5500); });
+    const banner = screen.getByTestId("infrastructure-banner");
+    expect(banner).toHaveAttribute("data-state", "offline");
+    expect(banner).toHaveTextContent("Connection lost. Retrying…");
+    act(() => { useConnection.getState().setStreamOpen(); });
+    expect(screen.queryByTestId("infrastructure-banner")).not.toBeInTheDocument();
+  });
+
+  it("while the connection is lost, counts the edits that will save when it is back", () => {
+    act(() => { useConnection.setState({ streamDownSince: Date.now() - 10_000 }); });
+    addMutation(qc, { status: "pending", submittedAt: Date.now() - 40_000 });
+    render(<InfrastructureBanner />, { wrapper: withQC(qc) });
+    const banner = screen.getByTestId("infrastructure-banner");
+    expect(banner).toHaveAttribute("data-state", "offline");
+    expect(banner).toHaveTextContent("Connection lost. Retrying… 1 change will save when it’s back.");
   });
 
   it("uses a full hairline border, not a left-edge severity stripe (showing)", () => {
@@ -100,16 +124,14 @@ describe("InfrastructureBanner", () => {
     expect(banner.querySelector('[aria-label="Saving"]')).not.toBeNull();
   });
 
-  it("labels the stuck state with an Error severity word + icon and corrected prose", () => {
+  it("labels the stuck state with a Not saved icon and no em-dash", () => {
     addMutation(qc, { status: "pending", submittedAt: Date.now() - 31000 });
     render(<InfrastructureBanner />, { wrapper: withQC(qc) });
     const banner = screen.getByTestId("infrastructure-banner");
     expect(banner).toHaveAttribute("data-state", "stuck");
-    expect(banner.querySelector('[aria-label="Error"]')).not.toBeNull();
-    // Em-dash retired: two sentences, no " — ".
-    expect(banner).toHaveTextContent("Couldn’t save. Try refreshing.");
+    expect(banner.querySelector('[aria-label="Not saved"]')).not.toBeNull();
+    expect(banner).toHaveTextContent("1 change not saved yet. Still trying.");
     expect(banner.textContent ?? "").not.toContain("—");
-    expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
   });
 
   it("docks centre by default (no page action bar occupies the lane)", () => {

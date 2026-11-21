@@ -210,6 +210,8 @@ function register_grouping_routes!()
                 "UPDATE sample_messages SET sample_id = ? WHERE sample_id = ?",
                 [survivor_id, loser_id])
 
+            inherit_bridges!(db, req, loser_id, survivor_id, exp_id)
+
             # (iv) Retire the loser (sets merged_into_id; does not hard-delete).
             retire_sample!(db, loser_id; merged_into_id=survivor_id)
 

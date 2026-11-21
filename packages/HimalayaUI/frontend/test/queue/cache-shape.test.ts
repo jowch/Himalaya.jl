@@ -154,7 +154,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     };
     qc.setQueryData(queryKeys.peaks(5), [initial]);
     qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
-    // Mock derived from routes_peaks.jl PATCH /peaks/:id response.
+    // Mock derived from routes_peaks.jl PATCH /peaks/auto/:id response.
     mockFetchOnce({
       ...initial, excluded: true,
       event_id: 10, view_row_id: 11,
@@ -207,7 +207,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     };
     qc.setQueryData(queryKeys.peaks(5), [initial]);
     qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
-    // Mock derived from routes_peaks.jl DELETE /peaks/:id response.
+    // Mock derived from routes_peaks.jl DELETE /peaks/manual/:id response.
     mockFetchOnce({
       event_id: 12, view_row_id: null,
       analysis_inputs_hash: "h2",
