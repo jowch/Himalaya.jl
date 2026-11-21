@@ -65,8 +65,6 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "assignment"] as const,
   sampleCall: (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "call"] as const,
-  messages:   (sampleId: number | undefined) =>
-    ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
     exposureId: number | undefined,
     phase: string | undefined,

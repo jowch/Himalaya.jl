@@ -36,7 +36,6 @@ import {
   addSampleTagMutator, removeSampleTagMutator,
   addCorpusSampleTagMutator, removeCorpusSampleTagMutator,
   addExposureTagMutator, removeExposureTagMutator,
-  postSampleMessageMutator,
   setExposureStatusMutator, selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
 
@@ -220,13 +219,6 @@ const SPECS: Spec[] = [
       { ...FLAT_BASE, kind: "remove_tag",
         payload: { tagId: 99 },
         sampleId: 1, exposureId: 5, tagId: 99 } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "postSampleMessage",
-    run: (qc) => postSampleMessageMutator.request(
-      { ...FLAT_BASE, kind: "post_message", payload: { body: "hi" },
-        sampleId: 10, body: "hi" } as any,
       new AbortController().signal),
   },
   {

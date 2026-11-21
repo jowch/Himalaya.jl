@@ -39,7 +39,6 @@ import {
   addSampleTagMutator,
   addCorpusSampleTagMutator,
   addExposureTagMutator,
-  postSampleMessageMutator,
 } from "../../src/lib/queue/mutators/trivial";
 import { queryKeys } from "../../src/queries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
@@ -61,9 +60,6 @@ const EXPOSURE_KEYS = new Set([
 ]);
 const SAMPLE_TAG_KEYS = new Set(["id", "key", "value", "source"]);
 const EXPOSURE_TAG_KEYS = new Set(["id", "key", "value", "source"]);
-const SAMPLE_MESSAGE_KEYS = new Set([
-  "id", "sample_id", "author_id", "author", "body", "created_at",
-]);
 const INDEX_ENTRY_KEYS = new Set([
   "id", "exposure_id", "phase", "basis", "score", "r_squared",
   "lattice_d", "ngc", "status", "kind", "inputs_hash",
@@ -568,22 +564,4 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     expect(after.find(p => p.source === "manual")!.excluded).toBe(false);
   });
 
-  it("postSampleMessage writes a SampleMessage with exactly 6 keys", async () => {
-    qc.setQueryData(queryKeys.messages(10), []);
-    // Mock derived from routes_messages.jl POST /samples/:id/messages response.
-    mockFetchOnce({
-      id: 200, sample_id: 10, author_id: 3, author: "alice",
-      body: "hello", created_at: "2026-05-03T12:00:00Z",
-    }, 201);
-    await runMutator(qc, postSampleMessageMutator, {
-      kind: "post_message",
-      clientOpId: "op-shape-12",
-      sampleId: 10, username: "alice", clientId: "tab-1",
-      body: "hello",
-      payload: { body: "hello" },
-    });
-    const list = qc.getQueryData<unknown[]>(queryKeys.messages(10));
-    expect(list).toHaveLength(1);
-    assertKeys(list![0], SAMPLE_MESSAGE_KEYS, "postSampleMessage cache row");
-  });
 });
