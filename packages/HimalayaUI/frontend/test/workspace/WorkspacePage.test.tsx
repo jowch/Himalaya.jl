@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
+import { peakList } from "../fixtures/peaks";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
@@ -289,14 +290,14 @@ describe("WorkspacePage", () => {
   });
   it("a click near an auto peak disables it, near a manual peak removes it, and elsewhere adds one", () => {
     state.trace = makeTrace(1);
-    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.2, "manual")];
+    state.peaks = peakList(101, { auto: [0.1, 0.12], manual: [0.2] });
     renderAt("/experiments/1/workspace/10");
     clickPlotAt(0.1);
     clickPlotAt(0.2);
     clickPlotAt(0.15);
     expect(calls.slice(0, 2)).toEqual([
-      { hook: "excludePeak", boundTo: 101, arg: { peakId: 7, excluded: true } },
-      { hook: "removePeak", boundTo: 101, arg: 8 },
+      { hook: "excludePeak", boundTo: 101, arg: { peakId: 1, excluded: true } },
+      { hook: "removePeak", boundTo: 101, arg: 1 },
     ]);
     expect(calls[2]).toMatchObject({ hook: "addPeak", boundTo: 101 });
     expect(calls[2]!.arg as number).toBeCloseTo(0.15, 2);
@@ -310,12 +311,12 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "addPeak")).toHaveLength(1);
   });
 
-  it("a click on a disabled auto peak restores it", () => {
+  it("a click on a disabled auto peak restores it, even when a manual peak shares its id", () => {
     state.trace = makeTrace(1);
-    state.peaks = [peak(7, 0.1, "auto", true)];
+    state.peaks = peakList(101, { auto: [{ q: 0.2, excluded: true }], manual: [0.1] });
     renderAt("/experiments/1/workspace/10");
-    clickPlotAt(0.1);
-    expect(calls).toEqual([{ hook: "excludePeak", boundTo: 101, arg: { peakId: 7, excluded: false } }]);
+    clickPlotAt(0.2);
+    expect(calls).toEqual([{ hook: "excludePeak", boundTo: 101, arg: { peakId: 1, excluded: false } }]);
   });
 
   it("does not edit peaks before a user is set", () => {
@@ -794,14 +795,14 @@ describe("WorkspacePage", () => {
 
   it("while a custom index is open, a plot click puts the first order on the nearest peak and edits no peaks", () => {
     state.trace = makeTrace(1);
-    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.2, "manual")];
+    state.peaks = peakList(101, { auto: [0.2], manual: [0.1] });
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    clickPlotAt(0.105);
-    const add = within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ });
-    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.1).toFixed(1)} Å`);
     clickPlotAt(0.2);
+    const add = within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ });
     expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.2).toFixed(1)} Å`);
+    clickPlotAt(0.1);
+    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.1).toFixed(1)} Å`);
     expect(calls).toEqual([]);
   });
 

@@ -80,7 +80,6 @@ export const queryKeys = {
   // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
   // collisions with the existing collection keys (e.g., a future
   // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
-  peak:     (id: number | undefined) => ["peak-entity", id ?? "none"] as const,
   index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
   sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
@@ -630,15 +629,6 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
     ...inner,
     mutate: (tagId: number) => inner.mutate({ tagId }),
   };
-}
-
-export function usePeak(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.peak(id),
-    queryFn: () => api.getPeak(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
 }
 
 export function useIndex(id: number | undefined) {

@@ -33,7 +33,7 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
     // so it doesn't route through the validation toast or retry path; the
     // mutation simply settles in error state and the user sees no UI change).
     // That's intentional: the user did nothing wrong, and the desync this
-    // guard prevents — DELETE /api/peaks/-N → 404 → rollback re-inserts the
+    // guard prevents — DELETE /api/peaks/manual/-N → 404 → rollback re-inserts the
     // placeholder while the still-pending add resolves into a real "ghost
     // peak" — should fail at the dev/test layer, not surface as a toast.
     if (p.peakId < 0) {
@@ -59,7 +59,7 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
       },
     };
   },
-  request: (p) => api.removePeak(p.peakId, buildAuthOpts(p)),
+  request: (p) => api.removeManualPeak(p.peakId, buildAuthOpts(p)),
   onSuccess: (p, response, qc) => {
     // The peak is already removed optimistically. Write the new hash onto the
     // exposure cache so the stale-indices alert doesn't flash before the SSE
