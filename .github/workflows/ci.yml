@@ -77,7 +77,9 @@ jobs:
           cache-name: ui-backend-${{ env.JULIA_CPU_TARGET }}
           include-matrix: false
       - name: Install
-        run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+        run: |
+          printf '[HimalayaUI]\nprecompile_workload = false\n' > packages/HimalayaUI/LocalPreferences.toml
+          julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
       - name: Test
         env:
           GROUP: ${{ matrix.group }}
