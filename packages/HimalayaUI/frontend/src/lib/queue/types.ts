@@ -46,7 +46,8 @@ export type OpKind =
   // resolveMutator (outbound).
   | "custom_index_commit"
   | "bridge_samples" | "unbridge_sample"
-  | "add_label" | "remove_label";
+  | "add_label" | "remove_label"
+  | "set_tag_color";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

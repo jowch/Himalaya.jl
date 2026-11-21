@@ -18,6 +18,8 @@ import {
   useRemoveLabel,
   useProblems,
   useDeleteExperiment,
+  useTagColors,
+  useSetTagColor,
   usePeaks,
   useFrameAssignments,
   useRemoveAssignmentPhase,
@@ -35,7 +37,7 @@ import {
 import { useScanState } from "../hooks/useScanState";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
+import { displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -193,6 +195,9 @@ export function WorkspacePage(): JSX.Element {
   const addLabel = useAddLabel(experimentId);
   const removeLabel = useRemoveLabel(experimentId);
   const [tagging, setTagging] = useState(false);
+  const tagColors = useTagColors();
+  const setTagColor = useSetTagColor();
+  const [coloringTag, setColoringTag] = useState<string | undefined>(undefined);
   const visible = useMemo(
     () => samples.filter((s) => sampleMatchesFilter(s.name, labelsFor(labelList, s.id), filter)),
     [samples, labelList, filter],
@@ -379,10 +384,15 @@ export function WorkspacePage(): JSX.Element {
   const shownDomain = clampDomain(xDomain, xExtent);
   const pickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), [samples, sampleId, shownRefs]);
   const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
-  useEffect(() => setTagging(false), [sampleId]);
+  useEffect(() => {
+    setTagging(false);
+    setColoringTag(undefined);
+  }, [sampleId]);
   const sampleTags = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
   const openTagging = useCallback(() => {
-    if (username && sampleId !== undefined) setTagging(true);
+    if (!username || sampleId === undefined) return;
+    setColoringTag(undefined);
+    setTagging(true);
   }, [username, sampleId]);
   const openBridge = useCallback(() => {
     if (username && sampleId !== undefined) setBridging(true);
@@ -470,6 +480,7 @@ export function WorkspacePage(): JSX.Element {
         setPicking(false);
         setBridging(false);
         setTagging(false);
+        setColoringTag(undefined);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -590,6 +601,7 @@ export function WorkspacePage(): JSX.Element {
     ...(username && sample
       ? [
           { id: "tag", label: `Add tag to ${sample.name}`, run: openTagging },
+          ...sampleTags.map((t) => ({ id: `tag-color-${t.label}`, label: `Set colour of tag ${displayTag(t.label)}`, run: () => setColoringTag(t.label) })),
           { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
           ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
         ]
@@ -666,6 +678,14 @@ export function WorkspacePage(): JSX.Element {
               adding={tagging}
               onOpenAdd={openTagging}
               onCloseAdd={() => setTagging(false)}
+              colors={tagColors.data ?? []}
+              coloring={coloringTag}
+              onOpenColor={(label) => {
+                setTagging(false);
+                setColoringTag(label);
+              }}
+              onCloseColor={() => setColoringTag(undefined)}
+              onSetColor={(label, color) => setTagColor.mutate({ label, color })}
               onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
               onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
             />

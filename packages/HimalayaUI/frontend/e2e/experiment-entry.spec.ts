@@ -105,6 +105,7 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route(`**/api/experiments/${opts.id}/bridges`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/api/tag-colors", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route(`**/api/experiments/${opts.id}/scan`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "complete", experiment_id: opts.id, changed: false }) }));
   await page.route(`**/api/experiments/${opts.id}/labels`, (r) =>
