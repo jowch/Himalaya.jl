@@ -88,6 +88,12 @@ describe("compare", () => {
       expect(lo).toBeGreaterThan(-1);
     });
 
+    it("keeps the tallest peak's top inside the range, since a sharp peak is under 1% of the points", () => {
+      const tallest = Math.max(...d.filter((_, i) => qs[i]! > 0.1));
+      const [, hi] = stripRange(qs, d, [qs[0]!, qs[qs.length - 1]!], peakQ);
+      expect(hi).toBeGreaterThanOrEqual(tallest);
+    });
+
     it("skips the low-q end when no peak is in view", () => {
       const [lo] = stripRange(qs, d, [qs[0]!, 0.12], []);
       expect(lo).toBeGreaterThan(-20);
