@@ -29,7 +29,6 @@ Frontend (TS):
 - `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts` — `handleRemoteEvent`, `synthesizeResponseFromSse`
 - `packages/HimalayaUI/frontend/src/lib/queue/applyRemoteToCache.ts` — per-kind SSE merge switch
 - `packages/HimalayaUI/frontend/src/lib/queue/persistence.ts` — `attachPersistence`, `rehydrate`, `MutatorResolver`
-- `packages/HimalayaUI/frontend/src/lib/queue/hooks.ts` — `useExposureHasPendingPeakOps`, `useQueueOpStatus`
 - `packages/HimalayaUI/frontend/src/lib/queue/useQueueMutation.ts` — framework wrapper
 - `packages/HimalayaUI/frontend/src/lib/queue/errors.ts` — failure-class classification
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/*.ts` — each mutator file
@@ -78,8 +77,6 @@ Frontend (TS):
 
 - **`MutationCache.getAll()` insertion order is load-bearing.** Foreign-event replay-as-rerun depends on insertion order: rollback in reverse, re-run onMutate forward. The regression test in `replayCoordinator.test.ts` pins this against TanStack version drift; don't disable or weaken it.
 
-- **`affectsExposurePeaks` is true ONLY for peak ops + reanalyze.** Tag/message/status/select mutators must NOT set this — they're not peak-affecting and shouldn't gate `useExposureHasPendingPeakOps`. The `PEAK_AFFECTING_KINDS` set in `hooks.ts` is canonical.
-
 - **`applyRemoteToCache` peak-merge uses `peakQTol`.** Same q-tolerance discipline as point 3 above.
 
 - **`mutatorRegistry.ts` discriminates dual-scope kinds via payload shape.** `add_tag` / `remove_tag` exist as both sample-scoped and exposure-scoped mutators sharing one OpKind. The resolver checks `exposureId` first, then `payload.experimentId !== undefined` distinguishes sample- vs corpus-scope (a corpus-tag op with no `experimentId` would otherwise collide). New dual-scope kinds need a similar discriminator.
@@ -91,8 +88,6 @@ Frontend (TS):
 - **`peak_added` placeholder swap by q-match, not id.** The placeholder id is random per call (negative); the server-assigned id is positive. `onSuccess` filters by `(pk.id < 0 && |pk.q - input.q| < peakQTol(input.q))` to find the placeholder.
 
 ### App-level wiring
-
-- **`print/App.tsx` wires `handleRemoteEvent`, NOT `handleCurationEvent`.** The legacy file `lib/sseSubscriber.ts` was deleted in `cd7ecfe`. Any code that imports it is stale.
 
 - **`print/App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
 

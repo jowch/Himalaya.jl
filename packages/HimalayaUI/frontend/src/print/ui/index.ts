@@ -8,8 +8,6 @@ export { KbLegend } from "./KbLegend";
 export type { Shortcut } from "./KbLegend";
 export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
-export { ColumnSortButton } from "./ColumnSortButton";
-export type { ColumnSortButtonProps, ColumnSortDir } from "./ColumnSortButton";
 export { CheckCircle } from "./CheckCircle";
 export { RejectOverlay } from "./RejectOverlay";
 export { ProgressBar } from "./ProgressBar";

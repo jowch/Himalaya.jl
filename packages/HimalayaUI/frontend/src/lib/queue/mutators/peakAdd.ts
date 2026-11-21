@@ -86,5 +86,4 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
       view_row_id: peakId,
     } as PeakAddResponse;
   },
-  affectsExposurePeaks: () => true,
 };

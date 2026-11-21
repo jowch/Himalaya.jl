@@ -5,8 +5,7 @@
  * - removeAssignmentPhaseMutator (kind: "assignment_remove")
  * - setSampleCallStateMutator    (kind: "sample_call_set_state")
  *
- * All three write `queryKeys.assignment` (the third for every frame of the sample)
- * and declare `affectsExposurePeaks: () => false` (they never touch the peak set).
+ * All three write `queryKeys.assignment` (the third for every frame of the sample).
  *
  * Two load-bearing invariants from the queue review:
  *
@@ -100,7 +99,6 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
-  affectsExposurePeaks: () => false,
 };
 
 // ---------------------------------------------------------------------------
@@ -130,7 +128,6 @@ export const removeAssignmentPhaseMutator: Mutator<RemovePhaseInput, AssignmentS
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
-  affectsExposurePeaks: () => false,
   // 404 = the member isn't in the assignment → desired end state.
   treats404AsSuccess: true,
 };
@@ -181,5 +178,4 @@ export const setSampleCallStateMutator: Mutator<SetStateInput, SampleCallScope, 
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthSampleCall,
-  affectsExposurePeaks: () => false,
 };

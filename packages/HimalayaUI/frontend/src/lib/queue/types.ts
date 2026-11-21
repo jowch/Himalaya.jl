@@ -28,11 +28,6 @@ import type { Assignment, SampleCall } from "../../api";
  *   kind today is speculative; the OpKind name describes the *user gesture*,
  *   the event name describes the *durable mutation*).
  * - `reanalyze_exposure` → emits `analyze_run` (manual-triggered analyze).
- *
- * Kind-set membership predicates (`useExposureHasPendingPeakOps`,
- * `PEAK_AFFECTING_KINDS`) operate on OpKind, not the event name. If a new
- * mutator's user-gesture name diverges from its event kind, document the
- * mapping here and double-check the membership predicates.
  */
 export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
@@ -43,8 +38,7 @@ export type OpKind =
   | "reanalyze_exposure"
   | "delete_index"
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
-  // native assignment event kinds. `affectsExposurePeaks: () => false` for all
-  // three — they touch only the assignment cache, never the peak set.
+  // native assignment event kinds.
   | "assignment_add" | "assignment_remove" | "sample_call_set_state"
   // Custom-index commit (Plan D-9). The OpKind names the user gesture; the
   // backend route emits two events (speculative_created + assignment_add), so
@@ -192,8 +186,6 @@ export type FlatPayload<TInput, TScope> = OpPayload<TInput> & TScope & TInput;
  * - `request` issues the HTTP call; honours AbortSignal
  * - `onSuccess` applies the server response to the cache
  * - `synthesizeFromSse` (optional) builds the SSE-wins synthetic response
- * - `affectsExposurePeaks` (optional) tells hooks whether this op should
- *   register as a "peak op" against an exposure for `useExposureHasPendingPeakOps`
  *
  * Three generics: `TInput` (per-call input), `TScope` (closure-injected at hook
  * construction), `TResponse` (server response). Callbacks receive the flat
@@ -215,7 +207,6 @@ export interface Mutator<TInput, TScope, TResponse> {
    * expects in its second argument — co-locating the two prevents drift.
    */
   synthesizeFromSse?: (remote: SseEvent, base: QueueResponseMeta) => TResponse | undefined;
-  affectsExposurePeaks?: (payload: FlatPayload<TInput, TScope>, exposureId: number) => boolean;
   /**
    * When set, an HTTP 404 response is treated as a no-op success: the
    * framework skips both the toast and the rollback, leaving the optimistic

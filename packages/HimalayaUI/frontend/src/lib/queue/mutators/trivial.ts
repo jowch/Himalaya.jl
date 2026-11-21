@@ -69,7 +69,7 @@ export const updateSampleMutator: Mutator<UpdateSampleInput, UpdateSampleScope, 
   onSuccess: (p, response, qc) => {
     // The PATCH route returns only the `samples` row — no `tags` field.
     // The Sample type requires `tags: SampleTag[]`, and the listing routes
-    // (GET /api/experiments/:id/samples and GET /api/samples/:id) attach
+    // (GET /api/experiments/:id/samples) attach
     // tags client-side. Spreading the response wholesale into the cache
     // would clobber `tags` to undefined.  Merge ONLY the patched fields
     // onto the existing cache entry so tags survive.
