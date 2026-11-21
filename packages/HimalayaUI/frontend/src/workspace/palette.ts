@@ -1,6 +1,7 @@
 import { LABEL_COLORS, type CorpusSample, type IndexEntry, type LabelColor } from "../api";
 import { cleanLabel, sameLabel } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
+import { latticeParam } from "./indexing";
 import type { WorkspaceTheme } from "./theme";
 import { LABEL_SWATCH } from "./ui/labelSwatches";
 import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "./ui/palette/model";
@@ -15,7 +16,6 @@ export interface PaletteLabel {
 
 export interface WorkspacePaletteInput {
   modKey: string;
-  sampleName: string | undefined;
   canEdit: boolean;
   nextUnreviewed: () => void;
   compare: { samples: readonly CorpusSample[]; notes: ReadonlyMap<number, string>; pick: (id: number) => void };
@@ -51,7 +51,7 @@ const THEMES: readonly { theme: WorkspaceTheme; name: string }[] = [
 ];
 
 export function candidateName(ix: Pick<IndexEntry, "phase" | "lattice_d">): string {
-  return ix.lattice_d !== null ? `${ix.phase} ${ix.lattice_d.toFixed(1)} Å` : ix.phase;
+  return ix.lattice_d !== null ? `${ix.phase}, ${latticeParam(ix.phase)} ${ix.lattice_d.toFixed(1)} Å` : ix.phase;
 }
 
 const COLOR_OPTIONS: readonly FieldOption[] = LABEL_COLORS.map((c) => ({ value: c, label: LABEL_SWATCH[c].name, swatch: LABEL_SWATCH[c].solid }));
@@ -192,7 +192,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
   ];
   const themeName = THEMES.find((t) => t.theme === p.theme.current)?.name;
   const app: PaletteItem[] = [
-    ...(pages.colours ? [{ id: "colours", label: "Label colour", page: "colours" }] : []),
+    ...(pages.colours ? [{ id: "colours", label: "Label colours", page: "colours" }] : []),
     { id: "theme", label: "Theme", hint: themeName, page: "theme" },
     { id: "switch-user", label: p.user.name ? "Switch user" : "Sign in", hint: p.user.name, run: p.user.switch },
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: p.help },
@@ -202,7 +202,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { title: "Plot", items: plot },
     { title: "Experiment", items: experiment },
     { title: "App", items: app },
-    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, run: () => p.goSample(s.id) })) },
+    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })) },
   ];
   return { groups, pages };
 }

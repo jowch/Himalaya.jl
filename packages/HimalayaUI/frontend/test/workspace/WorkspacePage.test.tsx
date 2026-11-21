@@ -1209,6 +1209,21 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
   });
 
+  it("typing a sample's exact name and Enter goes there rather than comparing with it", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("A3");
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+    expect(calls).toEqual([]);
+  });
+
+  it("Ctrl+K closes the palette from inside a page", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("compare with a sample");
+    const page = screen.getByRole("combobox", { name: "Sample" });
+    fireEvent.keyDown(page, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("Ctrl+K toggles the palette, and a command runs the same action as its key", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
@@ -1247,6 +1262,8 @@ describe("WorkspacePage", () => {
     runFromPalette("theme", "system");
     expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
     expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
+    runFromPalette("theme");
+    expect(screen.getByRole("option", { name: "Follow the system, Current" })).toBeInTheDocument();
   });
 
   it("I opens a custom index on the top candidate; arrows nudge the lattice and Enter adds it", () => {

@@ -38,19 +38,22 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
     form.submit(values);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLElement>): void => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.nativeEvent.isComposing) return;
     const value = values[field.id] ?? "";
     if (e.key === "Tab") {
       e.preventDefault();
       move(focus + (e.shiftKey ? -1 : 1));
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" || e.key === "Escape") {
       e.preventDefault();
-      submit();
+      if (e.repeat) return;
+      if (e.key === "Enter") submit();
+      else onBack();
     } else if (field.kind === "choice" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
       set(field.id, cycleOption(field.options ?? [], value, e.key === "ArrowDown" ? 1 : -1));
     } else if (e.key === "Backspace" && (field.kind === "choice" || value === "")) {
       e.preventDefault();
+      if (e.repeat) return;
       if (focus > 0) move(focus - 1);
       else onBack();
     }
