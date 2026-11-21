@@ -3,9 +3,10 @@ import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostSt
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
 import type {
   Peak, Exposure, Sample,
-  Assignment,
+  Assignment, Experiment,
 } from "../../api";
 import { queryKeys } from "../../queries";
+import { mergeExperimentPatch } from "./mutators/experiment";
 import { peakQTol } from "./peakQTol";
 import { announceAssignmentDropped } from "./assignmentDropped";
 import { INGEST_STAGES } from "../ingestStages";
@@ -300,6 +301,11 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "tag_color_set":
       qc.invalidateQueries({ queryKey: queryKeys.labelColors() });
+      break;
+    case "experiment_updated":
+      mergeExperimentPatch(qc, id, (payload ?? {}) as Partial<Experiment>);
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(id) });
+      qc.invalidateQueries({ queryKey: queryKeys.experiments });
       break;
     case "label_added":
     case "label_removed":

@@ -23,6 +23,7 @@ import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
+import { patchExperimentMutator } from "./lib/queue/mutators/experiment";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -471,6 +472,11 @@ export function useTriggerScan(experimentId: number) {
     ...inner,
     mutate: (force = false) => inner.mutate(force),
   };
+}
+
+export function usePatchExperiment(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(patchExperimentMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 export function useDeleteExperiment(experimentId: number) {

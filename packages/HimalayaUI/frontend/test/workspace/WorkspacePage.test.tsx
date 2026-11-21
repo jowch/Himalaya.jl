@@ -96,6 +96,7 @@ vi.mock("../../src/queries", () => ({
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
+  usePatchExperiment: () => ({ mutate: (patch: unknown) => calls.push({ hook: "patchExperiment", boundTo: 1, arg: patch }) }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
   useDeleteExperiment: (experimentId: number) => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
@@ -1176,6 +1177,30 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(form).getByRole("option", { name: "Green" }));
     fireEvent.keyDown(colour, { key: "Enter" });
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
+  });
+
+  it("the palette's Settings page renames the experiment and sets its description", () => {
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("settings", "name");
+    const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+    expect(name).toHaveValue("BL-19");
+    fireEvent.change(name, { target: { value: "BL-20" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+    calls.length = 0;
+    runFromPalette("settings", "description");
+    const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
+    fireEvent.change(description, { target: { value: "Lipid screen" } });
+    fireEvent.keyDown(description, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { description: "Lipid screen" } }]);
+  });
+
+  it("offers no Settings before a user is set", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(document.querySelector("[data-palette-item='settings']")).toBeNull();
   });
 
   it("offers no colour menu before a user is set", () => {

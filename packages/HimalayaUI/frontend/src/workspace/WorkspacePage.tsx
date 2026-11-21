@@ -32,6 +32,7 @@ import {
   useTrace,
   useUnbridgeSample,
   useTriggerScan,
+  usePatchExperiment,
   useCheckForNewFilesOnOpen,
   useEditOps,
 } from "../queries";
@@ -175,6 +176,7 @@ export function WorkspacePage(): JSX.Element {
   const scan = useScanState(experimentId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   const triggerScan = useTriggerScan(experimentId);
+  const patchExperiment = usePatchExperiment(experimentId);
   useCheckForNewFilesOnOpen(experimentId);
   const problems = useProblems(experimentId);
   const [problemsOpen, setProblemsOpen] = useState(false);
@@ -862,6 +864,10 @@ export function WorkspacePage(): JSX.Element {
     views: { options: PLOT_VIEWS, current: view, set: setView },
     resetZoom: () => setXDomain(null),
     comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
+    settings:
+      username && experiment.data
+        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: (patch) => patchExperiment.mutate(patch) }
+        : undefined,
     rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
     problems: problemRows.length > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
     removeExperiment:

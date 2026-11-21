@@ -46,7 +46,8 @@ export type OpKind =
   | "custom_index_commit"
   | "bridge_samples" | "unbridge_sample"
   | "add_label" | "remove_label" | "restore_label_suggestion"
-  | "set_tag_color";
+  | "set_tag_color"
+  | "patch_experiment";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style

@@ -176,6 +176,9 @@ export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
 export const deleteExperiment = (id: number, opts?: AuthOpts) =>
   request<{ id: number; deleted: boolean }>("DELETE", `/api/experiments/${id}`, undefined, opts);
 
+export const patchExperiment = (id: number, patch: { name?: string; description?: string | null }, opts?: AuthOpts) =>
+  request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);
+
 export const triggerScan = (id: number, opts?: AuthOpts, force = false) =>
   request<Experiment>("POST", `/api/experiments/${id}/scan`, { force }, opts);
 
