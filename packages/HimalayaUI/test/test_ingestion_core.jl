@@ -211,7 +211,7 @@ end
         # invisible break: the element-type annotation guarding it is the kind of
         # thing a later "simplification" removes with no other CI signal, and the
         # MethodError aborts the whole ingest. Reachable from routes_fs.jl (a
-        # directory with TIFs and no PRPs) and from regroup_experiment!.
+        # directory with TIFs and no PRPs).
         geo_empty, disc_empty = HimalayaUI.derive_geometry(String[], String[])
         @test geo_empty.energy_kev === missing
         @test geo_empty.energy_kev_source == "default"
@@ -741,7 +741,7 @@ end
         @test HimalayaUI.backfill_monitors!(db, exp_id) == 0
     end
 
-    @testset "server boot backfills beam monitors on an upgraded experiment whose rescan is stopped" begin
+    @testset "server boot backfills beam monitors on an upgraded experiment" begin
         dir = mktempdir()
         data_dir     = joinpath(dir, "data")
         analysis_dir = joinpath(dir, "analysis")
@@ -761,12 +761,9 @@ end
         HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
         DBInterface.execute(db, """UPDATE exposures SET transmitted_counts = NULL,
             incident_monitor = NULL, counting_time = NULL, monitors_read = 0""")
-        DBInterface.execute(db, """UPDATE experiments SET ingest_status = 'complete',
-            last_scan_tier = 'stopped' WHERE id = ?""", [exp_id])
+        DBInterface.execute(db, """UPDATE experiments SET ingest_status = 'complete' WHERE id = ?""", [exp_id])
         try
-            HimalayaUI.stop_all_rescan_timers!()
             task = HimalayaUI.boot!(db)
-            @test !haskey(HimalayaUI.RESCAN_TIMERS, exp_id)
             fetch(task)
             rows = Tables.rowtable(DBInterface.execute(db,
                 "SELECT monitors_read, transmitted_counts FROM exposures WHERE experiment_id = ?
@@ -775,7 +772,6 @@ end
             @test isequal([r.transmitted_counts for r in rows], [7001.0, 7002.0])
         finally
             HimalayaUI.stop_gc_timer!()
-            HimalayaUI.stop_all_rescan_timers!()
             HimalayaUI.Oxygen.resetstate()
             HimalayaUI._DB_REF[] = nothing
             SQLite.close(db)
@@ -866,7 +862,7 @@ end
         @test isempty(HimalayaUI.derive_sample_flags([load(5, 1, [clean])]))
     end
 
-    @testset "cheap_change_check" begin
+    @testset "ingest_has_work sees new files" begin
         dir = mktempdir()
         data_dir     = joinpath(dir, "data")
         analysis_dir = joinpath(dir, "analysis")
@@ -891,11 +887,10 @@ end
             data_dir = data_dir, analysis_dir = analysis_dir)
 
         # Before any ingest: 2 files on disk, 0 exposures in DB → changed
-        @test HimalayaUI.cheap_change_check(db, exp_id) == true
+        @test HimalayaUI.ingest_has_work(db, exp_id) == true
 
-        # After ingest: 2 files, 2 exposures → unchanged (true no-op tick)
-        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
-        @test HimalayaUI.cheap_change_check(db, exp_id) == false
+        HimalayaUI.scan_and_group!(db, exp_id)
+        @test HimalayaUI.ingest_has_work(db, exp_id) == false
 
         # Add a new TIF/PRP pair on disk (not yet ingested) → changed again
         new_stem = "HA_3_S0003_0_001"
@@ -905,25 +900,20 @@ end
             detector = "Pilatus 1M", exposure_time = 15.0,
             horizontal_position_mm = 67.3)
         write(joinpath(data_dir, "$new_stem.tif"), "fake tif")
-        @test HimalayaUI.cheap_change_check(db, exp_id) == true
+        @test HimalayaUI.ingest_has_work(db, exp_id) == true
 
-        # Re-scan picks up the new file; check goes quiet again
-        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
-        @test HimalayaUI.cheap_change_check(db, exp_id) == false
+        HimalayaUI.scan_and_group!(db, exp_id)
+        @test HimalayaUI.ingest_has_work(db, exp_id) == false
 
-        # Defensive: a non-existent data dir is treated as "no change" (nothing to ingest),
-        # never an error (the scheduler tick must not crash on a vanished volume).
         bad_db = fresh_db()
         bad_id = HimalayaUI.create_experiment!(bad_db;
             name = "missing-dir", path = dir,
             data_dir = joinpath(dir, "does_not_exist"),
             analysis_dir = analysis_dir)
-        @test HimalayaUI.cheap_change_check(bad_db, bad_id) == false
+        @test HimalayaUI.ingest_has_work(bad_db, bad_id) == false
     end
 
-    @testset "cheap_change_check reads image_pattern from experiment row" begin
-        # Verify that cheap_change_check uses the experiment row's image_pattern
-        # column (not a hardcoded default) so a non-default suffix is counted correctly.
+    @testset "ingest_has_work reads image_pattern from experiment row" begin
         dir = mktempdir()
         data_dir = joinpath(dir, "data")
         mkpath(data_dir)
@@ -939,16 +929,14 @@ end
             image_pattern = "{name}.tiff")
 
         # With the row's image_pattern="{name}.tiff": 2 files, 0 exposures → changed
-        @test HimalayaUI.cheap_change_check(db, exp_id) == true
+        @test HimalayaUI.ingest_has_work(db, exp_id) == true
 
-        # If image_pattern were ignored (defaulted to ".tif"), the count would be 0
-        # and cheap_change_check would return false — prove the pattern is honoured.
         db2 = fresh_db()
         exp_id2 = HimalayaUI.create_experiment!(db2;
             name = "pattern-check-tif", path = dir,
             data_dir = data_dir, analysis_dir = joinpath(dir, "analysis"))
         # image_pattern is NULL → default ".tif" → 0 .tif files → false (nothing to ingest)
-        @test HimalayaUI.cheap_change_check(db2, exp_id2) == false
+        @test HimalayaUI.ingest_has_work(db2, exp_id2) == false
     end
 
     @testset "_assign_sessions" begin
