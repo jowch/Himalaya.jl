@@ -26,7 +26,7 @@ import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -36,9 +36,10 @@ import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
+import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { CommandPalette, type Command } from "./ui/CommandPalette";
 import { useWorkspaceTheme } from "./theme";
-import { PLOT_VIEWS, nextView, usePlotView } from "./plotView";
+import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
@@ -53,7 +54,8 @@ import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
-import { Section } from "./ui/Section";
+import { MainSection, SampleHeading, Section } from "./ui/Section";
+import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -61,7 +63,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Move",
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
-        { keys: ["J", "Shift J"], what: "Next or previous unreviewed sample" },
+        { keys: ["Z"], what: "Next unreviewed sample" },
         { keys: ["/"], what: "Filter samples by name" },
       ],
     },
@@ -70,6 +72,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
         { keys: ["X"], what: "Drop or restore the exposure" },
+        { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
     {
@@ -85,17 +88,8 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
-        { keys: ["Z"], what: "Reset the zoom" },
-        { keys: ["L", "Shift L"], what: "Next or previous view: log, linear, log-log, q²I" },
+        { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["C"], what: "Compare with another sample" },
-        { keys: ["R"], what: "Hide or show comparisons" },
-      ],
-    },
-    {
-      title: "Bridges",
-      rows: [
-        { keys: ["B"], what: "Bridge this sample to another, so they always show together" },
-        { keys: ["Shift B"], what: "Take this sample out of its bridges" },
       ],
     },
     {
@@ -110,6 +104,21 @@ function helpSections(mod: string): HelpSection[] {
 
 const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 const HELP = helpSections(MOD_KEY);
+
+function latticeParam(phase: string): string {
+  return SYMS[phase]?.param ?? "a";
+}
+
+function exposureRows(e: Exposure): [string, string][] {
+  const rows: [string, string][] = [["File", e.filename ?? "—"]];
+  if (e.kind !== "file") rows.push(["Kind", e.kind === "averaged" ? "Averaged" : "Subtracted"]);
+  if (e.exposure_time != null) rows.push(["Exposure", `${e.exposure_time.toFixed(1)} s`]);
+  const i0 = e.incident_monitor;
+  const i2 = e.transmitted_counts;
+  if (i0 != null) rows.push(["I₀", i0.toLocaleString("en-US", { maximumSignificantDigits: 4 })]);
+  if (i2 != null) rows.push(["I signal", Math.round(i2).toLocaleString("en-US")]);
+  return rows;
+}
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -127,6 +136,7 @@ export function WorkspacePage(): JSX.Element {
   const linkedParam = Number(search.get("exposure"));
   const linkedExposure = Number.isInteger(linkedParam) && linkedParam > 0 ? linkedParam : undefined;
   const username = useAppState((s) => s.username);
+  const clearUsername = useAppState((s) => s.clearUsername);
   const experiment = useExperiment(experimentId);
   const corpus = useCorpusSamples();
   const [filter, setFilter] = useState("");
@@ -182,6 +192,7 @@ export function WorkspacePage(): JSX.Element {
   const [refsOn, setRefsOn] = useState(true);
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
@@ -363,18 +374,23 @@ export function WorkspacePage(): JSX.Element {
   const indexSeries: IndexSeries[] = useMemo(() => {
     if (!xExtent) return [];
     if (draft && draftFit) {
-      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, r2: draftFit.r2 }];
+      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, param: latticeParam(draft.phase), r2: draftFit.r2 }];
     }
     const hovered = candidates.find((c) => c.id === hoverId);
     const shown = hovered ? [hovered] : candidates.filter((c) => assigned.has(c.id));
     return shown.map((c) => {
       const fit = storedFit(c, xExtent);
-      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, r2: c.r_squared ?? fit.r2 };
+      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, param: latticeParam(c.phase), r2: c.r_squared ?? fit.r2 };
     });
   }, [draft, draftFit, xExtent, candidates, hoverId, assigned]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key === "0" && !isTyping(ev.target) && !inOverlay(ev.target)) {
+        ev.preventDefault();
+        setXDomain(null);
+        return;
+      }
       if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "k") {
         ev.preventDefault();
         setHelpOpen(false);
@@ -425,30 +441,15 @@ export function WorkspacePage(): JSX.Element {
         case "ArrowUp":
           step(-1);
           break;
-        case "j":
-        case "J": {
-          const nid = nextUnreviewed(visible, sampleId, ev.shiftKey ? -1 : 1);
-          if (nid !== undefined) goSample(nid);
-          break;
-        }
         case "ArrowRight":
         case "ArrowLeft": {
           const eid = stepExposure(exposureList, exposure?.id, ev.key === "ArrowRight" ? 1 : -1);
           if (eid !== undefined) setExposureId(eid);
           break;
         }
-        case "l":
-        case "L":
-          setView(nextView(view, ev.shiftKey ? -1 : 1));
-          break;
         case "c":
         case "C":
           setPicking(true);
-          break;
-        case "b":
-        case "B":
-          if (ev.shiftKey) leaveBridges();
-          else openBridge();
           break;
         case "i":
         case "I":
@@ -458,12 +459,15 @@ export function WorkspacePage(): JSX.Element {
           setHelpOpen(true);
           break;
         case "z":
-        case "Z":
-          setXDomain(null);
+        case "Z": {
+          const nid = nextUnreviewed(visible, sampleId, 1);
+          if (nid !== undefined) goSample(nid);
           break;
-        case "r":
-        case "R":
-          setRefsOn((v) => !v);
+        }
+        case " ":
+          if (ev.repeat) break;
+          if (exposure && imageUrl(exposure, false)) setBigOpen(true);
+          else handled = false;
           break;
         case "x":
         case "X":
@@ -483,10 +487,11 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, openBridge, leaveBridges, view, setView]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
 
+  const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
+  const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
@@ -500,24 +505,25 @@ export function WorkspacePage(): JSX.Element {
     {
       id: "next-unreviewed",
       label: "Next unreviewed sample",
-      shortcut: "J",
+      shortcut: "Z",
       run: () => {
         const nid = nextUnreviewed(visible, sampleId, 1);
         if (nid !== undefined) goSample(nid);
       },
     },
     { id: "compare", label: "Compare with a sample", shortcut: "C", run: () => setPicking(true) },
+    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
     ...(username && sample
       ? [
-          { id: "bridge", label: `Bridge ${sample.name} to a sample`, shortcut: "B", run: openBridge },
-          ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, shortcut: "Shift B", run: leaveBridges }] : []),
+          { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
+          ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
         ]
       : []),
-    { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", shortcut: "R", run: () => setRefsOn((v) => !v) },
-    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, shortcut: "L", run: () => setView(o.view) })),
-    { id: "zoom", label: "Reset zoom", shortcut: "Z", run: () => setXDomain(null) },
+    ...PLOT_VIEWS.map((o) => ({ id: `view-${o.view}`, label: `Plot ${o.name}${o.view === view ? ", current view" : ""}`, run: () => setView(o.view) })),
+    { id: "zoom", label: "Reset zoom", shortcut: `${MOD_KEY} 0`, run: () => setXDomain(null) },
     { id: "theme", label: theme.isDark ? "Switch to light theme" : "Switch to dark theme", run: theme.toggle },
     ...(theme.theme === "system" ? [] : [{ id: "theme-system", label: "Use system theme", run: theme.followSystem }]),
+    { id: "switch-user", label: username ? `Switch user, signed in as ${username}` : "Sign in", run: clearUsername },
     { id: "custom", label: "Custom index", shortcut: "I", run: openCustom },
     ...(username ? [{ id: "form-factor", label: isFormFactor ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: toggleFormFactor }] : []),
     { id: "help", label: "Keyboard shortcuts", shortcut: "?", run: () => setHelpOpen(true) },
@@ -530,6 +536,18 @@ export function WorkspacePage(): JSX.Element {
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {bigOpen && exposure && (
+            <DetectorOverlay
+              exposures={exposureList}
+              currentId={exposure.id}
+              onStep={(dir) => {
+                const eid = stepExposure(exposureList, exposure.id, dir);
+                if (eid !== undefined) setExposureId(eid);
+              }}
+              onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
+              onClose={() => setBigOpen(false)}
+            />
+          )}
           {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
         </>
       }
@@ -546,49 +564,51 @@ export function WorkspacePage(): JSX.Element {
       main={
         sample ? (
           <>
-            <Section title={sample.name} aside={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}>
-              <div className="relative mb-2">
-                <CompareBar
-                  chips={activeRefs.map((rid) => ({
-                    id: rid,
-                    name: sampleNames.get(rid) ?? `Sample ${rid}`,
-                    color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
-                    scale: scales.get(rid),
-                    bridged: bridged.includes(rid),
-                  }))}
-                  subtractId={subRef}
-                  hidden={!refsOn}
-                  onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
-                  onRemove={onRemoveChip}
-                  onAdd={() => setPicking(true)}
+            <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
+            <div className="relative px-3.5 py-1">
+              <CompareBar
+                chips={activeRefs.map((rid) => ({
+                  id: rid,
+                  name: sampleNames.get(rid) ?? `Sample ${rid}`,
+                  color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
+                  scale: scales.get(rid),
+                  bridged: bridged.includes(rid),
+                }))}
+                subtractId={subRef}
+                hidden={!refsOn}
+                onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
+                onRemove={onRemoveChip}
+                onAdd={() => setPicking(true)}
+              />
+              {picking && (
+                <ComparePicker
+                  samples={pickable}
+                  onPick={(rid) => {
+                    setRefs((r) => addCompare(r, rid));
+                    if (subRef === undefined) setSubRef(rid);
+                    setRefsOn(true);
+                  }}
+                  onClose={() => setPicking(false)}
                 />
-                {picking && (
-                  <ComparePicker
-                    samples={pickable}
-                    onPick={(rid) => {
-                      setRefs((r) => addCompare(r, rid));
-                      if (subRef === undefined) setSubRef(rid);
-                      setRefsOn(true);
-                    }}
-                    onClose={() => setPicking(false)}
-                  />
-                )}
-                {bridging && (
-                  <ComparePicker
-                    samples={bridgePickable}
-                    label={`Bridge ${sample.name} to a sample`}
-                    inputLabel="Find a sample to bridge to"
-                    onPick={(rid) => {
-                      bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
-                      setRefsOn(true);
-                    }}
-                    onClose={() => setBridging(false)}
-                  />
-                )}
-              </div>
+              )}
+              {bridging && (
+                <ComparePicker
+                  samples={bridgePickable}
+                  label={`Bridge ${sample.name} to a sample`}
+                  inputLabel="Find a sample to bridge to"
+                  onPick={(rid) => {
+                    bridgeSamples.mutate({ sampleId: sample.id, toSampleId: rid });
+                    setRefsOn(true);
+                  }}
+                  onClose={() => setBridging(false)}
+                />
+              )}
+            </div>
+            <div className="mx-3.5">
               <PlotCard>
                 <WorkspacePlot
                   trace={trace.data}
+                  {...(trace.isError ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching } : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}
@@ -613,13 +633,15 @@ export function WorkspacePage(): JSX.Element {
                   />
                 )}
               </PlotCard>
-            </Section>
-            <Section title="Exposures">
+            </div>
+            <MainSection title="Exposures" hint={keptHint}>
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
-            </Section>
+            </MainSection>
           </>
         ) : (
-          <Note>{emptyMessage}</Note>
+          <div className="px-3.5 py-3">
+            <Note>{emptyMessage}</Note>
+          </div>
         )
       }
       tools={
@@ -640,7 +662,7 @@ export function WorkspacePage(): JSX.Element {
               />
             </Section>
           ) : (
-            <Section title="Phase">
+            <Section title="Call">
               {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
               <CandidateList
                 candidates={candidates}
@@ -654,18 +676,11 @@ export function WorkspacePage(): JSX.Element {
             </Section>
           )}
           <Section title="Indexing">
-            <IndexingPlot series={indexSeries} empty="Hover a candidate or tick one to see its fit." />
+            <IndexingPlot series={indexSeries} />
           </Section>
           {exposure && (
-            <Section title="Exposure">
-              <MetaList
-                rows={[
-                  ["File", exposure.filename ?? "—"],
-                  ["Kind", exposure.kind === "file" ? "Raw" : exposure.kind === "averaged" ? "Averaged" : "Subtracted"],
-                  ["Status", exposure.status === "rejected" ? "Dropped" : "Kept"],
-                  ["Peaks", String(activePeaks)],
-                ]}
-              />
+            <Section title="Exposure" aside="← →">
+              <MetaList rows={exposureRows(exposure)} />
             </Section>
           )}
         </>

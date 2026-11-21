@@ -13,8 +13,8 @@ interface Props {
 
 function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   const st = sampleStatus(s);
-  if (st.kind === "phase") return <span data-testid="workspace-status" className="text-xs text-ink-soft">{st.phase}</span>;
-  if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-soft">Form factor</span>;
+  if (st.kind === "phase") return <span data-testid="workspace-status" className="text-xs font-semibold text-ink">{st.phase}</span>;
+  if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-faint">Form factor</span>;
   return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
 }
 
@@ -25,7 +25,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
   }, [currentId]);
   return (
     <>
-      <div className="border-b border-hair p-2">
+      <div className="border-b border-hair px-2.5 pb-2 pt-2.5">
         <input
           id="workspace-filter"
           type="search"
@@ -47,10 +47,10 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
           }}
           placeholder="Filter  /"
           aria-label="Filter samples"
-          className="w-full rounded-sm border border-hair bg-plate px-2 py-1 text-body placeholder:text-ink-faint focus:outline-2 focus:outline-accent"
+          className="w-full rounded-sm border border-hair bg-plate px-2 py-[5px] text-base text-ink placeholder:text-ink-faint focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
         />
       </div>
-      <ul className="min-h-0 flex-1 overflow-y-auto py-1" data-testid="workspace-samples">
+      <ul className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
         {samples.map((s) => {
           const cur = s.id === currentId;
           const bridges = bridgeCounts?.get(s.id) ?? 0;
@@ -63,8 +63,8 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, bridg
                 data-sample-id={s.id}
                 onClick={() => onPick(s.id)}
                 className={
-                  "flex w-full items-center justify-between gap-2 px-3 py-1 text-left text-body " +
-                  (cur ? "bg-row-cursor font-semibold" : "hover:bg-paper-sunk")
+                  "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base font-semibold text-ink " +
+                  (cur ? "bg-row-cursor shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-paper-sunk")
                 }
               >
                 <span className="flex min-w-0 items-center gap-2">

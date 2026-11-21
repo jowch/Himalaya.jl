@@ -37,6 +37,8 @@ interface Props {
   onAddPeak?: (q: number) => void;
   onClickPeak?: (peak: PeakRef) => void;
   height?: number;
+  onRetry?: () => void;
+  retrying?: boolean;
 }
 
 interface Geometry {
@@ -85,6 +87,8 @@ export function WorkspacePlot({
   onAddPeak,
   onClickPeak,
   height = PLOT_HEIGHT,
+  onRetry,
+  retrying = false,
 }: Props): JSX.Element {
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
@@ -109,6 +113,17 @@ export function WorkspacePlot({
     },
     [onXDomain],
   );
+
+  if (!trace && onRetry) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 text-base text-ink-soft" style={{ height }} role="alert" data-testid="workspace-trace-error">
+        <span>Couldn't load this sample</span>
+        <button type="button" onClick={onRetry} disabled={retrying} className="rounded-sm border border-hair bg-paper px-2 py-0.5 text-sm text-ink hover:border-hair-strong disabled:text-ink-faint">
+          {retrying ? "Retrying…" : "Retry"}
+        </button>
+      </div>
+    );
+  }
 
   if (!trace || trace.q.length < 2) {
     return <div className="rounded-sm bg-paper-sunk" style={{ height }} data-testid="workspace-trace-empty" />;

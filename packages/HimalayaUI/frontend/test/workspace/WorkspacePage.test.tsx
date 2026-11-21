@@ -9,6 +9,7 @@ type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
 const calls: Call[] = [];
 
+const traceRefetch = vi.fn();
 const state = {
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
@@ -16,6 +17,8 @@ const state = {
   assignment: undefined as Assignment | undefined,
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
+  traceError: false,
+  traceFetching: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
@@ -33,7 +36,7 @@ vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
   useExperiment: () => ({ data: { id: 1, name: "BL-19" } }),
   useExposures: () => ({ data: state.exposures }),
-  useTrace: () => ({ data: state.trace }),
+  useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
   usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
@@ -90,8 +93,9 @@ function clickPlotAt(q: number, detail = 1): void {
   fireEvent.click(screen.getByTestId("workspace-trace"), { clientX: px, clientY: 100, detail });
 }
 
+const clearUsername = vi.fn();
 vi.mock("../../src/state", () => ({
-  useAppState: (sel: (s: { username: string | undefined }) => unknown) => sel({ username: state.username }),
+  useAppState: (sel: (s: { username: string | undefined; clearUsername: () => void }) => unknown) => sel({ username: state.username, clearUsername }),
 }));
 
 function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): CorpusSample {
@@ -155,6 +159,8 @@ beforeEach(() => {
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.trace = undefined;
+  state.traceError = false;
+  state.traceFetching = false;
   state.peaks = [];
   state.compareTraces = new Map();
   state.bridges = [];
@@ -169,6 +175,99 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("2 of 4 reviewed");
   });
 
+  it("switches user from the palette, which names who is signed in", () => {
+    clearUsername.mockClear();
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    fireEvent.change(input, { target: { value: "switch user" } });
+    expect(screen.getAllByRole("option").some((o) => /Switch user, signed in as jc/.test(o.textContent ?? ""))).toBe(true);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(clearUsername).toHaveBeenCalledTimes(1);
+  });
+
+  it("says when the trace failed to load and retries on request", () => {
+    state.traceError = true;
+    traceRefetch.mockClear();
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByText("Couldn't load this sample")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(traceRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Retry while the retry is in flight", () => {
+    state.traceError = true;
+    state.traceFetching = true;
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("button", { name: "Retrying…" })).toBeDisabled();
+  });
+
+  it("holding Space opens the detector view once and does not close it", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, image_path: "/x.tif" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: " ", repeat: true });
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+  });
+
+  it("Space enlarges the shown frame's detector image, and Space or Esc closes it", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, image_path: "/x.tif", image_version: "7" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    const dialog = screen.getByRole("dialog", { name: "Detector image" });
+    expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("src")).toBe("/api/exposures/101/image?v=7");
+    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 2 · f101.dat");
+    fireEvent.keyDown(dialog, { key: " " });
+    expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+  });
+
+  it("flips through frames inside the enlarged view and drops one without closing it", () => {
+    state.exposures = [
+      exposure(100, { image_path: "/a.tif" }),
+      exposure(101, { selected: true, image_path: "/b.tif" }),
+      exposure(102, { image_path: "/c.tif" }),
+    ];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    const dialog = screen.getByRole("dialog", { name: "Detector image" });
+    expect(dialog.querySelectorAll("img")).toHaveLength(3);
+    const caption = screen.getByTestId("workspace-detector-caption");
+    expect(caption).toHaveTextContent("Frame 2 of 3");
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    expect(caption).toHaveTextContent("Frame 3 of 3 · f102.dat");
+    expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("data-exposure-id")).toBe("102");
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    expect(caption).toHaveTextContent("Frame 1 of 3");
+    fireEvent.keyDown(dialog, { key: "x" });
+    expect(calls.filter((c) => c.hook === "status").map((c) => c.arg)).toEqual([{ exposureId: 100, status: "rejected" }]);
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+    expect(currentFrame()).toBe("Frame 1");
+  });
+
+  it("does not drop from the enlarged view before a user is set", () => {
+    state.username = undefined;
+    state.exposures = [exposure(100, { selected: true, image_path: "/a.tif" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: "x" });
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
+  });
+
+  it("Space does nothing on a frame without a detector image", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
+  });
+
+  it("links the Himalaya brand back to the corpus", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments/1/corpus");
+  });
+
   it("updates the list and the count when the corpus status changes", () => {
     const { rerender } = renderAt("/experiments/1/workspace/11");
     state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m" } : s));
@@ -178,12 +277,26 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("3 of 4 reviewed");
   });
 
-  it("J jumps to the next unreviewed sample and Shift+J goes back", () => {
+  it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
     renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "j" });
+    fireEvent.keyDown(window, { key: "z" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
-    fireEvent.keyDown(window, { key: "J", shiftKey: true });
-    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/13");
+  });
+
+  it("J, L and R are no longer shortcuts", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(screen.getByRole("dialog").querySelector("[data-sample-id='11']")!);
+    expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "j" });
+    fireEvent.keyDown(window, { key: "l" });
+    fireEvent.keyDown(window, { key: "r" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+    expect(currentView()).toBe("Log");
+    expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "A2, hidden" })).toBeNull();
   });
 
   it("arrow down steps to the next sample in the list", () => {
@@ -231,6 +344,22 @@ describe("WorkspacePage", () => {
     expect(calls[1]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
   });
 
+  it("every exposure card has its own Drop button, which drops that frame and shows it", () => {
+    renderAt("/experiments/1/workspace/10");
+    const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
+    fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 1");
+  });
+
+  it("a dropped card offers Restore and the header counts the kept frames", () => {
+    state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    expect(within(within(strip).getAllByRole("listitem")[0]!).getByRole("button", { name: "Restore" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 kept")).toBeInTheDocument();
+  });
+
   it("refuses a phase call on a dropped frame and says why", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
@@ -257,7 +386,7 @@ describe("WorkspacePage", () => {
     dialog.appendChild(button);
     document.body.appendChild(dialog);
     fireEvent.keyDown(button, { key: "x" });
-    fireEvent.keyDown(button, { key: "j" });
+    fireEvent.keyDown(button, { key: "z" });
     expect(calls).toEqual([]);
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
     dialog.remove();
@@ -337,7 +466,7 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("L steps through log, linear, log-log and q²I, Shift L steps back, and the palette picks one", () => {
+  it("the palette steps through log, linear, log-log and q²I", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
     const ticks = (): string =>
@@ -346,16 +475,14 @@ describe("WorkspacePage", () => {
         .join(" ");
     const logTicks = ticks();
     expect(currentView()).toBe("Log");
-    fireEvent.keyDown(window, { key: "l" });
+    pickView("Plot Linear");
     expect(currentView()).toBe("Linear");
     expect(ticks()).not.toBe(logTicks);
-    fireEvent.keyDown(window, { key: "l" });
+    pickView("Plot Log-log");
     expect(currentView()).toBe("Log-log");
-    fireEvent.keyDown(window, { key: "l" });
+    pickView("Plot q²I");
     expect(currentView()).toBe("q²I (Kratky)");
     expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
-    fireEvent.keyDown(window, { key: "L", shiftKey: true });
-    expect(currentView()).toBe("Log-log");
     pickView("Plot Log");
     expect(currentView()).toBe("Log");
     expect(ticks()).toBe(logTicks);
@@ -454,7 +581,7 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveTextContent("×0.500 matched");
   });
 
-  it("clicking the subtracted chip stops subtracting, R hides comparisons, and × removes one", () => {
+  it("clicking the subtracted chip stops subtracting, the palette hides comparisons, and × removes one", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
@@ -464,11 +591,11 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "A2" }));
     expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "r" });
+    pickView("Hide comparisons");
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
     expect(screen.getByRole("button", { name: "A2, hidden" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "r" });
+    pickView("Show comparisons");
     fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
     expect(screen.queryByTestId("workspace-subtraction")).toBeNull();
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
@@ -517,7 +644,7 @@ describe("WorkspacePage", () => {
     const full = xTicks();
     for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 500 });
     expect(xTicks()).not.toBe(full);
-    fireEvent.keyDown(window, { key: "z" });
+    fireEvent.keyDown(window, { key: "0", ctrlKey: true });
     expect(xTicks()).toBe(full);
     for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 540 });
     const q = Array.from({ length: 21 }, (_, i) => 0.01 + i * 0.002);
@@ -543,7 +670,7 @@ describe("WorkspacePage", () => {
     const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
     expect(document.activeElement).toBe(help);
     fireEvent.keyDown(help, { key: "x" });
-    fireEvent.keyDown(help, { key: "j" });
+    fireEvent.keyDown(help, { key: "z" });
     fireEvent.keyDown(help, { key: "ArrowDown" });
     expect(calls).toEqual([]);
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
@@ -570,7 +697,7 @@ describe("WorkspacePage", () => {
     const input = screen.getByRole("combobox", { name: "Command or sample" });
     fireEvent.change(input, { target: { value: "reset zoom" } });
     const option = screen.getByRole("option", { name: /Reset zoom/ });
-    expect(option.querySelector("kbd")?.textContent).toBe("Z");
+    expect(option.querySelector("kbd")?.textContent).toBe("Ctrl 0");
     expect(input.getAttribute("aria-activedescendant")).toBe(option.id);
     fireEvent.change(input, { target: { value: "go" } });
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -702,7 +829,7 @@ describe("WorkspacePage", () => {
     ];
     renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-indexing");
-    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m 100.0 Å · R² 0.9900 · 2 of 2 on peaks");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m a = 100.0 Å R² 0.9900 2/2 on peaks");
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
   });
 
@@ -722,6 +849,30 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-indexing-fit")).toBeNull();
   });
 
+  it("draws empty indexing axes before any candidate is hovered or ticked", () => {
+    state.assignment = { exposure_id: 101, state: "indexed", members: [] };
+    renderAt("/experiments/1/workspace/10");
+    const plot = screen.getByTestId("workspace-indexing");
+    expect(plot.querySelector("svg")).not.toBeNull();
+    expect(within(plot).queryByTestId("workspace-indexing-fit")).toBeNull();
+  });
+
+  it("titles the phase list Call and the exposure details Exposure", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
+  });
+
+  it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
+    renderAt("/experiments/1/workspace/10");
+    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const text = section.textContent ?? "";
+    expect(text).toContain("Exposure10.0 s");
+    expect(text).toContain("I₀1.501");
+    expect(text).toContain("I signal7,798");
+  });
+
   it("the indexing plot follows the custom index while it is open", () => {
     state.trace = makeTrace(1);
     const a = (2 * Math.PI * Math.SQRT2) / 0.1;
@@ -730,7 +881,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 9");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2 of 9 on peaks");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/9 on peaks");
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });
@@ -870,7 +1021,7 @@ describe("WorkspacePage", () => {
     state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
     state.indices = [{ ...index(2, "Pn3m", 0.9), peaks: [{ peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 }] }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1 of 2 on peaks");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1/2 on peaks");
   });
   it("Enter on a focused button outside the custom panel does not add the index", () => {
     renderAt("/experiments/1/workspace/10");
@@ -948,10 +1099,10 @@ describe("WorkspacePage", () => {
     expect(screen.queryByText(/^minus /)).toBeNull();
   });
 
-  it("B opens a bridge picker that leaves out this sample and its bridges, and Enter bridges to the pick", () => {
+  it("the palette opens a bridge picker that leaves out this sample and its bridges, and Enter bridges to the pick", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "b" });
+    pickView("Bridge A1 to a sample");
     const picker = screen.getByRole("dialog", { name: "Bridge A1 to a sample" });
     expect(within(picker).queryByText("A1")).toBeNull();
     expect(within(picker).queryByText("A3")).toBeNull();
@@ -962,12 +1113,12 @@ describe("WorkspacePage", () => {
     expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13 } });
   });
 
-  it("Shift B takes the open sample out of its bridges, and × on a bridged chip takes that sample out", () => {
+  it("the palette takes the open sample out of its bridges, and × on a bridged chip takes that sample out", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "B", shiftKey: true });
+    pickView("Take A1 out of its bridges");
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 10 } });
     fireEvent.click(screen.getByRole("button", { name: "Remove bridge to A3" }));
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 12 } });
@@ -988,23 +1139,32 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "r" });
+    pickView("Hide comparisons");
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
-    fireEvent.keyDown(window, { key: "b" });
+    pickView("Bridge A1 to a sample");
     const input = within(screen.getByRole("dialog")).getByLabelText("Find a sample to bridge to");
     fireEvent.change(input, { target: { value: "a4" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(1);
   });
 
-  it("Shift B does nothing on a sample without bridges, and B does nothing before a user is set", () => {
+  it("B is not a shortcut, the palette offers no unbridging without bridges, and no bridging before a user is set", () => {
+    const options = (): string[] => {
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "bridge" } });
+      const labels = screen.queryAllByRole("option").map((o) => o.textContent ?? "");
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      return labels;
+    };
     const first = renderAt("/experiments/1/workspace/11");
+    fireEvent.keyDown(window, { key: "b" });
     fireEvent.keyDown(window, { key: "B", shiftKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls.filter((c) => c.hook === "unbridge")).toHaveLength(0);
+    expect(options()).toEqual(["Bridge A2 to a sample"]);
     first.unmount();
     state.username = undefined;
     renderAt("/experiments/1/workspace/11");
-    fireEvent.keyDown(window, { key: "b" });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(options()).toEqual([]);
   });
 });
