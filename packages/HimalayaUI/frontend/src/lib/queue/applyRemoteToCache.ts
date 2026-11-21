@@ -91,6 +91,7 @@ export function invalidateIngestFrameCache(
     qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.problems(expId) });
     qc.invalidateQueries({ queryKey: queryKeys.labels(expId) });
+    qc.invalidateQueries({ predicate: (q) => q.queryKey[2] === "trace" && q.state.status === "error" });
   }
 }
 
