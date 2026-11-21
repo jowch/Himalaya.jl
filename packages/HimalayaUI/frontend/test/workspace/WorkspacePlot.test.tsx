@@ -204,6 +204,13 @@ describe("WorkspacePlot", () => {
     expect(onClickPeak.mock.calls).toEqual([[{ id: 1, source: "auto" }], [{ id: 1, source: "manual" }]]);
   });
 
+  it("renders an auto and a manual peak that share an id without a duplicate key", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={() => {}} />);
+    expect(error.mock.calls.filter((c) => String(c[0]).includes("same key"))).toEqual([]);
+    error.mockRestore();
+  });
+
   it("a click reports the source of the peak it lands on when an auto and a manual peak share an id", () => {
     const onClickPeak = vi.fn();
     render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={onClickPeak} />);

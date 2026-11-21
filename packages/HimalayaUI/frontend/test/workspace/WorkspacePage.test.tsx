@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, SampleBridge, Trace } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import { peakList } from "../fixtures/peaks";
 
@@ -18,6 +18,7 @@ const state = {
   trace: undefined as Trace | undefined,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
+  bridges: [] as SampleBridge[],
 };
 
 function recorder(hook: string) {
@@ -36,6 +37,9 @@ vi.mock("../../src/queries", () => ({
   usePeaks: () => ({ data: state.peaks }),
   useIndices: () => ({ data: state.indices }),
   useAssignment: () => ({ data: state.assignment }),
+  useBridges: () => ({ data: state.bridges }),
+  useBridgeSamples: recorder("bridge"),
+  useUnbridgeSample: recorder("unbridge"),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetAssignmentState: recorder("state"),
@@ -153,6 +157,7 @@ beforeEach(() => {
   state.trace = undefined;
   state.peaks = [];
   state.compareTraces = new Map();
+  state.bridges = [];
 });
 
 describe("WorkspacePage", () => {
@@ -912,5 +917,78 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-form-factor")).toBeDisabled();
     fireEvent.keyDown(window, { key: "0" });
     expect(calls).toEqual([]);
+  });
+  it("draws bridged samples on the plot as soon as the sample opens, and marks them in the list", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='12']")?.getAttribute("d")).toMatch(/^M/);
+    expect(screen.getByRole("button", { name: "Remove bridge to A3" })).toBeInTheDocument();
+    const list = screen.getByTestId("workspace-samples");
+    expect(list.querySelector("[data-sample-id='10'] [data-bridged]")).toHaveTextContent("1 bridge");
+    expect(list.querySelector("[data-sample-id='12'] [data-bridged]")).not.toBeNull();
+    expect(list.querySelector("[data-sample-id='11'] [data-bridged]")).toBeNull();
+    expect(screen.queryByText(/^minus /)).toBeNull();
+  });
+
+  it("B opens a bridge picker that leaves out this sample and its bridges, and Enter bridges to the pick", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "b" });
+    const picker = screen.getByRole("dialog", { name: "Bridge A1 to a sample" });
+    expect(within(picker).queryByText("A1")).toBeNull();
+    expect(within(picker).queryByText("A3")).toBeNull();
+    const input = within(picker).getByLabelText("Find a sample to bridge to");
+    fireEvent.change(input, { target: { value: "a4" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13 } });
+  });
+
+  it("Shift B takes the open sample out of its bridges, and × on a bridged chip takes that sample out", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "B", shiftKey: true });
+    expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 10 } });
+    fireEvent.click(screen.getByRole("button", { name: "Remove bridge to A3" }));
+    expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 12 } });
+  });
+
+  it("a bridged sample can be the subtraction reference", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A3" }));
+    expect(screen.getByTestId("workspace-subtraction")).toBeInTheDocument();
+    expect(screen.getByText("minus A3")).toBeInTheDocument();
+  });
+
+  it("bridging while comparisons are hidden shows them again", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(3)]]);
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "r" });
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
+    fireEvent.keyDown(window, { key: "b" });
+    const input = within(screen.getByRole("dialog")).getByLabelText("Find a sample to bridge to");
+    fireEvent.change(input, { target: { value: "a4" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("workspace-compares").children).toHaveLength(1);
+  });
+
+  it("Shift B does nothing on a sample without bridges, and B does nothing before a user is set", () => {
+    const first = renderAt("/experiments/1/workspace/11");
+    fireEvent.keyDown(window, { key: "B", shiftKey: true });
+    expect(calls.filter((c) => c.hook === "unbridge")).toHaveLength(0);
+    first.unmount();
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/11");
+    fireEvent.keyDown(window, { key: "b" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
