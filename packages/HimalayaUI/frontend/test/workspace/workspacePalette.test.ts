@@ -141,6 +141,13 @@ describe("workspacePalette", () => {
     expect(save).toHaveBeenCalledWith({ name: "Beamtime 12" });
   });
 
+  it("trims stray whitespace off a stored name when it is saved unchanged", () => {
+    const save = vi.fn();
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11 ", description: "", save } }));
+    pages.settings!.items[0]!.form!().submit({ v: "Beamtime 11 " });
+    expect(save).toHaveBeenCalledWith({ name: "Beamtime 11" });
+  });
+
   it("clears the description to null when it is emptied", () => {
     const save = vi.fn();
     const { pages } = workspacePalette(input({ settings: { name: "B", description: "Lipid screen", save } }));

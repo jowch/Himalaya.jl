@@ -99,7 +99,7 @@ function textForm(title: string, value: string, check: (v: string) => string | u
     fields: [{ id: "v", label: title, kind: "text", value, check }],
     submit: (v) => {
       const next = (v.v ?? "").trim();
-      if (next !== value.trim()) save(next);
+      if (next !== value) save(next);
     },
   };
 }

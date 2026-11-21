@@ -22,6 +22,7 @@ import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
+import { patchExperimentMutator } from "./lib/queue/mutators/experiment";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -375,15 +376,7 @@ export function useTriggerScan(experimentId: number) {
 
 export function usePatchExperiment(experimentId: number) {
   const username = useAppState((s) => s.username);
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (patch: { name?: string; description?: string | null }) =>
-      api.patchExperiment(experimentId, patch, buildAuthOpts(username, CLIENT_ID)),
-    onSuccess: (exp) => {
-      qc.setQueryData(queryKeys.experiment(experimentId), exp);
-      void qc.invalidateQueries({ queryKey: queryKeys.experiments });
-    },
-  });
+  return useQueueMutation(patchExperimentMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 export function useDeleteExperiment(experimentId: number) {

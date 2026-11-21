@@ -894,7 +894,7 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
   });
 
-  it("the palette's Settings page renames the experiment and clears its description", () => {
+  it("the palette's Settings page renames the experiment and sets its description", () => {
     renderAt("/experiments/1/workspace/10");
     runFromPalette("settings", "name");
     const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
@@ -903,6 +903,12 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(name, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { name: "BL-20" } }]);
+    calls.length = 0;
+    runFromPalette("settings", "description");
+    const description = within(screen.getByRole("dialog", { name: "Description" })).getByRole("textbox", { name: "Description" });
+    fireEvent.change(description, { target: { value: "Lipid screen" } });
+    fireEvent.keyDown(description, { key: "Enter" });
+    expect(calls).toEqual([{ hook: "patchExperiment", boundTo: 1, arg: { description: "Lipid screen" } }]);
   });
 
   it("offers no Settings before a user is set", () => {
