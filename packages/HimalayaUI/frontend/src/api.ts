@@ -348,8 +348,8 @@ export const validatePath = (path: string) =>
 // Samples
 export const listSamples    = (experiment_id: number) =>
   request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
-export const listCorpusSamples = (): Promise<CorpusSample[]> =>
-  request<CorpusSample[]>("GET", "/api/samples");
+export const listCorpusSamples = (experimentId?: number): Promise<CorpusSample[]> =>
+  request<CorpusSample[]>("GET", experimentId === undefined ? "/api/samples" : `/api/samples?experiment_id=${experimentId}`);
 export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
   request<Sample>("PATCH", `/api/samples/${id}`, patch, opts);
 export const addSampleTag   = (id: number, key: string, value: string, opts?: AuthOpts) =>

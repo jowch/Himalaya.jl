@@ -17,7 +17,7 @@ async function mockApp(page: Page, answers: Answer[]): Promise<{ connections: ()
   let connections = 0;
   let listed = 0;
   await page.route("**/api/users", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
-  await page.route("**/api/samples", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments", (r) => {
     listed += 1;
     const afterRestart = listed > 1 && connections > 1;

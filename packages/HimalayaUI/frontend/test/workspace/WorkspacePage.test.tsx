@@ -12,6 +12,7 @@ type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks
 const calls: Call[] = [];
 
 const traceRefetch = vi.fn();
+const corpusRequests: number[] = [];
 const state = {
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
@@ -44,7 +45,10 @@ function recorder(hook: string) {
 }
 
 vi.mock("../../src/queries", () => ({
-  useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
+  useExperimentCorpusSamples: (experimentId: number) => {
+    corpusRequests.push(experimentId);
+    return { data: state.corpus, isLoading: false };
+  },
   useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
   useLoads: () => ({ data: state.loads }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
@@ -226,7 +230,9 @@ describe("WorkspacePage", () => {
   });
 
   it("lists only this experiment's samples and marks unreviewed ones", () => {
+    corpusRequests.length = 0;
     renderAt("/experiments/1/workspace/10");
+    expect(new Set(corpusRequests)).toEqual(new Set([1]));
     const list = screen.getByTestId("workspace-samples");
     expect(within(list).queryByText("other")).toBeNull();
     expect(within(list).getAllByRole("img", { name: "Unreviewed" })).toHaveLength(2);

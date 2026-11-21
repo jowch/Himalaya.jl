@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanContent, scanLegacyImports } from "../scripts/check-design.mjs";
+import { scanContent, scanLegacyImports, scanUnpairedFontSize } from "../scripts/check-design.mjs";
 
 // Helper: collect the set of rule ids a single line trips (outside ui/).
 function rulesFor(line: string): string[] {
@@ -146,3 +146,26 @@ describe("isExcluded via scanContent — print/detector authoring", () => {
   });
 });
 
+
+describe("scanUnpairedFontSize", () => {
+  it("flags a pixel font size with no line height in the same class string, even in src/print/ui", () => {
+    const v = scanUnpairedFontSize("print/ui/Chip.tsx", `const c = "font-mono text-[11px] font-bold";`);
+    expect(v).toEqual([{ rule: "font-size-needs-line-height", file: "print/ui/Chip.tsx", line: 1, text: "text-[11px]" }]);
+  });
+
+  it("accepts a pixel font size paired with a leading utility", () => {
+    expect(scanUnpairedFontSize("print/ui/Chip.tsx", `const c = "text-[11px] leading-[16px]";`)).toEqual([]);
+  });
+
+  it("flags an inline fontSize without lineHeight on the line of fontSize", () => {
+    const src = `<span\n  style={{\n    padding: "2px",\n    fontSize: "10px",\n  }}\n/>`;
+    expect(scanUnpairedFontSize("print/ui/Pill.tsx", src)).toEqual([
+      { rule: "font-size-needs-line-height", file: "print/ui/Pill.tsx", line: 4, text: "fontSize" },
+    ]);
+  });
+
+  it("accepts an inline fontSize with lineHeight, and SVG fontSize attributes", () => {
+    const src = `<span style={{ fontSize: "10px", lineHeight: "15px" }} /><text fontSize={10} />`;
+    expect(scanUnpairedFontSize("print/plot/Chart.tsx", src)).toEqual([]);
+  });
+});

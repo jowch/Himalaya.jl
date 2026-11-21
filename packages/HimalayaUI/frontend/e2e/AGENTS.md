@@ -54,3 +54,4 @@ See the live specs for the full pattern.
 - Don't use `localhost` in any URL — Playwright config and CORS expectations all assume `127.0.0.1`.
 - Don't `page.route` and `npm run e2e:live` together — live tests must hit the real backend.
 - Don't assume CSS-class changes are E2E-stable — only `data-*` and `role` are.
+- A `page.route` glob matches the whole URL, query string included, so `"**/api/samples"` never matches `/api/samples?experiment_id=4` (the workspace's sample list). For an endpoint that takes query parameters, match on the path: `page.route((url) => url.pathname === "/api/samples", …)`.
