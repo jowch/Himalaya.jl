@@ -3,7 +3,7 @@ import * as api from "../../../api";
 import type { SampleLabel } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
-import { applyAddLabel, applyRemoveLabel } from "../../labels";
+import { applyAddLabel, applyRemoveLabel, applyRestoreLabelSuggestion } from "../../labels";
 import type { Mutator, RollbackContext } from "../types";
 
 interface LabelScope {
@@ -37,5 +37,12 @@ export const removeLabelMutator: Mutator<LabelInput, LabelScope, SampleLabel[]> 
   kind: "remove_label",
   onMutate: (p, qc) => patchLabels(qc, p.experimentId, (list) => applyRemoveLabel(list, p.sampleId, p.label)),
   request: (p) => api.removeLabel(p.sampleId, p.label, authOpts(p.username, p.clientId, p.clientOpId)),
+  onSuccess: (p, response, qc) => settle(qc, p.experimentId, response),
+};
+
+export const restoreLabelSuggestionMutator: Mutator<LabelInput, LabelScope, SampleLabel[]> = {
+  kind: "restore_label_suggestion",
+  onMutate: (p, qc) => patchLabels(qc, p.experimentId, (list) => applyRestoreLabelSuggestion(list, p.sampleId, p.label)),
+  request: (p) => api.restoreLabelSuggestion(p.sampleId, p.label, authOpts(p.username, p.clientId, p.clientOpId)),
   onSuccess: (p, response, qc) => settle(qc, p.experimentId, response),
 };
