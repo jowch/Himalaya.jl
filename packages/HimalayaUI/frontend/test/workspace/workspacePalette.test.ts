@@ -21,7 +21,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     compare: { samples: [], notes: new Map(), pick: noop },
     bridge: { samples: [], pick: noop, bridged: false, leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
-    labels: { known: [], nextColor: "plum", toggle: noop, create: noop, recolour: noop },
+    labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
     formFactor: { on: false, toggle: noop },
     views: { options: PLOT_VIEWS, current: "log", set: noop },
@@ -56,7 +56,7 @@ describe("workspacePalette", () => {
 
   it("offers no editing pages or commands before a user is set", () => {
     const { pages, groups } = workspacePalette(
-      input({ canEdit: false, candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() }, labels: { known: [known("x")], nextColor: "plum", toggle: vi.fn(), create: vi.fn(), recolour: vi.fn() } }),
+      input({ canEdit: false, candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() }, labels: { known: [known("x")], colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour: vi.fn() } }),
     );
     expect(Object.keys(pages).sort()).toEqual(["compare", "theme", "view"]);
     expect(groups.flatMap((g) => g.items.map((i) => i.id))).not.toContain("colours");
@@ -80,7 +80,7 @@ describe("workspacePalette", () => {
 
   it("offers Create for a typed name the experiment does not have yet, which opens a name and colour form", () => {
     const create = vi.fn();
-    const { pages } = workspacePalette(input({ labels: { known: [known("retake"), known("Buffer")], nextColor: "teal", toggle: vi.fn(), create, recolour: vi.fn() } }));
+    const { pages } = workspacePalette(input({ labels: { known: [known("retake"), known("Buffer")], colorFor: () => "teal", toggle: vi.fn(), create, recolour: vi.fn() } }));
     expect(pages.label!.extra!("RETAKE")).toEqual([]);
     expect(pages.label!.extra!("")).toEqual([]);
     const [row] = pages.label!.extra!("dehydrated");
@@ -99,7 +99,7 @@ describe("workspacePalette", () => {
   it("labels rows say whether the label is on this sample, and Enter toggles it", () => {
     const toggle = vi.fn();
     const on = known("37C", { onSample: "confirmed" });
-    const { pages } = workspacePalette(input({ labels: { known: [on, known("Buffer", { onSample: "suggested" }), known("x")], nextColor: "plum", toggle, create: vi.fn(), recolour: vi.fn() } }));
+    const { pages } = workspacePalette(input({ labels: { known: [on, known("Buffer", { onSample: "suggested" }), known("x")], colorFor: () => "plum", toggle, create: vi.fn(), recolour: vi.fn() } }));
     expect(pages.label!.items.map((i) => i.hint)).toEqual(["On this sample, Enter removes it", "Suggested, Enter confirms it", undefined]);
     pages.label!.items[0]!.run!();
     expect(toggle).toHaveBeenCalledWith(on);
@@ -107,7 +107,7 @@ describe("workspacePalette", () => {
 
   it("recolours a label through a one-field form that starts on its colour and writes only a change", () => {
     const recolour = vi.fn();
-    const { pages } = workspacePalette(input({ labels: { known: [known("37C", { color: "rose", uses: 3 })], nextColor: "plum", toggle: vi.fn(), create: vi.fn(), recolour } }));
+    const { pages } = workspacePalette(input({ labels: { known: [known("37C", { color: "rose", uses: 3 })], colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour } }));
     const row = pages.colours!.items[0]!;
     expect(row.hint).toBe("3 samples");
     const form = row.form!();

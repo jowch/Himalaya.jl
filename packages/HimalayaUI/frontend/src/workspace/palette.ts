@@ -23,7 +23,7 @@ export interface WorkspacePaletteInput {
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
     known: readonly PaletteLabel[];
-    nextColor: LabelColor;
+    colorFor: (name: string) => LabelColor;
     toggle: (l: PaletteLabel) => void;
     create: (name: string, color: LabelColor) => void;
     recolour: (label: string, color: LabelColor) => void;
@@ -73,7 +73,7 @@ function newLabelForm(name: string, p: WorkspacePaletteInput): PaletteForm {
           return p.labels.known.some((l) => sameLabel(l.label, clean)) ? "That label exists. Pick it from the list." : undefined;
         },
       },
-      { id: "color", label: "Colour", kind: "choice", value: p.labels.nextColor, options: COLOR_OPTIONS },
+      { id: "color", label: "Colour", kind: "choice", value: p.labels.colorFor(name), options: COLOR_OPTIONS },
     ],
     submit: (v) => p.labels.create(cleanLabel(v.name ?? "")!, asColor(v.color ?? "")),
   };

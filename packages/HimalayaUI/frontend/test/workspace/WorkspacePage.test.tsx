@@ -785,6 +785,16 @@ describe("WorkspacePage", () => {
     ]);
   });
 
+  it("creating a label that already has a colour elsewhere starts on that colour and leaves it alone", () => {
+    state.labelColors = [{ label: "dried", color: "plum" }];
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("label", "Dried");
+    const form = screen.getByRole("dialog", { name: "New label" });
+    expect(within(form).getByRole("combobox", { name: "Colour" })).toHaveTextContent("Plum");
+    fireEvent.keyDown(within(form).getByRole("textbox", { name: "Name" }), { key: "Enter" });
+    expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Dried" } }]);
+  });
+
   it("L opens the label picker without typing the L, and Enter confirms a suggestion", () => {
     state.labels = [{ id: 2, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" }];
     renderAt("/experiments/1/workspace/10");
