@@ -132,7 +132,9 @@ export function TagRow({
   const hidden = tags.slice(shown);
   const colored = coloring === undefined ? undefined : tags.find((t) => sameLabel(t.label, coloring));
   const [menuLeft, setMenuLeft] = useState(14);
-  const restoreTo = useRef<string | undefined>(undefined);
+  const opener = useRef<HTMLElement | null>(null);
+  const restoreFocus = useRef(false);
+  const addButton = useRef<HTMLButtonElement | null>(null);
   const chipFor = (label: string): HTMLElement | null =>
     box.current?.querySelector<HTMLElement>(`[data-tag="${CSS.escape(label)}"]`) ?? null;
   useLayoutEffect(() => {
@@ -140,14 +142,22 @@ export function TagRow({
     const at = chipFor(colored.label) ?? moreButton.current;
     setMenuLeft(at ? at.offsetLeft : 14);
   }, [colored, shown]);
-  useEffect(() => {
-    if (coloring !== undefined || restoreTo.current === undefined) return;
-    const label = restoreTo.current;
-    restoreTo.current = undefined;
-    (chipFor(label)?.querySelector<HTMLElement>("button") ?? moreButton.current)?.focus();
+  useLayoutEffect(() => {
+    if (coloring === undefined) return;
+    const active = document.activeElement;
+    opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
   }, [coloring]);
-  const closeColor = (restoreFocus: boolean): void => {
-    restoreTo.current = restoreFocus ? colored?.label : undefined;
+  useEffect(() => {
+    if (coloring !== undefined) return;
+    const back = opener.current;
+    opener.current = null;
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+    const safe = back && back.isConnected && !back.closest("[data-tag]") ? back : null;
+    (safe ?? addButton.current ?? moreButton.current)?.focus();
+  }, [coloring]);
+  const closeColor = (restore: boolean): void => {
+    restoreFocus.current = restore;
     onCloseColor();
   };
   const openColor = (label: string): void => {
@@ -207,6 +217,7 @@ export function TagRow({
       {editable && (
         <button
           type="button"
+          ref={addButton}
           onClick={onOpenAdd}
           className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-dashed border-hair-strong px-2.5 pb-0 pt-1 text-caption text-ink-soft hover:text-ink"
         >

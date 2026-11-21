@@ -97,10 +97,26 @@ describe("TagRow colours", () => {
     expect(onSetColor.mock.calls).toEqual([["buffer", null], ["buffer", "rose"]]);
   });
 
-  it("Escape hands focus back to the tag it was opened from", () => {
+  it("closing hands focus back to what opened the menu, never to a tag's remove button", () => {
+    const { rerender } = render(<><button type="button">opener</button>{colorRow()}</>);
+    screen.getByRole("button", { name: "opener" }).focus();
+    rerender(<><button type="button">opener</button>{colorRow({ coloring: "37C" })}</>);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Violet" }), { key: "Escape" });
+    rerender(<><button type="button">opener</button>{colorRow({ coloring: undefined })}</>);
+    expect(screen.getByRole("button", { name: "opener" })).toHaveFocus();
+
+    screen.getByRole("button", { name: "Remove tag 37C" }).focus();
+    rerender(<><button type="button">opener</button>{colorRow({ coloring: "37C" })}</>);
+    fireEvent.click(screen.getByRole("radio", { name: "Rose" }));
+    rerender(<><button type="button">opener</button>{colorRow({ coloring: undefined })}</>);
+    expect(screen.getByRole("button", { name: "Remove tag 37C" })).not.toHaveFocus();
+    expect(screen.getByRole("button", { name: "+ Tag" })).toHaveFocus();
+  });
+
+  it("falls back to + Tag when the opener is gone, as after the palette closes", () => {
     const { rerender } = render(colorRow({ coloring: "37C" }));
     fireEvent.keyDown(screen.getByRole("radio", { name: "Violet" }), { key: "Escape" });
     rerender(colorRow({ coloring: undefined }));
-    expect(screen.getByRole("button", { name: "Remove tag 37C" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "+ Tag" })).toHaveFocus();
   });
 });
