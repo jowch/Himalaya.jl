@@ -4,6 +4,7 @@ import {
   applyAddLabel,
   applyRemoveLabel,
   cleanTag,
+  displayTag,
   labelsFor,
   sampleMatchesFilter,
   tagOptions,
@@ -17,11 +18,17 @@ function label(id: number, sample_id: number, text: string, state: SampleLabel["
 describe("tag vocabulary", () => {
   it("lists tags used in the experiment, most used first, then the standard tags not yet used", () => {
     const list = [label(1, 1, "37C"), label(2, 2, "retake"), label(3, 3, "37c"), label(4, 4, "Buffer")];
-    expect(tagVocabulary(list)).toEqual(["37C", "Buffer", "retake", "calibrant", "empty capillary"]);
+    expect(tagVocabulary(list)).toEqual(["37C", "Buffer", "retake", "Calibrant", "Empty capillary"]);
+  });
+
+  it("shows a built-in tag capitalized however it was typed", () => {
+    expect(tagVocabulary([label(1, 1, "buffer"), label(2, 2, "EMPTY capillary")])).toEqual(["Buffer", "Empty capillary", "Calibrant"]);
+    expect(displayTag("calibrant")).toBe("Calibrant");
+    expect(displayTag("37C")).toBe("37C");
   });
 
   it("leaves suggestions out of the vocabulary", () => {
-    expect(tagVocabulary([label(1, 1, "odd", "suggested")])).toEqual(["buffer", "calibrant", "empty capillary"]);
+    expect(tagVocabulary([label(1, 1, "odd", "suggested")])).toEqual(["Buffer", "Calibrant", "Empty capillary"]);
   });
 });
 
