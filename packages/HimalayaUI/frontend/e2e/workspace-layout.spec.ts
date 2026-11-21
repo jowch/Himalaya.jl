@@ -314,3 +314,28 @@ for (const viewport of [...VIEWPORTS, { width: 1024, height: 700 }]) {
     }
   });
 }
+
+for (const width of [1024, 1280]) {
+  for (const name of ["DOPC_DOPE_1to1_S2417 (S02P02)", "buffer_blank_S2424 (S02P05)"]) {
+    for (const id of [42, 43]) {
+      test(`at ${width} px "${name}" stays whole on the title row ${id === 42 ? "with two labels" : "with no labels"}`, async ({ page }) => {
+        const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+        await page.setViewportSize({ width, height: 760 });
+        await page.route((url) => url.pathname === "/api/samples", (r) =>
+          r.fulfill(json([{ id, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" }])));
+        await page.goto(`/experiments/17/workspace/${id}`);
+        const title = page.getByRole("heading", { level: 2, name });
+        await expect(page.locator("[data-testid=workspace-exposures] > li").first()).toBeVisible();
+        const meta = page.getByText("Frame 1 of 1", { exact: true });
+        if (width === 1280) await expect(meta).toBeVisible();
+        expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+        const add = page.getByRole("button", { name: "+ Label L" });
+        await expect(add).toBeVisible();
+        const heading = (await title.evaluate((el) => el.parentElement!.parentElement!.getBoundingClientRect().toJSON())) as DOMRect;
+        const btn = (await add.boundingBox())!;
+        expect(btn.x + btn.width).toBeLessThanOrEqual(heading.x + heading.width);
+        if (id === 42) await expect(page.getByTestId("workspace-label-chips").locator("[data-label], [data-testid=workspace-labels-more]").first()).toBeVisible();
+      });
+    }
+  }
+}
