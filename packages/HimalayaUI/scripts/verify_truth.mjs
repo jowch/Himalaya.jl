@@ -70,7 +70,65 @@ function unchanged(beforeFile, afterFile) {
   report({ ok: Object.keys(before).length > 0 && changed.length === 0, rule: "re-indexing from scratch changes nothing a person sees, and keeps their confirmed call", samples: Object.keys(before).length, changed });
 }
 
+const peakName = (p) => `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`;
+
+function gapQ(peaks) {
+  const qs = peaks.map((p) => p.q).sort((a, b) => a - b);
+  let best = null;
+  for (let i = 1; i < qs.length; i++) {
+    if (!best || qs[i] - qs[i - 1] > best[1] - best[0]) best = [qs[i - 1], qs[i]];
+  }
+  return best ? (best[0] + best[1]) / 2 : null;
+}
+
+async function addManual(api, exposureId, peaks) {
+  const q = gapQ(peaks);
+  if (q === null) report({ ok: false, error: `exposure ${exposureId} has fewer than two peaks to place a manual peak between` });
+  const res = await request(api, "POST", `/api/exposures/${exposureId}/peaks`, { data: { q } });
+  if (!res.ok) report({ ok: false, error: `adding a manual peak to exposure ${exposureId} returned ${res.status}`, body: res.body });
+  return res.body;
+}
+
+async function twin(file) {
+  const api = loadConfig().apiBase;
+  const frames = [];
+  for (const s of read(file).samples ?? []) {
+    if (s.assigned_frames?.length) continue;
+    const exposures = await getJson(api, `/api/samples/${s.sample_id}/exposures`);
+    for (const [i, exposure] of exposures.entries()) {
+      if (exposure.status === "rejected") continue;
+      const peaks = await getJson(api, `/api/exposures/${exposure.id}/peaks`);
+      if (peaks.length >= 2 && peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, frame: `Frame ${i + 1}`, peaks });
+    }
+  }
+  if (!frames.length) report({ ok: false, error: "no kept frame of an unassigned sample has two or more peaks, one of them auto" });
+  const autoIds = (f) => f.peaks.filter((p) => p.source === "auto").map((p) => p.id);
+  frames.sort((a, b) => Math.min(...autoIds(a)) - Math.min(...autoIds(b)));
+  const host = frames[0];
+  const ids = new Set(autoIds(host));
+  const last = Math.max(...ids);
+  let manual = await addManual(api, host.exposure.id, host.peaks);
+  while (!ids.has(manual.id)) {
+    const del = await request(api, "DELETE", `/api/peaks/manual/${manual.id}`);
+    if (!del.ok) report({ ok: false, error: `removing manual peak ${manual.id} returned ${del.status}` });
+    if (manual.id > last) report({ ok: false, error: `manual ids (${manual.id}) are past every auto id on exposure ${host.exposure.id} (max ${last}), so the check could not make the ids collide and would pass vacuously` });
+    manual = await addManual(api, host.exposure.id, host.peaks);
+  }
+  const auto = host.peaks.find((p) => p.source === "auto" && p.id === manual.id);
+  console.log(JSON.stringify({ sample_id: host.s.sample_id, exposure_id: host.exposure.id, frame: host.frame, id: manual.id, manual: peakName(manual), auto: peakName(auto), excluded: peakName({ ...auto, excluded: true }) }));
+}
+
+async function twinState(exposureId, id, want) {
+  const peaks = await getJson(loadConfig().apiBase, `/api/exposures/${exposureId}/peaks`);
+  const same = peaks.filter((p) => p.id === Number(id));
+  const manual = same.filter((p) => p.source === "manual");
+  const auto = same.filter((p) => p.source === "auto");
+  const expected = { excluded: [1, true], restored: [1, false], removed: [0, false] }[want];
+  const ok = manual.length === expected[0] && auto.length === 1 && auto[0].excluded === expected[1];
+  report({ ok, rule: `clicking a peak acts on that peak alone, when an auto and a manual peak share id ${id} (${want})`, exposure_id: Number(exposureId), with_id: same });
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const commands = { confirm, confirmed, unchanged, target, custom };
+const commands = { confirm, confirmed, unchanged, target, custom, twin, "twin-state": twinState };
 if (!commands[cmd]) report({ ok: false, error: `usage: verify_truth.mjs ${Object.keys(commands).join("|")} ...` });
 await commands[cmd](...args);
