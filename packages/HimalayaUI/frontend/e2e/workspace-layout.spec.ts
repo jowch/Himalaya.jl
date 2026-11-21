@@ -256,13 +256,15 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
 
 test("on a short window a number key opens the Call list before making the call", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
-  await page.goto("/experiments/17/workspace/41");
-  await openSample(page, 41);
+  await page.goto("/experiments/17/workspace/42");
+  await openSample(page, 42);
+  const first = page.locator("[data-testid=workspace-candidates] button[aria-pressed]").first();
+  await expect(first).toHaveAttribute("aria-pressed", "false");
   await exposureToggle(page).click();
   await expect(callToggle(page)).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("1");
   await expect(callToggle(page)).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator("[data-testid=workspace-candidates] button[aria-pressed]").first()).toHaveAttribute("aria-pressed", "true");
+  await expect(first).toHaveAttribute("aria-pressed", "true");
 });
 
 test("on a medium window the Call list scrolls inside a column that never scrolls", async ({ page }) => {
@@ -291,3 +293,24 @@ test("on a very short window the open Exposure section scrolls inside a column t
   });
   expect(state).toEqual({ asideFits: true, exposureScrolls: true });
 });
+
+for (const viewport of [...VIEWPORTS, { width: 1024, height: 700 }]) {
+  test(`every frame's Drop or Restore button stays inside its frame card at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.route(/\/api\/samples\/44\/exposures/, (r) => r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify(Array.from({ length: 7 }, (_, f) => ({ ...exposureOf(44, true, f, f === 6), status: f % 2 === 0 ? "rejected" : null }))),
+    }));
+    await page.goto("/experiments/17/workspace/44");
+    const frames = page.locator("[data-testid=workspace-exposures] > li");
+    await expect(frames).toHaveCount(7);
+    for (let i = 0; i < 7; i++) {
+      await frames.nth(i).hover();
+      const button = frames.nth(i).getByRole("button", { name: /^(Drop|Restore)/ });
+      await expect(button).toBeVisible();
+      const [card, b] = await Promise.all([frames.nth(i).boundingBox(), button.boundingBox()]);
+      expect(b!.x + b!.width, `frame ${i + 1} button right edge`).toBeLessThanOrEqual(card!.x + card!.width + 0.5);
+      expect(b!.x, `frame ${i + 1} button left edge`).toBeGreaterThanOrEqual(card!.x - 0.5);
+    }
+  });
+}

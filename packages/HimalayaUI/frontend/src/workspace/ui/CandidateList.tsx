@@ -26,7 +26,7 @@ export function CandidateList({ candidates, assigned, disabled, formFactor, onTo
         data-testid="workspace-form-factor"
         className={
           "grid w-full grid-cols-[auto_1fr] items-center gap-2 rounded-sm border px-2 py-[5px] text-left text-base disabled:opacity-50 " +
-          (formFactor ? "border-accent bg-accent-wash" : "border-transparent hover:border-hair-strong")
+          (formFactor ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong")
         }
       >
         <Kbd>0</Kbd>
@@ -52,7 +52,7 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
               onFocus={() => onHover(c.id)}
               className={
                 "grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-sm border px-2 py-[5px] text-left text-base disabled:opacity-50 " +
-                (on ? "border-accent bg-accent-wash" : "border-transparent hover:border-hair-strong")
+                (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong")
               }
             >
               <Kbd>{i + 1}</Kbd>
