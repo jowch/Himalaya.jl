@@ -3,7 +3,7 @@
  * the mutator. The TraceViewer click handler is responsible for skipping
  * negative-id peaks; the mutator's onMutate throws as defense-in-depth so any
  * regression at the click layer fails loudly instead of producing the silent
- * "ghost peak" desync (DELETE /api/peaks/-N → 404 → rollback re-inserts the
+ * "ghost peak" desync (DELETE /api/peaks/manual/-N → 404 → rollback re-inserts the
  * placeholder → original add resolves into a real, undeletable-feeling peak).
  */
 import { describe, it, expect } from "vitest";

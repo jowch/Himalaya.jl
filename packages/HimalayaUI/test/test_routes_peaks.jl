@@ -413,6 +413,48 @@ end
     end
 end
 
+@testset "custom index on a manual peak keeps claiming it across re-analysis when its id collides" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    autos = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e_id]))
+    qs   = [Float64(a.q) for a in autos]
+    gaps = [(qs[i+1] - qs[i], i) for i in 1:length(qs)-1]
+    _, gi = maximum(gaps)
+    manual_q = (qs[gi] + qs[gi+1]) / 2
+    twin_id  = Int(autos[end].id)
+    align_next_curation_id!(db, twin_id)
+    hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
+    claimed(ix) = [(Int(r.peak_id), String(r.peak_kind)) for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT peak_id, peak_kind FROM index_peaks WHERE index_id = ?", [ix]))]
+
+    with_inproc_routes(db) do call
+        r = call("POST", "/api/exposures/$e_id/peaks";
+            body = Vector{UInt8}(JSON3.write(Dict(:q => manual_q))), headers = hdrs)
+        @test JSON3.read(String(r.body)).id == twin_id
+        r = call("POST", "/api/exposures/$e_id/custom-index";
+            body = Vector{UInt8}(JSON3.write(Dict(:phase => "Lamellar", :basis => manual_q, :ratios => [1.0]))),
+            headers = hdrs)
+        @test r.status == 200
+        ix = Int(JSON3.read(String(r.body)).id)
+        @test claimed(ix) == [(twin_id, "curation")]
+
+        DBInterface.execute(db,
+            "UPDATE exposures SET trace_hash = NULL, analysis_inputs_hash = NULL WHERE id = ?", [e_id])
+        HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+        @test claimed(ix) == [(twin_id, "curation")]
+    end
+end
+
 # ── M2.2 BACKEND: with_idempotency + sync reanalyze + post_state broadcast ──
 
 function _setup_peaks_test(tmp)

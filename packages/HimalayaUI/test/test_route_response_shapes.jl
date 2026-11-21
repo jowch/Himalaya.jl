@@ -320,7 +320,7 @@ end
 
     @testset "GET /api/exposures/:id/peaks → Peak[] (full shape including nullable fields)" begin
         # Pre-fix peakAdd POST omitted intensity/prominence/sharpness (issue
-        # #17). The list endpoint includes them via _effective_peak_row, but
+        # #17). The list endpoint includes them, but
         # contract-test it explicitly so a future LIST regression that
         # tightens the SELECT and forgets to keep nullables is caught.
         mktempdir() do tmp

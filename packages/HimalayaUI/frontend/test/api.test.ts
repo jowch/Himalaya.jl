@@ -107,6 +107,18 @@ describe("api", () => {
     expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
   });
 
+  it("setAutoPeakExcluded sends PATCH to the auto-peak route with the excluded flag", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: 7, source: "auto", excluded: true }), { status: 200 }),
+    );
+    await api.setAutoPeakExcluded(7, true, { username: "alice", clientId: "tab-xyz" });
+    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe("/api/peaks/auto/7");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ excluded: true });
+    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
+  });
+
   it("reanalyzeExposure posts empty body and returns {id, analyzed}", async () => {
     vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ id: 42, analyzed: true }), { status: 200 }),

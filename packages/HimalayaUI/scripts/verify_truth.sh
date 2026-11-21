@@ -91,12 +91,12 @@ step 11-peak-clicks log bash -c '
   sid=$(get sample_id) eid=$(get exposure_id) id=$(get id)
   bin/verify open "/experiments/1/workspace/$sid"
   bin/verify click --role button --name "$(get frame)" --exact
-  bin/verify click --role button --name "$(get manual)" --exact
-  node "$help" twin-state "$eid" "$id" removed
   bin/verify click --role button --name "$(get auto)" --exact
   node "$help" twin-state "$eid" "$id" excluded
   bin/verify click --role button --name "$(get excluded)" --exact
-  node "$help" twin-state "$eid" "$id" restored' _ "$OUT" "$HELP"
+  node "$help" twin-state "$eid" "$id" restored
+  bin/verify click --role button --name "$(get manual)" --exact
+  node "$help" twin-state "$eid" "$id" removed' _ "$OUT" "$HELP"
 
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"

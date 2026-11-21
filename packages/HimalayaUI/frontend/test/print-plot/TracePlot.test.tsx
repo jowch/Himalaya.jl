@@ -282,6 +282,16 @@ describe("TracePlot", () => {
       expect(onClickPeak).toHaveBeenCalledWith({ id: 1, source: "manual" });
       expect(onClickPeak).toHaveBeenCalledTimes(1);
     });
+
+    it("reports the q of the peak the user is on", () => {
+      const onHoverQ = vi.fn();
+      const { container } = render(
+        <TracePlot trace={twins} width={500} height={300} interaction={{ onXDomain: () => {} }} onHoverQ={onHoverQ} />,
+      );
+      onHoverQ.mockClear();
+      fireEvent.focus(container.querySelector('[data-role="plot-peaks"] > g[data-peak-key="manual:1"]')!);
+      expect(onHoverQ).toHaveBeenCalledWith(0.25);
+    });
   });
 
   describe("q-link (cross-panel hover wires)", () => {

@@ -109,6 +109,22 @@ describe("PlotLabels", () => {
 
   // ── highlightPeakKeys — label dimming ---------------------------------------
   describe("highlightPeakKeys — label dimming", () => {
+    it("dims an auto label that shares an id with the highlighted manual peak", () => {
+      const { container } = wrap({
+        peaks: [
+          { id: 1, q: 50, source: "auto", intensity: 10, label: "α" },
+          { id: 1, q: 150, source: "manual", intensity: 15, label: "β" },
+        ],
+        projection: proj,
+        color,
+        highlightPeakKeys: new Set(["manual:1"]),
+      });
+      const label = (text: string) =>
+        Array.from(container.querySelectorAll('[data-role="peak-label"]')).find((t) => t.textContent === text)!;
+      expect(label("β").getAttribute("data-dimmed")).toBeNull();
+      expect(label("α").getAttribute("data-dimmed")).toBe("true");
+    });
+
     const peaks3: PlotPeak[] = [
       { id: 1, q: 50, source: "auto", intensity: 10, label: "α" },
       { id: 2, q: 150, source: "auto", intensity: 15, label: "β" },

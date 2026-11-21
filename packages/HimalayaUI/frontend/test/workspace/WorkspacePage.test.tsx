@@ -291,9 +291,9 @@ describe("WorkspacePage", () => {
 
   it("a click on a disabled auto peak restores it, even when a manual peak shares its id", () => {
     state.trace = makeTrace(1);
-    state.peaks = peakList(101, { auto: [{ q: 0.1, excluded: true }], manual: [0.2] });
+    state.peaks = peakList(101, { auto: [{ q: 0.2, excluded: true }], manual: [0.1] });
     renderAt("/experiments/1/workspace/10");
-    clickPlotAt(0.1);
+    clickPlotAt(0.2);
     expect(calls).toEqual([{ hook: "excludePeak", boundTo: 101, arg: { peakId: 1, excluded: false } }]);
   });
 
@@ -776,14 +776,14 @@ describe("WorkspacePage", () => {
 
   it("while a custom index is open, a plot click puts the first order on the nearest peak and edits no peaks", () => {
     state.trace = makeTrace(1);
-    state.peaks = peakList(101, { auto: [0.1], manual: [0.2] });
+    state.peaks = peakList(101, { auto: [0.2], manual: [0.1] });
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    clickPlotAt(0.105);
+    clickPlotAt(0.205);
     const add = within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ });
-    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.1).toFixed(1)} Å`);
-    clickPlotAt(0.2);
     expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.2).toFixed(1)} Å`);
+    clickPlotAt(0.1);
+    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.1).toFixed(1)} Å`);
     expect(calls).toEqual([]);
   });
 

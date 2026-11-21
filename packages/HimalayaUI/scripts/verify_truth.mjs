@@ -123,8 +123,8 @@ async function twinState(exposureId, id, want) {
   const same = peaks.filter((p) => p.id === Number(id));
   const manual = same.filter((p) => p.source === "manual");
   const auto = same.filter((p) => p.source === "auto");
-  const expected = { removed: false, excluded: true, restored: false }[want];
-  const ok = manual.length === 0 && auto.length === 1 && auto[0].excluded === expected;
+  const expected = { excluded: [1, true], restored: [1, false], removed: [0, false] }[want];
+  const ok = manual.length === expected[0] && auto.length === 1 && auto[0].excluded === expected[1];
   report({ ok, rule: `clicking a peak acts on that peak alone, when an auto and a manual peak share id ${id} (${want})`, exposure_id: Number(exposureId), with_id: same });
 }
 

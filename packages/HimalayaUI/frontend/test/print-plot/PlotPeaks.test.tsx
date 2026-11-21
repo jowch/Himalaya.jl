@@ -437,6 +437,28 @@ describe("PlotPeaks", () => {
       ).toBe("currentColor");
     });
 
+    it("dims an auto peak that shares an id with the highlighted manual peak", () => {
+      const { container } = render(
+        <svg>
+          <PlotPeaks
+            peaks={[
+              { id: 1, q: 0.13, source: "auto", intensity: 10 },
+              { id: 1, q: 0.18, source: "manual", intensity: 15 },
+            ]}
+            projection={proj}
+            color="oklch(0.5 0.1 30)"
+            highlightPeakKeys={new Set(["manual:1"])}
+          />
+        </svg>,
+      );
+      const g = (key: string) =>
+        Array.from(container.querySelectorAll('[data-role="plot-peaks"] > g')).find((el) =>
+          el.querySelector(`[data-peak-key="${key}"]`),
+        );
+      expect(g("manual:1")!.getAttribute("data-dimmed")).toBeNull();
+      expect(g("auto:1")!.getAttribute("data-dimmed")).toBe("true");
+    });
+
     it("no <g> has data-dimmed when highlightPeakKeys is not provided", () => {
       const { container } = render(
         <svg>
