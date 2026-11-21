@@ -13,6 +13,8 @@ const MIGRATION_HEX_SQRT11 = "hex_sqrt11_removal_v1"
 # Sentinel marker name for the Plotting redesign Plan A durable-assignment backfill.
 const MIGRATION_ASSIGNMENTS = "assignments_v1"
 
+const MIGRATION_SAMPLE_CALLS = "sample_calls_v1"
+
 # Sentinel marker names for the ingestion-redesign Phase A schema migrations.
 const MIGRATION_LOADS_TABLE             = "loads_table_v1"
 const MIGRATION_EXPOSURES_EXPERIMENT_ID = "exposures_experiment_id_v1"
@@ -239,6 +241,12 @@ CREATE TABLE IF NOT EXISTS assignment_members (
     exposure_id INTEGER NOT NULL REFERENCES exposures(id),
     index_id    INTEGER NOT NULL REFERENCES indices(id) ON DELETE CASCADE,
     PRIMARY KEY (exposure_id, index_id)
+);
+
+CREATE TABLE IF NOT EXISTS sample_calls (
+    sample_id INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+    state     TEXT NOT NULL DEFAULT 'indexed'
+              CHECK (state IN ('indexed', 'form_factor', 'null'))
 );
 
 CREATE TABLE IF NOT EXISTS sample_messages (
@@ -1659,6 +1667,69 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
         DBInterface.execute(db,
             "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
             [MIGRATION_HEX_SQRT11, comparison_now_iso()])
+    end
+    nothing
+end
+
+"""
+    migrate_sample_calls!(db)
+
+#350: a phase call belongs to the sample, not to one frame. Before this, each
+exposure had its own `assignments` state and members, and the sample showed the
+representative frame's call, so dropping the frame a call was made on hid it.
+
+Per sample, the call kept is the one on the frame the user edited last (the
+newest `assignment_*` event). A sample with no such event keeps its
+representative frame's call, else the lowest-id frame that has one. Members on
+the sample's other frames are deleted: the old UI never showed them together,
+and the event log still holds them. The kept frame's state becomes the sample's
+`sample_calls` state. Members stay keyed by the frame their index lives on.
+"""
+function migrate_sample_calls!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SAMPLE_CALLS) && return nothing
+    SQLite.transaction(db) do
+        last_event = Dict{Int, Int}()
+        for r in Tables.rowtable(DBInterface.execute(db, """
+                SELECT entity_id AS eid, MAX(id) AS last FROM user_actions
+                 WHERE entity_type = 'exposure'
+                   AND action IN ('assignment_add', 'assignment_remove', 'assignment_set_state')
+                 GROUP BY entity_id"""))
+            last_event[Int(r.eid)] = Int(r.last)
+        end
+        has_call = Set{Int}()
+        for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT exposure_id AS eid FROM assignments
+                 UNION SELECT exposure_id AS eid FROM assignment_members"))
+            push!(has_call, Int(r.eid))
+        end
+        by_sample = Dict{Int, Vector{NamedTuple}}()
+        for e in Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, sample_id, selected, status FROM exposures
+                  WHERE sample_id IS NOT NULL ORDER BY id"))
+            push!(get!(by_sample, Int(e.sample_id), NamedTuple[]), e)
+        end
+        for (sid, exps) in by_sample
+            ids = [Int(e.id) for e in exps]
+            any(in(has_call), ids) || any(in(keys(last_event)), ids) || continue
+            edited = [i for i in ids if haskey(last_event, i)]
+            rep = representative_exposure_id(exps)
+            keep = !isempty(edited) ? argmax(i -> last_event[i], edited) :
+                   (rep !== nothing && rep in has_call) ? rep :
+                   minimum(i for i in ids if i in has_call)
+            st = Tables.rowtable(DBInterface.execute(db,
+                "SELECT state FROM assignments WHERE exposure_id = ?", [keep]))
+            state = isempty(st) ? "indexed" : String(st[1].state)
+            DBInterface.execute(db,
+                "INSERT INTO sample_calls (sample_id, state) VALUES (?, ?)
+                 ON CONFLICT(sample_id) DO UPDATE SET state = excluded.state", [sid, state])
+            others = [i for i in ids if i != keep]
+            isempty(others) || DBInterface.execute(db,
+                "DELETE FROM assignment_members WHERE exposure_id IN ($(join(fill("?", length(others)), ",")))",
+                others)
+        end
+        DBInterface.execute(db,
+            "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+            [MIGRATION_SAMPLE_CALLS, comparison_now_iso()])
     end
     nothing
 end
