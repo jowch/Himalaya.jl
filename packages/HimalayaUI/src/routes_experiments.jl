@@ -261,7 +261,7 @@ function register_experiments_routes!()
         broadcast_progress!(exp_id; kind = "ingest_started", processed = 0, total = 0)
 
         # Kick off first scan asynchronously.
-        Threads.@spawn begin
+        Threads.@spawn with_background_db(db) do db
             try
                 # scan_and_group! (Phase B, ingest.jl) resolves data_dir from the row
                 # and is idempotent (dedup INSERT keys), so first-scan == rescan.
@@ -499,7 +499,7 @@ function register_experiments_routes!()
         # returns immediately; progress streams over SSE. Both Phase B functions
         # (cheap_change_check, scan_and_group!) resolve the experiment's data_dir from
         # the row themselves, and return gracefully on an empty directory.
-        Threads.@spawn begin
+        Threads.@spawn with_background_db(db) do db
             try_backfill_monitors!(db, id)
             try
                 changed = force_scan || cheap_change_check(db, id)
@@ -630,6 +630,12 @@ function register_experiments_routes!()
                     # IN-subqueries still resolve the ids.
                     DBInterface.execute(db, """
                         DELETE FROM series_samples WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_bridges WHERE sample_id IN
+                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
+                    DBInterface.execute(db, """
+                        DELETE FROM sample_calls WHERE sample_id IN
                           (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
                     DBInterface.execute(db, """
                         UPDATE series_members SET exposure_id = NULL WHERE exposure_id IN

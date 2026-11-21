@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { Assignment, Series } from "../../api";
+import type { Assignment, SampleCall, Series } from "../../api";
 
 // ---------------------------------------------------------------------------
 // Optimistic-id invariant
@@ -50,7 +50,7 @@ export type OpKind =
   // Focus surface (Plan D). The assignment cart's 3 mutators map 1:1 to the
   // native assignment event kinds. `affectsExposurePeaks: () => false` for all
   // three — they touch only the assignment cache, never the peak set.
-  | "assignment_add" | "assignment_remove" | "assignment_set_state"
+  | "assignment_add" | "assignment_remove" | "sample_call_set_state"
   // Custom-index commit (Plan D-9). The OpKind names the user gesture; the
   // backend route emits two events (speculative_created + assignment_add), so
   // there is no `custom_index_commit` event kind on the wire — it lives only in
@@ -65,7 +65,8 @@ export type OpKind =
   // and a merge emits NO sample_merged kind (it fans out as exposure_moved).
   | "move_exposure" | "rename_sample" | "merge_samples" | "split_sample" | "dismiss_grouping_flag"
   // Symmetric undo of dismiss: re-shows the flag so the sample re-enters review.
-  | "undo_dismiss_grouping_flag";
+  | "undo_dismiss_grouping_flag"
+  | "bridge_samples" | "unbridge_sample";
 
 /**
  * A queued operation: its kind, its per-call client_op_id (Stripe-style
@@ -142,6 +143,10 @@ export interface AssignmentPostState {
   assignment: Pick<Assignment, "state" | "members">;
 }
 
+export interface SampleCallPostState {
+  call: Pick<SampleCall, "state" | "members">;
+}
+
 /**
  * The shape of an SSE frame as parsed from the JSON `data:` line. Mirrors
  * the Julia-side `broadcast_event!` JSON shape (events.jl).
@@ -163,7 +168,7 @@ export interface SseEvent {
   client_op_id?: string | null;
   ts?: string;
   payload?: unknown;
-  post_state?: CurationPostState | AssignmentPostState | Series;
+  post_state?: CurationPostState | AssignmentPostState | SampleCallPostState | Series;
 }
 
 /**

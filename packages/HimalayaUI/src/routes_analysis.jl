@@ -11,14 +11,15 @@ using Himalaya
 """
     _assignment_body(db, exposure_id) -> Dict
 
-Build the canonical assignment response: the durable 3-state assignment for an
-exposure plus its 0..N member index ids (ascending). Returns the neutral
-default (state 'indexed', no members) when no assignment row exists yet.
+Build the canonical assignment response for one frame: the sample's call state
+(#350: the state belongs to the sample) plus the 0..N member index ids picked on
+this frame (ascending). The neutral default is state 'indexed' with no members.
 """
 function _assignment_body(db::SQLite.DB, exposure_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT state FROM assignments WHERE exposure_id = ?", [exposure_id]))
-    state = isempty(rows) ? "indexed" : String(rows[1].state)
+    srow = Tables.rowtable(DBInterface.execute(db,
+        "SELECT sample_id FROM exposures WHERE id = ?", [exposure_id]))
+    sid = isempty(srow) ? missing : srow[1].sample_id
+    state = ismissing(sid) ? "indexed" : sample_call_state(db, Int(sid))
     members = Tables.rowtable(DBInterface.execute(db,
         "SELECT index_id FROM assignment_members WHERE exposure_id = ? ORDER BY index_id",
         [exposure_id]))
@@ -167,7 +168,16 @@ function register_analysis_routes!()
             JSON3.write(_assignment_body(db, id)))
     end
 
-    @post "/api/exposures/{id}/assignment/state" function(req::HTTP.Request, id::Int)
+    @get "/api/samples/{id}/call" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        _sample_exists(db, id) || return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "sample not found")))
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(_sample_call_body(db, id)))
+    end
+
+    @post "/api/samples/{id}/call/state" function(req::HTTP.Request, id::Int)
         db   = current_db()
         body = json(req)
         if !haskey(body, :state)
@@ -179,21 +189,18 @@ function register_analysis_routes!()
             return HTTP.Response(400, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "invalid state: $state")))
         end
+        _sample_exists(db, id) || return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "sample not found")))
         return with_idempotency(db, req) do
             result = apply_event!(InTransaction(), db, req;
-                kind        = "assignment_set_state",
-                entity_type = "exposure",
+                kind        = "sample_call_set_state",
+                entity_type = "sample",
                 entity_id   = id,
                 payload     = Dict(:state => state))
-            # Build the response from the now-current assignment, and carry it as
-            # the SSE post_state so Plan D's applyRemoteToCache can patch the
-            # assignment cache directly (no extra refetch). NOTE: the post_state
-            # has NO top-level `indices` key — that is what lets the frontend's
-            # CurationPostState cast bail harmlessly for assignment frames.
-            b = _assignment_body(db, id)
-            post_state = Dict(:assignment => _assignment_post_state(b))
-            _enqueue_broadcast_from_result!(result, "assignment_set_state", "exposure", id;
-                post_state = post_state)
+            b = _sample_call_body(db, id)
+            _enqueue_broadcast_from_result!(result, "sample_call_set_state", "sample", id;
+                post_state = Dict(:call => _sample_call_post_state(b)))
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
@@ -204,7 +211,7 @@ function register_analysis_routes!()
     # POST/DELETE /api/exposures/{id}/assignment/members are the assignment-
     # native targets that the Plan D frontend calls directly (the legacy
     # /groups/{id}/members dual-write stays live until D-10). They mirror the
-    # /assignment/state route shape: with_idempotency + apply_event!(InTransaction())
+    # /samples/{id}/call/state route shape: with_idempotency + apply_event!(InTransaction())
     # + _assignment_body response, and carry the DISTINCT post_state
     # {assignment:{state,members}} (NO top-level `indices` key) so the
     # frontend's applyPostStateOnly/CurationPostState guard bails harmlessly.
@@ -223,6 +230,10 @@ function register_analysis_routes!()
                 JSON3.write(Dict(:error => "index_id must be an integer")))
         end
         return with_idempotency(db, req) do
+            isempty(Tables.rowtable(DBInterface.execute(db,
+                "SELECT 1 FROM indices WHERE id = ? AND exposure_id = ?", [index_id, id]))) &&
+                return HTTP.Response(409, ["Content-Type" => "application/json"],
+                    JSON3.write(Dict(:error => "this index changed after re-analysis, so pick it again")))
             result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_add",
                 entity_type = "exposure",

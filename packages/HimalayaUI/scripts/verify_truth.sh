@@ -22,7 +22,7 @@ step() {
   fi
 }
 
-trap 'bin/verify stop > /dev/null 2>&1 || true' EXIT
+trap 'bin/verify stop > /dev/null 2>&1 || true; bin/verify close > /dev/null 2>&1 || true' EXIT
 bin/verify seed --reset > "$OUT/0-seed.json" 2>&1 || { echo "seed failed"; cat "$OUT/0-seed.json"; tail -50 scratch/verify/demo.log 2>/dev/null; exit 1; }
 echo "ok      0-seed"
 
@@ -81,6 +81,22 @@ step 10-custom-index log bash -c '
   bin/verify click --role button --name Custom --within "$list"
   custom_row removed
   node "$help" custom "$out/5-confirmed.json" "$label" Hexagonal off' _ "$OUT" "$HELP" "$CONFIRM_SAMPLE"
+
+step 11-peak-clicks log bash -c '
+  set -e
+  out=$1 help=$2
+  twin=$(node "$help" twin "$out/5-confirmed.json") || { echo "$twin"; exit 1; }
+  echo "$twin"
+  get() { node -e "process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]]))" "$twin" "$1"; }
+  sid=$(get sample_id) eid=$(get exposure_id) id=$(get id)
+  bin/verify open "/experiments/1/workspace/$sid"
+  bin/verify click --role button --name "$(get frame)" --exact
+  bin/verify click --role button --name "$(get auto)" --exact
+  node "$help" twin-state "$eid" "$id" excluded
+  bin/verify click --role button --name "$(get excluded)" --exact
+  node "$help" twin-state "$eid" "$id" restored
+  bin/verify click --role button --name "$(get manual)" --exact
+  node "$help" twin-state "$eid" "$id" removed' _ "$OUT" "$HELP"
 
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"

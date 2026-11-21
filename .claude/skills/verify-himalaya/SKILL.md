@@ -14,14 +14,14 @@ Everything goes through one CLI, `bin/verify`. Every command prints one JSON obj
 ```bash
 bin/verify doctor                 # what is up, what is missing, and the fix for each failing check
 bin/verify seed                   # demo up in the background (generate, backend :8080, ingest, Vite :5173); no-op when already up
-bin/verify open /experiments/1/corpus
+bin/verify open /experiments/1        # opens the workspace on the first unreviewed sample
 bin/verify snapshot --raw         # accessibility tree: the roles and names you can click
 bin/verify click --role button --name "MO_PEG5_S2406 (S01P03)"   # opens it in the workspace
 bin/verify press Enter            # opens the workspace; keyboard shortcuts are first-class, see the Feature Map
 bin/verify screenshot scratch/verify/shots/focus-peg5.png
-bin/verify check-truth            # phase calls, frame counts and the corpus status against TRUTH.csv
+bin/verify check-truth            # phase calls, frame counts and the sample status against TRUTH.csv
 bin/verify triage                 # drop the bad frames TRUTH lists, as a triager would
-bin/verify check-truth --ui       # also reads the corpus and the workspace in the browser
+bin/verify check-truth --ui       # also reads the workspace in the browser
 bin/verify stop                   # stop the servers seed started (bin/verify close stops the browser)
 ```
 
@@ -39,7 +39,7 @@ Read [references/features/README.md](references/features/README.md) first. It is
 | `wait-settle [--url re]` | Wait for a server-triggered navigation (with `--url`), then for the page to settle. Fails on 4xx/5xx like the actions; its result has `settled` and `httpErrors` at the top level, not under `settle`. |
 | `screenshot [file] [--full] [--selector css]` | Save evidence. Default path `scratch/verify/shots/`. |
 | `api <METHOD> </api/path> [--data json] [--dry-run]` | Read or change backend state directly. Writes are real; use `--dry-run` to check the request first. |
-| `check-truth [--strict] [--ui]` | Compare what the app shows with the demo's `TRUTH.csv`, and report the invariants. `--ui` reads the corpus status, and the status and frame the workspace shows, in the browser. |
+| `check-truth [--strict] [--ui]` | Compare what the app shows with the demo's `TRUTH.csv`, and report the invariants. `--ui` reads the status, the opening frame and the kept count the workspace shows, in the browser. |
 | `triage [--undo] [--dry-run]` | Drop the frames in TRUTH's `drop` column through the same endpoint the workspace's Drop (X) uses; `--undo` keeps them again, including any a person dropped by hand. |
 
 ## check-truth
@@ -49,8 +49,8 @@ Read [references/features/README.md](references/features/README.md) first. It is
 - Default gate: every frame's auto call must equal `auto`, and every generated frame must be present in the right sample. A failure here is a regression in peak finding, indexing, grouping or ingest.
 - `known_gaps` lists samples where `auto` misses `phases`. Today that is `MO_PEG5` (Pn3m + Im3m coexistence, auto keeps only Im3m) and `MO_AMP_weak` (too weak to index). `--strict` fails on these too. Use it when working on the physics.
 - Bad frames: TRUTH's `drop` column lists frames a triager should drop. Its `flare` column marks the ones that still hold the sample (the beam clipped the capillary wall); their auto call may lose phases, because the streak can hide one, but must not add one (`expected: "within Pn3m"`). The rest hold no sample (a beam-off shot, missed capillaries) and must call `none`. `frames.bad_still_kept` and `frames.good_dropped` report triage progress. Neither fails the gate unless you pass `--expect fresh` (every frame still kept) or `--expect triaged` (every bad frame dropped). With `--ui`, check-truth also reads the corpus Kept column and fails if it disagrees with the API.
-- `make verify-truth` runs the whole live check on a regenerated demo, as CI's "Demo check-truth" job does: seed, check-truth `--expect fresh`, triage, check-truth `--expect triaged`, confirm one sample's call, a forced re-index (`analyze` after clearing the analysis hashes), check-truth, then a comparison that nothing a person sees changed, the description edit-and-clear, and a custom index added and removed in the workspace. Each step's output lands in `scratch/verify/truth/`. It serves the built app (`DEMO_UI_MODE=build`), not the Vite dev server; see docs/demo.md for why.
-- `shown` is the sample's status: `unreviewed`, `phase` (with its `call`) or `form_factor`. It is read from `GET /api/samples`, the data the corpus renders, together with the frame it describes (`representative_exposure_id`, reported as `corpus_api` because the page never marks that frame). check-truth does not decide which frame is the representative: it reads the app's choice. With `--ui` it also reads the corpus status cell's text and the current `Frame N` thumbnail in the workspace. It fails if the text disagrees with the API, or if a view shows no single pressed frame, because then check-truth itself is misreading the app. (The workspace showing no frame is expected only when every frame is dropped.)
+- `make verify-truth` runs the whole live check on a regenerated demo, as CI's "Demo check-truth" job does: seed, check-truth `--expect fresh`, triage, check-truth `--expect triaged`, confirm one sample's call, a forced re-index (`analyze` after clearing the analysis hashes), check-truth, then a comparison that nothing a person sees changed, the description edit-and-clear, a custom index added and removed in the workspace, and clicks on an auto and a manual peak that share an id, excluding and restoring the auto peak while its manual twin is still drawn and then removing the manual one (the real DB numbers the two sources from separate sequences, so ids collide; the step adds the manual peak where the next manual id lands on an auto peak of a kept frame, and fails rather than passing vacuously when it cannot make them collide). Each step's output lands in `scratch/verify/truth/`. It serves the built app (`DEMO_UI_MODE=build`), not the Vite dev server; see docs/demo.md for why.
+- `shown` is the sample's status: `unreviewed`, `phase` (with its `call`) or `form_factor`. It is read from `GET /api/samples`, the data the sample list renders, together with the frame it describes (`representative_exposure_id`, reported as `corpus_api` because the page never marks that frame). check-truth does not decide which frame is the representative: it reads the app's choice. With `--ui` it also reads the workspace: each sample row's status mark (invariant `workspace_status_matches`), the current `Frame N` thumbnail, and the kept count from the frame cards (`Frame N` / `Frame N, dropped`). It fails if the kept count disagrees with the API, or if a view shows no single pressed frame, because then check-truth itself is misreading the app. (The workspace showing no frame is expected only when every frame is dropped.)
 - `assigned_frames` lists every frame carrying a human assignment, wherever it sits.
 
 ### Invariants
@@ -86,6 +86,7 @@ Attach to every PR that touches something a user can see:
 - On a name collision the CLI refuses rather than guessing. Use `--exact` (for example `--name Im3m --exact` against "Im3m, in assignment"), `--within aside` or `--nth`.
 - Ports: `DEMO_API_PORT`, `DEMO_UI_PORT` and `VERIFY_CDP_PORT` move everything, including `seed`. Mocked Playwright (`npm run e2e`) also wants :5173, so `bin/verify stop` before running it.
 - The browser runs with the back/forward cache off. With it on, each page left by a full navigation stayed cached with its `/api/events` stream open, and the sixth `open` hung on Chromium's six-connections-per-host limit. In-app navigation (clicks, keys) never hit this.
+- Speed checks: the demo runs on a local network, so it hides costs that grow with network delay. Set `VERIFY_THROTTLE=<mbit>mbit,<ms>ms` (for example `20mbit,30ms`), which every command that drives the browser applies to the page through CDP. Backend-only commands (`seed`, `api`, `triage`, plain `check-truth`) run at full speed. Object results echo `throttle`, so the evidence says which conditions it ran under. Chrome's latency is a minimum round trip that overlaps server time, so it is not added on top of a slow response.
 - In cloud sessions the frontend's Playwright has no matching browser, so the CLI falls back to the preinstalled `/opt/pw-browsers/chromium-*`. Set `VERIFY_CHROMIUM` to force a binary.
 
 ## Keeping it true

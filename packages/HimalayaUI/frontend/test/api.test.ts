@@ -91,20 +91,32 @@ describe("api", () => {
     expect(init.body).toBe(JSON.stringify({ q: 0.15 }));
   });
 
-  it("removePeak sends DELETE with X-Username and returns hash payload", async () => {
+  it("removeManualPeak sends DELETE to the manual-peak route with X-Username and returns hash payload", async () => {
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
       new Response(JSON.stringify({
         event_id: 11, view_row_id: 22, analysis_inputs_hash: "hash-x",
       }), { status: 200, headers: { "Content-Type": "application/json" } }),
     );
-    const r = await api.removePeak(7, { username: "alice", clientId: "tab-xyz" });
+    const r = await api.removeManualPeak(7, { username: "alice", clientId: "tab-xyz" });
     expect(r.analysis_inputs_hash).toBe("hash-x");
     expect(r.event_id).toBe(11);
     const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
-    expect(url).toBe("/api/peaks/7");
+    expect(url).toBe("/api/peaks/manual/7");
     expect(init.method).toBe("DELETE");
     expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
     expect((init.headers as Record<string, string>)["X-Client-Id"]).toBe("tab-xyz");
+  });
+
+  it("setAutoPeakExcluded sends PATCH to the auto-peak route with the excluded flag", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id: 7, source: "auto", excluded: true }), { status: 200 }),
+    );
+    await api.setAutoPeakExcluded(7, true, { username: "alice", clientId: "tab-xyz" });
+    const [url, init] = fetchSpy.mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe("/api/peaks/auto/7");
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ excluded: true });
+    expect((init.headers as Record<string, string>)["X-Username"]).toBe("alice");
   });
 
   it("reanalyzeExposure posts empty body and returns {id, analyzed}", async () => {

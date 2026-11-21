@@ -69,34 +69,20 @@ function _queue_peak_added_broadcast!(result, entity_id::Integer,
         post_state = post_state)
 end
 
-"""
-    _effective_peak_row(db, id) -> Union{NamedTuple, Nothing}
+const _AUTO_PEAK_SQL = """
+    SELECT a.id, a.exposure_id, a.q, a.intensity, a.prominence, a.sharpness,
+           'auto' AS source,
+           CASE WHEN c.q IS NOT NULL THEN 1 ELSE 0 END AS excluded
+    FROM auto_peaks a
+    LEFT JOIN peak_curations c
+        ON c.exposure_id = a.exposure_id
+       AND c.kind = 'exclude'
+       AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
+    WHERE a.id = ?"""
 
-Look up a peak by id across both auto_peaks and peak_curations.
-Returns a NamedTuple with fields: id, exposure_id, q, intensity, prominence,
-sharpness, source, excluded — or nothing if not found.
-"""
-function _effective_peak_row(db::SQLite.DB, id::Int)
-    # Try auto_peaks first
-    auto_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT a.id, a.exposure_id, a.q, a.intensity, a.prominence, a.sharpness,
-                  'auto' AS source,
-                  CASE WHEN c.q IS NOT NULL THEN 1 ELSE 0 END AS excluded
-           FROM auto_peaks a
-           LEFT JOIN peak_curations c
-               ON c.exposure_id = a.exposure_id
-              AND c.kind = 'exclude'
-              AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
-           WHERE a.id = ?""", [id]))
-    isempty(auto_rows) || return auto_rows[1]
-
-    # Try peak_curations (kind='add')
-    curation_rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT id, exposure_id, q, NULL AS intensity, NULL AS prominence,
-                  NULL AS sharpness, 'manual' AS source, 0 AS excluded
-           FROM peak_curations WHERE id = ? AND kind = 'add'""", [id]))
-    isempty(curation_rows) && return nothing
-    return curation_rows[1]
+function _auto_peak_row(db::SQLite.DB, id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db, _AUTO_PEAK_SQL, [id]))
+    isempty(rows) ? nothing : rows[1]
 end
 
 function register_peaks_routes!()
@@ -208,47 +194,24 @@ function register_peaks_routes!()
         end
     end
 
-    @patch "/api/peaks/{id}" function(req::HTTP.Request, id::Int)
+    @patch "/api/peaks/auto/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
         return with_idempotency(db, req) do
             body = json(req)
 
-            # Currently the only patchable field is `excluded`, and only on auto peaks.
             if !haskey(body, :excluded)
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
                     JSON3.write(Dict(:error => "missing field: excluded")))
             end
 
-            # Check curation-add first: PATCH is not allowed on manual peaks
-            # (auto peak ids and curation ids are in separate sequences and may
-            # collide — always resolve 'add' curations before auto_peaks for PATCH).
-            curation_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM peak_curations WHERE id = ? AND kind = 'add'", [id]))
-            if !isempty(curation_rows)
-                return HTTP.Response(400,
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "only auto peaks can be excluded; delete manual peaks instead")))
-            end
-
-            # Check auto_peaks
-            auto_rows = Tables.rowtable(DBInterface.execute(db,
-                """SELECT a.id, a.exposure_id, a.q, a.intensity, a.prominence, a.sharpness,
-                          'auto' AS source,
-                          CASE WHEN c.q IS NOT NULL THEN 1 ELSE 0 END AS excluded
-                   FROM auto_peaks a
-                   LEFT JOIN peak_curations c
-                       ON c.exposure_id = a.exposure_id
-                      AND c.kind = 'exclude'
-                      AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
-                   WHERE a.id = ?""", [id]))
-            if isempty(auto_rows)
+            peak_row = _auto_peak_row(db, id)
+            if peak_row === nothing
                 return HTTP.Response(404,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "peak not found")))
+                    JSON3.write(Dict(:error => "auto peak not found")))
             end
 
-            peak_row    = auto_rows[1]
             exposure_id = Int(peak_row.exposure_id)
 
             excluded = Bool(body.excluded)
@@ -331,10 +294,10 @@ function register_peaks_routes!()
 
             # Return the updated row with fresh excluded state, plus the M2
             # response shape (event_id, view_row_id, analysis_inputs_hash).
-            out = _effective_peak_row(db, id)
+            out = _auto_peak_row(db, id)
             out === nothing && return HTTP.Response(404,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "peak not found after update")))
+                JSON3.write(Dict(:error => "auto peak not found after update")))
 
             d = row_to_json(out; bool_keys = (:excluded,))
             d[:event_id]             = event_id_out
@@ -344,83 +307,53 @@ function register_peaks_routes!()
         end
     end
 
-    @delete "/api/peaks/{id}" function(req::HTTP.Request, id::Int)
+    @delete "/api/peaks/manual/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
         return with_idempotency(db, req) do
-            # Check peak_curations(kind='add') first — manual peaks are deletable.
-            # (Auto peak ids and curation ids are independent sequences and can
-            # collide; always prefer the curation interpretation for DELETE.)
             curation_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, exposure_id FROM peak_curations WHERE id = ? AND kind = 'add'",
+                "SELECT exposure_id, q FROM peak_curations WHERE id = ? AND kind = 'add'",
                 [id]))
-            if !isempty(curation_rows)
-                exposure_id = Int(curation_rows[1].exposure_id)
-                # Capture q BEFORE deletion so the SSE payload is self-contained;
-                # foreign tabs need either id or q to filter the cache (issue #1).
-                q_rows = Tables.rowtable(DBInterface.execute(db,
-                    "SELECT q FROM peak_curations WHERE id = ?", [id]))
-                removed_q = isempty(q_rows) ? nothing : Float64(q_rows[1].q)
-
-                # Delete the curation row and its associated index_peaks rows
-                DBInterface.execute(db,
-                    "DELETE FROM index_peaks WHERE peak_id = ? AND peak_kind = 'curation'", [id])
-                DBInterface.execute(db,
-                    "DELETE FROM peak_curations WHERE id = ?", [id])
-
-                payload = Dict{Symbol, Any}(:peak_curation_id => id)
-                removed_q === nothing || (payload[:q] = removed_q)
-                result = apply_event!(InTransaction(), db, req;
-                    kind        = "peak_removed",
-                    entity_type = "exposure",
-                    entity_id   = exposure_id,
-                    payload     = payload)
-
-                dir = _resolve_analysis_dir(db, exposure_id)
-                dropped = String[]
-                if dir !== nothing
-                    ares = analyze_exposure!(db, exposure_id, dir;
-                        trace_known_unchanged = true,
-                        defer_broadcast       = true)
-                    dropped = ares.dropped_assignment_phases
-                end
-
-                post_state = _enrich_curation_post_state(db, exposure_id;
-                    dropped_assignment_phases = dropped)
-                _enqueue_broadcast_from_result!(result, "peak_removed",
-                    "exposure", exposure_id; post_state = post_state)
-
-                return HTTP.Response(200,
+            if isempty(curation_rows)
+                return HTTP.Response(404,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(
-                        :event_id             => result.event_id,
-                        :view_row_id          => result.view_row_id,
-                        :analysis_inputs_hash => post_state[:analysis_inputs_hash],
-                    )))
+                    JSON3.write(Dict(:error => "manual peak not found")))
+            end
+            exposure_id = Int(curation_rows[1].exposure_id)
+            removed_q   = Float64(curation_rows[1].q)
+
+            DBInterface.execute(db,
+                "DELETE FROM index_peaks WHERE peak_id = ? AND peak_kind = 'curation'", [id])
+            DBInterface.execute(db,
+                "DELETE FROM peak_curations WHERE id = ?", [id])
+
+            payload = Dict{Symbol, Any}(:peak_curation_id => id, :q => removed_q)
+            result = apply_event!(InTransaction(), db, req;
+                kind        = "peak_removed",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = payload)
+
+            dir = _resolve_analysis_dir(db, exposure_id)
+            dropped = String[]
+            if dir !== nothing
+                ares = analyze_exposure!(db, exposure_id, dir;
+                    trace_known_unchanged = true,
+                    defer_broadcast       = true)
+                dropped = ares.dropped_assignment_phases
             end
 
-            # If not a curation-add, check auto_peaks
-            auto_rows = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id FROM auto_peaks WHERE id = ?", [id]))
-            if !isempty(auto_rows)
-                # Auto peaks cannot be hard-deleted; use PATCH { excluded: true } instead
-                return HTTP.Response(400,
-                    ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "auto peaks can only be excluded, not deleted; use PATCH { excluded: true } instead")))
-            end
+            post_state = _enrich_curation_post_state(db, exposure_id;
+                dropped_assignment_phases = dropped)
+            _enqueue_broadcast_from_result!(result, "peak_removed",
+                "exposure", exposure_id; post_state = post_state)
 
-            HTTP.Response(404,
+            HTTP.Response(200,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "peak not found")))
+                JSON3.write(Dict(
+                    :event_id             => result.event_id,
+                    :view_row_id          => result.view_row_id,
+                    :analysis_inputs_hash => post_state[:analysis_inputs_hash],
+                )))
         end
-    end
-
-    @get "/api/peaks/{id}" function(req::HTTP.Request, id::Int)
-        db  = current_db()
-        row = _effective_peak_row(db, id)
-        row === nothing && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "peak not found")))
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(row_to_json(row; bool_keys = (:excluded,))))
     end
 end

@@ -28,9 +28,10 @@ import { scopeSeriesMutator } from "./mutators/scopeSeries";
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
-  setAssignmentStateMutator,
+  setSampleCallStateMutator,
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
+import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
 import { moveExposureMutator, renameSampleMutator, mergeSamplesMutator, splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator } from "./mutators/grouping";
 
 /**
@@ -125,8 +126,8 @@ export function resolveMutator(
       return addAssignmentPhaseMutator;
     case "assignment_remove":
       return removeAssignmentPhaseMutator;
-    case "assignment_set_state":
-      return setAssignmentStateMutator;
+    case "sample_call_set_state":
+      return setSampleCallStateMutator;
     case "custom_index_commit":
       return customIndexMutator;
     case "move_exposure": return moveExposureMutator;
@@ -135,6 +136,8 @@ export function resolveMutator(
     case "split_sample":           return splitSampleMutator;
     case "dismiss_grouping_flag":  return dismissGroupingFlagMutator;
     case "undo_dismiss_grouping_flag": return undoDismissGroupingFlagMutator;
+    case "bridge_samples":         return bridgeSamplesMutator;
+    case "unbridge_sample":        return unbridgeSampleMutator;
     default:
       return undefined;
   }
@@ -173,7 +176,7 @@ export function resolveMutatorForEvent(
       return commitSeriesPlateMutator;
     case "assignment_add":         return addAssignmentPhaseMutator;
     case "assignment_remove":      return removeAssignmentPhaseMutator;
-    case "assignment_set_state":   return setAssignmentStateMutator;
+    case "sample_call_set_state":  return setSampleCallStateMutator;
     // custom_index_commit has no own event kind — its route emits
     // speculative_created + assignment_add, both resolved above. Nothing to add.
     case "update_sample":       return updateSampleMutator;
@@ -215,6 +218,8 @@ export function resolveMutatorForEvent(
     // sample_split has no own-op mutator — it routes through applyRemoteToCache.
     case "sample_split":             return splitSampleMutator;
     case "grouping_flag_dismissed":  return dismissGroupingFlagMutator;
+    case "sample_bridged":           return bridgeSamplesMutator;
+    case "sample_unbridged":         return unbridgeSampleMutator;
     // merge_samples fans out as exposure_moved frames (no sample_merged kind exists);
     // own-op confirmation uses the exposure_moved arm above.
     // Event kinds with no queue mutator fall through here (handled entirely by

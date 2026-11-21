@@ -371,7 +371,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                 """INSERT OR IGNORE INTO index_peaks
                      (index_id, peak_id, peak_kind, ratio_position, residual)
                    VALUES (?, ?, ?, ?, ?)""",
-                [db_id, peak_id, String(peak_kind), rpos, resid])
+                [db_id, peak_id, String(peak_kind), Int(rpos), resid])
         end
     end
 
@@ -380,11 +380,9 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # index's `index_peaks` rows need fresh peak_ids. We match by q-value
     # (auto peaks: lookup in eff_lookup; curation-add peaks: stable id).
     if !isempty(speculative_index_ids)
-        # Build a lookup: peak_id → (q, sharpness, peak_kind) from eff
-        eff_by_id = Dict{Int, NamedTuple}()
+        eff_by_ref = Dict{Tuple{Int, Symbol}, NamedTuple}()
         for i in eachindex(eff.q)
-            eff_by_id[eff.peak_id[i]] = (q = eff.q[i], sharpness = eff.sharpness[i],
-                                          peak_kind = eff.peak_kind[i])
+            eff_by_ref[(eff.peak_id[i], eff.peak_kind[i])] = (q = eff.q[i], sharpness = eff.sharpness[i])
         end
 
         # Match an intent q against the current effective peak set. Curation
@@ -393,14 +391,14 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         # tolerance the old snapshot resolution used).
         function _resolve_intent_peak(qv::Float64)
             info = get(eff_lookup, qv, nothing)
-            info !== nothing && return info[1]
+            info !== nothing && return info
             tol_val = max(EXCLUDE_TOL, abs(qv) * 0.001)
             best, best_delta = nothing, Inf
             for i in eachindex(eff.q)
                 d = abs(eff.q[i] - qv)
                 if d < best_delta && d <= tol_val
                     best_delta = d
-                    best = eff.peak_id[i]
+                    best = (eff.peak_id[i], eff.peak_kind[i])
                 end
             end
             best
@@ -427,21 +425,21 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # analyze of this exposure.
             snaps = filter(s -> 1 <= Int(s.ratio_position) <= n,
                            get(by_index, ix_id, NamedTuple[]))
-            ratio_to_peak = Dict{Int, Tuple{Int, Float64, Float64}}()  # rpos → (peak_id, q, sharpness)
-            claimed_intent_pids = Set{Int}()
+            ratio_to_peak = Dict{Int, Tuple{Tuple{Int, Symbol}, Float64, Float64}}()
+            claimed_intent_refs = Set{Tuple{Int, Symbol}}()
             for s in snaps
                 rpos = Int(s.ratio_position)
-                pid  = _resolve_intent_peak(Float64(s.q_value))
-                pid === nothing && continue
+                ref  = _resolve_intent_peak(Float64(s.q_value))
+                ref === nothing && continue
                 # One peak per ratio position: without this, two intents can
                 # fuzzy-resolve to the same peak — stats then count it twice
                 # while the (index_id, peak_id, peak_kind) PK silently drops
                 # the second resolved row.
-                pid in claimed_intent_pids && continue
-                pr = get(eff_by_id, pid, nothing)
+                ref in claimed_intent_refs && continue
+                pr = get(eff_by_ref, ref, nothing)
                 pr === nothing && continue
-                ratio_to_peak[rpos] = (pid, Float64(pr.q), Float64(pr.sharpness))
-                push!(claimed_intent_pids, pid)
+                ratio_to_peak[rpos] = (ref, Float64(pr.q), Float64(pr.sharpness))
+                push!(claimed_intent_refs, ref)
             end
 
             # Determine a working basis we can use to discover *new* peaks that
@@ -488,29 +486,29 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # durable record and re-resolution (above) is how it heals.
             locked_row = !ismissing(ix_row.basis_locked) && Int(ix_row.basis_locked) == 1
             if !locked_row && basis_for_snap !== nothing && basis_for_snap > 0
-                claimed_pids = Set{Int}(p[1] for p in values(ratio_to_peak))
+                claimed_refs = Set{Tuple{Int, Symbol}}(p[1] for p in values(ratio_to_peak))
                 for rpos in 1:n
                     haskey(ratio_to_peak, rpos) && continue
                     predicted_q = basis_for_snap * ratios_normed[rpos]
-                    best_pid::Union{Int, Nothing} = nothing
+                    best_ref::Union{Tuple{Int, Symbol}, Nothing} = nothing
                     best_q     = 0.0
                     best_sharp = 0.0
                     best_relresid = SNAP_TOL
                     for i in eachindex(eff.q)
-                        pid = eff.peak_id[i]
-                        pid in claimed_pids && continue
+                        ref = (eff.peak_id[i], eff.peak_kind[i])
+                        ref in claimed_refs && continue
                         qv = eff.q[i]
                         relresid = abs(qv - predicted_q) / predicted_q
                         if relresid <= best_relresid
                             best_relresid = relresid
-                            best_pid      = pid
+                            best_ref      = ref
                             best_q        = qv
                             best_sharp    = eff.sharpness[i]
                         end
                     end
-                    if best_pid !== nothing
-                        ratio_to_peak[rpos] = (best_pid, best_q, best_sharp)
-                        push!(claimed_pids, best_pid)
+                    if best_ref !== nothing
+                        ratio_to_peak[rpos] = (best_ref, best_q, best_sharp)
+                        push!(claimed_refs, best_ref)
                     end
                 end
             end
@@ -576,14 +574,8 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
                    WHERE id = ?""",
                 [new_basis, new_score, new_r2, new_d, ix_id])
 
-            for (rpos, (pid, qv, _)) in ratio_to_peak
-                # Determine peak_kind from eff_by_id
-                pk_info = get(eff_by_id, pid, nothing)
-                pk_str = if pk_info !== nothing
-                    String(pk_info.peak_kind)
-                else
-                    "auto"
-                end
+            for (rpos, ((pid, kind), qv, _)) in ratio_to_peak
+                pk_str = String(kind)
                 ideal = ratios_normed[rpos] * new_basis
                 resid = abs(qv - ideal)
                 DBInterface.execute(db,

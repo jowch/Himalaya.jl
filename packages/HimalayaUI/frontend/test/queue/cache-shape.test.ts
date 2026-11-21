@@ -30,7 +30,7 @@ import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpe
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
-  setAssignmentStateMutator,
+  setSampleCallStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
 import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
@@ -154,7 +154,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     };
     qc.setQueryData(queryKeys.peaks(5), [initial]);
     qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
-    // Mock derived from routes_peaks.jl PATCH /peaks/:id response.
+    // Mock derived from routes_peaks.jl PATCH /peaks/auto/:id response.
     mockFetchOnce({
       ...initial, excluded: true,
       event_id: 10, view_row_id: 11,
@@ -207,7 +207,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     };
     qc.setQueryData(queryKeys.peaks(5), [initial]);
     qc.setQueryData(queryKeys.exposure(5), FULL_EXPOSURE);
-    // Mock derived from routes_peaks.jl DELETE /peaks/:id response.
+    // Mock derived from routes_peaks.jl DELETE /peaks/manual/:id response.
     mockFetchOnce({
       event_id: 12, view_row_id: null,
       analysis_inputs_hash: "h2",
@@ -284,22 +284,26 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     assertKeys(qc.getQueryData(queryKeys.assignment(5)), ASSIGNMENT_KEYS, "removeAssignmentPhase cache row");
   });
 
-  it("setAssignmentState writes an Assignment with exactly 3 keys (members cleared)", async () => {
+  it("setSampleCallState writes an Assignment with exactly 3 keys on every frame of the sample", async () => {
+    qc.setQueryData(queryKeys.exposures(1), [{ id: 5 }, { id: 6 }]);
     qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [42] });
+    qc.setQueryData(queryKeys.assignment(6), { exposure_id: 6, state: "indexed", members: [43] });
     mockFetchOnce({
-      exposure_id: 5, state: "form_factor", members: [],
-      event_id: 23, view_row_id: 9,
+      sample_id: 1, state: "form_factor", phase: null, call_phases: [], members: [],
+      event_id: 23, view_row_id: null,
     }, 200);
-    await runMutator(qc, setAssignmentStateMutator, {
-      kind: "assignment_set_state",
+    await runMutator(qc, setSampleCallStateMutator, {
+      kind: "sample_call_set_state",
       clientOpId: "op-asg-3",
-      exposureId: 5, username: "alice", clientId: "tab-1",
+      sampleId: 1, username: "alice", clientId: "tab-1",
       state: "form_factor", payload: { state: "form_factor" },
     });
-    const a = qc.getQueryData<{ state: string; members: number[] }>(queryKeys.assignment(5));
-    assertKeys(a, ASSIGNMENT_KEYS, "setAssignmentState cache row");
-    expect(a!.state).toBe("form_factor");
-    expect(a!.members).toEqual([]);
+    for (const id of [5, 6]) {
+      const a = qc.getQueryData<{ state: string; members: number[] }>(queryKeys.assignment(id));
+      assertKeys(a, ASSIGNMENT_KEYS, "setSampleCallState cache row");
+      expect(a!.state).toBe("form_factor");
+      expect(a!.members).toEqual([]);
+    }
   });
 
   it("two pending assignment_add ops converge (reverse-rollback + insertion-replay)", () => {

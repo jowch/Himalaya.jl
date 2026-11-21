@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup demo-data demo demo-empty demo-clean verify-truth lint
+.PHONY: all frontend sysimage check-sysimage clean test-parallel setup dev-setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
 
 all: frontend sysimage
 
@@ -64,12 +64,20 @@ test-parallel:
 # Manifest already records the path dep, so put back the file as it was before
 # (a copy, not `git checkout`, so uncommitted edits to it survive).
 UI_PROJECT := packages/HimalayaUI/Project.toml
+UI_PREFS   := packages/HimalayaUI/LocalPreferences.toml
 setup:
 	cd $(FRONTEND_DIR) && npm ci
 	julia --project=. -e 'using Pkg; Pkg.instantiate()'
 	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak; \
 	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
 	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'
+	@! grep -qs 'precompile_workload *= *false' $(UI_PREFS) || \
+		echo "Note: $(UI_PREFS) turns the route warm-up off. Delete it on a server."
+
+dev-setup:
+	@test -f $(UI_PREFS) || printf '[HimalayaUI]\nprecompile_workload = false\n' > $(UI_PREFS)
+	$(MAKE) setup
 
 # Synthetic SSRL-style experiment, generated on demand and NEVER committed
 # (scratch/ is gitignored). Override the target dir with DEMO_DIR=/tmp/...
@@ -77,6 +85,17 @@ DEMO_DIR    ?= scratch/demo-experiment
 DEMO_DB_DIR ?= scratch/demo
 demo-data:
 	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR)
+
+# Realistic scale: DEMO_LARGE_DIR/large_01 ... large_10, 300 samples each, with
+# images shared from a pool (docs/demo.md "Large mode"). Takes ~35 s, ~1.4 GB.
+DEMO_LARGE_DIR    ?= scratch/demo-large
+DEMO_LARGE_DB_DIR ?= scratch/demo-large-db
+demo-large-data:
+	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_LARGE_DIR) --large
+
+# Generate (if missing) and ingest every large experiment, then start the app.
+demo-large:
+	DEMO_DIR=$(DEMO_LARGE_DIR) DEMO_DB_DIR=$(DEMO_LARGE_DB_DIR) packages/HimalayaUI/scripts/demo.sh --large
 
 # Backend + Vite with the demo experiment ingested (through the same API calls
 # the New-experiment funnel makes). Generates the data first if it is missing.
@@ -90,9 +109,13 @@ demo-empty:
 verify-truth:
 	packages/HimalayaUI/scripts/verify_truth.sh
 
-# Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), so a mistyped
-# DEMO_DIR pointing at real data is left alone.
+# Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), and DEMO_LARGE_DIR
+# only when it holds nothing but large_NN folders and the completion marker, so a
+# mistyped path pointing at real data is left alone.
 demo-clean:
 	@if [ -f "$(DEMO_DIR)/TRUTH.csv" ]; then rm -rf "$(DEMO_DIR)"; \
 	elif [ -e "$(DEMO_DIR)" ]; then echo "$(DEMO_DIR) has no TRUTH.csv; not a demo tree, leaving it" >&2; fi
 	rm -rf "$(DEMO_DB_DIR)" "$(DEMO_DB_DIR)-empty"
+	rm -rf "$(DEMO_LARGE_DB_DIR)"
+	@if [ -e "$(DEMO_LARGE_DIR)" ] || [ -L "$(DEMO_LARGE_DIR)" ]; then \
+		julia --project=packages/HimalayaUI --startup-file=no packages/HimalayaUI/scripts/make_demo_data.jl --clean-large "$(DEMO_LARGE_DIR)"; fi

@@ -1,4 +1,5 @@
 import type { OpKind } from "./types";
+import { NetworkError } from "../../api";
 
 interface ErrorWithStatus {
   status?: number;
@@ -48,6 +49,19 @@ export function isInfrastructureError(err: unknown): boolean {
   return true;
 }
 
+const UNREACHABLE_STATUSES = new Set([502, 503, 504]);
+
+export function isUnreachableError(err: unknown): boolean {
+  if (err instanceof NetworkError) return true;
+  const e = asErrorWithStatus(err);
+  return !!e && typeof e.status === "number" && UNREACHABLE_STATUSES.has(e.status);
+}
+
+export function isServerError(err: unknown): boolean {
+  const e = asErrorWithStatus(err);
+  return !!e && typeof e.status === "number" && e.status >= 500 && e.status < 600;
+}
+
 const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   peak_added: "Couldn't add peak",
   peak_excluded: "Couldn't exclude peak",
@@ -63,6 +77,8 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   update_sample: "Couldn't update sample",
   reanalyze_exposure: "Couldn't re-analyze exposure",
   delete_index: "Couldn't delete index",
+  assignment_add: "Couldn't call phase",
+  assignment_remove: "Couldn't remove phase",
 };
 
 /**
@@ -74,4 +90,9 @@ export function buildValidationMessage(kind: OpKind, err: unknown): string {
   const detail =
     asErrorWithStatus(err)?.message ?? "see browser console for details";
   return `${head}: ${detail}`;
+}
+
+export function buildServerErrorMessage(kind: OpKind): string {
+  const head = VALIDATION_COPY[kind] ?? "Action failed";
+  return `${head}: the server hit an error, so the change was undone`;
 }

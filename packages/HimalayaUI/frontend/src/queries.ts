@@ -26,7 +26,7 @@ import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
-  setAssignmentStateMutator,
+  setSampleCallStateMutator,
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
@@ -40,6 +40,7 @@ import {
   splitSampleMutator, dismissGroupingFlagMutator, undoDismissGroupingFlagMutator,
 } from "./lib/queue/mutators/grouping";
 import { useExposureHasPendingPeakOps } from "./lib/queue/hooks";
+import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -53,6 +54,8 @@ export const queryKeys = {
   experiment: (id: number) => ["experiment", id] as const,
   samples:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "samples"] as const,
+  bridges:    (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "bridges"] as const,
   loads:      (id: number | undefined) =>
     ["experiment", id ?? "none", "loads"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -65,6 +68,8 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "indices"] as const,
   assignment: (exposureId: number | undefined) =>
     ["exposure", exposureId ?? "none", "assignment"] as const,
+  sampleCall: (sampleId: number | undefined) =>
+    ["sample", sampleId ?? "none", "call"] as const,
   messages:   (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "messages"] as const,
   speculativeSnap: (
@@ -77,7 +82,6 @@ export const queryKeys = {
   // Single-entity keys are namespaced with `-entity` to avoid prefix-matching
   // collisions with the existing collection keys (e.g., a future
   // invalidate(["exposure", id]) would otherwise also blast peaks/indices).
-  peak:     (id: number | undefined) => ["peak-entity", id ?? "none"] as const,
   index:    (id: number | undefined) => ["index-entity", id ?? "none"] as const,
   exposure: (id: number | undefined) => ["exposure-entity", id ?? "none"] as const,
   sample:   (id: number | undefined) => ["sample-entity", id ?? "none"] as const,
@@ -145,6 +149,24 @@ export function useExperiment(id: number) {
  *  manual reload. Polling while the scan is live (mirrors useExperiment's ingest
  *  self-heal) picks up the committed loads regardless of the invalidation race;
  *  it stops the moment the caller's `scanning` flag clears. */
+export function useBridges(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.bridges(experimentId),
+    queryFn: () => api.listBridges(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
+export function useBridgeSamples(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(bridgeSamplesMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useUnbridgeSample(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(unbridgeSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
 export function useLoads(id: number, refetchWhileScanning = false) {
   return useQuery({
     queryKey: queryKeys.loads(id),
@@ -400,6 +422,23 @@ export function useAssignment(exposureId: number | undefined) {
   });
 }
 
+export function useSampleCall(sampleId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.sampleCall(sampleId),
+    queryFn: () => api.getSampleCall(sampleId as number),
+    enabled: sampleId !== undefined,
+  });
+}
+
+export function useFrameAssignments(exposureIds: number[]) {
+  return useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: queryKeys.assignment(id),
+      queryFn: () => api.getAssignment(id),
+    })),
+  });
+}
+
 export function useAddAssignmentPhase(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
@@ -418,11 +457,24 @@ export function useRemoveAssignmentPhase(exposureId: number) {
   return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
 }
 
-export function useSetAssignmentState(exposureId: number) {
+export function useRemoveFramePhase() {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
-    setAssignmentStateMutator,
-    { exposureId, username, clientId: CLIENT_ID },
+    removeAssignmentPhaseMutator,
+    { exposureId: 0, username, clientId: CLIENT_ID },
+  );
+  return {
+    ...inner,
+    mutate: (exposureId: number, indexId: number) =>
+      inner.mutate({ exposureId, indexId }),
+  };
+}
+
+export function useSetSampleCallState(sampleId: number) {
+  const username = useAppState((s) => s.username);
+  const inner = useQueueMutation(
+    setSampleCallStateMutator,
+    { sampleId, username, clientId: CLIENT_ID },
   );
   return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
 }
@@ -609,15 +661,6 @@ export function useRemoveExposureTag(sampleId: number, exposureId: number) {
     ...inner,
     mutate: (tagId: number) => inner.mutate({ tagId }),
   };
-}
-
-export function usePeak(id: number | undefined) {
-  return useQuery({
-    queryKey: queryKeys.peak(id),
-    queryFn: () => api.getPeak(id as number),
-    enabled: id !== undefined,
-    retry: false,
-  });
 }
 
 export function useIndex(id: number | undefined) {
