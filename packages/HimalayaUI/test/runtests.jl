@@ -39,7 +39,8 @@ const GROUPS = [
                   "test_idempotency_sse_suppression.jl","test_comparisons.jl",
                   "test_comparison_pins.jl"]),
     ("wire",     ["test_http.jl","test_routes_health.jl","test_routes_status.jl",
-                  "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl"]),
+                  "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl",
+                  "test_precompile_workload.jl"]),
     ("migration", ["test_http.jl","test_migration_upgrade.jl"]),
 ]
 
@@ -74,7 +75,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl","test_migrate_comparisons_to_se
                    "test_picker_samples_route.jl","test_routes_resolve.jl","test_routes_bridges.jl",
                    "test_routes_fs.jl",
                    "test_comparison_pins.jl",
-                   "test_spa_fallback.jl","test_migration_upgrade.jl"]
+                   "test_spa_fallback.jl","test_precompile_workload.jl","test_migration_upgrade.jl"]
 
 # Drift guard: the buckets and ALL_ORDER must cover the identical file set, so a
 # parallel / GROUP=<name> run can never silently skip (or double-run) a file

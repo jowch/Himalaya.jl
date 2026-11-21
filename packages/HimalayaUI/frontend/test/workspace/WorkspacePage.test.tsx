@@ -22,7 +22,11 @@ const state = {
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
+  loads: [] as { samples: { flag: object | null }[] }[],
+  ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
+  rescanError: false,
 };
+const rescans: boolean[] = [];
 
 function recorder(hook: string) {
   return (boundTo: number) => ({
@@ -34,7 +38,9 @@ function recorder(hook: string) {
 
 vi.mock("../../src/queries", () => ({
   useCorpusSamples: () => ({ data: state.corpus, isLoading: false }),
-  useExperiment: () => ({ data: { id: 1, name: "BL-19" } }),
+  useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
+  useLoads: () => ({ data: state.loads }),
+  useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useExposures: () => ({ data: state.exposures }),
   useTrace: () => ({ data: state.trace, isError: state.traceError, isFetching: state.traceFetching, refetch: traceRefetch }),
   usePeaks: () => ({ data: state.peaks }),
@@ -94,7 +100,8 @@ function clickPlotAt(q: number, detail = 1): void {
 
 const clearUsername = vi.fn();
 vi.mock("../../src/state", () => ({
-  useAppState: (sel: (s: { username: string | undefined; clearUsername: () => void }) => unknown) => sel({ username: state.username, clearUsername }),
+  useAppState: (sel: (s: { username: string | undefined; clearUsername: () => void; ingestInFlight: Record<number, unknown> }) => unknown) =>
+    sel({ username: state.username, clearUsername, ingestInFlight: state.ingest ? { 1: state.ingest } : {} }),
 }));
 
 function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): CorpusSample {
@@ -124,6 +131,7 @@ function page(path: string): JSX.Element {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/experiments/:id/workspace/:sampleId?" element={<><WorkspacePage /><Where /></>} />
+        <Route path="*" element={<Where />} />
       </Routes>
     </MemoryRouter>
   );
@@ -163,6 +171,10 @@ beforeEach(() => {
   state.peaks = [];
   state.compareTraces = new Map();
   state.bridges = [];
+  state.loads = [];
+  state.ingest = undefined;
+  state.rescanError = false;
+  rescans.length = 0;
 });
 
 describe("WorkspacePage", () => {
@@ -262,9 +274,75 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
   });
 
-  it("links the Himalaya brand back to the corpus", () => {
+  it("links the Himalaya brand to all experiments", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments/1/corpus");
+    expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments");
+  });
+
+  it("opens an experiment without a sample on its first unreviewed sample", () => {
+    renderAt("/experiments/1/workspace");
+    expect(screen.getByRole("heading", { level: 2, name: "A2" })).toBeInTheDocument();
+  });
+
+  it("puts the landing sample in the URL, so calling its phase does not move on", () => {
+    const { rerender } = renderAt("/experiments/1/workspace");
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m" } : s));
+    rerender(page("/experiments/1/workspace"));
+    expect(screen.getByRole("heading", { level: 2, name: "A2" })).toBeInTheDocument();
+  });
+
+  it("says when the last rescan failed, and Details opens the failure", () => {
+    state.ingest = { status: "failed", processed: 0, total: 0 };
+    renderAt("/experiments/1/workspace/10");
+    const failed = screen.getByTestId("workspace-rescan-failed");
+    expect(failed).toHaveTextContent("The last rescan failed.");
+    fireEvent.click(within(failed).getByRole("button", { name: "Details" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/experiments\/1$/);
+  });
+
+  it("says the rescan failed when the request to start it fails", () => {
+    state.rescanError = true;
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-rescan-failed")).toBeInTheDocument();
+  });
+
+  it("shows nothing above the list while grouping is settled and no rescan runs", () => {
+    state.loads = [{ samples: [{ flag: null }] }];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-notice")).toBeNull();
+  });
+
+  it("says how many samples need a grouping check, and Review opens the grouping review", () => {
+    state.loads = [{ samples: [{ flag: { kind: "merge" } }, { flag: null }, { flag: { kind: "split" } }] }];
+    renderAt("/experiments/1/workspace/10");
+    const notice = screen.getByTestId("workspace-notice");
+    expect(notice).toHaveTextContent("2 samples need a grouping check.");
+    fireEvent.click(within(notice).getByRole("button", { name: "Review" }));
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/grouping");
+  });
+
+  it("shows rescan progress and hides the Rescan command while it runs", () => {
+    state.ingest = { status: "analyzing", processed: 5, total: 10 };
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-rescan")).toHaveTextContent("Rescanning: 5 / 10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "rescan" } });
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+  });
+
+  it("rescans, configures and reviews grouping from the palette", () => {
+    renderAt("/experiments/1/workspace/10");
+    const run = (label: string): void => {
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      const input = screen.getByLabelText("Command or sample");
+      fireEvent.change(input, { target: { value: label } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    };
+    run("rescan");
+    expect(rescans).toEqual([false]);
+    run("configure experiment");
+    expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/config");
   });
 
   it("updates the list and the count when the corpus status changes", () => {
@@ -828,6 +906,22 @@ describe("WorkspacePage", () => {
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
   });
 
+  it("the indexing plot waits for the trace before counting reflections", () => {
+    state.trace = undefined;
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
+    state.indices = [
+      {
+        ...index(2, "Pn3m", 0.9),
+        peaks: [
+          { peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 },
+          { peak_id: 8, ratio_position: 2, residual: 0, q_observed: 0.14 },
+        ],
+      },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-indexing-fit")).toBeNull();
+  });
+
   it("draws empty indexing axes before any candidate is hovered or ticked", () => {
     state.assignment = { exposure_id: 101, state: "indexed", members: [] };
     renderAt("/experiments/1/workspace/10");
@@ -859,8 +953,8 @@ describe("WorkspacePage", () => {
     state.indices = [{ ...index(2, "Pn3m", 0.9), lattice_d: a }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 6");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/6 on peaks");
+    expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 9");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/9 on peaks");
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { sampleStatus, nextUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
@@ -38,6 +38,20 @@ describe("sampleStatus", () => {
 
   it("reports form factor", () => {
     expect(sampleStatus(sample(1, { assignment_state: "form_factor" }))).toEqual({ kind: "form_factor" });
+  });
+});
+
+describe("firstUnreviewed", () => {
+  it("opens on the first unreviewed sample", () => {
+    expect(firstUnreviewed([sample(1, { assignment_state: "indexed", phase: "Pn3m" }), sample(2), sample(3)])?.id).toBe(2);
+  });
+
+  it("falls back to the first sample when everything is reviewed", () => {
+    expect(firstUnreviewed([sample(1, { assignment_state: "form_factor" }), sample(2, { assignment_state: "form_factor" })])?.id).toBe(1);
+  });
+
+  it("is undefined for an empty experiment", () => {
+    expect(firstUnreviewed([])).toBeUndefined();
   });
 });
 

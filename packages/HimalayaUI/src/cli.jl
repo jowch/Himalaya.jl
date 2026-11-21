@@ -205,7 +205,7 @@ function cli_show(args)
     end
 end
 
-function cli_serve(args)
+function parse_serve_args(args)
     s = ArgParseSettings(prog = "himalaya serve")
     @add_arg_table! s begin
         "--port"
@@ -214,7 +214,11 @@ function cli_serve(args)
         "--host"
             default  = get(ENV, "HIMALAYA_HOST", "127.0.0.1")
     end
-    p = parse_args(args, s; as_symbols = true)
+    parse_args(args, s; as_symbols = true)
+end
+
+function cli_serve(args)
+    p = parse_serve_args(args)
 
     db_path = default_db_path()
     # First-run bootstrap: serve an empty schema'd DB when none exists yet, so a
