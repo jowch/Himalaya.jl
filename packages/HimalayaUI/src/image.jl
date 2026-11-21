@@ -6,7 +6,7 @@ using Base.Threads: @threads, Atomic, atomic_add!
 Bump this string whenever `load_and_lognormalize` semantics change. It feeds
 into the per-image cache-busting token; bumping forces all browsers to re-fetch.
 """
-const IMAGE_PROCESSING_VERSION = "v3"
+const IMAGE_PROCESSING_VERSION = "v4"
 
 """
 Percentile clips applied to the log-counts of *positive* pixels in
@@ -62,9 +62,9 @@ function _clip_normalize(lv::AbstractMatrix{Float32})
     isempty(pos) && return lv
     lo = pos[max(1, round(Int, LOW_CLIP_PERCENTILE * length(pos)))]
     hi = pos[min(end, round(Int, HIGH_CLIP_PERCENTILE * length(pos)))]
-    # physics: a beam-off frame is the detector's flat dark floor, so the clip
-    # points coincide. The floor renders black and only pixels above it (hot
-    # pixels, stray light) render white.
+    # physics: on a beam-off frame almost every positive pixel is the same dark
+    # count, so the clip points coincide. Everything at or below that count
+    # renders black, and only brighter pixels render white.
     hi > lo || return Float32.(lv .> lo)
     clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0)
 end
@@ -162,8 +162,12 @@ leave a same-second re-ingest serving a stale cached thumb).
 """
 function _write_thumb_atomic(cache_path::String, bytes::Vector{UInt8})
     mkpath(dirname(cache_path))
-    tmp = string(cache_path, ".", getpid(), ".", Threads.threadid(), ".tmp")
-    write(tmp, bytes)
+    tmp, io = mktemp(dirname(cache_path))
+    try
+        write(io, bytes)
+    finally
+        close(io)
+    end
     mv(tmp, cache_path; force = true)
     nothing
 end
@@ -205,17 +209,28 @@ end
 function full_cache_path(db::SQLite.DB, exposure_id::Integer, token::AbstractString)
     dir = thumb_cache_dir(db)
     dir === nothing && return nothing
-    joinpath(dirname(dir), "full-1536", string(exposure_id, "-", token, ".png"))
+    joinpath(dirname(dir), "full-1536", string(exposure_id), string(token, ".png"))
 end
 
-_full_size_path(cache_path::String) = string(cache_path[1:end-4], ".size")
+_full_size_path(cache_path::String) = first(splitext(cache_path)) * ".size"
 
 function _read_full_cached(cache_path::String)
-    size_path = _full_size_path(cache_path)
-    (isfile(cache_path) && isfile(size_path)) || return nothing
-    dims = tryparse.(Int, split(read(size_path, String)))
-    (length(dims) == 2 && !any(isnothing, dims)) || return nothing
-    (bytes = read(cache_path), raw_h = dims[1], raw_w = dims[2])
+    try
+        dims = tryparse.(Int, split(read(_full_size_path(cache_path), String)))
+        (length(dims) == 2 && !any(isnothing, dims)) || return nothing
+        (bytes = read(cache_path), raw_h = dims[1], raw_w = dims[2])
+    catch err
+        err isa SystemError || err isa Base.IOError || rethrow()
+        nothing
+    end
+end
+
+function _remove_stale_full!(cache_path::String)
+    keep = (basename(cache_path), basename(_full_size_path(cache_path)))
+    for f in readdir(dirname(cache_path))
+        f in keep || !(endswith(f, ".png") || endswith(f, ".size")) ||
+            rm(joinpath(dirname(cache_path), f); force = true)
+    end
 end
 
 function ensure_full_cached(db::SQLite.DB, exposure_id::Integer, path::String;
@@ -231,6 +246,7 @@ function ensure_full_cached(db::SQLite.DB, exposure_id::Integer, path::String;
     if cache_path !== nothing
         _write_thumb_atomic(_full_size_path(cache_path), Vector{UInt8}(string(raw_h, " ", raw_w)))
         _write_thumb_atomic(cache_path, bytes)
+        _remove_stale_full!(cache_path)
     end
     (bytes = bytes, raw_h = raw_h, raw_w = raw_w)
 end
