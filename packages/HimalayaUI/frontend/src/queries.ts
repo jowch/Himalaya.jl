@@ -461,6 +461,7 @@ export function useTriggerScan(experimentId: number) {
   const inner = useMutation({
     mutationFn: (force: boolean) =>
       api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), force),
+    meta: { savesWork: false },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
     },
@@ -491,6 +492,7 @@ export function useCheckForNewFilesOnOpen(experimentId: number): void {
   const qc = useQueryClient();
   const { mutate } = useMutation({
     mutationFn: () => api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), false),
+    meta: { savesWork: false },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
     },
