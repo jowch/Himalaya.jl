@@ -10,7 +10,7 @@
     "frontend/src/print/shell/NavModal.tsx": 69,
     "frontend/src/print/shell/OnboardingFlow.tsx": 28,
     "frontend/src/print/shell/StaleUrlPage.tsx": 9,
-    "frontend/src/print/shell/TopNav.tsx": 11
+    "frontend/src/print/shell/TopNav.tsx": 9
   },
   "comments": {
     "frontend/src/api.ts": 107,
