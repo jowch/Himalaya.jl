@@ -7,7 +7,7 @@ interface Props {
   children: ReactNode;
   testId?: string;
   closeKeys?: readonly string[];
-  onKey?: (key: string) => boolean;
+  onKey?: (key: string, repeat: boolean) => boolean;
 }
 
 export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape"], onKey }: Props): JSX.Element {
@@ -33,7 +33,7 @@ export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape
           if (closeKeys.includes(e.key)) {
             e.preventDefault();
             if (!e.repeat) onClose();
-          } else if (!e.metaKey && !e.ctrlKey && !e.altKey && onKey?.(e.key)) {
+          } else if (!e.metaKey && !e.ctrlKey && !e.altKey && onKey?.(e.key, e.repeat)) {
             e.preventDefault();
           }
         }}
