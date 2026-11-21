@@ -32,6 +32,8 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 
+const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
+
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table. Mirrors the inlined pattern in
 # `migrate_assignments!` / `migrate_comparisons_to_series!`.
@@ -527,6 +529,7 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_drop_scan_signature!(db)
     migrate_exposures_beam_monitors!(db)
+    migrate_exposures_ingest_state!(db)
 
     # Speculative peak durability (2026-07-14 spec): intents table + legacy
     # basis rescale + heal trigger. Must run last — see the function docstring
@@ -806,6 +809,21 @@ function migrate_exposures_beam_monitors!(db::SQLite.DB)
                 "ALTER TABLE exposures ADD COLUMN $name $decl")
         end
         _record_migration!(db, MIGRATION_EXPOSURES_BEAM_MONITORS)
+    end
+    nothing
+end
+
+function migrate_exposures_ingest_state!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_INGEST_STATE) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        for name in ("analysis_version", "analysis_error")
+            name in existing || DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN $name TEXT")
+        end
+        DBInterface.execute(db,
+            "UPDATE exposures SET analysis_version = ? WHERE trace_hash IS NOT NULL AND analysis_version IS NULL",
+            [ANALYSIS_VERSION])
+        _record_migration!(db, MIGRATION_EXPOSURES_INGEST_STATE)
     end
     nothing
 end

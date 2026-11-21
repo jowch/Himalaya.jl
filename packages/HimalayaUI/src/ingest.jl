@@ -144,6 +144,7 @@ function scan_and_group!(
         dat_pattern = dat_pattern,
         on_progress = on_progress)
 
+    any(m -> m.prp !== nothing, metas) && filter!(m -> m.prp !== nothing, metas)
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
 
     # -----------------------------------------------------------------------
@@ -193,6 +194,7 @@ function scan_and_group!(
                     [experiment_id])))
 
             for gl in grouping.loads
+                any(ge -> !(ge.stem in existing_filenames), (ge for gs in gl.samples for ge in gs.exposures)) || continue
                 # Dedup the load row by (experiment_id, load_index). The loads table
                 # has only a NON-unique index (loads_experiment_idx), so an
                 # unconditional INSERT would mint a fresh load_id on every rescan —
@@ -218,6 +220,7 @@ function scan_and_group!(
                 end
 
                 for gs in gl.samples
+                    any(ge -> !(ge.stem in existing_filenames), gs.exposures) || continue
                     # Sample dedup by (experiment_id, load_id, slot_index). Reuse the
                     # existing row on rescan rather than re-inserting (also avoids
                     # tripping the samples_unique_name UNIQUE index).
@@ -269,7 +272,9 @@ function scan_and_group!(
     #    as cli_init_with_db!: a crash mid-analyze must not roll back ingest).
     # -----------------------------------------------------------------------
     if analyze
-        n_new = length(new_exposure_ids)
+        to_analyze = vcat(new_exposure_ids,
+            setdiff(pending_analysis_ids(db, experiment_id), new_exposure_ids))
+        n_new = length(to_analyze)
         # The "analyzing" segment reports against n_new, its OWN denominator — the
         # segmented bar gives each stage its own track, so stages no longer have to
         # share one scale (which is what forced the old cross-stage bookkeeping here).
@@ -282,12 +287,8 @@ function scan_and_group!(
         # Saturation is reduced, not eliminated — correctness under saturation
         # rests on _fanout_frame! (events.jl) closing an evicted subscriber.
         step = max(1, n_new ÷ 100)
-        for (i, eid) in enumerate(new_exposure_ids)
-            try
-                analyze_exposure!(db, eid)
-            catch e
-                @warn "scan_and_group!: analyze_exposure! failed" exposure_id=eid exception=e
-            end
+        for (i, eid) in enumerate(to_analyze)
+            analyze_or_record!(db, eid, analysis_dir)
             # Progress fires OUTSIDE the structural txn (already committed above).
             if on_progress !== nothing && (i % step == 0 || i == n_new)
                 on_progress(i, n_new, "analyzing")
@@ -802,58 +803,85 @@ function regroup_experiment!(db::SQLite.DB, experiment_id::Int; dry_run::Bool = 
     )
 end
 
-"""
-    cheap_change_check(db, experiment_id) -> Bool
+const NO_TRACE = "no trace"
 
-Cheap "has the directory changed since the last ingest?" probe for the Phase-C
-auto-rescan scheduler and the `POST /api/experiments/{id}/scan` route.
+function _trace_exists(db::SQLite.DB, experiment_id::Int, analysis_dir::AbstractString, filename::AbstractString)
+    resolve_trace_path(analysis_dir, integration_pattern_for(db, experiment_id), filename) !== nothing
+end
 
-Returns `true` when the data directory appears to hold files not yet persisted
-(so a `scan_and_group!` is warranted), `false` when it looks unchanged (the
-scheduler tick can stay quiet / back off — spec §9.4).
-
-**Cheapness contract:** this does NOT parse PRP files or run grouping. It counts
-matching image files in the experiment's `data_dir` (a single `readdir` + suffix
-filter) and compares against `COUNT(*)` of already-persisted exposures. Additive
-ingest dedups on `(experiment_id, filename)`, so "more files on disk than rows in
-the DB" is exactly "there is new data to ingest". The image suffix is read from
-the experiment row's `image_pattern` column (same source `scan_and_group!` uses).
-
-**Bias:** any ambiguity returns `true` (an extra scan is a harmless no-op via the
-insert-only dedup; a missed scan would silently drop data). The only `false`
-shortcuts are (a) a vanished/unreadable data dir — nothing to ingest, and a
-scheduler tick must never crash on a missing volume — and (b) on-disk count ≤
-persisted count.
-"""
-function cheap_change_check(
-    db::SQLite.DB,
-    experiment_id::Int,
-)::Bool
-    # Resolve the experiment's data_dir and image_pattern (the authoritative scan root + suffix).
-    rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT data_dir, image_pattern FROM experiments WHERE id = ?", [experiment_id]))
-    isempty(rows) && return true   # unknown experiment: let the caller's scan surface the error
-    exp_row = first(rows)
-    data_dir = String(exp_row.data_dir)
-
-    isdir(data_dir) || return false  # vanished/unreadable dir: nothing to ingest, never crash
-
-    # Cheap on-disk count: number of files whose name matches the image suffix.
-    # image_pattern is "{name}<suffix>"; everything after "{name}" is the literal suffix.
-    # Read from the experiment row — same source scan_and_group! uses.
-    image_pattern = coalesce(exp_row.image_pattern, "{name}.tif")
-    suffix = replace(image_pattern, "{name}" => "")
-    on_disk = try
-        count(f -> endswith(f, suffix), readdir(data_dir))
-    catch
-        return true   # readdir failed for any reason: assume changed (safe direction)
+function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::AbstractString)
+    row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename, experiment_id FROM exposures WHERE id = ?", [exposure_id])))
+    error_text = if !_trace_exists(db, Int(row.experiment_id), analysis_dir, String(row.filename))
+        NO_TRACE
+    else
+        try
+            analyze_exposure!(db, exposure_id, String(analysis_dir))
+            nothing
+        catch e
+            @warn "analyze_exposure! failed" exposure_id exception = e
+            sprint(showerror, e)
+        end
     end
+    error_text === nothing && return true
+    lock(_DB_WRITE_LOCK) do
+        DBInterface.execute(db, "UPDATE exposures SET analysis_error = ? WHERE id = ?",
+            [first(error_text, 500), exposure_id])
+    end
+    false
+end
 
-    # Persisted count.
-    persisted = Int(first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ?", [experiment_id]))).n)
+function pending_analysis_ids(db::SQLite.DB, experiment_id::Int)
+    exp_row = first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT analysis_dir FROM experiments WHERE id = ?", [experiment_id])))
+    analysis_dir = String(exp_row.analysis_dir)
+    rows = Tables.rowtable(DBInterface.execute(db, """
+        SELECT id, filename, analysis_error FROM exposures
+         WHERE experiment_id = ? AND filename IS NOT NULL
+           AND ((trace_hash IS NULL AND (analysis_error IS NULL OR analysis_error = ?))
+             OR (trace_hash IS NOT NULL AND (analysis_version IS NULL OR analysis_version != ?)))
+         ORDER BY id""", [experiment_id, NO_TRACE, ANALYSIS_VERSION]))
+    Int[Int(r.id) for r in rows
+        if ismissing(r.analysis_error) || _trace_exists(db, experiment_id, analysis_dir, String(r.filename))]
+end
 
-    return on_disk > persisted
+function _insertable_stems(db::SQLite.DB, experiment_id::Int)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT data_dir, image_pattern, metadata_pattern FROM experiments WHERE id = ?", [experiment_id]))
+    isempty(rows) && return String[]
+    r = first(rows)
+    data_dir = String(r.data_dir)
+    isdir(data_dir) || return String[]
+    tif_pre, tif_suf = split(coalesce(r.image_pattern, "{name}.tif"), "{name}"; limit = 2)
+    prp_pattern = coalesce(r.metadata_pattern, "{name}.prp")
+    tif_dir = isempty(dirname(tif_pre)) ? data_dir : joinpath(data_dir, dirname(tif_pre))
+    tif_lead = basename(tif_pre)
+    files, tif_files = try
+        f = Set(readdir(data_dir))
+        (f, tif_dir == data_dir ? f : Set(readdir(tif_dir)))
+    catch
+        return String[]
+    end
+    stems = String[f[length(tif_lead)+1:end-length(tif_suf)] for f in tif_files
+                   if startswith(f, tif_lead) && endswith(f, tif_suf) && length(f) > length(tif_lead) + length(tif_suf)]
+    known = Set(String(x.filename) for x in Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename FROM exposures WHERE experiment_id = ? AND filename IS NOT NULL", [experiment_id])))
+    has_prp(stem) = replace(prp_pattern, "{name}" => stem) in files
+    any_prp = any(has_prp, stems)
+    String[stem for stem in stems if !(stem in known) && (!any_prp || has_prp(stem))]
+end
+
+"""
+    ingest_has_work(db, experiment_id) -> Bool
+
+True when a pass would change something: a tif (with its prp, when the folder
+has prps) that has no exposure row yet, an exposure whose trace has appeared
+since it was last tried, one never analyzed, or one analyzed by an older
+`ANALYSIS_VERSION`. One `readdir` of `data_dir` plus a stat per exposure still
+missing its trace.
+"""
+function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
+    !isempty(_insertable_stems(db, experiment_id)) || !isempty(pending_analysis_ids(db, experiment_id))
 end
 
 """
