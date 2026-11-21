@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./shell/AppRoutes";
 import { OnboardingFlow } from "./shell/OnboardingFlow";
@@ -90,25 +90,15 @@ export function PrintApp(): JSX.Element {
     });
   }, [qc, mc, setIngestProgress, clearIngestProgress]); // stable selector results; EventSource lifetime unchanged
 
-  const rehydrated = useRef(false);
   useEffect(() => {
-    if (!rehydrated.current) {
-      rehydrated.current = true;
-      void rehydrate(qc, resolveMutator).then(({ dropped, failed }) => {
-        if (dropped > 0) {
-          showToast(
-            `${dropped} edits from a previous session couldn't be restored`,
-            "warning",
-          );
-        }
-        if (failed > 0) {
-          showToast(
-            `${failed} edits failed to replay; please retry`,
-            "error",
-          );
-        }
-      });
-    }
+    void rehydrate(qc, resolveMutator).then(({ dropped }) => {
+      if (dropped > 0) {
+        showToast(
+          `${dropped} edits from a previous session couldn't be restored`,
+          "warning",
+        );
+      }
+    });
     return attachPersistence(mc);
   }, [qc, mc]);
 

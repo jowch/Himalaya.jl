@@ -410,9 +410,16 @@ stored ops before `attachPersistence` writes its first mirror, then builds
 each op into the `MutationCache` with the live queue's options
 (`queueMutationOptions`). A replayed op therefore keeps its `client_op_id`,
 its place in the single `"queue"` scope, and the same retry policy as a fresh
-edit. It also stays visible to the outage banner, the reconnect-refresh gate
-and the mirror, so a second reload keeps it too. `PrintApp` runs both steps
-in one effect, in that order, and rehydrates only once per page load.
+edit. It is visible to the outage banner and to the mirror, so a second
+reload keeps it too. `PrintApp` runs both steps in one effect, in that order.
+`rehydrate` skips a stored op whose `client_op_id` is already pending in the
+cache, so StrictMode's second effect run and an ErrorBoundary remount don't
+replay it twice. A stored entry that can't be replayed counts as failed
+without stopping the rest.
+
+Reconnect refresh also covers a reload during an outage. `liveStream` counts
+the first open as a reconnect when an earlier attempt in the same page failed,
+so queries that errored while the server was down refetch once it returns.
 
 `schemaVersion` mismatch between the persisted shape and the current
 build drops the queue with a toast — the alternative (silent type drift)

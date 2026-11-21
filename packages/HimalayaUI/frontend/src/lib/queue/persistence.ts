@@ -108,24 +108,34 @@ export async function rehydrate(
   let failed = 0;
   const fires: Promise<unknown>[] = [];
   const mc = qc.getMutationCache();
+  const inFlight = new Set(
+    mc.getAll()
+      .filter((m) => m.state.status === "pending")
+      .map((m) => (m.state.variables as { clientOpId?: string } | undefined)?.clientOpId),
+  );
 
   for (const op of ops) {
-    if (op.schemaVersion !== SCHEMA_VERSION) {
-      dropped++;
-      continue;
+    try {
+      if (op.schemaVersion !== SCHEMA_VERSION) {
+        dropped++;
+        continue;
+      }
+      if (inFlight.has(op.clientOpId)) continue;
+      const mutator = lookup(op);
+      if (!mutator) {
+        dropped++;
+        continue;
+      }
+      const mutation = mc.build(qc, queueMutationOptions(mutator, qc));
+      fires.push(
+        mutation
+          .execute(op.payload as Record<string, unknown> & { kind: string; clientOpId: string })
+          .then(() => { replayed++; })
+          .catch(() => { failed++; }),
+      );
+    } catch {
+      failed++;
     }
-    const mutator = lookup(op);
-    if (!mutator) {
-      dropped++;
-      continue;
-    }
-    const mutation = mc.build(qc, queueMutationOptions(mutator, qc));
-    fires.push(
-      mutation
-        .execute(op.payload as Record<string, unknown> & { kind: string; clientOpId: string })
-        .then(() => { replayed++; })
-        .catch(() => { failed++; }),
-    );
   }
 
   await Promise.all(fires);

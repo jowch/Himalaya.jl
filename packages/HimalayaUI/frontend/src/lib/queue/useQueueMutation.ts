@@ -53,31 +53,14 @@ const ownErrorSurface = new Set<string>();
 
 type QueuePayload = { kind: string; clientOpId: string } & Record<string, unknown>;
 
-/**
- * Wires a Mutator into TanStack Query's useMutation with:
- * - per-call client_op_id mint (newClientOpId() on every mutate())
- * - optimistic effect via mutator.onMutate, restored on error or replay-rollback
- * - deferred-promise resolution: HTTP and SSE race; first to land wins
- * - failure-class routing: 4xx → Validation toast, 5xx/network → infrastructure
- *   (banner is mounted by M2 at App.tsx and reads from useMutationState directly)
- * - retry and ordering: one scope, so edits land in the order made; the retry
- *   classes are in docs/mutation-queue.md §10
- *
- * `scope` is merged into every payload before mutator callbacks run. Use it
- * for invariants the mutator needs but that aren't part of the per-call input
- * (exposureId, sampleId, username, clientId).
- *
- * **Important:** the per-call clientOpId is minted INSIDE `mutate(input)`, not
- * at hook construction. Each mutate() call produces a unique idempotency key.
- */
-export function queueMutationOptions<TResponse>(
+export function queueMutationOptions<TResponse, TPayload extends QueuePayload = QueuePayload>(
   mutator: Mutator<any, any, TResponse>,
   qc: QueryClient,
-): MutationOptions<TResponse, unknown, QueuePayload, RollbackContext> {
+): MutationOptions<TResponse, unknown, TPayload, RollbackContext> {
   return {
     mutationKey: [mutator.kind],
     scope: { id: "queue" },
-    mutationFn: async (payload: QueuePayload) => {
+    mutationFn: async (payload: TPayload) => {
       // TanStack v5 doesn't surface a per-call AbortSignal on the
       // MutationFunctionContext, so we mint our own. mutator.request still
       // honours signal.aborted; if the mutation is reset/cancelled future
@@ -108,7 +91,7 @@ export function queueMutationOptions<TResponse>(
         clearDeferred(payload.clientOpId);
       }
     },
-    onMutate: (payload: QueuePayload) => mutator.onMutate(payload, qc),
+    onMutate: (payload: TPayload) => mutator.onMutate(payload, qc),
     onSuccess: (response, payload) =>
       mutator.onSuccess(payload, response, qc),
     onError: (err, _payload, context) => {
@@ -137,6 +120,23 @@ export function queueMutationOptions<TResponse>(
   };
 }
 
+/**
+ * Wires a Mutator into TanStack Query's useMutation with:
+ * - per-call client_op_id mint (newClientOpId() on every mutate())
+ * - optimistic effect via mutator.onMutate, restored on error or replay-rollback
+ * - deferred-promise resolution: HTTP and SSE race; first to land wins
+ * - failure-class routing: 4xx → Validation toast, 5xx/network → infrastructure
+ *   (banner is mounted by M2 at App.tsx and reads from useMutationState directly)
+ * - retry and ordering: one scope, so edits land in the order made; the retry
+ *   classes are in docs/mutation-queue.md §10
+ *
+ * `scope` is merged into every payload before mutator callbacks run. Use it
+ * for invariants the mutator needs but that aren't part of the per-call input
+ * (exposureId, sampleId, username, clientId).
+ *
+ * **Important:** the per-call clientOpId is minted INSIDE `mutate(input)`, not
+ * at hook construction. Each mutate() call produces a unique idempotency key.
+ */
 export function useQueueMutation<TInput, TScope, TResponse>(
   mutator: Mutator<TInput, TScope, TResponse>,
   scope: TScope,
@@ -146,7 +146,7 @@ export function useQueueMutation<TInput, TScope, TResponse>(
   type Payload = FlatPayload<TInput, TScope>;
 
   const mutation = useMutation<TResponse, unknown, Payload, RollbackContext>(
-    queueMutationOptions(mutator, qc) as unknown as UseMutationOptions<TResponse, unknown, Payload, RollbackContext>,
+    queueMutationOptions<TResponse, Payload & QueuePayload>(mutator, qc) as UseMutationOptions<TResponse, unknown, Payload, RollbackContext>,
   );
 
   const mutate = (input: TInput, callbacks?: MutateCallbacks<TResponse>): void => {
