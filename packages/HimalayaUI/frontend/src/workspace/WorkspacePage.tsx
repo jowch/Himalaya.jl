@@ -9,7 +9,7 @@ import {
   useAssignment,
   useBridgeSamples,
   useBridges,
-  useCorpusSamples,
+  useExperimentCorpusSamples,
   useExperiment,
   useExposures,
   useIndices,
@@ -177,7 +177,7 @@ export function WorkspacePage(): JSX.Element {
   const rescanFailed = scan.failed || triggerScan.isError;
   const showFailure = useCallback(() => navigate(`/experiments/${experimentId}`), [navigate, experimentId]);
   const reviewGrouping = useCallback(() => navigate(`/experiments/${experimentId}/grouping`), [navigate, experimentId]);
-  const corpus = useCorpusSamples();
+  const corpus = useExperimentCorpusSamples(experimentId);
   const [filter, setFilter] = useState("");
 
   const samples = useMemo(

@@ -105,7 +105,7 @@ The row is created with `ingest_status = 'scanning'` and the route answers
 spawned task through `run_ingest!` (see [Rescans](#rescans)). It ends with
 `ingest_status` set to `complete` or `failed`. Progress goes out on the SSE `curation`
 frame with a `kind` of `ingest_started`, `ingest_progress` (with a `stage` of
-`discovery`, `analyzing` or `thumbnails`), and then `ingest_complete` or
+`discovery` or `analyzing`), and then `ingest_complete` or
 `ingest_failed`. Frames from a rescan also carry `phase: "rescan"`.
 
 ## Configuration fields
@@ -231,8 +231,12 @@ reads `data_dir`, `analysis_dir` and the patterns from the row, then:
    It is retried when that file changes (a half-copied trace that is copied
    again), when the version changes, or by a forced pass. A trace rewritten
    after a successful analysis is not picked up.
-6. **Prewarms** thumbnails for the experiment. A failure here never fails the
-   scan.
+
+After a successful pass, `run_ingest!` warms the experiment's thumbnails on a
+separate task, after `ingest_complete`, so the workspace opens without waiting
+for them. A thumbnail that isn't warm yet renders on first view. A restart
+during the warm doesn't resume it: the experiment is already `complete`, so the
+next pass with work warms the rest.
 
 The grouping is a suggestion. The grouping review page and the routes in
 `routes_grouping.jl` let the user rename, merge and split samples, and move

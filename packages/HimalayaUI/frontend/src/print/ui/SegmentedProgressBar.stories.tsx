@@ -33,14 +33,6 @@ export const Analyzing: Story = {
   },
 };
 
-/** Final stage — the shape the bar holds just before `ingest_complete`. */
-export const Thumbnails: Story = {
-  args: {
-    segments: deriveSegments("thumbnails", 310, 604)!,
-    label: "Scan progress",
-  },
-};
-
 /** Clean rescan: nothing new to analyze, so the stage closes as 0-of-0 and reads
  *  COMPLETE rather than stalled at 0%. */
 export const NothingToDo: Story = {

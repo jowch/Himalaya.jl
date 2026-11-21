@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
-import { useCorpusSamples, queryKeys } from "../src/queries";
+import { useCorpusSamples, useExperimentCorpusSamples, queryKeys } from "../src/queries";
 
 function withClient() {
   const client = makeClient();
@@ -56,5 +56,32 @@ describe("queries — useCorpusSamples", () => {
     for (const id of [0, 1, 42]) {
       expect(queryKeys.corpusSamples).not.toEqual(queryKeys.samples(id));
     }
+  });
+
+  it("fetches one experiment's samples under the corpus prefix, so corpus invalidations reach it", async () => {
+    const { client, wrapper } = withClient();
+    const fetchSpy = vi.spyOn(global, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify([CORPUS_ROWS[1]]), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }));
+    const { result } = renderHook(() => useExperimentCorpusSamples(2), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/samples?experiment_id=2", expect.objectContaining({ method: "GET" }),
+    );
+    expect(queryKeys.experimentCorpusSamples(2).slice(0, 2)).toEqual([...queryKeys.corpusSamples]);
+    expect(result.current.data?.map((s) => s.id)).toEqual([2]);
+
+    await client.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not fetch the corpus-wide list while disabled", async () => {
+    const { wrapper } = withClient();
+    const fetchSpy = vi.spyOn(global, "fetch");
+    renderHook(() => useCorpusSamples({ enabled: false }), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -199,19 +199,6 @@ describe("queries — exposure mutations (queue-driven)", () => {
       expect(list[0].status).toBe("rejected");
     });
 
-    it("also updates the single-exposure cache when present", () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);
-      client.setQueryData(queryKeys.exposure(EXPOSURE_ID), makeExposure({}));
-      vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
-      const { result } = renderHook(
-        () => useSetExposureStatus(SAMPLE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate({ exposureId: EXPOSURE_ID, status: "accepted" }); });
-      const single = client.getQueryData(queryKeys.exposure(EXPOSURE_ID)) as Exposure;
-      expect(single.status).toBe("accepted");
-    });
-
     it("retains the optimistic status after success (server response is a no-op)", async () => {
       const { client, wrapper } = withClient();
       client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);

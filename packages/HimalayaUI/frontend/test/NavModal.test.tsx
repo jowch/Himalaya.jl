@@ -92,6 +92,13 @@ beforeEach(() => {
 });
 
 describe("<NavModal>", () => {
+  it("does not load the corpus-wide sample list while closed", async () => {
+    useAppState.setState({ navModalOpen: false });
+    renderModal();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.listCorpusSamples).not.toHaveBeenCalled();
+  });
+
   it("returns null when navModalOpen is false", () => {
     useAppState.setState({ navModalOpen: false });
     const { container } = renderModal();

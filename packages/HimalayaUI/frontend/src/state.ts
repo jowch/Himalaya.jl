@@ -22,8 +22,8 @@ export interface IngestProgress {
   processed: number;
   total: number;
   status: IngestProgressStatus;
-  /** Which segment of the progress bar is reporting ("discovery" / "analyzing" /
-   *  "thumbnails"). SEPARATE from `status`, which selects the whole surface --
+  /** Which segment of the progress bar is reporting ("discovery" / "analyzing").
+   *  SEPARATE from `status`, which selects the whole surface --
    *  see lib/ingestStages.ts. Undefined on an `ingest_started` frame, or from a
    *  backend that predates stage reporting; the UI then falls back to the plain
    *  single-track bar. */
