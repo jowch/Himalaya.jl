@@ -38,7 +38,7 @@ export function ExposureStrip({ exposures, currentId, onPick, onToggleDrop }: Pr
               )}
             </button>
             {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
-            <div className={(cur ? "flex" : "hidden group-hover:flex group-focus-within:flex") + " gap-1"}>
+            <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
               <button
                 type="button"
                 onClick={() => onToggleDrop(e)}
