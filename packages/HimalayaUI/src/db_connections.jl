@@ -73,9 +73,33 @@ function _scoped_reader()
     scope = get(task_local_storage(), _READER_SCOPE_KEY, nothing)
     scope === nothing && return nothing
     if scope.reader === nothing
-        scope.reader = _checkout_reader(scope.pool)
+        reader = _checkout_reader(scope.pool)
+        try
+            DBInterface.execute(reader, "BEGIN")
+        catch
+            _discard_reader!(scope.pool, reader)
+            rethrow()
+        end
+        scope.reader = reader
     end
     scope.reader
+end
+
+function _discard_reader!(pool::ReaderPool, reader::SQLite.DB)
+    lock(() -> filter!(r -> r !== reader, pool.opened), pool.lock)
+    isopen(reader) && DBInterface.close!(reader)
+    nothing
+end
+
+function _end_snapshot!(pool::ReaderPool, reader::SQLite.DB)
+    try
+        SQLite.finalize_statements!(reader)
+        DBInterface.execute(reader, "ROLLBACK")
+        true
+    catch
+        _discard_reader!(pool, reader)
+        false
+    end
 end
 
 function _with_reader(f)
@@ -85,16 +109,18 @@ function _with_reader(f)
     try
         task_local_storage(f, _READER_SCOPE_KEY, scope)
     finally
-        scope.reader === nothing || _return_reader(pool, scope.reader)
+        reader = scope.reader
+        reader === nothing || (_end_snapshot!(pool, reader) && _return_reader(pool, reader))
     end
 end
 
 _is_read(req::HTTP.Request) = req.method == "GET" || req.method == "HEAD"
 _is_event_stream(req::HTTP.Request) = HTTP.URI(req.target).path in _UNPOOLED_GET_PATHS
 
-function with_background_db(f, db::SQLite.DB)
-    _poolable(db.file) || return f(db)
-    background = SQLite.DB(db.file)
+with_background_db(f, db::SQLite.DB) = _poolable(db.file) ? with_background_db(f, String(db.file)) : f(db)
+
+function with_background_db(f, path::String)
+    background = SQLite.DB(path)
     try
         DBInterface.execute(background, "PRAGMA foreign_keys = ON")
         DBInterface.execute(background, "PRAGMA busy_timeout = 10000")
