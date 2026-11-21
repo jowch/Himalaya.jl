@@ -1,12 +1,13 @@
-import type { SampleLabel } from "../api";
+import type { SampleLabel, TagColor, TagColorEntry } from "../api";
 
 export const STANDARD_TAGS = ["Buffer", "Calibrant", "Empty capillary"] as const;
 export const MAX_TAG_LENGTH = 64;
 
 const fold = (s: string): string => s.trim().toLowerCase();
+const labelKey = (s: string): string => s.trim().replace(/[A-Z]+/g, (m) => m.toLowerCase());
 
 export function sameLabel(a: string, b: string): boolean {
-  return fold(a) === fold(b);
+  return labelKey(a) === labelKey(b);
 }
 
 export function standardTag(label: string): string | undefined {
@@ -42,12 +43,12 @@ export function tagVocabulary(list: readonly SampleLabel[]): string[] {
   const counts = new Map<string, { label: string; n: number }>();
   for (const l of list) {
     if (l.state !== "confirmed") continue;
-    const k = fold(l.label);
+    const k = labelKey(l.label);
     const cur = counts.get(k);
     counts.set(k, { label: cur?.label ?? displayTag(l.label), n: (cur?.n ?? 0) + 1 });
   }
   const used = [...counts.values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label)).map((c) => c.label);
-  return [...used, ...STANDARD_TAGS.filter((t) => !counts.has(fold(t)))];
+  return [...used, ...STANDARD_TAGS.filter((t) => !counts.has(labelKey(t)))];
 }
 
 function editDistance(a: string, b: string): number {
@@ -96,4 +97,21 @@ export function sampleMatchesFilter(name: string, labels: readonly SampleLabel[]
   const f = fold(filter);
   if (f.length === 0) return true;
   return name.toLowerCase().includes(f) || labels.some((l) => l.label.toLowerCase().includes(f));
+}
+
+export function applyTagColor(list: readonly TagColorEntry[], label: string, color: TagColor | null): TagColorEntry[] {
+  const rest = list.filter((e) => !sameLabel(e.label, label));
+  return color === null ? rest : [...rest, { label: label.trim(), color }];
+}
+
+export function defaultTagColor(label: string): TagColor {
+  return standardTag(label) ? "blue" : "violet";
+}
+
+export function tagColor(colors: readonly TagColorEntry[], label: string): TagColor {
+  return colors.find((e) => sameLabel(e.label, label))?.color ?? defaultTagColor(label);
+}
+
+export function tagColorIsDefault(colors: readonly TagColorEntry[], label: string): boolean {
+  return !colors.some((e) => sameLabel(e.label, label));
 }

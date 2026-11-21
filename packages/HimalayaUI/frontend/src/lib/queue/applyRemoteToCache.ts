@@ -336,6 +336,9 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
       break;
     }
+    case "tag_color_set":
+      qc.invalidateQueries({ queryKey: queryKeys.tagColors() });
+      break;
     case "label_added":
     case "label_removed": {
       const expId = payload?.experiment_id as number | undefined;
