@@ -56,6 +56,10 @@ vi.mock("../../src/queries", () => ({
   }),
 }));
 
+vi.mock("../../src/workspace/prefetch", () => ({
+  usePrefetchNeighbours: () => {},
+}));
+
 vi.mock("../../src/workspace/useCompareTraces", () => ({
   useCompareTraces: (ids: readonly number[]) =>
     new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : []))),
