@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent, screen } from "@testing-library/react";
+import { act, render, fireEvent, screen } from "@testing-library/react";
 import { COMPARE_COLORS, PLOT_HEIGHT, WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
 import { PLOT_MARGINS } from "../../src/workspace/plotScale";
-import { SubtractionStrip } from "../../src/workspace/ui/SubtractionStrip";
 
 const trace = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [10, 50, 8, 6, 5], sigma: [0, 0, 0, 0, 0] };
 
@@ -149,21 +148,39 @@ describe("WorkspacePlot", () => {
     expect(xTicks().split(" ")).toContain("0.10");
   });
 
-  it("keeps the difference strip on the plot's q axis and intensity transform", () => {
-    const props = { q: [0.05, 0.1, 0.2], d: [0, 10, 10], label: "minus buf", xDomain: null, xExtent: [0.05, 0.2] as [number, number], peakQs: [] };
-    const xs = (): number[] =>
-      screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!
-        .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[0]));
-    const ys = (): number[] =>
-      screen.getByTestId("workspace-subtraction").querySelector("[data-role='difference-line']")!.getAttribute("d")!
-        .split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
-    const { rerender } = render(<SubtractionStrip {...props} view="log" />);
-    const linearX = xs();
-    expect(ys()[1]).toBeCloseTo(ys()[2]!);
-    rerender(<SubtractionStrip {...props} view="loglog" />);
-    expect(xs()[1]! - xs()[0]!).toBeGreaterThan(linearX[1]! - linearX[0]!);
-    rerender(<SubtractionStrip {...props} view="kratky" />);
-    expect(ys()[2]!).toBeLessThan(ys()[1]!);
+  const diffPoints = (): [number, number][] =>
+    screen.getByTestId("workspace-trace").querySelector('[data-role="difference-line"] path')!.getAttribute("d")!
+      .split(/[ML]/).filter(Boolean).map((p) => p.split(",").map(Number) as [number, number]);
+
+  it("draws the difference in place of the trace, with a zero line and no comparisons", () => {
+    const compare = { id: 3, name: "buf", q: trace.q, I: trace.I, color: COMPARE_COLORS[0], emphasis: true };
+    const difference = { q: [0.05, 0.1, 0.15, 0.2, 0.25], d: [4, 40, -2, 1, -1] };
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={[]} compares={[compare]} difference={difference} view="linear" />);
+    const svg = screen.getByTestId("workspace-trace");
+    expect(svg.querySelector('[data-role="trace-line"]')).toBeNull();
+    expect(svg.querySelector('[data-role="difference-line"] path')!.getAttribute("stroke")).toBe("var(--color-accent)");
+    expect(screen.getByTestId("workspace-compares").querySelector("path")).toBeNull();
+    const zero = Number(svg.querySelector('[data-role="zero-line"]')!.getAttribute("y1"));
+    const pts = diffPoints();
+    expect(pts[2]![1]).toBeGreaterThan(zero);
+    expect(pts[3]![1]).toBeLessThan(zero);
+    expect(yTicks()).toContain(0);
+  });
+
+  it("puts the difference on a pseudolog axis in the log views and a linear one otherwise", () => {
+    const q = Array.from({ length: 40 }, (_, i) => 0.05 + i * 0.005);
+    const d = q.map((v, i) => (Math.abs(v - 0.12) < 0.004 ? 1000 : i % 2 ? 1 : -1));
+    const props = { trace, peaks: [], combs: [], difference: { q, d } };
+    const { rerender } = render(<WorkspacePlot {...props} view="linear" />);
+    expect(yLabels().some((t) => t.startsWith("−") || t.startsWith("-"))).toBe(true);
+    const linear = yTicks();
+    rerender(<WorkspacePlot {...props} view="log" />);
+    const pseudo = yTicks();
+    expect(pseudo).toContain(0);
+    expect(pseudo).not.toEqual(linear);
+    expect(pseudo.filter((t) => t > 0).every((t) => Math.log10(t) % 1 === 0)).toBe(true);
+    rerender(<WorkspacePlot {...props} view="kratky" />);
+    expect(yTicks()).not.toEqual(pseudo);
   });
 
   it("draws the trace multiplied by q² in the q²I view and keeps the peak markers in a row above the plot", () => {
@@ -221,6 +238,22 @@ describe("WorkspacePlot", () => {
     fireEvent.keyDown(auto, { key: "Enter" });
     fireEvent.keyDown(manual, { key: " " });
     expect(onClickPeak.mock.calls).toEqual([[{ id: 1, source: "auto" }], [{ id: 1, source: "manual" }]]);
+  });
+
+  it("rings the keyboard-focused peak without recolouring it", () => {
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={() => {}} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const ring = (): Element | null => svg.querySelector('[data-role="peak-focus"]');
+    const auto = screen.getByRole("button", { name: "Auto peak at q = 0.1000 Å⁻¹" });
+    expect(ring()).toBeNull();
+    act(() => (auto as unknown as HTMLElement).focus());
+    expect(ring()).not.toBeNull();
+    expect(ring()!.getAttribute("fill")).toBe("none");
+    expect(["var(--color-accent)", "var(--color-ink)"]).not.toContain(ring()!.getAttribute("stroke"));
+    expect(auto.getAttribute("fill")).toBe("var(--color-ink)");
+    expect(auto.getAttribute("stroke")).toBe("none");
+    act(() => (auto as unknown as HTMLElement).blur());
+    expect(ring()).toBeNull();
   });
 
   it("renders an auto and a manual peak that share an id without a duplicate key", () => {
@@ -281,10 +314,4 @@ describe("WorkspacePlot", () => {
     expect(path(3).getAttribute("stroke-width")).toBe("1.6");
   });
 
-  it("draws the difference in the accent colour", () => {
-    render(<SubtractionStrip q={[0.05, 0.1, 0.2]} d={[0, 10, 10]} label="minus buf" xDomain={null} xExtent={[0.05, 0.2]} peakQs={[]} />);
-    const line = screen.getByTestId("workspace-subtraction").querySelector('[data-role="difference-line"]')!;
-    expect(line.getAttribute("stroke")).toBe("var(--color-accent)");
-    expect(line.getAttribute("stroke-width")).toBe("1.4");
-  });
 });

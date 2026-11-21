@@ -29,3 +29,30 @@ describe("SampleList weights", () => {
     expect(screen.getByRole("button", { name: /JC001/ }).className).not.toMatch(/\bfont-semibold\b/);
   });
 });
+
+describe("SampleList comparisons", () => {
+  it("marks compared rows", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(
+      <SampleList samples={[sample(1, "JC001"), sample(2, "JC002")]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} compareColors={new Map([[1, "blue"], [2, "red"]])} hiddenCompares={new Set([2])} />,
+    );
+    expect(screen.getByRole("img", { name: "Compared, hidden" }).getAttribute("class")).toMatch(/opacity-45/);
+    expect(screen.getByRole("img", { name: "Compared" }).getAttribute("class")).not.toMatch(/opacity-45/);
+    expect(screen.getByRole("button", { name: /JC002/ })).toHaveAttribute("data-compared");
+  });
+
+  it("a modifier click toggles the comparison instead of opening the sample", () => {
+    const onPick = vi.fn();
+    const onToggleCompare = vi.fn();
+    render(
+      <SampleList samples={[sample(1, "JC001")]} currentId={undefined} filter="" onFilter={() => {}} onPick={onPick} onToggleCompare={onToggleCompare} />,
+    );
+    const row = screen.getByRole("button", { name: /JC001/ });
+    fireEvent.click(row, { metaKey: true });
+    fireEvent.click(row, { ctrlKey: true });
+    expect(onToggleCompare).toHaveBeenCalledTimes(2);
+    expect(onPick).not.toHaveBeenCalled();
+    fireEvent.click(row);
+    expect(onPick).toHaveBeenCalledWith(1);
+  });
+});
