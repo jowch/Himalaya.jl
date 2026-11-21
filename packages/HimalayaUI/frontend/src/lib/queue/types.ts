@@ -45,6 +45,7 @@ export type OpKind =
   // resolveMutator (outbound).
   | "custom_index_commit"
   | "bridge_samples" | "unbridge_sample"
+  | "patch_compares"
   | "add_label" | "remove_label"
   | "set_tag_color"
   | "patch_experiment";

@@ -21,6 +21,7 @@ import {
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
+import { patchComparesMutator } from "./lib/queue/mutators/compares";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
 import { patchExperimentMutator } from "./lib/queue/mutators/experiment";
@@ -45,6 +46,8 @@ export const queryKeys = {
     ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "bridges"] as const,
+  compares:   (experimentId: number | undefined) =>
+    ["experiment", experimentId ?? "none", "compares"] as const,
   labels:     (experimentId: number | undefined) =>
     ["experiment", experimentId ?? "none", "labels"] as const,
   exposures:  (sampleId: number | undefined) =>
@@ -114,6 +117,19 @@ export function useBridgeSamples(experimentId: number) {
 export function useUnbridgeSample(experimentId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(unbridgeSampleMutator, { experimentId, username, clientId: CLIENT_ID });
+}
+
+export function useCompares(experimentId: number) {
+  return useQuery({
+    queryKey: queryKeys.compares(experimentId),
+    queryFn: () => api.listCompares(experimentId),
+    enabled: experimentId > 0,
+  });
+}
+
+export function usePatchCompares(experimentId: number) {
+  const username = useAppState((s) => s.username);
+  return useQueueMutation(patchComparesMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
 export function useLabels(experimentId: number) {

@@ -6,6 +6,9 @@ import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
+import { useSyncExternalStore } from "react";
+import type { CompareChange, CompareState } from "../../src/api";
+import { applyCompareChange, EMPTY_COMPARES } from "../../src/lib/compares";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
@@ -33,6 +36,15 @@ const state = {
   labelColors: [] as LabelColorEntry[],
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
+};
+const compareStore = { data: EMPTY_COMPARES as CompareState, listeners: new Set<() => void>() };
+function setCompares(next: CompareState): void {
+  compareStore.data = next;
+  compareStore.listeners.forEach((l) => l());
+}
+const subscribeCompares = (l: () => void): (() => void) => {
+  compareStore.listeners.add(l);
+  return () => compareStore.listeners.delete(l);
 };
 const rescans: boolean[] = [];
 const removals: number[] = [];
@@ -115,6 +127,13 @@ vi.mock("../../src/queries", () => ({
     mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
   }),
   useBridges: () => ({ data: state.bridges }),
+  useCompares: () => ({ data: useSyncExternalStore(subscribeCompares, () => compareStore.data) }),
+  usePatchCompares: () => ({
+    mutate: (arg: { sampleId: number; change: CompareChange }) => {
+      calls.push({ hook: "patchCompares", boundTo: arg.sampleId, arg: arg.change });
+      setCompares(applyCompareChange(compareStore.data, arg.sampleId, arg.change, state.username ?? null));
+    },
+  }),
   useBridgeSamples: recorder("bridge"),
   useUnbridgeSample: recorder("unbridge"),
   useLabels: () => ({ data: state.labels }),
@@ -256,6 +275,8 @@ beforeEach(() => {
   state.peaks = [];
   state.compareTraces = new Map();
   state.bridges = [];
+  compareStore.data = EMPTY_COMPARES;
+  localStorage.removeItem("himalaya-ui:recent:comparison:1");
   state.labels = [];
   state.problems = { ingest_error: null, exposures: [] };
   state.labelColors = [];
@@ -1622,20 +1643,61 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("button", { name: "Minus A3" })).toBeInTheDocument();
   });
 
-  it("keeps comparisons when moving to another sample, but never compares a sample with itself", () => {
+  it("comparisons and the subtraction belong to the sample: moving on carries nothing, and coming back restores them", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    expect(calls.filter((c) => c.hook === "patchCompares").map((c) => [c.boundTo, c.arg])).toEqual([
+      [10, { add: [11] }],
+      [10, { subtraction: 11 }],
+    ]);
     const overlay = (): Element | null => screen.getByTestId("workspace-compares").querySelector("[data-compare='11']");
     fireEvent.keyDown(window, { key: "ArrowDown" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
     expect(screen.queryByRole("button", { name: "Remove A2" })).toBeNull();
-    expect(overlay()).toBeNull();
     fireEvent.keyDown(window, { key: "ArrowDown" });
-    expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
-    expect(overlay()).not.toBeNull();
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+    expect(overlay()).toBeNull();
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("data-subtracted");
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("a comparison someone else added arrives hidden, and yours start shown", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    renderAt("/experiments/1/workspace/10");
+    const lines = (): string[] => Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare")!);
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "ana" }], subtractions: [{ sample_id: 10, ref_sample_id: 11 }] }));
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toHaveAttribute("data-subtracted");
+    expect(lines()).toEqual([]);
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
+    expect(lines()).toEqual(["11"]);
+    runFromPalette("compare with a sample", "a3");
+    expect(lines()).toEqual(["11", "12"]);
+  });
+
+  it("the compare picker lists samples you compared recently first, without adding them anywhere", () => {
+    state.trace = makeTrace(1);
+    state.labels = [{ id: 1, sample_id: 12, label: "Buffer", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    const rows = (): string[] => within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button").map((r) => r.textContent ?? "");
+    fireEvent.keyDown(window, { key: "c" });
+    expect(rows()[0]).toBe("A3Buffer");
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A4"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove A4" }));
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+    fireEvent.keyDown(window, { key: "c" });
+    expect(rows()[0]).toBe("A4");
   });
 
   it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {

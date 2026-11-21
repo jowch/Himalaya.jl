@@ -56,6 +56,19 @@ test.beforeEach(async ({ page }) => {
   await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(SAMPLES)));
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
+  const compares = { compares: [] as { sample_id: number; ref_sample_id: number; added_by: string | null }[], subtractions: [] as { sample_id: number; ref_sample_id: number }[] };
+  await page.route("**/api/experiments/17/compares", (r) => r.fulfill(json(compares)));
+  await page.route(/\/api\/samples\/\d+\/compares$/, (r) => {
+    const sampleId = Number(new URL(r.request().url()).pathname.split("/")[3]);
+    const change = r.request().postDataJSON() as { add?: number[]; remove?: number[]; subtraction?: number | null };
+    for (const ref of change.add ?? []) compares.compares.push({ sample_id: sampleId, ref_sample_id: ref, added_by: "alice" });
+    compares.compares = compares.compares.filter((c) => !(c.sample_id === sampleId && (change.remove ?? []).includes(c.ref_sample_id)));
+    if ("subtraction" in change) {
+      compares.subtractions = compares.subtractions.filter((t) => t.sample_id !== sampleId);
+      if (change.subtraction !== null && change.subtraction !== undefined) compares.subtractions.push({ sample_id: sampleId, ref_sample_id: change.subtraction });
+    }
+    return r.fulfill(json(compares));
+  });
   await page.route("**/api/experiments/17/problems", (r) => r.fulfill(json({ ingest_error: null, exposures: [] })));
   await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(LABELS)));

@@ -503,6 +503,7 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
+    migrate_sample_compares!(db)
     migrate_sample_labels!(db)
     migrate_label_colors!(db)
     migrate_sample_calls!(db)
@@ -566,6 +567,24 @@ function migrate_sample_bridges!(db::SQLite.DB)
         )""")
     DBInterface.execute(db,
         "CREATE INDEX IF NOT EXISTS idx_sample_bridges_group ON sample_bridges(group_id)")
+    nothing
+end
+
+function migrate_sample_compares!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_compares (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id     INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            ref_sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            added_by      INTEGER REFERENCES users(id) ON DELETE SET NULL
+        )""")
+    DBInterface.execute(db,
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_compares_pair ON sample_compares(sample_id, ref_sample_id)")
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_subtractions (
+            sample_id     INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+            ref_sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE
+        )""")
     nothing
 end
 

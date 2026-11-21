@@ -119,13 +119,6 @@ export function addCompare(refs: readonly number[], id: number): number[] {
   return [...refs, id].slice(-MAX_COMPARES);
 }
 
-export function withoutRef(set: ReadonlySet<number>, id: number): ReadonlySet<number> {
-  if (!set.has(id)) return set;
-  const next = new Set(set);
-  next.delete(id);
-  return next;
-}
-
 export function robustRange(values: readonly number[], lowFrac = 0.01, highFrac = 0.99): [number, number] {
   const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
   if (finite.length === 0) return [-1, 1];

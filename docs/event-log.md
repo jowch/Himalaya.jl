@@ -51,6 +51,7 @@ round-trip test in `test_events.jl`.
 | `label_added` | UPSERT `sample_labels` → `state='confirmed'`, unique per sample ignoring case; confirms a suggestion and brings back a removed label (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `label_removed` | UPSERT `sample_labels` → `state='removed'`; the row stays so a rescan never suggests the label again (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `tag_color_set` | UPSERT `label_colors` (unique per label ignoring case) to the colour, or DELETE the row when `color` is null so the label falls back to its default (blue for a built-in, violet otherwise). One colour per label name for the whole app (entity_type=`tag`, entity_id=0 `LABEL_COLOR_ENTITY_ID`, payload `{label, color}`). The kind and entity_type keep the old "tag" name because log rows are history; the table was `tag_colors` before `migrate_label_colors!` renamed it. |
+| `compares_changed` | Applies one change to a sample's saved comparisons: DELETE the `remove` refs from `sample_compares`, `INSERT OR IGNORE` the `add` refs with `added_by` from the event's user, then, only when the payload has the `subtraction` key, UPSERT `sample_subtractions` or DELETE it for null. The route sends only real changes, and when it removes the subtracted ref without naming a new one it adds `subtraction: null` (entity_type=`sample`, payload `{add?, remove?, subtraction?, experiment_id}`). |
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
