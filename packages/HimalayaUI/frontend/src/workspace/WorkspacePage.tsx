@@ -57,7 +57,7 @@ import { useCompareTraces } from "./useCompareTraces";
 import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
-import { SubtractionStrip } from "./ui/SubtractionStrip";
+import { EmptySubtractionStrip, SubtractionStrip } from "./ui/SubtractionStrip";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
@@ -1010,7 +1010,7 @@ export function WorkspacePage(): JSX.Element {
                       ? { onAddPeak: addPeakAt, onClickPeak }
                       : {})}
                 />
-                {difference && xExtent && subRef !== undefined && (
+                {difference && xExtent && subRef !== undefined ? (
                   <SubtractionStrip
                     q={difference.q}
                     d={difference.d}
@@ -1020,6 +1020,8 @@ export function WorkspacePage(): JSX.Element {
                     peakQs={peakQs}
                     view={view}
                   />
+                ) : (
+                  <EmptySubtractionStrip hint={activeRefs.length > 0 ? `${MOD_KEY}-click a comparison to subtract it` : "No subtraction"} />
                 )}
               </PlotCard>
             </div>

@@ -174,8 +174,9 @@ test("stepping between frames and hovering frames in another row keeps everythin
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/experiments/17/workspace/44");
   await openSample(page, 44);
-  const first = await measured(page);
   const cards = page.locator("[data-testid=workspace-exposures] > li");
+  await cards.last().scrollIntoViewIfNeeded();
+  const first = await measured(page);
   await expect(page.locator("aside").getByText("Averaged")).toBeVisible();
   await cards.nth(0).hover();
   expect(await measured(page), "hovering a frame in the other row").toEqual(first);
@@ -215,6 +216,21 @@ test("three comparisons with long names keep the compare bar on one line", async
   const after = await measured(page);
   expect(after.compareBar).toEqual(before.compareBar);
   expect(after.plot[0]).toEqual(before.plot[0]);
+});
+
+test("subtracting a comparison or stopping does not move the frames below the plot", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  const before = await measured(page);
+  await page.keyboard.press("c");
+  await page.keyboard.type(`${LONG}01`);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-testid=workspace-subtraction]")).toBeVisible();
+  expect(await measured(page)).toEqual(before);
+  await page.locator("[data-compare-chip] button[aria-pressed]").click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.locator("[data-testid=workspace-subtraction]")).toHaveCount(0);
+  expect(await measured(page)).toEqual(before);
 });
 
 test("on a short window Call and Exposure fold as an accordion, and stay put from sample to sample", async ({ page }) => {

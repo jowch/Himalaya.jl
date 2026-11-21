@@ -1396,6 +1396,18 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-compares").children).toHaveLength(0);
   });
 
+  it("keeps the subtraction strip's place when nothing is subtracted, and says how to subtract", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-subtraction-empty")).toHaveTextContent("No subtraction");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    expect(screen.queryByTestId("workspace-subtraction-empty")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    expect(screen.getByTestId("workspace-subtraction-empty")).toHaveTextContent("Ctrl-click a comparison to subtract it");
+  });
+
   it("a plain click on a chip hides or shows just that trace and keeps the subtraction", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);

@@ -17,9 +17,11 @@ interface Props {
   height?: number;
 }
 
+export const STRIP_HEIGHT = 96;
+
 const MARGINS = { top: 20, right: PLOT_MARGINS.right, bottom: 8, left: PLOT_MARGINS.left };
 
-export function SubtractionStrip({ q, d: raw, label, xDomain, xExtent, peakQs, view = "log", height = 96 }: Props): JSX.Element {
+export function SubtractionStrip({ q, d: raw, label, xDomain, xExtent, peakQs, view = "log", height = STRIP_HEIGHT }: Props): JSX.Element {
   const dom = xDomain ?? xExtent;
   const d = raw.map((v, i) => viewIntensity(view, q[i]!, v));
   const { xType } = viewAxes(view);
@@ -53,6 +55,16 @@ export function SubtractionStrip({ q, d: raw, label, xDomain, xExtent, peakQs, v
           );
         }}
       />
+    </div>
+  );
+}
+
+export function EmptySubtractionStrip({ hint }: { hint: string }): JSX.Element {
+  return (
+    <div className="border-t border-dashed border-hair" data-testid="workspace-subtraction-empty">
+      <p style={{ height: STRIP_HEIGHT, paddingLeft: MARGINS.left + 6, paddingTop: MARGINS.top - 16 }} className="text-caption text-ink-faint">
+        {hint}
+      </p>
     </div>
   );
 }
