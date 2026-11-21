@@ -186,10 +186,13 @@ DEMO_DATA_FLAGS=--late-trace`, or `bin/verify seed --reset --late-trace`) holds
 `MO_lowH2O`'s traces back in `<demo>/late/`, outside the analysis folder. The
 workspace notice should then report them as waiting for a trace, and
 `check-truth` expects no auto call on those frames. `bin/verify deliver-late`
-moves them into `tot_files` with a fresh mtime. Opening the experiment then runs
-a pass that has to analyze them, and `check-truth` fails while any delivered
-trace is still reported as waiting. `make verify-truth` (CI's "Demo
-check-truth" job) runs this sequence first.
+moves them into `tot_files` with a fresh mtime. The next pass has to analyze
+them, and `check-truth` fails while any delivered trace is still reported as
+waiting. With `--ui` it also checks the plot: a held frame says "Waiting for
+this frame's trace." and every other frame draws its trace. `make verify-truth`
+(CI's "Demo check-truth" job) runs this sequence first, and delivers the traces
+while the workspace is open on `MO_lowH2O`. It then waits, without a reload,
+for the plot to draw the trace and its peak markers.
 
 ### Large mode
 
