@@ -64,7 +64,11 @@ pass and once on open (the `label_suggestions_v1` migration). They have no
 row, so a user's confirm or remove always wins.
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
-`peak_removed`, `speculative_created`, `speculative_deleted`. Using
+`peak_removed`, `speculative_created`, `speculative_deleted`, and
+`experiment_updated` (entity_type=`experiment`, payload: the patched fields,
+e.g. `{name}` or `{description: null}`; `PATCH /api/experiments/{id}` writes the
+row itself and the frontend merges the payload into the experiment caches).
+Using
 `apply_event!` (with `entity_type='exposure'`) keeps these visible to
 `idx_events_by_exposure` so per-exposure folds find them; the dispatcher
 returns `nothing` for these kinds.
