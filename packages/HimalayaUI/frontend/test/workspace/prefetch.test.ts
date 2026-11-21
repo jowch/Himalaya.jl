@@ -148,7 +148,7 @@ describe("usePrefetchNeighbours", () => {
     expect(requested()[0]).toBe(full(31));
     expect(requested()).not.toContain(full(32));
     expect(vi.mocked(api.listExposures).mock.calls.map((c) => c[0]).sort()).toEqual([2, 4, 5]);
-    expect(vi.mocked(api.getTrace).mock.calls.map((c) => c[0]).sort()).toEqual([21, 41, 51]);
+    expect(vi.mocked(api.getTrace).mock.calls.map((c) => c[0]).sort()).toEqual([21, 32, 33, 41, 51]);
     expect(qc.getQueryData(queryKeys.trace(41))).toBeDefined();
     expect(qc.getQueryData(queryKeys.assignment(51))).toBeDefined();
     expect(requested()).toEqual(expect.arrayContaining([thumb(21), thumb(22), thumb(43), thumb(53)]));
@@ -160,6 +160,18 @@ describe("usePrefetchNeighbours", () => {
     expect(after.slice(2).sort()).toEqual([full(21), full(41), full(51)]);
     expect(requested()).not.toContain(thumb(31));
     expect(requested()).not.toContain(full(22));
+  });
+
+  it("loads the open sample's other frames' trace, peaks and candidates, so stepping frames draws at once", async () => {
+    const { qc } = setup(target(3));
+    await vi.advanceTimersByTimeAsync(PREFETCH_DWELL_MS);
+    for (const id of [32, 33]) {
+      expect(qc.getQueryData(queryKeys.trace(id))).toBeDefined();
+      expect(qc.getQueryData(queryKeys.peaks(id))).toBeDefined();
+      expect(qc.getQueryData(queryKeys.indices(id))).toBeDefined();
+      expect(qc.getQueryData(queryKeys.assignment(id))).toBeDefined();
+    }
+    expect(api.getTrace).not.toHaveBeenCalledWith(31, expect.anything());
   });
 
   it("starts the next frame only after the previous one has loaded", async () => {
