@@ -27,8 +27,8 @@ describe("bridge mutations", () => {
   it("routes both the outbound op and the echo back to the bridge mutators", () => {
     expect(resolveMutator({ kind: "bridge_samples", payload: {} })).toBe(bridgeSamplesMutator);
     expect(resolveMutator({ kind: "unbridge_sample", payload: {} })).toBe(unbridgeSampleMutator);
-    expect(resolveMutatorForEvent("sample_bridged", "sample")).toBe(bridgeSamplesMutator);
-    expect(resolveMutatorForEvent("sample_unbridged", "sample")).toBe(unbridgeSampleMutator);
+    expect(resolveMutatorForEvent("sample_bridged")).toBe(bridgeSamplesMutator);
+    expect(resolveMutatorForEvent("sample_unbridged")).toBe(unbridgeSampleMutator);
   });
 
   it("bridging shows at once and rolls back cleanly", () => {

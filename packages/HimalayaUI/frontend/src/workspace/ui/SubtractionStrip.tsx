@@ -17,7 +17,7 @@ interface Props {
   height?: number;
 }
 
-const MARGINS = { top: 6, right: PLOT_MARGINS.right, bottom: 8, left: PLOT_MARGINS.left };
+const MARGINS = { top: 20, right: PLOT_MARGINS.right, bottom: 8, left: PLOT_MARGINS.left };
 
 export function SubtractionStrip({ q, d: raw, label, xDomain, xExtent, peakQs, view = "log", height = 96 }: Props): JSX.Element {
   const dom = xDomain ?? xExtent;
@@ -48,7 +48,7 @@ export function SubtractionStrip({ q, d: raw, label, xDomain, xExtent, peakQs, v
               </defs>
               <line x1={0} x2={dims.plotWidth} y1={y.to(0)} y2={y.to(0)} stroke="var(--color-hair-strong)" strokeDasharray="3 3" />
               <path data-role="difference-line" d={linePath(q, d, x, y)} fill="none" stroke="var(--color-accent)" strokeWidth={1.4} clipPath={`url(#${clipId})`} />
-              <text x={6} y={8} className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke">{label}</text>
+              <text x={6} y={-7} className="fill-ink-faint text-caption" stroke="var(--color-plate)" strokeWidth={4} paintOrder="stroke">{label}</text>
             </>
           );
         }}

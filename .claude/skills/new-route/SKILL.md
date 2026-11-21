@@ -9,8 +9,8 @@ Scaffolds the four-file pattern for a new REST resource in HimalayaUI. Rather th
 
 ## Args
 
-- `<resource>` — the new resource name in snake_case (e.g. `tags`, `bridges`)
-- `--parent <parent>` — parent resource if nested (e.g. `--parent samples` → `/api/samples/{id}/tags`)
+- `<resource>` — the new resource name in snake_case (e.g. `labels`, `bridges`)
+- `--parent <parent>` — parent resource if nested (e.g. `--parent samples` → `/api/samples/{id}/labels`)
 - `--readonly` — omit mutation handlers and mutation hooks (GET only)
 
 ## Procedure

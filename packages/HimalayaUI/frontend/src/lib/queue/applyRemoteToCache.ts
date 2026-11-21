@@ -254,27 +254,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
-    case "add_tag":
-    case "remove_tag":
-    case "edit_tag": {
-      if (remote.entity_type === "sample") {
-        // A sample tag appears in two cached projections: the per-experiment
-        // samples list AND the corpus-wide contact-sheet list. The route
-        // always emits experiment_id, so the experiment key still invalidates
-        // (a harmless no-op if not cached); the corpusSamples invalidation is
-        // what refreshes the contact sheet from a foreign tab (#159).
-        qc.invalidateQueries({
-          queryKey: queryKeys.samples(payload?.experiment_id as number),
-        });
-        qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-        qc.invalidateQueries({ queryKey: queryKeys.corpusSampleTags });
-      } else {
-        qc.invalidateQueries({
-          queryKey: queryKeys.exposures(payload?.sample_id as number),
-        });
-      }
-      break;
-    }
     case "update_sample": {
       qc.setQueriesData<Sample[]>(
         { predicate: (q) => q.queryKey[0] === "experiment" && q.queryKey[2] === "samples" },
@@ -293,6 +272,10 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "analyze_run": {
       applyPostState();
+      if (payload?.trace_hash_before !== payload?.trace_hash_after) {
+        qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
+        qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
+      }
       break;
     }
     case "ingest_started":
@@ -316,7 +299,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       break;
     }
     case "tag_color_set":
-      qc.invalidateQueries({ queryKey: queryKeys.tagColors() });
+      qc.invalidateQueries({ queryKey: queryKeys.labelColors() });
       break;
     case "label_added":
     case "label_removed": {

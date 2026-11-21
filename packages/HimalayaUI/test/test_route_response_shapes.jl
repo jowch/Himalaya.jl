@@ -246,12 +246,7 @@ end
         end
     end
 
-    @testset "PATCH /api/samples/:id → bare samples row (NO tags field — known)" begin
-        # Pinning the fact that this route does NOT include tags. The
-        # frontend `updateSampleMutator` knows this and merges only the
-        # patched fields into the existing cache entry to preserve tags.
-        # If a future change starts including tags, update the mutator
-        # AND this test together.
+    @testset "PATCH /api/samples/:id → bare samples row" begin
         mktempdir() do tmp
             db     = open_prepared_clone(tmp)
             exp_id = HimalayaUI.create_experiment!(db; path=tmp,
@@ -292,7 +287,7 @@ end
                     :content_fingerprint,
                     :transmitted_counts, :incident_monitor, :counting_time, :monitors_read,
                     :analysis_version, :analysis_error, :analysis_trace_stat,
-                    :tags, :sources, :image_version,
+                    :sources, :image_version,
                     :beam_energy_ev, :pipe_length_m, :detector,
                 ]
                 assert_keys(body, expected)
@@ -323,7 +318,7 @@ end
         end
     end
 
-    @testset "GET /api/experiments/:id/samples → full Sample shape (including tags)" begin
+    @testset "GET /api/experiments/:id/samples → full Sample shape" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             with_inproc_routes(ctx.db) do call
@@ -332,8 +327,7 @@ end
                 body = only(JSON3.read(String(r.body)))
                 @test :id in keys(body)
                 @test :experiment_id in keys(body)
-                @test :tags in keys(body)
-                @test body.tags isa AbstractVector
+                @test :tags ∉ keys(body)
             end
         end
     end
@@ -341,46 +335,6 @@ end
     # D-10: GET /api/exposures/:id/groups (GroupEntry[]) was retired. The read-side
     # shape pinned here now lives on GET /assignment ({state, members}) in
     # test_assignments.jl.
-
-    @testset "POST /api/samples/:id/tags → SampleTag exactly (no parent FK leak)" begin
-        mktempdir() do tmp
-            db     = open_prepared_clone(tmp)
-            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            with_inproc_routes(db) do call
-                r = call("POST", "/api/samples/$s_id/tags";
-                    body = Vector{UInt8}(JSON3.write(Dict(:key => "k", :value => "v"))),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                @test r.status == 201
-                body = JSON3.read(String(r.body))
-                # Pin: frontend `SampleTag = {id, key, value, source}`.
-                # The route formerly leaked `sample_id`; the cache-shape
-                # test caught it. Pinned here so future drift is deliberate.
-                assert_keys(body, [:id, :key, :value, :source])
-            end
-        end
-    end
-
-    @testset "POST /api/exposures/:id/tags → ExposureTag exactly (no parent FK leak)" begin
-        mktempdir() do tmp
-            db     = open_prepared_clone(tmp)
-            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
-            with_inproc_routes(db) do call
-                r = call("POST", "/api/exposures/$e_id/tags";
-                    body = Vector{UInt8}(JSON3.write(Dict(:key => "k", :value => "v"))),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                @test r.status == 201
-                body = JSON3.read(String(r.body))
-                assert_keys(body, [:id, :key, :value, :source])
-            end
-        end
-    end
 
     @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
         mktempdir() do tmp

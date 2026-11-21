@@ -5,13 +5,6 @@ import { useAppState } from "./state";
 import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
-  addSampleTagMutator,
-  removeSampleTagMutator,
-  addCorpusSampleTagMutator,
-  removeCorpusSampleTagMutator,
-  editCorpusSampleTagMutator,
-  addExposureTagMutator,
-  removeExposureTagMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
@@ -28,7 +21,7 @@ import {
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
 import { addLabelMutator, removeLabelMutator } from "./lib/queue/mutators/labels";
-import { setTagColorMutator } from "./lib/queue/mutators/tagColors";
+import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -45,7 +38,7 @@ export const queryKeys = {
   problems:   (experimentId: number) => ["experiment", experimentId, "problems"] as const,
   folderPreview: (path: string) => ["folder-preview", path] as const,
   folderPreviews: ["folder-preview"] as const,
-  tagColors:  () => ["tag-colors"] as const,
+  labelColors:  () => ["label-colors"] as const,
   manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
     ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
@@ -64,11 +57,6 @@ export const queryKeys = {
     ["exposure", exposureId ?? "none", "assignment"] as const,
   sampleCall: (sampleId: number | undefined) =>
     ["sample", sampleId ?? "none", "call"] as const,
-  corpusSampleTags:    ["corpus-sample-tags"] as const,
-  // Corpus-wide sample listing (redesign Phase 1, #156). Distinct
-  // ["corpus", ...] namespace so corpus add_tag (#159) patches and
-  // invalidations never collide with the per-experiment
-  // ["experiment", id, "samples"] entries that `samples` produces.
   corpusSamples: ["corpus", "samples"] as const,
   experimentCorpusSamples: (experimentId: number) => ["corpus", "samples", experimentId] as const,
 };
@@ -144,13 +132,13 @@ export function useRemoveLabel(experimentId: number) {
   return useQueueMutation(removeLabelMutator, { experimentId, username, clientId: CLIENT_ID });
 }
 
-export function useTagColors() {
-  return useQuery({ queryKey: queryKeys.tagColors(), queryFn: () => api.listTagColors() });
+export function useLabelColors() {
+  return useQuery({ queryKey: queryKeys.labelColors(), queryFn: () => api.listLabelColors() });
 }
 
-export function useSetTagColor() {
+export function useSetLabelColor() {
   const username = useAppState((s) => s.username);
-  return useQueueMutation(setTagColorMutator, { username, clientId: CLIENT_ID });
+  return useQueueMutation(setLabelColorMutator, { username, clientId: CLIENT_ID });
 }
 
 export function useSamples(experimentId: number) {
@@ -190,8 +178,12 @@ export function useTrace(exposureId: number | undefined) {
     queryKey: queryKeys.trace(exposureId),
     queryFn: () => api.getTrace(exposureId as number),
     enabled: exposureId !== undefined,
-    retry: (failures, error) => !(error instanceof api.ApiError && error.status === 404) && failures < 1,
+    retry: retryUnlessMissing,
   });
+}
+
+export function retryUnlessMissing(failures: number, error: unknown): boolean {
+  return !(error instanceof api.ApiError && error.status === 404) && failures < 1;
 }
 
 export function usePeaks(exposureId: number | undefined) {
@@ -340,68 +332,6 @@ export function useCommitCustomIndex(exposureId: number) {
 }
 
 
-export function useAddSampleTag(experimentId: number, sampleId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    addSampleTagMutator,
-    { experimentId, sampleId, username, clientId: CLIENT_ID },
-  );
-}
-
-export function useRemoveSampleTag(experimentId: number, sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    removeSampleTagMutator,
-    { experimentId, sampleId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (tagId: number) => inner.mutate({ tagId }),
-  };
-}
-
-/**
- * Corpus contact-sheet sample tagging (#159). Scope carries `sampleId` only —
- * NO `experimentId` — which is how resolveMutator routes the op to the
- * corpus mutator rather than the experiment-scoped or exposure mutator.
- */
-export function useAddCorpusSampleTag(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    addCorpusSampleTagMutator,
-    { sampleId, username, clientId: CLIENT_ID },
-  );
-}
-
-export function useRemoveCorpusSampleTag(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    removeCorpusSampleTagMutator,
-    { sampleId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (tagId: number) => inner.mutate({ tagId }),
-  };
-}
-
-/**
- * Corpus contact-sheet tag editor (#LO-TAGDUP Slice 2). Scope carries `sampleId`
- * only — same routing as useRemoveCorpusSampleTag — which routes the op to
- * editCorpusSampleTagMutator via resolveMutator (edit_tag, sampleId-only).
- */
-export function useEditCorpusSampleTag(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    editCorpusSampleTagMutator,
-    { sampleId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (a: { tagId: number; key: string; value: string }) => inner.mutate(a),
-  };
-}
-
 export function useSetExposureStatus(sampleId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
@@ -419,35 +349,6 @@ export function useSelectExposure(sampleId: number) {
   };
 }
 
-export function useAddExposureTag(sampleId: number, exposureId: number) {
-  const username = useAppState((s) => s.username);
-  return useQueueMutation(
-    addExposureTagMutator,
-    { sampleId, exposureId, username, clientId: CLIENT_ID },
-  );
-}
-
-export function useRemoveExposureTag(sampleId: number, exposureId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(
-    removeExposureTagMutator,
-    { sampleId, exposureId, username, clientId: CLIENT_ID },
-  );
-  return {
-    ...inner,
-    mutate: (tagId: number) => inner.mutate({ tagId }),
-  };
-}
-
-/** Corpus distinct tag pairs — scoping reads these to propose the ordering
- *  variable. May be empty on a cold corpus (accepted by design, #174). */
-export function useCorpusSampleTags() {
-  return useQuery({
-    queryKey: queryKeys.corpusSampleTags,
-    queryFn: () => api.getCorpusSampleTags(),
-  });
-}
-
 /** Trigger a rescan of a single experiment (cheap change-check then additive
  *  ingest of new files). Plain TanStack mutation — not a queue mutator because
  *  the scan is idempotent and emits its own SSE progress frames. Invalidates
@@ -461,6 +362,7 @@ export function useTriggerScan(experimentId: number) {
   const inner = useMutation({
     mutationFn: (force: boolean) =>
       api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), force),
+    meta: { savesWork: false },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
     },
@@ -491,6 +393,7 @@ export function useCheckForNewFilesOnOpen(experimentId: number): void {
   const qc = useQueryClient();
   const { mutate } = useMutation({
     mutationFn: () => api.triggerScan(experimentId, buildAuthOpts(username, CLIENT_ID), false),
+    meta: { savesWork: false },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
     },

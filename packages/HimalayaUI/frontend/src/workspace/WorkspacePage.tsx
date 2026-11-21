@@ -18,8 +18,8 @@ import {
   useRemoveLabel,
   useProblems,
   useDeleteExperiment,
-  useTagColors,
-  useSetTagColor,
+  useLabelColors,
+  useSetLabelColor,
   usePeaks,
   useFrameAssignments,
   useRemoveAssignmentPhase,
@@ -38,7 +38,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayTag, labelsFor, sampleMatchesFilter, tagVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayLabel, labelsFor, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -76,7 +76,7 @@ import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
-import { TagRow } from "./ui/TagRow";
+import { LabelRow } from "./ui/LabelRow";
 import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
@@ -86,7 +86,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
         { keys: ["Z"], what: "Next unreviewed sample" },
-        { keys: ["/"], what: "Filter samples by name" },
+        { keys: ["/"], what: "Filter samples by name or label" },
       ],
     },
     {
@@ -103,6 +103,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
         { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice; Enter adds, Esc cancels" },
+        { keys: ["L"], what: "Label the sample, e.g. Buffer; Enter adds, Esc closes" },
       ],
     },
     {
@@ -194,13 +195,13 @@ export function WorkspacePage(): JSX.Element {
   );
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
-  const vocabulary = useMemo(() => tagVocabulary(labelList), [labelList]);
+  const vocabulary = useMemo(() => labelVocabulary(labelList), [labelList]);
   const addLabel = useAddLabel(experimentId);
   const removeLabel = useRemoveLabel(experimentId);
-  const [tagging, setTagging] = useState(false);
-  const tagColors = useTagColors();
-  const setTagColor = useSetTagColor();
-  const [coloringTag, setColoringTag] = useState<string | undefined>(undefined);
+  const [labeling, setLabeling] = useState(false);
+  const labelColors = useLabelColors();
+  const setLabelColor = useSetLabelColor();
+  const [coloringLabel, setColoringLabel] = useState<string | undefined>(undefined);
   const visible = useMemo(
     () => samples.filter((s) => sampleMatchesFilter(s.name, labelsFor(labelList, s.id), filter)),
     [samples, labelList, filter],
@@ -231,9 +232,12 @@ export function WorkspacePage(): JSX.Element {
   const darkNotice = traceIsDark(trace.data)
     ? `No counts on the detector: the beam was likely off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
     : undefined;
-  const noTraceMessage = noTrace
-    ? `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`
-    : undefined;
+  const tracePending = problemRows.some((p) => p.problem === "no_trace" && p.exposure_id === exposure?.id);
+  const noTraceMessage = !noTrace
+    ? undefined
+    : tracePending
+      ? "Waiting for this frame's trace."
+      : `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`;
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
@@ -399,14 +403,14 @@ export function WorkspacePage(): JSX.Element {
   }, [samples, labelList]);
   const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
   useEffect(() => {
-    setTagging(false);
-    setColoringTag(undefined);
+    setLabeling(false);
+    setColoringLabel(undefined);
   }, [sampleId]);
-  const sampleTags = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
-  const openTagging = useCallback(() => {
+  const sampleLabels = useMemo(() => (sampleId === undefined ? [] : labelsFor(labelList, sampleId)), [labelList, sampleId]);
+  const openLabeling = useCallback(() => {
     if (!username || sampleId === undefined) return;
-    setColoringTag(undefined);
-    setTagging(true);
+    setColoringLabel(undefined);
+    setLabeling(true);
   }, [username, sampleId]);
   const openBridge = useCallback(() => {
     if (username && sampleId !== undefined) setBridging(true);
@@ -497,8 +501,8 @@ export function WorkspacePage(): JSX.Element {
         setHelpOpen(false);
         setPicking(false);
         setBridging(false);
-        setTagging(false);
-        setColoringTag(undefined);
+        setLabeling(false);
+        setColoringLabel(undefined);
         setPaletteOpen((o) => !o);
         return;
       }
@@ -558,6 +562,11 @@ export function WorkspacePage(): JSX.Element {
         case "I":
           openCustom();
           break;
+        case "l":
+        case "L":
+          if (username && sample) openLabeling();
+          else handled = false;
+          break;
         case "?":
           setHelpOpen(true);
           break;
@@ -595,7 +604,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling]);
 
   const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
@@ -623,8 +632,8 @@ export function WorkspacePage(): JSX.Element {
     { id: "refs", label: refsOn ? "Hide comparisons" : "Show comparisons", run: () => setRefsOn((v) => !v) },
     ...(username && sample
       ? [
-          { id: "tag", label: `Add tag to ${sample.name}`, run: openTagging },
-          ...sampleTags.map((t) => ({ id: `tag-color-${t.label}`, label: `Set colour of tag ${displayTag(t.label)}`, run: () => setColoringTag(t.label) })),
+          { id: "label", label: `Add label to ${sample.name}`, shortcut: "L", run: openLabeling },
+          ...sampleLabels.map((t) => ({ id: `label-color-${t.label}`, label: `Set colour of label ${displayLabel(t.label)}`, run: () => setColoringLabel(t.label) })),
           { id: "bridge", label: `Bridge ${sample.name} to a sample`, run: openBridge },
           ...(bridged.length > 0 ? [{ id: "unbridge", label: `Take ${sample.name} out of its bridges`, run: leaveBridges }] : []),
         ]
@@ -693,24 +702,29 @@ export function WorkspacePage(): JSX.Element {
       main={
         sample ? (
           <>
-            <SampleHeading name={sample.name} meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined} />
-            <TagRow
-              tags={sampleTags}
-              vocabulary={vocabulary}
-              editable={Boolean(username)}
-              adding={tagging}
-              onOpenAdd={openTagging}
-              onCloseAdd={() => setTagging(false)}
-              colors={tagColors.data ?? []}
-              coloring={coloringTag}
-              onOpenColor={(label) => {
-                setTagging(false);
-                setColoringTag(label);
-              }}
-              onCloseColor={() => setColoringTag(undefined)}
-              onSetColor={(label, color) => setTagColor.mutate({ label, color })}
-              onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
-              onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
+            <SampleHeading
+              name={sample.name}
+              meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
+              aside={
+                <LabelRow
+                  labels={sampleLabels}
+                  vocabulary={vocabulary}
+                  editable={Boolean(username)}
+                  adding={labeling}
+                  onOpenAdd={openLabeling}
+                  onCloseAdd={() => setLabeling(false)}
+                  colors={labelColors.data ?? []}
+                  coloring={coloringLabel}
+                  onOpenColor={(label) => {
+                    setLabeling(false);
+                    setColoringLabel(label);
+                  }}
+                  onCloseColor={() => setColoringLabel(undefined)}
+                  onSetColor={(label, color) => setLabelColor.mutate({ label, color })}
+                  onAdd={(label) => addLabel.mutate({ sampleId: sample.id, label })}
+                  onRemove={(label) => removeLabel.mutate({ sampleId: sample.id, label })}
+                />
+              }
             />
             <div className="relative px-3.5 py-1">
               <CompareBar

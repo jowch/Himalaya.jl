@@ -39,9 +39,6 @@ const _COLD_ROUTES_OFF_THE_TRIAGE_PATH = Set([
     "GET /api/experiments/{id}/export", "GET /api/experiments/{id}/samples",
     "GET /api/fs/manifest", "GET /api/fs/preview", "GET /api/fs/suggest",
     "GET /api/resolve",
-    "GET /api/sample-tags", "GET /api/experiments/{eid}/sample-tags", "POST /api/samples/tags/batch",
-    "POST /api/samples/{id}/tags", "PATCH /api/samples/{id}/tags/{tag_id}", "DELETE /api/samples/{id}/tags/{tag_id}",
-    "POST /api/exposures/{id}/tags", "DELETE /api/exposures/{id}/tags/{tag_id}",
     "PATCH /api/samples/{id}",
     "DELETE /api/indices/{id}",
     "POST /api/exposures/{id}/speculative",
@@ -68,7 +65,7 @@ end
 @testset "every registered route is either in the precompile workload or listed as off the triage path" begin
     @test !isempty(_WORKLOAD_REQUESTS)
     routes = _registered_routes()
-    @test length(routes) > 50
+    @test length(routes) > 40
     driven = Set(r for r in routes if any(((m, t),) -> _route_matches(r, m, t), _WORKLOAD_REQUESTS))
     @test sort!(collect(setdiff(routes, driven, _COLD_ROUTES_OFF_THE_TRIAGE_PATH))) == String[]
     @test sort!(collect(intersect(driven, _COLD_ROUTES_OFF_THE_TRIAGE_PATH))) == String[]
