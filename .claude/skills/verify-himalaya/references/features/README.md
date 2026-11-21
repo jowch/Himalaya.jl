@@ -57,6 +57,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify press 1                                  # toggle the top candidate on the shown frame (writes to the DB)
   bin/verify press 0                                  # mark the shown frame no phase (form factor); 0 again clears it (writes to the DB)
   bin/verify press x                                  # drop the shown frame; x again restores it (writes to the DB)
+  bin/verify press Control+z                          # undo the last edit (tick, 0, x, peak, custom index), jumping back to its sample and frame; toast "Undone: …". Control+Shift+z redoes. History is per tab and resets on reload
   bin/verify press /                                  # focus the filter; Esc leaves it and keeps the text, Enter opens the first match
   bin/verify press c                                  # open the compare picker (dialog "Compare with a sample"); type, Enter adds; it subtracts too when nothing else is
   bin/verify press Control+0                          # reset the zoom (⌘0 on a Mac); the palette's "Hide comparisons" and "Plot …" replace the old R and L keys
