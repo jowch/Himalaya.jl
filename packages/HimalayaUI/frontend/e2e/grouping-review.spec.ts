@@ -176,7 +176,7 @@ async function mockGrouping(
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/events*", (r) => r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   // Stub the corpus /api/samples route (CorpusShell or sidebar may request it).
-  await page.route("**/api/samples", (r) =>
+  await page.route((url) => url.pathname === "/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/sample-tags", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));

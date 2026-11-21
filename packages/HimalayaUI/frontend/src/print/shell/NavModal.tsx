@@ -82,7 +82,7 @@ export function NavModal(): JSX.Element | null {
 
   const experimentsQ = useExperiments();
   const samplesQ     = useSamples(pendingExp ?? 0);
-  const corpusQ      = useCorpusSamples();
+  const corpusQ      = useCorpusSamples({ enabled: open });
 
   const filteredExperiments: Experiment[] = useMemo(() => {
     const list = experimentsQ.data ?? [];
