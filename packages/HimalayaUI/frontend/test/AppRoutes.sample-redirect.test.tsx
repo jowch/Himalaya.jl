@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -26,13 +27,19 @@ function stubApi(resolveBody?: unknown): void {
 
 function renderAt(route: string): void {
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={[route]}>
-        <AppRoutes />
-        <Where />
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <StrictMode>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={[route]}>
+          <AppRoutes />
+          <Where />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </StrictMode>,
   );
+}
+
+function serverDown(): void {
+  vi.spyOn(global, "fetch").mockImplementation(() => Promise.reject(new TypeError("Failed to fetch")));
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -49,7 +56,26 @@ describe("old sample links open the workspace", () => {
     stubApi();
     renderAt("/sample/99");
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments"));
+    expect(shown).toHaveBeenCalledTimes(1);
     expect(shown).toHaveBeenCalledWith("That sample link is no longer valid", "warning");
+  });
+
+  it("an old sample link opened while the server is down says it couldn't open, not that it is stale", async () => {
+    const shown = vi.spyOn(toast, "showToast").mockImplementation(() => {});
+    serverDown();
+    renderAt("/sample/42");
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments"));
+    expect(shown).toHaveBeenCalledTimes(1);
+    expect(shown).toHaveBeenCalledWith("Couldn't open that sample link", "error");
+  });
+
+  it("a permalink opened while the server is down says it couldn't open, not that it is stale", async () => {
+    const shown = vi.spyOn(toast, "showToast").mockImplementation(() => {});
+    serverDown();
+    renderAt("/index/lipid/A1");
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/experiments"));
+    expect(shown).toHaveBeenCalledTimes(1);
+    expect(shown).toHaveBeenCalledWith("Couldn't open that sample link", "error");
   });
 
   it("a permalink that no longer resolves lands on the experiments home and says the link is stale", async () => {
