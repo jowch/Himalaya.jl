@@ -5,7 +5,7 @@ The live application shell: the single layout shell, the topbar chrome, the rout
 ## Where things live
 
 - **Shell + chrome**: `AppShell` (the single layout shell) wraps `TopNav` (wordmark + stage-tabs + Experiment chip — composed from `../ui` primitives: `TopBar`, `Wordmark`). No appearance utilities live here — chrome appearance is owned by the `ui/` primitives (closed-look / open-placement contract).
-- **Routing**: `AppRoutes` is the route table (experiments home, new experiment, corpus, configuration and grouping review, imported from `../pages`). The triage workspace (`/experiments/:id/workspace/:sampleId?`, `src/workspace/`) mounts **outside** `AppShell` with its own header and its own keydown listener (it does not use `useKeyboardLayer` or the two-axis model below); `?exposure=<id>` opens it on that frame. Old links go there: `SampleRedirect` handles `/sample/:id` and `/sample/:id/loupe` (keeping `?exposure=`), and `IndexSlugRedirect` resolves `/index/:exp/:sample`. Build links with `workspaceHref` from `SampleRedirect.tsx`. `/series*` and `/compare*` redirect to `/experiments`. `StaleUrlPage` repairs unknown URLs; `ResolvingFallback` is the in-flight placeholder.
+- **Routing**: `AppRoutes` is the route table (experiments home, new experiment, configuration and grouping review, imported from `../pages`). `/experiments/:id` renders `ExperimentEntry`, which forwards to the workspace, to `/grouping` during a first scan, or shows `ScanFailedPage`; `/experiments/:id/corpus` redirects to it (the corpus page was deleted 2026-11-21). The triage workspace (`/experiments/:id/workspace/:sampleId?`, `src/workspace/`) mounts **outside** `AppShell` with its own header and its own keydown listener (it does not use `useKeyboardLayer` or the two-axis model below); `?exposure=<id>` opens it on that frame. Old links go there: `SampleRedirect` handles `/sample/:id` and `/sample/:id/loupe` (keeping `?exposure=`), and `IndexSlugRedirect` resolves `/index/:exp/:sample`. Build links with `workspaceHref` from `SampleRedirect.tsx`. `/series*` and `/compare*` redirect to `/experiments`. `StaleUrlPage` repairs unknown URLs; `ResolvingFallback` is the in-flight placeholder.
 - **Onboarding / modals / errors**: `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. The modals compose `ModalShell` (+ `Button`/`Kicker`/`IconButton`) from `../ui`.
 
 ## Import boundary
@@ -35,7 +35,7 @@ Arrow nav was lifted off the per-page scope-container `onKeyDown` into `arrowHan
 
 `InteractionDock` renders the dock UI directly from the live registry — no separate legend-sync step. `useListCursor` is the cursor primitive: ID-based, roving tabindex, SSE-survival heal.
 
-- **Two-axis model (corpus only; the workspace uses ↑↓/J for samples, ←→ for frames, 1–9 for phases, 0 for no phase, X to drop).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = the frame cursor on the active sample's thumbnails.
+- **Two-axis model (no page uses it since the corpus was deleted; the workspace uses ↑↓ for samples, ←→ for frames, 1–9 for phases, 0 for no phase, X to drop).** `↑`/`↓` = sample (`prevSample`/`nextSample`); `←`/`→` = the frame cursor on the active sample's thumbnails.
 
 ## The floatingDock lane protocol
 

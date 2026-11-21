@@ -2,18 +2,17 @@ import { Link } from "react-router-dom";
 import { Kbd } from "./Kbd";
 
 interface Props {
-  experimentId: number;
   experimentName: string;
   reviewed: number;
   total: number;
   onHelp: () => void;
 }
 
-export function WorkspaceHeader({ experimentId, experimentName, reviewed, total, onHelp }: Props): JSX.Element {
+export function WorkspaceHeader({ experimentName, reviewed, total, onHelp }: Props): JSX.Element {
   const pct = total > 0 ? (reviewed / total) * 100 : 0;
   return (
     <>
-      <Link to={`/experiments/${experimentId}/corpus`} title="Back to the corpus" className="text-lg font-semibold leading-none text-ink no-underline">
+      <Link to="/experiments" title="All experiments" className="text-lg font-semibold leading-none text-ink no-underline">
         Himalaya
       </Link>
       <h1 className="min-w-0 truncate text-base font-normal text-ink-soft">{experimentName}</h1>
