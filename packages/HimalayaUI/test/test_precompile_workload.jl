@@ -39,7 +39,6 @@ const _COLD_ROUTES_OFF_THE_TRIAGE_PATH = Set([
     "GET /api/experiments/{id}/export", "GET /api/experiments/{id}/loads", "GET /api/experiments/{id}/samples",
     "GET /api/fs/manifest", "GET /api/fs/resolve", "GET /api/fs/suggest", "GET /api/fs/validate",
     "GET /api/resolve",
-    "GET /api/samples/{id}/messages", "POST /api/samples/{id}/messages",
     "GET /api/users/{username}/actions",
     "GET /api/sample-tags", "GET /api/experiments/{eid}/sample-tags", "POST /api/samples/tags/batch",
     "POST /api/samples/{id}/tags", "PATCH /api/samples/{id}/tags/{tag_id}", "DELETE /api/samples/{id}/tags/{tag_id}",

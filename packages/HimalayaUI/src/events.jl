@@ -296,6 +296,7 @@ const RETIRED_EVENT_KINDS = (
     "comparison_submitted", "comparison_unpinned",
     "series_created", "series_deleted", "series_pinned", "series_plate_committed",
     "series_recipe_updated", "series_unpinned",
+    "post_message",
 )
 
 """
@@ -431,7 +432,6 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "add_tag" && return nothing
     kind == "remove_tag" && return nothing
     kind == "edit_tag" && return nothing
-    kind == "post_message" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 

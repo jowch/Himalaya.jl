@@ -8,7 +8,6 @@ import {
   addCorpusSampleTagMutator,
   removeCorpusSampleTagMutator,
   editCorpusSampleTagMutator,
-  postSampleMessageMutator,
   setExposureStatusMutator,
   selectExposureMutator,
 } from "./mutators/trivial";
@@ -82,8 +81,6 @@ export function resolveMutator(
       // edit_tag is corpus-only (no experiment-scoped or exposure-scoped path).
       // sampleId-only scope routes here, mirroring the corpus add_tag/remove_tag fallthrough.
       return editCorpusSampleTagMutator;
-    case "post_message":
-      return postSampleMessageMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
     case "select_exposure":
@@ -129,8 +126,8 @@ export function resolveMutator(
  * Resolve the mutator that owns a given SSE event kind. Used by the replay
  * coordinator to dispatch `synthesizeFromSse` per event kind.
  *
- * `entity_type` is required because three event kinds (`add_tag`,
- * `remove_tag`, `post_message`) are shared across mutators that differ only
+ * `entity_type` is required because two event kinds (`add_tag`,
+ * `remove_tag`) are shared across mutators that differ only
  * by the entity scope they operate on.
  *
  * Returns undefined for unknown event kinds — replayCoordinator will fall
@@ -178,11 +175,6 @@ export function resolveMutatorForEvent(
     case "edit_tag":
       // edit_tag is sample-scoped only. The corpus mutator owns synthesizeFromSse.
       return editCorpusSampleTagMutator;
-    case "post_message":
-      // Only the sample-message thread remains; the comparison-message variant
-      // was retired with the Compare page. `entityType` ("sample_message") is
-      // not discriminated on, but the param is kept for arm-shape parity.
-      return postSampleMessageMutator;
     // Ingestion grouping-review structural edits (Phase E2). A merge fans out as
     // exposure_moved frames — so exposure_moved is the only SSE kind move AND merge
     // share on the wire. See brief §Step 4 note.

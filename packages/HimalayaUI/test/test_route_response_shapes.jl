@@ -363,30 +363,6 @@ end
     # shape pinned here now lives on GET /assignment ({state, members}) in
     # test_assignments.jl.
 
-    @testset "GET /api/samples/:id/messages → SampleMessage[]" begin
-        mktempdir() do tmp
-            db     = open_prepared_clone(tmp)
-            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-            with_inproc_routes(db) do call
-                # Post one to have something to read.
-                call("POST", "/api/samples/$s_id/messages";
-                    body = Vector{UInt8}(JSON3.write(Dict(:body => "hello"))),
-                    headers = ["Content-Type" => "application/json",
-                               "X-Username"   => "alice"])
-                r = call("GET", "/api/samples/$s_id/messages")
-                @test r.status == 200
-                msgs = JSON3.read(String(r.body))
-                @test !isempty(msgs)
-                expected = [:id, :sample_id, :author_id, :author, :body, :created_at]
-                for m in msgs
-                    assert_keys(m, expected)
-                end
-            end
-        end
-    end
-
     @testset "POST /api/samples/:id/tags → SampleTag exactly (no parent FK leak)" begin
         mktempdir() do tmp
             db     = open_prepared_clone(tmp)

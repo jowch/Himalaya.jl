@@ -73,7 +73,6 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   select_exposure: "Couldn't switch exposure",
   add_tag: "Couldn't add tag",
   remove_tag: "Couldn't remove tag",
-  post_message: "Couldn't post message",
   update_sample: "Couldn't update sample",
   reanalyze_exposure: "Couldn't re-analyze exposure",
   delete_index: "Couldn't delete index",

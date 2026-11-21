@@ -12,7 +12,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import * as api from "../../../api";
 import type {
-  Sample, SampleTag, Exposure, ExposureTag, SampleMessage,
+  Sample, SampleTag, Exposure, ExposureTag,
   AuthOpts, CorpusSample,
 } from "../../../api";
 import { queryKeys } from "../../../queries";
@@ -431,47 +431,6 @@ export const editCorpusSampleTagMutator: Mutator<
       value: p.value as string,
       source: "manual",
     } as SampleTag;
-  },
-};
-
-// ---------------------------------------------------------------------------
-// post_message
-// ---------------------------------------------------------------------------
-
-export type PostSampleMessageInput = { body: string };
-type PostSampleMessageScope = BaseScope & { sampleId: number };
-
-export const postSampleMessageMutator: Mutator<PostSampleMessageInput, PostSampleMessageScope, SampleMessage> = {
-  kind: "post_message",
-  onMutate: (p, qc): RollbackContext => {
-    const key = queryKeys.messages(p.sampleId);
-    const prev = qc.getQueryData<SampleMessage[]>(key);
-    const placeholder: SampleMessage = {
-      id: nextOptimisticId(),
-      sample_id: p.sampleId,
-      author_id: null,
-      author: p.username ?? null,
-      body: p.body,
-      created_at: new Date().toISOString(),
-    };
-    qc.setQueryData<SampleMessage[]>(key, [...(prev ?? []), placeholder]);
-    return {
-      restore: () => {
-        if (prev === undefined) qc.removeQueries({ queryKey: key, exact: true });
-        else qc.setQueryData(key, prev);
-      },
-    };
-  },
-  request: (p) => api.postSampleMessage(p.sampleId, p.body, buildAuthOpts(p)),
-  onSuccess: (p, response, qc) => {
-    const key = queryKeys.messages(p.sampleId);
-    qc.setQueryData<SampleMessage[]>(key, (list) =>
-      replacePlaceholder(
-        list ?? [],
-        response,
-        (m) => m.body === response.body && m.sample_id === response.sample_id,
-      ),
-    );
   },
 };
 

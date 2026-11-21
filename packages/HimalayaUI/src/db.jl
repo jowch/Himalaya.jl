@@ -247,17 +247,6 @@ CREATE TABLE IF NOT EXISTS sample_calls (
               CHECK (state IN ('indexed', 'form_factor', 'null'))
 );
 
-CREATE TABLE IF NOT EXISTS sample_messages (
-    id         INTEGER PRIMARY KEY,
-    sample_id  INTEGER REFERENCES samples(id),
-    author_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    body       TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_sample_messages_sample
-    ON sample_messages(sample_id, created_at);
-
 CREATE TABLE IF NOT EXISTS user_actions (
     id              INTEGER PRIMARY KEY,
     user_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -436,7 +425,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_pk_to_autoincrement!(db)
     # Heal corrupted FKs from prior runs: a DB migrated before the helper
     # was generalized may still have FK refs to `_migrate_old_*` on tables
-    # like sample_messages/sample_tags/etc. Idempotent — no-op when clean.
+    # like sample_tags/exposure_tags/etc. Idempotent — no-op when clean.
     _fix_fk_references_after_autoincrement_migration!(db)
     # Run AFTER `_fix_fk_references_after_autoincrement_migration!` so the
     # AUTOINCREMENT rebuild has settled and the index attaches to the rebuilt
@@ -520,17 +509,18 @@ function migrate_schema!(db::SQLite.DB)
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
     migrate_sample_calls!(db)
-    migrate_drop_series!(db)
+    migrate_drop_retired_tables!(db)
 end
 
-const RETIRED_SERIES_TABLES = (
+const RETIRED_TABLES = (
     "series_pins", "series_messages", "series_samples", "series_members", "series",
     "comparison_pins", "comparison_messages", "comparison_members", "comparisons",
+    "sample_messages",
 )
 
-function migrate_drop_series!(db::SQLite.DB)
+function migrate_drop_retired_tables!(db::SQLite.DB)
     SQLite.transaction(db) do
-        for table in RETIRED_SERIES_TABLES
+        for table in RETIRED_TABLES
             DBInterface.execute(db, "DROP TABLE IF EXISTS $table")
         end
     end
@@ -1394,10 +1384,10 @@ hits a stale reference).
 
 The previous version of this function only rebuilt empty tables it knew
 were freshly created (`auto_peaks`, `peak_curations`). That missed
-populated tables like `sample_messages`, `sample_tags`, `exposure_tags`,
+populated tables like `sample_tags`, `exposure_tags`,
 `exposure_sources`, `index_groups`, `index_group_members` whose FKs had
 the same corruption. A real prod DB at `/tmp/himalaya-dev.db` with rows
-in `sample_tags`/`sample_messages` exhibited the bug — caught only by
+in `sample_tags` and the since-deleted `sample_messages` exhibited the bug — caught only by
 running the actual server (smoke checklist), not by the test suite which
 uses freshly-built DBs that don't go through this exact sequence.
 

@@ -181,11 +181,6 @@ function register_grouping_routes!()
                 "UPDATE sample_tags SET sample_id = ? WHERE sample_id = ?",
                 [survivor_id, loser_id])
 
-            # sample_messages re-point (no uniqueness constraint — plain UPDATE).
-            DBInterface.execute(db,
-                "UPDATE sample_messages SET sample_id = ? WHERE sample_id = ?",
-                [survivor_id, loser_id])
-
             inherit_bridges!(db, req, loser_id, survivor_id, exp_id)
 
             # (iii) Retire the loser (sets merged_into_id; does not hard-delete).
