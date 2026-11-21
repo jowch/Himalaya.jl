@@ -306,7 +306,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const app = await collectApp(cfg, experimentId);
   let workspaceRead = null;
   if (flags.ui) {
-    const opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder })));
+    const opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder })), { reload: Boolean(flags.reload) });
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
