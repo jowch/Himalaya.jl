@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./shell/AppRoutes";
 import { OnboardingFlow } from "./shell/OnboardingFlow";
@@ -17,6 +18,8 @@ import { openLiveStream } from "../lib/liveStream";
 import { useConnection } from "../lib/connection";
 import { createReconnectRefresh } from "../lib/queue/reconnectRefresh";
 import { useAppState } from "../state";
+import { forgetExperiment } from "../queries";
+import { getClientId } from "../lib/clientId";
 import type { SseEvent } from "../lib/queue/types";
 
 /**
@@ -30,6 +33,10 @@ export function PrintApp(): JSX.Element {
   const mc = qc.getMutationCache();
   const setIngestProgress = useAppState((s) => s.setIngestProgress);
   const clearIngestProgress = useAppState((s) => s.clearIngestProgress);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const here = useRef({ navigate, pathname: location.pathname });
+  here.current = { navigate, pathname: location.pathname };
 
   // Expose minimal test helpers on `window.__himalayaTest` in DEV only.
   // Production bundles tree-shake this out (Vite + DEV gate).
@@ -48,6 +55,17 @@ export function PrintApp(): JSX.Element {
         // applyRemoteToCache, which stays pure); the cache invalidation delegates
         // to the shared invalidateIngestFrameCache helper (defined + tested in
         // applyRemoteToCache.ts, Task 18) — no duplication.
+        if (parsed.kind === "experiment_deleted") {
+          const expId = parsed.entity_id;
+          const { navigate: go, pathname } = here.current;
+          const open = pathname === `/experiments/${expId}` || pathname.startsWith(`/experiments/${expId}/`);
+          if (open && parsed.client_id !== getClientId()) {
+            go("/experiments", { replace: true });
+            showToast("This experiment was removed in another window.");
+          }
+          forgetExperiment(qc, expId);
+          return;
+        }
         if (
           parsed.kind === "ingest_started" || parsed.kind === "ingest_progress" ||
           parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed"

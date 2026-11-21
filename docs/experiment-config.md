@@ -62,6 +62,13 @@ Each setup also carries the counts a scan would find (`exposures`,
 any geometry discrepancies, and `duplicate_of` when an experiment already uses
 its `data_dir`.
 
+A new experiment stores the real path of its `data_dir` (symlinks resolved,
+trailing slash dropped). The duplicate check resolves only the folder being
+picked and compares it against the stored paths as text. It never visits the
+folders of existing experiments, so a stored folder on an unreachable network
+share cannot stall adding a new one. An experiment created before this rule
+under a symlinked path is matched only by that same spelling.
+
 ### File manifest
 
 `GET /api/fs/manifest` answers "what would a scan of these settings find?"

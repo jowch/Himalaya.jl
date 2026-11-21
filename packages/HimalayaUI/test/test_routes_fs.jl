@@ -534,3 +534,36 @@ end
         end
     end
 end
+
+@testset "the duplicate check reads stored folders as text and never visits them" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        gone = joinpath(tmp, "unmounted-share", "setup1", "data")
+        HimalayaUI.create_experiment!(db; name = "old", path = gone, data_dir = gone * "/", analysis_dir = gone)
+        @test HimalayaUI.experiment_using_dir(db, gone).name == "old"
+        real = mkpath(joinpath(tmp, "real", "data"))
+        link = joinpath(tmp, "link"); symlink(real, link)
+        HimalayaUI.create_experiment!(db; name = "via link", path = link, data_dir = link, analysis_dir = link)
+        @test HimalayaUI.experiment_using_dir(db, link).name == "via link"
+        @test HimalayaUI.experiment_using_dir(db, real) === nothing
+    end
+end
+
+@testset "a new experiment stores its folder canonically, so a symlinked spelling is caught" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        real = mkpath(joinpath(tmp, "real", "data"))
+        link = joinpath(tmp, "link"); symlink(joinpath(tmp, "real"), link)
+        with_inproc_routes(db) do call
+            post(path) = call("POST", "/api/experiments";
+                headers = ["Content-Type" => "application/json"],
+                body = Vector{UInt8}(JSON3.write(Dict("data_dir" => path, "name" => basename(path)))))
+            r = post(joinpath(link, "data") * "/")
+            @test r.status == 202
+            stored = first(Tables.rowtable(DBInterface.execute(db, "SELECT data_dir FROM experiments WHERE id = ?",
+                [JSON3.read(r.body).id]))).data_dir
+            @test stored == realpath(real)
+            @test post(real).status == 409
+        end
+    end
+end
