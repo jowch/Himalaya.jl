@@ -504,20 +504,26 @@ function migrate_schema!(db::SQLite.DB)
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
     migrate_sample_labels!(db)
-    migrate_tag_colors!(db)
+    migrate_label_colors!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
     migrate_label_suggestions!(db)
 end
 
-function migrate_tag_colors!(db::SQLite.DB)
+function migrate_label_colors!(db::SQLite.DB)
+    has(t) = !isempty(Tables.rowtable(DBInterface.execute(db,
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t])))
+    if has("tag_colors") && !has("label_colors")
+        DBInterface.execute(db, "ALTER TABLE tag_colors RENAME TO label_colors")
+    end
+    DBInterface.execute(db, "DROP INDEX IF EXISTS idx_tag_colors_label")
     DBInterface.execute(db, """
-        CREATE TABLE IF NOT EXISTS tag_colors (
+        CREATE TABLE IF NOT EXISTS label_colors (
             label TEXT NOT NULL,
             color TEXT NOT NULL
         )""")
     DBInterface.execute(db,
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_colors_label ON tag_colors(label COLLATE NOCASE)")
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_label_colors_label ON label_colors(label COLLATE NOCASE)")
     nothing
 end
 

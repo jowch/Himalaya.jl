@@ -13,9 +13,15 @@ export function statusFromText(text) {
   return "phase";
 }
 
-function failedRequests(settle, where) {
-  if (!settle.httpErrors.length) return;
-  const list = settle.httpErrors.map((e) => `${e.method} ${new URL(e.url).pathname} ${e.status}`).join(", ");
+export function heldTrace404(e, heldIds) {
+  const m = /^\/api\/exposures\/(\d+)\/trace$/.exec(new URL(e.url).pathname);
+  return e.method === "GET" && e.status === 404 && m !== null && heldIds.has(Number(m[1]));
+}
+
+function failedRequests(settle, where, heldIds = new Set()) {
+  const failed = settle.httpErrors.filter((e) => !heldTrace404(e, heldIds));
+  if (!failed.length) return;
+  const list = failed.map((e) => `${e.method} ${new URL(e.url).pathname} ${e.status}`).join(", ");
   throw new Error(`${where} loaded with failed requests (${list}); the view it shows can't be trusted`);
 }
 
@@ -40,7 +46,8 @@ async function settledGoto(page, cfg, route) {
   failedRequests(settle, route);
 }
 
-export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId) {
+export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId, { reload = false } = {}) {
+  if (reload) return { reuse: false, route: WORKSPACE_ROUTE(experimentId, firstSampleId) };
   let url;
   try {
     url = new URL(currentUrl);
@@ -107,18 +114,32 @@ export function openSampleBy(currentUrl, experimentId, sampleId) {
   return path === WORKSPACE_ROUTE(experimentId, sampleId) ? { reopen: true } : { click: true };
 }
 
-async function clickSample(page, id) {
+async function clickSample(page, id, held = new Set()) {
   const tracker = armSettle(page);
   await page.locator(`[data-testid='workspace-samples'] [data-sample-id='${id}']`).click();
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`the workspace did not settle on sample ${id} within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-  failedRequests(settle, `the workspace on sample ${id}`);
+  failedRequests(settle, `the workspace on sample ${id}`, held);
 }
 
-export async function readWorkspace(page, cfg, experimentId, samples) {
+async function textOrNull(page, selector) {
+  const el = page.locator(selector);
+  return (await el.count()) ? ((await el.first().textContent()) ?? "").trim() : null;
+}
+
+async function plotMessage(page, timeoutMs = 5000) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const text = await textOrNull(page, "[data-testid='workspace-trace-empty']");
+    if (text !== "" || Date.now() > until) return text;
+    await page.waitForTimeout(100);
+  }
+}
+
+export async function readWorkspace(page, cfg, experimentId, samples, { reload = false } = {}) {
   const out = new Map();
   if (!samples.length) return out;
-  const start = workspaceStart(page.url(), cfg.uiBase, experimentId, samples[0].id);
+  const start = workspaceStart(page.url(), cfg.uiBase, experimentId, samples[0].id, { reload });
   if (!start.reuse) await settledGoto(page, cfg, start.route);
   const filter = page.getByLabel("Filter samples");
   if ((await filter.count()) && (await filter.inputValue())) {
@@ -131,30 +152,34 @@ export async function readWorkspace(page, cfg, experimentId, samples) {
     let frame = null;
     let kept = null;
     let rail = null;
+    let plot = null;
+    let notice = null;
     if (await row.count()) {
       const how = openSampleBy(page.url(), experimentId, s.id);
       if (how.reopen) {
         kept = await workspaceKept(page);
         const away = rows.find((r) => r.id !== s.id);
         if (away) {
-          await clickSample(page, away.id);
-          await clickSample(page, s.id);
+          await clickSample(page, away.id, new Set(samples.find((x) => x.id === away.id)?.heldIds ?? []));
+          await clickSample(page, s.id, new Set(s.heldIds ?? []));
         } else {
           await settledGoto(page, cfg, WORKSPACE_ROUTE(experimentId, s.id));
         }
       } else {
-        await clickSample(page, s.id);
+        await clickSample(page, s.id, new Set(s.heldIds ?? []));
         kept = await workspaceKept(page);
       }
       frame = await currentWorkspaceFrame(page, s.frameOrder);
       rail = await workspaceRail(page);
+      plot = await plotMessage(page);
+      notice = await textOrNull(page, "[data-testid='workspace-ingest-status']");
     }
-    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse });
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice });
   }
   return out;
 }
 
-export async function readViews(cfg, experimentId, samples) {
+export async function readViews(cfg, experimentId, samples, { reload = false } = {}) {
   if (!(await reachable(cfg.uiBase, "/"))) {
     throw new UsageError(`nothing is serving ${cfg.uiBase}`, "--ui reads the workspace in the browser; run `bin/verify seed`");
   }
@@ -163,7 +188,7 @@ export async function readViews(cfg, experimentId, samples) {
   const out = new Map();
   try {
     await prepareUser(session.page, cfg, { username: "verify", onboarding: false });
-    const workspace = await readWorkspace(session.page, cfg, experimentId, samples);
+    const workspace = await readWorkspace(session.page, cfg, experimentId, samples, { reload });
     for (const s of samples) out.set(s.id, workspace.get(s.id) ?? {});
   } finally {
     await session.browser.close().catch(() => undefined);

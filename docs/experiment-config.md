@@ -272,7 +272,10 @@ last failed pass (cleared by the next pass that succeeds), and `exposures`:
 each exposure still waiting for its trace (`no_trace`) or whose analysis failed
 (`failed`), with its sample and reason. The workspace notice summarizes these
 (for example "2 exposures waiting for a trace · 1 analysis failed") and its
-Details button opens the list; picking a row opens that sample.
+Details button opens the list; picking a row opens that sample. A frame
+waiting for its trace says "Waiting for this frame's trace." in the plot, not
+"No integrated trace", and the plot refetches the trace when the next pass
+completes.
 
 ## Rescans
 

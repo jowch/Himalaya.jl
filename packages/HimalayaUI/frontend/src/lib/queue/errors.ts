@@ -74,10 +74,12 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   update_sample: "Couldn't update sample",
   add_label: "Couldn't add label",
   remove_label: "Couldn't remove label",
+  restore_label_suggestion: "Couldn't put the label back to suggested",
   reanalyze_exposure: "Couldn't re-analyze exposure",
   delete_index: "Couldn't delete index",
   assignment_add: "Couldn't call phase",
   assignment_remove: "Couldn't remove phase",
+  patch_experiment: "Couldn't save the experiment",
 };
 
 /**
