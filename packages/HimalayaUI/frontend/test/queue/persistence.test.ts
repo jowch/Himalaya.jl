@@ -299,6 +299,9 @@ describe("persistence: stale-schemaVersion op drop", () => {
   it.each([
     ["series_save", { title: "draft", samples: [] }],
     ["post_message", { sampleId: 10, body: "hi" }],
+    ["add_tag", { sampleId: 10, key: "rejection_reason", value: "air" }],
+    ["remove_tag", { exposureId: 11, tagId: 3 }],
+    ["edit_tag", { exposureId: 11, tagId: 3, value: "air" }],
   ])("drops a persisted op of a deleted kind (%s) without replaying it", async (kind, payload) => {
     sessionStorage.setItem(
       STORAGE_KEY,

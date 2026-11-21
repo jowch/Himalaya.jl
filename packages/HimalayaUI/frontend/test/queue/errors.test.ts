@@ -36,7 +36,8 @@ describe("error classification", () => {
 
   it("buildValidationMessage produces a per-kind copy", () => {
     expect(buildValidationMessage("peak_added", new Error("bad q"))).toMatch(/peak/i);
-    expect(buildValidationMessage("add_label", new Error("missing key"))).toMatch(/tag/i);
+    expect(buildValidationMessage("add_label", new Error("missing key"))).toBe("Couldn't add label: missing key");
+    expect(buildValidationMessage("remove_label", new Error("gone"))).toMatch(/^Couldn't remove label/);
     // Unknown kind falls back to a generic message.
     expect(buildValidationMessage("update_sample" as any, new Error("oops"))).toBeTruthy();
   });
