@@ -9,7 +9,7 @@
 #
 # Usage (from the repo root; `make demo-data` wraps this):
 #   julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl \
-#       [out_dir] [--seed 7] [--no-images]
+#       [out_dir] [--seed 7] [--no-images] [--late-trace]
 # `--large [--experiments 10] [--samples 300]` instead writes <out>/large_NN/ trees at
 # realistic scale (`make demo-large-data`); see docs/demo.md "Large mode". There each
 # .tif is a hardlink to one of ~24 pooled frames, not rendered from its own trace.
@@ -369,12 +369,12 @@ end
 
 csvq(s) = occursin(r"[,\"]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s
 
-const USAGE = "usage: make_demo_data.jl [out_dir] [--seed N] [--no-images] " *
+const USAGE = "usage: make_demo_data.jl [out_dir] [--seed N] [--no-images] [--late-trace] " *
               "[--large [--experiments N] [--samples M]] | --clean-large <dir>"
 
 function parse_args(args)
     out = joinpath(dirname(dirname(dirname(@__DIR__))), "scratch", "demo-experiment")
-    o = (seed = 7, images = true, large = false, experiments = 10, samples = 300)
+    o = (seed = 7, images = true, large = false, experiments = 10, samples = 300, late = false)
     i = 1
     intopt(name) = (i < length(args) || error("$name needs a value"); parse(Int, args[i+1]))
     while i <= length(args)
@@ -389,6 +389,8 @@ function parse_args(args)
             o = merge(o, (images = false,))
         elseif a == "--large"
             o = merge(o, (large = true,))
+        elseif a == "--late-trace"
+            o = merge(o, (late = true,))
         elseif startswith(a, "-")
             error("unknown option $a ($USAGE)")
         else
@@ -396,6 +398,7 @@ function parse_args(args)
         end
         i += 1
     end
+    o.late && o.large && error("--late-trace applies to the curated demo only")
     merge(o, (out = abspath(out),))
 end
 
@@ -422,6 +425,9 @@ end
 const TRUTH_HEADER = "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"
 const T0_DEFAULT = DateTime(2026, 4, 26, 18, 0, 0)
 
+const LATE_TRACE_SAMPLE = "MO_lowH2O"
+late_dir(out) = joinpath(out, "late")
+
 """
 Reset an experiment tree and return its (data, analysis, tot) directories. Files
 from an earlier generation are removed so a re-run can't leave strays.
@@ -433,6 +439,7 @@ function prepare_tree(out)
     for d in (data, tot)
         isdir(d) && foreach(f -> rm(joinpath(d, f)), readdir(d))
     end
+    rm(late_dir(out); force = true, recursive = true)
     mkpath(data); mkpath(tot)
     data, analysis, tot
 end
@@ -510,8 +517,14 @@ function main_curated(o)
         push!(truth, truth_row(label, bases, comps, peaks, auto, images, drops, flares, note))
     end
     write(joinpath(out, "TRUTH.csv"), join(truth, "\n") * "\n")
+    if o.late
+        mkpath(late_dir(out))
+        for f in readdir(tot)
+            startswith(f, LATE_TRACE_SAMPLE * "_S") && mv(joinpath(tot, f), joinpath(late_dir(out), f))
+        end
+    end
     println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",
-            images ? "" : ", no images", ")")
+            images ? "" : ", no images", o.late ? ", $LATE_TRACE_SAMPLE's traces held in late/" : "", ")")
     out
 end
 

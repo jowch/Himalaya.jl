@@ -177,6 +177,25 @@ with a median of 4 frames. Performance work needs real scale and a real network
 (the app is usually reached through an SSH tunnel), so test it with the
 `--large` option below and a throttled browser.
 
+### Late traces
+
+At SSRL the integration pipeline writes a `_tot.dat` some time after its image,
+so a pass can see an exposure before its trace (see docs/experiment-config.md,
+"Scan and grouping"). `make_demo_data.jl --late-trace` (`make demo-data
+DEMO_DATA_FLAGS=--late-trace`, or `bin/verify seed --reset --late-trace`) holds
+`MO_lowH2O`'s traces back in `<demo>/late/`, outside the analysis folder. The
+workspace notice should then report them as waiting for a trace, and
+`check-truth` expects no auto call on those frames. `bin/verify deliver-late`
+moves them into `tot_files` with a fresh mtime. The next pass has to analyze
+them, and `check-truth` fails while any delivered trace is still reported as
+waiting. With `--ui` it also checks the plot: a held frame says "Waiting for
+this frame's trace." and every other frame draws its trace. `make verify-truth`
+(CI's "Demo check-truth" job) runs this sequence first, and delivers the traces
+while the workspace is open on `MO_lowH2O`. It then waits, without a reload,
+for the plot to draw the trace and its peak markers. That step is the only guard for a trace
+that lands while its sample is open: `plot_matches_trace` cannot see a stale
+plot, because each sample click remounts the plot and refetches a failed trace.
+
 ### Large mode
 
 `make demo-large-data` (generate only, into `scratch/demo-large/`) or
