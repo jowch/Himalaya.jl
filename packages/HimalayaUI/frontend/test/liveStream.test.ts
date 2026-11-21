@@ -86,4 +86,22 @@ describe("openLiveStream", () => {
     vi.advanceTimersByTime(120_000);
     expect(FakeES.all).toHaveLength(1);
   });
+
+  it("reports the stream down on any error and up again when it reopens", () => {
+    stop();
+    const seen: string[] = [];
+    stop = openLiveStream("/api/events", {
+      listeners: {},
+      onReconnect: () => {},
+      onStatus: (s) => seen.push(s),
+      createSource: (url) => new FakeES(url) as unknown as EventSource,
+    });
+    last().fire("open");
+    last().fire("error");
+    last().fire("error");
+    last().failForGood();
+    vi.advanceTimersByTime(1000);
+    last().fire("open");
+    expect(seen).toEqual(["open", "down", "down", "down", "open"]);
+  });
 });
