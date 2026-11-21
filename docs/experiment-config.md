@@ -234,7 +234,9 @@ reads `data_dir`, `analysis_dir` and the patterns from the row, then:
 
 After a successful pass, `run_ingest!` warms the experiment's thumbnails on a
 separate task, after `ingest_complete`, so the workspace opens without waiting
-for them. A thumbnail that isn't warm yet renders on first view.
+for them. A thumbnail that isn't warm yet renders on first view. A restart
+during the warm doesn't resume it: the experiment is already `complete`, so the
+next pass with work warms the rest.
 
 The grouping is a suggestion. The grouping review page and the routes in
 `routes_grouping.jl` let the user rename, merge and split samples, and move

@@ -395,6 +395,8 @@ end
         lock(HimalayaUI.SSE_LOCK) do
             push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
         end
+        gate = Channel{Nothing}(1)
+        HimalayaUI._THUMB_PREWARM_GATE[] = gate
         try
             @test HimalayaUI.run_ingest!(db, exp) === :ok
             stages = String[]
@@ -408,15 +410,23 @@ end
                 haskey(obj, :payload) && haskey(obj.payload, :stage) && push!(stages, String(obj.payload.stage))
             end
             @test "ingest_complete" in kinds
+            @test "analyzing" in stages
             @test !("thumbnails" in stages)
+            @test first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT ingest_status FROM experiments WHERE id = ?", [exp]))).ingest_status == "complete"
 
-            task = lock(() -> HimalayaUI.THUMB_PREWARMS[exp], HimalayaUI._THUMB_PREWARMS_LOCK)
-            wait(task)
             e = first(Tables.rowtable(DBInterface.execute(db,
                 "SELECT id, image_path FROM exposures WHERE experiment_id = ?", [exp])))
-            token = HimalayaUI.image_version_token(String(e.image_path))
-            @test isfile(HimalayaUI.thumb_cache_path(db, Int(e.id), token))
+            thumb = HimalayaUI.thumb_cache_path(db, Int(e.id), HimalayaUI.image_version_token(String(e.image_path)))
+            @test !isfile(thumb)
+
+            put!(gate, nothing)
+            HimalayaUI.wait_prewarm(exp)
+            @test isfile(thumb)
         finally
+            HimalayaUI._THUMB_PREWARM_GATE[] = nothing
+            isready(gate) || put!(gate, nothing)
+            HimalayaUI.wait_prewarm(exp)
             lock(HimalayaUI.SSE_LOCK) do
                 filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
             end

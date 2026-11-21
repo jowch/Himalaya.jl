@@ -170,7 +170,7 @@
     "src/grouping.jl": 268,
     "src/hash.jl": 26,
     "src/idempotency.jl": 135,
-    "src/image.jl": 159,
+    "src/image.jl": 142,
     "src/ingest.jl": 152,
     "src/json.jl": 16,
     "src/pipeline.jl": 430,
