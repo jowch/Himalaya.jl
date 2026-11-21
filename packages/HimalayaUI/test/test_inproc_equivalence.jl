@@ -94,12 +94,12 @@ end
         mktempdir() do d
             fx = _seed(d)
             hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
-            bodyj = JSON3.write(Dict(:body => "orphan"))
+            bodyj = JSON3.write(Dict(:q => 0.05))
             w = with_test_server(fx.db) do port, base
-                HTTP.post("$base/api/samples/99999/messages"; body=bodyj, headers=hdrs, status_exception=false)
+                HTTP.post("$base/api/exposures/99999/peaks"; body=bodyj, headers=hdrs, status_exception=false)
             end
             ip = with_inproc_routes(fx.db) do call
-                call("POST", "/api/samples/99999/messages";
+                call("POST", "/api/exposures/99999/peaks";
                      headers=hdrs, body=Vector{UInt8}(bodyj))
             end
             @test w.status >= 400
@@ -130,22 +130,22 @@ end
         function _replay(call_with, opid)
             hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice",
                     "X-Client-Id"=>"tab-1", "X-Client-Op-Id"=>opid]
-            bodyj = JSON3.write(Dict(:body => "hello"))
+            bodyj = JSON3.write(Dict(:status => "rejected"))
             call_with(hdrs, bodyj)
         end
         wire_bodies = mktempdir() do d
             fx = _seed(d)
             with_test_server(fx.db) do port, base
-                r1 = _replay((h,b)->HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=b, headers=h), "op-wire")
-                r2 = _replay((h,b)->HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=b, headers=h), "op-wire")
+                r1 = _replay((h,b)->HTTP.request("PATCH", "$base/api/exposures/$(fx.e_id)/status", h, b), "op-wire")
+                r2 = _replay((h,b)->HTTP.request("PATCH", "$base/api/exposures/$(fx.e_id)/status", h, b), "op-wire")
                 (r1.status, _body(r1), _body(r2))
             end
         end
         inproc_bodies = mktempdir() do d
             fx = _seed(d)
             with_inproc_routes(fx.db) do call
-                r1 = _replay((h,b)->call("POST", "/api/samples/$(fx.s_id)/messages"; headers=h, body=Vector{UInt8}(b)), "op-ip")
-                r2 = _replay((h,b)->call("POST", "/api/samples/$(fx.s_id)/messages"; headers=h, body=Vector{UInt8}(b)), "op-ip")
+                r1 = _replay((h,b)->call("PATCH", "/api/exposures/$(fx.e_id)/status"; headers=h, body=Vector{UInt8}(b)), "op-ip")
+                r2 = _replay((h,b)->call("PATCH", "/api/exposures/$(fx.e_id)/status"; headers=h, body=Vector{UInt8}(b)), "op-ip")
                 (r1.status, _body(r1), _body(r2))
             end
         end
@@ -185,15 +185,15 @@ end
                 end
                 close(pending)
             end
-            count(f -> !startswith(f, ":") && occursin("post_message", f), collect(pending))
+            count(f -> !startswith(f, ":") && occursin("set_exposure_status", f), collect(pending))
         end
         hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice"]
-        bodyj = JSON3.write(Dict(:body => "hi"))
+        bodyj = JSON3.write(Dict(:status => "rejected"))
         wire_n = mktempdir() do d
             fx = _seed(d)
             _count_frames() do
                 with_test_server(fx.db) do port, base
-                    HTTP.post("$base/api/samples/$(fx.s_id)/messages"; body=bodyj, headers=hdrs)
+                    HTTP.request("PATCH", "$base/api/exposures/$(fx.e_id)/status", hdrs, bodyj)
                     sleep(0.3)   # wire broadcast fires off-task; allow the drain
                 end
             end
@@ -202,7 +202,7 @@ end
             fx = _seed(d)
             _count_frames() do
                 with_inproc_routes(fx.db) do call
-                    call("POST", "/api/samples/$(fx.s_id)/messages"; headers=hdrs, body=Vector{UInt8}(bodyj))
+                    call("PATCH", "/api/exposures/$(fx.e_id)/status"; headers=hdrs, body=Vector{UInt8}(bodyj))
                 end  # synchronous flush — frame already on the channel
             end
         end

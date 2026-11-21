@@ -669,20 +669,6 @@ export const removeAssignmentPhase = (
 ) => request<AssignmentMutationResponse>(
   "DELETE", `/api/exposures/${exposure_id}/assignment/members/${index_id}`, undefined, opts);
 
-// Sample messages (chat log)
-export interface SampleMessage {
-  id: number;
-  sample_id: number;
-  author_id: number | null;
-  /** Null if the author's user row has been deleted. */
-  author: string | null;
-  body: string;
-  created_at: string;
-}
-
-export const postSampleMessage = (sample_id: number, body: string, opts?: AuthOpts) =>
-  request<SampleMessage>("POST", `/api/samples/${sample_id}/messages`, { body }, opts);
-
 // Analysis
 export interface ReanalyzeResponse {
   id: number;

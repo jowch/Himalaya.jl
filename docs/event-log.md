@@ -67,7 +67,7 @@ write was removed; confirmation is now carried by `assignment_add` /
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
 `set_exposure_status`, `select_exposure`, `add_tag`, `remove_tag`,
-`edit_tag`, `post_message`, `update_sample`, `analyze`, `scan`, `experiment_created`. The
+`edit_tag`, `update_sample`, `analyze`, `scan`, `experiment_created`. The
 dispatcher carries explicit no-op `return nothing` guards for the
 view-less kinds (`set_exposure_status`, `select_exposure`, `edit_tag`, …).
 

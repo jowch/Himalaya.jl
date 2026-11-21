@@ -415,7 +415,6 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "add_tag" && return nothing
     kind == "remove_tag" && return nothing
     kind == "edit_tag" && return nothing
-    kind == "post_message" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 

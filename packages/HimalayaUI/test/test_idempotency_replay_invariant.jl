@@ -144,39 +144,6 @@ end
         end
     end
 
-    @testset "POST /api/samples/:id/messages (post_message)" begin
-        mktempdir() do tmp
-            db = open_prepared_clone(tmp)
-            exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-                data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-            s_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-
-            with_inproc_routes(db) do call
-                op_id = "replay-test-msg-$(rand(UInt32))"
-                headers = ["Content-Type" => "application/json",
-                           "X-Username"   => "alice",
-                           "X-Client-Id"  => "tab-1",
-                           "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:body => "hello"))
-
-                pre_count = _count_actions(db, "post_message")
-                r1 = nothing; r2 = nothing
-                frames = _capture_sse_during("post_message") do
-                    r1 = call("POST", "/api/samples/$s_id/messages";
-                        headers = headers, body = Vector{UInt8}(body_json))
-                    r2 = call("POST", "/api/samples/$s_id/messages";
-                        headers = headers, body = Vector{UInt8}(body_json))
-                end
-                @test r1.status == 201
-                @test r2.status == 201
-                @test String(r2.body) == String(r1.body)
-                post_count = _count_actions(db, "post_message")
-                @test post_count - pre_count == 1
-                @test length(frames) == 1
-            end
-        end
-    end
-
     @testset "PATCH /api/samples/:id (update_sample)" begin
         mktempdir() do tmp
             db = open_prepared_clone(tmp)

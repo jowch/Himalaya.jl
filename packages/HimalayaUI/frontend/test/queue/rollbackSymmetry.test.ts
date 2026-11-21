@@ -37,7 +37,6 @@ import {
   addSampleTagMutator, removeSampleTagMutator,
   addCorpusSampleTagMutator, removeCorpusSampleTagMutator,
   addExposureTagMutator, removeExposureTagMutator,
-  postSampleMessageMutator,
   setExposureStatusMutator, selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
 import { queryKeys } from "../../src/queries";
@@ -337,23 +336,6 @@ const SPECS: Spec[] = [
         payload: { tagId: 99 },
         sampleId: 1, exposureId: 5, username: "alice", clientId: "tab",
         tagId: 99,
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "postSampleMessage",
-    keys: [queryKeys.messages(10)],
-    seed: (qc) => qc.setQueryData(queryKeys.messages(10), [
-      { id: 1, sample_id: 10, author_id: 3, author: "alice",
-        body: "hello", created_at: "2026-05-03" },
-    ]),
-    run: (qc) => {
-      const ctx = postSampleMessageMutator.onMutate({
-        kind: "post_message", clientOpId: "op",
-        payload: { body: "world" },
-        sampleId: 10, username: "alice", clientId: "tab",
-        body: "world",
       } as any, qc);
       ctx.restore();
     },
