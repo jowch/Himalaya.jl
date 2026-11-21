@@ -39,11 +39,6 @@ export function handleRemoteEvent(
   if (remote.client_op_id) {
     const deferred = getDeferred(remote.client_op_id);
     if (deferred) {
-      // Apply post_state (indices + exposure hash) BEFORE resolving the
-      // deferred so that by the time the mutator's onSuccess runs the
-      // indices cache is already fresh. Without this, the indices stay
-      // frozen at the pre-mutation `inputs_hash` and the stale-indices alert
-      // sticks until a hard refetch.
       applyPostStateOnly(remote, qc);
       // Resolve first, THEN abort — Promises only settle once, so the
       // resolution wins and the abort-handler's reject becomes a no-op.
@@ -59,14 +54,6 @@ export function handleRemoteEvent(
     }
   }
 
-  // Self-echo guard (issue #8 from PR review). No deferred matches but the
-  // frame originated in this same tab — i.e. HTTP-first won and the deferred
-  // was already cleared in `mutationFn`'s finally. The mutator's onSuccess
-  // already wrote the canonical peak row + exposure hash; falling into Case
-  // 2 would double-apply the per-kind body (e.g. duplicate peak row for
-  // peak_added). But we still need to propagate `post_state.indices` —
-  // mutator onSuccess paths don't write the indices cache, so without this
-  // the stale-indices alert sticks.
   if (isOwnTab) {
     applyPostStateOnly(remote, qc);
     return;

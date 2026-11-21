@@ -1,13 +1,5 @@
-/**
- * peak_excluded / peak_unexcluded mutators (M2.2). Backend uses two distinct
- * event kinds depending on the boolean target, so we ship two mutators with
- * the same payload + cache logic and route between them at the hook layer
- * based on `excluded`. Optimistically flips the peak's `excluded` field;
- * onSuccess writes the server peak (authoritative) and updates the exposure
- * `analysis_inputs_hash` so the stale-indices alert does not flash.
- */
 import * as api from "../../../api";
-import type { Peak, PeakUpdatedResponse, Exposure, AuthOpts } from "../../../api";
+import type { Peak, PeakUpdatedResponse, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, OpKind, RollbackContext } from "../types";
@@ -34,9 +26,6 @@ function makeMutator(
       const peaksKey = queryKeys.peaks(p.exposureId);
       const prev = qc.getQueryData<Peak[]>(peaksKey);
       if (prev) {
-        // Only auto peaks are excludable. Match (id, source='auto') so a
-        // manual peak that happens to share the id (independent SQLite
-        // sequences) does not get its excluded flag flipped.
         qc.setQueryData<Peak[]>(peaksKey, prev.map((pk) =>
           pk.id === p.peakId && pk.source === "auto" ? { ...pk, excluded } : pk,
         ));
@@ -50,33 +39,17 @@ function makeMutator(
     request: (p) => api.setAutoPeakExcluded(p.peakId, excluded, buildAuthOpts(p)),
     onSuccess: (p, response, qc) => {
       const peaksKey = queryKeys.peaks(p.exposureId);
-      // Strip event metadata + queue plumbing fields. Merge (not replace) so
-      // SSE-wins synthetic responses — which omit intensity/prominence/
-      // sharpness — preserve those fields from the optimistic row. HTTP-wins
-      // responses include the full Peak shape, so merge is equivalent to
-      // replace there.
-      const { meta, payload: peakFields } = stripQueueMetadata(response);
+      const { payload: peakFields } = stripQueueMetadata(response);
       qc.setQueryData<Peak[]>(peaksKey, (old) =>
         (old ?? []).map((pk) =>
           pk.id === peakFields.id && pk.source === "auto"
             ? ({ ...pk, ...peakFields } as Peak) : pk,
         ),
       );
-      qc.setQueryData<Exposure>(queryKeys.exposure(p.exposureId), (old) =>
-        old ? { ...old, analysis_inputs_hash: meta.analysis_inputs_hash ?? null } : old);
     },
     synthesizeFromSse: (remote, base) => {
       const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
       if (payload.auto_peak_id === undefined) return undefined;
-      // intensity/prominence/sharpness/exposure_id are intentionally absent —
-      // they aren't carried on the SSE wire. The cast goes through `unknown`
-      // because PeakUpdatedResponse extends Peak (which requires those fields),
-      // and `as PeakUpdatedResponse` alone would be rejected by tsc-strict for
-      // insufficient overlap. Safe at runtime: peakSetExcluded.onSuccess uses
-      // spread merge `{ ...pk, ...peakFields }` into the existing cached Peak,
-      // so the optimistic row's detection values survive when the synth omits
-      // them. The legacy synth in replayCoordinator relied on the same merge —
-      // preserve the contract.
       return {
         ...base,
         id: payload.auto_peak_id as number,
