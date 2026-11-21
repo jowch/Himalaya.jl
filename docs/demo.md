@@ -7,7 +7,8 @@ Used for UI walkthroughs and Playwright screenshots.
 ## Quick start
 
 ```bash
-make setup        # once per checkout: npm ci + Pkg.develop/instantiate (≈5 min cold)
+make dev-setup    # once per checkout: npm ci + Pkg.develop/instantiate (≈5 min cold), with
+                  # the ~100 s route precompile workload off for dev (CLAUDE.md)
 make demo         # generate data if missing, start backend :8080, ingest, start Vite :5173
 # open http://127.0.0.1:5173/   (Ctrl-C stops both servers)
 
@@ -137,9 +138,9 @@ The app needs Julia (compat says ≥ 1.9; tested on 1.13), Node ≥ 20 and npm. 
    ```
 
    Node, npm and Playwright's Chromium are already in the cloud image. Keep the
-   script machine-level; run `make setup` in the session (it needs the repo).
+   script machine-level; run `make dev-setup` in the session (it needs the repo).
 
-Then, in the session: `make setup && make demo`. Playwright can drive
+Then, in the session: `make dev-setup && make demo`. Playwright can drive
 `http://127.0.0.1:5173` from the same container (`require('playwright')` works
 from any directory). To skip onboarding in scripted runs, seed localStorage
 before navigating:
@@ -229,5 +230,5 @@ compares the app's phase calls and frame counts with `TRUTH.csv`. See the
   Playwright version, whose browser build isn't in the image. Harmless; skeletons
   still load from the committed `src/bones/` captures.
 - On Julia ≥ 1.11, `Pkg.develop(path=".")` rewrites `packages/HimalayaUI/Project.toml`
-  (adds `[sources]`, strips comments). `make setup` restores the tracked file; the
+  (adds `[sources]`, strips comments). `make setup` (and `make dev-setup`) restores the tracked file; the
   gitignored Manifest keeps the path dependency.
