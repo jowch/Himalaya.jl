@@ -1,10 +1,85 @@
-@testset "precompile workload drives every hot route and leaves no global state" begin
-    mktempdir() do tmp
-        @test HimalayaUI.run_route_workload(tmp) === nothing
+const _STATE_CONTAINER = Union{AbstractDict, AbstractVector, AbstractSet}
+
+function _module_state()
+    state = Dict{Symbol, Any}()
+    for name in names(HimalayaUI; all = true)
+        isdefined(HimalayaUI, name) && isconst(HimalayaUI, name) || continue
+        value = getfield(HimalayaUI, name)
+        if value isa _STATE_CONTAINER
+            state[name] = copy(value)
+        elseif value isa Base.RefValue
+            held = value[]
+            state[name] = held isa _STATE_CONTAINER ? copy(held) : held
+        end
     end
-    @test HimalayaUI._DB_REF[] === nothing
-    @test isempty(HimalayaUI.SSE_SUBSCRIBERS[])
-    @test isempty(HimalayaUI.OP_LOCKS)
+    state
+end
+
+const _WORKLOAD_REQUESTS = Tuple{String, String}[]
+
+@testset "precompile workload drives every hot route and leaves no module state behind" begin
+    HimalayaUI._clear_peak_set_hash_cache!()
+    before = _module_state()
+    @test all(haskey(before, n) for n in (:_DB_REF, :SSE_SUBSCRIBERS, :OP_LOCKS,
+                                          :_PEAK_SET_HASH_CACHE, :_PEAK_SET_HASH_CACHE_ORDER))
+    mktempdir() do tmp
+        @test HimalayaUI.run_route_workload(tmp; record = _WORKLOAD_REQUESTS) === nothing
+    end
+    after = _module_state()
+    @test sort!(collect(keys(after))) == sort!(collect(keys(before)))
+    @test [name for name in keys(before) if !isequal(before[name], after[name])] == Symbol[]
     probe = Oxygen.internalrequest(HTTP.Request("GET", "/api/health"); serialize = true, catch_errors = true)
     @test probe.status == 404
+end
+
+const _COLD_ROUTES_OFF_THE_TRIAGE_PATH = Set([
+    "GET /**",
+    "POST /api/experiments", "PATCH /api/experiments/{id}", "DELETE /api/experiments/{id}",
+    "POST /api/experiments/{id}/scan", "POST /api/experiments/{id}/analyze",
+    "GET /api/experiments/{id}/export", "GET /api/experiments/{id}/loads", "GET /api/experiments/{id}/samples",
+    "GET /api/fs/manifest", "GET /api/fs/resolve", "GET /api/fs/suggest", "GET /api/fs/validate",
+    "GET /api/resolve",
+    "GET /api/series", "POST /api/series", "GET /api/series/{id}", "PATCH /api/series/{id}",
+    "DELETE /api/series/{id}", "POST /api/series/{id}/commit", "GET /api/series/{id}/forks",
+    "GET /api/series/{id}/traces", "POST /api/series/{id}/pin", "DELETE /api/series/{id}/pin",
+    "GET /api/series/{id}/messages", "POST /api/series/{id}/messages", "GET /api/users/me/series-pins",
+    "GET /api/samples/{id}/messages", "POST /api/samples/{id}/messages",
+    "GET /api/picker-samples", "GET /api/experiments/{eid}/picker-samples",
+    "GET /api/users/{id}/recently-picked-exposures", "GET /api/users/{username}/actions",
+    "GET /api/sample-tags", "GET /api/experiments/{eid}/sample-tags", "POST /api/samples/tags/batch",
+    "POST /api/samples/{id}/tags", "PATCH /api/samples/{id}/tags/{tag_id}", "DELETE /api/samples/{id}/tags/{tag_id}",
+    "POST /api/exposures/{id}/tags", "DELETE /api/exposures/{id}/tags/{tag_id}",
+    "PATCH /api/samples/{id}", "PATCH /api/samples/{id}/name",
+    "POST /api/samples/{id}/merge", "POST /api/samples/{id}/split", "POST /api/exposures/{id}/move",
+    "POST /api/samples/{id}/dismiss-flag", "POST /api/samples/{id}/dismiss-flag/undo",
+    "GET /api/indices/{id}", "DELETE /api/indices/{id}",
+    "POST /api/exposures/{id}/speculative", "GET /api/exposures/{id}/speculative-snap",
+])
+
+function _registered_routes()
+    src = joinpath(pkgdir(HimalayaUI), "src")
+    routes = Set{String}()
+    for file in readdir(src; join = true)
+        endswith(file, ".jl") || continue
+        for m in eachmatch(r"@(get|post|patch|put|delete) \"([^\"]+)\"", read(file, String))
+            push!(routes, uppercase(m.captures[1]) * " " * m.captures[2])
+        end
+    end
+    routes
+end
+
+function _route_matches(route::AbstractString, method::AbstractString, target::AbstractString)
+    verb, template = split(route, ' '; limit = 2)
+    pattern = Regex("^" * replace(template, "*" => "\\*", r"\{[^}]+\}" => "[^/]+") * "\$")
+    verb == method && occursin(pattern, first(split(target, '?')))
+end
+
+@testset "every registered route is either in the precompile workload or listed as off the triage path" begin
+    @test !isempty(_WORKLOAD_REQUESTS)
+    routes = _registered_routes()
+    @test length(routes) > 50
+    driven = Set(r for r in routes if any(((m, t),) -> _route_matches(r, m, t), _WORKLOAD_REQUESTS))
+    @test sort!(collect(setdiff(routes, driven, _COLD_ROUTES_OFF_THE_TRIAGE_PATH))) == String[]
+    @test sort!(collect(intersect(driven, _COLD_ROUTES_OFF_THE_TRIAGE_PATH))) == String[]
+    @test sort!(collect(setdiff(_COLD_ROUTES_OFF_THE_TRIAGE_PATH, routes))) == String[]
 end
