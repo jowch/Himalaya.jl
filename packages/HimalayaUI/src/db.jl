@@ -1671,20 +1671,6 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
     nothing
 end
 
-"""
-    migrate_sample_calls!(db)
-
-#350: a phase call belongs to the sample, not to one frame. Before this, each
-exposure had its own `assignments` state and members, and the sample showed the
-representative frame's call, so dropping the frame a call was made on hid it.
-
-Per sample, the call kept is the one on the frame the user edited last (the
-newest `assignment_*` event). A sample with no such event keeps its
-representative frame's call, else the lowest-id frame that has one. Members on
-the sample's other frames are deleted: the old UI never showed them together,
-and the event log still holds them. The kept frame's state becomes the sample's
-`sample_calls` state. Members stay keyed by the frame their index lives on.
-"""
 function migrate_sample_calls!(db::SQLite.DB)
     _migrated(db, MIGRATION_SAMPLE_CALLS) && return nothing
     SQLite.transaction(db) do

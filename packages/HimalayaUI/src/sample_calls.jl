@@ -1,11 +1,5 @@
 using DBInterface, Tables, SQLite
 
-"""
-    sample_call_state(db, sample_id) -> String
-
-The sample's phase-call state (#350): 'indexed' unless the user marked the
-sample as form factor or null.
-"""
 function sample_call_state(db::SQLite.DB, sample_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT state FROM sample_calls WHERE sample_id = ?", [sample_id]))
@@ -15,12 +9,6 @@ end
 _sample_exists(db::SQLite.DB, sample_id::Int) = !isempty(Tables.rowtable(DBInterface.execute(db,
     "SELECT 1 FROM samples WHERE id = ?", [sample_id])))
 
-"""
-    sample_call_members(db, sample_ids) -> Dict{Int, Vector}
-
-Every member of each sample's call, from any of its frames, kept or dropped,
-as `(index_id, exposure_id, phase, score)`.
-"""
 function sample_call_members(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
     out = Dict{Int, Vector{NamedTuple{(:index_id, :exposure_id, :phase, :score), Tuple{Int, Int, String, Float64}}}}()
     isempty(sample_ids) && return out
@@ -52,13 +40,6 @@ function sample_call_states(db::SQLite.DB, sample_ids::AbstractVector{<:Integer}
     out
 end
 
-"""
-    call_summary(state, members) -> (; phase, call_phases)
-
-`phase` is the top-scored member's phase, the one a status chip shows.
-`call_phases` lists every phase in the call, sorted. Both are empty unless
-the state is 'indexed'.
-"""
 function call_summary(state::AbstractString, members)
     (state == "indexed" && !isempty(members)) || return (phase = nothing, call_phases = String[])
     (phase = argmax(m -> m.score, members).phase,

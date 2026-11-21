@@ -47,7 +47,10 @@ round-trip test in `test_events.jl`.
 | `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (the route stamps `undoes_event_id` onto the `user_actions` row when resolvable — see Atomicity note) |
 | `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
-| `assignment_set_state` | UPSERT `assignments.state`; clears `assignment_members` when state ≠ `indexed` (entity_type=`exposure`, payload `{state}`) |
+| `sample_call_set_state` | UPSERT `sample_calls.state`; clears `assignment_members` on every frame of the sample when state ≠ `indexed` (entity_type=`sample`, payload `{state}`) |
+| `assignment_set_state` | Legacy, no longer emitted. Replays as before and also upserts the frame's sample into `sample_calls` (entity_type=`exposure`, payload `{state}`) |
+
+`assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
 **Route through `apply_event!` for entity-type discipline, but no view write:**
 `peak_removed`, `speculative_created`, `speculative_deleted`. Using
@@ -84,6 +87,26 @@ so old logs fold cleanly and no migration is needed.
 `_maybe_broadcast_event!`, with a dispatcher no-op `return nothing` guard
 and the §3a no-op suppression rule (suppress both frame and durable row
 when both skip flags are true).
+
+### Phase calls belong to the sample (#350)
+
+A sample's phase call is one sample-level record. Its state (`indexed`,
+`form_factor`, `null`) lives in `sample_calls`. Its members are the union of
+`assignment_members` across all of the sample's frames, kept or dropped. Each
+member stays keyed by the frame its index lives on, so the per-frame
+`assignment_add` / `assignment_remove` contract is unchanged. Dropping a frame
+never clears the call. `GET /api/samples` reports `phase` (the top-scored
+member) and `call_phases` (every phase in the call) from the sample, not from
+the representative frame. `GET /api/samples/{id}/call` returns the whole call,
+and `POST /api/samples/{id}/call/state` sets the state.
+
+`migrate_sample_calls!` (`sample_calls_v1`) moves existing calls. Per sample,
+it keeps the call on the frame the user edited last (the newest
+`assignment_*` event). A sample with no such event keeps its representative
+frame's call, else the lowest-id frame with one. Members on the sample's other
+frames are deleted: the old UI never showed them together, so the union would
+surface stale picks. The event log still holds them. The kept frame's state
+becomes the sample's state.
 
 ### Payload contract
 

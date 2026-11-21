@@ -14,9 +14,8 @@ import {
   useIndices,
   usePeaks,
   useRemoveAssignmentPhase,
-  useSetAssignmentState,
+  useSetSampleCallState,
   useRemovePeak,
-  useSelectExposure,
   useSetExposureStatus,
   useSetPeakExcluded,
   useTrace,
@@ -164,9 +163,8 @@ export function WorkspacePage(): JSX.Element {
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
-  const setCallState = useSetAssignmentState(exposure?.id ?? 0);
+  const setCallState = useSetSampleCallState(sampleId ?? 0);
   const isFormFactor = assignment.data?.state === "form_factor";
-  const selectExposure = useSelectExposure(sampleId ?? 0);
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
   const exposureDropped = exposure?.status === "rejected";
@@ -185,10 +183,7 @@ export function WorkspacePage(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const theme = useWorkspaceTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
-  const [customError, setCustomError] = useState<string | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
-  const draftOpen = draft !== null;
-  useEffect(() => setCustomError(null), [draftOpen]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
@@ -223,24 +218,15 @@ export function WorkspacePage(): JSX.Element {
         removePhase.mutate(ix.id);
         return;
       }
-      if (exposure.selected) {
-        addPhase.mutate(ix.id);
-        return;
-      }
-      selectExposure.mutate(exposure.id, { onSuccess: () => addPhase.mutate(ix.id) });
+      addPhase.mutate(ix.id);
     },
-    [exposure, assigned, addPhase, removePhase, selectExposure],
+    [exposure, assigned, addPhase, removePhase],
   );
 
   const toggleFormFactor = useCallback(() => {
     if (!exposure || exposure.status === "rejected") return;
-    const next = isFormFactor ? "null" : "form_factor";
-    if (exposure.selected) {
-      setCallState.mutate(next);
-      return;
-    }
-    selectExposure.mutate(exposure.id, { onSuccess: () => setCallState.mutate(next) });
-  }, [exposure, isFormFactor, setCallState, selectExposure]);
+    setCallState.mutate(isFormFactor ? "null" : "form_factor");
+  }, [exposure, isFormFactor, setCallState]);
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
@@ -321,20 +307,9 @@ export function WorkspacePage(): JSX.Element {
     if (!draft || !exposure || !canCall) return;
     const c = draftCommit(draft);
     if (c.ratios.length === 0) return;
-    const commit = (): void => {
-      commitCustom.mutate(c.phase, c.basis, c.ratios);
-      setDraft(null);
-    };
-    if (exposure.selected) {
-      commit();
-      return;
-    }
-    setCustomError(null);
-    selectExposure.mutate(exposure.id, {
-      onSuccess: commit,
-      onError: () => setCustomError("This frame could not be selected, so the index was not added. Try again."),
-    });
-  }, [draft, exposure, canCall, commitCustom, selectExposure]);
+    commitCustom.mutate(c.phase, c.basis, c.ratios);
+    setDraft(null);
+  }, [draft, exposure, canCall, commitCustom]);
   const snapDraft = useCallback(
     (q: number) => {
       if (!draft) return;
@@ -631,8 +606,7 @@ export function WorkspacePage(): JSX.Element {
                 max={draftBounds.max}
                 landed={draftFit?.landed ?? 0}
                 total={draftFit?.points.length ?? 0}
-                disabled={!canCall || selectExposure.isPending}
-                error={customError}
+                disabled={!canCall}
                 onChange={setDraftClamped}
                 onAdd={addCustom}
                 onCancel={() => setDraft(null)}

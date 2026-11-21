@@ -102,13 +102,13 @@ describe("api — assignment fetchers (Plan D-1)", () => {
       .toEqual({ phase: "Pn3m", basis: 0.15, ratios: [1, 1.2247448714] });
   });
 
-  it("setAssignmentState POSTs state to /assignment/state", async () => {
+  it("setSampleCallState POSTs state to the sample's call", async () => {
     const spy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ exposure_id: 7, state: "form_factor", members: [] }),
+      new Response(JSON.stringify({ sample_id: 7, state: "form_factor", phase: null, call_phases: [], members: [] }),
         { status: 200, headers: { "Content-Type": "application/json" } }));
-    await api.setAssignmentState(7, "form_factor", { username: "alice" });
+    await api.setSampleCallState(7, "form_factor", { username: "alice" });
     const [path, init] = spy.mock.calls[0]!;
-    expect(path).toBe("/api/exposures/7/assignment/state");
+    expect(path).toBe("/api/samples/7/call/state");
     expect((init as RequestInit).method).toBe("POST");
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({ state: "form_factor" });
   });

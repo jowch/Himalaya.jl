@@ -39,10 +39,18 @@ function shownLabel(shown) {
   return shown.status === "phase" ? shown.call : shown.status;
 }
 
-function statusMatches(shown, confirmed) {
-  if (!confirmed.length) return shown.status === "unreviewed";
-  if (shown.status === "unreviewed") return false;
-  return confirmed.some((c) => (shown.status === "form_factor" ? c.call === "none" : c.call.split("+").includes(shown.call)));
+export function sampleCall(frames) {
+  const states = new Set(frames.map((f) => f.assignment?.state).filter(Boolean));
+  if (states.has("form_factor")) return "none";
+  if (states.has("null")) return null;
+  const phases = frames.flatMap((f) => f.assignment?.phases ?? []);
+  return phases.length ? normalizeCall(phases) : null;
+}
+
+function statusMatches(shown, call) {
+  if (call === null) return shown.status === "unreviewed";
+  if (shown.status === "form_factor") return call === "none";
+  return shown.status === "phase" && call.split("+").includes(shown.call);
 }
 
 const VIEW_NAMES = { workspace: "the workspace" };
@@ -59,9 +67,7 @@ function sampleInvariants(app, frames) {
   const keptNames = kept.map((f) => f.filename);
   const shown = shownStatus(app.shown);
   const rep = frames.find((f) => f.id === (app.shown.representative_id ?? null)) ?? null;
-  const confirmed = kept
-    .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))
-    .filter((c) => c.call !== null);
+  const confirmed = sampleCall(frames);
   const opened = { corpus_api: rep?.filename ?? null, ...(app.views ?? {}) };
   const onDropped = Object.entries(opened)
     .map(([view, name]) => ({ view, frame: frames.find((f) => f.filename === name) }))
@@ -78,7 +84,7 @@ function sampleInvariants(app, frames) {
 }
 
 export const INVARIANTS = {
-  status_matches_assignment: "A sample with no confirmed call (no assignment on a kept frame) is shown as unreviewed; a sample with one is shown with that call.",
+  status_matches_assignment: "A sample's confirmed call is the phases assigned on any of its frames, kept or dropped, or the sample's form-factor state. A sample with none is shown as unreviewed; a sample with one is shown with that call.",
   representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
   views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",

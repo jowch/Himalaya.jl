@@ -150,7 +150,7 @@ test("status_matches_assignment: unconfirmed reads unreviewed, confirmed reads t
 
   const hidden = compareTruth(TRUTH, app({ h2o: h2oAssigned }));
   assert.deepEqual(hidden.invariants.status_matches_assignment.violations, [
-    { sample: "MO_H2O", shown: "unreviewed", confirmed: [{ frame: "MO_H2O_S1", call: "Pn3m" }] },
+    { sample: "MO_H2O", shown: "unreviewed", confirmed: "Pn3m" },
   ]);
 
   const shown = compareTruth(TRUTH, app({ h2o: h2oAssigned, h2oShown: { phase: "Pn3m" } }));
@@ -160,14 +160,23 @@ test("status_matches_assignment: unconfirmed reads unreviewed, confirmed reads t
   assert.equal(wrong.invariants.status_matches_assignment.ok, false);
 
   const unconfirmedShown = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
-  assert.deepEqual(unconfirmedShown.invariants.status_matches_assignment.violations, [{ sample: "MO_PEG5", shown: "Im3m", confirmed: [] }]);
+  assert.deepEqual(unconfirmedShown.invariants.status_matches_assignment.violations, [{ sample: "MO_PEG5", shown: "Im3m", confirmed: null }]);
 
   const coexistence = { state: "indexed", phases: ["Pn3m", "Im3m"] };
   const peg = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m" } }));
   assert.equal(peg.invariants.status_matches_assignment.ok, true, "the corpus shows one phase of a coexistence call");
 
-  const onDropped = compareTruth(TRUTH, app({ h2o: [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned, ...dropped }), frame("MO_H2O_S2", ["Pn3m"])] }));
-  assert.equal(onDropped.invariants.status_matches_assignment.ok, true);
+  const onDroppedFrames = [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned, ...dropped }), frame("MO_H2O_S2", ["Pn3m"])];
+  const onDropped = compareTruth(TRUTH, app({ h2o: onDroppedFrames }));
+  assert.deepEqual(onDropped.invariants.status_matches_assignment.violations, [
+    { sample: "MO_H2O", shown: "unreviewed", confirmed: "Pn3m" },
+  ], "a call made on a frame that was later dropped still belongs to the sample");
+  const onDroppedShown = compareTruth(TRUTH, app({ h2o: onDroppedFrames, h2oShown: { phase: "Pn3m" } }));
+  assert.equal(onDroppedShown.invariants.status_matches_assignment.ok, true);
+
+  const acrossFrames = [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Im3m"], { assignment: { state: "indexed", phases: ["Im3m"] } })];
+  const across = compareTruth(TRUTH, app({ h2o: acrossFrames, h2oShown: { phase: "Im3m" } }));
+  assert.equal(across.invariants.status_matches_assignment.ok, true, "phases picked on different frames add up to one call");
 
   const ff = { state: "form_factor", phases: [] };
   const ffHidden = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: ff })] }));

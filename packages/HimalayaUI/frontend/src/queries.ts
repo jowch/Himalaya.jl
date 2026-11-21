@@ -26,7 +26,7 @@ import { createSpeculativeMutator } from "./lib/queue/mutators/createSpeculative
 import {
   addAssignmentPhaseMutator,
   removeAssignmentPhaseMutator,
-  setAssignmentStateMutator,
+  setSampleCallStateMutator,
 } from "./lib/queue/mutators/assignment";
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "./lib/queue/mutators/reanalyzeExposure";
@@ -438,11 +438,11 @@ export function useRemoveAssignmentPhase(exposureId: number) {
   return { ...inner, mutate: (indexId: number) => inner.mutate({ indexId }) };
 }
 
-export function useSetAssignmentState(exposureId: number) {
+export function useSetSampleCallState(sampleId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
-    setAssignmentStateMutator,
-    { exposureId, username, clientId: CLIENT_ID },
+    setSampleCallStateMutator,
+    { sampleId, username, clientId: CLIENT_ID },
   );
   return { ...inner, mutate: (state: api.AssignmentState) => inner.mutate({ state }) };
 }

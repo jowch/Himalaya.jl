@@ -28,7 +28,7 @@ import {
 import { deleteIndexMutator } from "../../src/lib/queue/mutators/indexGroup";
 import { createSpeculativeMutator } from "../../src/lib/queue/mutators/createSpeculative";
 import {
-  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setAssignmentStateMutator,
+  addAssignmentPhaseMutator, removeAssignmentPhaseMutator, setSampleCallStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
 import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
@@ -174,13 +174,16 @@ const SPECS: Spec[] = [
     },
   },
   {
-    name: "setAssignmentState",
+    name: "setSampleCallState",
     keys: [queryKeys.assignment(5)],
-    seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
+    seed: (qc) => {
+      qc.setQueryData(queryKeys.exposures(1), [EXPOSURE]);
+      qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT);
+    },
     run: (qc) => {
-      const ctx = setAssignmentStateMutator.onMutate({
-        kind: "assignment_set_state", clientOpId: "op", payload: { state: "form_factor" },
-        exposureId: 5, username: "alice", clientId: "tab", state: "form_factor",
+      const ctx = setSampleCallStateMutator.onMutate({
+        kind: "sample_call_set_state", clientOpId: "op", payload: { state: "form_factor" },
+        sampleId: 1, username: "alice", clientId: "tab", state: "form_factor",
       } as any, qc);
       ctx.restore();
     },

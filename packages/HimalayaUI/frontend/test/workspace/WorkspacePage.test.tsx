@@ -42,8 +42,7 @@ vi.mock("../../src/queries", () => ({
   useUnbridgeSample: recorder("unbridge"),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
-  useSetAssignmentState: recorder("state"),
-  useSelectExposure: recorder("select"),
+  useSetSampleCallState: recorder("state"),
   useSetExposureStatus: recorder("status"),
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
@@ -210,14 +209,11 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("on an unselected frame, adds the phase only after the select succeeds", () => {
+  it("on an unselected frame, adds the phase to that frame without selecting it", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "2" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
-    calls[0]!.callbacks!.onSuccess!();
-    expect(calls[1]).toEqual({ hook: "add", boundTo: 100, arg: 1 });
+    expect(calls).toEqual([{ hook: "add", boundTo: 100, arg: 1 }]);
   });
 
   it("X drops the shown frame and keeps it in view, so a second X restores it", () => {
@@ -662,14 +658,13 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("a custom index on an unselected frame selects it first", () => {
+  it("a custom index on an unselected frame lands on that frame without selecting it", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "i" });
     fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
-    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
-    calls[0]!.callbacks!.onSuccess!();
-    expect(calls[1]).toMatchObject({ hook: "custom", boundTo: 100 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ hook: "custom", boundTo: 100 });
   });
 
   it("does not open a custom index on a dropped frame or before a user is set", () => {
@@ -814,16 +809,6 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
   });
 
-  it("says so and keeps the custom index open when the frame cannot be selected", () => {
-    renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "ArrowLeft" });
-    fireEvent.keyDown(window, { key: "i" });
-    fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
-    act(() => calls[0]!.callbacks!.onError!());
-    expect(screen.getByRole("alert")).toHaveTextContent("could not be selected");
-    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-    expect(calls.filter((c) => c.hook === "custom")).toEqual([]);
-  });
 
   it("hovering a candidate shows its fit in place of the ticked ones", () => {
     state.trace = makeTrace(1);
@@ -891,24 +876,21 @@ describe("WorkspacePage", () => {
     const row = screen.getByTestId("workspace-form-factor");
     expect(row).toHaveAttribute("aria-pressed", "false");
     fireEvent.keyDown(window, { key: "0" });
-    expect(calls).toEqual([{ hook: "state", boundTo: 101, arg: "form_factor" }]);
+    expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "form_factor" }]);
     calls.length = 0;
     state.assignment = { exposure_id: 101, state: "form_factor", members: [] };
     fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Frame 2" }));
     expect(screen.getByTestId("workspace-form-factor")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("workspace-form-factor"));
-    expect(calls).toEqual([{ hook: "state", boundTo: 101, arg: "null" }]);
+    expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "null" }]);
   });
 
-  it("on an unselected frame, marks form factor only after the select succeeds", () => {
+  it("form factor is the sample's call, set the same from any frame", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "0" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ hook: "select", boundTo: 10, arg: 100 });
-    calls[0]!.callbacks!.onSuccess!();
-    expect(calls[1]).toEqual({ hook: "state", boundTo: 100, arg: "form_factor" });
+    expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "form_factor" }]);
   });
 
   it("form factor is not offered on a dropped frame or before a user is set", () => {
