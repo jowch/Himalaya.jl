@@ -49,6 +49,7 @@ import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
+import { SYMS } from "../lib/customIndex";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -98,6 +99,21 @@ function helpSections(mod: string): HelpSection[] {
 
 const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 const HELP = helpSections(MOD_KEY);
+
+function latticeParam(phase: string): string {
+  return SYMS[phase]?.param ?? "a";
+}
+
+function exposureRows(e: Exposure): [string, string][] {
+  const rows: [string, string][] = [["File", e.filename ?? "—"]];
+  if (e.kind !== "file") rows.push(["Kind", e.kind === "averaged" ? "Averaged" : "Subtracted"]);
+  if (e.exposure_time != null) rows.push(["Exposure", `${e.exposure_time.toFixed(1)} s`]);
+  const i0 = e.incident_monitor;
+  const i2 = e.transmitted_counts;
+  if (i0 != null) rows.push(["I₀", Math.round(i0).toLocaleString("en-US")]);
+  if (i2 != null) rows.push(["I signal", Math.round(i2).toLocaleString("en-US")]);
+  return rows;
+}
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -325,13 +341,13 @@ export function WorkspacePage(): JSX.Element {
 
   const indexSeries: IndexSeries[] = useMemo(() => {
     if (draft && draftFit) {
-      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, r2: draftFit.r2 }];
+      return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, param: latticeParam(draft.phase), r2: draftFit.r2 }];
     }
     const hovered = candidates.find((c) => c.id === hoverId);
     const shown = hovered ? [hovered] : candidates.filter((c) => assigned.has(c.id));
     return shown.map((c) => {
       const fit = storedFit(c, xExtent);
-      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, r2: c.r_squared ?? fit.r2 };
+      return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, param: latticeParam(c.phase), r2: c.r_squared ?? fit.r2 };
     });
   }, [draft, draftFit, xExtent, candidates, hoverId, assigned]);
 
@@ -442,7 +458,6 @@ export function WorkspacePage(): JSX.Element {
   }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView]);
 
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const activePeaks = (peaks.data ?? []).filter((p) => !p.excluded).length;
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
@@ -575,7 +590,7 @@ export function WorkspacePage(): JSX.Element {
               />
             </Section>
           ) : (
-            <Section title="Phase">
+            <Section title="Call">
               {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
               <CandidateList
                 candidates={candidates}
@@ -589,18 +604,11 @@ export function WorkspacePage(): JSX.Element {
             </Section>
           )}
           <Section title="Indexing">
-            <IndexingPlot series={indexSeries} empty="Hover a candidate or tick one to see its fit." />
+            <IndexingPlot series={indexSeries} />
           </Section>
           {exposure && (
-            <Section title="Exposure">
-              <MetaList
-                rows={[
-                  ["File", exposure.filename ?? "—"],
-                  ["Kind", exposure.kind === "file" ? "Raw" : exposure.kind === "averaged" ? "Averaged" : "Subtracted"],
-                  ["Status", exposure.status === "rejected" ? "Dropped" : "Kept"],
-                  ["Peaks", String(activePeaks)],
-                ]}
-              />
+            <Section title="Exposure" aside="← →">
+              <MetaList rows={exposureRows(exposure)} />
             </Section>
           )}
         </>

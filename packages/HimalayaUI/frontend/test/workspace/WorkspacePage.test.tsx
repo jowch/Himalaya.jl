@@ -701,8 +701,32 @@ describe("WorkspacePage", () => {
     ];
     renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-indexing");
-    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m 100.0 Å · R² 0.9900 · 2 of 2 on peaks");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m a = 100.0 Å R² 0.9900 2/2 on peaks");
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
+  });
+
+  it("draws empty indexing axes before any candidate is hovered or ticked", () => {
+    state.assignment = { exposure_id: 101, state: "indexed", members: [] };
+    renderAt("/experiments/1/workspace/10");
+    const plot = screen.getByTestId("workspace-indexing");
+    expect(plot.querySelector("svg")).not.toBeNull();
+    expect(within(plot).queryByTestId("workspace-indexing-fit")).toBeNull();
+  });
+
+  it("titles the phase list Call and the exposure details Exposure", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
+  });
+
+  it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1868810, transmitted_counts: 1532078 })];
+    renderAt("/experiments/1/workspace/10");
+    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const text = section.textContent ?? "";
+    expect(text).toContain("Exposure10.0 s");
+    expect(text).toContain("I₀1,868,810");
+    expect(text).toContain("I signal1,532,078");
   });
 
   it("the indexing plot follows the custom index while it is open", () => {
@@ -713,7 +737,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 6");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2 of 6 on peaks");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/6 on peaks");
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });
@@ -853,7 +877,7 @@ describe("WorkspacePage", () => {
     state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
     state.indices = [{ ...index(2, "Pn3m", 0.9), peaks: [{ peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 }] }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1 of 2 on peaks");
+    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1/2 on peaks");
   });
   it("Enter on a focused button outside the custom panel does not add the index", () => {
     renderAt("/experiments/1/workspace/10");
