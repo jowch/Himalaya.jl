@@ -291,7 +291,7 @@ without trailing digits:
 - `empty`, `emptycap` or `emptycapillary` suggests Empty capillary;
 - `buffer`, `buf` or `blank` suggests Buffer;
 - `hepes`, `pbs` or `tris` suggests Buffer only when every other word is a
-  code (`S01`, `2`) or another buffer word, so `HEPES_S01` is a buffer and
+  code (`S01`, `2`, or the `S01P02` slot code ingest adds) or another buffer word, so `HEPES_S01` is a buffer and
   `MO_HEPES_S01` or `DOPC_in_PBS` is not.
 
 The tag is *suggested*, with source `ingest`. A sample that already has any role

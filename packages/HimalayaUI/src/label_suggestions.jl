@@ -11,7 +11,7 @@ const ROLE_WORDS = (
 const SOLVENT_WORDS = Set(["hepes", "pbs", "tris"])
 
 _bare(t) = (b = rstrip(isdigit, t); isempty(b) ? t : String(b))
-_is_code(t) = occursin(r"^[a-z]?[0-9]+$", t)
+_is_code(t) = occursin(r"^([a-z]?[0-9]+)+$", t)
 
 function suggested_role(name::AbstractString)
     tokens = split(lowercase(name), r"[^a-z0-9]+"; keepempty = false)
