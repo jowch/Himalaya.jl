@@ -37,6 +37,7 @@ import { samePeak, type PeakRef } from "../lib/peakRef";
 import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
+import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
 import { SubtractionStrip } from "./ui/SubtractionStrip";
@@ -198,6 +199,13 @@ export function WorkspacePage(): JSX.Element {
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
+  usePrefetchNeighbours({
+    samples: visible,
+    currentId: sample?.id,
+    exposures: exposureList,
+    shownId: exposure?.id,
+    settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
+  });
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
   const sampleCall = useSampleCall(sampleId);
   const otherFrames = useMemo(
