@@ -917,13 +917,15 @@ acquisition_stem(filename::AbstractString) = replace(filename, r"_\d+_\d+$" => "
     resolve_trace_path(analysis_dir, integration_pattern, filename) -> String | nothing
 
 Resolve an exposure's integration `.dat` under `analysis_dir`. Tries the exact
-per-frame name (`integration_pattern` with `{name}` => `filename`) first, then
-falls back to the per-acquisition name with the trailing `_<rep>_<frame>` suffix
-dropped: the real beamline `_tot.dat` total integration is named by the
-acquisition stem and shared across that acquisition's per-frame exposures. The
-migration rewrites `exposures.filename` to the full per-frame stem (for rescan
-dedup), so every `.dat` consumer — analyze, the trace route, series traces — must
-resolve through here. Returns the path if found, else `nothing`.
+name (`integration_pattern` with `{name}` => `filename`) first, then falls back
+to the name with the trailing `_0_001` suffix dropped. The beamline writes one
+`.tif`, `.prp` and `_tot.dat` per exposure, and the `_tot.dat` is named by the
+stem without that suffix; nothing sums or averages exposures into one
+`_tot.dat`. The migration rewrites `exposures.filename` to the stem with the
+suffix (for rescan dedup), so every `.dat` consumer — analyze, the trace route,
+series traces — must resolve through here. Each exposure row must map to its own
+`_tot.dat`: a scan detects `{name}_0_001.tif`, so no two rows share a stem.
+Returns the path if found, else `nothing`.
 """
 function resolve_trace_path(analysis_dir::AbstractString,
                             integration_pattern::AbstractString,
@@ -1031,8 +1033,6 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         end
     end
 
-    # Slow path: resolve the trace (per-frame name, else the shared per-acquisition
-    # `_tot.dat` — see resolve_trace_path).
     resolved = resolve_trace_path(analysis_dir, integration_pattern, String(filename))
     resolved === nothing && error("dat file not found: $dat_path")
     dat_path = resolved
