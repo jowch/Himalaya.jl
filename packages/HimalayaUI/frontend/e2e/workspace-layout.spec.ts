@@ -196,7 +196,7 @@ test("three comparisons with long names keep the compare bar on one line", async
   expect(after.plot[0]).toEqual(before.plot[0]);
 });
 
-for (const viewport of VIEWPORTS) {
+for (const viewport of [...VIEWPORTS, { width: 1024, height: 700 }]) {
   test(`every frame's Drop or Restore button stays inside its frame card at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.route(/\/api\/samples\/44\/exposures/, (r) => r.fulfill({
