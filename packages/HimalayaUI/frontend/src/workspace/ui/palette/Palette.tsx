@@ -143,7 +143,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => choose(item)}
               className={
-                "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_32px] items-center gap-x-3 rounded-sm px-2 text-base " +
+                "grid h-8 cursor-pointer grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] items-center gap-x-3 rounded-sm px-2 text-base " +
                 (i === at ? "bg-row-cursor" : "")
               }
             >
