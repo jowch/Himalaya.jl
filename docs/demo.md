@@ -76,7 +76,11 @@ scratch/demo-experiment/
     A flare must be dropped, and its auto call may lose phases but must not add
     one.
   - `MO_H2O`: the newest scan is a beam-off shot: a flat dark floor of about
-    0.01 counts per pixel plus hot pixels, so the detector image is black.
+    0.01 counts per pixel plus hot pixels, so the detector image is black. Its
+    `.prp` I₀ is the ion chamber's negative electrometer offset (about −0.07 to
+    −0.12 V, as on real SSRL beam-off frames), not 0. The workspace's "No counts
+    on the detector" caption shows on it because its trace is dark, and the
+    negative I₀ adds a supporting hint.
   - `DOPE_H2O`: the oldest scan missed the capillary: steep q⁻⁴ air and slit
     scatter over a faint air floor, so the detector image shows a glow at the beamstop and
     darkness beyond it.
