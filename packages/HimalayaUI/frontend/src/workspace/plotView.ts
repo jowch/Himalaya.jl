@@ -44,8 +44,8 @@ export function applyView<T extends { q: number[]; I: number[]; sigma: number[] 
   };
 }
 
-export function viewLabel(view: PlotView): string {
-  return view === "kratky" ? "q²·I (a.u.)" : "intensity (a.u.)";
+export function viewLabel(view: PlotView): string | null {
+  return view === "kratky" ? "q²·I" : null;
 }
 
 export function nextView(view: PlotView, dir: 1 | -1): PlotView {
