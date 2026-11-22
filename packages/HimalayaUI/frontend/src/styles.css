@@ -76,7 +76,7 @@
      "kept" verdict dot reads through `bg-success` (T-4). */
   --color-success: oklch(0.520 0.120 162);    /* sage */
   --color-warning: oklch(0.620 0.130 70);     /* amber */
-  --color-error:   oklch(0.520 0.170 28);     /* red */
+  --color-error:   oklch(0.490 0.190 15);     /* crimson */
   --color-phase-pn3m: oklch(0.520 0.100 200);
   --color-phase-im3m: oklch(0.480 0.140 258);
   --color-phase-ia3d: oklch(0.500 0.150 300);
@@ -87,20 +87,20 @@
   --color-phase-square: oklch(0.550 0.020 250);
   --color-label-rose-wash: oklch(0.935 0.032 355);
   --color-label-rose-ink:  oklch(0.360 0.120 355);
-  --color-label-plum-wash: oklch(0.935 0.032 320);
-  --color-label-plum-ink:  oklch(0.360 0.120 320);
+  --color-label-plum-wash: oklch(0.910 0.032 320);
+  --color-label-plum-ink:  oklch(0.320 0.120 320);
   --color-label-violet-wash: oklch(0.935 0.032 285);
-  --color-label-violet-ink:  oklch(0.360 0.120 285);
-  --color-label-blue-wash: oklch(0.935 0.032 240);
-  --color-label-blue-ink:  oklch(0.360 0.120 240);
+  --color-label-violet-ink:  oklch(0.400 0.120 285);
+  --color-label-blue-wash: oklch(0.910 0.032 240);
+  --color-label-blue-ink:  oklch(0.360 0.082 240);
   --color-label-teal-wash: oklch(0.935 0.028 185);
-  --color-label-teal-ink:  oklch(0.360 0.090 185);
-  --color-label-green-wash: oklch(0.935 0.030 150);
-  --color-label-green-ink:  oklch(0.360 0.110 150);
+  --color-label-teal-ink:  oklch(0.320 0.055 185);
+  --color-label-green-wash: oklch(0.910 0.030 150);
+  --color-label-green-ink:  oklch(0.380 0.100 150);
   --color-label-ochre-wash: oklch(0.935 0.034 85);
-  --color-label-ochre-ink:  oklch(0.360 0.100 85);
-  --color-label-stone-wash: oklch(0.935 0.010 75);
-  --color-label-stone-ink:  oklch(0.360 0.020 75);
+  --color-label-ochre-ink:  oklch(0.400 0.075 85);
+  --color-label-stone-wash: oklch(0.910 0.010 75);
+  --color-label-stone-ink:  oklch(0.460 0.020 75);
   /* "The Print" palette — the canonical light aesthetic (DESIGN.md `colors:`).
      Consumed directly by the new corpus surfaces via the `bg-paper`/`text-ink`/
      `border-hair`/`text-print-accent` utilities. `--color-accent` above is now
@@ -442,7 +442,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-workspace-theme="system"] {
+  [data-theme="system"] {
     --color-paper:       oklch(0.165 0.005 280);
     --color-paper-sunk:  oklch(0.140 0.005 280);
     --color-plate:       oklch(0.195 0.006 280);
@@ -457,7 +457,7 @@
     --color-row-cursor:  oklch(0.245 0.013 280);
     --color-success:     oklch(0.740 0.080 162);
     --color-warning:     oklch(0.780 0.110 70);
-    --color-error:       oklch(0.700 0.150 28);
+    --color-error:       oklch(0.680 0.170 15);
     --color-scrim:       oklch(0 0 0 / 0.6);
     --color-phase-pn3m: oklch(0.740 0.100 200);
     --color-phase-im3m: oklch(0.720 0.120 258);
@@ -467,26 +467,26 @@
     --color-phase-hexagonal: oklch(0.760 0.140 130);
     --color-phase-lamellar: oklch(0.700 0.090 100);
     --color-phase-square: oklch(0.840 0.020 250);
-    --color-label-rose-wash: oklch(0.300 0.045 355);
-    --color-label-rose-ink:  oklch(0.900 0.090 355);
-    --color-label-plum-wash: oklch(0.300 0.045 320);
-    --color-label-plum-ink:  oklch(0.900 0.090 320);
-    --color-label-violet-wash: oklch(0.300 0.045 285);
-    --color-label-violet-ink:  oklch(0.900 0.090 285);
-    --color-label-blue-wash: oklch(0.300 0.045 240);
-    --color-label-blue-ink:  oklch(0.900 0.090 240);
-    --color-label-teal-wash: oklch(0.300 0.038 185);
-    --color-label-teal-ink:  oklch(0.900 0.068 185);
-    --color-label-green-wash: oklch(0.300 0.042 150);
-    --color-label-green-ink:  oklch(0.900 0.082 150);
-    --color-label-ochre-wash: oklch(0.300 0.042 85);
-    --color-label-ochre-ink:  oklch(0.900 0.075 85);
-    --color-label-stone-wash: oklch(0.300 0.012 75);
-    --color-label-stone-ink:  oklch(0.900 0.015 75);
+    --color-label-rose-wash: oklch(0.310 0.045 355);
+    --color-label-rose-ink:  oklch(0.860 0.080 355);
+    --color-label-plum-wash: oklch(0.290 0.045 320);
+    --color-label-plum-ink:  oklch(0.800 0.090 320);
+    --color-label-violet-wash: oklch(0.310 0.045 285);
+    --color-label-violet-ink:  oklch(0.740 0.090 285);
+    --color-label-blue-wash: oklch(0.290 0.045 240);
+    --color-label-blue-ink:  oklch(0.900 0.054 240);
+    --color-label-teal-wash: oklch(0.310 0.038 185);
+    --color-label-teal-ink:  oklch(0.860 0.110 185);
+    --color-label-green-wash: oklch(0.290 0.042 150);
+    --color-label-green-ink:  oklch(0.920 0.090 150);
+    --color-label-ochre-wash: oklch(0.310 0.042 85);
+    --color-label-ochre-ink:  oklch(0.880 0.080 85);
+    --color-label-stone-wash: oklch(0.290 0.012 75);
+    --color-label-stone-ink:  oklch(0.820 0.015 75);
     color-scheme: dark;
   }
 }
-[data-workspace-theme="dark"] {
+[data-theme="dark"] {
   --color-paper:       oklch(0.165 0.005 280);
   --color-paper-sunk:  oklch(0.140 0.005 280);
   --color-plate:       oklch(0.195 0.006 280);
@@ -501,7 +501,7 @@
   --color-row-cursor:  oklch(0.245 0.013 280);
   --color-success:     oklch(0.740 0.080 162);
   --color-warning:     oklch(0.780 0.110 70);
-  --color-error:       oklch(0.700 0.150 28);
+  --color-error:       oklch(0.680 0.170 15);
   --color-scrim:       oklch(0 0 0 / 0.6);
   --color-phase-pn3m: oklch(0.740 0.100 200);
   --color-phase-im3m: oklch(0.720 0.120 258);
@@ -511,21 +511,21 @@
   --color-phase-hexagonal: oklch(0.760 0.140 130);
   --color-phase-lamellar: oklch(0.700 0.090 100);
   --color-phase-square: oklch(0.840 0.020 250);
-  --color-label-rose-wash: oklch(0.300 0.045 355);
-  --color-label-rose-ink:  oklch(0.900 0.090 355);
-  --color-label-plum-wash: oklch(0.300 0.045 320);
-  --color-label-plum-ink:  oklch(0.900 0.090 320);
-  --color-label-violet-wash: oklch(0.300 0.045 285);
-  --color-label-violet-ink:  oklch(0.900 0.090 285);
-  --color-label-blue-wash: oklch(0.300 0.045 240);
-  --color-label-blue-ink:  oklch(0.900 0.090 240);
-  --color-label-teal-wash: oklch(0.300 0.038 185);
-  --color-label-teal-ink:  oklch(0.900 0.068 185);
-  --color-label-green-wash: oklch(0.300 0.042 150);
-  --color-label-green-ink:  oklch(0.900 0.082 150);
-  --color-label-ochre-wash: oklch(0.300 0.042 85);
-  --color-label-ochre-ink:  oklch(0.900 0.075 85);
-  --color-label-stone-wash: oklch(0.300 0.012 75);
-  --color-label-stone-ink:  oklch(0.900 0.015 75);
+  --color-label-rose-wash: oklch(0.310 0.045 355);
+  --color-label-rose-ink:  oklch(0.860 0.080 355);
+  --color-label-plum-wash: oklch(0.290 0.045 320);
+  --color-label-plum-ink:  oklch(0.800 0.090 320);
+  --color-label-violet-wash: oklch(0.310 0.045 285);
+  --color-label-violet-ink:  oklch(0.740 0.090 285);
+  --color-label-blue-wash: oklch(0.290 0.045 240);
+  --color-label-blue-ink:  oklch(0.900 0.054 240);
+  --color-label-teal-wash: oklch(0.310 0.038 185);
+  --color-label-teal-ink:  oklch(0.860 0.110 185);
+  --color-label-green-wash: oklch(0.290 0.042 150);
+  --color-label-green-ink:  oklch(0.920 0.090 150);
+  --color-label-ochre-wash: oklch(0.310 0.042 85);
+  --color-label-ochre-ink:  oklch(0.880 0.080 85);
+  --color-label-stone-wash: oklch(0.290 0.012 75);
+  --color-label-stone-ink:  oklch(0.820 0.015 75);
   color-scheme: dark;
 }

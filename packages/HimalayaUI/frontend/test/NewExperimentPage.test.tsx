@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NewExperimentPage } from "../src/print/pages/NewExperimentPage";
@@ -117,6 +117,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/20261103/setup1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
   });
@@ -203,6 +204,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
     const field = document.createElement("input");
@@ -215,6 +217,8 @@ describe("NewExperimentPage", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(create).not.toHaveBeenCalled();
     dialog.remove();
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   });
 
   it("adds once when ⌘/Ctrl+Enter is pressed twice quickly", async () => {
@@ -224,6 +228,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     resolve({ id: 11 } as api.Experiment);

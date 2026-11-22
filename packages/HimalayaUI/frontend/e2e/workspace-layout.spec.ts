@@ -217,6 +217,30 @@ test("three comparisons with long names keep the compare bar on one line", async
   expect(after.plot[0]).toEqual(before.plot[0]);
 });
 
+test("subtracting a comparison, switching between Raw and Minus and stopping move nothing", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  await page.keyboard.press("c");
+  await page.keyboard.type(`${LONG}01`);
+  await page.keyboard.press("Enter");
+  const toggle = page.getByTestId("workspace-subtraction-toggle");
+  const chip = page.locator("[data-compare-chip] button[aria-pressed]");
+  await expect(chip).toBeVisible();
+  await expect(toggle).toHaveCount(0);
+  const before = await measured(page);
+  await chip.click({ modifiers: ["ControlOrMeta"] });
+  await expect(toggle.getByRole("button", { name: /^Minus / })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-role=difference-line]")).toHaveCount(1);
+  expect(await measured(page)).toEqual(before);
+  await toggle.getByRole("button", { name: "Raw" }).click();
+  await expect(page.locator("[data-role=trace-line]")).toHaveCount(1);
+  expect(await measured(page)).toEqual(before);
+  await chip.click({ modifiers: ["ControlOrMeta"] });
+  await expect(toggle).toHaveCount(0);
+  expect(await measured(page)).toEqual(before);
+});
+
 test("on a short window Call and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
