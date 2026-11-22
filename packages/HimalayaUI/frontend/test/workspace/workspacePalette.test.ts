@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { IndexEntry } from "../../src/api";
 import { workspacePalette, type PaletteLabel, type WorkspacePaletteInput } from "../../src/workspace/palette";
 import { PLOT_VIEWS } from "../../src/workspace/plotView";
-import { rootRows } from "../../src/workspace/ui/palette/model";
+import { rootRows } from "../../src/ui/palette/model";
 
 function candidate(id: number, lattice: number): IndexEntry {
   return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
