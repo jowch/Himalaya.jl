@@ -67,6 +67,11 @@ export interface WorkspacePaletteInput extends AppActions {
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
+  elsewhere?: {
+    experiments: readonly { id: number; name: string }[];
+    samples: readonly { id: number; name: string; experiment: string; href: string }[];
+    go: (path: string) => void;
+  };
 }
 
 const THEMES: readonly { theme: AppTheme; name: string }[] = [
@@ -328,6 +333,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
     { id: "home", label: "Back to all experiments", run: p.home },
+    ...(p.elsewhere?.experiments ?? []).map((e) => ({ id: `open-${e.id}`, label: `Open ${e.name}`, name: e.name, typeOnly: true, run: () => p.elsewhere!.go(`/experiments/${e.id}`) })),
     ...(p.removeExperiment ? [{ id: "remove-experiment", label: "Remove this experiment", danger: true, typeOnly: true, run: p.removeExperiment }] : []),
   ];
   const app: PaletteItem[] = [
@@ -341,7 +347,14 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { title: "Plot", items: plot },
     { title: "Experiment", items: experiment },
     { title: "App", items: app },
-    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })) },
+    {
+      title: "Samples",
+      searchOnly: true,
+      items: [
+        ...p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })),
+        ...(p.elsewhere?.samples ?? []).map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: s.experiment, run: () => p.elsewhere!.go(s.href) })),
+      ],
+    },
   ];
   return { groups, pages };
 }

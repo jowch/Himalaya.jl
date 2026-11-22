@@ -52,6 +52,7 @@ import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
+import { useElsewhere } from "./useElsewhere";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
@@ -341,6 +342,7 @@ export function WorkspacePage(): JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const { elsewhere, onType: onPaletteType } = useElsewhere(experimentId);
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
@@ -1092,6 +1094,7 @@ export function WorkspacePage(): JSX.Element {
     },
     samples,
     goSample,
+    elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
   const indexingSection = (
@@ -1140,7 +1143,7 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setBigOpen(false)}
             />
           )}
-          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} />}
+          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} onType={onPaletteType} />}
         </>
       }
       header={
