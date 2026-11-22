@@ -24,7 +24,6 @@ test("status text maps onto the sample states", () => {
   assert.equal(statusFromText("Unreviewed"), "unreviewed");
   assert.equal(statusFromText("Index →"), "unreviewed");
   assert.equal(statusFromText("Form factor"), "form_factor");
-  assert.equal(statusFromText("No exposures"), "no_exposures");
   assert.equal(statusFromText(" Pn3m "), "phase");
   assert.equal(statusFromText(null), null);
 });

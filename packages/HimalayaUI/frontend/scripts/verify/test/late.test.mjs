@@ -81,7 +81,7 @@ test("check-truth reads ingest problems and fails while a delivered trace is sti
     "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note\nMO,MO_S1,Pn3m,100,Pn3m,,true,,,\n");
   const problems = { ingest_error: null, exposures: [waiting("MO_S1")] };
   const stub = await stubBackend({
-    "/api/experiments": [{ id: 4, data_dir: path.join(demoDir, "data"), ingest_status: "complete" }],
+    "/api/experiments": [{ id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" }],
     "/api/samples?experiment_id=4": [{ id: 10, name: "MO_S1 (S01P01)", assignment_state: "indexed", phase: null, representative_exposure_id: 1 }],
     "/api/experiments/4/export": [{ name: "MO_S1 (S01P01)", exposures: [{ filename: "MO_S1", indices: [] }] }],
     "/api/experiments/4/problems": () => problems,
@@ -128,7 +128,7 @@ test("check-truth --ui tells the reader every held frame, since a neighbour's pr
   fs.writeFileSync(path.join(demoDir, "TRUTH.csv"),
     "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note\nA,A_S1,none,,none,,true,,,\nB,B_S2,none,,none,,true,,,\n");
   const stub = await stubBackend({
-    "/api/experiments": [{ id: 4, data_dir: path.join(demoDir, "data"), ingest_status: "complete" }],
+    "/api/experiments": [{ id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" }],
     "/api/samples?experiment_id=4": [
       { id: 10, name: "A_S1 (S01P01)", assignment_state: "indexed", phase: null, representative_exposure_id: 1 },
       { id: 11, name: "B_S2 (S01P02)", assignment_state: "indexed", phase: null, representative_exposure_id: 2 },
@@ -152,7 +152,7 @@ test("check-truth --ui tells the reader every held frame, since a neighbour's pr
       [10, { workspace: "A_S1", workspace_kept: "1/1", workspace_text: "Unreviewed", workspace_rail: { ticked: [], candidates: [], form_factor: false }, workspace_plot: null, workspace_notice: notice }],
       [11, { workspace: "B_S2", workspace_kept: "1/1", workspace_text: "Unreviewed", workspace_rail: { ticked: [], candidates: [], form_factor: false }, workspace_plot: plot, workspace_notice: notice }],
     ]);
-    const good = await checkTruth(cfg, { ui: true }, { views: read("Waiting for this frame's trace.", "1 exposure waiting for a trace") });
+    const good = await checkTruth(cfg, { ui: true }, { views: read("Waiting for this frame's trace.", "1 frame waiting for a trace") });
     assert.equal(good.invariants.plot_matches_trace.ok, true);
     assert.equal(good.traces.notice_ok, true);
     const stale = await checkTruth(cfg, { ui: true }, { views: read("No integrated trace for this frame.", null) });
@@ -175,11 +175,11 @@ test("plotMismatch: a held frame's plot says it is waiting, any other frame show
 });
 
 test("compareTraces checks the workspace notice when it was read", () => {
-  assert.equal(compareTraces(["A_S1", "A_S2"], [waiting("A_S1"), waiting("A_S2")], "2 exposures waiting for a trace").ok, true);
+  assert.equal(compareTraces(["A_S1", "A_S2"], [waiting("A_S1"), waiting("A_S2")], "2 frames waiting for a trace").ok, true);
   assert.equal(compareTraces([], [], null).ok, true);
-  const stale = compareTraces([], [], "1 exposure waiting for a trace");
+  const stale = compareTraces([], [], "1 frame waiting for a trace");
   assert.equal(stale.ok, false);
-  assert.equal(stale.notice, "1 exposure waiting for a trace");
+  assert.equal(stale.notice, "1 frame waiting for a trace");
   assert.equal(compareTraces(["A_S1"], [waiting("A_S1")], null).ok, false);
   assert.equal(compareTraces(["A_S1"], [waiting("A_S1")], undefined).ok, true);
 });

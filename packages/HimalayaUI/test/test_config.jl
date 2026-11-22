@@ -9,25 +9,28 @@ function _pattern_db(; kwargs...)
     db, exp_id
 end
 
+_exposure_pattern(db, id) = HimalayaUI.integration_pattern_for_exposure(db,
+    HimalayaUI.create_exposure!(db; experiment_id = id, filename = "f"))
+
 @testset "integration_pattern_for" begin
     @testset "defaults to {name}.dat when the column is unset" begin
         db, id = _pattern_db()
-        @test HimalayaUI.integration_pattern_for(db, id) == "{name}.dat"
+        @test _exposure_pattern(db, id) == "{name}.dat"
     end
 
-    @testset "uses the experiment's column" begin
+    @testset "uses the setup's column" begin
         db, id = _pattern_db(integration_pattern = "{name}_tot.dat")
-        @test HimalayaUI.integration_pattern_for(db, id) == "{name}_tot.dat"
+        @test _exposure_pattern(db, id) == "{name}_tot.dat"
     end
 
     @testset "ignores values without {name}" begin
         db, id = _pattern_db(integration_pattern = "trace.dat")
-        @test HimalayaUI.integration_pattern_for(db, id) == "{name}.dat"
+        @test _exposure_pattern(db, id) == "{name}.dat"
     end
 
-    @testset "errors on an unknown experiment" begin
+    @testset "errors on an exposure without a setup" begin
         db, _ = _pattern_db()
-        @test_throws ErrorException HimalayaUI.integration_pattern_for(db, 999)
+        @test_throws ErrorException HimalayaUI.integration_pattern_for_exposure(db, 999)
     end
 end
 

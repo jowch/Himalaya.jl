@@ -53,7 +53,7 @@ end
 # dispatcher's view-update needs to satisfy FK constraints.
 function _seed_exposure(db::SQLite.DB)
     DBInterface.execute(db,
-        "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+        "INSERT INTO experiments (name, path) VALUES ('e', '/p')")
     DBInterface.execute(db,
         "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
     res = DBInterface.execute(db,

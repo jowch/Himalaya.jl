@@ -68,7 +68,7 @@ function groupByYear(
 /**
  * ExperimentsHomePage — /experiments gallery (M2). Year-grouped 2-column card
  * grid with a slim left timeline rail. Each card shows the experiment name,
- * state chip (scanning / N to review / up to date), data_dir path, and counts.
+ * state chip (scanning / N to review / up to date), folder path, and counts.
  * Empty → EmptyState + New CTA.
  */
 export function ExperimentsHomePage(): JSX.Element {
@@ -129,7 +129,7 @@ export function ExperimentsHomePage(): JSX.Element {
             // the font size instead of stretching the full page width (note 3).
             <span className="block max-w-[34ch] mx-auto">
               Point Himalaya to your experiment directory. It will discover your
-              setup, scan your exposures, group them into samples. Easy.
+              setup, scan your frames, group them into samples. Easy.
             </span>
           }
           action={
@@ -202,9 +202,8 @@ export function ExperimentsHomePage(): JSX.Element {
                           </NoticePill>
                         </div>
 
-                        {/* data_dir path */}
                         <div className="text-xs text-ink-soft mb-2 truncate">
-                          {e.data_dir}
+                          {e.path}
                         </div>
 
                         {/* Counts or indexing placeholder */}
@@ -215,7 +214,7 @@ export function ExperimentsHomePage(): JSX.Element {
                             <span className="text-ink">{stats.samples}</span>
                             {" samples · "}
                             <span className="text-ink">{stats.exposures}</span>
-                            {" exposures · "}
+                            {" frames · "}
                             <span className="text-ink">{stats.loads}</span>
                             {" loads"}
                           </div>

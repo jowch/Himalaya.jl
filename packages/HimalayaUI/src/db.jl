@@ -65,32 +65,39 @@ CREATE TABLE IF NOT EXISTS experiments (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT,
     path            TEXT NOT NULL,
-    data_dir        TEXT NOT NULL,
-    analysis_dir    TEXT NOT NULL,
-    manifest_path   TEXT,
-    config          TEXT,
-    experiment_type TEXT,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    description     TEXT,
+    last_scanned_at TEXT,
+    ingest_status   TEXT DEFAULT 'idle',
+    ingest_error    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS setups (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id        INTEGER NOT NULL REFERENCES experiments(id) ON DELETE CASCADE,
+    folder               TEXT NOT NULL,
+    display_name         TEXT,
+    position             INTEGER NOT NULL DEFAULT 0,
+    included             INTEGER NOT NULL DEFAULT 1,
+    root_dir             TEXT NOT NULL,
+    data_dir             TEXT NOT NULL,
+    analysis_dir         TEXT NOT NULL,
     image_pattern        TEXT,
     metadata_pattern     TEXT,
     integration_pattern  TEXT,
-    energy_kev      REAL,
-    flight_path_m   REAL,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    energy_kev_source        TEXT DEFAULT 'default',
-    flight_path_m_source     TEXT DEFAULT 'default',
-    beam_center_x            REAL,
-    beam_center_x_source     TEXT DEFAULT 'default',
-    beam_center_y            REAL,
-    beam_center_y_source     TEXT DEFAULT 'default',
-    pixel_size_um            REAL,
-    pixel_size_um_source     TEXT DEFAULT 'default',
-    q_units                  TEXT,
-    q_units_source           TEXT DEFAULT 'default',
-    last_scanned_at          TEXT,
-    ingest_status            TEXT DEFAULT 'idle',
-    ingest_error             TEXT,
-    last_scan_tier           TEXT DEFAULT 'fast',
-    consecutive_empty_ticks  INTEGER NOT NULL DEFAULT 0
+    energy_kev           REAL,
+    energy_kev_source    TEXT DEFAULT 'default',
+    flight_path_m        REAL,
+    flight_path_m_source TEXT DEFAULT 'default',
+    beam_center_x        REAL,
+    beam_center_x_source TEXT DEFAULT 'default',
+    beam_center_y        REAL,
+    beam_center_y_source TEXT DEFAULT 'default',
+    pixel_size_um        REAL,
+    pixel_size_um_source TEXT DEFAULT 'default',
+    q_units              TEXT,
+    q_units_source       TEXT DEFAULT 'default',
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS loads (
@@ -101,7 +108,8 @@ CREATE TABLE IF NOT EXISTS loads (
     start_time    TEXT,
     end_time      TEXT,
     frame_count   INTEGER NOT NULL DEFAULT 0,
-    note          TEXT
+    note          TEXT,
+    setup_id      INTEGER REFERENCES setups(id)
 );
 
 CREATE TABLE IF NOT EXISTS samples (
@@ -113,7 +121,8 @@ CREATE TABLE IF NOT EXISTS samples (
     load_id          INTEGER REFERENCES loads(id),
     slot_index       INTEGER,
     grouping_source  TEXT DEFAULT 'auto_position',
-    name_source      TEXT DEFAULT 'auto'
+    name_source      TEXT DEFAULT 'auto',
+    setup_id         INTEGER REFERENCES setups(id)
 );
 
 CREATE TABLE IF NOT EXISTS exposures (
@@ -141,7 +150,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     monitors_read        INTEGER NOT NULL DEFAULT 0,
     analysis_version     TEXT,
     analysis_error       TEXT,
-    analysis_trace_stat  TEXT
+    analysis_trace_stat  TEXT,
+    setup_id             INTEGER REFERENCES setups(id)
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -339,10 +349,6 @@ function migrate_schema!(db::SQLite.DB)
     alter_stmts = [
         "ALTER TABLE exposures ADD COLUMN status TEXT CHECK (status IN ('accepted', 'rejected'))",
         "ALTER TABLE exposures ADD COLUMN image_path TEXT",
-        "ALTER TABLE experiments ADD COLUMN config TEXT",
-        "ALTER TABLE experiments ADD COLUMN experiment_type TEXT",
-        "ALTER TABLE experiments ADD COLUMN energy_kev REAL",
-        "ALTER TABLE experiments ADD COLUMN flight_path_m REAL",
         "ALTER TABLE users ADD COLUMN first_name TEXT",
         "ALTER TABLE users ADD COLUMN last_name TEXT",
         "ALTER TABLE indices ADD COLUMN kind TEXT NOT NULL DEFAULT 'auto'",
@@ -378,6 +384,8 @@ function migrate_schema!(db::SQLite.DB)
                 rethrow()
         end
     end
+
+    migrate_setups!(db; finish = false)
 
     # The below statements are all IF NOT EXISTS-guarded. The CREATE INDEX
     # variants depend on `user_actions` existing; partial-legacy DBs (e.g.
@@ -503,11 +511,13 @@ function migrate_schema!(db::SQLite.DB)
 
     migrate_index_peaks_ratio_int!(db)
     migrate_sample_bridges!(db)
+    migrate_sample_compares!(db)
     migrate_sample_labels!(db)
     migrate_label_colors!(db)
     migrate_sample_calls!(db)
     migrate_drop_retired_tables!(db)
     migrate_label_suggestions!(db)
+    migrate_setups!(db)
 end
 
 function migrate_label_colors!(db::SQLite.DB)
@@ -566,6 +576,24 @@ function migrate_sample_bridges!(db::SQLite.DB)
         )""")
     DBInterface.execute(db,
         "CREATE INDEX IF NOT EXISTS idx_sample_bridges_group ON sample_bridges(group_id)")
+    nothing
+end
+
+function migrate_sample_compares!(db::SQLite.DB)
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_compares (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            sample_id     INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            ref_sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE,
+            added_by      INTEGER REFERENCES users(id) ON DELETE SET NULL
+        )""")
+    DBInterface.execute(db,
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sample_compares_pair ON sample_compares(sample_id, ref_sample_id)")
+    DBInterface.execute(db, """
+        CREATE TABLE IF NOT EXISTS sample_subtractions (
+            sample_id     INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+            ref_sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE
+        )""")
     nothing
 end
 
@@ -1856,41 +1884,23 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
 end
 
 function create_experiment!(db::SQLite.DB;
-        name::Union{String,Nothing} = nothing,
-        path::String,
-        data_dir::String,
-        analysis_dir::String,
-        manifest_path::Union{String,Nothing} = nothing,
-        config::Union{String,Nothing} = nothing,
-        experiment_type::Union{String,Nothing} = nothing,
-        image_pattern::Union{String,Nothing} = nothing,
-        metadata_pattern::Union{String,Nothing} = nothing,
-        integration_pattern::Union{String,Nothing} = nothing,
-        energy_kev::Union{Float64,Nothing} = nothing,
-        flight_path_m::Union{Float64,Nothing} = nothing,
-        # --- new (Phase A) ---
-        energy_kev_source = "default", flight_path_m_source = "default",
-        beam_center_x = nothing, beam_center_x_source = "default",
-        beam_center_y = nothing, beam_center_y_source = "default",
-        pixel_size_um = nothing, pixel_size_um_source = "default",
-        q_units = nothing, q_units_source = "default",
-        last_scanned_at = nothing, ingest_status = "idle")
+        name::Union{AbstractString,Nothing} = nothing,
+        path::AbstractString,
+        data_dir::Union{AbstractString,Nothing} = nothing,
+        analysis_dir::Union{AbstractString,Nothing} = nothing,
+        description = nothing,
+        last_scanned_at = nothing, ingest_status = "idle",
+        setup...)
     result = DBInterface.execute(db, """
-        INSERT INTO experiments
-            (name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
-             image_pattern, metadata_pattern, integration_pattern,
-             energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
-             beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
-             pixel_size_um, pixel_size_um_source, q_units, q_units_source,
-             last_scanned_at, ingest_status)
-        VALUES (?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?, ?,?)
-    """, [name, path, data_dir, analysis_dir, manifest_path, config, experiment_type,
-          image_pattern, metadata_pattern, integration_pattern,
-          energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
-          beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
-          pixel_size_um, pixel_size_um_source, q_units, q_units_source,
-          last_scanned_at, ingest_status])
-    return Int(DBInterface.lastrowid(result))
+        INSERT INTO experiments (name, path, description, last_scanned_at, ingest_status)
+        VALUES (?,?,?,?,?)
+    """, [name, String(path), description, last_scanned_at, ingest_status])
+    exp_id = Int(DBInterface.lastrowid(result))
+    if data_dir !== nothing
+        create_setup!(db; experiment_id = exp_id, data_dir = data_dir,
+            analysis_dir = something(analysis_dir, data_dir), setup...)
+    end
+    return exp_id
 end
 
 function create_load!(db::SQLite.DB;
@@ -1900,21 +1910,23 @@ function create_load!(db::SQLite.DB;
         start_time::Union{String, Nothing}     = nothing,
         end_time::Union{String, Nothing}       = nothing,
         frame_count::Integer                   = 0,
-        note::Union{String, Nothing}           = nothing)
+        note::Union{String, Nothing}           = nothing,
+        setup_id                               = default_setup_id(db, experiment_id))
     res = DBInterface.execute(db, """
-        INSERT INTO loads (experiment_id, load_index, session_id, start_time, end_time, frame_count, note)
-        VALUES (?,?,?,?,?,?,?)
-    """, [experiment_id, load_index, session_id, start_time, end_time, frame_count, note])
+        INSERT INTO loads (experiment_id, setup_id, load_index, session_id, start_time, end_time, frame_count, note)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, [experiment_id, setup_id, load_index, session_id, start_time, end_time, frame_count, note])
     Int(DBInterface.lastrowid(res))
 end
 
 function create_sample!(db::SQLite.DB; experiment_id::Integer, name::AbstractString,
         notes=nothing, load_id=nothing, slot_index=nothing,
-        grouping_source="auto_position", name_source="auto")
+        grouping_source="auto_position", name_source="auto",
+        setup_id = default_setup_id(db, experiment_id))
     res = DBInterface.execute(db, """
-        INSERT INTO samples (experiment_id, name, notes, load_id, slot_index, grouping_source, name_source)
-        VALUES (?,?,?,?,?,?,?)
-    """, [experiment_id, name, notes, load_id, slot_index, grouping_source, name_source])
+        INSERT INTO samples (experiment_id, setup_id, name, notes, load_id, slot_index, grouping_source, name_source)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, [experiment_id, setup_id, name, notes, load_id, slot_index, grouping_source, name_source])
     return Int(DBInterface.lastrowid(res))
 end
 
@@ -1938,15 +1950,16 @@ function create_exposure!(db::SQLite.DB;
         transmitted_counts = nothing,
         incident_monitor  = nothing,
         counting_time     = nothing,
-        monitors_read::Bool = prp_path !== nothing)
+        monitors_read::Bool = prp_path !== nothing,
+        setup_id = default_setup_id(db, experiment_id))
     result = DBInterface.execute(db, """
         INSERT INTO exposures
-            (experiment_id, sample_id, filename, kind, selected, status, image_path,
+            (setup_id, experiment_id, sample_id, filename, kind, selected, status, image_path,
              prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
              load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
              monitors_read)
-        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?)
-    """, [experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
+        VALUES (?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?)
+    """, [setup_id, experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
           prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
           load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
           Int(monitors_read)])

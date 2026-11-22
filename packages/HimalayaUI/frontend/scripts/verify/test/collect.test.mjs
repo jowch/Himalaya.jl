@@ -17,8 +17,8 @@ const TRUTH = [
 function routes(demoDir) {
   return {
     "/api/experiments": [
-      { id: 3, data_dir: "/elsewhere/data", ingest_status: "complete" },
-      { id: 4, data_dir: path.join(demoDir, "data"), ingest_status: "complete" },
+      { id: 3, setups: [{ data_dir: "/elsewhere/data" }], ingest_status: "complete" },
+      { id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" },
     ],
     "/api/samples?experiment_id=4": [
       { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", representative_exposure_id: 1 },

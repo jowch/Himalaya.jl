@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 
 // JSDOM does not implement ResizeObserver. Provide a no-op stub so components
-// that observe layout changes (e.g. DetectorImage auto-rotate) don't throw.
+// that observe layout changes don't throw.
 class ResizeObserverStub {
   observe(): void {}
   unobserve(): void {}
@@ -35,14 +35,6 @@ class EventSourceStub {
 if (typeof globalThis.EventSource === "undefined") {
   // @ts-expect-error JSDOM lacks EventSource
   globalThis.EventSource = EventSourceStub;
-}
-
-// JSDOM does not implement object URLs. DetectorImage turns a fetched image blob
-// into one for its <img>; stub both so any component that renders a detector
-// image doesn't throw. Tests asserting the value re-stub createObjectURL locally.
-if (typeof URL.createObjectURL !== "function") {
-  URL.createObjectURL = () => "blob:stub";
-  URL.revokeObjectURL = () => {};
 }
 
 // JSDOM does not implement window.matchMedia. Stub it so boneyard-js dark-mode

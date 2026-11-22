@@ -42,26 +42,28 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # q_units present in response (default A-1 when not set in config; UI prettifies)
         r2 = call("GET", "/api/experiments/$exp_id")
         body2 = JSON3.read(String(r2.body))
-        @test haskey(body2, :q_units)
-        @test body2.q_units == "A-1"
+        @test length(body2.setups) == 1
+        @test body2.setups[1].q_units == "A-1"
+        @test body2.setups[1].name == "$(basename(tmp))"
+        @test body2.setups[1].included == true
 
         # q_units in list response too
         r3 = call("GET", "/api/experiments")
         list = JSON3.read(String(r3.body))
         @test length(list) >= 1
-        @test haskey(list[1], :q_units)
+        @test haskey(list[1].setups[1], :q_units)
 
         # Typed-geometry row with a NULL q_units (a migrated/fresh experiment that
         # carries real beam center etc.) must STILL default q_units to A-1. The
         # typed path used to serve the raw NULL column, blanking the geometry ledger.
         DBInterface.execute(db,
-            "UPDATE experiments SET beam_center_x = 421.4, beam_center_x_source = 'setup', q_units = NULL WHERE id = ?",
+            "UPDATE setups SET beam_center_x = 421.4, beam_center_x_source = 'setup', q_units = NULL WHERE experiment_id = ?",
             [exp_id])
         r4 = call("GET", "/api/experiments/$exp_id")
         body4 = JSON3.read(String(r4.body))
-        @test body4.beam_center_x == 421.4          # has_typed = true → typed path
-        @test body4.q_units == "A-1"                # ...yet q_units still defaults
-        @test body4.q_units_source == "default"
+        @test body4.setups[1].beam_center_x == 421.4
+        @test body4.setups[1].q_units == "A-1"
+        @test body4.setups[1].q_units_source == "default"
 
         r5 = call("GET", "/api/experiments")
         @test r5.status == 200
@@ -72,7 +74,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # PATCH must not touch path fields — those go through reingest.
         original_data_dir = Tables.rowtable(DBInterface.execute(db,
-            "SELECT data_dir FROM experiments WHERE id = ?", [exp_id]))[1].data_dir
+            "SELECT data_dir FROM setups WHERE experiment_id = ?", [exp_id]))[1].data_dir
         r = call("PATCH", "/api/experiments/$exp_id";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
@@ -82,7 +84,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 400
         # Row must be unchanged.
         @test Tables.rowtable(DBInterface.execute(db,
-            "SELECT data_dir FROM experiments WHERE id = ?", [exp_id]))[1].data_dir ==
+            "SELECT data_dir FROM setups WHERE experiment_id = ?", [exp_id]))[1].data_dir ==
               original_data_dir
     end
 end
@@ -142,18 +144,17 @@ end
     end
 end
 
-@testset "a legacy config blob is neither read nor sent" begin
+@testset "an experiment sends its configuration only under setups" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)
     exp_id = HimalayaUI.create_experiment!(db; path=tmp, data_dir="data", analysis_dir="analysis")
-    DBInterface.execute(db, "UPDATE experiments SET config = ? WHERE id = ?",
-        ["[beamline]\nbeam_center_x = 420.791\nq_units = \"nm-1\"\n", exp_id])
 
     with_inproc_routes(db) do call
         body = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
-        @test body.beam_center_x === nothing
-        @test body.q_units == "A-1"
-        @test !haskey(body, :config)
+        for k in (:data_dir, :analysis_dir, :beam_center_x, :q_units, :config, :integration_pattern)
+            @test !haskey(body, k)
+        end
+        @test body.setups[1].beam_center_x === nothing
         @test call("GET", "/api/experiments").status == 200
     end
 end
@@ -166,8 +167,8 @@ end
 
     with_inproc_routes(db) do call
         body = JSON3.read(String(call("GET", "/api/experiments/$exp_id").body))
-        @test body.q_units == "nm^-1"
-        @test body.q_units_source == "user"
+        @test body.setups[1].q_units == "nm^-1"
+        @test body.setups[1].q_units_source == "user"
     end
 end
 
@@ -241,7 +242,7 @@ end
         row = Tables.rowtable(DBInterface.execute(db,
             "SELECT beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
                     energy_kev, energy_kev_source, flight_path_m, flight_path_m_source
-             FROM experiments WHERE id = ?", [eid]))[1]
+             FROM setups WHERE experiment_id = ?", [eid]))[1]
         # Provided fields are persisted and stamped 'user' (the scan never clobbers them).
         @test row.beam_center_x == 421.3
         @test row.beam_center_x_source == "user"
@@ -275,7 +276,7 @@ end
         eid = Int(JSON3.read(String(r.body)).id)
         row = Tables.rowtable(DBInterface.execute(db,
             "SELECT beam_center_x_source, flight_path_m_source, pixel_size_um_source,
-                    energy_kev_source, flight_path_m FROM experiments WHERE id = ?", [eid]))[1]
+                    energy_kev_source, flight_path_m FROM setups WHERE experiment_id = ?", [eid]))[1]
         @test row.beam_center_x_source == "setup"   # honest provenance, not 'user'
         @test row.flight_path_m_source == "setup"
         @test row.flight_path_m == 1.8095           # the setup value, not a PRP re-derive
@@ -297,10 +298,10 @@ end
            beam_center_x = missing, beam_center_x_source = "prp",
            beam_center_y = missing, beam_center_y_source = "prp",
            pixel_size_um = 172.0, pixel_size_um_source = "prp")
-    HimalayaUI._fill_unset_geometry!(db, eid, geo)
+    HimalayaUI._fill_unset_geometry!(db, HimalayaUI.default_setup_id(db, eid), geo)
     row = Tables.rowtable(DBInterface.execute(db,
         "SELECT flight_path_m, flight_path_m_source, energy_kev, energy_kev_source,
-                beam_center_x, pixel_size_um FROM experiments WHERE id = ?", [eid]))[1]
+                beam_center_x, pixel_size_um FROM setups WHERE experiment_id = ?", [eid]))[1]
     @test row.flight_path_m == 1.8095                # established 'setup' value PRESERVED
     @test row.flight_path_m_source == "setup"
     @test row.energy_kev == 9.0                      # was 'default' → filled
@@ -326,7 +327,7 @@ end
         @test occursin("director", lowercase(String(body.error)))
         # No second experiment was created for that directory.
         n = Tables.rowtable(DBInterface.execute(db,
-            "SELECT COUNT(*) AS c FROM experiments WHERE data_dir = ?", [data_dir]))[1].c
+            "SELECT COUNT(*) AS c FROM setups WHERE data_dir = ?", [data_dir]))[1].c
         @test n == 1
     end
 end

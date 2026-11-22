@@ -11,5 +11,5 @@ export function readTruth(cfg, file = path.join(cfg.demoDir, "TRUTH.csv")) {
 export async function findDemoExperiment(cfg) {
   const experiments = await getJson(cfg.apiBase, "/api/experiments");
   const dataDir = path.join(cfg.demoDir, "data");
-  return experiments.find((e) => e.data_dir && path.resolve(e.data_dir) === dataDir) ?? null;
+  return experiments.find((e) => (e.setups ?? []).some((s) => s.data_dir && path.resolve(s.data_dir) === dataDir)) ?? null;
 }
