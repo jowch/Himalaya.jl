@@ -2897,7 +2897,7 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
     expect(screen.getByText("Image 2 of 3")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
-    expect(screen.getByTitle("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: " " });
     expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Image 2 of 3, A3 in Long pipe");
     fireEvent.keyDown(window, { key: " " });
@@ -2948,7 +2948,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as A3")).toHaveTextContent("Same as A3");
+    expect(screen.getByText("Same as A3")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='12']")).toBeNull();
     expect(screen.getByTestId("workspace-compare-bar").querySelector("[data-compare-chip]")).toBeNull();
     const list = screen.getByTestId("workspace-samples");
@@ -3059,7 +3059,7 @@ describe("WorkspacePage", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }];
     act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as MO_H2O in setup2")).toBeInTheDocument();
+    expect(screen.getByText("Same as MO_H2O in setup2")).toBeInTheDocument();
     expect(within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: "MO_PEG5, setup2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "c" });
     const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
@@ -3076,7 +3076,7 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as A1 in setup1")).toBeInTheDocument();
+    expect(screen.getByText("Same as A1 in setup1")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
     expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();

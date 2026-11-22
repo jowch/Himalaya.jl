@@ -1,6 +1,7 @@
 import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
+import { Tooltip } from "./Tooltip";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
@@ -23,7 +24,9 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
       {groups.map((g, gi) => (
         <section key={g.key} aria-label={g.title} className="flex flex-col gap-1">
           {g.title !== undefined && (
-            <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft" title={g.title}>{g.title}</h4>
+            <Tooltip content={g.title} overflowOnly>
+              <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft">{g.title}</h4>
+            </Tooltip>
           )}
           <ul className="m-0 grid list-none grid-cols-6 gap-2 p-0">
             {g.exposures.map((e, i) => {

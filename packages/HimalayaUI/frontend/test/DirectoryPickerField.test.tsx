@@ -172,7 +172,7 @@ describe("DirectoryPickerField", () => {
     expect(fireEvent.keyDown(input(), { key: "Tab" })).toBe(true);
   });
 
-  it("shows the folder name and what it holds, and a click fills in the full path", () => {
+  it("shows the folder name and what it holds, and a click fills in the full path", async () => {
     const onChange = vi.fn();
     render(<DirectoryPickerField value="/b/" onChange={onChange} folders={[
       f("/b/2026-11", { kind: "beamtime", setups: 2 }),
@@ -185,7 +185,8 @@ describe("DirectoryPickerField", () => {
       "setup1, setup · added as Oct",
       "notes",
     ]);
-    expect(options[0]).toHaveAttribute("title", "/b/2026-11");
+    fireEvent.mouseEnter(options[0]!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("/b/2026-11");
     fireEvent.click(options[0]!);
     expect(onChange).toHaveBeenCalledWith("/b/2026-11/");
   });

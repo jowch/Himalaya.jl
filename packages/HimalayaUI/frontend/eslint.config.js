@@ -12,6 +12,13 @@ export default tseslint.config(
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
       "no-console": ["error", { allow: ["warn", "error"] }],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXOpeningElement[name.name=/^([a-z].*|Link|NavLink)$/] > JSXAttribute[name.name='title']",
+          message: "Native title tooltips are slow, unstyled and never show on keyboard focus. Wrap the element in <Tooltip content=…> from src/ui, or <Tooltip overflowOnly> when the text only repeats a truncated label.",
+        },
+      ],
     },
   },
   {

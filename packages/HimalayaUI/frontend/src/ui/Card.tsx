@@ -25,7 +25,7 @@ type CardOwnProps<T extends CardElement> = {
   interactive?: boolean;
 };
 export type CardProps<T extends CardElement = "div"> = CardOwnProps<T> &
-  Omit<ElementProps[T], keyof CardOwnProps<T>>;
+  Omit<ElementProps[T], keyof CardOwnProps<T> | "title">;
 const borderClass: Record<NonNullable<CardOwnProps<CardElement>["border"]>, string> = {
   hair: "border border-hair",
   strong: "border border-hair-strong",
