@@ -15,7 +15,7 @@ colors:
   frame-tag: "oklch(0.82 0.01 80)"
   success: "oklch(0.520 0.120 162)"
   warning: "oklch(0.620 0.130 70)"
-  error: "oklch(0.520 0.170 28)"
+  error: "oklch(0.490 0.190 15)"
   peak-manual: "oklch(0.550 0.200 340)"
   phase-pn3m: "oklch(0.520 0.100 200)"
   phase-im3m: "oklch(0.480 0.140 258)"
@@ -181,15 +181,15 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Manual-Peak Magenta** (`peak-manual`, oklch 0.550 0.200 340): paper-tuned (darker than the dark-era 0.78) for AA on the plate. Used for one thing only: peak markers the user added by hand. Its hue sits well clear of the terracotta accent (38) and every phase hue.
 
 ### Phase palette (paper-tuned, AA on plate)
-Eight data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays and phase chips. Every chromatic phase hue (chroma ≥ 0.06) sits at least 30° from the accent (38), error (28), warning (70) and success (162), so a phase never reads as a status. Hexagonal moved to 130 and Lamellar to 100 to clear success and warning; they keep apart from each other by lightness (0.53 against 0.44). Each clears WCAG AA on `plate`.
+Eight data colours, one per liquid-crystalline phase, used for index/peak colour, trace overlays and phase chips. Every chromatic phase hue (chroma ≥ 0.06) sits at least 30° from the accent (38), error (15), warning (70) and success (162), so a phase never reads as a status. Hexagonal moved to 130 and Lamellar to 100 to clear success and warning; they keep apart from each other by lightness (0.53 against 0.44). Each clears WCAG AA on `plate`.
 - **Pn3m Teal** (0.520 0.100 200) · **Im3m Blue** (0.480 0.140 258) · **Ia3d Violet** (0.500 0.150 300) · **Fd3m Plum** (0.420 0.120 325) · **Hexagonal Green** (0.530 0.140 130) · **Lamellar Olive** (0.440 0.090 100) · **Fm3m Slate** (0.400 0.050 230) · **Square Grey** (0.550 0.020 250).
 
-**Dark workspace.** The workspace's dark theme restates each phase as a `--color-phase-*` token with the same hue and a higher lightness, so every phase clears AA on the dark `paper` and `plate` and solid chips keep their paper text readable: Pn3m (0.740 0.100 200) · Im3m (0.720 0.120 258) · Ia3d (0.700 0.140 300) · Fd3m (0.760 0.120 325) · Hexagonal (0.760 0.140 130) · Lamellar (0.700 0.090 100) · Fm3m (0.660 0.060 230) · Square (0.840 0.020 250). `phaseColor()` returns `var(--color-phase-…)` with the light value as a fallback, so exported figures outside the page keep the light palette. The dark status colours keep the light hues (success 0.740 0.080 162, warning 0.780 0.110 70, error 0.700 0.150 28) and change only lightness and chroma. The dark block is scoped to the workspace root, so the older pages keep the light identity, and any token built from another token is restated there because a custom property resolves where it is declared. `test/phases.test.ts` runs every check below against both the light `@theme` block and the dark block.
+**Dark workspace.** The workspace's dark theme restates each phase as a `--color-phase-*` token with the same hue and a higher lightness, so every phase clears AA on the dark `paper` and `plate` and solid chips keep their paper text readable: Pn3m (0.740 0.100 200) · Im3m (0.720 0.120 258) · Ia3d (0.700 0.140 300) · Fd3m (0.760 0.120 325) · Hexagonal (0.760 0.140 130) · Lamellar (0.700 0.090 100) · Fm3m (0.660 0.060 230) · Square (0.840 0.020 250). `phaseColor()` returns `var(--color-phase-…)` with the light value as a fallback, so exported figures outside the page keep the light palette. The dark status colours keep the light hues (success 0.740 0.080 162, warning 0.780 0.110 70, error 0.680 0.170 15) and change only lightness and chroma. The dark block is scoped to the workspace root, so the older pages keep the light identity, and any token built from another token is restated there because a custom property resolves where it is declared. `test/phases.test.ts` runs every check below against both the light `@theme` block and the dark block.
 
 The five phases that turn up most in lipid work (Pn3m, Im3m, Ia3d, Hexagonal, Lamellar) get the clearest hue separation. Fm3m and Square are rare and get low-chroma cool neutrals, kept clear of the warm ink tones. Eight hues cannot all stay distinct from each other and from three warm status colours under every type of colour blindness; a simulation shows Hexagonal/Lamellar and Im3m/Ia3d close for deutan and protan viewers. That is why the phase name always travels with the colour (chip text, legend label). `test/phases.test.ts` reads the values from this file and from `styles.css` and asserts: AA on `plate`; at least 0.05 OKLab between every pair of phases and between each phase and the accent, status and ink tokens; and the 30° hue gap for chromatic phases.
 
 ### Status
-- **Success** (oklch 0.520 0.120 162, sage), **Warning** (0.620 0.130 70, amber), **Error** (0.520 0.170 28, red). Paper-tuned for AA. Status-only; never decoration. (Note: the contact-sheet "kept" verdict dot is sage, not a generic green, T-4.)
+- **Success** (oklch 0.520 0.120 162, sage), **Warning** (0.620 0.130 70, amber), **Error** (0.490 0.190 15, crimson). Paper-tuned for AA. Status-only; never decoration. (Note: the contact-sheet "kept" verdict dot is sage, not a generic green, T-4.)
 
 ### Named rules
 **The Semantic Colour Rule.** Every colour is a label (interaction, provenance, phase, status). Decorative colour is a bug.
