@@ -4,7 +4,7 @@ import { workspacePalette, type PaletteLabel, type WorkspacePaletteInput } from 
 import { PLOT_VIEWS } from "../../src/workspace/plotView";
 
 function candidate(id: number, lattice: number): IndexEntry {
-  return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
+  return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
 }
 
 function known(label: string, over: Partial<PaletteLabel> = {}): PaletteLabel {
@@ -15,7 +15,6 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
   const noop = vi.fn();
   return {
     modKey: "Ctrl",
-    sampleName: "A1",
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },

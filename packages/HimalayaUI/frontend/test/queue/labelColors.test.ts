@@ -7,7 +7,7 @@ import { queryKeys } from "../../src/queries";
 import type { SseEvent } from "../../src/lib/queue/types";
 import type { LabelColorEntry } from "../../src/api";
 
-const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "set_tag_color", payload: {} } as const;
+const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "set_tag_color" } as const;
 
 describe("label colour mutations", () => {
   afterEach(() => vi.unstubAllGlobals());

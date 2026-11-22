@@ -49,7 +49,7 @@ describe("compare", () => {
 
   it("takes the median, so one outlier in the window does not move the scale", () => {
     const buffer = { q, I: q.map(() => 1) };
-    const sample = { q, I: q.map((x, i) => (i === q.length - 1 ? 1000 : 2)) };
+    const sample = { q, I: q.map((_x, i) => (i === q.length - 1 ? 1000 : 2)) };
     expect(matchScale(sample, buffer)).toBe(2);
   });
 

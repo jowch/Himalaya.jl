@@ -59,7 +59,7 @@ function captureFetch(): Captured[] {
       source: "manual", excluded: false, label: null,
       name: "n", notes: null, key: "k", value: "v", source_field: "manual",
       kind: "auto", active: true, members: [], peaks: [], predicted_q: [],
-      basis: 0.1, score: 0.9, r_squared: 0.99, lattice_d: 50, ngc: 0.5,
+      basis: 0.1, score: 0.9, r_squared: 0.99, lattice_d: 50,
       status: "candidate", inputs_hash: "h",
       author_id: 3, author: "alice", body: "hi", created_at: "2026-05-03",
       event_id: 9, view_row_id: 100, analysis_inputs_hash: "h1",
@@ -83,106 +83,100 @@ const FLAT_BASE = {
 const SPECS: Spec[] = [
   {
     name: "peakAdd",
-    run: (qc) => peakAddMutator.request(
-      { ...FLAT_BASE, kind: "peak_added", payload: { q: 0.5 },
+    run: () => peakAddMutator.request(
+      { ...FLAT_BASE, kind: "peak_added",
         exposureId: 5, q: 0.5 } as any,
       new AbortController().signal),
   },
   {
     name: "peakRemove",
-    run: (qc) => peakRemoveMutator.request(
-      { ...FLAT_BASE, kind: "peak_removed", payload: { peakId: 7 },
+    run: () => peakRemoveMutator.request(
+      { ...FLAT_BASE, kind: "peak_removed",
         exposureId: 5, peakId: 7 } as any,
       new AbortController().signal),
   },
   {
     name: "peakExclude",
-    run: (qc) => peakExcludeMutator.request(
+    run: () => peakExcludeMutator.request(
       { ...FLAT_BASE, kind: "peak_excluded",
-        payload: { peakId: 7, q: 0.5 },
         exposureId: 5, peakId: 7, q: 0.5 } as any,
       new AbortController().signal),
   },
   {
     name: "peakUnexclude",
-    run: (qc) => peakUnexcludeMutator.request(
+    run: () => peakUnexcludeMutator.request(
       { ...FLAT_BASE, kind: "peak_unexcluded",
-        payload: { peakId: 7, q: 0.5 },
         exposureId: 5, peakId: 7, q: 0.5 } as any,
       new AbortController().signal),
   },
   {
     name: "deleteIndex",
-    run: (qc) => deleteIndexMutator.request(
+    run: () => deleteIndexMutator.request(
       { ...FLAT_BASE, kind: "delete_index",
-        payload: { indexId: 10 }, exposureId: 5, indexId: 10 } as any,
+        exposureId: 5, indexId: 10 } as any,
       new AbortController().signal),
   },
   {
     name: "addAssignmentPhase",
-    run: (qc) => addAssignmentPhaseMutator.request(
-      { ...FLAT_BASE, kind: "assignment_add", payload: { indexId: 10 },
+    run: () => addAssignmentPhaseMutator.request(
+      { ...FLAT_BASE, kind: "assignment_add",
         exposureId: 5, indexId: 10 } as any,
       new AbortController().signal),
   },
   {
     name: "removeAssignmentPhase",
-    run: (qc) => removeAssignmentPhaseMutator.request(
-      { ...FLAT_BASE, kind: "assignment_remove", payload: { indexId: 10 },
+    run: () => removeAssignmentPhaseMutator.request(
+      { ...FLAT_BASE, kind: "assignment_remove",
         exposureId: 5, indexId: 10 } as any,
       new AbortController().signal),
   },
   {
     name: "setSampleCallState",
-    run: (qc) => setSampleCallStateMutator.request(
-      { ...FLAT_BASE, kind: "sample_call_set_state", payload: { state: "form_factor" },
+    run: () => setSampleCallStateMutator.request(
+      { ...FLAT_BASE, kind: "sample_call_set_state",
         sampleId: 1, state: "form_factor" } as any,
       new AbortController().signal),
   },
   {
     name: "customIndex",
-    run: (qc) => customIndexMutator.request(
-      { ...FLAT_BASE, kind: "custom_index_commit", payload: { phase: "Pn3m", basis: 0.15 },
+    run: () => customIndexMutator.request(
+      { ...FLAT_BASE, kind: "custom_index_commit",
         exposureId: 5, phase: "Pn3m", basis: 0.15 } as any,
       new AbortController().signal),
   },
   {
     name: "createSpeculative",
-    run: (qc) => createSpeculativeMutator.request(
+    run: () => createSpeculativeMutator.request(
       { ...FLAT_BASE, kind: "speculative_created",
-        payload: { phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [] },
         exposureId: 5, phase: "Pn3m", anchor_peak_id: 7,
         anchor_ratio: 1, additional: [] } as any,
       new AbortController().signal),
   },
   {
     name: "reanalyzeExposure",
-    run: (qc) => reanalyzeExposureMutator.request(
-      { ...FLAT_BASE, kind: "reanalyze_exposure", payload: {},
+    run: () => reanalyzeExposureMutator.request(
+      { ...FLAT_BASE, kind: "reanalyze_exposure",
         exposureId: 5 } as any,
       new AbortController().signal),
   },
   {
     name: "updateSample",
-    run: (qc) => updateSampleMutator.request(
+    run: () => updateSampleMutator.request(
       { ...FLAT_BASE, kind: "update_sample",
-        payload: { sampleId: 10 },
         sampleId: 10, experimentId: 1, display_name: "x" } as any,
       new AbortController().signal),
   },
   {
     name: "setExposureStatus",
-    run: (qc) => setExposureStatusMutator.request(
+    run: () => setExposureStatusMutator.request(
       { ...FLAT_BASE, kind: "set_exposure_status",
-        payload: { exposureId: 5, status: "rejected" },
         sampleId: 1, exposureId: 5, status: "rejected" } as any,
       new AbortController().signal),
   },
   {
     name: "selectExposure",
-    run: (qc) => selectExposureMutator.request(
+    run: () => selectExposureMutator.request(
       { ...FLAT_BASE, kind: "select_exposure",
-        payload: { exposureId: 6 },
         sampleId: 1, exposureId: 6 } as any,
       new AbortController().signal),
   },

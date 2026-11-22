@@ -9,6 +9,7 @@
     "lint:design": "node scripts/check-design.mjs",
     "lint:ratchet": "node scripts/check-ratchets.mjs",
     "lint": "eslint src",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

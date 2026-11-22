@@ -73,7 +73,7 @@ describe("mutator onSuccess on SSE-wins synthetic responses", () => {
     const httpResponse = {
       id: 99, exposure_id: 42, phase: "Im3m", basis: 1.0, score: 0.9,
       r_squared: 0.99, lattice_d: 100, status: "speculative", kind: "speculative",
-      inputs_hash: "h", peaks: [], predicted_q: [], ngc: -2.0,
+      inputs_hash: "h", peaks: [], predicted_q: [],
     } as any;
     createSpeculativeMutator.onSuccess(
       { exposureId: 42, phase: "Im3m", anchor_peak_id: 1, anchor_ratio: 1.0,

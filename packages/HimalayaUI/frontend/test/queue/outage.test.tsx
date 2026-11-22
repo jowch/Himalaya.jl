@@ -3,7 +3,7 @@ import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useQueueMutation } from "../../src/lib/queue/useQueueMutation";
-import type { Mutator } from "../../src/lib/queue/types";
+import type { Mutator, OpKind } from "../../src/lib/queue/types";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 import * as toast from "../../src/lib/toast";
 import { NetworkError } from "../../src/api";
@@ -126,7 +126,7 @@ describe("an edit made while the server is down", () => {
   it("delivers a frame drop and a later phase call in the order they were made", async () => {
     const upAt = Date.now() + 60_000;
     const applied: string[] = [];
-    const make = (kind: string): Mutator<{ v: string }, Record<string, unknown>, unknown> => ({
+    const make = (kind: OpKind): Mutator<{ v: string }, Record<string, unknown>, unknown> => ({
       kind,
       onMutate: () => ({ restore: () => {} }),
       request: async (p) => {
@@ -137,7 +137,7 @@ describe("an edit made while the server is down", () => {
       onSuccess: () => {},
     });
     const drop = renderHook(() => useQueueMutation(make("set_exposure_status"), { sampleId: 1 }), { wrapper: wrap(qc) });
-    const call = renderHook(() => useQueueMutation(make("add_assignment_phase"), { exposureId: 3 }), { wrapper: wrap(qc) });
+    const call = renderHook(() => useQueueMutation(make("assignment_add"), { exposureId: 3 }), { wrapper: wrap(qc) });
     act(() => drop.result.current.mutate({ v: "drop frame 1" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
     act(() => call.result.current.mutate({ v: "call Pn3m on frame 3" }));

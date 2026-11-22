@@ -6,6 +6,7 @@ import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
+import { makeExposure } from "../helpers/exposure";
 import { useSyncExternalStore } from "react";
 import type { CompareChange, CompareState } from "../../src/api";
 import { applyCompareChange, EMPTY_COMPARES } from "../../src/lib/compares";
@@ -250,16 +251,13 @@ function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): Co
 }
 
 function exposure(id: number, extra: Partial<Exposure> = {}): Exposure {
-  return {
-    id, sample_id: 10, filename: `f${id}.dat`, kind: "file", selected: false, status: null,
-    image_path: null, image_version: "", sources: [], ...extra,
-  } as Exposure;
+  return makeExposure({ id, sample_id: 10, filename: `f${id}.dat`, ...extra });
 }
 
 function index(id: number, phase: string, score: number): IndexEntry {
   return {
     id, exposure_id: 101, phase, basis: 0.1, score, r_squared: 0.99, lattice_d: 100,
-    ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.14],
+    status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.14],
   } as IndexEntry;
 }
 

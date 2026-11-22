@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
 import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, nearestKeptExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
+import { makeExposure } from "../helpers/exposure";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
   return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", ...over };
@@ -9,16 +10,13 @@ function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
 
 function index(id: number, phase: string, score: number | null): IndexEntry {
   return {
-    id, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: null, ngc: null,
+    id, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: null, 
     status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [],
   };
 }
 
 function exposure(id: number, over: Partial<Exposure> = {}): Exposure {
-  return {
-    id, sample_id: 1, filename: `f${id}.tif`, kind: "file", selected: false, status: null,
-    image_path: "x.tif", image_version: "v1", sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
-  };
+  return makeExposure({ id, filename: `f${id}.tif`, image_path: "x.tif", image_version: "v1", ...over });
 }
 
 describe("sampleStatus", () => {
