@@ -11,7 +11,7 @@
     "frontend/src/api.ts": 73,
     "frontend/src/lib/queue/applyRemoteToCache.ts": 81,
     "frontend/src/lib/queue/peakQTol.ts": 6,
-    "frontend/src/pages/ExperimentsHomePage.tsx": 27,
+    "frontend/src/pages/ExperimentsHomePage.tsx": 25,
     "frontend/src/shell/OnboardingFlow.tsx": 7,
     "src/db.jl": 609,
     "src/events.jl": 333,

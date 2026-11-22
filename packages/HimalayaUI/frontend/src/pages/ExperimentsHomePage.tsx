@@ -95,9 +95,6 @@ export function ExperimentsHomePage(): JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  // Empty gallery: the prominent banner CTA carries the call to action, so the
-  // header CTA is redundant — disable it and let the banner drive (note 1).
-  const isEmpty = experiments.isSuccess && list.length === 0;
 
   return (
     <PageFrame width="home" className="px-6 py-8">
@@ -111,7 +108,6 @@ export function ExperimentsHomePage(): JSX.Element {
         <Button
           variant="accent"
           data-testid="new-experiment-cta"
-          disabled={isEmpty}
           onClick={() => navigate("/experiments/new")}
         >
           + New experiment
