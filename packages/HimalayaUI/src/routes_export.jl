@@ -4,72 +4,69 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
     build_export(db, experiment_id) -> Vector{Dict}
 
 Compose the per-sample summary used by both JSON and CSV exports.
-For each exposure, `indices` reflects the active group if one is set,
-otherwise all candidate indices ordered by score DESC.
+Each sample carries its phase call (`call_state`, `phase`, `call_phases`), as
+the Call list shows it. When the sample is called (`indexed` with members),
+each exposure's `indices` are the call's members on that exposure and
+`called` is true; otherwise they are all candidate indices by score.
 """
 function build_export(db::SQLite.DB, experiment_id::Int)
     samples = Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
         [experiment_id]))
+    sids = [Int(sm.id) for sm in samples]
+    states = sample_call_states(db, sids)
+    members = sample_call_members(db, sids)
 
     out = Dict[]
     for sm in samples
         sid  = Int(sm.id)
         labels = [String(r.label) for r in Tables.rowtable(DBInterface.execute(db,
             "SELECT label FROM sample_labels WHERE sample_id = ? AND state = 'confirmed' ORDER BY id", [sid]))]
+        state = get(states, sid, "indexed")
+        ms = get(members, sid, [])
+        summary = call_summary(state, ms)
+        called = summary.phase !== nothing
+        called_ids = Set(m.index_id for m in ms)
 
         exposures = Tables.rowtable(DBInterface.execute(db,
             "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sid]))
 
         ex_out = Dict[]
         for e in exposures
-            eid = Int(e.id)
-            active = Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, kind FROM index_groups
-                 WHERE exposure_id = ? AND active = 1
-                 ORDER BY id DESC LIMIT 1", [eid]))
-            ag_kind   = isempty(active) ? nothing : String(active[1].kind)
-            active_id = isempty(active) ? nothing : Int(active[1].id)
-
-            indices = if active_id === nothing
-                Tables.rowtable(DBInterface.execute(db,
-                    "SELECT phase, basis, score, r_squared, lattice_d
-                     FROM indices WHERE exposure_id = ? ORDER BY score DESC",
-                    [eid]))
-            else
-                Tables.rowtable(DBInterface.execute(db,
-                    "SELECT i.phase, i.basis, i.score, i.r_squared, i.lattice_d
-                     FROM indices i
-                     JOIN index_group_members m ON m.index_id = i.id
-                     WHERE m.group_id = ? ORDER BY i.score DESC", [active_id]))
-            end
-
+            indices = Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, phase, basis, score, r_squared, lattice_d
+                 FROM indices WHERE exposure_id = ? ORDER BY score DESC, id", [Int(e.id)]))
+            called && (indices = filter(ix -> Int(ix.id) in called_ids, indices))
             push!(ex_out, Dict(
-                :filename          => e.filename,
-                :selected          => e.selected != 0,
-                :active_group_kind => ag_kind,
-                :indices           => rows_to_json(indices),
+                :filename => e.filename,
+                :selected => e.selected != 0,
+                :called   => called,
+                :indices  => [delete!(ix, :id) for ix in rows_to_json(indices)],
             ))
         end
 
         push!(out, Dict(
-            :name         => sm.name,
-            :notes        => sm.notes isa Missing ? nothing : sm.notes,
-            :labels       => labels,
-            :exposures    => ex_out,
+            :name        => sm.name,
+            :notes       => sm.notes isa Missing ? nothing : sm.notes,
+            :labels      => labels,
+            :call_state  => state,
+            :phase       => summary.phase,
+            :call_phases => summary.call_phases,
+            :exposures   => ex_out,
         ))
     end
     out
 end
 
 function _export_csv(summary)
-    header = ["sample_name","exposure_filename",
+    header = ["sample_name","exposure_filename","call_state","call_phases",
               "phases","lattice_ds","r_squareds","scores","labels"]
     rows = Vector{Vector{Any}}()
     for sm in summary
         label_str = join(sm[:labels], ";")
+        call_str = join(sm[:call_phases], ";")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], "", "", "", "", "", label_str])
+            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", label_str])
             continue
         end
         for ex in sm[:exposures]
@@ -77,7 +74,7 @@ function _export_csv(summary)
             lds    = join([string(ix[:lattice_d]) for ix in ex[:indices]], ";")
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
-            push!(rows, [sm[:name], ex[:filename],
+            push!(rows, [sm[:name], ex[:filename], sm[:call_state], call_str,
                          phases, lds, r2s, scs, label_str])
         end
     end

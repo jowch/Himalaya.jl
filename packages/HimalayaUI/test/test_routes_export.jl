@@ -37,7 +37,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test occursin("text/csv", HTTP.header(r, "Content-Type"))
         csv_body = String(r.body)
-        @test startswith(csv_body, "sample_name,exposure_filename,phases")
+        @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,phases")
         @test occursin("D1,example_tot", csv_body)
         @test strip(last(split(first(split(csv_body, "\n")), ","))) == "labels"
         @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C")
