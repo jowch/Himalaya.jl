@@ -57,17 +57,25 @@ describe("CandidateList", () => {
     expect(onToggle).toHaveBeenCalledWith(b);
   });
 
-  it("marks a group pressed only when every member is in the call", () => {
+  it("marks a group pressed only when every member is in the call, and dashes its border while only some are", () => {
     const [a, b] = [candidate(1), candidate(2)];
     const { rerender } = render(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set()} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("workspace-bonnet-group").className).not.toContain("border-dashed");
+    rerender(
+      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id])} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+    expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "mixed");
+    expect(screen.getByTestId("workspace-bonnet-group").className).toContain("border-dashed");
     rerender(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id, b!.id])} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("workspace-bonnet-group").className).not.toContain("border-dashed");
   });
 });
