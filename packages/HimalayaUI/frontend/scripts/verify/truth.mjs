@@ -155,7 +155,7 @@ export const INVARIANTS = {
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
   bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup. Unchecked while the experiment has no bridge.",
   bridged_calls_match: "Samples bridged as the same sample show one call: the same call state and the same called phases. Unchecked while the experiment has no bridge.",
-  plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this frame's trace.\" when its trace is held back in late/, and shows the trace otherwise (needs --ui).",
+  plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this image's trace.\" when its trace is held back in late/, and shows the trace otherwise (needs --ui).",
 };
 
 const NEEDS_VIEWS = new Set(["representative_kept", "views_agree", "workspace_status_matches", "rail_matches_call", "plot_matches_trace"]);
@@ -189,7 +189,7 @@ function withinCall(call, allowed) {
 
 export const TRACES_RULE = "Exactly the frames whose trace is held back in late/ are reported as waiting for a trace, and no analysis failed. With --ui, the workspace notice counts exactly those frames.";
 
-export const WAITING_PLOT = "Waiting for this frame's trace.";
+export const WAITING_PLOT = "Waiting for this image's trace.";
 
 export function plotMismatch(frame, plot, held) {
   if (!frame) return null;
@@ -200,7 +200,7 @@ export function plotMismatch(frame, plot, held) {
 function noticeMismatch(held, notice) {
   if (notice === undefined) return null;
   const n = held.length;
-  const says = /(\d+) frames? waiting for a trace/.exec(notice ?? "");
+  const says = /(\d+) images? waiting for a trace/.exec(notice ?? "");
   if (n === 0) return says ? notice : null;
   return says && Number(says[1]) === n ? null : notice ?? "no notice";
 }
@@ -280,7 +280,7 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
       shown.workspace_kept = one.workspaceKept ?? null;
       const keptCount = one.frames.length ? `${one.frames.filter(isKept).length}/${one.frames.length}` : null;
       if (one.workspaceKept !== keptCount) problems.push(`the workspace's frame cards show ${one.workspaceKept ?? "nothing"} kept but the app has ${keptCount ?? "no frames"}`);
-      for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Frame N" thumbnail); check-truth is misreading the app`);
+      for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Image N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
       .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))

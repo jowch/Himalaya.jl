@@ -69,7 +69,7 @@ The Print's recurring patterns live as **closed-look** primitives in `ui/` (Butt
 
 A count that falls must be locked in with `npm run lint:ratchet -- --update` (commit the baseline). `--update` also accepts a rename or split as long as each total does not grow.
 
-`npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on all of `src/`, stories included.
+`npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on all of `src/`, stories included, plus `copy/ui-copy` outside stories (see "UI copy").
 
 This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `ui/**`, `plot/**` and `detector/**`:
 
@@ -79,6 +79,20 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
 Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `main.tsx`, plus the excluded `{ui,plot,detector}/` prefixes).
+
+## UI copy (ENFORCED)
+
+Copy follows the Microsoft, GitLab Pajamas and Polaris guides on the points below. `copy/ui-copy` (`scripts/eslint-ui-copy.mjs`, run by `npm run lint`) checks the mechanical rules, and its diagnostics carry the fix. `test/copy-no-emdash.test.ts` bans em dashes.
+
+- **Hints are full imperative sentences.** Say what to do, not what the control does: "Click to hide.", "⌘-click to subtract from the current trace.", "Press Enter to add it or Esc to close." Never the telegraphic "Click hides." or "Enter removes it" (lint).
+- **Sentences end with a period; names don't.** A tooltip that only names a control ("Keyboard shortcuts", "All experiments") is a short phrase with no period. A string that holds a sentence, or starts with an instruction ("Click to …", "Press …"), ends with one (lint). Placeholders are prompts with no period ("Type to filter").
+- **Sentence case everywhere**: buttons, headings, menu items, tooltips. Capitalise only the first word and proper names (lint flags Title Case of three or more words).
+- **House vocabulary** (lint, user-facing strings only): "image", not "frame" or "exposure" ("exposure time" stays); "label", not "tag"; "Drop"/"Restore", not "mute". Prefer the plain literal verb over a metaphor.
+- **Tooltips add, never hold the only copy.** Don't repeat the visible label, and keep anything important in the visible UI. Tooltips never hold links or buttons; popovers do.
+- **No em dashes.** Use a period, a comma or a colon. The standalone "—" missing-value placeholder is the one exception.
+- **Name things the way the person sees them**: the sample's name, the setup's folder name, the keycap glyph (⌘ on a Mac, Ctrl elsewhere, via `MOD_KEY` from `lib/modKey`).
+
+The rule reads JSX text, the copy props (`title`, `aria-label`, `placeholder`, `label`, `content`, `hint`, …), the copy keys of plain objects (`what`, `hint`, `label`, `message`, …) and any other string shaped like prose (a capitalised word followed by a lowercase one). Identifiers, paths, query keys and `className` are never read. A general prose linter (write-good, alex) was tried on every user-facing string on 2026-11-22: 17 flags, none a real problem, and it missed the telegraphic form, so it is not used.
 
 ## Mutation queue — load-bearing one-liners
 

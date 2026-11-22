@@ -50,12 +50,12 @@ function register_exposures_routes!()
             "SELECT image_path FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "frame not found")))
+            JSON3.write(Dict(:error => "image not found")))
 
         ip = rows[1].image_path
         (ip === nothing || ip isa Missing) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no image for this frame")))
+            JSON3.write(Dict(:error => "no TIFF for this image")))
 
         # The DB stores image_path at ingest, but the source TIFF may have been
         # moved or deleted since. Guard before load_and_lognormalize, which
@@ -132,7 +132,7 @@ function register_exposures_routes!()
             "SELECT id FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "frame not found")))
+            JSON3.write(Dict(:error => "image not found")))
 
         return with_idempotency(db, req) do
             DBInterface.execute(db,
@@ -158,7 +158,7 @@ function register_exposures_routes!()
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "frame not found")))
+            JSON3.write(Dict(:error => "image not found")))
         analysis_dir = String(rows[1].analysis_dir)
 
         # Issue #9: route is now queue-shaped — `with_idempotency` honors the

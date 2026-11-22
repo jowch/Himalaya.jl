@@ -43,7 +43,7 @@ export function ProblemList({ problems, onPick, onAddSetups, onClose }: Props): 
                   onClick={() => { if (p.sample_id !== null) onPick(p.sample_id); }}
                   className="flex w-full flex-col items-start gap-0.5 text-left hover:text-accent"
                 >
-                  <span>{p.filename ?? "Unnamed frame"}{p.sample_name ? ` · ${p.sample_name}` : ""}</span>
+                  <span>{p.filename ?? "Unnamed image"}{p.sample_name ? ` · ${p.sample_name}` : ""}</span>
                   <span className="text-caption text-ink-soft">{reason(p)}</span>
                 </button>
               </li>

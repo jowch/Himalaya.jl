@@ -100,12 +100,12 @@ describe("workspacePalette", () => {
   });
   it("keeps the root order and lists undo and redo only when typed, at the end of App", () => {
     const run = vi.fn();
-    const { groups } = workspacePalette(input({ history: { undo: "dropped frame 2 of A1", redo: "ticked Pn3m on A1", run } }));
+    const { groups } = workspacePalette(input({ history: { undo: "dropped image 2 of A1", redo: "ticked Pn3m on A1", run } }));
     expect(groups.map((g) => g.title)).toEqual(workspacePalette(input()).groups.map((g) => g.title));
     expect(groups[0]!.items[0]!.id).toBe("next-unreviewed");
     const app = groups.find((g) => g.title === "App")!.items;
     const undo = app.find((i) => i.id === "undo")!;
-    expect(undo).toMatchObject({ label: "Undo: dropped frame 2 of A1", typeOnly: true });
+    expect(undo).toMatchObject({ label: "Undo: dropped image 2 of A1", typeOnly: true });
     expect(app.find((i) => i.id === "redo")).toMatchObject({ label: "Redo: ticked Pn3m on A1", typeOnly: true });
     undo.run?.();
     expect(run).toHaveBeenCalledWith("undo");
@@ -133,7 +133,7 @@ describe("workspacePalette", () => {
     const toggle = vi.fn();
     const on = known("37C", { onSample: "confirmed" });
     const { pages } = workspacePalette(input({ labels: { known: [on, known("Buffer", { onSample: "suggested" }), known("x")], colorFor: () => "plum", toggle, create: vi.fn(), recolour: vi.fn() } }));
-    expect(pages.label!.items.map((i) => i.hint)).toEqual(["On this sample, Enter removes it", "Suggested, Enter confirms it", undefined]);
+    expect(pages.label!.items.map((i) => i.hint)).toEqual(["On this sample. Press Enter to remove it.", "Suggested. Press Enter to confirm it.", undefined]);
     pages.label!.items[0]!.run!();
     expect(toggle).toHaveBeenCalledWith(on);
   });

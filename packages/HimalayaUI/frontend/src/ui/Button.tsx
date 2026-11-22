@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 export type ButtonVariant = "solid" | "accent" | "success" | "ghost" | "danger" | "outline" | "outlineAccent" | "outlineSuccess" | "ghostInverse";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> {
   variant?: ButtonVariant;
   armed?: boolean;
   size?: ButtonSize;

@@ -43,7 +43,7 @@ HimalayaDB reads the HimalayaUI database file directly, with no server running. 
 - **Reading while the app writes.** The DB runs in WAL mode. A reader opened while HimalayaUI is writing needs write access to the DB's directory, because SQLite creates the `-wal` and `-shm` sidecars there. Reading a copied `.db` with the app stopped needs no such access.
 - **Traces are opt-in.** Annotations come from the DB alone. `load_trace` reads the `.dat` file from disk and errors clearly if it isn't reachable.
 
-HimalayaUI calls an exposure a "frame". The database and this package keep
+HimalayaUI calls an exposure an "image". The database and this package keep
 "exposure".
 
 ## Upgrading from 0.1

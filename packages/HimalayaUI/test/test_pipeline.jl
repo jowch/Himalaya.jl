@@ -594,7 +594,7 @@ let
                 e
             end
             @test err isa ErrorException
-            @test err !== nothing && occursin("1 frame", err.msg)
+            @test err !== nothing && occursin("1 image", err.msg)
             hashed = [Int(r.id) for r in DBInterface.execute(db,
                 "SELECT id FROM exposures WHERE analysis_inputs_hash IS NOT NULL")]
             @test hashed == [seeded.exposure_ids[2]]

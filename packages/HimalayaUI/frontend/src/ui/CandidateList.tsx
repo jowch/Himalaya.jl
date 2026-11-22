@@ -4,6 +4,7 @@ import type { CallRow } from "../workspace/bonnetGroups";
 import { formatCurvature, gaussianCurvature } from "../workspace/curvature";
 import { Kbd } from "./Kbd";
 import { Note } from "./Note";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   rows: readonly CallRow[];
@@ -22,7 +23,7 @@ const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-tr
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      {rows.length === 0 && <Note>No candidate indices for this frame.</Note>}
+      {rows.length === 0 && <Note>No candidate indices for this image.</Note>}
       {rows.length > 0 && <Rows rows={rows} assigned={assigned} disabled={disabled} onToggle={onToggle} onToggleGroup={onToggleGroup} onHover={onHover} />}
       <button
         type="button"
@@ -63,10 +64,12 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
         >
           <Key n={key} />
           <PhaseChip phase={c.phase} variant="solid" />
-          <span className="min-w-0 truncate whitespace-nowrap text-ink-soft" title={kappa !== null ? `${lattice}, ${formatCurvature(kappa)}` : undefined}>
-            {lattice}
-            {kappa !== null && <span className="ml-1.5 text-xs" data-testid="workspace-candidate-curvature">{formatCurvature(kappa)}</span>}
-          </span>
+          <Tooltip content={kappa !== null ? `${lattice}, ${formatCurvature(kappa)}` : lattice} overflowOnly>
+            <span className="min-w-0 truncate whitespace-nowrap text-ink-soft">
+              {lattice}
+              {kappa !== null && <span className="ml-1.5 text-xs" data-testid="workspace-candidate-curvature">{formatCurvature(kappa)}</span>}
+            </span>
+          </Tooltip>
           <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
         </button>
       </li>

@@ -98,7 +98,7 @@ async function twin(file) {
     for (const [i, exposure] of exposures.entries()) {
       if (exposure.status === "rejected") continue;
       const peaks = await getJson(api, `/api/exposures/${exposure.id}/peaks`);
-      if (peaks.length >= 2 && peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, frame: `Frame ${i + 1}`, peaks });
+      if (peaks.length >= 2 && peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, frame: `Image ${i + 1}`, peaks });
     }
   }
   if (!frames.length) report({ ok: false, error: "no kept frame of an unassigned sample has two or more peaks, one of them auto" });

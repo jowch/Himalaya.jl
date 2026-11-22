@@ -148,7 +148,7 @@ export function WorkspacePlot({
     );
   }
 
-  const empty = trace ? (trace.q.length < 2 ? "This frame's trace has no points." : undefined) : emptyMessage ?? "";
+  const empty = trace ? (trace.q.length < 2 ? "This image's trace has no points." : undefined) : emptyMessage ?? "";
   if (empty !== undefined || !trace) {
     return (
       <div role={empty ? "status" : undefined} className="flex items-center justify-center rounded-sm bg-paper-sunk px-6 text-center text-base text-ink-soft" style={{ height }} data-testid="workspace-trace-empty">

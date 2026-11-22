@@ -453,7 +453,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: " " });
     const dialog = screen.getByRole("dialog", { name: "Detector image" });
     expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("src")).toBe("/api/exposures/101/image?v=7");
-    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 2 · f101.dat");
+    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Image 2 of 2 · f101.dat");
     fireEvent.keyDown(dialog, { key: " " });
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
     fireEvent.keyDown(window, { key: " " });
@@ -472,18 +472,18 @@ describe("WorkspacePage", () => {
     const dialog = screen.getByRole("dialog", { name: "Detector image" });
     expect(dialog.querySelectorAll("img")).toHaveLength(3);
     const caption = screen.getByTestId("workspace-detector-caption");
-    expect(caption).toHaveTextContent("Frame 3 of 3 · f102.dat");
+    expect(caption).toHaveTextContent("Image 3 of 3 · f102.dat");
     expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("data-exposure-id")).toBe("102");
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
-    expect(caption).toHaveTextContent("Frame 2 of 3 · f101.dat");
+    expect(caption).toHaveTextContent("Image 2 of 3 · f101.dat");
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
-    expect(caption).toHaveTextContent("Frame 1 of 3");
+    expect(caption).toHaveTextContent("Image 1 of 3");
     fireEvent.keyDown(dialog, { key: "x" });
     fireEvent.keyDown(dialog, { key: "x", repeat: true });
     expect(calls.filter((c) => c.hook === "status").map((c) => c.arg)).toEqual([{ exposureId: 100, status: "rejected" }]);
     expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
-    expect(caption).toHaveTextContent("Frame 2 of 3");
-    expect(currentFrame()).toBe("Frame 2");
+    expect(caption).toHaveTextContent("Image 2 of 3");
+    expect(currentFrame()).toBe("Image 2");
   });
 
   it("does not drop from the enlarged view before a user is set", () => {
@@ -605,7 +605,7 @@ describe("WorkspacePage", () => {
     };
     renderAt("/experiments/1/workspace/10");
     const notice = screen.getByTestId("workspace-notice");
-    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 frames waiting for a trace · 1 analysis failed");
+    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 images waiting for a trace · 1 analysis failed");
     fireEvent.click(within(notice).getByRole("button", { name: "Details" }));
     const rows = screen.getAllByTestId("problem-row");
     expect(rows).toHaveLength(3);
@@ -820,7 +820,7 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(101, { incident_monitor: -0.1 })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent(
-      "No integrated trace for this frame. I₀ reads below zero, so the beam was likely off.",
+      "No integrated trace for this image. I₀ reads below zero, so the beam was likely off.",
     );
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
@@ -829,7 +829,7 @@ describe("WorkspacePage", () => {
     state.traceError = true;
     state.traceErr = new ApiError(404, ".dat file not found", null);
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this image.");
   });
 
   it("says a frame is waiting for its trace when ingest reports it pending, matching the notice", () => {
@@ -840,8 +840,8 @@ describe("WorkspacePage", () => {
       { exposure_id: 101, filename: "f101", sample_id: 10, sample_name: "S", problem: "no_trace", reason: "no trace" },
     ] };
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
-    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 frame waiting for a trace");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this image's trace.");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 image waiting for a trace");
   });
 
   it("keeps saying no integrated trace when only another frame is pending", () => {
@@ -852,12 +852,12 @@ describe("WorkspacePage", () => {
       { exposure_id: 999, filename: "f999", sample_id: 11, sample_name: "T", problem: "no_trace", reason: "no trace" },
     ] };
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this frame.");
+    expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this image.");
   });
 
   it("opens on the representative frame", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(currentFrame()).toBe("Frame 2");
+    expect(currentFrame()).toBe("Image 2");
   });
 
   it("ranks candidates by score and number keys toggle them on the shown exposure", () => {
@@ -886,7 +886,7 @@ describe("WorkspacePage", () => {
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     rerender(page("/experiments/1/workspace/10"));
-    expect(currentFrame()).toBe("Frame 1");
+    expect(currentFrame()).toBe("Image 1");
     fireEvent.keyDown(window, { key: "2" });
     expect(calls[1]).toEqual({ hook: "add", boundTo: 100, arg: 1 });
   });
@@ -895,10 +895,10 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(currentFrame()).toBe("Frame 2, dropped");
+    expect(currentFrame()).toBe("Image 2, dropped");
     fireEvent.keyDown(window, { key: "x" });
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
-    expect(currentFrame()).toBe("Frame 2, dropped");
+    expect(currentFrame()).toBe("Image 2, dropped");
   });
 
   it("X keeps the dropped frame in view when no other frame is kept", () => {
@@ -906,17 +906,17 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "x" });
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
-    expect(currentFrame()).toBe("Frame 2");
+    expect(currentFrame()).toBe("Image 2");
   });
 
   it("a card's Drop button drops that frame and leaves the view on the shown one", () => {
     state.exposures = [exposure(100), exposure(101), exposure(102)];
     renderAt("/experiments/1/workspace/10");
-    expect(currentFrame()).toBe("Frame 3");
+    expect(currentFrame()).toBe("Image 3");
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
     fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
-    expect(currentFrame()).toBe("Frame 3");
+    expect(currentFrame()).toBe("Image 3");
   });
 
   it("the shown frame's own Drop button moves to the nearest kept frame", () => {
@@ -925,7 +925,7 @@ describe("WorkspacePage", () => {
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
     fireEvent.click(within(cards[2]!).getByRole("button", { name: "Drop" }));
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 102, status: "rejected" } });
-    expect(currentFrame()).toBe("Frame 2");
+    expect(currentFrame()).toBe("Image 2");
   });
 
   it("holding X drops only the shown frame, not a run of frames", () => {
@@ -935,7 +935,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "x", repeat: true });
     fireEvent.keyDown(window, { key: "x", repeat: true });
     expect(calls.filter((c) => c.hook === "status")).toHaveLength(1);
-    expect(currentFrame()).toBe("Frame 2");
+    expect(currentFrame()).toBe("Image 2");
   });
 
   describe("undo and redo", () => {
@@ -1057,12 +1057,12 @@ describe("WorkspacePage", () => {
       server.saving = true;
       await undo();
       expect(ops()).toEqual([]);
-      expect(toasts.at(-1)).toBe("Saving your last edit first, then undoing: dropped frame 2 of A1");
+      expect(toasts.at(-1)).toBe("Saving your last edit first, then undoing: dropped image 2 of A1");
       server.saving = false;
       server.saved?.();
       await settle();
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
-      expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+      expect(toasts.at(-1)).toBe("Undone: dropped image 2 of A1");
     });
 
     it("undoes a drop by restoring the frame", async () => {
@@ -1070,7 +1070,7 @@ describe("WorkspacePage", () => {
       fireEvent.keyDown(window, { key: "x" });
       await press({ key: "z", metaKey: true });
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
-      expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+      expect(toasts.at(-1)).toBe("Undone: dropped image 2 of A1");
     });
 
     it("leaves a frame alone when someone else restored it before the undo", async () => {
@@ -1079,7 +1079,7 @@ describe("WorkspacePage", () => {
       server.status.set(101, null);
       await undo();
       expect(ops()).toEqual([]);
-      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: dropped frame 2 of A1");
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: dropped image 2 of A1");
     });
 
     it("leaves a label's colour alone when someone else recoloured it before the undo", async () => {
@@ -1101,7 +1101,7 @@ describe("WorkspacePage", () => {
       calls.length = 0;
       await redo();
       expect(ops()).toEqual([]);
-      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: dropped frame 2 of A1");
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: dropped image 2 of A1");
     });
 
     it("redoes a label recolour only while the label still has the colour the undo restored", async () => {
@@ -1399,7 +1399,7 @@ describe("WorkspacePage", () => {
       fireEvent.keyDown(window, { key: "x" });
       fireEvent.keyDown(window, { key: "k", ctrlKey: true });
       fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "undo" } });
-      fireEvent.click(screen.getByRole("option", { name: /Undo: dropped frame 2 of A1/ }));
+      fireEvent.click(screen.getByRole("option", { name: /Undo: dropped image 2 of A1/ }));
       await settle();
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
     });
@@ -1417,10 +1417,10 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(currentFrame()).toBe("Frame 2, dropped");
+    expect(currentFrame()).toBe("Image 2, dropped");
     fireEvent.keyDown(window, { key: "2" });
     expect(calls).toEqual([]);
-    expect(screen.getByText("This frame is dropped. Restore it to call a phase.")).toBeInTheDocument();
+    expect(screen.getByText("This image is dropped. Restore it to call a phase.")).toBeInTheDocument();
   });
 
   it("ticks a phase called on another frame and unticks it there, even when that frame is dropped", () => {
@@ -1431,7 +1431,7 @@ describe("WorkspacePage", () => {
       members: [{ index_id: 7, exposure_id: 101, phase: "Pn3m" }],
     };
     renderAt("/experiments/1/workspace/10");
-    expect(currentFrame()).toBe("Frame 1");
+    expect(currentFrame()).toBe("Image 1");
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     expect(rows[0]).toHaveTextContent("Pn3m");
     expect(rows[0]).toHaveAttribute("aria-pressed", "true");
@@ -1517,7 +1517,7 @@ describe("WorkspacePage", () => {
     runFromPalette("label");
     const page = screen.getByRole("dialog", { name: "Label" });
     expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual([
-      "37C, On this sample, Enter removes it",
+      "37C, On this sample. Press Enter to remove it.",
       "retake",
       "Buffer",
       "Calibrant",
@@ -1811,7 +1811,7 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(currentFrame()).toBe("Frame 2, dropped");
+    expect(currentFrame()).toBe("Image 2, dropped");
     clickPlotAt(0.15);
     expect(calls).toEqual([]);
   });
@@ -2441,7 +2441,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "ArrowRight" });
     fireEvent.keyDown(window, { key: "ArrowRight", shiftKey: true });
     expect(within(panel).getByText(/Add Pn3m 105\.5 Å/)).toBeInTheDocument();
-    expect(currentFrame()).toBe("Frame 2");
+    expect(currentFrame()).toBe("Image 2");
     fireEvent.keyDown(window, { key: "Enter" });
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
     expect(calls).toHaveLength(1);
@@ -2481,7 +2481,7 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(currentFrame()).toBe("Frame 2, dropped");
+    expect(currentFrame()).toBe("Image 2, dropped");
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
   });
@@ -2532,7 +2532,7 @@ describe("WorkspacePage", () => {
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Frame" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Image" })).toBeInTheDocument();
   });
 
   it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
@@ -2541,7 +2541,7 @@ describe("WorkspacePage", () => {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
       const call = within(tools).getByRole("button", { name: /Call/ });
-      const exposure = within(tools).getByRole("button", { name: /^Frame/ });
+      const exposure = within(tools).getByRole("button", { name: /^Image/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
@@ -2551,8 +2551,8 @@ describe("WorkspacePage", () => {
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-      expect(within(tools).queryByRole("button", { name: /^Frame/ })).toBeNull();
-      expect(within(tools).getByRole("heading", { name: /^Frame/ })).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /^Image/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /^Image/ })).toBeInTheDocument();
       expect(within(tools).queryByText("File")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
@@ -2567,11 +2567,11 @@ describe("WorkspacePage", () => {
       state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
       const { unmount } = renderAt("/experiments/1/workspace/10");
       const tools = () => screen.getByRole("complementary", { name: "Tools" });
-      const frame = () => within(tools()).getByRole("button", { name: /^Frame/ }).closest("section")!;
+      const frame = () => within(tools()).getByRole("button", { name: /^Image/ }).closest("section")!;
       expect(frame().querySelector("[data-section-folded]")).toHaveTextContent("A1");
-      fireEvent.click(screen.getByRole("button", { name: "Frame 1 of A3" }));
+      fireEvent.click(screen.getByRole("button", { name: "Image 1 of A3" }));
       expect(frame().querySelector("[data-section-folded]")).toHaveTextContent("A3");
-      fireEvent.click(within(tools()).getByRole("button", { name: /^Frame/ }));
+      fireEvent.click(within(tools()).getByRole("button", { name: /^Image/ }));
       expect(frame().querySelector("[data-section-folded]")).toBeNull();
       unmount();
       state.bridges = [];
@@ -2586,7 +2586,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Call", "Indexing", "Frame"]);
+    expect(headings).toEqual(["Call", "Indexing", "Image"]);
   });
 
   it("the Custom index button in the indexing section opens a custom index", () => {
@@ -2608,7 +2608,7 @@ describe("WorkspacePage", () => {
   it("lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height", () => {
     state.exposures = [exposure(100), exposure(101)];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("KindSingle");
     expect(text).toContain("Exposure—");
@@ -2619,7 +2619,7 @@ describe("WorkspacePage", () => {
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
     expect(text).toContain("I₀1.501");
@@ -2631,7 +2631,7 @@ describe("WorkspacePage", () => {
       timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
     })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Acquired2026-04-26 18:20:27");
     expect(text).toContain("Flight tube700 mm");
@@ -2641,7 +2641,7 @@ describe("WorkspacePage", () => {
 
   it("keeps the new .prp rows with a dash when the frame has no .prp", () => {
     renderAt("/experiments/1/workspace/10");
-    const text = screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent ?? "";
+    const text = screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent ?? "";
     for (const k of ["Acquired", "Flight tube", "Energy", "Detector"]) expect(text).toContain(`${k}—`);
   });
 
@@ -2748,8 +2748,8 @@ describe("WorkspacePage", () => {
   it("moving to another frame closes the custom index", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
-    fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
-    expect(currentFrame()).toBe("Frame 1");
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
+    expect(currentFrame()).toBe("Image 1");
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
   });
 
@@ -2844,10 +2844,10 @@ describe("WorkspacePage", () => {
   });
   it("opens on the frame a link names, and falls back to the representative for a frame of another sample", () => {
     const { unmount } = renderAt("/experiments/1/workspace/10?exposure=100");
-    expect(currentFrame()).toBe("Frame 1");
+    expect(currentFrame()).toBe("Image 1");
     unmount();
     renderAt("/experiments/1/workspace/10?exposure=999");
-    expect(currentFrame()).toBe("Frame 2");
+    expect(currentFrame()).toBe("Image 2");
   });
 
   it("0 marks the frame as no phase (form factor), and 0 again clears it", () => {
@@ -2859,8 +2859,8 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "form_factor" }]);
     calls.length = 0;
     state.assignment = { exposure_id: 101, state: "form_factor", members: [] };
-    fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Frame 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 2" }));
     expect(screen.getByTestId("workspace-form-factor")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("workspace-form-factor"));
     expect(calls).toEqual([{ hook: "state", boundTo: 10, arg: "null" }]);
@@ -2888,18 +2888,18 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     const frames = screen.getByTestId("workspace-exposures");
     expect(within(frames).getAllByTestId("frame-group-header").map((h) => h.textContent)).toEqual(["A1 in Short pipe", "A3 in Long pipe"]);
-    expect(within(frames).getAllByRole("button", { name: /^Frame \d/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
-      "Frame 1", "Frame 2", "Frame 1 of A3 in Long pipe", "Frame 2 of A3 in Long pipe", "Frame 3 of A3 in Long pipe",
+    expect(within(frames).getAllByRole("button", { name: /^Image \d/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Image 1", "Image 2", "Image 1 of A3 in Long pipe", "Image 2 of A3 in Long pipe", "Image 3 of A3 in Long pipe",
     ]);
-    expect(screen.getByText("Frame 2 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent).toContain("SampleA1 in Short pipe");
-    fireEvent.click(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" }));
-    expect(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("Frame 2 of 3")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
-    expect(screen.getByTitle("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByText("Image 2 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA1 in Short pipe");
+    fireEvent.click(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" }));
+    expect(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("Image 2 of 3")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
+    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: " " });
-    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 3, A3 in Long pipe");
+    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Image 2 of 3, A3 in Long pipe");
     fireEvent.keyDown(window, { key: " " });
   });
 
@@ -2918,9 +2918,9 @@ describe("WorkspacePage", () => {
     state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
     renderAt("/experiments/1/workspace/10?exposure=101");
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(screen.getByRole("button", { name: "Frame 1 of A3" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: "Image 1 of A3" })).toHaveAttribute("aria-current", "true");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
-    expect(screen.getByRole("button", { name: "Frame 2" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: "Image 2" })).toHaveAttribute("aria-current", "true");
   });
 
   it("dropping a same sample's frame drops it on that sample, and undo restores it there", async () => {
@@ -2929,8 +2929,8 @@ describe("WorkspacePage", () => {
     state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12 })]]]);
     state.exposures = [...state.exposures, exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12 })];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.click(screen.getByRole("button", { name: "Frame 1 of A3" }));
-    const tile = screen.getByRole("button", { name: "Frame 1 of A3" }).closest("li")!;
+    fireEvent.click(screen.getByRole("button", { name: "Image 1 of A3" }));
+    const tile = screen.getByRole("button", { name: "Image 1 of A3" }).closest("li")!;
     fireEvent.click(within(tile).getByRole("button", { name: "Drop" }));
     expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"]]);
     expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
@@ -2948,7 +2948,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as A3")).toHaveTextContent("Same as A3");
+    expect(screen.getByText("Same as A3")).toBeInTheDocument();
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='12']")).toBeNull();
     expect(screen.getByTestId("workspace-compare-bar").querySelector("[data-compare-chip]")).toBeNull();
     const list = screen.getByTestId("workspace-samples");
@@ -3002,7 +3002,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(keep, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(calls.filter((c) => c.hook === "op:bridge").map((c) => c.arg)).toEqual([[10, 12, 12]]));
-    fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -3059,7 +3059,7 @@ describe("WorkspacePage", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }];
     act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as MO_H2O in setup2")).toBeInTheDocument();
+    expect(screen.getByText("Same as MO_H2O in setup2")).toBeInTheDocument();
     expect(within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: "MO_PEG5, setup2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "c" });
     const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
@@ -3076,7 +3076,7 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as A1 in setup1")).toBeInTheDocument();
+    expect(screen.getByText("Same as A1 in setup1")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
     expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();

@@ -1,3 +1,5 @@
+import { Tooltip } from "./Tooltip";
+
 export interface SuggestionItem {
   key: string;
   name: string;
@@ -25,25 +27,26 @@ export function SuggestionList({ id, label, items, active, onPick, note, testId,
       <ul id={id} role="listbox" aria-label={label} className="py-1">
         {items.map((item, i) => (
           <li key={item.key} role="none">
-            <button
-              type="button"
-              tabIndex={-1}
-              id={suggestionOptionId(id, i)}
-              role="option"
-              aria-selected={i === active}
-              aria-label={item.hint === undefined ? item.name : `${item.name}, ${item.hint}`}
-              data-active={i === active ? "true" : undefined}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => onPick(i)}
-              title={item.title}
-              className={
-                "flex w-full items-baseline gap-3 px-3 py-1.5 text-left text-sm transition-colors " +
-                (i === active ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink hover:bg-paper-sunk")
-              }
-            >
-              <span className={"min-w-0 flex-1 truncate" + (item.strong === true ? " text-ink" : "")}>{item.name}</span>
-              {item.hint !== undefined && <span className="shrink-0 text-caption text-ink-soft">{item.hint}</span>}
-            </button>
+            <Tooltip content={item.title}>
+              <button
+                type="button"
+                tabIndex={-1}
+                id={suggestionOptionId(id, i)}
+                role="option"
+                aria-selected={i === active}
+                aria-label={item.hint === undefined ? item.name : `${item.name}, ${item.hint}`}
+                data-active={i === active ? "true" : undefined}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onPick(i)}
+                className={
+                  "flex w-full items-baseline gap-3 px-3 py-1.5 text-left text-sm transition-colors " +
+                  (i === active ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink hover:bg-paper-sunk")
+                }
+              >
+                <span className={"min-w-0 flex-1 truncate" + (item.strong === true ? " text-ink" : "")}>{item.name}</span>
+                {item.hint !== undefined && <span className="shrink-0 text-caption text-ink-soft">{item.hint}</span>}
+              </button>
+            </Tooltip>
           </li>
         ))}
       </ul>
