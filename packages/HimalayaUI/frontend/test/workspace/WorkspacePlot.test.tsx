@@ -222,6 +222,60 @@ describe("WorkspacePlot", () => {
     expect(screen.getByTestId("workspace-trace").querySelector('[data-role="q-readout"]')).toBeNull();
   });
 
+  it("draws a dashed crosshair at the readout's q, under the peak markers, in every view and zoom", () => {
+    if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
+    const peaks = [{ id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
+    const { rerender } = render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} />);
+    const svg = (): Element => screen.getByTestId("workspace-trace");
+    const crosshair = (): Element | null => svg().querySelector('[data-role="crosshair"]');
+    expect(crosshair()).toBeNull();
+    const frame = svg().parentElement!;
+    const plotWidth = 640 - PLOT_MARGINS.left - PLOT_MARGINS.right;
+    const at = plotWidth * 0.25;
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + at, clientY: 100 });
+    const line = crosshair()!;
+    expect(Number(line.getAttribute("x1"))).toBeCloseTo(at, 6);
+    expect(line.getAttribute("x2")).toBe(line.getAttribute("x1"));
+    expect(Number(line.getAttribute("y1"))).toBe(0);
+    expect(Number(line.getAttribute("y2"))).toBe(PLOT_HEIGHT - PLOT_MARGINS.top - PLOT_MARGINS.bottom);
+    expect(line.getAttribute("stroke-dasharray")).toBeTruthy();
+    expect(line.closest('[pointer-events="none"]') ?? (line.getAttribute("pointer-events") === "none" ? line : null)).not.toBeNull();
+    const glyphs = svg().querySelector('[data-role="peak-glyph"]')!;
+    expect(line.compareDocumentPosition(glyphs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const view of ["linear", "loglog", "kratky"] as const) {
+      rerender(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} view={view} />);
+      fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + at, clientY: 100 });
+      const readout = Number(svg().querySelector('[data-role="q-readout"]')!.textContent!.match(/q ([\d.]+)/)![1]);
+      expect(readout).toBeGreaterThan(0);
+      expect(Number(crosshair()!.getAttribute("x1"))).toBeCloseTo(at, 6);
+    }
+    rerender(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} xDomain={[0.1, 0.2]} />);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + at, clientY: 100 });
+    expect(svg().querySelector('[data-role="q-readout"]')!.textContent).toMatch(/^q 0\.12/);
+    expect(Number(crosshair()!.getAttribute("x1"))).toBeCloseTo(at, 6);
+    fireEvent.pointerLeave(frame);
+    expect(crosshair()).toBeNull();
+  });
+
+  it("colours the peaks a hovered call claims and dims the rest, without moving any marker", () => {
+    const peaks = [
+      { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+      { id: 2, exposure_id: 1, q: 0.15, intensity: 8, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+      { id: 3, exposure_id: 1, q: 0.2, intensity: 6, prominence: null, sharpness: null, source: "manual" as const, excluded: false },
+    ];
+    const glyph = (key: string): Element => screen.getByTestId("workspace-trace").querySelector(`[data-peak-key="${key}"]`)!;
+    const { rerender } = render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} />);
+    const before = ["auto:1", "auto:2", "manual:3"].map((k) => glyph(k).getAttribute("points"));
+    for (const k of ["auto:1", "auto:2", "manual:3"]) expect(glyph(k).getAttribute("opacity")).toBeNull();
+    rerender(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} highlight={new Map([["auto:1", "var(--color-phase-pn3m)"], ["manual:3", "var(--color-phase-im3m)"]])} />);
+    expect(glyph("auto:1").getAttribute("fill")).toBe("var(--color-phase-pn3m)");
+    expect(glyph("manual:3").getAttribute("fill")).toBe("var(--color-phase-im3m)");
+    expect(glyph("auto:1").getAttribute("opacity")).toBeNull();
+    expect(Number(glyph("auto:2").getAttribute("opacity"))).toBeLessThan(1);
+    expect(glyph("auto:2").getAttribute("fill")).toBe("var(--color-ink)");
+    expect(["auto:1", "auto:2", "manual:3"].map((k) => glyph(k).getAttribute("points"))).toEqual(before);
+  });
+
   const kpeaks = [
     { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
     { id: 1, exposure_id: 1, q: 0.15, intensity: 8, prominence: null, sharpness: null, source: "manual" as const, excluded: true },

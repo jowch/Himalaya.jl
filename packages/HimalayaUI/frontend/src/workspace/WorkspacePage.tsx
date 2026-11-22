@@ -90,6 +90,7 @@ import { CandidateList } from "../ui/CandidateList";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
 import { MainSection, SampleHeading, Section } from "../ui/Section";
+import { claimedPeaks } from "./claimedPeaks";
 import { CustomIndexButton } from "../ui/CustomIndexButton";
 import { LabelRow } from "../ui/LabelRow";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
@@ -504,6 +505,11 @@ export function WorkspacePage(): JSX.Element {
     if (draft) return [{ id: -1, qs: draftQs, color: phaseColor(draft.phase) }];
     return candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
   }, [candidates, hoverIds, draft, draftQs]);
+
+  const highlight = useMemo(
+    () => (draft ? null : claimedPeaks(candidates.filter((c) => hoverIds?.includes(c.id)), peaks.data ?? [])),
+    [draft, candidates, hoverIds, peaks.data],
+  );
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const nameOf = useCallback((rid: number) => sampleNames.get(rid) ?? `sample ${rid}`, [sampleNames]);
@@ -1214,6 +1220,7 @@ export function WorkspacePage(): JSX.Element {
                       : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
+                  highlight={highlight}
                   compares={compares}
                   {...(minusOn && difference ? { difference } : {})}
                   xDomain={shownDomain}
