@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { makeClient } from "./test-utils";
 import {
   useSetExposureStatus,
-  useSelectExposure,
   queryKeys,
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
@@ -14,7 +13,6 @@ import { makeExposure } from "./helpers/exposure";
 
 const SAMPLE_ID = 10;
 const EXPOSURE_ID = 100;
-const OTHER_EXPOSURE_ID = 101;
 
 function withClient() {
   const client = makeClient();
@@ -84,63 +82,6 @@ describe("queries — exposure mutations (queue-driven)", () => {
       await waitFor(() => {
         const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
         expect(list[0].status).toBeNull();
-      });
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // useSelectExposure
-  // -------------------------------------------------------------------------
-
-  describe("useSelectExposure", () => {
-    it("flips selected to the targeted exposure optimistically", () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        frame({ id: EXPOSURE_ID, selected: true }),
-        frame({ id: OTHER_EXPOSURE_ID, selected: false }),
-      ]);
-      vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
-      const { result } = renderHook(
-        () => useSelectExposure(SAMPLE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(OTHER_EXPOSURE_ID); });
-      const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-      expect(list.find((e) => e.id === EXPOSURE_ID)!.selected).toBe(false);
-      expect(list.find((e) => e.id === OTHER_EXPOSURE_ID)!.selected).toBe(true);
-    });
-
-    it("retains the selection after success", async () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        frame({ id: EXPOSURE_ID, selected: true }),
-        frame({ id: OTHER_EXPOSURE_ID, selected: false }),
-      ]);
-      mockOnce(200, { id: OTHER_EXPOSURE_ID, selected: true });
-      const { result } = renderHook(
-        () => useSelectExposure(SAMPLE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(OTHER_EXPOSURE_ID); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list.find((e) => e.id === OTHER_EXPOSURE_ID)!.selected).toBe(true);
-      });
-    });
-
-    it("rolls back selection on 4xx", async () => {
-      const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        frame({ id: EXPOSURE_ID, selected: true }),
-        frame({ id: OTHER_EXPOSURE_ID, selected: false }),
-      ]);
-      mockOnce(409, { error: "conflict" });
-      const { result } = renderHook(
-        () => useSelectExposure(SAMPLE_ID), { wrapper },
-      );
-      act(() => { result.current.mutate(OTHER_EXPOSURE_ID); });
-      await waitFor(() => {
-        const list = client.getQueryData(queryKeys.exposures(SAMPLE_ID)) as Exposure[];
-        expect(list.find((e) => e.id === EXPOSURE_ID)!.selected).toBe(true);
-        expect(list.find((e) => e.id === OTHER_EXPOSURE_ID)!.selected).toBe(false);
       });
     });
   });

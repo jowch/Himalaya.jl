@@ -266,12 +266,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
-    case "select_exposure": {
-      const sampleId = payload?.sample_id as number;
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) });
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-      break;
-    }
     case "analyze_run": {
       applyPostState();
       if (payload?.trace_hash_before !== payload?.trace_hash_after) {

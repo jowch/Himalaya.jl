@@ -91,7 +91,7 @@ Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), ex
 
 ## Exposure-state quirks
 
-- **`exposures.selected` is sample-scoped LWW.** `PATCH /api/exposures/:id/select` clears `selected = 0` across all exposures in the sample, then sets one. Under multiplayer this is intentional — concurrent selects produce a single resolved value. **Don't add If-Match to this route.**
+- **The representative frame is the newest kept frame.** `representative_exposure_id` derives it; nothing stores it. The old `exposures.selected` column and `PATCH /api/exposures/:id/select` were removed, and `select_exposure` log rows replay as a retired kind.
 
 ## Phase-type serialization
 

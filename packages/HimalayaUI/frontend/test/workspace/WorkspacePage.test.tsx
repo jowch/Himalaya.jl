@@ -311,7 +311,7 @@ beforeEach(() => {
     sample(13, "A4"),
     { ...sample(99, "other"), experiment_id: 2 },
   ];
-  state.exposures = [exposure(100), exposure(101, { selected: true })];
+  state.exposures = [exposure(100), exposure(101)];
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.sampleCall = undefined;
@@ -417,7 +417,7 @@ describe("WorkspacePage", () => {
   });
 
   it("holding Space opens the detector view once and does not close it", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, image_path: "/x.tif" })];
+    state.exposures = [exposure(100), exposure(101, { image_path: "/x.tif" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: " " });
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: " ", repeat: true });
@@ -425,7 +425,7 @@ describe("WorkspacePage", () => {
   });
 
   it("Space enlarges the shown frame's detector image, and Space or Esc closes it", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, image_path: "/x.tif", image_version: "7" })];
+    state.exposures = [exposure(100), exposure(101, { image_path: "/x.tif", image_version: "7" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: " " });
     const dialog = screen.getByRole("dialog", { name: "Detector image" });
@@ -441,7 +441,7 @@ describe("WorkspacePage", () => {
   it("flips through frames inside the enlarged view, and dropping one moves to the nearest kept frame without closing it", () => {
     state.exposures = [
       exposure(100, { image_path: "/a.tif" }),
-      exposure(101, { selected: true, image_path: "/b.tif" }),
+      exposure(101, { image_path: "/b.tif" }),
       exposure(102, { image_path: "/c.tif" }),
     ];
     renderAt("/experiments/1/workspace/10");
@@ -449,11 +449,10 @@ describe("WorkspacePage", () => {
     const dialog = screen.getByRole("dialog", { name: "Detector image" });
     expect(dialog.querySelectorAll("img")).toHaveLength(3);
     const caption = screen.getByTestId("workspace-detector-caption");
-    expect(caption).toHaveTextContent("Frame 2 of 3");
-    fireEvent.keyDown(dialog, { key: "ArrowRight" });
     expect(caption).toHaveTextContent("Frame 3 of 3 · f102.dat");
     expect(dialog.querySelector("img:not([aria-hidden])")!.getAttribute("data-exposure-id")).toBe("102");
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
+    expect(caption).toHaveTextContent("Frame 2 of 3 · f101.dat");
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
     expect(caption).toHaveTextContent("Frame 1 of 3");
     fireEvent.keyDown(dialog, { key: "x" });
@@ -466,7 +465,7 @@ describe("WorkspacePage", () => {
 
   it("does not drop from the enlarged view before a user is set", () => {
     state.username = undefined;
-    state.exposures = [exposure(100, { selected: true, image_path: "/a.tif" })];
+    state.exposures = [exposure(100, { image_path: "/a.tif" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: " " });
     fireEvent.keyDown(screen.getByRole("dialog", { name: "Detector image" }), { key: "x" });
@@ -742,7 +741,7 @@ describe("WorkspacePage", () => {
 
   it("says the detector recorded nothing when the shown frame's trace is dark, and adds I₀'s sign as support", () => {
     state.trace = makeTrace(0.001);
-    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { incident_monitor: -0.1 })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent(
       "No counts on the detector: the beam was likely off or the shutter closed. I₀ also reads below zero.",
@@ -751,7 +750,7 @@ describe("WorkspacePage", () => {
 
   it("says the detector recorded nothing on a dark trace even when I₀ looks fine", () => {
     state.trace = makeTrace(0.001);
-    state.exposures = [exposure(101, { selected: true, incident_monitor: 1.5 })];
+    state.exposures = [exposure(101, { incident_monitor: 1.5 })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-plot-notice").textContent).toBe(
       "No counts on the detector: the beam was likely off or the shutter closed.",
@@ -760,7 +759,7 @@ describe("WorkspacePage", () => {
 
   it("never calls a frame with counts beam-off, whatever I₀ reads", () => {
     state.trace = makeTrace(20);
-    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.exposures = [exposure(101, { incident_monitor: -0.1 })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
   });
@@ -768,7 +767,7 @@ describe("WorkspacePage", () => {
   it("says a frame has no integrated trace instead of offering a retry, with I₀'s sign as a hint", () => {
     state.traceError = true;
     state.traceErr = new ApiError(404, ".dat file not found", null);
-    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.exposures = [exposure(101, { incident_monitor: -0.1 })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent(
       "No integrated trace for this frame. I₀ reads below zero, so the beam was likely off.",
@@ -786,7 +785,7 @@ describe("WorkspacePage", () => {
   it("says a frame is waiting for its trace when ingest reports it pending, matching the notice", () => {
     state.traceError = true;
     state.traceErr = new ApiError(404, ".dat file not found", null);
-    state.exposures = [exposure(101, { selected: true, incident_monitor: -0.1 })];
+    state.exposures = [exposure(101, { incident_monitor: -0.1 })];
     state.problems = { ingest_error: null, exposures: [
       { exposure_id: 101, filename: "f101", sample_id: 10, sample_name: "S", problem: "no_trace", reason: "no trace" },
     ] };
@@ -798,7 +797,7 @@ describe("WorkspacePage", () => {
   it("keeps saying no integrated trace when only another frame is pending", () => {
     state.traceError = true;
     state.traceErr = new ApiError(404, ".dat file not found", null);
-    state.exposures = [exposure(101, { selected: true })];
+    state.exposures = [exposure(101)];
     state.problems = { ingest_error: null, exposures: [
       { exposure_id: 999, filename: "f999", sample_id: 11, sample_name: "T", problem: "no_trace", reason: "no trace" },
     ] };
@@ -835,7 +834,7 @@ describe("WorkspacePage", () => {
     const { rerender } = renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "x" });
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
-    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     rerender(page("/experiments/1/workspace/10"));
     expect(currentFrame()).toBe("Frame 1");
     fireEvent.keyDown(window, { key: "2" });
@@ -843,7 +842,7 @@ describe("WorkspacePage", () => {
   });
 
   it("X on a dropped frame restores it and keeps it in view", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(currentFrame()).toBe("Frame 2, dropped");
@@ -853,7 +852,7 @@ describe("WorkspacePage", () => {
   });
 
   it("X keeps the dropped frame in view when no other frame is kept", () => {
-    state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
+    state.exposures = [exposure(100, { status: "rejected" }), exposure(101)];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "x" });
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
@@ -861,7 +860,7 @@ describe("WorkspacePage", () => {
   });
 
   it("a card's Drop button drops that frame and leaves the view on the shown one", () => {
-    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    state.exposures = [exposure(100), exposure(101), exposure(102)];
     renderAt("/experiments/1/workspace/10");
     expect(currentFrame()).toBe("Frame 3");
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
@@ -871,7 +870,7 @@ describe("WorkspacePage", () => {
   });
 
   it("the shown frame's own Drop button moves to the nearest kept frame", () => {
-    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    state.exposures = [exposure(100), exposure(101), exposure(102)];
     renderAt("/experiments/1/workspace/10");
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
     fireEvent.click(within(cards[2]!).getByRole("button", { name: "Drop" }));
@@ -880,7 +879,7 @@ describe("WorkspacePage", () => {
   });
 
   it("holding X drops only the shown frame, not a run of frames", () => {
-    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    state.exposures = [exposure(100), exposure(101), exposure(102)];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "x" });
     fireEvent.keyDown(window, { key: "x", repeat: true });
@@ -1357,7 +1356,7 @@ describe("WorkspacePage", () => {
   });
 
   it("a dropped card offers Restore and the header counts the kept frames", () => {
-    state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
+    state.exposures = [exposure(100, { status: "rejected" }), exposure(101)];
     renderAt("/experiments/1/workspace/10");
     const strip = screen.getByTestId("workspace-exposures");
     expect(within(within(strip).getAllByRole("listitem")[0]!).getByRole("button", { name: "Restore" })).toBeInTheDocument();
@@ -1365,7 +1364,7 @@ describe("WorkspacePage", () => {
   });
 
   it("refuses a phase call on a dropped frame and says why", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(currentFrame()).toBe("Frame 2, dropped");
@@ -1375,7 +1374,7 @@ describe("WorkspacePage", () => {
   });
 
   it("ticks a phase called on another frame and unticks it there, even when that frame is dropped", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     state.assignment = { exposure_id: 100, state: "indexed", members: [] };
     state.sampleCall = {
       sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
@@ -1759,7 +1758,7 @@ describe("WorkspacePage", () => {
 
   it("does not edit peaks on a dropped frame", () => {
     state.trace = makeTrace(1);
-    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(currentFrame()).toBe("Frame 2, dropped");
@@ -2431,7 +2430,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
     unmount();
     state.username = "jc";
-    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(currentFrame()).toBe("Frame 2, dropped");
@@ -2536,7 +2535,7 @@ describe("WorkspacePage", () => {
   });
 
   it("lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true })];
+    state.exposures = [exposure(100), exposure(101)];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
@@ -2547,7 +2546,7 @@ describe("WorkspacePage", () => {
   });
 
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
-    state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
+    state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
@@ -2558,7 +2557,7 @@ describe("WorkspacePage", () => {
 
   it("lists the shown exposure's acquisition time, flight tube, energy and detector from the .prp", () => {
     state.exposures = [exposure(100), exposure(101, {
-      selected: true, timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
+      timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
     })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;

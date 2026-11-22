@@ -68,7 +68,7 @@ The `invariants` block states properties the app should hold and lists each viol
 
 `checked` is false for `views_agree` without `--ui`, and for both view invariants when a workspace read failed (that read is also a gate problem).
 
-The representative is one rule everywhere: the selected frame if it is kept, else the newest kept frame, else none (`frontend/src/lib/exposure.ts`, `src/representative.jl`, held together by `frontend/test/fixtures/representative-exposure.json`). The workspace opens on it. Switching frames in the workspace and assigning there can still break `status_matches_assignment`, since the sample status (`GET /api/samples`) describes the representative.
+The representative is one rule everywhere: the newest kept frame, else none (`frontend/src/lib/exposure.ts`, `src/representative.jl`, held together by `frontend/test/fixtures/representative-exposure.json`). The workspace opens on it. Switching frames in the workspace and assigning there can still break `status_matches_assignment`, since the sample status (`GET /api/samples`) describes the representative.
 
 ## Evidence in a PR
 
