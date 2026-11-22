@@ -37,8 +37,6 @@ if (typeof globalThis.EventSource === "undefined") {
   globalThis.EventSource = EventSourceStub;
 }
 
-// JSDOM does not implement window.matchMedia. Stub it so the theme and
-// media-query hooks don't throw during unit tests.
 if (typeof window.matchMedia === "undefined") {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
