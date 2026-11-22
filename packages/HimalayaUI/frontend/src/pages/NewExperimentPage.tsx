@@ -37,6 +37,10 @@ const GEOMETRY_FIELDS: ReadonlyArray<{ key: GeometryKey; label: string }> = [
 
 const count = (n: number): string => n.toLocaleString("en-US");
 
+const NO_FOLDERS: api.FolderSuggestions = { folders: [], more: false };
+
+const isFullPath = (p: string): boolean => p.startsWith("/") || p === "~" || p.startsWith("~/");
+
 const folderName = (p: string): string => p.replace(/\/+$/, "").split("/").pop() ?? p;
 
 function initialEdit(s: api.SetupPreview): RowEdit {
@@ -227,25 +231,26 @@ export function NewExperimentPage(): JSX.Element {
   const queryClient = useQueryClient();
   const [search] = useSearchParams();
   const [path, setPath] = useState(() => search.get("path") ?? "");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggested, setSuggested] = useState<api.FolderSuggestions>(NO_FOLDERS);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [refused, setRefused] = useState<{ id: number; name: string } | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const picked = useDebounced(path.trim(), 200);
+  const full = isFullPath(picked);
 
   useEffect(() => {
-    if (picked === "") { setSuggestions([]); return; }
+    if (!full) { setSuggested(NO_FOLDERS); return; }
     let live = true;
-    void api.suggestPaths(picked).then((r) => { if (live) setSuggestions(r.suggestions); }).catch(() => {});
+    void api.suggestFolders(picked).then((r) => { if (live) setSuggested(r); }).catch(() => { if (live) setSuggested(NO_FOLDERS); });
     return () => { live = false; };
-  }, [picked]);
+  }, [picked, full]);
 
   const preview = useQuery({
     queryKey: queryKeys.folderPreview(picked),
     queryFn: () => api.previewFolder(picked),
-    enabled: picked !== "",
+    enabled: full,
     retry: false,
   });
   const setups = useMemo(() => preview.data?.setups ?? [], [preview.data]);
@@ -342,14 +347,18 @@ export function NewExperimentPage(): JSX.Element {
 
   const status = picked === ""
     ? "Pick a beamtime folder to add every setup in it, or one setup folder."
+    : !full
+      ? "Type a full path, starting with / or ~."
     : preview.isError
       ? preview.error instanceof api.ApiError && preview.error.status === 400
-        ? "That folder does not exist."
+        ? suggested.folders.length > 0 ? "Keep typing, or press ↓ to choose a folder." : "That folder does not exist."
         : `Could not read that folder: ${preview.error instanceof Error ? preview.error.message : "unknown error"}`
       : preview.isFetching && setups.length === 0
         ? "Looking for setups…"
         : setups.length === 0
-          ? "No images found here or in the folders directly inside it."
+          ? suggested.folders.some((f) => f.kind !== null)
+            ? "No images here. Press ↓ to choose a beamtime or setup inside it."
+            : "No images found here or in the folders directly inside it."
           : setups.length === 1
             ? "Found 1 setup."
             : `Found ${setups.length} setups.`;
@@ -360,7 +369,7 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} suggestions={suggestions} autoFocus />
+          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} folders={suggested.folders} more={suggested.more} autoFocus />
           <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing === undefined
             ? status
             : setups.some((s) => s.duplicate_of === null)
