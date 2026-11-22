@@ -155,7 +155,7 @@ The voice matches the brand: an **assured, precise, unshowy** colleague. Copy is
 - **Buttons** name the action as a verb in the user's terms: "+ Label", "Remove experiment", "Drop", "Restore". Not "OK" / "Submit" / "Go".
 - **Empty states** tell the user why the surface is empty and what to do next, in the `EmptyState` title + body pair (e.g. "No samples yet. They appear as the ingest reads the data folder.").
 - **Error copy** is honest and specific, never a masquerade: a failed fetch says it failed and offers a recovery ("The last ingest failed." with a Details button that shows the error), and is never allowed to read as an empty "no results" state.
-- **Loading copy** is quiet and momentary ("Loading samples…") behind the skeleton, not a spinner narration.
+- **Loading copy** is quiet and momentary ("Loading samples…"), not a spinner narration.
 
 **The Domain-Vocabulary-Is-Correct Rule.** The instrument's own terms are *precise*, not jargon to be softened: Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square, Miller, q-value, hkl, reanalyze. These are the scientist's working vocabulary; "simplifying" them is a regression, not an accessibility win. Write to the expert, not around them.
 
@@ -242,11 +242,11 @@ Every interactive primitive draws from one shared vocabulary of states. The trea
 - **Focus-visible.** A terracotta `accent` ring, keyboard-only (`focus-visible`, offset). Buttons outline 2px accent; ghost and inverse variants use a 1px accent outline; inputs land the ring on the whole field via `focus-within:border-accent`; SVG hit targets (custom-index snap points, slider thumbs) stroke accent on `:focus-visible` only. Mouse clicks never show a ring. Bespoke `<button>`/`<a>` elements outside the primitives inherit the 2px accent ring by default from a base-layer rule in `styles.css`, so the state is systematized everywhere; primitive refinements and deliberate suppressions override it from higher layers (per-property — the 1px refiners redeclare `outline-offset-0` explicitly).
 - **Disabled.** `disabled:opacity-45 disabled:cursor-not-allowed` on buttons; Disabled is a dimming, not a colour change.
 - **Selected.** `Card selected` adds accent selection chrome: an accent-tinted border plus a subtle inset accent ring (flat, no shadow), and exposes `data-selected="true"` for tests and targeted CSS. This is the candidate-pick / row-selection signal.
-- **Busy / loading.** A **skeleton** (boneyard `Skeleton`, the slow `.bone` pulse, fed a committed `*.bones.json` capture or an inline fixture) covers the first paint of a data-driven region. A known-duration job has no shared progress primitive yet. A bare spinner is reserved for indeterminate inline waits and is not yet a systematized primitive (extension point).
+- **Busy / loading.** The first paint of a data-driven region shows quiet loading copy or an `aria-busy` placeholder. A known-duration job has no shared progress primitive yet. A bare spinner is reserved for indeterminate inline waits and is not yet a systematized primitive (extension point).
 - **Error.** Inline and honest. Inputs take `invalid` → `border-error` plus `aria-invalid`, second-channeled by consumer error text. Page-level fetch failures render an `EmptyState` with failure copy (never a masquerading "no results"). `Toast` (`role="status"`) carries transient feedback with a leading status glyph + word (severity is the word + `aria-label`, not an edge hue).
 - **Read-only.** A genuinely inert value renders as a static, non-interactive row, no chevron, no pointer cursor, not a `<button>`. Controls must not lie: an affordance that does nothing is removed, not styled live.
 
-**The Honest-Surface-State Rule.** Skeleton for the first load of a data region; spinner or progress for an in-flight action on already-loaded content; `EmptyState` (with a next-step CTA in the body) for a legitimately empty or failed surface; inline `border-error` + error text for a single invalid field. Never let a failure read as an empty state, and never show a control that cannot act.
+**The Honest-Surface-State Rule.** Quiet loading copy for the first load of a data region; spinner or progress for an in-flight action on already-loaded content; `EmptyState` (with a next-step CTA in the body) for a legitimately empty or failed surface; inline `border-error` + error text for a single invalid field. Never let a failure read as an empty state, and never show a control that cannot act.
 
 ### Buttons
 - **Shape:** 5px radius (`rounded.sm`), compact padding.
@@ -279,8 +279,8 @@ Motion is polish measured in milliseconds, never spectacle. It exists to soften 
 
 - **Default transition.** A global rule transitions `color`, `background-color`, `border-color`, and `opacity` over **120ms ease-out** (`styles.css` `@layer base`). That is the whole motion budget for hovers, focus, selection, and tonal shifts.
 - **Easing.** Ease-out only. No bounce, no elastic, no spring. Movement decelerates into rest and stops.
-- **Functional animations, kept short.** A few one-shot keyframes carry genuine feedback: overlay fade-ins (`.anim-pal-in` 120ms, `.anim-pal-scale` 140ms popover entry, `overlay-fade-in` 140ms for newly-built trace marks) and the slow `.bone` skeleton pulse (1.8s). These convey state (something appeared, something is loading), so they earn their motion.
-- **Motion conveys state only.** Nothing animates for delight. There is no page-load choreography, no scroll-driven sequence, no staggered entrance beyond the skeleton's brief reveal stagger. If a motion does not report a state change, it does not belong.
+- **Functional animations, kept short.** A few one-shot keyframes carry genuine feedback: overlay fade-ins (`.anim-pal-in` 120ms, `.anim-pal-scale` 140ms popover entry, `overlay-fade-in` 140ms for newly-built trace marks). These convey state (something appeared, something is loading), so they earn their motion.
+- **Motion conveys state only.** Nothing animates for delight. There is no page-load choreography, no scroll-driven sequence, no staggered entrance. If a motion does not report a state change, it does not belong.
 - **The Reduced-Motion Rule.** Under `prefers-reduced-motion: reduce`, every transition and animation is near-zeroed to 0.01ms (not removed, so `transitionend` / `animationend` listeners still fire) and `scroll-behavior` snaps to auto. The result has no perceptible spatial movement while functional feedback that depends on completing (spinners, progress, focus) is preserved.
 
 > The fractal-noise grain, palette fades, and trace-overlay choreography of the retired dark "Darkroom" era are gone. Do not reintroduce them.

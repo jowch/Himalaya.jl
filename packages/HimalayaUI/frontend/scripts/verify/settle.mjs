@@ -1,4 +1,4 @@
-export const BUSY_SELECTOR = "[data-boneyard-overlay], [aria-busy='true'], [role='progressbar']";
+export const BUSY_SELECTOR = "[aria-busy='true'], [role='progressbar']";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

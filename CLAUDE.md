@@ -37,6 +37,7 @@ If this is your first session on this repo, skim these in order before touching 
 ```
 src/                                # core Himalaya package — see src/AGENTS.md
 test/                               # core tests
+packages/HimalayaDB/                # read-only Julia reader of the central DB for analysis scripts; contract-tested against HimalayaUI
 packages/HimalayaUI/
   src/                              # backend — see packages/HimalayaUI/src/AGENTS.md
   test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
@@ -48,10 +49,8 @@ packages/HimalayaUI/
       hooks/                        # custom React hooks
       lib/                          # url, plot, peak-ref, custom-index, label and bridge helpers
         queue/                      # mutation queue — see lib/queue/AGENTS.md
-      bones/                        # committed *.bones.json skeleton captures
     test/                           # Vitest unit tests — see frontend/test/AGENTS.md
     e2e/                            # Playwright mocked — see e2e/AGENTS.md
-    e2e/live/                       # Playwright live integration — see e2e/live/README.md
     dist/                           # vite build output; served by Oxygen.jl in prod
 docs/                               # design docs (peak-finding, scoring, event-log, …)
 examples/                           # scripts using Himalaya (not part of the package)
@@ -83,6 +82,9 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.in
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
+# HimalayaDB (read-only DB reader; contract tests run HimalayaUI's own readers on its fixture)
+julia --project=packages/HimalayaDB -e 'using Pkg; Pkg.test()'
+
 # HimalayaUI backend (Julia) — ~3 min serial. Capture once. See packages/HimalayaUI/test/AGENTS.md
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
 # Faster (~2 min): run the 7 GROUP buckets as parallel processes:
@@ -94,7 +96,6 @@ GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("Himala
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (mocked; builds and serves the bundle; runs in CI)
-npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # lint:design + lint:ratchet + eslint + tsc --noEmit + vite build (must pass before PR)
 npm run typecheck:test  # tsc over src + test + e2e (Vitest and Playwright skip types; CI runs this)
 ```
@@ -146,7 +147,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 | Peak finding, scoring, phase types | [src/AGENTS.md](src/AGENTS.md) |
 | Routes, SQLite, pipeline, events, image, idempotency | [packages/HimalayaUI/src/AGENTS.md](packages/HimalayaUI/src/AGENTS.md) |
 | Backend tests, in-process SSE, FK-heal fixtures | [packages/HimalayaUI/test/AGENTS.md](packages/HimalayaUI/test/AGENTS.md) |
-| Zustand, TanStack Query, SSE wiring, Tailwind, boneyard | [packages/HimalayaUI/frontend/src/AGENTS.md](packages/HimalayaUI/frontend/src/AGENTS.md) |
+| Zustand, TanStack Query, SSE wiring, Tailwind | [packages/HimalayaUI/frontend/src/AGENTS.md](packages/HimalayaUI/frontend/src/AGENTS.md) |
 | App shell / routing / modal gotchas (AppRoutes, ExperimentEntry, ShellPalette, OnboardingFlow) | [packages/HimalayaUI/frontend/src/print/shell/AGENTS.md](packages/HimalayaUI/frontend/src/print/shell/AGENTS.md) |
 | Mutation queue internals | [packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md](packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md) |
 | Vitest / JSDOM / RTL patterns | [packages/HimalayaUI/frontend/test/AGENTS.md](packages/HimalayaUI/frontend/test/AGENTS.md) |
@@ -180,7 +181,5 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 **Package-specific:**
 
-- [packages/HimalayaUI/docs/boneyard.md](packages/HimalayaUI/docs/boneyard.md) — skeleton loading reference.
-- [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md) — runbook for live-integration Playwright tests.
 - [packages/HimalayaUI/.env.example](packages/HimalayaUI/.env.example) — deployment env vars.
 

@@ -55,10 +55,10 @@ end
         mktempdir() do d
             fx = _seed(d)
             w = with_test_server(fx.db) do port, base
-                HTTP.get("$base/api/experiments/$(fx.exp_id)/samples")
+                HTTP.get("$base/api/samples?experiment_id=$(fx.exp_id)")
             end
             ip = with_inproc_routes(fx.db) do call
-                call("GET", "/api/experiments/$(fx.exp_id)/samples")
+                call("GET", "/api/samples?experiment_id=$(fx.exp_id)")
             end
             _assert_equiv(w, ip; label="list")
         end
