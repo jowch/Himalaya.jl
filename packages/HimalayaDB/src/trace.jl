@@ -22,6 +22,9 @@ const DEFAULT_INTEGRATION_PATTERN = "{name}.dat"
 
 _name_pattern(v) = (v isa AbstractString && occursin("{name}", v)) ? String(v) : nothing
 
+integration_pattern_for(column) =
+    something(_name_pattern(coalesce(column, nothing)), DEFAULT_INTEGRATION_PATTERN)
+
 """
     load_trace(db, exposure_id; pattern=nothing) -> (q, I, σ)
 
@@ -37,7 +40,7 @@ first, then falls back to the name with the trailing `_0_001` suffix stripped.
 Each exposure has its own `_tot.dat`, named by the stem without that suffix.
 
 The file-not-found error names the path(s) it tried, which reveals a pattern
-mismatch. Throws `ArgumentError` when the exposure is missing or has no setup.
+mismatch. Throws `ArgumentError` when the exposure is missing or belongs to no setup.
 """
 function load_trace(db::SQLite.DB, exposure_id::Integer;
                     pattern::Union{AbstractString,Nothing}=nothing)
@@ -52,9 +55,9 @@ function load_trace(db::SQLite.DB, exposure_id::Integer;
     row.filename === missing && throw(ArgumentError(
         "load_trace: exposure $exposure_id has no filename"))
     row.analysis_dir === missing && throw(ArgumentError(
-        "load_trace: exposure $exposure_id has no setup"))
+        "load_trace: exposure $exposure_id belongs to no setup, so it has no analysis_dir"))
     pat = pattern !== nothing ? String(pattern) :
-          something(_name_pattern(coalesce(row.integration_pattern, nothing)), DEFAULT_INTEGRATION_PATTERN)
+          integration_pattern_for(row.integration_pattern)
     dir = String(row.analysis_dir)
     fname = String(row.filename)
 

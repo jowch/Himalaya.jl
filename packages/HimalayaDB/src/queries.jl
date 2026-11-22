@@ -36,15 +36,17 @@ const _SAMPLE_COLS = "id, experiment_id, setup_id, name, notes"
 """
     samples(db; experiment=nothing) -> Vector{<:NamedTuple}
 
-Samples, optionally filtered to one experiment id.
+Samples, optionally filtered to one experiment id. Samples merged into another
+(`samples.merged_into_id`, left by the retired merge route) are left out, as
+HimalayaUI leaves them out; their exposures stay readable through `exposures`.
 """
 function samples(db::SQLite.DB; experiment::Union{Integer,Nothing}=nothing)
     if experiment === nothing
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT $_SAMPLE_COLS FROM samples ORDER BY id"))
+            "SELECT $_SAMPLE_COLS FROM samples WHERE merged_into_id IS NULL ORDER BY id"))
     else
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT $_SAMPLE_COLS FROM samples WHERE experiment_id = ? ORDER BY id",
+            "SELECT $_SAMPLE_COLS FROM samples WHERE experiment_id = ? AND merged_into_id IS NULL ORDER BY id",
             [Int(experiment)]))
     end
 end

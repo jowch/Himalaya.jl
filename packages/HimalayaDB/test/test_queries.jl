@@ -116,6 +116,8 @@ end
     @test subtraction_background(db, ids.sample_id) == ids.sample2_id
     @test subtraction_background(db, ids.sample2_id) === nothing
 
+    @test isempty(sample_labels(db, ids.merged_id))
+    @test isempty(bridged_samples(db, ids.merged_id))
     @test bridged_samples(db, ids.sample_id) == [ids.sample2_id]
     @test bridged_samples(db, ids.sample2_id) == [ids.sample_id]
     @test isempty(bridged_samples(db, 999999))
