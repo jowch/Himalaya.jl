@@ -25,6 +25,7 @@ export interface FormField {
   kind: "text" | "choice";
   value: string;
   placeholder?: string;
+  typed?: boolean;
   options?: readonly FieldOption[];
   check?: (value: string) => string | undefined;
 }

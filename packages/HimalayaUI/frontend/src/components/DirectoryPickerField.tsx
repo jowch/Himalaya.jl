@@ -1,167 +1,154 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import type { FolderSuggestion } from "../api";
 import { Input } from "../ui/Input";
-import { Popover } from "../ui/Popover";
+import { SuggestionList, suggestionOptionId } from "../ui/SuggestionList";
 
 export interface DirectoryPickerFieldProps {
   value: string;
   onChange: (path: string) => void;
   onSubmit?: (() => void) | undefined;
-  /** Live autocomplete suggestions for the current `value` (caller fetches via
-   *  `suggestPaths`). */
-  suggestions: ReadonlyArray<string>;
-  /** Accessible label for the input. Default "Data directory" (the primary
-   *  new-experiment use); set e.g. "Analysis directory" when reused elsewhere. */
+  folders: ReadonlyArray<FolderSuggestion>;
+  more?: boolean;
   ariaLabel?: string;
+  placeholder?: string;
+  inputSize?: "sm" | "md";
+  testId?: string;
   autoFocus?: boolean;
-  /** PLACEMENT-ONLY. */
   className?: string;
 }
 
-/**
- * DirectoryPickerField — path input + suggestion list (via Popover).
- * Tab completes a partly typed folder name, ↑↓ then ↵ picks a suggestion,
- * and a plain ↵ with nothing highlighted submits. No full file browser (spec §8.7).
- * Composes `Input`, `Popover`, and design-system token utilities only
- * (no inline appearance); the suggestion list is anchored inside Popover,
- * which provides outside-pointerdown dismiss, Escape close, and focus-return
- * to the trigger — the functional gaps of a hand-rolled `<ul role=listbox>`.
- *
- * Popover trigger: the Input itself (its inner `<input>` receives the
- * `onValueChange` + keyboard handlers via `...rest`; the Popover clone adds
- * `aria-haspopup="dialog"` + `aria-expanded` without conflicting with those).
- * The popover stays open whenever `suggestions.length > 0` — Popover's
- * outside-pointerdown close matches the user expectation of clicking away to
- * dismiss. Escape resets focus to the input (Popover handles it).
- */
+const trimSlash = (p: string): string => p.replace(/\/+$/, "");
+
+const basename = (p: string): string => {
+  const trimmed = trimSlash(p);
+  const seg = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return seg === "" ? p : seg;
+};
+
+export function folderHint(f: FolderSuggestion): string | undefined {
+  const parts: string[] = [];
+  if (!f.described) return "not checked";
+  if (f.kind === "beamtime") parts.push(f.setups === 1 ? "beamtime, 1 setup" : `beamtime, ${f.setups ?? 0} setups`);
+  if (f.kind === "setup") parts.push("setup");
+  if (f.added !== null) parts.push(`added as ${f.added.name}`);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 export function DirectoryPickerField({
   value,
   onChange,
   onSubmit,
-  suggestions,
+  folders,
+  more = false,
   ariaLabel = "Data directory",
+  placeholder = "Type or paste a beamtime folder, starting with / or ~",
+  inputSize = "md",
+  testId = "dirpicker",
   autoFocus = false,
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
   const [active, setActive] = useState(-1);
+  const [focused, setFocused] = useState(autoFocus);
+  const [dismissed, setDismissed] = useState(false);
   const listId = useId();
-  const suggestionsKey = suggestions.join("\n");
-  useEffect(() => setActive(-1), [suggestionsKey]);
-  // Ref to the inner <input>. Popover's open-effect focuses its panel by
-  // default; for this search-first combobox we redirect that focus back to the
-  // input (initialFocusRef) so a click that opens the suggestion popover keeps
-  // the caret in the field — otherwise typing and Tab-completion land on the
-  // panel, not the input.
-  const inputRef = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const foldersKey = folders.map((f) => f.path).join("\n");
+  useEffect(() => setActive(-1), [foldersKey]);
+
+  const onlyEcho = folders.length === 1 && trimSlash(folders[0]!.path).toLowerCase() === trimSlash(value).toLowerCase() && !value.endsWith("/");
+  const showing = focused && !dismissed && folders.length > 0 && !onlyEcho;
+  const highlighted = showing && active >= 0 ? folders[active] : undefined;
+
+  const change = (v: string): void => {
+    setDismissed(false);
+    setActive(-1);
+    onChange(v);
+  };
 
   const complete = (path: string): void => {
     onChange(path.endsWith("/") ? path : `${path}/`);
     setActive(-1);
+    setDismissed(true);
   };
 
-  // The dropdown shows each suggestion's basename (last path segment) — the only
-  // part that differs from what the user typed — rather than the full absolute
-  // path, which is long and repeats the common prefix. Selecting still completes
-  // the FULL path into the field (complete(s)). Defensive against a trailing
-  // slash; falls back to the whole string if there is no segment.
-  const basename = (p: string): string => {
-    const trimmed = p.replace(/\/+$/, "");
-    const seg = trimmed.slice(trimmed.lastIndexOf("/") + 1);
-    return seg === "" ? p : seg;
+  const step = (dir: 1 | -1): void => {
+    const n = folders.length;
+    setActive((i) => (i < 0 ? (dir === 1 ? 0 : n - 1) : (i + dir + n) % n));
   };
-
-  const folder = value.endsWith("/") ? value : `${value}/`;
-  const completion = suggestions.find((s) => s.startsWith(value) && !s.startsWith(folder));
-  const highlighted = active >= 0 ? suggestions[active] : undefined;
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && highlighted === undefined) {
+    if (e.nativeEvent.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape") {
+      if (!showing) return;
       e.preventDefault();
-      onSubmit?.();
+      e.stopPropagation();
+      setActive(-1);
+      setDismissed(true);
       return;
     }
-    if (suggestions.length === 0) return;
-    if (e.key === "Tab") {
-      if (e.shiftKey || completion === undefined) return;
+    if (e.key === "Enter") {
+      if (e.shiftKey) return;
       e.preventDefault();
-      complete(completion);
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActive((i) => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive((i) => Math.max(i - 1, -1));
-    } else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && highlighted !== undefined) {
-      e.preventDefault();
-      complete(highlighted);
+      if (highlighted !== undefined) complete(highlighted.path);
+      else onSubmit?.();
+      return;
     }
+    const down = e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey);
+    const up = e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey);
+    if (!down && !up) return;
+    if (!showing) {
+      if (e.key === "ArrowDown" && folders.length > 0) {
+        e.preventDefault();
+        setDismissed(false);
+        setActive(0);
+      }
+      return;
+    }
+    if (e.key === "Tab" && e.shiftKey && active < 0) return;
+    e.preventDefault();
+    step(down ? 1 : -1);
   };
 
-  // The Input is the Popover trigger. Popover's cloneElement adds
-  // aria-haspopup/aria-expanded/onClick to it; onValueChange and onKeyDown
-  // pass through Input's ...rest spread onto the inner <input>. Popover is
-  // self-managed (no controlled `open`): clicking into the field to type opens
-  // it, and the list below renders once suggestions arrive — so in the normal
-  // click-then-type flow the matches appear as you type. (A purely programmatic
-  // fill that never focuses the field would not auto-open it; not a real-use
-  // path. 9d.) Popover's outside-pointerdown + Escape handlers close it.
-  const hasSuggestions = suggestions.length > 0;
-
   return (
-    <div className={`flex flex-col gap-2 ${className}`.trim()}>
-      <Popover
-        trigger={
-          <Input
-            testId="dirpicker-input"
-            value={value}
-            onValueChange={onChange}
-            onKeyDown={onKeyDown}
-            inputRef={inputRef}
-            mono
-            placeholder="Type or paste your experiment directory…"
-            aria-label={ariaLabel}
-            aria-activedescendant={highlighted === undefined ? undefined : `${listId}-${active}`}
-            autoFocus={autoFocus}
-            className="w-full"
-          />
-        }
-        label="Directory suggestions"
-        initialFocusRef={inputRef}
-        fullWidth
+    <div
+      ref={root}
+      className={`relative ${className}`.trim()}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        if (!(e.relatedTarget instanceof Node && root.current?.contains(e.relatedTarget))) setFocused(false);
+      }}
+    >
+      <Input
+        testId={`${testId}-input`}
+        inputSize={inputSize}
+        value={value}
+        onValueChange={change}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-autocomplete="list"
+        aria-expanded={showing}
+        aria-controls={showing ? listId : undefined}
+        aria-activedescendant={highlighted === undefined ? undefined : suggestionOptionId(listId, active)}
+        autoFocus={autoFocus}
+        spellCheck={false}
+        autoComplete="off"
         className="w-full"
-      >
-        {hasSuggestions && (
-          <ul
-            data-testid="dirpicker-suggestions"
-            id={listId}
-            role="listbox"
-            aria-label="Directory suggestions"
-            className="py-1"
-          >
-            {suggestions.map((s, i) => (
-              <li key={s}>
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  id={`${listId}-${i}`}
-                  role="option"
-                  aria-selected={i === active}
-                  data-active={i === active ? "true" : undefined}
-                  onClick={() => complete(s)}
-                  title={s}
-                  className={
-                    "flex w-full px-3 py-1.5 text-left font-mono text-sm transition-colors " +
-                    (i === active ? "text-ink bg-paper-sunk" : "text-ink-soft hover:text-ink hover:bg-paper-sunk")
-                  }
-                >
-                  {basename(s)}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Popover>
+      />
+      {showing && (
+        <SuggestionList
+          id={listId}
+          label="Folders"
+          testId={`${testId}-suggestions`}
+          className="absolute left-0 right-0 top-full mt-1"
+          items={folders.map((f) => ({ key: f.path, name: basename(f.path), hint: folderHint(f), title: f.path, strong: f.kind !== null }))}
+          active={active}
+          onPick={(i) => complete(folders[i]!.path)}
+          note={more ? "More folders match. Keep typing to narrow the list." : undefined}
+        />
+      )}
     </div>
   );
 }

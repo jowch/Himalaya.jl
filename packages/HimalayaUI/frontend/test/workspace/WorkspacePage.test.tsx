@@ -12,6 +12,7 @@ import type { CompareChange, CompareState } from "../../src/api";
 import { applyCompareChange, EMPTY_COMPARES } from "../../src/lib/compares";
 import { COMPARES_FULL, MAX_COMPARES } from "../../src/workspace/compare";
 import { COMPARE_COLORS } from "../../src/ui/WorkspacePlot";
+import { phaseColor } from "../../src/phases";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
@@ -21,6 +22,9 @@ const traceRefetch = vi.fn();
 const corpusRequests: number[] = [];
 const state = {
   experimentLoaded: true,
+  experiments: [] as { id: number; name: string }[],
+  allCorpus: [] as CorpusSample[],
+  allCorpusEnabled: [] as boolean[],
   setups: [] as { id: number; name: string; folder: string; included: boolean }[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
@@ -134,6 +138,11 @@ const editOps = {
 
 vi.mock("../../src/queries", () => ({
   useEditOps: () => editOps,
+  useExperiments: () => ({ data: state.experiments }),
+  useCorpusSamples: ({ enabled = true }: { enabled?: boolean } = {}) => {
+    state.allCorpusEnabled.push(enabled);
+    return { data: enabled ? state.allCorpus : undefined };
+  },
   useExperimentCorpusSamples: (experimentId: number) => {
     corpusRequests.push(experimentId);
     return { data: state.corpus, isLoading: false };
@@ -303,6 +312,9 @@ beforeEach(() => {
   prefetchTargets.length = 0;
   state.username = "jc";
   state.experimentLoaded = true;
+  state.experiments = [{ id: 1, name: "BL-19" }, { id: 2, name: "Beamtime 12" }];
+  state.allCorpus = [];
+  state.allCorpusEnabled = [];
   state.setups = [];
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
@@ -670,6 +682,22 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("button", { name: "A2, hidden" })).toBeNull();
   });
 
+  it("⌘K opens another experiment, and finds its samples once something is typed", () => {
+    state.allCorpus = [...state.corpus, { ...sample(40, "lipid_A"), experiment_id: 2 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(state.allCorpusEnabled.every((e) => !e)).toBe(true);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "BL-19" } });
+    expect(screen.queryByRole("option", { name: /Open BL-19/ })).toBeNull();
+    fireEvent.change(input, { target: { value: "lipid" } });
+    expect(state.allCorpusEnabled.at(-1)).toBe(true);
+    expect(screen.getByRole("option", { name: /Go to lipid_A/ })).toHaveTextContent("Beamtime 12");
+    fireEvent.change(input, { target: { value: "Beamtime 12" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/2");
+  });
+
   it("/ puts the cursor in the filter, where letters type, and ? opens the shortcuts only while the filter is empty", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "/" });
@@ -685,6 +713,17 @@ describe("WorkspacePage", () => {
     fireEvent.change(filter, { target: { value: "a" } });
     fireEvent.keyDown(filter, { key: "?" });
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
+  it("/ selects an earlier filter, so the next query replaces it", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "/" });
+    const filter = screen.getByRole("searchbox", { name: "Filter samples" }) as HTMLInputElement;
+    fireEvent.change(filter, { target: { value: "buffer" } });
+    filter.blur();
+    fireEvent.keyDown(window, { key: "/" });
+    expect(document.activeElement).toBe(filter);
+    expect([filter.selectionStart, filter.selectionEnd]).toEqual([0, "buffer".length]);
   });
 
   it("Esc leaves a page field that has no Esc handling of its own", () => {
@@ -2704,6 +2743,42 @@ describe("WorkspacePage", () => {
     expect(new Set(combIds())).toEqual(new Set(["1"]));
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(combIds()).toEqual([]);
+  });
+  it("hovering a candidate, a custom row or a Bonnet group header colours the peaks it claims on the trace", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.05, "auto"), peak(8, 0.06, "auto"), peak(9, 0.07, "manual"), peak(10, 0.2, "auto"), peak(11, 0.08, "auto")];
+    const claims = (pairs: [number, number][]) => pairs.map(([id, q], i) => ({ peak_id: id, ratio_position: i + 1, residual: 0, q_observed: q }));
+    state.indices = [
+      { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: claims([[7, 0.05], [9, 0.07]]) },
+      { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: claims([[8, 0.06], [11, 0.08]]) },
+      { ...index(3, "Ia3d", 0), kind: "speculative", score: null, lattice_d: 300, peaks: claims([[10, 0.2]]) },
+    ];
+    state.assignment = { exposure_id: 101, state: "null", members: [] };
+    renderAt("/experiments/1/workspace/10");
+    const glyph = (key: string): Element => screen.getByTestId("workspace-trace").querySelector(`[data-peak-key="${key}"]`)!;
+    const dimmed = (key: string): boolean => glyph(key).getAttribute("opacity") !== null;
+    const list = screen.getByTestId("workspace-candidates");
+    const row = (name: RegExp): HTMLElement => within(list).getAllByRole("button").find((b) => name.test(b.textContent ?? ""))!;
+    expect(["auto:7", "auto:8", "manual:9", "auto:10"].some(dimmed)).toBe(false);
+
+    fireEvent.mouseEnter(row(/Im3m/));
+    expect(glyph("auto:7").getAttribute("fill")).toBe(phaseColor("Im3m"));
+    expect(glyph("manual:9").getAttribute("fill")).toBe(phaseColor("Im3m"));
+    expect(dimmed("auto:8")).toBe(true);
+    expect(dimmed("auto:10")).toBe(true);
+
+    fireEvent.mouseEnter(row(/Custom/));
+    expect(glyph("auto:10").getAttribute("fill")).toBe(phaseColor("Ia3d"));
+    expect(dimmed("auto:7")).toBe(true);
+
+    fireEvent.mouseEnter(screen.getByTestId("workspace-bonnet-group"));
+    expect(glyph("auto:7").getAttribute("fill")).toBe(phaseColor("Im3m"));
+    expect(glyph("auto:8").getAttribute("fill")).toBe(phaseColor("Pn3m"));
+    expect(dimmed("auto:10")).toBe(true);
+
+    fireEvent.mouseLeave(list);
+    expect(["auto:7", "auto:8", "manual:9", "auto:10"].some(dimmed)).toBe(false);
+    expect(glyph("auto:7").getAttribute("fill")).toBe("var(--color-ink)");
   });
   it("the indexing plot shows the peaks the stored index claimed, even where a fresh match would differ", () => {
     state.trace = makeTrace(1);

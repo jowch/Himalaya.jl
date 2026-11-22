@@ -1,4 +1,4 @@
-export interface LutStop { t: number; L: number; C: number; h: number } // OKLCH
+export interface LutStop { t: number; L: number; C: number; h: number }
 
 export type DetectorLutVariant = "neutral" | "warm" | "magma";
 
@@ -20,27 +20,22 @@ function buildSrgbRamp(stops: readonly (readonly [number, number, number])[]): U
   return lut;
 }
 
-// Warm-GRAY ink ramp: lightness rises monotonically; chroma is tiny (~0.005–0.009)
-// so it reads as a warm neutral, leaving the colour channel to the rings.
 export const PRINT_DETECTOR_STOPS_NEUTRAL: readonly LutStop[] = [
-  { t: 0.00, L: 0.130, C: 0.005, h: 60 }, // warm near-black (window backing)
+  { t: 0.00, L: 0.130, C: 0.005, h: 60 },
   { t: 0.30, L: 0.320, C: 0.008, h: 65 },
   { t: 0.60, L: 0.550, C: 0.009, h: 70 },
   { t: 0.82, L: 0.780, C: 0.007, h: 78 },
-  { t: 1.00, L: 0.950, C: 0.005, h: 85 }, // warm paper-cream
+  { t: 1.00, L: 0.950, C: 0.005, h: 85 },
 ];
 
-// Saturated terracotta ramp (the original "beauty" look). Hues ~45–85° so no
-// hue-wrap handling is needed.
 export const PRINT_DETECTOR_STOPS_WARM: readonly LutStop[] = [
-  { t: 0.00, L: 0.150, C: 0.010, h: 55 }, // warm near-black (window backing)
-  { t: 0.35, L: 0.320, C: 0.060, h: 50 }, // deep umber
-  { t: 0.62, L: 0.550, C: 0.130, h: 45 }, // terracotta bloom (the Print accent heat)
-  { t: 0.85, L: 0.780, C: 0.090, h: 70 }, // warm gold
-  { t: 1.00, L: 0.930, C: 0.020, h: 85 }, // cream highlight
+  { t: 0.00, L: 0.150, C: 0.010, h: 55 },
+  { t: 0.35, L: 0.320, C: 0.060, h: 50 },
+  { t: 0.62, L: 0.550, C: 0.130, h: 45 },
+  { t: 0.85, L: 0.780, C: 0.090, h: 70 },
+  { t: 1.00, L: 0.930, C: 0.020, h: 85 },
 ];
 
-// Default stops (the neutral analysis ramp). Exposed for the Storybook swatch.
 export const PRINT_DETECTOR_STOPS = PRINT_DETECTOR_STOPS_NEUTRAL;
 
 function stopsFor(variant: DetectorLutVariant): readonly LutStop[] {
@@ -49,7 +44,6 @@ function stopsFor(variant: DetectorLutVariant): readonly LutStop[] {
 
 function clamp01(v: number): number { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
-// OKLCH -> sRGB (0..255). Bjorn Ottosson's oklab matrices + sRGB gamma.
 function oklchToSrgb(L: number, C: number, h: number): [number, number, number] {
   const hr = (h * Math.PI) / 180;
   const a = C * Math.cos(hr);
@@ -92,15 +86,12 @@ export function buildPrintDetectorLut(variant: DetectorLutVariant = "neutral"): 
   const stops = stopsFor(variant);
   for (let i = 0; i < 256; i++) {
     const t = i / 255;
-    // Find the bracketing stop pair.
     let a = stops[0], b = stops[stops.length - 1];
     for (let k = 0; k < stops.length - 1; k++) {
       if (t >= stops[k].t && t <= stops[k + 1].t) { a = stops[k]; b = stops[k + 1]; break; }
     }
     const span = b.t - a.t || 1;
     const f = (t - a.t) / span;
-    // Linear in L/C/h - the stops sit in a narrow warm hue band so no hue
-    // wrap-around handling is needed.
     const [r, g, bl] = oklchToSrgb(
       a.L + f * (b.L - a.L),
       a.C + f * (b.C - a.C),
@@ -112,16 +103,6 @@ export function buildPrintDetectorLut(variant: DetectorLutVariant = "neutral"): 
   return lut;
 }
 
-/**
- * The same 256-entry LUT expressed as SVG `<feFunc* type="table">` ramps — three
- * space-separated 0..1 strings (R, G, B). Lets the browser apply the colormap as
- * a GPU `<feComponentTransfer>` filter on the grayscale PNG instead of a
- * per-pixel JS loop + canvas readback. Derived from `buildPrintDetectorLut`, so
- * the filter and the (retired) loop share one colour source — no drift.
- *
- * Input is grayscale (R=G=B=t), so each output channel is just its table indexed
- * by t — exactly `lut[t]`.
- */
 export function detectorLutTableValues(
   variant: DetectorLutVariant = "neutral",
 ): { r: string; g: string; b: string } {

@@ -1,11 +1,5 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
 
-"""
-    build_export(db, experiment_id) -> Vector{Dict}
-
-Per-sample summary; `indices` holds only the call's members on each frame (empty unless the sample is called).
-`candidates` lists every index and `auto_phases` the analysis's own pick; `call_state` is `uncalled` until a tick.
-"""
 function build_export(db::SQLite.DB, experiment_id::Int)
     samples = Tables.rowtable(DBInterface.execute(db,
         "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",

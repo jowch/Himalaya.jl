@@ -20,10 +20,16 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
   const wide = form.fields.length === 1 && field.kind === "text";
   const shownError = tried ? errors[field.id] : undefined;
 
+  const opening = useRef(!form.fields[0]?.typed);
   useEffect(() => {
     const el = refs.current[focus];
     el?.focus();
-    if (el instanceof HTMLInputElement) el.setSelectionRange(el.value.length, el.value.length);
+    if (!(el instanceof HTMLInputElement)) return;
+    if (opening.current && focus === 0) el.select();
+    else el.setSelectionRange(el.value.length, el.value.length);
+  }, [focus]);
+  useEffect(() => {
+    if (focus !== 0) opening.current = false;
   }, [focus]);
 
   const set = (id: string, v: string): void => setValues((cur) => ({ ...cur, [id]: v }));

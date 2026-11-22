@@ -52,6 +52,7 @@ import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
+import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
@@ -90,6 +91,7 @@ import { CandidateList } from "../ui/CandidateList";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
 import { MainSection, SampleHeading, Section } from "../ui/Section";
+import { claimedPeaks } from "./claimedPeaks";
 import { CustomIndexButton } from "../ui/CustomIndexButton";
 import { LabelRow } from "../ui/LabelRow";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
@@ -341,6 +343,14 @@ export function WorkspacePage(): JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteCorpus = useCorpusPalette();
+  const elsewhere = useMemo(
+    () => ({
+      experiments: paletteCorpus.experiments.filter((e) => e.id !== experimentId),
+      samples: paletteCorpus.samples.filter((s) => s.experimentId !== experimentId),
+    }),
+    [paletteCorpus.experiments, paletteCorpus.samples, experimentId],
+  );
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
@@ -504,6 +514,11 @@ export function WorkspacePage(): JSX.Element {
     if (draft) return [{ id: -1, qs: draftQs, color: phaseColor(draft.phase) }];
     return candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
   }, [candidates, hoverIds, draft, draftQs]);
+
+  const highlight = useMemo(
+    () => (draft ? null : claimedPeaks(candidates.filter((c) => hoverIds?.includes(c.id)), peaks.data ?? [])),
+    [draft, candidates, hoverIds, peaks.data],
+  );
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const nameOf = useCallback((rid: number) => sampleNames.get(rid) ?? `sample ${rid}`, [sampleNames]);
@@ -855,7 +870,9 @@ export function WorkspacePage(): JSX.Element {
       }
       if (ev.key === "/") {
         ev.preventDefault();
-        document.getElementById("workspace-filter")?.focus();
+        const filter = document.getElementById("workspace-filter");
+        filter?.focus();
+        if (filter instanceof HTMLInputElement) filter.select();
         return;
       }
       if (draft) {
@@ -1079,6 +1096,7 @@ export function WorkspacePage(): JSX.Element {
     },
     samples,
     goSample,
+    elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
   const indexingSection = (
@@ -1127,7 +1145,7 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setBigOpen(false)}
             />
           )}
-          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} />}
+          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} onType={paletteCorpus.onType} />}
         </>
       }
       header={
@@ -1214,6 +1232,7 @@ export function WorkspacePage(): JSX.Element {
                       : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
+                  highlight={highlight}
                   compares={compares}
                   {...(minusOn && difference ? { difference } : {})}
                   xDomain={shownDomain}

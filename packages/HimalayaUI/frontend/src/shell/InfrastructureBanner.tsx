@@ -10,19 +10,9 @@ function changes(n: number): string {
   return n === 1 ? "1 change" : `${n} changes`;
 }
 
-/**
- * InfrastructureBanner — persistent status strip for long-pending mutations.
- *
- * Hidden when no mutation has been pending for >500ms (avoids flicker on
- * fast successes). After 30s pending it counts the changes not saved yet.
- * When the live stream has been down for 5s it says the connection is lost,
- * pending edits or not; queued edits keep retrying until the server answers.
- */
 export function InfrastructureBanner(): JSX.Element | null {
   const [, setTick] = useState(0);
-
   const streamDownSince = useConnection((s) => s.streamDownSince);
-
   const pendingSubmittedAts = useMutationState({
     filters: { status: "pending", predicate: (m) => m.options.meta?.savesWork !== false },
     select: (m) => m.state.submittedAt,
@@ -43,11 +33,9 @@ export function InfrastructureBanner(): JSX.Element | null {
     streamDownSince !== null && now - streamDownSince > OFFLINE_THRESHOLD_MS;
 
   if (visible.length === 0 && !offline) return null;
-
   const stuck = visible.some((t) => now - t > STUCK_THRESHOLD_MS);
   const stateAttr = offline ? "offline" : stuck ? "stuck" : "showing";
   const pending = pendingSubmittedAts.length;
-
   return (
     <div
       data-testid="infrastructure-banner"

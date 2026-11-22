@@ -239,7 +239,7 @@ _setup_data_dir(root) = isdir(joinpath(root, "data")) ? joinpath(root, "data") :
 
 function setup_roots(path::AbstractString)
     isdir(joinpath(path, "data")) && _has_tifs(joinpath(path, "data")) && return [String(path)]
-    subs = String[d for d in sort!(_subdirs(path)) if _has_tifs(_setup_data_dir(d))]
+    subs = String[d for d in natural_sort(_subdirs(path)) if _has_tifs(_setup_data_dir(d))]
     !isempty(subs) && return subs
     _has_tifs(path) ? [String(path)] : String[]
 end
@@ -297,26 +297,74 @@ function _setup_preview(db, path, root)
          :duplicate_of => dup === nothing ? nothing : Dict(:id => dup.id, :name => dup.name))
 end
 
+const SUGGEST_LIMIT = 20
+const SUGGEST_DESCRIBE_SECONDS = Ref(0.5)
+
+expand_folder(p::AbstractString) = (q = String(strip(p)); q == "~" || startswith(q, "~/") ? expanduser(q) : q)
+
+function _natural_key(s::AbstractString)
+    parts = Any[]
+    for m in eachmatch(r"\d+|\D+", lowercase(s))
+        push!(parts, isdigit(m.match[1]) ? (0, parse(BigInt, m.match), "") : (1, big(0), m.match))
+    end
+    parts
+end
+
+natural_sort(xs::Vector{String}) = xs[sortperm(map(_natural_key, xs))]
+
+_undescribed(dir, described) = Dict{Symbol,Any}(:path => dir, :kind => nothing, :setups => nothing,
+                                                :added => nothing, :described => described)
+
+function _describe_folder(db, dir)
+    roots = setup_roots(dir)
+    kind, setups = isempty(roots) ? (nothing, nothing) :
+                   roots == [dir] ? ("setup", nothing) : ("beamtime", length(roots))
+    added = kind == "beamtime" ? experiment_at_path(db, dir) :
+            kind == "setup" ? something(experiment_using_dir(db, _setup_data_dir(dir)),
+                                        experiment_at_path(db, dir), Some(nothing)) :
+            nothing
+    Dict(:path => dir, :kind => kind, :setups => setups, :described => true,
+         :added => added === nothing ? nothing : Dict(:id => added.id, :name => added.name))
+end
+
+function suggest_folders(db, prefix::AbstractString)
+    none = (; folders = Dict{Symbol,Any}[], more = false)
+    p = expand_folder(prefix)
+    isabspath(p) || return none
+    dir, base = endswith(p, "/") ? (p, "") : (dirname(p), basename(p))
+    isdir(dir) || return none
+    needle = lowercase(base)
+    names = natural_sort(String[n for n in _listdir(dir)
+                                if startswith(lowercase(n), needle) && (startswith(base, ".") || !startswith(n, "."))])
+    found = String[]
+    more = false
+    for n in names
+        full = joinpath(dir, n)
+        isdir(full) || continue
+        length(found) == SUGGEST_LIMIT && (more = true; break)
+        push!(found, full)
+    end
+    trimmed = rstrip(dir, '/')
+    inside_setup = _has_tifs(_setup_data_dir(isempty(trimmed) ? "/" : trimmed))
+    deadline = time() + SUGGEST_DESCRIBE_SECONDS[]
+    folders = map(found) do full
+        inside_setup ? _undescribed(full, true) :
+        time() >= deadline ? _undescribed(full, false) :
+            _describe_folder(db, full)
+    end
+    (; folders, more)
+end
+
 function register_fs_routes!()
     @get "/api/fs/suggest" function(req::HTTP.Request)
-        q      = HTTP.queryparams(HTTP.URI(req.target))
-        prefix = get(q, "prefix", "")
-        isempty(prefix) && return _json(200, Dict(:suggestions => String[]))
-        dir  = isdir(prefix) ? prefix : dirname(prefix)
-        base = isdir(prefix) ? "" : basename(prefix)
-        isdir(dir) || return _json(200, Dict(:suggestions => String[]))
-        kids = String[]
-        for name in readdir(dir; sort = true)
-            startswith(name, base) || continue
-            full = joinpath(dir, name)
-            isdir(full) && push!(kids, full)
-            length(kids) >= 20 && break
-        end
-        _json(200, Dict(:suggestions => kids))
+        q = HTTP.queryparams(HTTP.URI(req.target))
+        r = suggest_folders(current_db(), get(q, "prefix", ""))
+        _json(200, Dict(:folders => r.folders, :more => r.more))
     end
     @get "/api/fs/preview" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
-        path = get(q, "path", "")
+        path = expand_folder(get(q, "path", ""))
+        isabspath(path) || return _json(400, Dict(:error => "use a full path, starting with / or ~"))
         isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
         db = current_db()
         existing = experiment_at_path(db, path)

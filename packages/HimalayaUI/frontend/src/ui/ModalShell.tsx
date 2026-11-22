@@ -8,24 +8,17 @@ export type ModalAlign = "center" | "top";
 export type ModalVariant = "dialog" | "drawer";
 
 export interface ModalShellProps {
-  /** Render gate. Returns null when false (matches every call site's `if (!open) return null`). */
   open: boolean;
   onClose: () => void;
-  size?: ModalSize;            // default "md"; ignored for variant="drawer"
-  align?: ModalAlign;          // default "center"; ignored for variant="drawer"
-  /** Esc dismiss. Default true. Set false where the parent owns Escape. */
+  size?: ModalSize;
+  align?: ModalAlign;
   closeOnEsc?: boolean;
-  /** Backdrop-click dismiss. Default true. */
   closeOnOutsideClick?: boolean;
-  /** "drawer" → right-edge sheet with a lower-z scrim. Default "dialog". */
   variant?: ModalVariant;
-  /** a11y: the caller must supply at least one of these. */
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-describedby"?: string;
-  /** Forwarded to the FRAME (role=dialog). Scrim gets `${testId}-scrim`. */
   testId?: string;
-  /** PLACEMENT-ONLY on the frame (max-height, flex/grid, one-off width). No appearance utilities. */
   className?: string;
   children: ReactNode;
 }
@@ -40,7 +33,6 @@ const alignClass: Record<ModalAlign, string> = {
   center: "items-center justify-center",
   top: "items-start justify-center pt-[12vh]",
 };
-
 
 export function ModalShell({
   open,
