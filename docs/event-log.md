@@ -306,7 +306,7 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on reconnect by
-  refetching: `PrintApp` opens the stream through `lib/liveStream.ts`, and
+  refetching: `App` opens the stream through `lib/liveStream.ts`, and
   every `open` after the first runs `lib/queue/reconnectRefresh.ts`. That
   invalidates every query except raw exposure traces, and it waits until no
   mutation is pending, so a refetch can't overwrite an optimistic edit that
@@ -356,7 +356,7 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
-The EventSource connection is bound to `src/print/App.tsx` (`PrintApp`)'s
+The EventSource connection is bound to `src/App.tsx` (`App`)'s
 mount/unmount only; `clientId` is stable for the lifetime of the tab, so
 no listener recycling is needed.
 

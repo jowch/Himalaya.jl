@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ExperimentEntry, EXPERIMENT_GONE } from "../src/print/shell/ExperimentEntry";
+import { ExperimentEntry, EXPERIMENT_GONE } from "../src/shell/ExperimentEntry";
 import * as toast from "../src/lib/toast";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";

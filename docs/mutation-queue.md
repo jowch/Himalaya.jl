@@ -400,12 +400,12 @@ each op into the `MutationCache` with the live queue's options
 (`queueMutationOptions`). A replayed op therefore keeps its `client_op_id`,
 its place in the single `"queue"` scope, and the same retry policy as a fresh
 edit. It is visible to the outage banner and to the mirror, so a second
-reload keeps it too. `PrintApp` runs both steps in one effect, in that order.
+reload keeps it too. `App` runs both steps in one effect, in that order.
 `rehydrate` skips a stored op whose `client_op_id` is already pending in the
 cache, so StrictMode's second effect run and an ErrorBoundary remount don't
 replay it twice. A stored entry this build can't apply (a malformed entry, or
 one whose `onMutate` throws because the payload shape changed in a deploy)
-counts as `lost` without stopping the rest, and `PrintApp` shows the same
+counts as `lost` without stopping the rest, and `App` shows the same
 "couldn't be restored" toast as a schema mismatch. A replayed op that the
 server rejects counts as `failed` and gets no extra toast, since the queue's
 own error toast already reports it.
@@ -449,7 +449,7 @@ frame written by the *other* version mid-rollout:
 | Class | Examples | Retry? | UX |
 |---|---|---|---|
 | Validation | 4xx, schema rejection, duplicate ↔ existing row | No | Toast with kind-specific message |
-| Unreachable | a `NetworkError` from `api.request` (only a rejected `fetch` becomes one), 502, 503, 504 | Yes, until the server answers (exponential backoff capped at 5s) | Banner mounted at `print/App.tsx` (PrintApp) via `useMutationState` |
+| Unreachable | a `NetworkError` from `api.request` (only a rejected `fetch` becomes one), 502, 503, 504 | Yes, until the server answers (exponential backoff capped at 5s) | Banner mounted at `App.tsx` (App) via `useMutationState` |
 | Server error | other 5xx | Yes (up to 5x, backoff capped at 5s), then rolls back | Banner while retrying, then a kind-specific error toast unless the call passed its own `onError` |
 | Client-side throw | a bug in a mutator's `request`, a header `fetch` refuses | Yes (up to 5x), then rolls back | No toast; the caller's `onError` decides |
 
@@ -473,7 +473,7 @@ one sample carry different keys (a frame drop has `sampleId`, a phase call only
 before the scope queue. A flow that waits for `onSuccess` waits out the whole
 outage.
 
-`InfrastructureBanner` (`print/shell/InfrastructureBanner.tsx`) is a global
+`InfrastructureBanner` (`shell/InfrastructureBanner.tsx`) is a global
 status strip that reads from `useMutationState` and the `useConnection` store
 (`lib/connection.ts`, fed by `openLiveStream`'s `onStatus`). It hides until
 any mutation has been pending > 500ms (avoids flicker on fast successes),
@@ -523,7 +523,7 @@ discipline and the canonical paired test files.
 | `lib/queue/mutators/` | One file per mutator kind (peak / index / speculative / custom-index / assignment / bridges / trivial / reanalyze) |
 | `lib/clientId.ts` | Per-tab UUID (sessionStorage) |
 | `lib/clientOpId.ts` | Per-mutation UUID (`crypto.randomUUID` per call) |
-| `print/shell/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |
+| `shell/InfrastructureBanner.tsx` | Global "infrastructure error" status strip |
 
 **Backend** (`packages/HimalayaUI/src/`):
 

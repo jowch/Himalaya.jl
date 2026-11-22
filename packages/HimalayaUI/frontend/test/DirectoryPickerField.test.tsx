@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DirectoryPickerField, folderHint } from "../src/print/components/DirectoryPickerField";
+import { DirectoryPickerField, folderHint } from "../src/components/DirectoryPickerField";
 import type { FolderSuggestion } from "../src/api";
 
 const f = (path: string, extra: Partial<FolderSuggestion> = {}): FolderSuggestion =>
