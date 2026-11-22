@@ -24,10 +24,6 @@ describe("bonnetGroups", () => {
     expect(bonnetGroups(c)).toEqual([]);
   });
 
-  it("keeps lattices more than 1% off the Bonnet ratio apart", () => {
-    expect(bonnetGroups([ix("Pn3m", 100, range(1, 4)), ix("Im3m", 127.9 * 1.011, range(5, 8))])).toEqual([]);
-    expect(bonnetGroups([ix("Pn3m", 100, range(1, 4)), ix("Im3m", 127.9 * 1.009, range(5, 8))])).toHaveLength(1);
-  });
 
   it("leaves out a third cubic that adds no peaks of its own", () => {
     const c = [ix("Pn3m", 100, range(1, 9), 0.8), ix("Im3m", 127.9, range(7, 16), 1), ix("Ia3d", 157.6, [2, 4, 9, 12], 0.9)];
@@ -79,6 +75,47 @@ describe("bonnetGroups", () => {
   it("does not depend on the order of the candidates", () => {
     const c = [ix("Pn3m", 100, range(1, 4), 0.2), ix("Im3m", 127.9, range(5, 8), 0.9)];
     expect(ids(bonnetGroups([...c].reverse()))).toEqual(ids(bonnetGroups(c)));
+  });
+});
+
+function fitted(phase: string, a: number, base: number, scatter: number, n = 4): IndexEntry {
+  const predicted_q = Array.from({ length: n }, (_, i) => base * (i + 1));
+  return {
+    ...ix(phase, a, []),
+    predicted_q,
+    peaks: predicted_q.map((q, i) => ({
+      peak_id: Math.round(base * 1e4) + i, ratio_position: i + 1, residual: 0,
+      q_observed: q * (1 + (i % 2 === 0 ? scatter : -scatter)),
+    })),
+  };
+}
+const pair = (scatter: number, off: number) =>
+  bonnetGroups([fitted("Pn3m", 100, 0.01, scatter), fitted("Im3m", 127.93 * (1 + off), 0.013, scatter)]);
+
+describe("Bonnet tolerance from the lattice fits", () => {
+  it("holds precise fits to the instrument floor", () => {
+    expect(pair(0, 0.007)).toHaveLength(1);
+    expect(pair(0, 0.011)).toEqual([]);
+  });
+
+  it("widens for scattered fits", () => {
+    expect(pair(0.01, 0.015)).toHaveLength(1);
+    expect(pair(0.01, 0.02)).toEqual([]);
+  });
+
+  it("never exceeds the cap however scattered the fits", () => {
+    expect(pair(0.05, 0.019)).toHaveLength(1);
+    expect(pair(0.05, 0.021)).toEqual([]);
+  });
+
+  it("keeps a lattice alias out even with the widest tolerance", () => {
+    expect(bonnetGroups([fitted("Pn3m", 100, 0.01, 0.05), fitted("Im3m", 141.42, 0.013, 0.05)])).toEqual([]);
+  });
+
+  it("uses the floor alone for fits with fewer than three peaks", () => {
+    const two = (phase: string, a: number, base: number) => fitted(phase, a, base, 0.05, 2);
+    expect(bonnetGroups([two("Pn3m", 100, 0.01), two("Im3m", 127.93 * 1.007, 0.013)])).toHaveLength(1);
+    expect(bonnetGroups([two("Pn3m", 100, 0.01), two("Im3m", 127.93 * 1.011, 0.013)])).toEqual([]);
   });
 });
 
