@@ -114,7 +114,7 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
                 @test _bc_members(fx.db) == [(fx.ea, 10)]
                 @test _bc_listed(call, fx.exp_id, fx.b).phases == ["Pn3m"]
                 removed = Tables.rowtable(DBInterface.execute(fx.db,
-                    "SELECT entity_id FROM user_actions WHERE action = 'assignment_remove'"))
+                    "SELECT entity_id FROM user_actions WHERE action = 'assignment_set_state'"))
                 @test [Int(r.entity_id) for r in removed] == [fx.eb]
             end
         end
@@ -192,7 +192,7 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
         end
     end
 
-    @testset "a one-time repair gives every member of an old bridge the same call state, through the log" begin
+    @testset "a one-time repair aligns old bridges whose calls agree, and leaves a conflict for a person to settle" begin
         mktempdir() do dir
             fx = _bridge_call_fixture(dir)
             c = HimalayaUI.create_sample!(fx.db; experiment_id = fx.exp_id, name = "C")
@@ -205,17 +205,100 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
             DBInterface.execute(fx.db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_BRIDGED_CALLS])
             @test HimalayaUI.bridged_call_drift(fx.db) == [7, 8]
             HimalayaUI.migrate_share_bridged_calls!(fx.db)
-            @test HimalayaUI.bridged_call_drift(fx.db) == Int[]
-            @test _bc_states(fx.db)[fx.b] == "indexed"
+            @test HimalayaUI.bridged_call_drift(fx.db) == [7]
+            @test _bc_states(fx.db)[fx.b] == "form_factor"
             @test _bc_states(fx.db)[d] == "form_factor"
             @test _bc_members(fx.db) == [(fx.ea, 10)]
             logged = Tables.rowtable(DBInterface.execute(fx.db,
                 "SELECT entity_id, user_id FROM user_actions WHERE action = 'sample_call_set_state' ORDER BY id"))
-            @test [Int(r.entity_id) for r in logged] == [fx.b, d]
+            @test [Int(r.entity_id) for r in logged] == [d]
             @test all(r -> r.user_id === missing, logged)
             HimalayaUI.migrate_share_bridged_calls!(fx.db)
             @test length(Tables.rowtable(DBInterface.execute(fx.db,
-                "SELECT id FROM user_actions WHERE action = 'sample_call_set_state'"))) == 2
+                "SELECT id FROM user_actions WHERE action = 'sample_call_set_state'"))) == 1
+
+            with_inproc_routes(fx.db) do call
+                r = _bc_bridge(call, fx.a, fx.b)
+                @test r.status == 409
+                @test Dict(Int(c.sample_id) => String(c.state) for c in _bc_json(r).calls) ==
+                      Dict(fx.a => "indexed", fx.b => "form_factor")
+                @test _bc_bridge(call, fx.a, fx.b; keep = "both").status == 400
+                @test _bc_bridge(call, fx.a, fx.b; keep = fx.b).status == 200
+                @test _bc_states(fx.db)[fx.a] == "form_factor"
+                @test _bc_members(fx.db) == []
+                @test HimalayaUI.bridged_call_drift(fx.db) == Int[]
+                @test _bc_bridge(call, fx.a, fx.b).status == 200
+            end
+        end
+    end
+
+    @testset "the edit's own frame goes out before the mates' call frames" begin
+        mktempdir() do dir
+            fx = _bridge_call_fixture(dir)
+            sub = (pending = Channel{String}(64),)
+            with_inproc_routes(fx.db) do call
+                _bc_bridge(call, fx.a, fx.b)
+                _bc_state(call, fx.a, "form_factor")
+                lock(HimalayaUI.SSE_LOCK) do
+                    push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+                end
+                try
+                    for (path, body, first_kind) in (
+                            ("/api/exposures/$(fx.ea)/assignment/members", Dict(:index_id => 10), "assignment_add"),
+                            ("/api/samples/$(fx.a)/call/state", Dict(:state => "form_factor"), "sample_call_set_state"))
+                        r = call("POST", path; headers = vcat(_BC_HEADERS, "X-Client-Op-Id" => "op-$(first_kind)"),
+                            body = Vector{UInt8}(JSON3.write(body)))
+                        @test r.status == 200
+                        frames = String[]
+                        while isready(sub.pending)
+                            push!(frames, take!(sub.pending))
+                        end
+                        own = filter(f -> occursin("op-$(first_kind)", f), frames)
+                        @test length(own) == 2
+                        @test occursin("\"kind\":\"$(first_kind)\"", own[1])
+                        @test occursin("\"entity_id\":$(first_kind == "assignment_add" ? fx.ea : fx.a)", own[1])
+                        @test occursin("\"entity_id\":$(fx.b)", own[2])
+                    end
+                finally
+                    lock(HimalayaUI.SSE_LOCK) do
+                        filter!(s -> s !== sub, HimalayaUI.SSE_SUBSCRIBERS[])
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "keeping one call clears every phase ticked on the other side's frames under one op id" begin
+        mktempdir() do dir
+            fx = _bridge_call_fixture(dir)
+            with_inproc_routes(fx.db) do call
+                _bc_tick(call, fx.ea, 10)
+                _bc_tick(call, fx.eb, 20)
+                _bc_tick(call, fx.eb, 21)
+                r = call("POST", "/api/samples/$(fx.a)/bridge"; headers = vcat(_BC_HEADERS, "X-Client-Op-Id" => "op-keep"),
+                    body = Vector{UInt8}(JSON3.write(Dict(:to_sample_id => fx.b, :keep_call => fx.a))))
+                @test r.status == 200
+                @test _bc_members(fx.db) == [(fx.ea, 10)]
+                @test _bc_states(fx.db) == Dict(fx.a => "indexed", fx.b => "indexed")
+                @test _bc_listed(call, fx.exp_id, fx.b).phases == ["Pn3m"]
+                HimalayaUI.rebuild_views_from_log!(fx.db, fx.eb; entity_type = "exposure")
+                @test _bc_members(fx.db) == [(fx.ea, 10)]
+            end
+        end
+    end
+
+    @testset "a custom index on a form-factor group sets every member back to indexed" begin
+        mktempdir() do dir
+            fx = _bridge_call_fixture(dir)
+            with_inproc_routes(fx.db) do call
+                _bc_bridge(call, fx.a, fx.b)
+                _bc_state(call, fx.a, "form_factor")
+                r = _bc_post(call, "/api/exposures/$(fx.ea)/custom-index",
+                    Dict(:phase => "Pn3m", :basis => 0.1, :ratios => [sqrt(2), sqrt(3), 2.0]))
+                @test r.status == 200
+                @test _bc_states(fx.db) == Dict(fx.a => "indexed", fx.b => "indexed")
+                @test HimalayaUI.bridged_call_drift(fx.db) == Int[]
+            end
         end
     end
 end
