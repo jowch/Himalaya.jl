@@ -34,6 +34,7 @@ function register_exposures_routes!()
                 "SELECT source_exposure_id, role FROM exposure_sources
                  WHERE averaged_exposure_id = ?", [Int(e.id)]))
             d = row_to_json(e)
+            delete!(d, :q_step)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
             merge!(d, prp_details(e.prp_path))

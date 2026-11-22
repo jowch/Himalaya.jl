@@ -271,21 +271,21 @@ without its kind is ambiguous. Resolving the kind separately (e.g. via
 actually won a snap — the collision `insert_speculative_index!` guards against
 by re-querying the resolved table.
 """
-_effective_peak_rows(db::SQLite.DB, exposure_id::Int) =
-    Tables.rowtable(DBInterface.execute(db, """
-        SELECT a.id, a.q, a.sharpness, 'auto' AS peak_kind
-        FROM auto_peaks a
-        WHERE a.exposure_id = ?
-          AND NOT EXISTS (
-              SELECT 1 FROM peak_curations c
-              WHERE c.exposure_id = a.exposure_id AND c.kind = 'exclude'
-                AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
-          )
-        UNION ALL
-        SELECT id, q, NULL AS sharpness, 'curation' AS peak_kind
-        FROM peak_curations
-        WHERE exposure_id = ? AND kind = 'add'
-    """, [exposure_id, exposure_id]))
+function _effective_peak_rows(db::SQLite.DB, exposure_id::Int)
+    auto = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ? ORDER BY id",
+        [exposure_id]))
+    fl = curation_flags(db, exposure_id, [Float64(r.q) for r in auto])
+    rows = NamedTuple[]
+    for (i, r) in enumerate(auto)
+        (fl.excluded[i] || fl.superseded[i]) && continue
+        push!(rows, (id = r.id, q = r.q, sharpness = r.sharpness, peak_kind = "auto"))
+    end
+    for a in fl.adds
+        push!(rows, (id = a.id, q = a.q, sharpness = missing, peak_kind = "curation"))
+    end
+    rows
+end
 
 """
     insert_speculative_index!(db, exposure_id, phase, ratio_to_peak_id)
