@@ -62,12 +62,12 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
             </button>
             {c.scale !== undefined && (
               <span
-                className={"min-w-0 truncate whitespace-nowrap text-ink-faint" + dim}
+                className={"flex min-w-0 items-baseline whitespace-nowrap text-ink-faint" + dim}
                 data-scale-source={c.scale.source}
                 title={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}
               >
-                ×{c.scale.scale.toPrecision(3)}
-                {c.scale.source === "matched" && " matched"}
+                <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
+                {c.scale.source === "matched" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
               </span>
             )}
             <button
