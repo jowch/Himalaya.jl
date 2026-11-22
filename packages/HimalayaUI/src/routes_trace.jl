@@ -10,14 +10,14 @@ function register_trace_routes!()
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
         row = rows[1]
         String(row.kind) == "file" || return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "trace not available for derived exposures")))
+            JSON3.write(Dict(:error => "trace not available for derived frames")))
         row.filename === missing && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure has no filename")))
+            JSON3.write(Dict(:error => "frame has no filename")))
 
         pattern = integration_pattern_for(row)
         filename = String(row.filename)

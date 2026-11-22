@@ -58,13 +58,6 @@ test.beforeEach(async ({ page }) => {
     r.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/experiments/17/problems", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ingest_error: null, exposures: [] }) }));
-  await page.route("**/api/experiments/17/samples", (route) => {
-    route.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify([SAMPLE]),
-    });
-  });
-  // Corpus list — the focus workspace learns the sample's experiment from here.
   await page.route((url) => url.pathname === "/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([SAMPLE]) }));
   await page.route("**/api/users", (r) =>
