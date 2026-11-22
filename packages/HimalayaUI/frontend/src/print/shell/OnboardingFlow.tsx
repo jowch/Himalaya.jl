@@ -42,6 +42,11 @@ type Phase = "name" | "tutorial";
 /** Allowed handle characters: letters, digits, underscore. No @, no spaces. */
 const HANDLE_RE = /^[A-Za-z0-9_]+$/;
 
+export function handleFromName(first: string, last: string): string {
+  const word = (s: string): string => s.normalize("NFD").toLowerCase().replace(/[^a-z0-9_]/g, "");
+  return word(first) || word(last);
+}
+
 interface PendingUser {
   username: string;
   firstName?: string | undefined;
@@ -92,7 +97,7 @@ export function OnboardingFlow(): JSX.Element | null {
     setError(null);
     const isNew = selection === "__new__";
     // Tolerate a leading @ even though the visual prefix means it shouldn't be there.
-    const handle = isNew ? newHandle.trim().replace(/^@/, "") : selection;
+    const handle = isNew ? newHandle.trim().replace(/^@/, "") || handleFromName(newFirst, newLast) : selection;
     if (!handle) { setError("Handle required"); return; }
     if (isNew && !HANDLE_RE.test(handle)) {
       setError("Handle may only contain letters, digits, and underscores");
@@ -204,7 +209,7 @@ function NameStep({
 
   const previewLabel = (first: string, last: string, handle: string): string => {
     const name = [first.trim(), last.trim()].filter(Boolean).join(" ");
-    const h = handle.trim().replace(/^@/, "");
+    const h = handle.trim().replace(/^@/, "") || handleFromName(first, last);
     if (!name && !h) return " "; // reserve a line of space so layout doesn't jump
     if (!h)          return name;
     if (!name)       return `@${h}`;
@@ -263,7 +268,7 @@ function NameStep({
             <input
               className="flex-1 bg-transparent px-2 py-1 focus:outline-none"
               type="text"
-              placeholder="handle"
+              placeholder={handleFromName(newFirst, newLast) || "handle"}
               value={newHandle}
               onChange={(e) => onNewHandle(e.target.value.replace(/^@/, ""))}
               data-testid="onboarding-new-handle"

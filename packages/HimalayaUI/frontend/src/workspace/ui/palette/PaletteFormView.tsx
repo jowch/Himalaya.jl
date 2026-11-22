@@ -23,7 +23,7 @@ export function PaletteFormView({ form, onBack, onDone }: Props): JSX.Element {
   useEffect(() => {
     const el = refs.current[focus];
     el?.focus();
-    if (el instanceof HTMLInputElement) el.setSelectionRange(el.value.length, el.value.length);
+    if (el instanceof HTMLInputElement) el.select();
   }, [focus]);
 
   const set = (id: string, v: string): void => setValues((cur) => ({ ...cur, [id]: v }));

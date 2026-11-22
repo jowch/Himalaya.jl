@@ -867,7 +867,9 @@ export function WorkspacePage(): JSX.Element {
       }
       if (ev.key === "/") {
         ev.preventDefault();
-        document.getElementById("workspace-filter")?.focus();
+        const filter = document.getElementById("workspace-filter");
+        filter?.focus();
+        if (filter instanceof HTMLInputElement) filter.select();
         return;
       }
       if (draft) {
