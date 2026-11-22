@@ -257,7 +257,7 @@ function exposure(id: number, extra: Partial<Exposure> = {}): Exposure {
 function index(id: number, phase: string, score: number): IndexEntry {
   return {
     id, exposure_id: 101, phase, basis: 0.1, score, r_squared: 0.99, lattice_d: 100,
-    ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.14],
+    status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.14],
   } as IndexEntry;
 }
 

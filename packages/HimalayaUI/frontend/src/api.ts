@@ -493,7 +493,6 @@ export interface IndexEntry {
   score: number | null;
   r_squared: number | null;
   lattice_d: number | null;
-  ngc: number | null;
   status: "candidate";
   kind: "auto" | "speculative";
   inputs_hash: string | null;

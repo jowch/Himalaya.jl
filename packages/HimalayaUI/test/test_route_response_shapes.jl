@@ -156,7 +156,7 @@ end
                 @test !isempty(indices)
                 expected = [
                     :id, :exposure_id, :phase, :basis, :score, :r_squared,
-                    :lattice_d, :ngc, :status, :kind, :inputs_hash,
+                    :lattice_d, :status, :kind, :inputs_hash,
                     :peaks, :predicted_q,
                     # Plan B: the candidate-list route carries the Gauss–Bonnet
                     # coexistence flag (null when N/A). The single-index and
@@ -173,7 +173,7 @@ end
         end
     end
 
-    @testset "POST /api/exposures/:id/speculative → IndexEntry full shape (incl. ngc)" begin
+    @testset "POST /api/exposures/:id/speculative → IndexEntry full shape" begin
         mktempdir() do tmp
             ctx = _setup_analyzed_exposure(tmp)
             peaks = Tables.rowtable(DBInterface.execute(ctx.db,
@@ -191,12 +191,11 @@ end
                 @test r.status == 200
                 body = JSON3.read(String(r.body))
                 # IndexEntry interface in api.ts: id, exposure_id, phase,
-                # basis, score, r_squared, lattice_d, ngc, status, kind,
+                # basis, score, r_squared, lattice_d, status, kind,
                 # inputs_hash, peaks, predicted_q.
-                # `ngc` was missing pre-deep-scan fix; pin it explicitly.
                 expected = [
                     :id, :exposure_id, :phase, :basis, :score, :r_squared,
-                    :lattice_d, :ngc, :status, :kind, :inputs_hash,
+                    :lattice_d, :status, :kind, :inputs_hash,
                     :peaks, :predicted_q,
                 ]
                 assert_keys(body, expected)
@@ -228,7 +227,7 @@ end
                 body = JSON3.read(String(r.body))
                 expected = [
                     :id, :exposure_id, :phase, :basis, :score, :r_squared,
-                    :lattice_d, :ngc, :bonnet, :status, :kind, :inputs_hash,
+                    :lattice_d, :bonnet, :status, :kind, :inputs_hash,
                     :peaks, :predicted_q, :event_id, :view_row_id,
                 ]
                 assert_keys(body, expected)

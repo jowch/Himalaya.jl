@@ -60,40 +60,6 @@ function predicted_q_for_phase(phase_name::AbstractString, basis::Float64)::Vect
 end
 
 """
-    _ngc_for_phase(phase_name, lattice_d) -> Union{Float64, Nothing}
-
-Compute phase-averaged Gaussian curvature κ for the three bicontinuous
-cubic phases (Ia3d, Pn3m, Im3m). Result has units `1/length²` matching
-the unit of `lattice_d` — i.e. if the experiment stores q in `A-1`,
-lattice_d is in Å and κ comes back in `Å⁻²`; if q is in `nm-1`, κ is
-in `nm⁻²`. Returns `nothing` for other phases or when `lattice_d` is
-missing/non-positive.
-
-Formula: `κ = -2π·(χ/A₀)/a²`. The legacy `Himalaya.ngc` kernel hard-codes
-a `(10/a)²` factor that assumed `a` in Å and produced `nm⁻²` output —
-fine for the matlab UI it was ported from, but it breaks dimensional
-honesty when the experiment isn't in Å. The unit-naked formula here lets
-the frontend render κ alongside its experiment-native lattice unit
-(`Å⁻²` or `nm⁻²`) without backend-side conversion.
-"""
-function _ngc_for_phase(phase_name::AbstractString, lattice_d)::Union{Float64, Nothing}
-    (lattice_d === nothing || ismissing(lattice_d)) && return nothing
-    a = Float64(lattice_d)
-    a > 0 || return nothing
-    bare = last(split(phase_name, '.'))
-    χ, A₀ = if bare == "Ia3d"
-        (-8, 3.091)
-    elseif bare == "Pn3m"
-        (-2, 1.919)
-    elseif bare == "Im3m"
-        (-4, 2.345)
-    else
-        return nothing
-    end
-    -2π * (χ / A₀) / a^2
-end
-
-"""
     _bonnet_for_index(db, exposure_id, phase_name, lattice_d, index_id) -> Union{Dict,Nothing}
 
 For a candidate index, return `{predicted_a, consistent}` when the exposure's
@@ -154,7 +120,6 @@ function register_analysis_routes!()
             d = row_to_json(ix)
             d[:peaks]        = rows_to_json(peak_rows)
             d[:predicted_q]  = predicted
-            d[:ngc]          = _ngc_for_phase(String(ix.phase), ix.lattice_d)
             d[:bonnet]       = _bonnet_for_index(db, id, String(ix.phase), ix.lattice_d, Int(ix.id))
             d
         end
@@ -354,7 +319,6 @@ function register_analysis_routes!()
             d = row_to_json(ix)
             d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
-            d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
         end
     end
@@ -465,12 +429,10 @@ function register_analysis_routes!()
             d = row_to_json(ix)
             d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
-            d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
             # Match GET /api/exposures/:id/indices, which sets `bonnet` (:157).
             # CandidateRow reads `ix.bonnet?.consistent`, so omitting it here
             # left a freshly committed custom index without its Gauss–Bonnet
-            # flag until the next refetch — the same hazard this file already
-            # documents for `ngc` on the sibling speculative route.
+            # flag until the next refetch.
             d[:bonnet]      = _bonnet_for_index(db, id, String(ix.phase), ix.lattice_d, nid)
             d[:event_id]    = sc.event_id
             d[:view_row_id] = sc.view_row_id

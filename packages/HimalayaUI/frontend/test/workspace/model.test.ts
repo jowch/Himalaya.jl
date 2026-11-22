@@ -10,7 +10,7 @@ function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
 
 function index(id: number, phase: string, score: number | null): IndexEntry {
   return {
-    id, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: null, ngc: null,
+    id, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: null, 
     status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [],
   };
 }

@@ -59,7 +59,7 @@ function captureFetch(): Captured[] {
       source: "manual", excluded: false, label: null,
       name: "n", notes: null, key: "k", value: "v", source_field: "manual",
       kind: "auto", active: true, members: [], peaks: [], predicted_q: [],
-      basis: 0.1, score: 0.9, r_squared: 0.99, lattice_d: 50, ngc: 0.5,
+      basis: 0.1, score: 0.9, r_squared: 0.99, lattice_d: 50,
       status: "candidate", inputs_hash: "h",
       author_id: 3, author: "alice", body: "hi", created_at: "2026-05-03",
       event_id: 9, view_row_id: 100, analysis_inputs_hash: "h1",
