@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { IndexEntry } from "../../src/api";
-import { CandidateList } from "../../src/workspace/ui/CandidateList";
+import { CandidateList } from "../../src/ui/CandidateList";
 import type { CallRow } from "../../src/workspace/bonnetGroups";
 
 function candidate(id: number, phase = "Lamellar", lattice: number | null = 40 + id): IndexEntry {

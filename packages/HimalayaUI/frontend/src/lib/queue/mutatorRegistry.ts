@@ -2,7 +2,6 @@ import type { OpKind, Mutator } from "./types";
 import {
   updateSampleMutator,
   setExposureStatusMutator,
-  selectExposureMutator,
 } from "./mutators/trivial";
 import { peakAddMutator } from "./mutators/peakAdd";
 import { peakRemoveMutator } from "./mutators/peakRemove";
@@ -52,8 +51,6 @@ export function resolveMutator(
       return updateSampleMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
-    case "select_exposure":
-      return selectExposureMutator;
     case "peak_added":
       return peakAddMutator;
     case "peak_removed":
@@ -118,7 +115,6 @@ export function resolveMutatorForEvent(
     // speculative_created + assignment_add, both resolved above. Nothing to add.
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
-    case "select_exposure":     return selectExposureMutator;
     case "sample_bridged":           return bridgeSamplesMutator;
     case "sample_unbridged":         return unbridgeSampleMutator;
     case "compares_changed":         return patchComparesMutator;

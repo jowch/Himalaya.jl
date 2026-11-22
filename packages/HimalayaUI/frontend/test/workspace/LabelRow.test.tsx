@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { SampleLabel } from "../../src/api";
-import { LabelRow } from "../../src/workspace/ui/LabelRow";
+import { LabelRow } from "../../src/ui/LabelRow";
 
 function chip(id: number, label: string, state: SampleLabel["state"] = "confirmed"): SampleLabel {
   return { id, sample_id: 1, label, state, source: "user" };

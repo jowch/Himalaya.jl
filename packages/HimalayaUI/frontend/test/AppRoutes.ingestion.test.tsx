@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AppRoutes } from "../src/print/shell/AppRoutes";
+import { AppRoutes } from "../src/shell/AppRoutes";
 import * as api from "../src/api";
 
 function renderAt(path: string) {

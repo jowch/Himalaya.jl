@@ -93,7 +93,6 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
 
     _workload_call(send, "PATCH", "/api/exposures/$exposure/status", Dict(:status => "rejected"))
     _workload_call(send, "PATCH", "/api/exposures/$exposure/status", Dict(:status => nothing))
-    _workload_call(send, "PATCH", "/api/exposures/$exposure/select", Dict())
 
     indices = _workload_call(send, "GET", "/api/exposures/$exposure/indices")
     if !isempty(indices)

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "./test-utils";
-import { OnboardingFlow } from "../src/print/shell/OnboardingFlow";
+import { OnboardingFlow } from "../src/shell/OnboardingFlow";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 

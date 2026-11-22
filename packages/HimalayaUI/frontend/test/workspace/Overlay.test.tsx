@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Overlay } from "../../src/workspace/ui/Overlay";
+import { Overlay } from "../../src/ui/Overlay";
 
 function Harness({ onClose = () => undefined, empty = false }: { onClose?: () => void; empty?: boolean }): JSX.Element {
   const [open, setOpen] = useState(false);
