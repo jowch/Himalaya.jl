@@ -328,7 +328,8 @@ function backfill_all_monitors!(db::SQLite.DB)
         "SELECT DISTINCT experiment_id FROM exposures
           WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
     for r in ids
-        try_backfill_monitors!(db, Int(r.experiment_id))
+        eid = Int(r.experiment_id)
+        try_backfill_monitors!(db, eid) > 0 && suggest_labels_quietly!(db, eid)
     end
     nothing
 end

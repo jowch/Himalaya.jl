@@ -111,4 +111,29 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
         @test_logs (:warn, "label suggestions failed") match_mode=:any HimalayaUI.migrate_schema!(db)
         @test _rows(db) == Set([(b, "Buffer", "suggested", "ingest")])
     end
+    @testset "suggests the flight path when every frame of a sample agrees" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c, d, e, f)) = _seed_named_samples(db, ["MO_A", "MO_B", "MO_C", "MO_D", "MO_E", "MO_F"])
+        frame(sid, m) = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = sid,
+            filename = "f$(sid)_$(rand(UInt32))", pipe_length_m = m)
+        frame(a, 1.7095); frame(a, 1.7095)
+        frame(b, 0.7); frame(b, 1.7)
+        frame(c, nothing)
+        frame(d, 1.7); frame(d, nothing)
+        frame(e, 1.7)
+        frame(f, 1.7)
+        DBInterface.execute(db, "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, '1.70 m', 'removed', 'user')", [e])
+        DBInterface.execute(db, "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, '1 M', 'confirmed', 'user')", [f])
+        HimalayaUI.suggest_labels_for_experiment!(db, exp_id)
+        HimalayaUI.suggest_labels_for_experiment!(db, exp_id)
+        @test _rows(db) == Set([
+            (a, "1.7 m", "suggested", "ingest"),
+            (d, "1.7 m", "suggested", "ingest"),
+            (e, "1.70 m", "removed", "user"),
+            (f, "1 M", "confirmed", "user"),
+            (f, "1.7 m", "suggested", "ingest"),
+        ])
+        @test HimalayaUI.flight_path_label(0.5) == "0.5 m"
+    end
+
 end
