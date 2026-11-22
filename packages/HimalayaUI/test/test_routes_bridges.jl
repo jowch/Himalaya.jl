@@ -257,20 +257,56 @@ _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables
         @test _label_states(db, b) == live
     end
 
-    @testset "the export names the samples each one is bridged with" begin
+    @testset "the export names the other bridged sample and its setup, never the row itself" begin
         db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b, c)) = _seed_bridge_samples(db, 3)
+        exp_id = HimalayaUI.create_experiment!(db; path="/d", data_dir="/d", analysis_dir="/a")
+        s1 = HimalayaUI.create_setup!(db; experiment_id=exp_id, data_dir="/d/setup1/data", analysis_dir="/a1", folder="setup1")
+        s2 = HimalayaUI.create_setup!(db; experiment_id=exp_id, data_dir="/d/setup2/data", analysis_dir="/a2", folder="setup2", display_name="long pipe")
+        a = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DOPE_H2O", setup_id=s1)
+        b = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="DOPE_H2O", setup_id=s2)
+        c = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="lone", setup_id=s1)
         with_inproc_routes(db) do call
             call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
             body = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export?format=json").body))
-            by = Dict(String(s.name) => collect(String, s.bridged_with) for s in body)
-            @test by == Dict("S1" => ["S2"], "S2" => ["S1"], "S3" => String[])
+            rows = Dict(String(s.setup) * "/" * String(s.name) => s for s in body)
+            @test [(String(x.name), String(x.setup)) for x in rows["setup1/DOPE_H2O"].bridged_with] == [("DOPE_H2O", "long pipe")]
+            @test [(String(x.name), String(x.setup)) for x in rows["long pipe/DOPE_H2O"].bridged_with] == [("DOPE_H2O", "setup1")]
+            @test isempty(rows["setup1/lone"].bridged_with)
             csv = String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)
             header = split(first(split(csv, '\n')), ',')
-            @test "bridged_with" in header
-            col = findfirst(==("bridged_with"), header)
-            rows = Dict(split(l, ',')[1] => split(l, ',')[col] for l in split(strip(csv), '\n')[2:end])
-            @test rows["S1"] == "S2" && rows["S2"] == "S1" && rows["S3"] == ""
+            @test header[end-1:end] == ["setup", "bridged_with"]
+            lines = [split(l, ',') for l in split(strip(csv), '\n')[2:end]]
+            by = Dict((l[1], l[end-1]) => l[end] for l in lines)
+            @test by[("DOPE_H2O", "setup1")] == "DOPE_H2O (long pipe)"
+            @test by[("DOPE_H2O", "long pipe")] == "DOPE_H2O (setup1)"
+            @test by[("lone", "setup1")] == ""
         end
+    end
+
+    @testset "a one-time repair shares labels across bridges made before labels were shared, through the log" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c)) = _seed_bridge_samples(db, 3)
+        DBInterface.execute(db, "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 9), (?, 9)", [a, b])
+        DBInterface.execute(db,
+            "INSERT INTO sample_labels (sample_id, label, state) VALUES (?, 'Buffer', 'confirmed'), (?, '37C', 'confirmed'), (?, 'buffer', 'removed'), (?, '1.7 m', 'confirmed'), (?, 'other', 'confirmed')",
+            [a, b, b, b, c])
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_BRIDGED_LABELS])
+        @test HimalayaUI.bridged_label_drift(db) == [9]
+        HimalayaUI.migrate_share_bridged_labels!(db)
+        @test isempty(HimalayaUI.bridged_label_drift(db))
+        @test _label_states(db, a) == Dict("Buffer" => "confirmed", "37C" => "confirmed")
+        @test _label_states(db, b)["buffer"] == "confirmed"
+        @test !haskey(_label_states(db, a), "1.7 m")
+        @test _label_states(db, c) == Dict("other" => "confirmed")
+        logged = Tables.rowtable(DBInterface.execute(db,
+            "SELECT entity_id, payload, user_id FROM user_actions WHERE action = 'label_added' ORDER BY id"))
+        @test Set(Int(r.entity_id) for r in logged) == Set([a, b])
+        @test all(r -> r.user_id === missing, logged)
+        n = length(logged)
+        HimalayaUI.migrate_share_bridged_labels!(db)
+        @test length(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM user_actions WHERE action = 'label_added'"))) == n
+        DBInterface.execute(db, "DELETE FROM sample_labels WHERE sample_id = ?", [a])
+        HimalayaUI.rebuild_views_from_log!(db, a; entity_type = "sample")
+        @test _label_states(db, a) == Dict("37C" => "confirmed")
     end
 end

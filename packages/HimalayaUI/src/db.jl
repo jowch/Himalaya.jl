@@ -38,6 +38,7 @@ const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
 const MIGRATION_EXPERIMENTS_INGEST_ERROR = "experiments_ingest_error_v1"
 const MIGRATION_LABEL_SUGGESTIONS = "label_suggestions_v1"
+const MIGRATION_BRIDGED_LABELS = "bridged_labels_shared_v1"
 
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
@@ -519,6 +520,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_drop_exposure_selected!(db)
     migrate_drop_retired_tables!(db)
     migrate_label_suggestions!(db)
+    migrate_share_bridged_labels!(db)
     migrate_setups!(db)
     migrate_exposures_pipe_length!(db)
 end

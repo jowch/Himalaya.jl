@@ -82,15 +82,37 @@ function _share_labels!(db, req, sample_id::Int, exp_id::Int)
 end
 
 function bridged_label_drift(db)
-    rows = Tables.rowtable(DBInterface.execute(db,
-        """SELECT b.group_id, b.sample_id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
-            WHERE s.merged_into_id IS NULL ORDER BY b.group_id, b.sample_id"""))
+    sets(sid) = Set(keys(_confirmed_shared_labels(db, [sid])))
+    sort([g for (g, ms) in _live_bridge_groups(db) if length(unique(sets.(ms))) > 1])
+end
+
+function _live_bridge_groups(db)
     groups = Dict{Int, Vector{Int}}()
-    for r in rows
+    for r in Tables.rowtable(DBInterface.execute(db,
+            """SELECT b.group_id, b.sample_id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
+                WHERE s.merged_into_id IS NULL ORDER BY b.group_id, b.sample_id"""))
         push!(get!(groups, Int(r.group_id), Int[]), Int(r.sample_id))
     end
-    sets(sid) = Set(keys(_confirmed_shared_labels(db, [sid])))
-    sort([g for (g, ms) in groups if length(unique(sets.(ms))) > 1])
+    filter(kv -> length(last(kv)) >= 2, groups)
+end
+
+function migrate_share_bridged_labels!(db::SQLite.DB)
+    _migrated(db, MIGRATION_BRIDGED_LABELS) && return nothing
+    SQLite.transaction(db) do
+        req = _system_request()
+        for (_, members) in sort(collect(_live_bridge_groups(db)); by = first)
+            exp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT experiment_id FROM samples WHERE id = ?", [first(members)]))).experiment_id)
+            labels = sort(collect(values(_confirmed_shared_labels(db, members))))
+            for sid in members, label in labels
+                _label_state(db, sid, label) == "confirmed" && continue
+                apply_event!(InTransaction(), db, req; kind = "label_added", entity_type = "sample",
+                    entity_id = sid, payload = Dict(:label => label, :experiment_id => exp_id))
+            end
+        end
+        _record_migration!(db, MIGRATION_BRIDGED_LABELS)
+    end
+    nothing
 end
 
 function bridge_samples!(db, req, a::Int, b::Int, exp_id::Int)
