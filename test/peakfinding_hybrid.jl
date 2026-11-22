@@ -295,6 +295,74 @@ end
     end
 end
 
+# Gaussian peaks on a zero baseline with unit noise.
+function _zero_baseline(seed, n, centres, height; width = 4.0)
+    I = randn(MersenneTwister(seed), n)
+    for c in centres
+        I .+= height .* exp.(-((1:n) .- c) .^ 2 ./ (2 * width^2))
+    end
+    collect(range(0.01, 0.4; length = n)), I
+end
+
+@testset "hybrid: clustered peaks on a zero baseline are found" begin
+    n = 970
+    q0 = collect(range(0.01, 0.4; length = n))
+    centres(qs) = [argmin(abs.(q0 .- x)) for x in qs]
+    cases = [
+        centres(0.20:0.015:0.26),                              # five peaks in a cluster
+        centres([0.04 * sqrt(k) for k in 2:9]),                # Pn3m-like series
+    ]
+    for cs in cases, height in (30.0, 100.0)
+        miss_h = miss_d = miss_h2 = 0
+        for seed in 1:20
+            q, I = _zero_baseline(seed, n, cs, height)
+            σ = ones(n)
+            found(r) = count(c -> any(abs.(r.indices .- c) .<= 3), cs)
+            miss_d  += length(cs) - found(findpeaks(q, I, σ))
+            miss_h  += length(cs) - found(findpeaks(q, I, σ; method = :hybrid))
+            miss_h2 += length(cs) - found(findpeaks(q, I; method = :hybrid))
+        end
+        @test miss_h <= miss_d
+        @test miss_h2 <= miss_d
+    end
+end
+
+# Poisson sample by Knuth's method (small means only).
+function _poisson(rng, λ)
+    L = exp(-λ); k = 0; p = 1.0
+    while true
+        p *= rand(rng)
+        p <= L && return k
+        k += 1
+    end
+end
+
+@testset "hybrid: quantised counts, 2-argument form is scale invariant" begin
+    n = 970
+    q = collect(range(0.01, 0.4; length = n))
+    for seed in 1:20
+        rng = MersenneTwister(seed)
+        λ = 0.8 .+ [sum(10.0 * exp(-((i - c)^2) / (2 * 3.0^2)) for c in (150, 300, 450, 600, 750)) for i in 1:n]
+        I = Float64[_poisson(rng, l) for l in λ]
+        a = findpeaks(q, I; method = :hybrid).indices
+        @test findpeaks(q, I .* 1e3; method = :hybrid).indices == a
+        @test findpeaks(q, I .* 1e-3; method = :hybrid).indices == a
+    end
+end
+
+@testset "hybrid: an interior block of zeros adds no peak the default lacks" begin
+    for seed in 1:10
+        q, I0, σ0, _ = _hybrid_trace(; seed, peaks = false)
+        I = copy(I0); I[400:420] .= 0.0
+        base = findpeaks(q, I, σ0).indices
+        @test issubset(findpeaks(q, I, σ0; method = :hybrid).indices, base)
+        base2 = findpeaks(q, I).indices
+        @test issubset(findpeaks(q, I; method = :hybrid).indices, base2)
+        I[400:420] .= NaN
+        @test issubset(findpeaks(q, I, σ0; method = :hybrid).indices, findpeaks(q, I, σ0).indices)
+    end
+end
+
 @testset "hybrid: without σ, an estimate is used" begin
     q, I, σ, t = _hybrid_trace()
     with_σ = findpeaks(q, I, σ; method = :hybrid)
