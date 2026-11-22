@@ -84,8 +84,6 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([exp]) }));
   await page.route(`**/api/experiments/${opts.id}`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exp) }));
-  await page.route(`**/api/experiments/${opts.id}/samples`, (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
   await page.route(`**/api/experiments/${opts.id}/problems`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(problems) }));
   await page.route((url) => url.pathname === "/api/samples", (r) =>

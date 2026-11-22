@@ -37,6 +37,7 @@ If this is your first session on this repo, skim these in order before touching 
 ```
 src/                                # core Himalaya package — see src/AGENTS.md
 test/                               # core tests
+packages/HimalayaDB/                # read-only Julia reader of the central DB for analysis scripts; contract-tested against HimalayaUI
 packages/HimalayaUI/
   src/                              # backend — see packages/HimalayaUI/src/AGENTS.md
   test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
@@ -50,7 +51,6 @@ packages/HimalayaUI/
         queue/                      # mutation queue — see lib/queue/AGENTS.md
     test/                           # Vitest unit tests — see frontend/test/AGENTS.md
     e2e/                            # Playwright mocked — see e2e/AGENTS.md
-    e2e/live/                       # Playwright live integration — see e2e/live/README.md
     dist/                           # vite build output; served by Oxygen.jl in prod
 docs/                               # design docs (peak-finding, scoring, event-log, …)
 examples/                           # scripts using Himalaya (not part of the package)
@@ -82,6 +82,9 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.in
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
 
+# HimalayaDB (read-only DB reader; contract tests run HimalayaUI's own readers on its fixture)
+julia --project=packages/HimalayaDB -e 'using Pkg; Pkg.test()'
+
 # HimalayaUI backend (Julia) — ~3 min serial. Capture once. See packages/HimalayaUI/test/AGENTS.md
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
 # Faster (~2 min): run the 7 GROUP buckets as parallel processes:
@@ -93,7 +96,6 @@ GROUP=routes julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("Himala
 npm test              # Vitest unit tests (one-shot)
 npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (mocked; builds and serves the bundle; runs in CI)
-npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # lint:design + lint:ratchet + eslint + tsc --noEmit + vite build (must pass before PR)
 npm run typecheck:test  # tsc over src + test + e2e (Vitest and Playwright skip types; CI runs this)
 ```
@@ -165,7 +167,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
   - **Plan 8 — Mutation queue + idempotency:** Per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. Frontend `useQueueMutation` + `handleRemoteEvent` implement own-op confirmation and foreign-event replay-as-rerun. `analyze_run` no-op fast path suppresses both the SSE frame and the durable `user_actions` row.
   - **Series and comparisons deleted (2026-11-21):** the Compare page was folded into Series 2026-05-29, Series was hidden 2026-11-20 and then deleted on both sides 2026-11-21: frontend, `/api/series*` and picker routes, the series/comparison event kinds, and their nine tables (`migrate_drop_retired_tables!` drops them on `open_db`; the log rows stay). Sample chat (`/api/samples/{id}/messages`, `sample_messages`, the `post_message` kind) was deleted the same way. `/series*` and `/compare*` are now stale URLs. Anything similar gets a fresh design. Multiplayer is last-write-wins (no conflict UI — see the Plan 7 note above). Slug-based permalink URLs round-trip through `useStateFromUrl`.
   - **Component library + enforced design system (2026-05-29):** The Print's recurring patterns extracted into a closed-look primitive library under `src/print/ui/` (Button, Card, PhaseChip, Input, Popover, Tooltip, …; unused primitives were deleted 2026-11-22) — consumers pass **placement-only** `className`; appearance lives in the primitives (the closed-look/open-placement contract). Enforced by `scripts/check-design.mjs`, a **pure-absolute** `lint:design` build step (+ a warn-only PostToolUse hook) that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-exempt dirs (`src/print/ui/**`, the new workspace's `src/workspace/ui/**`, plus the `print/{plot,detector}/` render layers) (rules #3/#5 also allowlist the colour-authoring files `phases.ts` and `print/main.tsx`). Radius collapsed to one 5px step (`rounded.sm` == `rounded.md`); `--color-print-accent` sources from `--color-accent`; the live visual catalog is Storybook (`npm run storybook` from `packages/HimalayaUI/frontend`) — the hand-maintained `docs/design-system.html` mock was retired 2026-06-21 (it drifted from the living primitives; the `.stories.tsx` files are the source of truth).
-  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~279 Vitest files · 11 Playwright E2E spec files (mocked) + 4 Playwright live-integration specs.
+  - **Test coverage:** ~1000 Julia (HimalayaUI) · ~100 Julia (core) · ~279 Vitest files · 11 Playwright E2E spec files (mocked).
 - Deferred: holistic trace-plot-card / peak-move redesign (M4 — gated on rethinking the `auto_peaks`/`peak_curations` curation model), Phase panel Recent section, export UI, per-user audit view, derived-exposure construction. See [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
@@ -184,7 +186,6 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 **Package-specific:**
 
-- [packages/HimalayaUI/frontend/e2e/live/README.md](packages/HimalayaUI/frontend/e2e/live/README.md) — runbook for live-integration Playwright tests.
 - [packages/HimalayaUI/.env.example](packages/HimalayaUI/.env.example) — deployment env vars.
 
 > The per-sub-project design specs and implementation plans that used to live under `docs/superpowers/` were consolidated into the living docs above and removed (2026-06-18); their full history is preserved in git.

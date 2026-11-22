@@ -312,20 +312,6 @@ end
             end
         end
     end
-
-    @testset "GET /api/experiments/:id/samples → full Sample shape" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/experiments/$(ctx.experiment_id)/samples")
-                @test r.status == 200
-                body = only(JSON3.read(String(r.body)))
-                @test :id in keys(body)
-                @test :experiment_id in keys(body)
-                @test :tags ∉ keys(body)
-            end
-        end
-    end
 end
 
 @testset "Route response shapes: sample call (#350)" begin
