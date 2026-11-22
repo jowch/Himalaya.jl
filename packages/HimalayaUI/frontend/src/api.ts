@@ -222,7 +222,7 @@ export interface SetupPreview {
   discrepancies: ManifestDiscrepancy[];
   duplicate_of: { id: number; name: string } | null;
 }
-export interface FolderPreview { path: string; setups: SetupPreview[] }
+export interface FolderPreview { path: string; existing?: { id: number; name: string } | null; setups: SetupPreview[] }
 export const previewFolder = (path: string) =>
   request<FolderPreview>("GET", `/api/fs/preview?path=${encodeURIComponent(path)}`);
 

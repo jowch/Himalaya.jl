@@ -200,6 +200,13 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+function existingFrom(body: unknown): { id: number; name: string } | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const b = body as { experiment_id?: unknown; name?: unknown };
+  if (typeof b.experiment_id !== "number" || typeof b.name !== "string") return undefined;
+  return { id: b.experiment_id, name: b.name };
+}
+
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -208,6 +215,7 @@ export function NewExperimentPage(): JSX.Element {
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [refused, setRefused] = useState<{ id: number; name: string } | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const picked = useDebounced(path.trim(), 200);
 
@@ -234,14 +242,15 @@ export function NewExperimentPage(): JSX.Element {
     })));
   }, [setups]);
 
-  useEffect(() => { setTypedName(undefined); }, [picked]);
+  useEffect(() => { setTypedName(undefined); setRefused(undefined); }, [picked]);
 
   const folder = preview.data?.path ?? picked;
   const name = typedName ?? folderName(folder);
+  const existing = preview.data?.existing ?? refused;
 
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
   const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
-  const canSubmit = current && chosen.length > 0 && !submitting && name.trim() !== "";
+  const canSubmit = current && chosen.length > 0 && !submitting && name.trim() !== "" && existing === undefined;
   const [submitWhenReady, setSubmitWhenReady] = useState<string | undefined>(undefined);
   const inFlight = useRef(false);
 
@@ -278,7 +287,9 @@ export function NewExperimentPage(): JSX.Element {
       void queryClient.invalidateQueries({ queryKey: queryKeys.folderPreviews });
       navigate(`/experiments/${exp.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add this beamtime.");
+      const taken = err instanceof api.ApiError && err.status === 409 ? existingFrom(err.body) : undefined;
+      if (taken !== undefined) setRefused(taken);
+      else setError(err instanceof Error ? err.message : "Could not add this beamtime.");
     } finally {
       setSubmitting(false);
       inFlight.current = false;
@@ -330,7 +341,10 @@ export function NewExperimentPage(): JSX.Element {
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
           <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady(path.trim()))} suggestions={suggestions} autoFocus />
-          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{status}</p>
+          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing !== undefined ? `This beamtime is already added as ${existing.name}. New setup folders in it are added when it is rescanned.` : status}</p>
+          {existing !== undefined && (
+            <Button variant="ghost" data-testid="open-existing" className="mt-1" onClick={() => navigate(`/experiments/${existing.id}`)}>Open {existing.name}</Button>
+          )}
         </div>
         {setups.length > 0 && (
           <div className="mt-6">

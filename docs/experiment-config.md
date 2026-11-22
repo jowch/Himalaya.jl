@@ -131,8 +131,17 @@ without writing anything. `path` is the `data_dir`. It returns:
   (`included` defaults to `true`). Setups are stored in the order sent, as
   `position` 0, 1, … Each `data_dir` must be an existing directory: `400`
   otherwise, `400` when two setups share one, and `409` if another experiment
-  already uses it. `root` defaults to the folder that holds `data_dir`, and the
-  setup's `folder` is the root's name.
+  already uses it. `root` defaults to the folder that holds `data_dir`; it must
+  exist, hold `data_dir` and sit inside `path` (`400` otherwise). The setup's
+  `folder` is the root's name. A setup that is not an object, has no string
+  `data_dir`, or has a non-string `root`/`analysis_dir`, a non-boolean
+  `included`, or `patterns`/`geometry` that are not objects is a `400`, and so
+  is a non-string `name`.
+- `path` may not already be another experiment's `path`: that is a `409` with
+  `experiment_id` and `name`, and the funnel then offers to open that
+  experiment instead. `GET /api/fs/preview` reports the same as `existing`, so
+  the funnel says so before anything is sent. New setup folders in a beamtime
+  that is already added come in through a rescan.
 - `analysis_dir` defaults to `data_dir/analysis` if that exists, else `data_dir`.
 - A geometry value with no source is stored with source `user`. Non-numeric
   values and non-string sources are ignored.
@@ -162,7 +171,7 @@ Everything else is a column on the experiment's `setups` rows.
 |--------|--------|----------------|
 | `folder` | Create: the setup subfolder's name | No |
 | `display_name` | Not yet (planned palette rename) | Shown instead of `folder` when set |
-| `included` | Create (`1`) | Planned: unticking hides a setup, and the scan skips it |
+| `included` | Create (`1`), or the funnel's tick box | Not yet: a setup unticked in the funnel stays unticked until the palette's Settings can tick it (planned) |
 | `root_dir`, `data_dir`, `analysis_dir` | Create | No |
 | `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Not yet (see [Rescans](#rescans)) |
 | `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Not yet |
@@ -342,8 +351,11 @@ buffers by their traces (no peaks, a flat trace, a low floor) is not built yet
 
 A new setup folder is any folder `setup_roots` finds under the experiment's
 `path` that is not one of its setups yet and whose data folder no other
-experiment uses. It is added as the next `position`, ticked, with the layout
-`resolve_experiment_layout` detects; the scan then fills its geometry. Setups
+experiment uses. It waits until `resolve_experiment_layout` detects its layout
+(an integrated trace, or the SSRL `analysis/automatic_analysis/tot_files`
+folder), so a folder whose images arrive before anything else is not stored
+with guessed patterns. It is then added as the next `position`, ticked, with
+that layout; the scan then fills its geometry. Setups
 the user unticked stay setups, so they are never re-added. An experiment whose
 `path` is one of its own setup folders (a single setup was picked, or a DB
 migrated from one experiment per setup) never adds folders. An unreachable
@@ -422,10 +434,12 @@ himalaya merge <experiment> <experiment>... [--name N] [--path P] [--apply]
 `merge` keeps the first experiment named and moves the others' setups, loads,
 samples and frames into it, then deletes the emptied experiments. No other id
 changes, so phase calls, labels, bridges and the event log carry over. The
-result's `path` is the folder the setups share (or `--path`) and its name is
-that folder's name (or `--name`). Setups are ordered by folder name. It refuses
-fewer than two experiments, one listed twice, one that is scanning, and two
-setups with the same folder name. Stop the server before applying it, so no
+result's `path` is the folder the setups share (or `--path`) and its name
+replaces the kept experiment's name: that folder's name, or `--name`. Setups
+are ordered by folder name. It refuses fewer than two experiments, one listed
+twice, one that is scanning or analyzing, two setups with the same folder name,
+setups that are not all in one folder (unless `--path` names it), and a `path`
+another experiment already has. Stop the server before applying it, so no
 open page holds stale experiment ids.
 
 `-e` takes an id, a name or a path. A path matches the experiment's folder whether

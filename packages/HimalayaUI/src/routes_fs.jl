@@ -275,6 +275,14 @@ function experiment_using_dir(db, dir)
     isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))
 end
 
+function experiment_at_path(db, dir)
+    plain = rstrip(String(dir), '/')
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, name FROM experiments WHERE rtrim(path, '/') IN (?, ?) ORDER BY id LIMIT 1",
+        [plain, _canonical_dir(dir)]))
+    isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))
+end
+
 _trim_slash(p) = rstrip(p, '/')
 
 function _setup_name(path, root)
@@ -337,7 +345,10 @@ function register_fs_routes!()
         path = get(q, "path", "")
         isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
         db = current_db()
+        existing = experiment_at_path(db, path)
         _json(200, Dict(:path => path,
+                        :existing => existing === nothing ? nothing :
+                            Dict(:id => existing.id, :name => existing.name),
                         :setups => [_setup_preview(db, path, root) for root in setup_roots(path)]))
     end
     @get "/api/fs/manifest" function(req::HTTP.Request)

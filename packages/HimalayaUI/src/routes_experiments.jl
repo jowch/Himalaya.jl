@@ -83,6 +83,29 @@ function _setup_spec(spec; default_analysis_dir)
     out
 end
 
+_is_obj(v) = v isa AbstractDict || v isa JSON3.Object
+_under(child, parent) = (c = _canonical_dir(child); q = _canonical_dir(parent);
+    c == q || startswith(c, rstrip(q, '/') * "/"))
+
+function _malformed_setup(s)
+    _is_obj(s) || return "each setup must be an object"
+    _body_get(s, :data_dir) isa AbstractString || return "each setup needs a data_dir"
+    for k in (:root, :analysis_dir)
+        v = _body_get(s, k)
+        v === nothing || v isa AbstractString || return "$k must be a string"
+    end
+    inc = _body_get(s, :included)
+    inc === nothing || inc isa Bool || return "included must be true or false"
+    for k in (:patterns, :geometry)
+        v = _body_get(s, k)
+        v === nothing || _is_obj(v) || return "$k must be an object"
+    end
+    pats = _body_get(s, :patterns)
+    pats === nothing || all(v -> v === nothing || v isa AbstractString, values(pats)) ||
+        return "patterns must be strings"
+    nothing
+end
+
 _default_analysis_dir(data_dir) = (ad = joinpath(data_dir, "analysis"); isdir(ad) ? ad : data_dir)
 
 function _checked_data_dir(db, raw)
@@ -120,10 +143,19 @@ function _create_beamtime_experiment(db, body, raw_setups)
     isdir(String(raw_path)) || return _json_error(400,
         Dict(:error => "path does not exist or is not a directory", :path => String(raw_path)))
     path = _canonical_dir(String(raw_path))
+    existing = experiment_at_path(db, path)
+    existing === nothing || return _json_error(409, Dict(
+        :error => "this beamtime is already added as $(existing.name)",
+        :experiment_id => existing.id, :name => existing.name, :path => path))
     raw_setups isa AbstractVector && !isempty(raw_setups) ||
         return _json_error(400, Dict(:error => "setups must be a non-empty list"))
+    name_val = _body_get(body, :name)
+    name_val === nothing || name_val isa AbstractString ||
+        return _json_error(400, Dict(:error => "name must be a string"))
     specs = Dict{Symbol,Any}[]
     for s in raw_setups
+        bad = _malformed_setup(s)
+        bad === nothing || return _json_error(400, Dict(:error => bad))
         data_dir = _checked_data_dir(db, _body_get(s, :data_dir))
         data_dir isa HTTP.Response && return data_dir
         any(p -> _same_dir(p[:data_dir], data_dir), specs) && return _json_error(400,
@@ -131,12 +163,15 @@ function _create_beamtime_experiment(db, body, raw_setups)
         spec = _setup_spec(s; default_analysis_dir = _default_analysis_dir(data_dir))
         spec[:data_dir] = data_dir
         root = _body_get(s, :root)
-        spec[:root_dir] = root === nothing ? setup_root_dir(data_dir) : _canonical_dir(String(root))
+        root_dir = root === nothing ? setup_root_dir(data_dir) : _canonical_dir(String(root))
+        isdir(root_dir) && _under(data_dir, root_dir) && _under(root_dir, path) ||
+            return _json_error(400, Dict(:error => "a setup folder must hold its data folder and sit in the beamtime folder",
+                                         :path => root_dir))
+        spec[:root_dir] = root_dir
         push!(specs, spec)
     end
     any(sp -> sp[:included], specs) ||
         return _json_error(400, Dict(:error => "tick at least one setup"))
-    name_val = _body_get(body, :name)
     exp_name = name_val !== nothing && !isempty(strip(String(name_val))) ?
         String(strip(String(name_val))) : basename(rstrip(path, '/'))
     exp_id = lock(_DB_WRITE_LOCK) do

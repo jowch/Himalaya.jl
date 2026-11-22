@@ -26,7 +26,9 @@ _post(call, body) = call("POST", "/api/experiments";
         @test isempty(HimalayaUI.new_setup_roots(db, eid))
         HimalayaUI.scan_and_group!(db, eid; analyze = false)
 
-        _write_setup!(joinpath(bt, "setup2"); stems = ["B_S0001_0_001"])
+        _, a2 = _write_setup!(joinpath(bt, "setup2"); stems = ["B_S0001_0_001"])
+        @test isempty(HimalayaUI.new_setup_roots(db, eid))
+        mkpath(joinpath(a2, "automatic_analysis", "tot_files"))
         @test HimalayaUI.new_setup_roots(db, eid) == [realpath(joinpath(bt, "setup2"))]
         @test HimalayaUI.ingest_has_work(db, eid)
 
@@ -117,11 +119,33 @@ _post(call, body) = call("POST", "/api/experiments";
 
             dup = _post(call, Dict(:path => bt, :setups => [Dict(:data_dir => d2)]))
             @test dup.status == 409
+            d3, _ = _write_setup!(joinpath(bt, "setup3"); stems = ["C_S0001_0_001"])
+            again = _post(call, Dict(:path => bt * "/", :setups => [Dict(:data_dir => d3)]))
+            @test again.status == 409
+            refusal = JSON3.read(String(again.body))
+            @test refusal.experiment_id == eid
+            @test refusal.name == "Nov beamtime"
+            preview = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(bt))").body))
+            @test preview.existing.id == eid
+            fresh = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(d3))").body))
+            @test fresh.existing === nothing
             @test _count(db, "SELECT COUNT(*) AS c FROM experiments") == 1
 
             none = _post(call, Dict(:path => mktempdir(), :setups => [Dict(:data_dir => mktempdir(), :included => false)]))
             @test none.status == 400
-            @test _post(call, Dict(:path => bt, :setups => [])).status == 400
+            @test _post(call, Dict(:path => mktempdir(), :setups => [])).status == 400
+            other = mktempdir()
+            od, _ = _write_setup!(joinpath(other, "setup1"); stems = ["D_S0001_0_001"])
+            for bad in (Any["setup"], [Dict(:root => other)],
+                        [Dict(:data_dir => od, :included => "yes")],
+                        [Dict(:data_dir => od, :patterns => "x")],
+                        [Dict(:data_dir => od, :patterns => Dict(:image => 3))],
+                        [Dict(:data_dir => od, :root => joinpath(other, "nope"))],
+                        [Dict(:data_dir => od, :root => d3)])
+                @test _post(call, Dict(:path => other, :setups => bad)).status == 400
+            end
+            @test _post(call, Dict(:path => other, :name => 7, :setups => [Dict(:data_dir => od)])).status == 400
+            @test _post(call, Dict(:path => mktempdir(), :setups => [Dict(:data_dir => od)])).status == 400
             @test _count(db, "SELECT COUNT(*) AS c FROM experiments") == 1
         end
     end
@@ -173,5 +197,18 @@ _post(call, body) = call("POST", "/api/experiments";
         b = HimalayaUI.create_experiment!(db; name = "b", path = "/x/day2/setup1",
             data_dir = "/x/day2/setup1/data", analysis_dir = "/x/day2/setup1/analysis")
         @test_throws ErrorException HimalayaUI.merge_plan(db, [a, b])
+    end
+    @testset "merge needs one beamtime folder, an idle ingest and a free path" begin
+        db = fresh_db()
+        a = HimalayaUI.create_experiment!(db; name = "a", path = "/x/day1/setup1",
+            data_dir = "/x/day1/setup1/data", analysis_dir = "/x/day1/setup1/analysis")
+        b = HimalayaUI.create_experiment!(db; name = "b", path = "/x/day2/setup2",
+            data_dir = "/x/day2/setup2/data", analysis_dir = "/x/day2/setup2/analysis")
+        @test_throws ErrorException HimalayaUI.merge_plan(db, [a, b])
+        @test HimalayaUI.merge_plan(db, [a, b]; path = "/x").path == "/x"
+        c = HimalayaUI.create_experiment!(db; name = "c", path = "/x")
+        @test_throws ErrorException HimalayaUI.merge_plan(db, [a, b]; path = "/x")
+        DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'analyzing' WHERE id = ?", [a])
+        @test_throws ErrorException HimalayaUI.merge_plan(db, [a, b]; path = "/y")
     end
 end

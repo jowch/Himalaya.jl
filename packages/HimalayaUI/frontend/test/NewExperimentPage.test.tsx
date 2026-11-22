@@ -357,4 +357,32 @@ describe("NewExperimentPage", () => {
     await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("No images found"));
     expect(screen.getByTestId("create-submit")).toBeDisabled();
   });
+  it("points to the experiment that already holds a picked beamtime instead of adding it again", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({
+      path: "/b/20261103", existing: { id: 4, name: "Nov beamtime" },
+      setups: [setup("/b/20261103/setup3")],
+    });
+    const create = vi.spyOn(api, "createExperiment");
+    renderPage();
+    pick("/b/20261103");
+    await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("already added as Nov beamtime"));
+    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("open-existing"));
+    expect(navigate).toHaveBeenCalledWith("/experiments/4");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("offers the existing experiment when the server refuses a beamtime someone just added", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
+    vi.spyOn(api, "createExperiment").mockRejectedValue(
+      new api.ApiError(409, "this beamtime is already added as Nov beamtime", { error: "x", experiment_id: 4, name: "Nov beamtime" }),
+    );
+    renderPage();
+    pick("/b/20261103");
+    await screen.findAllByTestId("setup-row");
+    fireEvent.click(screen.getByTestId("create-submit"));
+    await screen.findByTestId("open-existing");
+    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

@@ -6,18 +6,19 @@ describe("ingestion fetchers (Phase E1)", () => {
   beforeEach(() => vi.restoreAllMocks());
   afterEach(() => vi.restoreAllMocks());
 
-  it("createExperiment POSTs {path,name?,patterns?} to /api/experiments", async () => {
+  it("createExperiment POSTs {path,name?,setups} to /api/experiments", async () => {
     const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true, status: 200,
       text: async () => JSON.stringify({ id: 7 }),
       json: async () => ({ id: 7 }),
     } as Response);
-    const out = await api.createExperiment({ path: "/d", name: "X" }, { username: "u" });
+    const body = { path: "/d", name: "X", setups: [{ root: "/d/setup1", data_dir: "/d/setup1/data", included: true }] };
+    const out = await api.createExperiment(body, { username: "u" });
     expect(out.id).toBe(7);
     const [url, init] = spy.mock.calls[0]!;
     expect(url).toBe("/api/experiments");
     expect(init!.method).toBe("POST");
-    expect(JSON.parse(init!.body as string)).toEqual({ path: "/d", name: "X" });
+    expect(JSON.parse(init!.body as string)).toEqual(body);
     expect((init!.headers as Record<string, string>)["X-Username"]).toBe("u");
   });
 
