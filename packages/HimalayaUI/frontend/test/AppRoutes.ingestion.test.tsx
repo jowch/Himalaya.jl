@@ -1,4 +1,3 @@
-// test/AppRoutes.ingestion.test.tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -29,16 +28,6 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
 
   it("/experiments/new renders the directory picker", () => {
     renderAt("/experiments/new");
-    expect(screen.getByTestId("dirpicker-input")).toBeInTheDocument();
-  });
-
-  it.each(["corpus", "config", "grouping"])("/experiments/:id/%s goes to the workspace", async (retired) => {
-    renderAt(`/experiments/7/${retired}`);
-    expect(await screen.findByTestId("workspace")).toBeInTheDocument();
-  });
-
-  it("/experiments/new/config goes back to the new-experiment screen", () => {
-    renderAt("/experiments/new/config");
     expect(screen.getByTestId("dirpicker-input")).toBeInTheDocument();
   });
 

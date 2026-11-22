@@ -25,16 +25,7 @@ node_modules/.bin/playwright test --grep "batch-reject"
 
 ## Seeding Zustand state
 
-The workspace sample list rows carry `data-sample-id` and the detector overlay carries `data-exposure-id`, but to land on a specific sample/exposure, seed Zustand state in `localStorage` before `page.goto("/")`:
-
-```ts
-await page.addInitScript((state) => {
-  localStorage.setItem("himalaya-ui:state", JSON.stringify({ state, version: 5 }));
-}, { activeSampleId: 1, activeExposureId: 2 });
-await page.goto("/");
-```
-
-The persisted version is currently `5` (see `src/state.ts`); any older version number also works because the store's `migrate` function upgrades old seeds, so the exact number is not load-bearing.
+The workspace sample list rows carry `data-sample-id` and the detector overlay carries `data-exposure-id`. To land on a specific sample and frame, go to its URL: `page.goto("/experiments/1/workspace/10?exposure=2")`. The persisted store holds only the user and tutorial fields; seed those in `localStorage` (`himalaya-ui:state`) before `page.goto`. Any version number works because the store's `migrate` drops retired keys.
 
 ## Port binding
 

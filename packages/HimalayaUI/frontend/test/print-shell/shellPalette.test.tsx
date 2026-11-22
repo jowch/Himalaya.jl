@@ -52,7 +52,7 @@ describe("the palette on the pages outside the workspace", () => {
   beforeEach(() => {
     localStorage.clear();
     location = "";
-    useAppState.setState({ username: "alice", activeExperimentId: undefined, staleUrlContext: null, paletteOpen: false });
+    useAppState.setState({ username: "alice", paletteOpen: false });
     vi.spyOn(api, "listExperiments").mockResolvedValue([experiment(1, "Lipids"), experiment(2, "Peptides")]);
     vi.spyOn(api, "listCorpusSamples").mockResolvedValue([sample(11, 1, "MO_PEG5"), sample(12, 2, "AMP_weak")]);
   });

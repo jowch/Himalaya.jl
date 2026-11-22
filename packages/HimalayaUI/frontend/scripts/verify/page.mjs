@@ -6,7 +6,7 @@ import { armSettle } from "./settle.mjs";
 import { reachable } from "./http.mjs";
 
 export const STATE_KEY = "himalaya-ui:state";
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 export function routeUrl(cfg, route) {
   if (/^https?:\/\//.test(route)) return route;

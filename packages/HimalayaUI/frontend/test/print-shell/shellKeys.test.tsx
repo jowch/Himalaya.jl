@@ -19,7 +19,7 @@ function renderAt(path: string) {
 
 describe("shell keys on the pages outside the workspace", () => {
   beforeEach(() => {
-    useAppState.setState({ activeExperimentId: undefined, staleUrlContext: null, paletteOpen: false });
+    useAppState.setState({ paletteOpen: false });
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
   });
   afterEach(() => vi.restoreAllMocks());

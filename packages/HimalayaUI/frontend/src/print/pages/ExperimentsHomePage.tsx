@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useExperiments } from "../../queries";
-import { useAppState } from "../../state";
 import { PageFrame } from "../components/PageFrame";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -73,11 +72,9 @@ function groupByYear(
  */
 export function ExperimentsHomePage(): JSX.Element {
   const navigate = useNavigate();
-  const setActiveExperiment = useAppState((s) => s.setActiveExperiment);
   const experiments = useExperiments();
 
   const open = (id: number): void => {
-    setActiveExperiment(id);
     navigate(`/experiments/${id}`);
   };
 

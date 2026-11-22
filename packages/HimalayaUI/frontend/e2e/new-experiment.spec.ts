@@ -28,7 +28,7 @@ interface Created { name: string; path: string; setups: CreatedSetup[] }
 
 async function mockFunnel(page: Page, created: Created[]): Promise<void> {
   await page.addInitScript(() => {
-    localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 5 }));
+    localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 6 }));
   });
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/events*", (r) => r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
