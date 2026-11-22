@@ -134,6 +134,48 @@ a trace. Switch to `:cwt` (multi-scale Ricker) when peaks span a wide
 range of widths within one trace, or when single-pixel spike rejection
 is important.
 
+## Hybrid detector (opt-in)
+
+`findpeaks(q, I, σ; method = :hybrid)`. The default `:persistence` path is
+unchanged and remains the default.
+
+**Why.** The persistence detector thresholds prominence in raw intensity.
+On a steep background that threshold is set by the large low-q features, so
+weak peaks and shoulders on the steep flank fall below it even when they
+are clearly significant against the local noise. A detector that works in
+noise-relative units after background removal does not have this problem,
+but alone it adds more spurious candidates than the persistence detector.
+
+**What it does** (code in `src/matchedfilter.jl`):
+
+1. Run the persistence detector with `q_trim_high = 0.07`.
+2. Compute a matched-filter significance `z`. Background is a SNIP baseline
+   on `log I` (half-window 60 points); the residual is correlated with
+   unit-norm, zero-mean Ricker kernels of widths 2, 3, 4.5, 7, 11, 16
+   points and divided by `sqrt(Σ k² σ²)`. Each width is normalised by its
+   median and 1.4826·MAD over the trace, and the maximum over widths is
+   taken. Points whose kernel runs off the trace get `z = 0`.
+3. Keep persistence peaks whose max `z` within ±3 points is at least `kb`
+   (default 5). This removes persistence peaks that are not significant
+   against the noise.
+4. Add local maxima of `z` with `z ≥ k` (default 12), at least 9 points
+   apart (strongest first), outside the top 5% of points and more than 4
+   points from a kept persistence peak.
+
+**Output.** Same fields as the default path, plus `z`. For an added peak,
+`prominence` is the persistence prominence of `I` at that index if it is a
+local maximum and `0.0` otherwise (a shoulder has none). `sharpness` is the
+Savitzky-Golay sharpness at the index; a value ≤ 0 (common for shoulders)
+is replaced by a small positive number scaled by `z`, at most the smallest
+positive sharpness in the trace, because `score` takes the CV of sharpness
+and fails on nonpositive values.
+
+**Evidence.** On a set of curated real traces it recovered several times
+more user-added peaks than the default path while detecting fewer
+user-rejected ones, and the phase calls from the resulting peak lists were
+about as good. This is not enough to change the default; it is opt-in until
+it has been tried on more data.
+
 ## References
 
 [1] Huber, S. (2021). [Persistent Topology for Peak Detection](https://www.sthu.org/blog/13-perstopology-peakdetection/index.html). *sthu.org*. — Accessible explanation of the flooding intuition applied specifically to 1D peak detection.
@@ -144,7 +186,7 @@ is important.
 
 - **Parametric shape fitting.** Brittle on real SAXS backgrounds; phase-ratio coherence is a stronger downstream filter.
 - **Sub-pixel peak positions.** Peaks are returned at grid positions. Parabolic interpolation is a straightforward follow-up if needed.
-- **Background subtraction** (SNIP, asymmetric least squares). A potential follow-up for steep-background cases.
+- **Background subtraction in the default path.** SNIP is used only by the opt-in hybrid detector.
 - **Multi-trace batch statistics.** Thresholds are per-trace; no pooling across scans.
 - **q-banded kneedle** (independent thresholds per q-band). Considered when designing the no-peak-trace gating; rejected because every band of a noise-only trace is itself noise, and per-band kneedle would still find spurious knees.
 - **σ(q)-based noise floor** using the third column of `_tot.dat`. Considered for the same purpose; rejected because parametric noise modelling at the candidate-selection stage re-opens the design dimension this document already closed (see "Why not σ-based SNR" above). The relative-prominence floor uses the data's own prominence distribution and avoids this.
