@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
+import { bridgeLabelDrift, compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
 
 const TRUTH = [
   { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
@@ -320,4 +320,27 @@ test("with --ui, a Call list that misses a phase called on a dropped frame break
 
   const unread = compareTruth(TRUTH, withViews(app(shown), {}, "Pn3m", {}, { 1: null }));
   assert.equal(unread.invariants.rail_matches_call.ok, false);
+});
+
+test("bridgeLabelDrift compares confirmed labels across a bridge, ignoring case and flight paths", () => {
+  const samples = [{ id: 1, name: "A" }, { id: 2, name: "B" }, { id: 3, name: "C" }];
+  const bridges = [{ sample_id: 1, group_id: 7 }, { sample_id: 2, group_id: 7 }];
+  const l = (sample_id, label, state = "confirmed") => ({ sample_id, label, state });
+  const same = [l(1, "Buffer"), l(2, "buffer"), l(1, "0.5 m"), l(2, "1.7 m"), l(1, "maybe", "suggested"), l(3, "37C")];
+  assert.equal(bridgeLabelDrift(samples, same, bridges).size, 0);
+  const apart = bridgeLabelDrift(samples, [l(1, "Buffer"), l(3, "Buffer")], bridges);
+  assert.deepEqual([...apart.keys()], [1, 2]);
+  assert.deepEqual(apart.get(2), [{ mate: "A", mine: [], theirs: ["buffer"] }]);
+});
+
+test("bridged_labels_match fails on a sample whose labels drifted from its bridge", () => {
+  const ok = compareTruth(TRUTH, app());
+  assert.equal(ok.invariants.bridged_labels_match.ok, true);
+  const drifted = app();
+  drifted[0].labelDrift = [{ mate: "MO_PEG5_S3 (S01P02)", mine: ["buffer"], theirs: [] }];
+  const r = compareTruth(TRUTH, drifted);
+  assert.deepEqual(r.summary.invariants_failed, ["bridged_labels_match"]);
+  assert.deepEqual(r.invariants.bridged_labels_match.violations, [
+    { sample: "MO_H2O", mate: "MO_PEG5_S3 (S01P02)", mine: ["buffer"], theirs: [] },
+  ]);
 });

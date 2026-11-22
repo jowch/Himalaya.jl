@@ -15,6 +15,30 @@ export function isKept(frame) {
   return frame.status !== "rejected";
 }
 
+const DISTANCE_LABEL = /^\s*\d+(\.\d+)?\s*m\s*$/;
+
+export function bridgeLabelDrift(samples, labels, bridges) {
+  const shared = new Map(samples.map((s) => [s.id, new Set()]));
+  for (const l of labels) {
+    if (l.state === "confirmed" && !DISTANCE_LABEL.test(l.label)) shared.get(l.sample_id)?.add(l.label.trim().toLowerCase());
+  }
+  const groupOf = new Map(bridges.map((b) => [b.sample_id, b.group_id]));
+  const nameOf = new Map(samples.map((s) => [s.id, s.name]));
+  const key = (id) => [...(shared.get(id) ?? [])].sort();
+  const out = new Map();
+  for (const s of samples) {
+    const g = groupOf.get(s.id);
+    if (g === undefined) continue;
+    const mine = key(s.id);
+    const drift = bridges
+      .filter((b) => b.group_id === g && b.sample_id !== s.id && nameOf.has(b.sample_id))
+      .map((b) => ({ mate: nameOf.get(b.sample_id), mine, theirs: key(b.sample_id) }))
+      .filter((d) => d.mine.join("\n") !== d.theirs.join("\n"));
+    if (drift.length) out.set(s.id, drift);
+  }
+  return out;
+}
+
 function words(value) {
   return String(value ?? "").split(/\s+/).filter(Boolean);
 }
@@ -99,6 +123,7 @@ function sampleInvariants(app, frames, held = new Set()) {
     rail_matches_call: railViolation(app, kept, confirmed),
     representative_kept: onDropped.length ? onDropped : null,
     views_agree: allRead && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
+    bridged_labels_match: app.labelDrift?.length ? app.labelDrift : null,
   };
 }
 
@@ -108,6 +133,7 @@ export const INVARIANTS = {
   representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
   views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
+  bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup.",
   plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this frame's trace.\" when its trace is held back in late/, and shows the trace otherwise (needs --ui).",
 };
 
@@ -299,10 +325,13 @@ async function readAssignment(api, exposureId) {
 
 export async function collectApp(cfg, experimentId) {
   const api = cfg.apiBase;
-  const [samples, exported] = await Promise.all([
+  const [samples, exported, labels, bridges] = await Promise.all([
     getJson(api, `/api/samples?experiment_id=${experimentId}`),
     getJson(api, `/api/experiments/${experimentId}/export`),
+    getJson(api, `/api/experiments/${experimentId}/labels`),
+    getJson(api, `/api/experiments/${experimentId}/bridges`),
   ]);
+  const drift = bridgeLabelDrift(samples, labels, bridges);
   const autoByFrame = new Map();
   for (const s of exported) for (const e of s.exposures) {
     if (!Array.isArray(e.auto_phases)) throw new Error(`export frame ${e.filename} has no auto_phases array`);
@@ -322,6 +351,7 @@ export async function collectApp(cfg, experimentId) {
         shown: { phase: s.phase ?? null, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
         frameOrder: exposures.map((e) => e.filename),
         frames,
+        ...(drift.has(s.id) ? { labelDrift: drift.get(s.id) } : {}),
       };
     }),
   );

@@ -11,6 +11,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
         "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
         [experiment_id]))
     sids = [Int(sm.id) for sm in samples]
+    names = Dict(Int(sm.id) => String(sm.name) for sm in samples)
     states = sample_call_states(db, sids)
     members = sample_call_members(db, sids)
 
@@ -53,6 +54,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
             :name        => sm.name,
             :notes       => sm.notes isa Missing ? nothing : sm.notes,
             :labels      => labels,
+            :bridged_with => [names[m] for m in bridge_mates(db, sid)],
             :call_state  => export_call_state(state, ms),
             :phase       => summary.phase,
             :call_phases => summary.call_phases,
@@ -64,13 +66,14 @@ end
 
 function _export_csv(summary)
     header = ["sample_name","exposure_filename","call_state","call_phases","auto_phases",
-              "phases","lattice_ds","r_squareds","scores","labels"]
+              "phases","lattice_ds","r_squareds","scores","labels","bridged_with"]
     rows = Vector{Vector{Any}}()
     for sm in summary
         label_str = join(sm[:labels], ";")
         call_str = join(sm[:call_phases], ";")
+        bridged_str = join(sm[:bridged_with], ";")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str])
+            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str, bridged_str])
             continue
         end
         for ex in sm[:exposures]
@@ -79,7 +82,7 @@ function _export_csv(summary)
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
             push!(rows, [sm[:name], ex[:filename], sm[:call_state], call_str, join(ex[:auto_phases], ";"),
-                         phases, lds, r2s, scs, label_str])
+                         phases, lds, r2s, scs, label_str, bridged_str])
         end
     end
     io = IOBuffer()
