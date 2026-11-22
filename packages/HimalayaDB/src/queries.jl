@@ -1,10 +1,37 @@
 """
     experiments(db) -> Vector{<:NamedTuple}
 
-All experiments, ordered by id.
+All experiments (one per beamtime), ordered by id. Paths, file patterns and
+geometry live on each setup: see [`setups`](@ref).
 """
 experiments(db::SQLite.DB) = Tables.rowtable(DBInterface.execute(db,
-    "SELECT id, name, path, data_dir, analysis_dir, experiment_type, energy_kev, flight_path_m, created_at FROM experiments ORDER BY id"))
+    "SELECT id, name, path, description, created_at, last_scanned_at, ingest_status FROM experiments ORDER BY id"))
+
+const _SETUP_COLS = """id, experiment_id, folder, display_name, position, included,
+    root_dir, data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern,
+    energy_kev, flight_path_m, beam_center_x, beam_center_y, pixel_size_um, q_units"""
+
+"""
+    setups(db; experiment=nothing) -> Vector{<:NamedTuple}
+
+Setups (one per subfolder of a beamtime), optionally filtered to one experiment
+id, in the order HimalayaUI shows them. Each row carries the setup's
+directories, file patterns and geometry (`energy_kev`, `flight_path_m`, beam
+centre, `pixel_size_um`, `q_units`). Join an exposure or sample to its setup by
+`setup_id`: setups of one beamtime can differ in flight path and energy.
+"""
+function setups(db::SQLite.DB; experiment::Union{Integer,Nothing}=nothing)
+    if experiment === nothing
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT $_SETUP_COLS FROM setups ORDER BY experiment_id, position, id"))
+    else
+        Tables.rowtable(DBInterface.execute(db,
+            "SELECT $_SETUP_COLS FROM setups WHERE experiment_id = ? ORDER BY position, id",
+            [Int(experiment)]))
+    end
+end
+
+const _SAMPLE_COLS = "id, experiment_id, setup_id, name, notes"
 
 """
     samples(db; experiment=nothing) -> Vector{<:NamedTuple}
@@ -14,26 +41,32 @@ Samples, optionally filtered to one experiment id.
 function samples(db::SQLite.DB; experiment::Union{Integer,Nothing}=nothing)
     if experiment === nothing
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, experiment_id, name, notes FROM samples ORDER BY id"))
+            "SELECT $_SAMPLE_COLS FROM samples ORDER BY id"))
     else
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, experiment_id, name, notes FROM samples WHERE experiment_id = ? ORDER BY id",
+            "SELECT $_SAMPLE_COLS FROM samples WHERE experiment_id = ? ORDER BY id",
             [Int(experiment)]))
     end
 end
 
+const _EXPOSURE_COLS = """id, experiment_id, setup_id, sample_id, filename, kind, selected,
+    status, image_path, timestamp, exposure_time, frame_no,
+    transmitted_counts, incident_monitor"""
+
 """
     exposures(db; sample=nothing) -> Vector{<:NamedTuple}
 
-Exposures, optionally filtered to one sample id.
+Exposures (HimalayaUI calls them frames), optionally filtered to one sample id.
+`transmitted_counts` and `incident_monitor` are the beam monitors read from the
+exposure's `.prp` file (`missing` when none was read).
 """
 function exposures(db::SQLite.DB; sample::Union{Integer,Nothing}=nothing)
     if sample === nothing
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, sample_id, filename, kind, selected, status, image_path FROM exposures ORDER BY id"))
+            "SELECT $_EXPOSURE_COLS FROM exposures ORDER BY id"))
     else
         Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, sample_id, filename, kind, selected, status, image_path FROM exposures WHERE sample_id = ? ORDER BY id",
+            "SELECT $_EXPOSURE_COLS FROM exposures WHERE sample_id = ? ORDER BY id",
             [Int(sample)]))
     end
 end
@@ -86,6 +119,9 @@ The exposure's durable *indexed assignment*: the index rows in `assignment_membe
 when the exposure's `assignments.state` is `'indexed'` (the state defaults to
 `'indexed'` when no assignments row exists). This is the same "confirmed index"
 HimalayaUI reads. Empty when the state is `form_factor`/`null`. Sorted by score.
+
+The phase call HimalayaUI shows belongs to the sample, not the exposure: use
+[`phase_call`](@ref) for it.
 
 A non-empty result is NOT by itself proof of an explicit human decision: HimalayaUI's
 D-10 migration backfills the auto group's pick into `assignment_members` at

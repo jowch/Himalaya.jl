@@ -37,6 +37,7 @@ If this is your first session on this repo, skim these in order before touching 
 ```
 src/                                # core Himalaya package — see src/AGENTS.md
 test/                               # core tests
+packages/HimalayaDB/                # read-only Julia reader of the central DB for analysis scripts; contract-tested against HimalayaUI
 packages/HimalayaUI/
   src/                              # backend — see packages/HimalayaUI/src/AGENTS.md
   test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
@@ -82,6 +83,9 @@ julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.in
 
 # Core Himalaya
 julia --project=. -e 'using Pkg; Pkg.test()'
+
+# HimalayaDB (read-only DB reader; contract tests run HimalayaUI's own readers on its fixture)
+julia --project=packages/HimalayaDB -e 'using Pkg; Pkg.test()'
 
 # HimalayaUI backend (Julia) — ~3 min serial. Capture once. See packages/HimalayaUI/test/AGENTS.md
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI")' > /tmp/jl-test.out 2>&1
