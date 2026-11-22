@@ -1,6 +1,7 @@
 import type { Trace, TraceMonitors } from "../api";
 
-export const MAX_COMPARES = 3;
+export const MAX_COMPARES = 5;
+export const COMPARES_FULL = `${MAX_COMPARES} comparisons at most. Remove one to compare another.`;
 
 export function interpolateAt(trace: Pick<Trace, "q" | "I">, q: number): number {
   const xs = trace.q;
@@ -112,18 +113,6 @@ export function subtractTrace(
     }
   });
   return { q, d };
-}
-
-export function addCompare(refs: readonly number[], id: number): number[] {
-  if (refs.includes(id)) return [...refs];
-  return [...refs, id].slice(-MAX_COMPARES);
-}
-
-export function withoutRef(set: ReadonlySet<number>, id: number): ReadonlySet<number> {
-  if (!set.has(id)) return set;
-  const next = new Set(set);
-  next.delete(id);
-  return next;
 }
 
 export function robustRange(values: readonly number[], lowFrac = 0.01, highFrac = 0.99): [number, number] {

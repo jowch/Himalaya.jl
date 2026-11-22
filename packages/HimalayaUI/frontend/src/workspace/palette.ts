@@ -22,6 +22,7 @@ export interface WorkspacePaletteInput {
     samples: readonly CorpusSample[];
     notes: ReadonlyMap<number, string>;
     pick: (id: number) => void;
+    full?: string | undefined;
     compared: readonly CorpusSample[];
     remove: (id: number) => void;
     subtractable: readonly CorpusSample[];
@@ -142,8 +143,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Compare with",
       arg: "Sample",
       deep: true,
-      empty: "No other samples.",
-      items: p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: p.compare.notes.get(s.id), run: () => p.compare.pick(s.id) })),
+      empty: p.compare.full ?? "No other samples.",
+      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: p.compare.notes.get(s.id), run: () => p.compare.pick(s.id) })),
     },
     view: {
       title: "Plot view",
