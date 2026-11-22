@@ -67,6 +67,10 @@ describe("countTsComments", () => {
     expect(countTsComments('const url = "http://example.com"; const g = "/* no */";')).toBe(0);
   });
 
+  it("exempts triple-slash reference directives", () => {
+    expect(countTsComments('/// <reference types="vite/client" />')).toBe(0);
+  });
+
   it("exempts directives with a reason and leading physics tags", () => {
     const src = [
       "// eslint-disable-next-line no-console -- surfaced to the user as a toast",

@@ -15,7 +15,7 @@ const APPEARANCE_EXEMPT_PREFIXES = ["ui/", "plot/", "detector/"];
 const APPEARANCE_TOKEN =
   /^(text-(?!(?:left|right|center|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip)$)[a-z][\w-]*|bg-[\w-]+|border(?:-[\w-]+)?|rounded(?:-[\w-]+)?|shadow(?:-[\w-]+)?|font-[\w-]+|tracking-[\w-]+|leading-[\w-]+|uppercase|lowercase|italic|underline|opacity-\d+|ring(?:-[\w-]+)?)$/;
 
-const TS_EXEMPT = /^(?:\/\/+|\/\*+)\s*(?:eslint-disable[\w-]*\s+\S.*?\s--\s+\S|@ts-expect-error\b|physics:)/s;
+const TS_EXEMPT = /^(?:\/\/\/\s*<reference\b|(?:\/\/+|\/\*+)\s*(?:eslint-disable[\w-]*\s+\S.*?\s--\s+\S|@ts-expect-error\b|physics:))/s;
 const JL_EXEMPT = /^#\s*physics:/;
 
 function readQuoted(s, i) {
@@ -286,7 +286,7 @@ const FIX = {
   appearance:
     "Styling belongs in a src/ui primitive. Use an existing primitive or add a variant to one; a consumer className carries placement only (margin, position, grid).",
   comments:
-    "HimalayaUI code is comment-free. Put the reason in a name, a test or an assertion. Allowed: comments that start with `physics:`, `eslint-disable… -- <reason>`, and `@ts-expect-error`.",
+    "HimalayaUI code is comment-free. Put the reason in a name, a test or an assertion. Allowed: comments that start with `physics:`, `eslint-disable… -- <reason>`, `@ts-expect-error` and `/// <reference>` directives.",
 };
 
 function writeBaseline(current, verb) {
