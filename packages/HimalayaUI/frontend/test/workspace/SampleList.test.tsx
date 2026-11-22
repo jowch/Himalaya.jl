@@ -80,3 +80,17 @@ describe("SampleList setup headers", () => {
     expect(screen.queryByTestId("setup-header")).toBeNull();
   });
 });
+
+describe("SampleList tooltips", () => {
+  it("names the unreviewed mark and the bridge count on hover", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(
+      <SampleList samples={[sample(1, "JC001")]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} bridgeCounts={new Map([[1, 2]])} />,
+    );
+    fireEvent.mouseEnter(screen.getByRole("img", { name: "Unreviewed" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Unreviewed");
+    fireEvent.mouseLeave(screen.getByRole("img", { name: "Unreviewed" }));
+    fireEvent.mouseEnter(screen.getByText("⇄2"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("2 bridges");
+  });
+});

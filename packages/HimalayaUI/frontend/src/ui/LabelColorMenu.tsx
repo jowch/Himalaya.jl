@@ -2,6 +2,7 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 import type { LabelColor } from "../api";
 import { USER_LABEL_COLORS } from "../lib/labels";
 import { LABEL_SWATCH } from "./labelSwatches";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   name: string;
@@ -59,18 +60,18 @@ export function LabelColorMenu({ name, current, isDefault, left, onPick, onClose
     >
       <div role="radiogroup" aria-label={`Colour of label ${name}`} className="flex items-center gap-1.5" onKeyDown={move}>
         {USER_LABEL_COLORS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            role="radio"
-            aria-checked={c === current}
-            tabIndex={c === current ? 0 : -1}
-            aria-label={LABEL_SWATCH[c].name}
-            title={LABEL_SWATCH[c].name}
-            data-label-color={c}
-            onClick={() => pick(c)}
-            className={`h-5 w-5 rounded-full ${LABEL_SWATCH[c].solid} ${c === current ? "ring-2 ring-ink ring-offset-2 ring-offset-plate" : ""}`}
-          />
+          <Tooltip key={c} content={LABEL_SWATCH[c].name}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={c === current}
+              tabIndex={c === current ? 0 : -1}
+              aria-label={LABEL_SWATCH[c].name}
+              data-label-color={c}
+              onClick={() => pick(c)}
+              className={`h-5 w-5 rounded-full ${LABEL_SWATCH[c].solid} ${c === current ? "ring-2 ring-ink ring-offset-2 ring-offset-plate" : ""}`}
+            />
+          </Tooltip>
         ))}
       </div>
       {!isDefault && (

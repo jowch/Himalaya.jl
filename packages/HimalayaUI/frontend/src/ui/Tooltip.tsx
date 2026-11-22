@@ -240,11 +240,11 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
             id={id}
             data-testid="tooltip"
             data-side={pos?.side ?? side}
-            className="pointer-events-none fixed z-[60] flex w-max max-w-[18rem] items-baseline gap-2 whitespace-normal break-words rounded-sm bg-ink px-2 py-1 text-left text-xs font-normal text-paper shadow-lg"
+            className="pointer-events-none fixed z-[60] flex w-max max-w-[18rem] items-baseline gap-2 whitespace-normal break-words rounded-sm border border-hair bg-plate px-2 py-1 text-left text-xs font-normal text-ink shadow-lg"
             style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: "hidden" }}
           >
             <span className="min-w-0">{content}</span>
-            {shortcut && <Kbd onFill>{shortcut}</Kbd>}
+            {shortcut && <Kbd>{shortcut}</Kbd>}
           </span>,
           document.body,
         )}
