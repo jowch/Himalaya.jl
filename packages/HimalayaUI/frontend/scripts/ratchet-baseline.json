@@ -11,7 +11,6 @@
   },
   "comments": {
     "frontend/src/api.ts": 83,
-    "frontend/src/bones/registry.ts": 1,
     "frontend/src/hooks/useClickOutside.ts": 6,
     "frontend/src/hooks/useFocusTrap.ts": 25,
     "frontend/src/hooks/useStateFromUrl.ts": 21,
@@ -48,7 +47,6 @@
     "frontend/src/print/components/DirectoryPickerField.tsx": 39,
     "frontend/src/print/components/PageFrame.tsx": 3,
     "frontend/src/print/detector/detectorLut.ts": 27,
-    "frontend/src/print/main.tsx": 7,
     "frontend/src/print/pages/ExperimentsHomePage.tsx": 27,
     "frontend/src/print/plot/PlotFrame.tsx": 10,
     "frontend/src/print/plot/interaction.ts": 16,
@@ -56,7 +54,6 @@
     "frontend/src/print/shell/AppRoutes.tsx": 14,
     "frontend/src/print/shell/InfrastructureBanner.tsx": 8,
     "frontend/src/print/shell/OnboardingFlow.tsx": 7,
-    "frontend/src/print/shell/ResolvingFallback.tsx": 3,
     "frontend/src/print/shell/StaleUrlPage.tsx": 2,
     "frontend/src/print/shell/TopNav.tsx": 7,
     "frontend/src/print/ui/Button.tsx": 26,
