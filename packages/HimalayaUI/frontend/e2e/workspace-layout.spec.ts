@@ -508,58 +508,62 @@ for (const width of [1024, 1280]) {
   }
 }
 
-for (const width of [1280, 1440]) {
-    test(`at ${width} px a compare chip keeps its setup and beam scale whole and truncates the sample name instead`, async ({ page }) => {
-    const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
-    await page.setViewportSize({ width, height: 800 });
-    const setup = (id: number, name: string) => ({ id, experiment_id: 17, folder: name, display_name: null, name, position: id, included: true, root_dir: "", data_dir: "", analysis_dir: "" });
-    const experiment = { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "", manifest_path: null, created_at: "", q_units: null, setups: [setup(1, "setup1"), setup(2, "setup2")] };
-    await page.route("**/api/experiments/17", (r) => r.fulfill(json(experiment)));
-    const peg = "MO_PEG5_S2406 (S01P03)";
-    const samples = [
-      { id: 40, name: "MO_H2O_S2401 (S01P01)", setup_id: 1 },
-      { id: 42, name: peg, setup_id: 1 },
-      { id: 44, name: peg, setup_id: 2 },
-      { id: 46, name: "MO_PEG10_S2409 (S01P04)", setup_id: 1 },
-      { id: 48, name: "MO_PEG10_S2409 (S01P04)", setup_id: 2 },
-    ].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, q_units: "A-1" }));
-    await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(samples)));
-    await page.route("**/api/experiments/17/compares", (r) => r.fulfill(json({
-      compares: [42, 44, 46, 48].map((ref) => ({ sample_id: 40, ref_sample_id: ref, added_by: "alice" })), subtractions: [],
-    })));
-    await page.goto("/experiments/17/workspace/40");
-    const bar = page.getByTestId("workspace-compare-bar");
-    await expect(bar.getByRole("button", { name: `${peg}, setup1`, exact: true })).toBeVisible();
-    await expect(bar.getByRole("button", { name: `${peg}, setup2`, exact: true })).toBeVisible();
-    const scales = bar.locator("[data-scale-value]");
-    await expect(scales).toHaveCount(4);
-    for (const el of await scales.all()) {
-      await expect(el).toHaveText(/^×\d\.\d+$/);
-      expect(await el.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
-    }
-    const clear = await bar.locator("[data-compare-chip]").evaluateAll((ns) => ns.map((n) => {
-      const value = n.querySelector("[data-scale-value]")!.getBoundingClientRect();
-      const wrapper = n.querySelector("[data-scale-source]")!.getBoundingClientRect();
-      const remove = n.querySelector("button[aria-label^='Remove']")!.getBoundingClientRect();
-      return { holds: wrapper.width + 0.5 >= value.width, clear: remove.left + 0.5 >= value.right };
-    }));
-    expect(clear).toEqual(Array(4).fill({ holds: true, clear: true }));
-    const setups = bar.locator("[data-chip-setup]");
-    expect(await setups.allTextContents()).toEqual(["setup1", "setup2", "setup1", "setup2"]);
-    for (const el of await setups.all()) {
-      await expect(el).toBeVisible();
-      expect(await el.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
-    }
-    const edges = await bar.locator("[data-compare-chip]").evaluateAll((ns) => ns.map((n) => {
-      const r = n.getBoundingClientRect();
-      const inner = Array.from(n.children).map((c) => c.getBoundingClientRect().right);
-      return { left: r.left, right: r.right, inner: Math.max(...inner) };
-    }));
-    for (const [i, e] of edges.entries()) {
-      expect(e.inner).toBeLessThanOrEqual(e.right + 1);
-      if (i > 0) expect(edges[i - 1]!.right).toBeLessThanOrEqual(e.left);
-    }
-    const names = bar.locator("[data-compare-chip] button[aria-pressed] > span:first-child");
-    expect(await names.evaluateAll((ns) => ns.some((n) => n.scrollWidth > n.clientWidth))).toBe(true);
-  });
+for (const width of [1024, 1280, 1440]) {
+  for (const subtracting of [false, true]) {
+    test(`at ${width} px five compare chips${subtracting ? " and the subtraction toggle" : ""} fit in the two reserved rows, each whole`, async ({ page }) => {
+      const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+      await page.setViewportSize({ width, height: 800 });
+      const setup = (id: number, name: string) => ({ id, experiment_id: 17, folder: name, display_name: null, name, position: id, included: true, root_dir: "", data_dir: "", analysis_dir: "" });
+      const experiment = { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "", manifest_path: null, created_at: "", q_units: null, setups: [setup(1, "setup1"), setup(2, "setup2")] };
+      await page.route("**/api/experiments/17", (r) => r.fulfill(json(experiment)));
+      const peg = "MO_PEG5_S2406 (S01P03)";
+      const samples = [
+        { id: 40, name: "MO_H2O_S2401 (S01P01)", setup_id: 1 },
+        { id: 42, name: peg, setup_id: 1 },
+        { id: 44, name: peg, setup_id: 2 },
+        { id: 46, name: "MO_PEG10_S2409 (S01P04)", setup_id: 1 },
+        { id: 48, name: "MO_PEG10_S2409 (S01P04)", setup_id: 2 },
+        { id: 50, name: "vesicles_ULV_S2425 (S02P06)", setup_id: 1 },
+      ].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, q_units: "A-1" }));
+      await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(samples)));
+      await page.route("**/api/experiments/17/compares", (r) => r.fulfill(json({
+        compares: [42, 44, 46, 48, 50].map((ref) => ({ sample_id: 40, ref_sample_id: ref, added_by: "alice" })),
+        subtractions: subtracting ? [{ sample_id: 40, ref_sample_id: 42 }] : [],
+      })));
+      await page.goto("/experiments/17/workspace/40");
+      const bar = page.getByTestId("workspace-compare-bar");
+      await expect(bar.getByRole("button", { name: peg, exact: true })).toBeVisible();
+      await expect(bar.getByRole("button", { name: `${peg}, setup2`, exact: true })).toBeVisible();
+      await expect(bar.locator("[data-scale-value]")).toHaveCount(5);
+      if (subtracting) await expect(bar.getByTestId("workspace-subtraction-toggle")).toBeVisible();
+      expect(await bar.locator("[data-compare-chip] [data-chip-setup]").count()).toBe(2);
+      const area = await bar.locator("[data-compare-chips]").evaluate((n) => ({ scroll: n.scrollHeight, client: n.clientHeight, right: n.getBoundingClientRect().right }));
+      expect(area.scroll).toBeLessThanOrEqual(area.client);
+      const chips = await bar.locator("[data-compare-chip]").evaluateAll((ns) => ns.map((n) => {
+        const box = (sel: string) => n.querySelector(sel)!.getBoundingClientRect();
+        const r = n.getBoundingClientRect();
+        return {
+          left: r.left, right: r.right, top: r.top,
+          inner: Math.max(...Array.from(n.children).map((c) => c.getBoundingClientRect().right)),
+          value: box("[data-scale-value]"), wrapper: box("[data-scale-source]"), remove: box("button[aria-label^='Remove']"),
+          name: box("button[aria-pressed] > span:first-child").width,
+        };
+      }));
+      for (const [i, c] of chips.entries()) {
+        expect(c.inner).toBeLessThanOrEqual(c.right + 1);
+        expect(c.right).toBeLessThanOrEqual(area.right + 1);
+        expect(c.wrapper.width + 0.5).toBeGreaterThanOrEqual(c.value.width);
+        expect(c.remove.left + 0.5).toBeGreaterThanOrEqual(c.value.right);
+        expect(c.name).toBeGreaterThan(width >= 1280 && !subtracting ? 60 : 20);
+        const prev = chips[i - 1];
+        if (prev && prev.top === c.top) expect(prev.right).toBeLessThanOrEqual(c.left);
+      }
+      if (subtracting) {
+        const toggle = await bar.getByTestId("workspace-subtraction-toggle").boundingBox();
+        const last = chips[chips.length - 1]!;
+        expect(toggle!.x + toggle!.width).toBeLessThanOrEqual(area.right + 1);
+        if (Math.abs(toggle!.y - last.top) < 4) expect(last.right).toBeLessThanOrEqual(toggle!.x);
+      }
+    });
+  }
 }
