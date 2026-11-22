@@ -276,9 +276,9 @@ end
     end
 end
 
-@testset "hybrid: the valid range is judged against local noise" begin
+@testset "hybrid: z is defined at the low-noise high-q end" begin
     # The high-q end of the standard trace has a low baseline but also low noise;
-    # a global noise scale (set by the steep low-q region) excludes it.
+    # it must not be treated as masked or undefined.
     for seed in 1:10
         q, I, σ, _ = _hybrid_trace(; seed, extra = [(0.365, 250.0, 0.0012)])
         i = argmin(abs.(q .- 0.365))

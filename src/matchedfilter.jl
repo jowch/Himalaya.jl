@@ -294,9 +294,12 @@ function mf_white_scale(I, σ, missing)
     m = length(I)
     d = zeros(m)
     use = falses(m)
+    # Differences below rounding error are zero, as in `second_difference_scale`.
+    tol = 1e-9 * maximum((abs(x) for x in I if isfinite(x)); init = 0.0)
     for i in 2:(m - 1)
         (missing[i - 1] || missing[i] || missing[i + 1]) && continue
-        d[i] = (I[i - 1] - 2I[i] + I[i + 1]) / sqrt(σ[i - 1]^2 + 4σ[i]^2 + σ[i + 1]^2)
+        x = I[i - 1] - 2I[i] + I[i + 1]
+        d[i] = abs(x) <= tol ? 0.0 : x / sqrt(σ[i - 1]^2 + 4σ[i]^2 + σ[i + 1]^2)
         use[i] = true
     end
     est = mf_noise_scale(d, use, 2)
