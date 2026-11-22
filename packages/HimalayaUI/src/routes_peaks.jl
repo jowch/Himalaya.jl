@@ -1,12 +1,5 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 
-"""
-    _peak_curation_tol(q) -> Float64
-
-Tolerance for matching auto peak q-values to exclude-curation q-values.
-"""
-_peak_curation_tol(q::Real) = max(1e-6, abs(Float64(q)) * 0.001)
-
 function _resolve_analysis_dir(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     setup = exposure_setup(db, exposure_id)
     setup === nothing ? nothing : String(setup.analysis_dir)
@@ -58,42 +51,19 @@ function _queue_peak_added_broadcast!(result, entity_id::Integer,
         post_state = post_state)
 end
 
-const _AUTO_PEAK_SQL = """
-    SELECT a.id, a.exposure_id, a.q, a.intensity, a.prominence, a.sharpness,
-           'auto' AS source,
-           CASE WHEN c.q IS NOT NULL THEN 1 ELSE 0 END AS excluded
-    FROM auto_peaks a
-    LEFT JOIN peak_curations c
-        ON c.exposure_id = a.exposure_id
-       AND c.kind = 'exclude'
-       AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
-    WHERE a.id = ?"""
-
 function _auto_peak_row(db::SQLite.DB, id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db, _AUTO_PEAK_SQL, [id]))
-    isempty(rows) ? nothing : rows[1]
+    owner = Tables.rowtable(DBInterface.execute(db,
+        "SELECT exposure_id FROM auto_peaks WHERE id = ?", [id]))
+    isempty(owner) && return nothing
+    rows = peak_listing(db, Int(owner[1].exposure_id); include_superseded = true)
+    i = findfirst(r -> r.source == "auto" && Int(r.id) == id, rows)
+    i === nothing ? nothing : rows[i]
 end
 
 function register_peaks_routes!()
     @get "/api/exposures/{id}/peaks" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db, """
-            SELECT a.id, a.exposure_id, a.q, a.intensity, a.prominence, a.sharpness,
-                   'auto' AS source,
-                   CASE WHEN c.q IS NOT NULL THEN 1 ELSE 0 END AS excluded
-            FROM auto_peaks a
-            LEFT JOIN peak_curations c
-                ON c.exposure_id = a.exposure_id
-               AND c.kind = 'exclude'
-               AND ABS(c.q - a.q) <= MAX(1e-6, ABS(a.q) * 0.001)
-            WHERE a.exposure_id = ?
-            UNION ALL
-            SELECT id, exposure_id, q, NULL AS intensity, NULL AS prominence, NULL AS sharpness,
-                   'manual' AS source, 0 AS excluded
-            FROM peak_curations
-            WHERE exposure_id = ? AND kind = 'add'
-            ORDER BY q
-        """, [id, id]))
+        rows = peak_listing(db, id)
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(rows_to_json(rows; bool_keys = (:excluded,))))
     end
@@ -205,19 +175,15 @@ function register_peaks_routes!()
 
             excluded = Bool(body.excluded)
             peak_q   = Float64(peak_row.q)
-            tol      = _peak_curation_tol(peak_q)
+            q_step   = exposure_q_step(db, exposure_id)
 
             event_id_out::Union{Int, Nothing} = nothing
             view_row_id_out::Union{Int, Nothing} = nothing
             mutated = false
 
             if excluded
-                # INSERT exclude curation — idempotent: only emit event if none exists
-                existing = Tables.rowtable(DBInterface.execute(db,
-                    """SELECT id FROM peak_curations
-                       WHERE exposure_id = ? AND kind = 'exclude'
-                         AND ABS(q - ?) <= ?""",
-                    [exposure_id, peak_q, tol]))
+                # Idempotent: only emit an event if a curation already hides this peak.
+                existing = Int(peak_row.excluded) == 1 ? [1] : Int[]
                 if isempty(existing)
                     payload = Dict(:q => peak_q, :auto_peak_id => id)
                     result = apply_event!(InTransaction(), db, req;
@@ -250,9 +216,9 @@ function register_peaks_routes!()
                     WHERE action = 'peak_excluded'
                       AND entity_type = 'exposure' AND entity_id = ?
                       AND payload IS NOT NULL
-                      AND ABS(json_extract(payload, '\$.q') - ?) <= MAX(1e-6, ABS(?) * 0.001)
+                      AND ABS(json_extract(payload, '\$.q') - ?) <= ?
                     ORDER BY id DESC LIMIT 1
-                """, [exposure_id, peak_q, peak_q]))
+                """, [exposure_id, peak_q, peak_match_tol(peak_q, q_step)]))
                 undoes = isempty(prior) ? nothing : Int(prior[1].id)
 
                 payload = Dict(:q => peak_q, :auto_peak_id => id)

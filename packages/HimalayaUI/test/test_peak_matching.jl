@@ -164,23 +164,39 @@ end
 end
 
 @testset "peak toggle route uses nearest matching" begin
-    fx = _pm_fixture(auto_qs = [0.2, 0.2 + 3PM_H])
-    ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(fx.db,
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    step = HimalayaUI.exposure_q_step(db, e_id)
+    # Replace the detected peaks by two synthetic ones 3 grid points apart.
+    DBInterface.execute(db, "DELETE FROM index_peaks")
+    DBInterface.execute(db, "DELETE FROM auto_peaks WHERE exposure_id = ?", [e_id])
+    for q in (0.2, 0.2 + 3step)
+        DBInterface.execute(db,
+            "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, ?, 1.0)", [e_id, q])
+    end
+    ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM auto_peaks ORDER BY q"))]
     hdr = ["Content-Type" => "application/json", "X-Username" => "alice"]
-    with_inproc_routes(fx.db) do call
+    patch(call, id, ex) = call("PATCH", "/api/peaks/auto/$id"; headers = hdr,
+                               body = Vector{UInt8}(JSON3.write(Dict(:excluded => ex))))
+    with_inproc_routes(db) do call
         for id in ids
-            r = call("PATCH", "/api/peaks/auto/$id"; headers = hdr,
-                     body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))))
-            @test r.status == 200
+            @test patch(call, id, true).status == 200
         end
-        n = Tables.rowtable(DBInterface.execute(fx.db,
+        n = Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM peak_curations WHERE kind='exclude'"))[1].c
         @test n == 2
-        r = call("PATCH", "/api/peaks/auto/$(ids[1])"; headers = hdr,
-                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))))
-        @test r.status == 200
-        list = JSON3.read(String(call("GET", "/api/exposures/$(fx.e_id)/peaks").body))
+        @test patch(call, ids[1], false).status == 200
+        list = JSON3.read(String(call("GET", "/api/exposures/$e_id/peaks").body))
         @test [p.excluded for p in list] == [false, true]
     end
 end
@@ -198,11 +214,11 @@ end
     @test after[0.2 + 4PM_H] == before[0.2]
     @test after[0.3 - PM_H] == before[0.3]
 
-    # without q_step the same move creates new ids (old rule)
+    # with unknown q_step the same move creates new ids (old rule)
     fx2 = _pm_fixture(auto_qs = [0.2])
     old = Int(Tables.rowtable(DBInterface.execute(fx2.db, "SELECT id FROM auto_peaks"))[1].id)
     HimalayaUI.diff_update_auto_peaks!(fx2.db, fx2.e_id,
-        (q = [0.2 + 4PM_H], indices = [10], prominence = [1.0], sharpness = [1.0]), I)
+        (q = [0.2 + 4PM_H], indices = [10], prominence = [1.0], sharpness = [1.0]), I; q_step = nothing)
     ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(fx2.db, "SELECT id FROM auto_peaks"))]
     @test !(old in ids)
 end

@@ -335,13 +335,22 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     end
 
     if kind == "peak_unexcluded"
-        # payload.q is the auto peak's q; remove the matching exclude curation.
-        # Tolerance shape mirrors effective_peaks.
-        DBInterface.execute(db,
-            """DELETE FROM peak_curations
-               WHERE exposure_id = ? AND kind = 'exclude'
-                 AND ABS(q - ?) <= MAX(1e-6, ABS(?) * 0.001)""",
-            [Int(entity_id), Float64(payload.q), Float64(payload.q)])
+        # payload.q is the auto peak's q. Remove the nearest exclude within the
+        # grid-aware tolerance, plus any duplicates within the base tolerance.
+        # Curation q values are never rewritten; matching happens at read time.
+        q0   = Float64(payload.q)
+        tol  = peak_match_tol(q0, exposure_q_step(db, Int(entity_id)))
+        base = peak_match_tol(q0, nothing)
+        rows = Tables.rowtable(DBInterface.execute(db,
+            "SELECT id, q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude'",
+            [Int(entity_id)]))
+        near = [r for r in rows if abs(Float64(r.q) - q0) <= tol]
+        doomed = Set{Int}(Int(r.id) for r in rows if abs(Float64(r.q) - q0) <= base)
+        isempty(near) || push!(doomed,
+            Int(near[argmin([abs(Float64(r.q) - q0) for r in near])].id))
+        for cid in doomed
+            DBInterface.execute(db, "DELETE FROM peak_curations WHERE id = ?", [cid])
+        end
         return nothing
     end
 
