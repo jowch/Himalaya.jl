@@ -35,6 +35,23 @@ jobs:
           cache-name: core-${{ env.JULIA_CPU_TARGET }}
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 
+  peak-model:
+    name: HimalayaPeakModel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ env.JULIA_VERSION }}
+      - uses: julia-actions/cache@v2
+        with:
+          cache-name: peak-model-${{ env.JULIA_CPU_TARGET }}
+      - run: julia --project=packages/HimalayaPeakModel -e 'using Pkg; Pkg.instantiate(); Pkg.test(; julia_args=["--threads=4"])'
+
   himalayadb:
     name: HimalayaDB
     runs-on: ubuntu-latest

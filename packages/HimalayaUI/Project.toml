@@ -12,6 +12,7 @@ DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 Himalaya = "c5c84187-0f9f-481b-afdc-282fe863df0d"
+HimalayaPeakModel = "b253d074-8f84-4666-b3c0-b1d18d46a6d1"
 ImageCore = "a09fc81d-aa75-5fe9-8630-4744c3626534"
 ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
 ImageTransformations = "02fcd773-0e25-5acc-982a-7f6622650795"
@@ -29,6 +30,7 @@ TiffImages = "731e570b-9d59-4bfa-96dc-6df516fadf69"
 
 [sources]
 Himalaya = {path = "../.."}
+HimalayaPeakModel = {path = "../HimalayaPeakModel"}
 
 [compat]
 ArgParse = "1.2.0"
@@ -38,6 +40,7 @@ DBInterface = "2.6.1"
 FileIO = "1.18.0"
 HTTP = "1.11.0"
 Himalaya = "0.6"
+HimalayaPeakModel = "0.1"
 ImageCore = "0.10.5"
 ImageIO = "0.6.9"
 ImageTransformations = "0.10.2"

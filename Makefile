@@ -72,6 +72,7 @@ setup:
 	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
 	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'
+	julia --project=packages/HimalayaPeakModel -e 'using Pkg; Pkg.instantiate()'
 	@! grep -qs 'precompile_workload *= *false' $(UI_PREFS) || \
 		echo "Note: $(UI_PREFS) turns the route warm-up off. Delete it on a server."
 

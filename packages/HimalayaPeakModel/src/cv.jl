@@ -8,7 +8,7 @@ end
 Tally() = Tally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 function tally!(t::Tally, e::LabeledExposure, peak_q::AbstractVector)
-    q_step = HimalayaUI.grid_step(e.q)
+    q_step = grid_step(e.q)
     near(x, set) = any(p -> abs(x - p) <= match_tol(x, q_step), set)
     if e.curated
         t.curated += 1

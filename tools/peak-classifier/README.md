@@ -11,9 +11,10 @@ Everything stays on your machine. The tool opens the database with the SQLite
 URI `mode=ro` (plus `PRAGMA query_only`), so it runs no migration, creates no
 file for a mistyped path, and does not checkpoint a `-wal` file when it closes.
 It reads your trace files and writes only the model path you give it. A
-database in WAL mode (one the server has open) still needs its `-shm` file to
-exist or its directory to be writable, so SQLite can create the `-shm`; that is
-the only file it may add. The safest input is a copy of the database.
+database in WAL mode (one the server has open) needs its `-shm` and `-wal`
+files to exist or its directory to be writable, so a read-only open may leave
+empty `-shm` and `-wal` side files next to it; those are the only files it may
+add. The safest input is a copy of the database.
 
 Trained models and feature files are lab data: the
 repository ignores `tools/peak-classifier/models/` and `features/`. Keep
@@ -62,13 +63,15 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
      did not exclude;
    - dropped: other candidates inside the match tolerance of a positive
      (duplicates; non-maximum suppression handles them at prediction time);
-   - strong negative: a candidate at an excluded auto peak, and every
+   - strong negative: a candidate within the match tolerance of any exclude
+     you recorded (even one no stored auto peak matches any more), and every
      candidate on a form-factor exposure;
    - weak negative: any other candidate on a curated exposure (you looked and
      did not add it). Weak negatives are subsampled at 50% in training.
    Exposures without curations give no labels. Tolerance and the matching of
-   curations to auto peaks come from `HimalayaUI.peak_match_tol` and
-   `curation_flags`, the app's own code.
+   curations to auto peaks come from `peak_match_tol` (defined in
+   `HimalayaPeakModel`, used by HimalayaUI) and `HimalayaUI.curation_flags`, the
+   app's own code.
 4. **Model.** Random forest (DecisionTree.jl). Prediction keeps candidates with
    probability at or above the threshold, then thins them by non-maximum
    suppression.
