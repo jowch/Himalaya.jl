@@ -62,6 +62,25 @@ describe("NewExperimentPage", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("the data and integration folder fields under Details complete folders too", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/day1", setups: [setup("/b/day1/setup1")] });
+    renderPage();
+    pick("/b/day1");
+    const row = await screen.findByTestId("setup-row");
+    fireEvent.click(within(row).getByRole("button", { name: "Details" }));
+    vi.mocked(api.suggestFolders).mockImplementation(async (p) =>
+      folders(p === "/b/day1/setup1/d" ? ["/b/day1/setup1/data", "/b/day1/setup1/data_old"] : []));
+    const field = within(row).getByRole("combobox", { name: "Data folder" });
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "/b/day1/setup1/d" } });
+    await within(row).findByRole("option", { name: "data_old" });
+    fireEvent.keyDown(field, { key: "Tab" });
+    fireEvent.keyDown(field, { key: "Tab" });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(field).toHaveValue("/b/day1/setup1/data_old/");
+    expect(within(row).getByRole("combobox", { name: "Integration folder" })).toBeInTheDocument();
+  });
+
   it("starts on the folder a link passes in", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
