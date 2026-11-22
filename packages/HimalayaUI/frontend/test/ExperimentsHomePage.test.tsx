@@ -54,6 +54,16 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     expect(navigate).toHaveBeenCalledWith("/experiments/new");
   });
 
+  it("keeps the header New CTA working on the empty home page", async () => {
+    vi.spyOn(api, "listExperiments").mockResolvedValue([]);
+    renderPage();
+    await screen.findByText(/no experiments yet/i);
+    const cta = screen.getByTestId("new-experiment-cta");
+    expect(cta).toBeEnabled();
+    fireEvent.click(cta);
+    expect(navigate).toHaveBeenCalledWith("/experiments/new");
+  });
+
   it("shows an empty state when there are no experiments", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
     renderPage();

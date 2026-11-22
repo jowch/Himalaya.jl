@@ -24,7 +24,7 @@ React reuses the same element instance across param changes on a single route, s
 
 ## OnboardingFlow defers `setUser` until `closeTutorial`
 
-For a brand-new user who hasn't seen the tutorial, `onSubmitName` stashes the created user in local `pending` state and switches to the tutorial phase **instead of** calling `setUser()` immediately (`OnboardingFlow.tsx:118-124`). The reason: `setUser()` makes `username !== undefined`, which trips the `if (username !== undefined && phase !== "tutorial") return null` unmount guard (`:96`) and skips the tutorial. The pending user is committed only in `closeTutorial()` (`:130-135`, behind `setTutorialSeen(true)`). Calling `setUser()` at creation time silently breaks the tutorial for new users.
+For a brand-new user who hasn't seen the tutorial, `onSubmitName` stashes the created user in local `pending` state and switches to the tutorial phase **instead of** calling `setUser()` immediately (in `onSubmitName`). The reason: `setUser()` makes `username !== undefined`, which trips the `if (username !== undefined && phase !== "tutorial") return null` unmount guard near the top of `OnboardingFlow` and skips the tutorial. The pending user is committed only in `closeTutorial()`, behind `setTutorialSeen(true)`. Calling `setUser()` at creation time silently breaks the tutorial for new users.
 
 ## Anti-patterns
 
