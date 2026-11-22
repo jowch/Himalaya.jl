@@ -98,6 +98,7 @@ import { MainSection, SampleHeading, Section } from "../ui/Section";
 import { claimedPeaks } from "./claimedPeaks";
 import { CustomIndexButton } from "../ui/CustomIndexButton";
 import { LabelRow } from "../ui/LabelRow";
+import { setupNames } from "../lib/sample/setupNames";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
@@ -229,6 +230,13 @@ export function WorkspacePage(): JSX.Element {
     () => new Set(inExperiment.filter((s) => s.setup_id != null && hiddenSetups.has(s.setup_id)).map((s) => s.id)),
     [inExperiment, hiddenSetups],
   );
+  const sampleSetup = useMemo<ReadonlyMap<number, string>>(() => {
+    const names = setupNames(setups);
+    return new Map(inExperiment.flatMap((s) => {
+      const name = s.setup_id == null ? undefined : names?.get(s.setup_id);
+      return name ? [[s.id, name] as const] : [];
+    }));
+  }, [setups, inExperiment]);
   const setupHeaders = useMemo(() => {
     const shown = setups.filter((st) => st.included);
     return shown.length > 1 ? new Map(shown.map((st) => [st.id, st.name])) : undefined;
@@ -693,17 +701,12 @@ export function WorkspacePage(): JSX.Element {
     },
     [sampleId, sample?.name, sample?.assignment_state, samples, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
   );
-  const setupNames = useMemo(() => (setups.length > 1 ? new Map(setups.map((st) => [st.id, st.name])) : undefined), [setups]);
-  const setupOfSample = useCallback(
-    (s: CorpusSample | undefined): string | undefined => (s?.setup_id == null ? undefined : setupNames?.get(s.setup_id)),
-    [setupNames],
-  );
   const nameWithSetup = useCallback(
     (s: Pick<CorpusSample, "id" | "name">): string => {
-      const setup = setupOfSample(samples.find((x) => x.id === s.id));
+      const setup = sampleSetup.get(s.id);
       return setup ? `${s.name} in ${setup}` : s.name;
     },
-    [samples, setupOfSample],
+    [sampleSetup],
   );
   const bridgeChoices = useCallback(
     (rid: number) => {
@@ -1108,6 +1111,7 @@ export function WorkspacePage(): JSX.Element {
     else addReference(rid);
   };
   const palette = workspacePalette({
+    setupOf: (id) => sampleSetup.get(id),
     modKey: MOD_KEY,
     canEdit: Boolean(username && sample),
     nextUnreviewed: () => {
@@ -1133,7 +1137,6 @@ export function WorkspacePage(): JSX.Element {
       },
       choices: bridgeChoices,
       names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
-      setupOf: (id) => setupOfSample(samples.find((x) => x.id === id)),
       bridged: bridgedNames,
       leave: leaveBridges,
     },
@@ -1289,6 +1292,7 @@ export function WorkspacePage(): JSX.Element {
                 chips={activeRefs.map((rid) => ({
                   id: rid,
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
+                  setup: sampleSetup.get(rid),
                   color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
                   hidden: shownCompareSet.has(rid),
@@ -1314,6 +1318,7 @@ export function WorkspacePage(): JSX.Element {
                 <ComparePicker
                   samples={pickable}
                   notes={bufferNotes}
+                  setups={sampleSetup}
                   full={comparesFull ? COMPARES_FULL : undefined}
                   onPick={addReference}
                   onClose={() => setPicking(false)}

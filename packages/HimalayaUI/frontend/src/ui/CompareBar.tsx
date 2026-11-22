@@ -9,6 +9,7 @@ export interface CompareChip {
   color: string;
   scale: CompareScale | undefined;
   hidden?: boolean;
+  setup?: string | undefined;
 }
 
 interface Props {
@@ -46,7 +47,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
             <button
               type="button"
               aria-pressed={!off}
-              {...(off ? { "aria-label": `${c.name}, hidden` } : {})}
+              {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
               aria-description={sub ? "Subtracted from the current trace" : undefined}
               data-subtracted={sub ? "" : undefined}
               title={`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract from the current trace"}.`}
@@ -54,23 +55,24 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 if (e.metaKey || e.ctrlKey) onSubtract(c.id);
                 else onToggleShown(c.id);
               }}
-              className={"min-w-0 truncate text-ink" + dim}
+              className={"grid min-w-min grid-cols-[minmax(0,1fr)_auto] items-baseline gap-1 text-left text-ink" + dim}
             >
-              {c.name}
+              <span className="min-w-0 truncate">{c.name}</span>
+              {c.setup && <span data-chip-setup className="whitespace-nowrap text-ink-faint">{c.setup}</span>}
             </button>
             {c.scale !== undefined && (
               <span
-                className={"shrink-0 whitespace-nowrap text-ink-faint" + dim}
+                className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
                 data-scale-source={c.scale.source}
                 title={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}
               >
-                ×{c.scale.scale.toPrecision(3)}
-                {c.scale.source === "matched" && " matched"}
+                <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
+                {c.scale.source === "matched" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
               </span>
             )}
             <button
               type="button"
-              aria-label={`Remove ${c.name}`}
+              aria-label={`Remove ${[c.name, c.setup].filter(Boolean).join(", ")}`}
               onClick={() => onRemove(c.id)}
               className="shrink-0 px-1 text-ink-faint hover:text-ink"
             >

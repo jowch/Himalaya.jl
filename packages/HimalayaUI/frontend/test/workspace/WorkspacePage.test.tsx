@@ -3050,6 +3050,24 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-compare-bar").querySelectorAll("[data-compare-chip]")).toHaveLength(5);
   });
 
+  it("tells same-named samples in two shown setups apart in the picker, the chips and the same-sample note", () => {
+    state.setups = [
+      { id: 1, name: "setup1", folder: "setup1", included: true },
+      { id: 2, name: "setup2", folder: "setup2", included: true },
+    ];
+    state.corpus = [{ ...sample(10, "MO_H2O"), setup_id: 1 }, { ...sample(11, "MO_H2O"), setup_id: 2 }, { ...sample(12, "MO_PEG5"), setup_id: 2 }];
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }];
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTitle("Same as MO_H2O in setup2")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: "MO_PEG5, setup2" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "c" });
+    const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
+    expect(within(picker).getByRole("button", { name: "MO_H2O, setup2" })).toBeInTheDocument();
+    fireEvent.change(within(picker).getByLabelText("Find a sample to compare"), { target: { value: "setup2" } });
+    expect(within(picker).getAllByRole("button").map((b) => b.getAttribute("data-sample-id"))).toEqual(["11"]);
+  });
+
   it("names a same sample whose setup is hidden, so the note and the leave command match the group", () => {
     state.setups = [
       { id: 2, name: "setup2", folder: "setup2", included: true },

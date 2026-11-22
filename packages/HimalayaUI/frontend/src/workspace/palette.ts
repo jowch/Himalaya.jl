@@ -1,5 +1,6 @@
 import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
 import type { CorpusExperiment, CorpusSampleRow } from "../hooks/useCorpusPalette";
+import { joinHints } from "../lib/sample/setupNames";
 import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
@@ -43,7 +44,6 @@ export interface WorkspacePaletteInput extends AppActions {
     pick: (id: number, keep?: KeepCall) => void;
     choices: (id: number) => readonly KeepChoice[] | undefined;
     names: (id: number) => string;
-    setupOf: (id: number) => string | undefined;
     bridged: readonly string[];
     leave: () => void;
   };
@@ -77,6 +77,7 @@ export interface WorkspacePaletteInput extends AppActions {
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
+  setupOf: (id: number) => string | undefined;
   elsewhere?: {
     experiments: readonly CorpusExperiment[];
     samples: readonly CorpusSampleRow[];
@@ -252,7 +253,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       arg: "Sample",
       deep: true,
       empty: p.compare.full ?? "No other samples.",
-      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: p.compare.notes.get(s.id), run: () => p.compare.pick(s.id) })),
+      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: joinHints(p.setupOf(s.id), p.compare.notes.get(s.id)), run: () => p.compare.pick(s.id) })),
     },
     view: {
       title: "Plot view",
@@ -270,7 +271,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: p.compare.subtractable.map((s) => ({
         id: `subtract-${s.id}`,
         label: s.name,
-        hint: s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined,
+        hint: joinHints(p.setupOf(s.id), s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined),
         run: () => p.compare.subtract(s.id),
       })),
     };
@@ -280,7 +281,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Stop comparing",
       arg: "Sample",
       deep: true,
-      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, run: () => p.compare.remove(s.id) })),
+      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, hint: p.setupOf(s.id), run: () => p.compare.remove(s.id) })),
     };
   }
   if (p.settings) pages.settings = settingsPage(p.settings);
@@ -292,10 +293,9 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       empty: "No other samples.",
       items: p.bridge.samples.map((s) => {
         const choices = p.bridge.choices(s.id);
-        const setup = p.bridge.setupOf(s.id);
+        const setup = p.setupOf(s.id);
         if (!choices) return { id: `bridge-${s.id}`, label: s.name, hint: setup, run: () => p.bridge.pick(s.id) };
-        const hint = setup ? `${setup} · Different call` : "Different call";
-        return { id: `bridge-${s.id}`, label: s.name, hint, form: () => keepCallForm(`Same sample as ${p.bridge.names(s.id)}`, choices, (keep) => p.bridge.pick(s.id, keep)) };
+        return { id: `bridge-${s.id}`, label: s.name, hint: joinHints(setup, "Different call"), form: () => keepCallForm(`Same sample as ${p.bridge.names(s.id)}`, choices, (keep) => p.bridge.pick(s.id, keep)) };
       }),
     };
     if (p.candidates.list.length > 0) {
@@ -388,7 +388,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Samples",
       searchOnly: true,
       items: [
-        ...p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })),
+        ...p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: p.setupOf(s.id), run: () => p.goSample(s.id) })),
         ...(p.elsewhere?.samples ?? []).map((s) => goToSampleItem(s, p.elsewhere!.go)),
       ],
     },

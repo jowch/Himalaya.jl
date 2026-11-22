@@ -19,7 +19,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
-    bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, setupOf: () => undefined, bridged: [], leave: noop },
+    bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
@@ -38,11 +38,30 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     history: { undo: undefined, redo: undefined, run: noop },
     samples: [],
     goSample: noop,
+    setupOf: () => undefined,
     ...over,
   };
 }
 
 describe("workspacePalette", () => {
+  it("names each sample's setup on the compare, subtract, stop, same-sample and go-to rows", () => {
+    const a = { id: 2, experiment_id: 1, name: "A1", notes: null, q_units: "A-1", setup_id: 1 };
+    const b = { ...a, id: 3, setup_id: 2 };
+    const setupOf = (id: number) => (id === 2 ? "setup1" : "setup2");
+    const noop = vi.fn();
+    const { pages, groups } = workspacePalette(input({
+      setupOf,
+      compare: { samples: [a, b], notes: new Map([[3, "Buffer"]]), pick: noop, compared: [a], remove: noop, subtractable: [a], subtracted: 2, subtract: noop },
+      bridge: { samples: [a, b], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop },
+      samples: [a, b],
+    }));
+    expect(pages.compare!.items.map((i) => i.hint)).toEqual(["setup1", "setup2 · Buffer"]);
+    expect(pages.subtract!.items[0]!.hint).toBe("setup1 · Subtracted, Enter stops");
+    expect(pages.uncompare!.items[0]!.hint).toBe("setup1");
+    expect(pages.bridge!.items.map((i) => i.hint)).toEqual(["setup1", "setup2"]);
+    expect(groups.find((g) => g.title === "Samples")!.items.map((i) => i.hint)).toEqual(["setup1", "setup2"]);
+  });
+
   it("lists every candidate on the tick page, past the nine with number keys, and marks the ticked ones", () => {
     const tick = vi.fn();
     const list = Array.from({ length: 12 }, (_, i) => candidate(i + 1, 100 + i));
@@ -180,9 +199,9 @@ describe("workspacePalette", () => {
     const b = { id: 3, name: "B" } as WorkspacePaletteInput["bridge"]["samples"][number];
     const choices = [{ value: "1", label: "Here: Pn3m", keep: 1 }, { value: "3", label: "B: Im3m", keep: 3 }, { value: "both", label: "Both: Im3m + Pn3m", keep: "both" as const }];
     const setups = new Map([[2, "Short pipe"], [3, "Long pipe"]]);
-    const { pages } = workspacePalette(input({ bridge: {
+    const { pages } = workspacePalette(input({ setupOf: (id) => setups.get(id), bridge: {
       samples: [a, b], pick, choices: (id) => (id === 3 ? choices : undefined),
-      names: (id) => `${id === 2 ? "A" : "B"} in ${setups.get(id)}`, setupOf: (id) => setups.get(id), bridged: [], leave: vi.fn(),
+      names: (id) => `${id === 2 ? "A" : "B"} in ${setups.get(id)}`, bridged: [], leave: vi.fn(),
     } }));
     const [plain, differs] = pages.bridge!.items;
     expect(plain!.form).toBeUndefined();
