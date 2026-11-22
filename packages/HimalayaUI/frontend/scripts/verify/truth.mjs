@@ -280,7 +280,7 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
       shown.workspace_kept = one.workspaceKept ?? null;
       const keptCount = one.frames.length ? `${one.frames.filter(isKept).length}/${one.frames.length}` : null;
       if (one.workspaceKept !== keptCount) problems.push(`the workspace's frame cards show ${one.workspaceKept ?? "nothing"} kept but the app has ${keptCount ?? "no frames"}`);
-      for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Frame N" thumbnail); check-truth is misreading the app`);
+      for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Image N" thumbnail); check-truth is misreading the app`);
     }
     const assignedFrames = frames
       .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))

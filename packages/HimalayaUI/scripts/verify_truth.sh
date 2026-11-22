@@ -35,7 +35,7 @@ step 1-late-in-place log bash -c '
   plot() { bin/verify count --selector "$1" | node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>{const r=JSON.parse(d);process.stdout.write(r.count+\"|\"+(r.texts[0]??\"\"))})"; }
   before=$(plot "[data-testid=workspace-trace-empty]")
   echo "before delivery: $before"
-  [[ $before == "1|Waiting for this frame'"'"'s trace." ]] || { echo "the open plot does not say the frame is waiting for its trace"; exit 1; }
+  [[ $before == "1|Waiting for this image'"'"'s trace." ]] || { echo "the open plot does not say the image is waiting for its trace"; exit 1; }
   bin/verify deliver-late
   bin/verify api POST /api/experiments/1/scan
   for _ in $(seq 1 60); do

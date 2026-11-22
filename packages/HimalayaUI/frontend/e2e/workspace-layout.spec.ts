@@ -297,7 +297,7 @@ test("three comparisons with long names keep the compare bar on one line", async
 
 for (const viewport of VIEWPORTS) {
   const short = viewport.height <= 860;
-  const order = short ? "Call, then Frame, with Indexing pinned at the bottom" : "Call, then Indexing, then Frame";
+  const order = short ? "Call, then Image, with Indexing pinned at the bottom" : "Call, then Indexing, then Image";
   test(`the tools column reads ${order} at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/41");
@@ -396,10 +396,10 @@ test("on a short window, folding Call or Frame and opening a custom index never 
   const start = await indexing();
   await exposureToggle(page).click();
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
-  expect(await indexing(), "after opening Frame").toEqual(start);
+  expect(await indexing(), "after opening Image").toEqual(start);
   await page.getByRole("button", { name: /Custom index/ }).click();
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
-  expect(await indexing(), "after opening a custom index from Frame").toEqual(start);
+  expect(await indexing(), "after opening a custom index from Image").toEqual(start);
   await page.getByRole("button", { name: /Custom index/ }).click();
   await expect(page.getByTestId("workspace-custom-index")).toHaveCount(0);
   expect(await indexing(), "after closing it with the same button").toEqual(start);
