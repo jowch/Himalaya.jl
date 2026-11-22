@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage clean test-parallel setup dev-setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
+.PHONY: all frontend sysimage check-sysimage deploy clean test-parallel setup dev-setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
 
 all: frontend sysimage
 
@@ -24,7 +24,7 @@ DEPOT_PROBE = 'd = first(DEPOT_PATH); print(ispath(d) ? realpath(d) : rstrip(nor
 sysimage:
 	@$(JULIA) -e 'print("Building sysimage with depot ")' -e $(DEPOT_PROBE) -e 'println()'
 	$(JULIA) --project=scripts -e 'using Pkg; Pkg.instantiate()'
-	$(JULIA) --project=scripts scripts/build_sysimage.jl
+	$(JULIA) --project=scripts scripts/build_sysimage.jl $(BUILD_DIR)
 
 check-sysimage:
 	@$(LOAD_ENV) \
@@ -101,6 +101,36 @@ setup:
 	$(JULIA) --project=packages/HimalayaPeakModel -e 'using Pkg; Pkg.instantiate()'
 	@! grep -qs 'precompile_workload *= *false' $(UI_PREFS) || \
 		echo "Note: $(UI_PREFS) turns the route warm-up off. Delete it on a server."
+
+HIMALAYA_SERVICE ?= himalaya
+HIMALAYA_RESTART ?= sudo systemctl restart $(HIMALAYA_SERVICE)
+NEXT_BUILD_DIR   := $(BUILD_DIR)/next
+RESOLVE_DIST = $(LOAD_ENV) dist="$${HIMALAYA_FRONTEND_DIST:-$(FRONTEND_DIR)/dist}"; \
+	case "$$dist" in /*) ;; *) dist="$(CURDIR)/$$dist" ;; esac; dist="$${dist%/}";
+
+deploy:
+	@case '$(HIMALAYA_RESTART)' in sudo\ *) \
+		sudo -n -l $(wordlist 2,99,$(HIMALAYA_RESTART)) >/dev/null 2>&1 || sudo -v ;; esac
+	$(MAKE) setup
+	@$(RESOLVE_DIST) rm -rf "$$dist.next"; \
+	cd $(FRONTEND_DIR) && npm run build -- --outDir "$$dist.next"
+	$(MAKE) sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
+	$(MAKE) check-sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
+	@$(RESOLVE_DIST) \
+	if [ ! -f "$$dist.next/index.html" ]; then echo "No frontend build at $$dist.next; nothing swapped."; exit 1; fi; \
+	rm -rf "$$dist.old"; \
+	if [ -d "$$dist" ]; then mv "$$dist" "$$dist.old" || exit 1; fi; \
+	if ! mv "$$dist.next" "$$dist"; then \
+		[ ! -d "$$dist.old" ] || mv "$$dist.old" "$$dist"; \
+		echo "Could not move the new frontend into $$dist; the old one is back."; exit 1; \
+	fi; \
+	if ! mv $(NEXT_BUILD_DIR)/himalaya.so $(BUILD_DIR)/himalaya.so; then \
+		rm -rf "$$dist"; [ ! -d "$$dist.old" ] || mv "$$dist.old" "$$dist"; \
+		echo "Could not move the new sysimage into $(BUILD_DIR); the old frontend is back."; exit 1; \
+	fi; \
+	mv $(NEXT_BUILD_DIR)/julia_version $(NEXT_BUILD_DIR)/depot_path $(BUILD_DIR)/; \
+	rm -rf "$$dist.old"
+	$(HIMALAYA_RESTART)
 
 dev-setup:
 	@test -f $(UI_PREFS) || printf '[HimalayaUI]\nprecompile_workload = false\n' > $(UI_PREFS)

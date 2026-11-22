@@ -1,7 +1,7 @@
 using PackageCompiler
 
 repo_root = dirname(@__DIR__)
-out_dir   = joinpath(repo_root, "build")
+out_dir   = isempty(ARGS) ? joinpath(repo_root, "build") : abspath(ARGS[1])
 out_path  = joinpath(out_dir, "himalaya.so")
 workload  = joinpath(repo_root, "scripts", "precompile_workload.jl")
 
