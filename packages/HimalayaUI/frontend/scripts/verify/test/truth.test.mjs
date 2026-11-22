@@ -10,7 +10,7 @@ const TRUTH = [
 const NOT_INDEXED = { phase: null, state: "indexed" };
 
 function frame(filename, autoPhases, extra = {}) {
-  return { id: Number(filename.at(-1)), filename, status: null, selected: false, autoPhases, assignment: { state: "indexed", phases: [] }, ...extra };
+  return { id: Number(filename.at(-1)), filename, status: null, autoPhases, assignment: { state: "indexed", phases: [] }, ...extra };
 }
 
 function sample(id, name, frames, shown = {}) {

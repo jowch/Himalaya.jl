@@ -111,30 +111,6 @@ export const setExposureStatusMutator: Mutator<
 };
 
 // ---------------------------------------------------------------------------
-// select_exposure
-// ---------------------------------------------------------------------------
-
-export type SelectExposureInput = { exposureId: number };
-type SelectExposureScope = BaseScope & { sampleId: number };
-
-export const selectExposureMutator: Mutator<
-  SelectExposureInput, SelectExposureScope, { id: number; selected: boolean }
-> = {
-  kind: "select_exposure",
-  onMutate: (p, qc): RollbackContext => {
-    return {
-      restore: rewriteExposureLists(qc, p.sampleId, (list) =>
-        list.map((e) => ({ ...e, selected: e.id === p.exposureId })),
-      ),
-    };
-  },
-  request: (p) => api.selectExposure(p.exposureId, buildAuthOpts(p)),
-  onSuccess: (_p, _r, qc) => {
-    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-  },
-};
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

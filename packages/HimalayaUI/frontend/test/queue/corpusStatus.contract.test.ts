@@ -6,7 +6,7 @@ import {
   removeAssignmentPhaseMutator,
   setSampleCallStateMutator,
 } from "../../src/lib/queue/mutators/assignment";
-import { selectExposureMutator, setExposureStatusMutator } from "../../src/lib/queue/mutators/trivial";
+import { setExposureStatusMutator } from "../../src/lib/queue/mutators/trivial";
 import type { SseEvent } from "../../src/lib/queue/types";
 import type { CorpusSample } from "../../src/api";
 import { queryKeys } from "../../src/queries";
@@ -32,7 +32,6 @@ describe("corpus sample status follows the calls that derive it", () => {
       ["assignment_add", () => addAssignmentPhaseMutator.onSuccess({ ...scope, kind: "assignment_add", indexId: 42 }, assignmentRow as never, qc)],
       ["assignment_remove", () => removeAssignmentPhaseMutator.onSuccess({ ...scope, kind: "assignment_remove", indexId: 42 }, assignmentRow as never, qc)],
       ["sample_call_set_state", () => setSampleCallStateMutator.onSuccess({ ...scope, kind: "sample_call_set_state", state: "form_factor" }, { sample_id: 1, state: "form_factor", members: [] } as never, qc)],
-      ["select_exposure", () => selectExposureMutator.onSuccess(scope as never, { id: 5, selected: true }, qc)],
       ["set_exposure_status", () => setExposureStatusMutator.onSuccess({ ...scope, status: "rejected" } as never, { id: 5, status: "rejected" }, qc)],
     ])("%s invalidates the corpus samples", (_kind, run) => {
       run();
@@ -48,7 +47,6 @@ describe("corpus sample status follows the calls that derive it", () => {
         post_state: { assignment: { state: "indexed", members: [] } } },
       { id: 9, kind: "sample_call_set_state", entity_type: "sample", entity_id: 1, payload: { state: "form_factor" },
         post_state: { call: { state: "form_factor", members: [] } } },
-      { id: 9, kind: "select_exposure", entity_type: "exposure", entity_id: 5, payload: { sample_id: 1 } },
       { id: 9, kind: "set_exposure_status", entity_type: "exposure", entity_id: 5, payload: { status: "rejected" } },
     ];
     it.each(frames.map((f) => [f.kind, f] as const))("%s invalidates the corpus samples", (_kind, frame) => {

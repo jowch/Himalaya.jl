@@ -42,8 +42,8 @@ end
     exp_id  = create_experiment!(db; path="/tmp", data_dir="/tmp", analysis_dir="/tmp")
     samp_id = create_sample!(db; experiment_id=exp_id, name = "S")
     DBInterface.execute(db,
-        "INSERT INTO exposures (sample_id, filename, kind, selected, status, image_path)
-         VALUES (?, 'test.dat', 'file', 0, 'accepted', '/tmp/test.tiff')", [samp_id])
+        "INSERT INTO exposures (sample_id, filename, kind, status, image_path)
+         VALUES (?, 'test.dat', 'file', 'accepted', '/tmp/test.tiff')", [samp_id])
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT status, image_path FROM exposures"))
     @test length(rows) == 1
