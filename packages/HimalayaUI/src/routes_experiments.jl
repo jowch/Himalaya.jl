@@ -4,16 +4,6 @@ const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path", "
 const _PLAIN_PATCH_FIELDS = ["name", "description"]
 const _CLEARABLE_PATCH_FIELDS = ("description",)
 
-"""
-    _experiment_stats(db, exp_id) -> NamedTuple
-
-Cheap roll-up of counts for the shared experiment header stat ledger and the
-gallery cards. `span_hours` is the exposure timestamp span; `sessions` is the
-persisted macro-session count from `loads.session_id` (assigned at ingest by
-`_assign_sessions` in grouping.jl, backfilled for existing loads by
-`backfill_load_sessions!` in db.jl — spec §5). `started_at` is the minimum
-exposure timestamp (String or nothing) — used by the gallery for year-grouping.
-"""
 function _experiment_stats(db::SQLite.DB, exp_id::Integer)
     loads = Tables.rowtable(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?", [exp_id]))[1].c
@@ -383,94 +373,9 @@ function register_experiments_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "the experiment is still ingesting")))
 
-
-        # Live schema (db.jl:32-152, confirmed 2026-06-18) keys a DEEP tree of
-        # structural tables off exposures/samples/indices, and almost none of those
-        # FKs declare `ON DELETE CASCADE`: samples.experiment_id (db.jl:34),
-        # exposures.sample_id (db.jl:42), and the exposure-keyed tables
-        # exposure_sources, indices, auto_peaks, peak_curations,
-        # index_groups, assignments, assignment_members (db.jl:60-152), plus the
-        # indices-keyed index_peaks / index_group_members. Corrected Plan A does NOT
-        # add cascades (SQLite cannot ALTER a cascade onto an existing column).
-        # FK enforcement is ON at the connection level (open_db, db.jl:1907), so a
-        # bare `DELETE FROM experiments` would FK-fail and 500.
-        #
-        # Enumerating ~16 child deletes in FK order is brittle and easy to leave
-        # incomplete as the schema grows. Instead follow the codebase's own teardown
-        # idiom for cross-FK structural surgery (db.jl:1620-1647 and the other
-        # migrations): toggle `PRAGMA foreign_keys = OFF` at the CONNECTION level
-        # OUTSIDE the transaction (it is a documented no-op mid-transaction), do the
-        # parent + cascade deletes, then restore `ON` in a `finally`. Delete in
-        # FK-child→parent order anyway so the row set is internally consistent.
-        #
-        # Concurrency note: this disables FK checks connection-wide for the duration
-        # of the delete on the shared singleton connection (parallel=true). Acceptable
-        # because (a) experiment delete is a rare admin action, (b) the whole delete
-        # is serialized under `_DB_WRITE_LOCK`, and (c) it mirrors the established
-        # migration precedent. Do NOT issue `PRAGMA foreign_keys` INSIDE the
-        # transaction — SQLite silently ignores it there.
         lock(_DB_WRITE_LOCK) do
-            DBInterface.execute(db, "PRAGMA foreign_keys = OFF")
-            try
-                SQLite.transaction(db) do
-                    # exposure-keyed structural tables (children of exposures/indices)
-                    DBInterface.execute(db, """
-                        DELETE FROM index_peaks WHERE index_id IN
-                          (SELECT i.id FROM indices i
-                             JOIN exposures e ON e.id = i.exposure_id
-                            WHERE e.experiment_id = ?)""", [id])
-                    DBInterface.execute(db, """
-                        DELETE FROM index_group_members WHERE index_id IN
-                          (SELECT i.id FROM indices i
-                             JOIN exposures e ON e.id = i.exposure_id
-                            WHERE e.experiment_id = ?)""", [id])
-                    for tbl in ("assignment_members", "assignments", "index_groups",
-                                "indices", "auto_peaks", "peak_curations",
-                                "exposure_sources")
-                        # exposure_sources keys two exposure columns; clean both.
-                        if tbl == "exposure_sources"
-                            DBInterface.execute(db, """
-                                DELETE FROM exposure_sources WHERE averaged_exposure_id IN
-                                  (SELECT id FROM exposures WHERE experiment_id = ?)
-                                   OR source_exposure_id IN
-                                  (SELECT id FROM exposures WHERE experiment_id = ?)""",
-                                [id, id])
-                        else
-                            DBInterface.execute(db, """
-                                DELETE FROM $tbl WHERE exposure_id IN
-                                  (SELECT id FROM exposures WHERE experiment_id = ?)""",
-                                [id])
-                        end
-                    end
-                    # sample-keyed tables, then the core rows.
-                    DBInterface.execute(db, """
-                        DELETE FROM sample_bridges WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
-                    DBInterface.execute(db, """
-                        DELETE FROM sample_compares WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
-                    DBInterface.execute(db, """
-                        DELETE FROM sample_subtractions WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
-                    DBInterface.execute(db, """
-                        DELETE FROM sample_labels WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
-                    DBInterface.execute(db, """
-                        DELETE FROM sample_calls WHERE sample_id IN
-                          (SELECT id FROM samples WHERE experiment_id = ?)""", [id])
-                    DBInterface.execute(db,
-                        "DELETE FROM exposures WHERE experiment_id = ?", [id])
-                    DBInterface.execute(db,
-                        "DELETE FROM samples WHERE experiment_id = ?", [id])
-                    DBInterface.execute(db,
-                        "DELETE FROM loads WHERE experiment_id = ?", [id])
-                    DBInterface.execute(db,
-                        "DELETE FROM setups WHERE experiment_id = ?", [id])
-                    DBInterface.execute(db,
-                        "DELETE FROM experiments WHERE id = ?", [id])
-                end
-            finally
-                DBInterface.execute(db, "PRAGMA foreign_keys = ON")
+            SQLite.transaction(db) do
+                _delete_experiment_rows!(db, id)
             end
         end
 
@@ -480,4 +385,27 @@ function register_experiments_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:id => id, :deleted => true)))
     end
+end
+
+const _INDEX_CHILD_TABLES = ("index_peaks", "index_group_members")
+const _EXPOSURE_CHILD_TABLES = ("assignment_members", "assignments", "index_groups",
+    "indices", "auto_peaks", "peak_curations")
+
+function _delete_experiment_rows!(db::SQLite.DB, id::Int)
+    exposures = "SELECT id FROM exposures WHERE experiment_id = ?"
+    for tbl in _INDEX_CHILD_TABLES
+        DBInterface.execute(db, """
+            DELETE FROM $tbl WHERE index_id IN
+              (SELECT id FROM indices WHERE exposure_id IN ($exposures))""", [id])
+    end
+    for tbl in _EXPOSURE_CHILD_TABLES
+        DBInterface.execute(db, "DELETE FROM $tbl WHERE exposure_id IN ($exposures)", [id])
+    end
+    DBInterface.execute(db, """
+        DELETE FROM exposure_sources
+         WHERE averaged_exposure_id IN ($exposures) OR source_exposure_id IN ($exposures)""", [id, id])
+    for tbl in ("exposures", "samples", "loads", "setups")
+        DBInterface.execute(db, "DELETE FROM $tbl WHERE experiment_id = ?", [id])
+    end
+    DBInterface.execute(db, "DELETE FROM experiments WHERE id = ?", [id])
 end
