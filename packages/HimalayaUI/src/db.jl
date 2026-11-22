@@ -38,6 +38,7 @@ const MIGRATION_EXPERIMENTS_INGEST_ERROR = "experiments_ingest_error_v1"
 const MIGRATION_LABEL_SUGGESTIONS = "label_suggestions_v1"
 const MIGRATION_BRIDGED_LABELS = "bridged_labels_shared_v1"
 const MIGRATION_BRIDGED_CALLS = "bridged_calls_shared_v1"
+const MIGRATION_PEAK_PROVENANCE = "peak_provenance_v1"
 
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
@@ -153,7 +154,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     analysis_version     TEXT,
     analysis_error       TEXT,
     analysis_trace_stat  TEXT,
-    setup_id             INTEGER REFERENCES setups(id)
+    setup_id             INTEGER REFERENCES setups(id),
+    reviewed_at          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -202,7 +204,9 @@ CREATE TABLE IF NOT EXISTS auto_peaks (
     intensity       REAL,
     prominence      REAL,
     sharpness       REAL,
-    findpeaks_index INTEGER
+    findpeaks_index INTEGER,
+    found_by        TEXT NOT NULL DEFAULT 'hybrid' CHECK (found_by IN ('hybrid', 'model', 'both')),
+    model_id        INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS peak_curations (
@@ -213,6 +217,20 @@ CREATE TABLE IF NOT EXISTS peak_curations (
     created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS peak_reviews (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    exposure_id    INTEGER NOT NULL REFERENCES exposures(id),
+    event_id       INTEGER REFERENCES user_actions(id),
+    created_at     TEXT NOT NULL,
+    shown_detector TEXT NOT NULL,
+    shown_model_id INTEGER,
+    backfilled     INTEGER NOT NULL DEFAULT 0,
+    peaks_json     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_peak_reviews_exposure
+    ON peak_reviews(exposure_id);
 
 CREATE INDEX IF NOT EXISTS idx_auto_peaks_exposure
     ON auto_peaks(exposure_id);
@@ -522,6 +540,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_setups!(db)
     migrate_exposures_pipe_length!(db)
     migrate_exposures_q_step!(db)
+    migrate_peak_provenance!(db)
 end
 
 function migrate_label_colors!(db::SQLite.DB)
@@ -1823,7 +1842,9 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
                     intensity       REAL,
                     prominence      REAL,
                     sharpness       REAL,
-                    findpeaks_index INTEGER
+                    findpeaks_index INTEGER,
+                    found_by        TEXT NOT NULL DEFAULT 'hybrid' CHECK (found_by IN ('hybrid', 'model', 'both')),
+                    model_id        INTEGER
                 )
             """)
             DBInterface.execute(db, """

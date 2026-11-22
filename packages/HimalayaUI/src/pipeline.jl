@@ -173,12 +173,15 @@ Match new findpeaks output against existing auto_peaks rows by q-value within
 `peak_match_tol` (nearest first, one-to-one), UPDATE matched rows in place,
 INSERT unmatched, DELETE orphans. `q_step` is the trace grid step (`nothing`
 when unknown). Populates `findpeaks_index` from `peaks_result.indices[i]` on
-every INSERT/UPDATE.
+every INSERT/UPDATE. `found_by` and `model_id` (one value or one per peak)
+are written on every INSERT/UPDATE.
 """
 function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
                                   peaks_result::NamedTuple,
                                   I_full::Vector{Float64};
-                                  q_step::Union{Float64, Nothing} = exposure_q_step(db, exposure_id))
+                                  q_step::Union{Float64, Nothing} = exposure_q_step(db, exposure_id),
+                                  found_by::Union{AbstractString, AbstractVector{<:AbstractString}} = "hybrid",
+                                  model_id::Union{Integer, Nothing, AbstractVector} = nothing)
     existing = Tables.rowtable(DBInterface.execute(db,
         "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     remaining = Set{Int}(Int(r.id) for r in existing)
@@ -218,23 +221,26 @@ function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
         intensity = I_full[full_idx]
         prom      = peaks_result.prominence[i]
         sharp     = peaks_result.sharpness[i]
+        fb        = String(found_by isa AbstractString ? found_by : found_by[i])
+        mid       = model_id isa AbstractVector ? model_id[i] : model_id
 
         best_id = get(matched_id, i, 0)
 
         if best_id != 0
             DBInterface.execute(db,
                 """UPDATE auto_peaks SET q = ?, intensity = ?, prominence = ?,
-                                         sharpness = ?, findpeaks_index = ?
+                                         sharpness = ?, findpeaks_index = ?,
+                                         found_by = ?, model_id = ?
                    WHERE id = ?""",
-                [qval, intensity, prom, sharp, full_idx, best_id])
+                [qval, intensity, prom, sharp, full_idx, fb, mid, best_id])
             delete!(remaining, best_id)
             q_to_id[qval] = best_id
         else
             res = DBInterface.execute(db,
                 """INSERT INTO auto_peaks (exposure_id, q, intensity, prominence,
-                                           sharpness, findpeaks_index)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                [exposure_id, qval, intensity, prom, sharp, full_idx])
+                                           sharpness, findpeaks_index, found_by, model_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                [exposure_id, qval, intensity, prom, sharp, full_idx, fb, mid])
             q_to_id[qval] = Int(DBInterface.lastrowid(res))
         end
     end

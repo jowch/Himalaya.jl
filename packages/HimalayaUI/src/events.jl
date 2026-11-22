@@ -160,6 +160,7 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
         payload_canonical = JSON3.read(payload_json)
         view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
     end
+    fresh_insert && record_event_reviews!(db, kind, entity_type, entity_id, event_id)
 
     return (event_id    = event_id,
             view_row_id = view_row_id,
