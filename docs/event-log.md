@@ -361,24 +361,10 @@ no listener recycling is needed.
 
 ### Conflict resolution
 
-> **⚠ Superseded — decided 2026-06-03 (greenfield "The Print" rebuild).** The
-> optimistic-concurrency model described below (`If-Match` + 409-retry, Plan 7
-> R5b) is **cancelled, not deferred.** The product decision is that commit
-> conflicts should not surface as friction: multiplayer stays last-write-wins
-> permanently, and the positive replacement is **edit-tracking → undo/redo →
-> versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
-> conflict UI from this section. See `docs/future-feature-ideas.md`
-> §"Multi-user / review" and `docs/himalayaui-design.md` §2.10. The original
-> deferral note is retained below for historical context only.
-
-Optimistic concurrency via `If-Match` headers + 409-retry on the
-frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
-instrumentation showing real contention: ≥2% delta-event collision rate over
-≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
-event log makes auditable after the fact.
-
-`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
-the 2026-06-03 decision above, *all* entities follow this LWW grain.)
+Multiplayer is last-write-wins, with no `If-Match`/409 path and no conflict UI
+(decided 2026-06-03). Undo in the workspace reads the server before it restores
+anything, so it never overwrites another user's newer edit. Versioning is still
+open; see `docs/future-feature-ideas.md` §"Multi-user / review".
 
 ---
 
@@ -479,8 +465,7 @@ this doc:
 
 ## See also
 
-- [`docs/himalayaui-design.md`](himalayaui-design.md) §2.6, §2.9, §2.10 —
-  design principles and the active-set preservation story.
+- [`PRODUCT.md`](../PRODUCT.md) and [`DESIGN.md`](../DESIGN.md) — product principles and the design system.
 - `packages/HimalayaUI/src/{events,hash,server,pipeline}.jl` and
   `packages/HimalayaUI/frontend/src/lib/queue/{replayCoordinator,applyRemoteToCache}.ts`
   — the code.
