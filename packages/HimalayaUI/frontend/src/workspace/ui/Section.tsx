@@ -44,12 +44,13 @@ export function MainSection({ title, hint, children }: { title: string; hint?: R
   );
 }
 
-export function SampleHeading({ name, meta, aside }: { name: string; meta?: ReactNode; aside?: ReactNode }): JSX.Element {
+export function SampleHeading({ name, meta, note, aside }: { name: string; meta?: ReactNode; note?: string | undefined; aside?: ReactNode }): JSX.Element {
   return (
     <div className="@container flex min-w-0 items-center gap-3 px-3.5 pb-1 pt-2.5">
       <div className="flex min-w-0 items-baseline gap-3">
         <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink" title={name}>{name}</h2>
         {meta && <span className="shrink-0 whitespace-nowrap text-base text-ink-faint @max-[34rem]:hidden">{meta}</span>}
+        {note && <span data-same-sample className="min-w-0 truncate whitespace-nowrap text-base text-ink-faint @max-[34rem]:hidden" title={note}>{note}</span>}
       </div>
       {aside && <div className="flex min-w-min flex-1 basis-0 justify-end">{aside}</div>}
     </div>

@@ -354,10 +354,7 @@ export function WorkspacePage(): JSX.Element {
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
-  const shownRefs = useMemo(
-    () => [...bridged, ...refs.filter((r) => !bridged.includes(r) && !hiddenSamples.has(r))],
-    [bridged, refs, hiddenSamples],
-  );
+  const shownRefs = useMemo(() => refs.filter((r) => !hiddenSamples.has(r)), [refs, hiddenSamples]);
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
   const hiddenRefs = useMemo<ReadonlySet<number>>(
     () =>
@@ -626,16 +623,6 @@ export function WorkspacePage(): JSX.Element {
   const leaveBridges = useCallback(() => {
     if (sampleId !== undefined && bridged.length > 0) unbridgeOne(sampleId);
   }, [sampleId, bridged, unbridgeOne]);
-  const onRemoveChip = useCallback(
-    (rid: number) => {
-      if (!bridged.includes(rid)) {
-        removeCompare(rid);
-        return;
-      }
-      unbridgeOne(rid);
-    },
-    [bridged, removeCompare, unbridgeOne],
-  );
   const bridgeTo = useCallback(
     (rid: number) => {
       if (sampleId === undefined) return;
@@ -1003,7 +990,7 @@ export function WorkspacePage(): JSX.Element {
     }));
   };
   const toggleCompare = (rid: number): void => {
-    if (rid === sampleId || bridged.includes(rid)) return;
+    if (rid === sampleId) return;
     if (refs.includes(rid)) removeCompare(rid);
     else addReference(rid);
   };
@@ -1019,7 +1006,7 @@ export function WorkspacePage(): JSX.Element {
       notes: bufferNotes,
       pick: addReference,
       full: comparesFull ? COMPARES_FULL : undefined,
-      compared: refs.filter((r) => r !== sampleId && !bridged.includes(r)).flatMap((r) => samples.filter((x) => x.id === r)),
+      compared: refs.filter((r) => r !== sampleId).flatMap((r) => samples.filter((x) => x.id === r)),
       remove: removeCompare,
       subtractable: activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
       subtracted: subRef,
@@ -1030,9 +1017,8 @@ export function WorkspacePage(): JSX.Element {
       pick: (rid) => {
         if (sampleId === undefined) return;
         bridgeTo(rid);
-        setRefsOn(true);
       },
-      bridged: bridged.length > 0,
+      bridged: bridged.flatMap((r) => samples.filter((x) => x.id === r).map((x) => x.name)),
       leave: leaveBridges,
     },
     candidates: {
@@ -1158,6 +1144,7 @@ export function WorkspacePage(): JSX.Element {
             <SampleHeading
               name={sample.name}
               meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
+              note={bridged.length > 0 ? `Same sample as ${bridged.map((r) => sampleNames.get(r) ?? `Sample ${r}`).join(", ")}` : undefined}
               aside={
                 <LabelRow
                   labels={sampleLabels}
@@ -1186,7 +1173,6 @@ export function WorkspacePage(): JSX.Element {
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
                   color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
-                  bridged: bridged.includes(rid),
                   hidden: shownCompareSet.has(rid),
                 }))}
                 subtractId={subRef}
@@ -1202,7 +1188,7 @@ export function WorkspacePage(): JSX.Element {
                   setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
                 }}
                 onSubtract={toggleSubtract}
-                onRemove={onRemoveChip}
+                onRemove={removeCompare}
                 onAdd={() => setPicking(true)}
                 trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
               />
