@@ -64,7 +64,10 @@ member's `exposure_id` says which sample's frame holds the evidence.
 ## Upgrading to 0.5
 
 HimalayaUI dropped `samples.merged_into_id`, a column only the retired merge
-route ever wrote. `samples` and the annotation readers no longer filter on it.
+route ever wrote. `samples` and the annotation readers no longer filter on it,
+so `samples(db)` now also returns any sample that route merged away. The merge
+moved every exposure to the kept sample, so such a row has no exposures: skip
+samples whose `exposures(db; sample=id)` is empty if a study should ignore them.
 0.4 fails on any database HimalayaUI has opened since then.
 
 ## Keeping it in step with HimalayaUI

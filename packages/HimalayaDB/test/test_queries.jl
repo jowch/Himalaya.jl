@@ -21,10 +21,10 @@
     @test isempty(setups(db; experiment=999999))
 
     smps = samples(db; experiment=ids.experiment_id)
-    @test length(smps) == 2
-    @test smps[1].id == ids.sample_id
+    @test [s.id for s in smps] == [ids.sample_id, ids.sample2_id, ids.empty_id]
     @test smps[1].setup_id == ids.setup_id
-    @test length(samples(db)) == 2
+    @test length(samples(db)) == 3
+    @test isempty(exposures(db; sample=ids.empty_id))
 
     exs = exposures(db; sample=ids.sample_id)
     @test length(exs) == 2

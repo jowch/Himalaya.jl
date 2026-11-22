@@ -16,7 +16,8 @@ whose `assignments.state = 'form_factor'` (NOT `'indexed'`) — used to prove
 The experiment's one setup carries geometry and a `{name}_tot.dat` integration
 pattern. A second sample (`sample2_id`, a buffer) is sample 1's subtraction
 background and shares a bridge with it; sample 1 has an `indexed` sample call
-and confirmed, suggested and removed labels.
+and confirmed, suggested and removed labels. A third sample (`empty_id`) holds no
+exposures, like a sample the retired merge route emptied: readers list it.
 Direct INSERTs are fine here — a reader only cares that the view tables are populated.
 """
 function build_fixture(path::AbstractString, analysis_dir::AbstractString)
@@ -117,7 +118,9 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
                 "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 1)", [sid])
         end
 
-        return (; experiment_id, setup_id, sample_id, sample2_id, exposure_id, exposure2_id,
+        empty_id = HimalayaUI.create_sample!(db; experiment_id=experiment_id, name="Emptied by an old merge")
+
+        return (; experiment_id, setup_id, sample_id, sample2_id, empty_id, exposure_id, exposure2_id,
                   index_id, index2_id, auto_peak_ids)
     finally
         close(db)
