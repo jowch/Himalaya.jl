@@ -216,6 +216,12 @@ but alone it adds more spurious candidates than the persistence detector.
    kernel sees as one blob while the narrower kernels sit in the valley between
    them.
 
+   Known limitation: a strongly asymmetric peak (one side 8 or more times
+   wider than the other) can get a second, added peak about 10 points out on
+   its long side, because the long side is concave at the wide widths and not
+   a valley at the narrow ones. Rejecting it would need a shape model per peak,
+   which this detector avoids.
+
 **Output.** Same fields as the default path, plus `z`. For an added peak,
 `prominence` is the persistence prominence of `I` at that index if it is a
 local maximum and `0.0` otherwise (a shoulder has none). `sharpness` is the
