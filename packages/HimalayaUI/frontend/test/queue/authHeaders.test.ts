@@ -84,14 +84,14 @@ const SPECS: Spec[] = [
   {
     name: "peakAdd",
     run: () => peakAddMutator.request(
-      { ...FLAT_BASE, kind: "peak_added", payload: { q: 0.5 },
+      { ...FLAT_BASE, kind: "peak_added",
         exposureId: 5, q: 0.5 } as any,
       new AbortController().signal),
   },
   {
     name: "peakRemove",
     run: () => peakRemoveMutator.request(
-      { ...FLAT_BASE, kind: "peak_removed", payload: { peakId: 7 },
+      { ...FLAT_BASE, kind: "peak_removed",
         exposureId: 5, peakId: 7 } as any,
       new AbortController().signal),
   },
@@ -99,7 +99,6 @@ const SPECS: Spec[] = [
     name: "peakExclude",
     run: () => peakExcludeMutator.request(
       { ...FLAT_BASE, kind: "peak_excluded",
-        payload: { peakId: 7, q: 0.5 },
         exposureId: 5, peakId: 7, q: 0.5 } as any,
       new AbortController().signal),
   },
@@ -107,7 +106,6 @@ const SPECS: Spec[] = [
     name: "peakUnexclude",
     run: () => peakUnexcludeMutator.request(
       { ...FLAT_BASE, kind: "peak_unexcluded",
-        payload: { peakId: 7, q: 0.5 },
         exposureId: 5, peakId: 7, q: 0.5 } as any,
       new AbortController().signal),
   },
@@ -115,34 +113,34 @@ const SPECS: Spec[] = [
     name: "deleteIndex",
     run: () => deleteIndexMutator.request(
       { ...FLAT_BASE, kind: "delete_index",
-        payload: { indexId: 10 }, exposureId: 5, indexId: 10 } as any,
+        exposureId: 5, indexId: 10 } as any,
       new AbortController().signal),
   },
   {
     name: "addAssignmentPhase",
     run: () => addAssignmentPhaseMutator.request(
-      { ...FLAT_BASE, kind: "assignment_add", payload: { indexId: 10 },
+      { ...FLAT_BASE, kind: "assignment_add",
         exposureId: 5, indexId: 10 } as any,
       new AbortController().signal),
   },
   {
     name: "removeAssignmentPhase",
     run: () => removeAssignmentPhaseMutator.request(
-      { ...FLAT_BASE, kind: "assignment_remove", payload: { indexId: 10 },
+      { ...FLAT_BASE, kind: "assignment_remove",
         exposureId: 5, indexId: 10 } as any,
       new AbortController().signal),
   },
   {
     name: "setSampleCallState",
     run: () => setSampleCallStateMutator.request(
-      { ...FLAT_BASE, kind: "sample_call_set_state", payload: { state: "form_factor" },
+      { ...FLAT_BASE, kind: "sample_call_set_state",
         sampleId: 1, state: "form_factor" } as any,
       new AbortController().signal),
   },
   {
     name: "customIndex",
     run: () => customIndexMutator.request(
-      { ...FLAT_BASE, kind: "custom_index_commit", payload: { phase: "Pn3m", basis: 0.15 },
+      { ...FLAT_BASE, kind: "custom_index_commit",
         exposureId: 5, phase: "Pn3m", basis: 0.15 } as any,
       new AbortController().signal),
   },
@@ -150,7 +148,6 @@ const SPECS: Spec[] = [
     name: "createSpeculative",
     run: () => createSpeculativeMutator.request(
       { ...FLAT_BASE, kind: "speculative_created",
-        payload: { phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [] },
         exposureId: 5, phase: "Pn3m", anchor_peak_id: 7,
         anchor_ratio: 1, additional: [] } as any,
       new AbortController().signal),
@@ -158,7 +155,7 @@ const SPECS: Spec[] = [
   {
     name: "reanalyzeExposure",
     run: () => reanalyzeExposureMutator.request(
-      { ...FLAT_BASE, kind: "reanalyze_exposure", payload: {},
+      { ...FLAT_BASE, kind: "reanalyze_exposure",
         exposureId: 5 } as any,
       new AbortController().signal),
   },
@@ -166,7 +163,6 @@ const SPECS: Spec[] = [
     name: "updateSample",
     run: () => updateSampleMutator.request(
       { ...FLAT_BASE, kind: "update_sample",
-        payload: { sampleId: 10 },
         sampleId: 10, experimentId: 1, display_name: "x" } as any,
       new AbortController().signal),
   },
@@ -174,7 +170,6 @@ const SPECS: Spec[] = [
     name: "setExposureStatus",
     run: () => setExposureStatusMutator.request(
       { ...FLAT_BASE, kind: "set_exposure_status",
-        payload: { exposureId: 5, status: "rejected" },
         sampleId: 1, exposureId: 5, status: "rejected" } as any,
       new AbortController().signal),
   },
@@ -182,7 +177,6 @@ const SPECS: Spec[] = [
     name: "selectExposure",
     run: () => selectExposureMutator.request(
       { ...FLAT_BASE, kind: "select_exposure",
-        payload: { exposureId: 6 },
         sampleId: 1, exposureId: 6 } as any,
       new AbortController().signal),
   },

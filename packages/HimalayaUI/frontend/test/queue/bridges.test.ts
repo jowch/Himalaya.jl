@@ -11,7 +11,7 @@ function frame(kind: string, entity_id: number, payload: Record<string, unknown>
   return { kind, entity_id, entity_type: "sample", payload } as unknown as SseEvent;
 }
 
-const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "bridge_samples", payload: {}, experimentId: 7 } as const;
+const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "bridge_samples", experimentId: 7 } as const;
 
 describe("bridge mutations", () => {
   it("a remote bridge event refetches that experiment's bridges and nothing exposure-scoped", () => {
