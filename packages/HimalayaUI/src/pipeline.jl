@@ -1067,8 +1067,6 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # everything commits atomically.
     lock(_DB_WRITE_LOCK) do
     SQLite.transaction(db) do
-        # Written before matching so every curation match in this run, and
-        # later DB-only runs, use the same grid step.
         q_step === nothing || DBInterface.execute(db,
             "UPDATE exposures SET q_step = ? WHERE id = ?", [q_step, exposure_id])
         if !findpeaks_skipped

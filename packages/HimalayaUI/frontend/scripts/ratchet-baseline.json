@@ -100,7 +100,7 @@
     "src/routes_export.jl": 7,
     "src/routes_exposures.jl": 68,
     "src/routes_fs.jl": 26,
-    "src/routes_peaks.jl": 56,
+    "src/routes_peaks.jl": 51,
     "src/routes_resolve.jl": 28,
     "src/routes_samples.jl": 5,
     "src/routes_users.jl": 3,
