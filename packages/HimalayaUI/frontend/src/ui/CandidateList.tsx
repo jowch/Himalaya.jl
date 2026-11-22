@@ -22,7 +22,7 @@ const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-tr
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      {rows.length === 0 && <Note>No candidate indices for this frame.</Note>}
+      {rows.length === 0 && <Note>No candidate indices for this image.</Note>}
       {rows.length > 0 && <Rows rows={rows} assigned={assigned} disabled={disabled} onToggle={onToggle} onToggleGroup={onToggleGroup} onHover={onHover} />}
       <button
         type="button"

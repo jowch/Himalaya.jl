@@ -30,7 +30,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
               const cur = e.id === currentId;
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
-              const name = gi === 0 || g.title === undefined ? `Frame ${i + 1}` : `Frame ${i + 1} of ${g.title}`;
+              const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
                   key={e.id}
@@ -50,7 +50,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
                     {src ? (
                       <img src={src} alt="" loading="lazy" style={DETECTOR_COLOUR} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-xs text-frame-tag">No image</span>
+                      <span className="text-xs text-frame-tag">No TIFF</span>
                     )}
                   </button>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}

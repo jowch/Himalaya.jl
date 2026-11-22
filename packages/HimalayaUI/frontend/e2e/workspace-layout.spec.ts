@@ -117,7 +117,7 @@ async function layout(page: Page): Promise<Record<string, number[]>> {
       exposures: box(document.querySelector("[data-testid=workspace-exposures]")),
       indexing: box(section("Indexing")),
       indexingPlot: box(document.querySelector("[data-testid=workspace-indexing] svg")),
-      exposure: box(section("Frame")),
+      exposure: box(section("Image")),
     };
   });
 }
@@ -129,7 +129,7 @@ async function measured(page: Page): Promise<Record<string, number[]>> {
 }
 
 function exposureToggle(page: Page) {
-  return page.locator("aside").getByRole("button", { name: "Frame" });
+  return page.locator("aside").getByRole("button", { name: "Image" });
 }
 
 function callToggle(page: Page) {
@@ -148,7 +148,7 @@ async function openSample(page: Page, id: number): Promise<void> {
   await expect(page.locator("[data-testid=workspace-indexing] svg")).toBeVisible();
   if ((await callToggle(page).count()) === 0 || (await callToggle(page).getAttribute("aria-expanded")) === "true") {
     await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
-    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this frame.")).toBeVisible();
+    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this image.")).toBeVisible();
   }
   await expect(page.locator("[data-testid=workspace-exposures] li")).toHaveCount(FRAMES[id] ?? 1);
   const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
@@ -304,7 +304,7 @@ for (const viewport of VIEWPORTS) {
     await openSample(page, 41);
     const tops = await page.evaluate(() => {
       const top = (sel: string) => Math.round(document.querySelector(sel)!.getBoundingClientRect().top);
-      return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Frame]") };
+      return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Image]") };
     });
     const sequence = Object.entries(tops).sort((a, b) => a[1] - b[1]).map(([name]) => name);
     expect(sequence).toEqual(short ? ["call", "exposure", "indexing"] : ["call", "indexing", "exposure"]);
@@ -368,7 +368,7 @@ test("on a short window Call and Frame fold as an accordion, and stay put from s
   await expect(page.locator("[data-testid=workspace-candidates]")).toHaveCount(0);
   await expect(page.locator("aside").getByText("JC_S41_0_001")).toBeVisible();
   expect(await fits()).toBe(true);
-  const lastRow = () => page.locator("aside section[data-section=Frame] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
+  const lastRow = () => page.locator("aside section[data-section=Image] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
   const first = await measured(page);
   const firstLastRow = await lastRow();
   for (const id of [44, 43, 40, 41]) {
@@ -383,7 +383,7 @@ test("on a short window Call and Frame fold as an accordion, and stay put from s
   await page.keyboard.press("i");
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
   await expect(exposureToggle(page), "Exposure is not a dead toggle while a custom index is open").toHaveCount(0);
-  await expect(page.locator("aside section[data-section=Frame]")).toHaveAttribute("data-collapsed", "true");
+  await expect(page.locator("aside section[data-section=Image]")).toHaveAttribute("data-collapsed", "true");
   await page.keyboard.press("Escape");
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
 });
@@ -456,7 +456,7 @@ test("on a very short window the open Frame section scrolls inside a column that
   await expect(page.locator("aside").getByText("JC_S44_0_007")).toBeVisible();
   const state = await page.evaluate(() => {
     const aside = document.querySelector("aside")!;
-    const exposure = aside.querySelector("section[data-section=Frame]") as HTMLElement;
+    const exposure = aside.querySelector("section[data-section=Image]") as HTMLElement;
     return { asideFits: aside.scrollHeight <= aside.clientHeight, exposureScrolls: exposure.scrollHeight > exposure.clientHeight };
   });
   expect(state).toEqual({ asideFits: true, exposureScrolls: true });
@@ -494,7 +494,7 @@ for (const width of [1024, 1280]) {
         await page.goto(`/experiments/17/workspace/${id}`);
         const title = page.getByRole("heading", { level: 2, name });
         await expect(page.locator("[data-testid=workspace-exposures] li").first()).toBeVisible();
-        const meta = page.getByText("Frame 1 of 1", { exact: true });
+        const meta = page.getByText("Image 1 of 1", { exact: true });
         if (width === 1280) await expect(meta).toBeVisible();
         expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
         const add = page.getByRole("button", { name: "+ Label L" });

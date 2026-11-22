@@ -113,10 +113,10 @@ function helpSections(mod: string): HelpSection[] {
       ],
     },
     {
-      title: "Frames",
+      title: "Images",
       rows: [
-        { keys: ["←", "→"], what: "Previous or next frame" },
-        { keys: ["X"], what: "Drop the frame and show the nearest kept one, or restore a dropped one" },
+        { keys: ["←", "→"], what: "Previous or next image" },
+        { keys: ["X"], what: "Drop the image and show the nearest kept one, or restore a dropped one" },
         { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
@@ -309,8 +309,8 @@ export function WorkspacePage(): JSX.Element {
   const noTraceMessage = !noTrace
     ? undefined
     : tracePending
-      ? "Waiting for this frame's trace."
-      : `No integrated trace for this frame.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`;
+      ? "Waiting for this image's trace."
+      : `No integrated trace for this image.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`;
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
@@ -362,7 +362,7 @@ export function WorkspacePage(): JSX.Element {
     (eid: number) => {
       const at = frameOf(groups, eid);
       const owner = at && at.group.sampleId !== sample?.id ? inExperiment.find((s) => s.id === at.group.sampleId)?.name : sample?.name;
-      return `frame ${(at?.index ?? -1) + 1} of ${owner ?? "this sample"}`;
+      return `image ${(at?.index ?? -1) + 1} of ${owner ?? "this sample"}`;
     },
     [groups, sample?.name, sample?.id, inExperiment],
   );
@@ -1066,7 +1066,7 @@ export function WorkspacePage(): JSX.Element {
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const ownerSample = shownFrame ? inExperiment.find((s) => s.id === shownFrame.group.sampleId) : undefined;
   const frameOwner = ownerSample ? frameSetupName(ownerSample) : undefined;
-  const frameCount = shownFrame ? `Frame ${shownFrame.index + 1} of ${shownFrame.group.exposures.length}` : undefined;
+  const frameCount = shownFrame ? `Image ${shownFrame.index + 1} of ${shownFrame.group.exposures.length}` : undefined;
   const frameLine = frameCount && shownFrame && shownFrame.group.sampleId !== sampleId ? `${frameCount}, ${frameOwner ?? ""}` : frameCount;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
@@ -1350,7 +1350,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </PlotCard>
             </div>
-            <MainSection title="Frames" hint={keptHint}>
+            <MainSection title="Images" hint={keptHint}>
               <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
             </MainSection>
           </>
@@ -1379,7 +1379,7 @@ export function WorkspacePage(): JSX.Element {
               </Section>
             ) : (
               <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
-                {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
+                {exposureDropped && <Note>This image is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   rows={rows}
                   assigned={assigned}
@@ -1395,7 +1395,7 @@ export function WorkspacePage(): JSX.Element {
           </div>
           {!shortWindow && indexingSection}
           <Section
-            title="Frame"
+            title="Image"
             aside="← →"
             folded={groups.length > 1 ? frameOwner : undefined}
             className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}

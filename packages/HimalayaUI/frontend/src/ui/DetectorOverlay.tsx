@@ -58,13 +58,13 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
         </div>
         <p className="m-0 flex w-full items-baseline justify-between gap-3 text-sm text-ink-soft" data-testid="workspace-detector-caption">
           <span>
-            {caption ?? `Frame ${index + 1} of ${exposures.length}`}
-            <span className="text-ink-faint"> · {current?.filename ?? "Unnamed frame"}</span>
+            {caption ?? `Image ${index + 1} of ${exposures.length}`}
+            <span className="text-ink-faint"> · {current?.filename ?? "Unnamed image"}</span>
           </span>
           {dropped && <span className="font-semibold text-ink line-through">dropped</span>}
         </p>
         <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint">
-          <span><Kbd>←</Kbd> <Kbd>→</Kbd> frames</span>
+          <span><Kbd>←</Kbd> <Kbd>→</Kbd> images</span>
           {onToggleDrop && <span><Kbd>X</Kbd> {dropped ? "restore" : "drop"}</span>}
           <span><Kbd>Esc</Kbd> close</span>
         </p>

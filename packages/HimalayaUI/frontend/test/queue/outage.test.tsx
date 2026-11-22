@@ -97,7 +97,7 @@ describe("an edit made while the server is down", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
     expect(restore).toHaveBeenCalledTimes(1);
     expect(toastSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/^Couldn't drop or restore frame/),
+      expect.stringMatching(/^Couldn't drop or restore image/),
       "error",
     );
   });
