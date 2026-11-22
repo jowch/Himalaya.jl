@@ -102,6 +102,25 @@ jobs:
           GROUP: ${{ matrix.group }}
         run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.test("HimalayaUI"; julia_args=["--threads=4,1"])'
 
+  peak-classifier:
+    name: Peak classifier tool
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ env.JULIA_VERSION }}
+      - uses: julia-actions/cache@v2
+        with:
+          cache-name: peak-classifier-${{ env.JULIA_CPU_TARGET }}
+      - run: |
+          printf '[HimalayaUI]\nprecompile_workload = false\n' > tools/peak-classifier/LocalPreferences.toml
+          julia --project=tools/peak-classifier -e 'using Pkg; Pkg.instantiate(); Pkg.test(; julia_args=["--threads=4"])'
+
   frontend:
     name: Frontend build and Vitest
     runs-on: ubuntu-latest

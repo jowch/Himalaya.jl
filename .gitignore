@@ -85,3 +85,8 @@ cache/thumb-*/
 # from the repo root never commits a node_modules cache (e.g. .vite/vitest results.json).
 node_modules/
 LocalPreferences.toml
+
+# Peak classifier: trained models and feature dumps are lab data. Keep them out of the repo.
+tools/peak-classifier/models/
+tools/peak-classifier/features/
+*.pcmodel
