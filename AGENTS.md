@@ -22,7 +22,6 @@ Julia monorepo for indexing SAXS diffraction patterns. Core `Himalaya` package (
 │       │   ├── src/             # Frontend source
 │       │   ├── test/            # Vitest unit tests
 │       │   └── e2e/             # Playwright E2E specs
-│       └── docs/                # Frontend-specific docs (boneyard)
 ├── docs/                        # Architecture docs (peak-finding, queue, events, scoring)
 ├── scripts/                     # Build scripts (PackageCompiler sysimage)
 └── bin/                         # CLI wrapper script
@@ -127,8 +126,6 @@ When reviewing a PR (as reviewer, not author):
 - **State split**: Zustand = client state; TanStack Query = server state — don't mix
 - **Optimistic peak ids are negative** — UI code must handle `peak.id < 0`
 - **Mint `client_op_id` inside `mutationFn`**, not at hook creation time
-- **Gate skeletons on `query.isLoading`**, not `isPending`
-- **`className` on `<Skeleton>` is load-bearing** — pass layout classes to preserve flex chains
 - **`exactOptionalPropertyTypes: true`** — use `authOpts(username)` helper, never `{ username: undefined }`
 - SSE self-echo filtering uses per-tab `client_id` from `sessionStorage`
 
@@ -167,6 +164,5 @@ See `docs/contract-testing.md` for canonical paired test files.
 | REST routes | `packages/HimalayaUI/src/routes_*.jl` |
 | Frontend state | `packages/HimalayaUI/frontend/src/state.ts`, `queries.ts` |
 | Mutation queue | `packages/HimalayaUI/frontend/src/lib/queue/` |
-| Skeleton loading | `packages/HimalayaUI/docs/boneyard.md` |
 
 See `CLAUDE.md` for more info and gotchas.

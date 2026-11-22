@@ -209,7 +209,9 @@ describe("NewExperimentPage", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(create).not.toHaveBeenCalled();
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
+    await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
     expect(create).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledTimes(1);
     expect(create.mock.calls[0]![0]).toMatchObject({ path: "/b/day1/setup1/", setups: [{ data_dir: "/b/day1/setup1/data" }] });
   });
 

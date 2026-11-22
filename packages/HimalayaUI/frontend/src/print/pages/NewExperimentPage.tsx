@@ -12,6 +12,7 @@ import { FieldError } from "../ui/FieldError";
 import { KbKey } from "../ui/KbKey";
 import { modCombo } from "../../lib/modKey";
 import { Kicker } from "../ui/Kicker";
+import { useFireOnce } from "../../hooks/useFireOnce";
 
 type Patterns = api.SetupPreview["patterns"];
 type GeometryKey = "flight_path_m" | "beam_center_x" | "beam_center_y" | "energy_kev" | "pixel_size_um";
@@ -268,7 +269,6 @@ export function NewExperimentPage(): JSX.Element {
   const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
   const canSubmit = current && chosen.length > 0 && patternsOk && !submitting && (existing !== undefined || name.trim() !== "");
   const [submitWhenReady, setSubmitWhenReady] = useState<{ path: string } | undefined>(undefined);
-  const firedFor = useRef<{ path: string } | undefined>(undefined);
   const inFlight = useRef(false);
 
   const submit = useCallback(async (): Promise<void> => {
@@ -317,14 +317,13 @@ export function NewExperimentPage(): JSX.Element {
   }, [canSubmit, setups, edits, name, folder, existing, navigate, queryClient]);
 
   useEffect(() => {
-    if (submitWhenReady === undefined) return;
-    if (submitWhenReady.path !== path.trim()) setSubmitWhenReady(undefined);
-    else if (current && firedFor.current !== submitWhenReady) {
-      firedFor.current = submitWhenReady;
-      setSubmitWhenReady(undefined);
-      if (canSubmit) void submit();
-    }
-  }, [submitWhenReady, path, current, canSubmit, submit]);
+    if (submitWhenReady !== undefined && submitWhenReady.path !== path.trim()) setSubmitWhenReady(undefined);
+  }, [submitWhenReady, path]);
+  const fireQueued = useCallback(() => {
+    setSubmitWhenReady(undefined);
+    if (canSubmit) void submit();
+  }, [canSubmit, submit]);
+  useFireOnce(submitWhenReady?.path === path.trim() ? submitWhenReady : undefined, current, fireQueued);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {

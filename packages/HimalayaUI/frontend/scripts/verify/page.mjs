@@ -13,6 +13,10 @@ export function routeUrl(cfg, route) {
   return new URL(route.startsWith("/") ? route : `/${route}`, cfg.uiBase).toString();
 }
 
+export async function leavePage(page) {
+  if (page.url() !== "about:blank") await page.goto("about:blank");
+}
+
 export async function prepareUser(page, cfg, { username, onboarding }) {
   if (!page.url().startsWith(cfg.uiBase)) await page.goto(cfg.uiBase, { waitUntil: "domcontentloaded" });
   return page.evaluate(
@@ -62,6 +66,7 @@ export async function open(cfg, route, flags) {
   return withPage(cfg, async (page) => {
     if (viewport) await page.setViewportSize(viewport);
     const user = await prepareUser(page, cfg, { username: flags.user ?? "verify", onboarding: Boolean(flags.onboarding) });
+    await leavePage(page);
     const tracker = armSettle(page);
     let response;
     try {

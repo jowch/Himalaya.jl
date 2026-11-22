@@ -67,10 +67,8 @@ export function useAppTheme(): { theme: AppTheme; isDark: boolean; choose: (next
 }
 
 export function useDocumentTheme(): void {
-  const { theme, isDark } = useAppTheme();
+  const { theme } = useAppTheme();
   useLayoutEffect(() => {
-    const root = document.documentElement;
-    root.setAttribute("data-theme", theme);
-    root.classList.toggle("dark", isDark);
-  }, [theme, isDark]);
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 }
