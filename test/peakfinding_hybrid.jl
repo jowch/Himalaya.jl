@@ -228,6 +228,37 @@ end
     end
 end
 
+@testset "hybrid: strong peaks on a zero baseline are found" begin
+    n = 700
+    q = collect(range(0.01, 0.4; length = n))
+    centres = [100, 220, 340, 460, 580]
+    miss_h = miss_d = 0
+    for seed in 1:20
+        rng = MersenneTwister(seed)
+        I = randn(rng, n)
+        for c in centres
+            I .+= 100.0 .* exp.(-((1:n) .- c) .^ 2 ./ (2 * 4.0^2))
+        end
+        σ = ones(n)
+        hyb = findpeaks(q, I, σ; method = :hybrid)
+        base = findpeaks(q, I, σ)
+        miss_h += count(c -> !any(abs.(hyb.indices .- c) .<= 3), centres)
+        miss_d += count(c -> !any(abs.(base.indices .- c) .<= 3), centres)
+    end
+    @test miss_h <= miss_d
+    @test miss_h == 0
+end
+
+@testset "hybrid: the 2-argument form does not depend on intensity scale" begin
+    for seed in 1:20
+        q, I, σ, _ = _hybrid_trace(; seed)
+        a = findpeaks(q, I; method = :hybrid).indices
+        for scale in (1e-3, 1e-5, 1e3)
+            @test findpeaks(q, I .* scale; method = :hybrid).indices == a
+        end
+    end
+end
+
 @testset "hybrid: without σ, an estimate is used" begin
     q, I, σ, t = _hybrid_trace()
     with_σ = findpeaks(q, I, σ; method = :hybrid)
