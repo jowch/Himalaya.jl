@@ -178,31 +178,27 @@ HIMALAYA_DB_PATH=/opt/himalaya/himalaya.db himalaya serve
 
 ## Updating a deployment
 
-The work needed depends on what changed:
-
-| Change type | Steps | Cost |
-|---|---|---|
-| Frontend only (TS/CSS/React) | `git pull` → `make frontend` → browser refresh | ~30 s |
-| Backend Julia, no new deps | `git pull` → `make sysimage` → `sudo systemctl restart himalaya` | ~5–10 min |
-| Backend Julia, no sysimage | `git pull` → `make setup` → `sudo systemctl restart himalaya` | ~2 min, before the restart |
-| Backend with new Julia deps | `git pull` → `make setup` → `make sysimage` → `sudo systemctl restart himalaya` | ~5–10 min |
-| Schema migration | none extra — `open_db` runs migrations on connect, daemon restart picks them up | — |
-| Julia version bump (juliaup) | rebuild sysimage (`make check-sysimage` flags the mismatch) | ~5–10 min |
-
-For multi-user deploys, packages and the sysimage must go into the shared depot
-that `bin/himalaya` runs against. `make setup`, `make sysimage` and
-`make check-sysimage` read `JULIA_DEPOT_PATH` from the same `.env` as
-`bin/himalaya`, so nothing needs exporting:
+After a pull, one target does everything:
 
 ```bash
 cd /opt/Himalaya.jl
 git pull
-make setup                                             # only if Project.toml or src/ changed
-make frontend                                          # only if frontend/ changed
-make sysimage                                          # only if any Julia code changed
-make check-sysimage                                    # fails on a depot or Julia mismatch, or if it won't start
-sudo systemctl restart himalaya                        # only if you rebuilt the sysimage
+make deploy
 ```
+
+`make deploy` runs `make setup`, builds the frontend, runs `make sysimage` and
+`make check-sysimage`, then `sudo systemctl restart himalaya`. It stops at the
+first step that fails, so a broken build or a sysimage that won't start never
+reaches the restart, and the old daemon keeps serving. It takes about 5–10 min.
+`SERVICE=<unit>` names another systemd unit, and `RESTART=` skips the restart.
+
+Packages and the sysimage go into the shared depot that `bin/himalaya` runs
+against: every make target reads `JULIA_DEPOT_PATH` from the same `.env`, so
+nothing needs exporting. Schema migrations need nothing extra: `open_db` runs
+them on connect, so the restart picks them up.
+
+A frontend-only change doesn't need the full deploy: `make frontend` and a
+browser refresh is enough (~30 s).
 
 A few non-obvious things to know:
 
