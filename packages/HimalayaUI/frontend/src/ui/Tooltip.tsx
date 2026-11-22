@@ -1,10 +1,11 @@
 import { cloneElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { FocusEvent, MouseEvent, MutableRefObject, ReactElement, ReactNode, Ref } from "react";
+import type { FocusEvent, MouseEvent, MutableRefObject, PointerEvent, ReactElement, ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { Kbd } from "./Kbd";
 
 export const TOOLTIP_OPEN_DELAY_MS = 400;
 export const TOOLTIP_WARM_WINDOW_MS = 300;
+const SCROLL_GRACE_MS = 100;
 const GAP = 6;
 const MARGIN = 8;
 
@@ -21,18 +22,32 @@ interface TooltipProps {
 type TriggerProps = {
   onMouseEnter?: (e: MouseEvent<HTMLElement>) => void;
   onMouseLeave?: (e: MouseEvent<HTMLElement>) => void;
-  onPointerDown?: (e: MouseEvent<HTMLElement>) => void;
+  onPointerDown?: (e: PointerEvent<HTMLElement>) => void;
   onFocus?: (e: FocusEvent<HTMLElement>) => void;
   onBlur?: (e: FocusEvent<HTMLElement>) => void;
   "aria-describedby"?: string;
+  "aria-label"?: string;
 };
 
+type Suppression = "pointer" | "key" | null;
+
 let lastClosedAt = Number.NEGATIVE_INFINITY;
-let closeOpen: (() => void) | null = null;
+let active: { close: () => void; onEscape: () => void } | null = null;
+let escapeListening = false;
+
+function onWindowKeyDown(e: KeyboardEvent): void {
+  if (e.key === "Escape") active?.onEscape();
+}
+
+function listenForEscape(): void {
+  if (escapeListening || typeof window === "undefined") return;
+  window.addEventListener("keydown", onWindowKeyDown, true);
+  escapeListening = true;
+}
 
 export function resetTooltipWarmth(): void {
   lastClosedAt = Number.NEGATIVE_INFINITY;
-  closeOpen = null;
+  active = null;
 }
 
 function isWarm(): boolean {
@@ -75,61 +90,92 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; side: Side } | null>(null);
+  const openRef = useRef(false);
+  const openedAt = useRef(0);
   const triggerRef = useRef<HTMLElement | null>(null);
   const tipRef = useRef<HTMLSpanElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const suppressed = useRef(false);
+  const suppressed = useRef<Suppression>(null);
+  const empty = content === null || content === undefined || content === "";
 
   const clearTimer = (): void => {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
   };
 
+  const handle = useRef<{ close: () => void; onEscape: () => void } | null>(null);
+
   const close = useCallback((): void => {
     clearTimer();
-    setOpen((was) => {
-      if (was) lastClosedAt = Date.now();
-      return false;
-    });
+    if (openRef.current) lastClosedAt = Date.now();
+    openRef.current = false;
+    if (active === handle.current) active = null;
+    setOpen(false);
     setPos(null);
   }, []);
 
+  if (handle.current === null) {
+    handle.current = {
+      close: () => close(),
+      onEscape: () => {
+        suppressed.current = "key";
+        close();
+      },
+    };
+  }
+
+  const claim = (): void => {
+    if (active && active !== handle.current) active.close();
+    active = handle.current;
+    listenForEscape();
+  };
+
   const show = useCallback((): void => {
+    timer.current = null;
     const el = triggerRef.current;
-    if (!el || suppressed.current) return;
+    if (!el || suppressed.current || empty) return;
     if (overflowOnly && !isTruncated(el)) return;
-    if (closeOpen && closeOpen !== close) closeOpen();
-    closeOpen = close;
+    claim();
+    openRef.current = true;
+    openedAt.current = Date.now();
     setOpen(true);
-  }, [close, overflowOnly]);
+  }, [empty, overflowOnly]);
 
   const schedule = (): void => {
     clearTimer();
-    if (isWarm()) show();
-    else timer.current = setTimeout(show, TOOLTIP_OPEN_DELAY_MS);
+    if (isWarm()) {
+      show();
+      return;
+    }
+    claim();
+    timer.current = setTimeout(show, TOOLTIP_OPEN_DELAY_MS);
   };
+
+  useEffect(() => {
+    if (empty) close();
+  }, [empty, close]);
 
   useEffect(() => () => {
     clearTimer();
-    if (closeOpen === close) closeOpen = null;
-  }, [close]);
+    if (active === handle.current) active = null;
+  }, []);
+
+  useEffect(() => {
+    if (import.meta.env.DEV && !empty && triggerRef.current === null) {
+      console.error("Tooltip: the trigger must be a DOM element or a component that forwards its ref to one.");
+    }
+  }, [empty]);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        suppressed.current = true;
-        close();
-      }
+    const onScroll = (): void => {
+      if (Date.now() - openedAt.current >= SCROLL_GRACE_MS) close();
     };
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);
-      if (closeOpen === close) closeOpen = null;
     };
   }, [open, close]);
 
@@ -143,11 +189,10 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
     setPos(placeTooltip(r, t, { width: window.innerWidth, height: window.innerHeight }, side));
   }, [open, side, content, shortcut]);
 
-  const empty = content === null || content === undefined || content === "";
-  if (empty) return children;
-
   const own = children.props as TriggerProps;
   const childRef = (children as unknown as { ref?: Ref<HTMLElement> }).ref;
+  const namesTrigger = overflowOnly || (typeof content === "string" && own["aria-label"] === content);
+  const describes = open && !empty && !namesTrigger;
   const trigger = cloneElement(children, {
     ref: (node: HTMLElement | null) => {
       triggerRef.current = node;
@@ -155,16 +200,17 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
     },
     onMouseEnter: (e: MouseEvent<HTMLElement>) => {
       own.onMouseEnter?.(e);
+      if (suppressed.current === "key") suppressed.current = null;
       schedule();
     },
     onMouseLeave: (e: MouseEvent<HTMLElement>) => {
       own.onMouseLeave?.(e);
-      suppressed.current = false;
+      suppressed.current = null;
       close();
     },
-    onPointerDown: (e: MouseEvent<HTMLElement>) => {
+    onPointerDown: (e: PointerEvent<HTMLElement>) => {
       own.onPointerDown?.(e);
-      suppressed.current = true;
+      suppressed.current = "pointer";
       close();
     },
     onFocus: (e: FocusEvent<HTMLElement>) => {
@@ -176,16 +222,17 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
     },
     onBlur: (e: FocusEvent<HTMLElement>) => {
       own.onBlur?.(e);
-      suppressed.current = false;
+      suppressed.current = null;
       close();
     },
-    ...(open ? { "aria-describedby": [own["aria-describedby"], id].filter(Boolean).join(" ") } : {}),
+    ...(describes ? { "aria-describedby": [own["aria-describedby"], id].filter(Boolean).join(" ") } : {}),
   } as TriggerProps);
 
   return (
     <>
       {trigger}
       {open &&
+        !empty &&
         createPortal(
           <span
             ref={tipRef}

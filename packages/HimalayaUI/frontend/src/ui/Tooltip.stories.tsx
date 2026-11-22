@@ -38,3 +38,13 @@ export const OverflowOnly: Story = {
     children: <span className="block w-32 truncate">A_very_long_sample_name_that_does_not_fit_S2401</span>,
   },
 };
+
+export const Sweep: Story = {
+  render: () => (
+    <div className="flex">
+      <Tooltip content="First"><Button variant="ghost">One</Button></Tooltip>
+      <Tooltip content="Second"><Button variant="ghost">Two</Button></Tooltip>
+      <Tooltip content="Third"><Button variant="ghost">Three</Button></Tooltip>
+    </div>
+  ),
+};

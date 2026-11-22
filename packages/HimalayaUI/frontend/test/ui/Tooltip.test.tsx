@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { forwardRef, createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { placeTooltip, resetTooltipWarmth, Tooltip, TOOLTIP_OPEN_DELAY_MS, TOOLTIP_WARM_WINDOW_MS } from "../../src/ui/Tooltip";
@@ -91,23 +93,110 @@ describe("<Tooltip>", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
-  it("closes on Escape and stays closed until the pointer leaves", () => {
-    render(<Tooltip content="Reanalyze"><button>Run</button></Tooltip>);
+  it("closes on Escape without consuming it, and stays closed until the pointer leaves", () => {
+    const onKeyDown = vi.fn();
+    render(<div onKeyDown={onKeyDown}><Tooltip content="Reanalyze"><button>Run</button></Tooltip></div>);
     const run = screen.getByText("Run");
     hoverAndWait(run);
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(run, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).toBeNull();
-    fireEvent.mouseEnter(run);
-    act(() => {
-      vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
-    });
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(onKeyDown).toHaveBeenCalledTimes(1);
     fireEvent.mouseLeave(run);
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_WARM_WINDOW_MS);
     });
     hoverAndWait(run);
     expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  });
+
+  it("an Escape during the open delay cancels the pending tooltip", () => {
+    render(<Tooltip content="Reanalyze"><button>Run</button></Tooltip>);
+    const run = screen.getByText("Run");
+    fireEvent.mouseEnter(run);
+    fireEvent.keyDown(window, { key: "Escape" });
+    act(() => {
+      vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("after Escape on a keyboard-focused trigger, hovering it again shows the tooltip", () => {
+    render(<Tooltip content="Reanalyze"><button>Run</button></Tooltip>);
+    const run = screen.getByText("Run");
+    act(() => {
+      run.focus();
+    });
+    fireEvent.keyDown(run, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(TOOLTIP_WARM_WINDOW_MS);
+    });
+    hoverAndWait(run);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  });
+
+  it("stays warm when the pointer moves straight from one trigger onto a touching one", () => {
+    render(
+      <>
+        <Tooltip content="First"><button>A</button></Tooltip>
+        <Tooltip content="Second"><button>B</button></Tooltip>
+      </>,
+    );
+    const a = screen.getByText("A");
+    const b = screen.getByText("B");
+    hoverAndWait(a);
+    fireEvent.mouseOut(a, { relatedTarget: b });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Second");
+  });
+
+  it("closes, and does not come back on its own, when the content empties while open", () => {
+    function Harness(): JSX.Element {
+      const [text, setText] = useState("Reanalyze");
+      return (
+        <>
+          <Tooltip content={text}><button>Run</button></Tooltip>
+          <button onClick={() => setText("")}>Empty</button>
+          <button onClick={() => setText("Back")}>Refill</button>
+        </>
+      );
+    }
+    render(<Harness />);
+    const run = screen.getByText("Run");
+    hoverAndWait(run);
+    fireEvent.click(screen.getByText("Empty"));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.mouseLeave(run);
+    fireEvent.click(screen.getByText("Refill"));
+    act(() => {
+      vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("does not open when a mouse click focuses the trigger", async () => {
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    render(<Tooltip content="Reanalyze"><button>Run</button></Tooltip>);
+    await user.click(screen.getByText("Run"));
+    expect(screen.getByText("Run")).toHaveFocus();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("ignores the scroll that brings a newly focused trigger into view", () => {
+    render(<Tooltip content="Reanalyze"><button>Run</button></Tooltip>);
+    act(() => {
+      screen.getByText("Run").focus();
+    });
+    fireEvent.scroll(window);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+  });
+
+  it("does not repeat the trigger's own accessible name through aria-describedby", () => {
+    render(<Tooltip content="Dismiss"><button aria-label="Dismiss">×</button></Tooltip>);
+    const btn = screen.getByRole("button", { name: "Dismiss" });
+    hoverAndWait(btn);
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    expect(btn.getAttribute("aria-describedby")).toBeNull();
   });
 
   it("closes on pointer down and on scroll", () => {
@@ -121,6 +210,9 @@ describe("<Tooltip>", () => {
       vi.advanceTimersByTime(TOOLTIP_WARM_WINDOW_MS);
     });
     hoverAndWait(run);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
     fireEvent.scroll(window);
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
@@ -169,7 +261,7 @@ describe("<Tooltip>", () => {
     hoverAndWait(screen.getByText("Help"));
     const tip = screen.getByRole("tooltip");
     expect(tip).toHaveTextContent("Keyboard shortcuts");
-    expect(tip.querySelector("kbd")).toHaveTextContent("?");
+    expect(within(tip).getByText("?")).toBeInTheDocument();
   });
 
   it("with overflowOnly, shows only when the trigger's text is truncated", () => {
