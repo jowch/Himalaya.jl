@@ -10,6 +10,7 @@ test("the pressed thumbnail's frame number maps to the exposure list order", () 
   assert.equal(frameFromLabels([], order), null);
   assert.equal(frameFromLabels(["Frame 1", "Frame 2"], order), null);
   assert.equal(frameFromLabels(["Frame 9"], order), null);
+  assert.equal(frameFromLabels(["Frame 1 of A3 in Long pipe"], order), null);
 });
 
 test("the workspace's frame cards give kept / total", () => {
@@ -17,6 +18,7 @@ test("the workspace's frame cards give kept / total", () => {
   assert.equal(keptFromLabels(["Frame 1, dropped"]), "0/1");
   assert.equal(keptFromLabels(["Drop", "Restore"]), null);
   assert.equal(keptFromLabels([]), null);
+  assert.equal(keptFromLabels(["Frame 1", "Frame 1 of A3, dropped", "Frame 2 of A3"]), "1/1");
 });
 
 test("status text maps onto the sample states", () => {

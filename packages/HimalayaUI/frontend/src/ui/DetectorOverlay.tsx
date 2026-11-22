@@ -11,12 +11,13 @@ const CLOSE_KEYS = ["Escape", " "] as const;
 interface Props {
   exposures: readonly Exposure[];
   currentId: number;
+  caption?: string | undefined;
   onStep: (dir: 1 | -1) => void;
   onToggleDrop: (() => void) | undefined;
   onClose: () => void;
 }
 
-export function DetectorOverlay({ exposures, currentId, onStep, onToggleDrop, onClose }: Props): JSX.Element {
+export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggleDrop, onClose }: Props): JSX.Element {
   const index = exposures.findIndex((e) => e.id === currentId);
   const current = exposures[index];
   const dropped = current?.status === "rejected";
@@ -57,7 +58,7 @@ export function DetectorOverlay({ exposures, currentId, onStep, onToggleDrop, on
         </div>
         <p className="m-0 flex w-full items-baseline justify-between gap-3 text-sm text-ink-soft" data-testid="workspace-detector-caption">
           <span>
-            Frame {index + 1} of {exposures.length}
+            {caption ?? `Frame ${index + 1} of ${exposures.length}`}
             <span className="text-ink-faint"> · {current?.filename ?? "Unnamed frame"}</span>
           </span>
           {dropped && <span className="font-semibold text-ink line-through">dropped</span>}

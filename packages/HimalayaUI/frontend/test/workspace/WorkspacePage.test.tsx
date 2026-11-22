@@ -28,6 +28,7 @@ const state = {
   setups: [] as { id: number; name: string; folder: string; included: boolean }[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
+  mateExposures: new Map<number, Exposure[]>(),
   indices: [] as IndexEntry[],
   assignment: undefined as Assignment | undefined,
   sampleCall: undefined as SampleCall | undefined,
@@ -71,6 +72,7 @@ const toasts: string[] = [];
 const compareFetches: number[][] = [];
 vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
 
+let mateCache: (Exposure[] | undefined)[] = [];
 const server = {
   indices: new Map<number, IndexEntry[]>(),
   assignments: new Map<number, Assignment>(),
@@ -161,6 +163,11 @@ vi.mock("../../src/queries", () => ({
     reset: () => {}, isPending: false, error: null,
   }),
   useExposures: () => ({ data: state.exposures }),
+  useSamplesExposures: (ids: readonly number[]) => {
+    const next = ids.map((id) => state.mateExposures.get(id));
+    if (next.length !== mateCache.length || next.some((d, i) => d !== mateCache[i])) mateCache = next;
+    return mateCache;
+  },
   useTrace: () => ({
     data: state.trace, error: state.traceErr, isError: state.traceError, isFetching: state.traceFetching,
     fetchStatus: state.traceFetching ? "fetching" : "idle", refetch: traceRefetch,
@@ -326,6 +333,7 @@ beforeEach(() => {
     { ...sample(99, "other"), experiment_id: 2 },
   ];
   state.exposures = [exposure(100), exposure(101)];
+  state.mateExposures = new Map();
   state.indices = [index(1, "Im3m", 0.4), index(2, "Pn3m", 0.9)];
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.sampleCall = undefined;
@@ -2849,12 +2857,75 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "0" });
     expect(calls).toEqual([]);
   });
+  it("shows a same sample's frames under their own heading after this sample's, and picking one shows it", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: true }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2, assignment_state: "indexed" } : s));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12, image_path: "/m.tif" }), exposure(202, { sample_id: 12 })]]]);
+    renderAt("/experiments/1/workspace/10");
+    const frames = screen.getByTestId("workspace-exposures");
+    expect(within(frames).getAllByTestId("frame-group-header").map((h) => h.textContent)).toEqual(["A1 in Short pipe", "A3 in Long pipe"]);
+    expect(within(frames).getAllByRole("button", { name: /^Frame \d/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Frame 1", "Frame 2", "Frame 1 of A3 in Long pipe", "Frame 2 of A3 in Long pipe", "Frame 3 of A3 in Long pipe",
+    ]);
+    expect(screen.getByText("Frame 2 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent).toContain("SampleA1 in Short pipe");
+    fireEvent.click(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" }));
+    expect(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("Frame 2 of 3")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
+    expect(screen.getByTitle("Same as A3 in Long pipe")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 3, A3 in Long pipe");
+    fireEvent.keyDown(window, { key: " " });
+  });
+
+  it("the kept count under Frames counts only this sample's own frames", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12, status: "rejected" })]]]);
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByText("1 of 2 kept")).toBeInTheDocument();
+  });
+
+  it("arrow keys step from this sample's last frame into the same sample's frames", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
+    renderAt("/experiments/1/workspace/10?exposure=101");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByRole("button", { name: "Frame 1 of A3" })).toHaveAttribute("aria-current", "true");
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(screen.getByRole("button", { name: "Frame 2" })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("dropping a same sample's frame drops it on that sample, and undo restores it there", async () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12 })]]]);
+    state.exposures = [...state.exposures, exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12 })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "Frame 1 of A3" }));
+    const tile = screen.getByRole("button", { name: "Frame 1 of A3" }).closest("li")!;
+    fireEvent.click(within(tile).getByRole("button", { name: "Drop" }));
+    expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"]]);
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
+    await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null]]);
+  });
+
+  it("an unbridged sample's frames have no group heading", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(within(screen.getByTestId("workspace-exposures")).queryByTestId("frame-group-header")).toBeNull();
+  });
+
   it("names the same sample in the heading and the list, and keeps it out of the comparisons", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same sample as A3")).toHaveTextContent("Same sample as A3");
+    expect(screen.getByTitle("Same as A3")).toHaveTextContent("Same as A3");
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='12']")).toBeNull();
     expect(screen.getByTestId("workspace-compare-bar").querySelector("[data-compare-chip]")).toBeNull();
     const list = screen.getByTestId("workspace-samples");
@@ -2964,7 +3035,7 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same sample as A1")).toBeInTheDocument();
+    expect(screen.getByTitle("Same as A1 in setup1")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
     expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();
