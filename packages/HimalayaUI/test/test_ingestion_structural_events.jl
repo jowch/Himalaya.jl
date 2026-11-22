@@ -104,10 +104,19 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
         @test Int(row.sample_id) == s2_id
     end
 
-    @testset "samples.merged_into_id column exists after migration" begin
+    @testset "the retired samples.merged_into_id column is dropped and its rows kept" begin
         db = fresh_db()
-        col_names = String.(getproperty.(Tables.rowtable(
+        cols() = String.(getproperty.(Tables.rowtable(
             DBInterface.execute(db, "PRAGMA table_info(samples)")), :name))
-        @test "merged_into_id" in col_names
+        @test !("merged_into_id" in cols())
+        seed_two_samples(db)
+        DBInterface.execute(db, "ALTER TABLE samples ADD COLUMN merged_into_id INTEGER REFERENCES samples(id)")
+        n = Int(first(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM samples"))).n)
+        DBInterface.execute(db, "UPDATE samples SET merged_into_id = (SELECT MIN(id) FROM samples) WHERE id <> (SELECT MIN(id) FROM samples)")
+        HimalayaUI.migrate_drop_merged_into!(db)
+        HimalayaUI.migrate_drop_merged_into!(db)
+        @test !("merged_into_id" in cols())
+        @test n == 2
+        @test Int(first(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM samples"))).n) == n
     end
 end

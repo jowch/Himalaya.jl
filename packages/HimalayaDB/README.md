@@ -61,6 +61,15 @@ Samples bridged as the same sample share one call, so `phase_call` of a bridged
 sample now includes the indices confirmed on the other members' exposures. A
 member's `exposure_id` says which sample's frame holds the evidence.
 
+## Upgrading to 0.5
+
+HimalayaUI dropped `samples.merged_into_id`, a column only the retired merge
+route ever wrote. `samples` and the annotation readers no longer filter on it,
+so `samples(db)` now also returns any sample that route merged away. The merge
+moved every exposure to the kept sample, so such a row has no exposures: skip
+samples whose `exposures(db; sample=id)` is empty if a study should ignore them.
+0.4 fails on any database HimalayaUI has opened since then.
+
 ## Keeping it in step with HimalayaUI
 
 The package re-implements a few HimalayaUI reads. `test/test_contract.jl` runs

@@ -33,7 +33,6 @@ function makeLoads(sampleCount: number): object[] {
     slot_index: i + 1,
     grouping_source: "auto_position",
     name_source: "auto",
-    merged_into_id: null,
     exposures: [
       {
         id: 200 + i,

@@ -17,8 +17,7 @@ function _call_groups(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
             SELECT b.sample_id AS sid, m.sample_id AS mate
               FROM sample_bridges b
               JOIN sample_bridges m ON m.group_id = b.group_id AND m.sample_id <> b.sample_id
-              JOIN samples s ON s.id = m.sample_id
-             WHERE b.sample_id IN ($ph) AND s.merged_into_id IS NULL
+             WHERE b.sample_id IN ($ph)
              ORDER BY m.sample_id""", collect(Int, sample_ids)))
         push!(out[Int(r.sid)], Int(r.mate))
     end

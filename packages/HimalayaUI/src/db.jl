@@ -20,9 +20,6 @@ const MIGRATION_EXPOSURES_EXPERIMENT_ID = "exposures_experiment_id_v1"
 const MIGRATION_EXPERIMENTS_GEOMETRY    = "experiments_geometry_v1"
 const MIGRATION_SAMPLES_NAME_COLLAPSE   = "samples_name_collapse_v1"
 
-# Sentinel marker name for the ingestion-redesign Phase D merged_into_id column.
-const MIGRATION_SAMPLES_MERGED_INTO = "samples_merged_into_v1"
-
 # Sentinel marker name for the ingestion-redesign Phase E1 editable config columns.
 const MIGRATION_EXPERIMENTS_CONFIG_COLS = "experiments_config_cols_v1"
 
@@ -485,10 +482,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_experiments_geometry!(db)
     migrate_samples_name_collapse!(db)
 
-    # Ingestion redesign (Phase D): nullable merged_into_id on samples for
-    # soft-retire on merge (spec §9.3). Run AFTER migrate_samples_name_collapse!
-    # so the samples table is fully settled before this column is added.
-    migrate_samples_merged_into!(db)
+    migrate_drop_merged_into!(db)
 
     # Ingestion redesign (Phase E1): editable config columns on experiments
     # (description + 3 pattern fields). Additive; no dependency on Phase D.
@@ -820,14 +814,12 @@ function migrate_samples_name_collapse!(db::SQLite.DB)
     nothing
 end
 
-function migrate_samples_merged_into!(db::SQLite.DB)
-    _migrated(db, MIGRATION_SAMPLES_MERGED_INTO) && return nothing
+function migrate_drop_merged_into!(db::SQLite.DB)
+    "merged_into_id" in cols_of(db, "samples") || return nothing
     SQLite.transaction(db) do
-        existing = cols_of(db, "samples")
-        "merged_into_id" in existing || DBInterface.execute(db,
-            "ALTER TABLE samples ADD COLUMN merged_into_id INTEGER REFERENCES samples(id)")
-        _record_migration!(db, MIGRATION_SAMPLES_MERGED_INTO)
+        DBInterface.execute(db, "ALTER TABLE samples DROP COLUMN merged_into_id")
     end
+    nothing
 end
 
 function migrate_experiments_config_cols!(db::SQLite.DB)
