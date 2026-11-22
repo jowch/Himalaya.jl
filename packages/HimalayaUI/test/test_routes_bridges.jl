@@ -32,6 +32,11 @@ end
 _bridge_rows(db) = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.execute(db,
     "SELECT sample_id FROM sample_bridges")))
 
+_label_body(label) = Vector{UInt8}(JSON3.write(Dict(:label => label)))
+
+_label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables.rowtable(DBInterface.execute(db,
+    "SELECT label, state FROM sample_labels WHERE sample_id = ?", [sid])))
+
 @testset "sample bridges" begin
     @testset "bridging two unbridged samples puts them in one group" begin
         db = open_prepared_clone(mktempdir())
@@ -195,5 +200,77 @@ _bridge_rows(db) = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.exe
         bridged = filter(f -> occursin("sample_bridged", f), frames)
         @test length(bridged) == 2
         @test all(f -> occursin("\"experiment_id\":$exp_id", f), bridged)
+    end
+    @testset "bridged samples share their labels, except flight paths" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c)) = _seed_bridge_samples(db, 3)
+        DBInterface.execute(db,
+            "INSERT INTO sample_labels (sample_id, label, state) VALUES (?, 'Buffer', 'confirmed'), (?, '37C', 'confirmed'), (?, '1.7 m', 'confirmed'), (?, 'gone', 'removed')",
+            [a, b, b, b])
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            @test _label_states(db, a) == Dict("Buffer" => "confirmed", "37C" => "confirmed")
+            @test _label_states(db, b) == Dict("Buffer" => "confirmed", "37C" => "confirmed",
+                                               "1.7 m" => "confirmed", "gone" => "removed")
+            @test isempty(HimalayaUI.bridged_label_drift(db))
+
+            call("POST", "/api/samples/$b/labels"; headers=_BRIDGE_HEADERS, body=_label_body("Calibrant"))
+            @test _label_states(db, a)["Calibrant"] == "confirmed"
+            call("DELETE", "/api/samples/$a/labels?label=Buffer"; headers=_BRIDGE_HEADERS)
+            @test _label_states(db, b)["Buffer"] == "removed"
+            call("POST", "/api/samples/$a/labels/suggested"; headers=_BRIDGE_HEADERS, body=_label_body("Buffer"))
+            @test _label_states(db, b)["Buffer"] == "suggested"
+            call("POST", "/api/samples/$a/labels"; headers=_BRIDGE_HEADERS, body=_label_body("0.5 m"))
+            @test !haskey(_label_states(db, b), "0.5 m")
+            @test isempty(HimalayaUI.bridged_label_drift(db))
+
+            call("POST", "/api/samples/$c/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            @test _label_states(db, c) == Dict("37C" => "confirmed", "Calibrant" => "confirmed")
+            @test isempty(HimalayaUI.bridged_label_drift(db))
+        end
+    end
+
+    @testset "leaving a bridge keeps a copy of the labels, and later edits stay put" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b)) = _seed_bridge_samples(db, 2)
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            call("POST", "/api/samples/$a/labels"; headers=_BRIDGE_HEADERS, body=_label_body("37C"))
+            call("DELETE", "/api/samples/$b/bridge"; headers=_BRIDGE_HEADERS)
+            @test _label_states(db, b) == Dict("37C" => "confirmed")
+            call("POST", "/api/samples/$a/labels"; headers=_BRIDGE_HEADERS, body=_label_body("Buffer"))
+            @test !haskey(_label_states(db, b), "Buffer")
+        end
+    end
+
+    @testset "shared labels survive a rebuild from the log" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b)) = _seed_bridge_samples(db, 2)
+        DBInterface.execute(db, "INSERT INTO sample_labels (sample_id, label, state) VALUES (?, 'Buffer', 'confirmed')", [a])
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            call("POST", "/api/samples/$b/labels"; headers=_BRIDGE_HEADERS, body=_label_body("37C"))
+        end
+        live = _label_states(db, b)
+        DBInterface.execute(db, "DELETE FROM sample_labels WHERE sample_id = ?", [b])
+        HimalayaUI.rebuild_views_from_log!(db, b; entity_type = "sample")
+        @test _label_states(db, b) == live
+    end
+
+    @testset "the export names the samples each one is bridged with" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c)) = _seed_bridge_samples(db, 3)
+        with_inproc_routes(db) do call
+            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
+            body = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export?format=json").body))
+            by = Dict(String(s.name) => collect(String, s.bridged_with) for s in body)
+            @test by == Dict("S1" => ["S2"], "S2" => ["S1"], "S3" => String[])
+            csv = String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)
+            header = split(first(split(csv, '\n')), ',')
+            @test "bridged_with" in header
+            col = findfirst(==("bridged_with"), header)
+            rows = Dict(split(l, ',')[1] => split(l, ',')[col] for l in split(strip(csv), '\n')[2:end])
+            @test rows["S1"] == "S2" && rows["S2"] == "S1" && rows["S3"] == ""
+        end
     end
 end
