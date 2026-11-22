@@ -132,6 +132,7 @@ function register_routes!()
 
     register_users_routes!()
     register_experiments_routes!()
+    register_setups_routes!()
     register_samples_routes!()
     register_exposures_routes!()
     register_peaks_routes!()

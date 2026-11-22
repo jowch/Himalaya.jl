@@ -14,6 +14,13 @@ export interface PaletteLabel {
   onSample: "confirmed" | "suggested" | undefined;
 }
 
+export interface PaletteSetup {
+  id: number;
+  folder: string;
+  name: string;
+  included: boolean;
+}
+
 export interface WorkspacePaletteInput {
   modKey: string;
   canEdit: boolean;
@@ -43,7 +50,15 @@ export interface WorkspacePaletteInput {
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
   difference?: { on: boolean; name: string; toggle: () => void };
-  settings: { name: string; description: string; save: (patch: { name?: string; description?: string | null }) => void } | undefined;
+  settings:
+    | {
+        name: string;
+        description: string;
+        save: (patch: { name?: string; description?: string | null }) => void;
+        setups: readonly PaletteSetup[];
+        saveSetup: (id: number, patch: { name?: string | null; included?: boolean }) => void;
+      }
+    | undefined;
   rescan: (() => void) | undefined;
   problems: (() => void) | undefined;
   removeExperiment: (() => void) | undefined;
@@ -115,6 +130,38 @@ function textForm(title: string, value: string, check: (v: string) => string | u
   };
 }
 
+const SHOWN_OPTIONS: readonly FieldOption[] = [
+  { value: "shown", label: "Shown" },
+  { value: "hidden", label: "Hidden" },
+];
+
+function setupForm(st: PaletteSetup, s: NonNullable<WorkspacePaletteInput["settings"]>): PaletteForm {
+  const lastShown = st.included && s.setups.filter((x) => x.included).length === 1;
+  return {
+    title: st.name,
+    verb: "save",
+    fields: [
+      { id: "name", label: "Name", kind: "text", value: st.name, placeholder: st.folder },
+      {
+        id: "shown",
+        label: "In the workspace",
+        kind: "choice",
+        value: st.included ? "shown" : "hidden",
+        options: SHOWN_OPTIONS,
+        check: (v) => (lastShown && v === "hidden" ? "Keep at least one setup shown." : undefined),
+      },
+    ],
+    submit: (v) => {
+      const patch: { name?: string | null; included?: boolean } = {};
+      const name = (v.name ?? "").trim();
+      if (name !== st.name) patch.name = name === "" ? null : name;
+      const included = v.shown !== "hidden";
+      if (included !== st.included) patch.included = included;
+      if (Object.keys(patch).length > 0) s.saveSetup(st.id, patch);
+    },
+  };
+}
+
 function settingsPage(s: NonNullable<WorkspacePaletteInput["settings"]>): PalettePage {
   return {
     title: "Settings",
@@ -132,6 +179,12 @@ function settingsPage(s: NonNullable<WorkspacePaletteInput["settings"]>): Palett
         value: s.description,
         form: () => textForm("Description", s.description, () => undefined, (d) => s.save({ description: d || null })),
       },
+      ...s.setups.map((st) => ({
+        id: `setting-setup-${st.id}`,
+        label: `Setup ${st.name}`,
+        value: st.included ? "Shown" : "Hidden",
+        form: () => setupForm(st, s),
+      })),
     ],
   };
 }
@@ -255,7 +308,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.difference ? [{ id: "difference", label: p.difference.on ? "Show the raw trace" : `Show minus ${p.difference.name}`, run: p.difference.toggle }] : []),
   ];
   const experiment: PaletteItem[] = [
-    ...(pages.settings ? [{ id: "settings", label: "Settings", hint: "Name, description", page: "settings" }] : []),
+    ...(pages.settings ? [{ id: "settings", label: "Settings", hint: p.settings && p.settings.setups.length > 0 ? "Name, description, setups" : "Name, description", page: "settings" }] : []),
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
     { id: "home", label: "Back to all experiments", run: p.home },

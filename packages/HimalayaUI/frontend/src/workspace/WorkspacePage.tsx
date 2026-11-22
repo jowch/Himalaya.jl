@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Exposure, IndexEntry, LabelColor } from "../api";
+import type { CorpusSample, Exposure, IndexEntry, LabelColor } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -38,7 +38,7 @@ import {
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
+  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -63,7 +63,7 @@ import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { Palette } from "./ui/palette/Palette";
-import { workspacePalette } from "./palette";
+import { workspacePalette, type PaletteSetup } from "./palette";
 import { useWorkspaceTheme } from "./theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
@@ -87,6 +87,7 @@ import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { LabelRow } from "./ui/LabelRow";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
+import type { SetupPatch } from "../lib/queue/mutators/setup";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -199,10 +200,29 @@ export function WorkspacePage(): JSX.Element {
   const corpus = useExperimentCorpusSamples(experimentId);
   const [filter, setFilter] = useState("");
 
-  const samples = useMemo(
+  const setups = useMemo(() => experiment.data?.setups ?? [], [experiment.data]);
+  const setupOrder = useMemo(() => new Map(setups.map((st, i) => [st.id, i])), [setups]);
+  const hiddenSetups = useMemo(() => new Set(setups.filter((st) => !st.included).map((st) => st.id)), [setups]);
+  const inExperiment = useMemo(
     () => (corpus.data ?? []).filter((s) => s.experiment_id === experimentId),
     [corpus.data, experimentId],
   );
+  const samples = useMemo(() => {
+    const rank = (s: CorpusSample): number => setupOrder.get(s.setup_id ?? -1) ?? 0;
+    return inExperiment
+      .filter((s) => s.setup_id == null || !hiddenSetups.has(s.setup_id))
+      .map((s, i) => ({ s, i }))
+      .sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)
+      .map(({ s }) => s);
+  }, [inExperiment, setupOrder, hiddenSetups]);
+  const hiddenSamples = useMemo(
+    () => new Set(inExperiment.filter((s) => s.setup_id != null && hiddenSetups.has(s.setup_id)).map((s) => s.id)),
+    [inExperiment, hiddenSetups],
+  );
+  const setupHeaders = useMemo(() => {
+    const shown = setups.filter((st) => st.included);
+    return shown.length > 1 ? new Map(shown.map((st) => [st.id, st.name])) : undefined;
+  }, [setups]);
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
   const vocabulary = useMemo(() => labelVocabulary(labelList), [labelList]);
@@ -315,11 +335,17 @@ export function WorkspacePage(): JSX.Element {
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const bridged = useMemo(
+    () => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId).filter((r) => !hiddenSamples.has(r))),
+    [bridgeList, sampleId, hiddenSamples],
+  );
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
-  const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
+  const shownRefs = useMemo(
+    () => [...bridged, ...refs.filter((r) => !bridged.includes(r) && !hiddenSamples.has(r))],
+    [bridged, refs, hiddenSamples],
+  );
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
   useEffect(() => {
     setHiddenRefs((h) => ([...h].every((r) => shownRefs.includes(r)) ? h : new Set([...h].filter((r) => shownRefs.includes(r)))));
@@ -597,6 +623,28 @@ export function WorkspacePage(): JSX.Element {
     },
     [experiment.data, ops, sampleId, history],
   );
+  const paletteSetups: PaletteSetup[] = useMemo(
+    () => setups.map((st) => ({ id: st.id, folder: st.folder, name: st.name, included: st.included })),
+    [setups],
+  );
+  const editSetup = useCallback(
+    (setupId: number, next: SetupPatch) => {
+      const cur = setups.find((st) => st.id === setupId);
+      if (!cur) return;
+      const prev: SetupPatch = {};
+      if (next.name !== undefined) prev.name = cur.display_name;
+      if (next.included !== undefined) prev.included = cur.included;
+      ops.patchSetup(setupId, next);
+      if (sampleId === undefined) return;
+      const label = next.included === false
+        ? `hid setup ${cur.name}`
+        : next.included === true
+          ? `showed setup ${cur.name}`
+          : `renamed setup ${cur.name} to ${next.name ?? cur.folder}`;
+      history.record(setupEntry(ops, { label, sampleId, exposureId: undefined, setupId, prev, next }));
+    },
+    [setups, ops, sampleId, history],
+  );
   const createLabel = useCallback(
     (name: string, color: LabelColor) => {
       if (sampleId === undefined) return;
@@ -841,7 +889,9 @@ export function WorkspacePage(): JSX.Element {
       ? "Loading samples…"
       : samples.length === 0
         ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
-        : "This sample is not in this experiment.";
+        : inExperiment.some((s) => s.id === requested)
+          ? "This sample's setup is hidden. Show it again from Settings in the palette."
+          : "This sample is not in this experiment.";
 
   const addReference = (rid: number): void => {
     setRefs((r) => addCompare(r, rid));
@@ -913,7 +963,13 @@ export function WorkspacePage(): JSX.Element {
     ...(difference && subRef !== undefined ? { difference: { on: minusOn, name: subName, toggle: () => setMinusFor(minusOn ? undefined : subRef) } } : {}),
     settings:
       username && experiment.data
-        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: editExperiment }
+        ? {
+            name: experiment.data.name ?? "",
+            description: experiment.data.description ?? "",
+            save: editExperiment,
+            setups: paletteSetups,
+            saveSetup: editSetup,
+          }
         : undefined,
     rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
     problems: problemRows.length > 0 || unrecognizedSetups > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
@@ -984,7 +1040,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>

@@ -23,6 +23,7 @@ import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges"
 import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./mutators/labels";
 import { setLabelColorMutator } from "./mutators/labelColors";
 import { patchExperimentMutator } from "./mutators/experiment";
+import { patchSetupMutator } from "./mutators/setup";
 
 /**
  * Minimal shape required by the resolver: just enough of a persisted op to
@@ -83,6 +84,7 @@ export function resolveMutator(
     case "restore_label_suggestion": return restoreLabelSuggestionMutator;
     case "set_tag_color":          return setLabelColorMutator;
     case "patch_experiment":       return patchExperimentMutator;
+    case "patch_setup":            return patchSetupMutator;
     default:
       return undefined;
   }
@@ -122,6 +124,7 @@ export function resolveMutatorForEvent(
     case "label_suggestion_restored": return restoreLabelSuggestionMutator;
     case "tag_color_set":            return setLabelColorMutator;
     case "experiment_updated":       return patchExperimentMutator;
+    case "setup_updated":            return patchSetupMutator;
     // Event kinds with no queue mutator fall through here (handled entirely by
     // applyRemoteToCache — no optimistic outbound op exists).
     // replayCoordinator treats undefined as "use the generic {...base,...payload} shape".

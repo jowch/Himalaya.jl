@@ -135,7 +135,7 @@ describe("workspacePalette", () => {
   it("lists the experiment name and description on the Settings page only when the user can edit", () => {
     const save = vi.fn();
     expect(workspacePalette(input()).pages.settings).toBeUndefined();
-    const { groups, pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save } }));
+    const { groups, pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save, setups: [], saveSetup: vi.fn() } }));
     expect(groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "settings")?.page).toBe("settings");
     expect(pages.settings!.items.map((i) => [i.label, i.value])).toEqual([
       ["Name", "Beamtime 11"],
@@ -145,7 +145,7 @@ describe("workspacePalette", () => {
 
   it("saves a trimmed name only when it changed and refuses an empty one", () => {
     const save = vi.fn();
-    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save } }));
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11", description: "", save, setups: [], saveSetup: vi.fn() } }));
     const form = pages.settings!.items[0]!.form!();
     expect(form.fields[0]!.check!("  ")).toBe("Type a name.");
     form.submit({ v: " Beamtime 11 " });
@@ -156,15 +156,39 @@ describe("workspacePalette", () => {
 
   it("trims stray whitespace off a stored name when it is saved unchanged", () => {
     const save = vi.fn();
-    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11 ", description: "", save } }));
+    const { pages } = workspacePalette(input({ settings: { name: "Beamtime 11 ", description: "", save, setups: [], saveSetup: vi.fn() } }));
     pages.settings!.items[0]!.form!().submit({ v: "Beamtime 11 " });
     expect(save).toHaveBeenCalledWith({ name: "Beamtime 11" });
   });
 
   it("clears the description to null when it is emptied", () => {
     const save = vi.fn();
-    const { pages } = workspacePalette(input({ settings: { name: "B", description: "Lipid screen", save } }));
+    const { pages } = workspacePalette(input({ settings: { name: "B", description: "Lipid screen", save, setups: [], saveSetup: vi.fn() } }));
     pages.settings!.items[1]!.form!().submit({ v: "  " });
     expect(save).toHaveBeenCalledWith({ description: null });
+  });
+
+  it("lists each setup on the Settings page and saves a rename or a hide from its form", () => {
+    const saveSetup = vi.fn();
+    const setups = [
+      { id: 3, folder: "setup1", name: "Long pipe", included: true },
+      { id: 4, folder: "setup2", name: "setup2", included: false },
+    ];
+    const { groups, pages } = workspacePalette(input({ settings: { name: "B", description: "", save: vi.fn(), setups, saveSetup } }));
+    expect(groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "settings")?.hint).toBe("Name, description, setups");
+    expect(pages.settings!.items.slice(2).map((i) => [i.label, i.value])).toEqual([
+      ["Setup Long pipe", "Shown"],
+      ["Setup setup2", "Hidden"],
+    ]);
+    const first = pages.settings!.items[2]!.form!();
+    expect(first.fields.map((f) => [f.id, f.value])).toEqual([["name", "Long pipe"], ["shown", "shown"]]);
+    expect(first.fields[0]!.placeholder).toBe("setup1");
+    expect(first.fields[1]!.check!("hidden")).toBe("Keep at least one setup shown.");
+    first.submit({ name: "Long pipe", shown: "shown" });
+    expect(saveSetup).not.toHaveBeenCalled();
+    first.submit({ name: "  ", shown: "shown" });
+    expect(saveSetup).toHaveBeenLastCalledWith(3, { name: null });
+    pages.settings!.items[3]!.form!().submit({ name: "Short pipe", shown: "shown" });
+    expect(saveSetup).toHaveBeenLastCalledWith(4, { name: "Short pipe", included: true });
   });
 });
