@@ -9,11 +9,10 @@ const HYB_Q = collect(range(0.01, 0.4; length = HYB_N))
 const HYB_DQ = step(range(0.01, 0.4; length = HYB_N))
 
 # Power law + constant + narrow peaks (strong, weak, shoulder) + Poisson-like noise.
-function _hybrid_trace(; seed = 1, peaks = true)
+function _hybrid_trace(; seed = 1, peaks = true, extra = (), strong = [0.07, 0.115, 0.16, 0.23, 0.3])
     rng = MersenneTwister(seed)
     q = HYB_Q
     I = 6000.0 .* (q ./ 0.04) .^ (-4) .+ 30.0
-    strong = [0.07, 0.115, 0.16, 0.23, 0.30]
     weak = [0.34]
     shoulder = [0.04]           # sits on the steep low-q flank
     if peaks
@@ -24,6 +23,9 @@ function _hybrid_trace(; seed = 1, peaks = true)
         end
     else
         I .+= 150.0 .* exp.(-((q .- 0.2) ./ 0.08) .^ 2)   # broad hump only
+    end
+    for (q0, h, γ) in extra
+        I .+= h ./ (1 .+ ((q .- q0) ./ γ) .^ 2)
     end
     σ = sqrt.(I)
     I .+= σ .* randn(rng, length(q))
@@ -98,6 +100,103 @@ end
     pers = findpeaks(q, I, σ; q_trim_high = 0.07)
     @test strict.indices == pers.indices
     @test findpeaks(q, I; method = :hybrid).indices isa Vector{Int}
+end
+
+# A broad peak (half-width ~15 points) must not come back as two peaks.
+@testset "hybrid: a broad peak is not reported twice" begin
+    q = HYB_Q
+    dup = 0
+    for seed in 1:200
+        rng = MersenneTwister(seed)
+        I = 100.0 .+ 400.0 ./ (1 .+ ((q .- 0.2) ./ 0.006) .^ 2)
+        σ = sqrt.(I)
+        I .+= σ .* randn(rng, HYB_N)
+        hyb = findpeaks(q, I, σ; method = :hybrid)
+        dup += count(abs.(hyb.q .- 0.2) .< 0.04) > 1
+    end
+    @test dup == 0
+end
+
+@testset "hybrid: added peaks respect q_trim_high" begin
+    q, I, σ, _ = _hybrid_trace()
+    for trim in (0.07, 0.3)
+        hyb = findpeaks(q, I, σ; method = :hybrid, q_trim_high = trim)
+        qcut = q[1] + (1 - trim) * (q[end] - q[1])
+        @test all(hyb.q .<= qcut)
+    end
+    # non-uniform grid: the cut is in q, not in points
+    qn = q .^ 2 ./ q[end]
+    hyb = findpeaks(qn, I, σ; method = :hybrid)
+    @test all(hyb.q .<= qn[1] + 0.93 * (qn[end] - qn[1]))
+end
+
+@testset "hybrid: persistence peaks near the trace ends are kept" begin
+    n = 700
+    q = collect(range(0.01, 0.4; length = n))
+    I = fill(100.0, n)
+    for c in (6, 15, 200, 400, 600)
+        I .+= 300.0 ./ (1 .+ ((1:n) .- c) .^ 2 ./ 4)
+    end
+    σ = sqrt.(I)
+    I .+= σ .* randn(MersenneTwister(1), n)
+    base = findpeaks(q, I, σ)
+    hyb = findpeaks(q, I, σ; method = :hybrid)
+    @test 6 in base.indices
+    @test all(i -> i in hyb.indices, base.indices)
+
+    # short traces: the widest kernels do not fit; must not error or lose the peak
+    qs = q[1:120]; Is = I[1:120]; σs = σ[1:120]
+    short = findpeaks(qs, Is, σs; method = :hybrid)
+    @test all(i -> i in short.indices, findpeaks(qs, Is, σs).indices)
+    @test all(isfinite, short.sharpness)
+end
+
+@testset "hybrid: nonpositive intensities do not create peaks" begin
+    q, I0, σ0, _ = _hybrid_trace(; seed = 3, peaks = false)
+    @test isempty(findpeaks(q, I0, σ0; method = :hybrid).indices)
+
+    beam = copy(I0); beam[1:15] .= 0.0
+    @test isempty(findpeaks(q, beam, σ0; method = :hybrid).indices)
+
+    iso = copy(I0); iso[[100, 400, 401, 700]] .= 0.0
+    @test isempty(findpeaks(q, iso, σ0; method = :hybrid).indices)
+
+    neg = I0 .- (I0[end] + 4 * σ0[end])      # high-q tail goes slightly negative
+    @test isempty(findpeaks(q, neg, σ0; method = :hybrid).indices)
+
+    nanpt = copy(I0); nanpt[50] = NaN
+    @test isempty(findpeaks(q, nanpt, σ0; method = :hybrid).indices)
+end
+
+@testset "hybrid: result does not depend on intensity scale" begin
+    q, I, σ, _ = _hybrid_trace()
+    a = findpeaks(q, I, σ; method = :hybrid)
+    b = findpeaks(q, I .* 1e-9, σ .* 1e-9; method = :hybrid)
+    @test a.indices == b.indices
+    c = findpeaks(q, I .* 1e6, σ .* 1e6; method = :hybrid)
+    @test a.indices == c.indices
+end
+
+@testset "hybrid: without σ, an estimate is used" begin
+    q, I, σ, t = _hybrid_trace()
+    with_σ = findpeaks(q, I, σ; method = :hybrid)
+    no_σ = findpeaks(q, I; method = :hybrid)
+    @test count(<=(0.03), no_σ.q) == 0
+    @test length(no_σ.indices) <= length(with_σ.indices) + 1
+    @test _recall(no_σ, t.strong) == length(t.strong)
+end
+
+@testset "hybrid: nonpositive sharpness is replaced by the median of the others" begin
+    q, I, σ, _ = _hybrid_trace(; seed = 1, extra = [(0.06, 600.0, 0.01)], strong = [0.115, 0.16, 0.23])
+    hyb = findpeaks(q, I, σ; method = :hybrid)
+    sf = hyb.sharpness_full[hyb.indices]
+    substituted = findall(<=(0), sf)
+    @test !isempty(substituted)               # the branch is exercised
+    @test all(hyb.sharpness .> 0)
+    keep = setdiff(eachindex(sf), substituted)
+    ref = median(sf[keep][sf[keep] .> 0])
+    @test all(hyb.sharpness[substituted] .== ref)
+    @test hyb.sharpness[keep] == sf[keep] || all(>(0), sf[keep])
 end
 
 @testset "hybrid: real fixtures" begin
