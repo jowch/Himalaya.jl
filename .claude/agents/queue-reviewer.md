@@ -63,11 +63,11 @@ Frontend (TS):
 
 - **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/queue/optimisticId.ts` (shared monotonic counter). Don't introduce module-local counters or use `Date.now() * -1` (collision risk). UI code that reads the cache must tolerate negative ids.
 
-- **Q-tolerance comparisons use `peakQTol(q)`.** Mirrors Julia's `MAX(1e-6, |q|*0.001)`. Don't use bare `< 1e-6` or `< 1e-9` — for q far from 1.0 the tolerances diverge from the backend.
+- **Q-tolerance comparisons use `peakQTol(q)`.** Optimistic display only: the server matches curations grid-aware and nearest-first, and the peak list refetch settles it. Don't use bare `< 1e-6` or `< 1e-9` — for q far from 1.0 the tolerances diverge from the backend.
 
 - **`onMutate` snapshots BEFORE writing.** Capture `prev = qc.getQueryData(...)` before any `setQueryData`. The returned `restore` closure must be self-contained and revert the cache to identical prior state.
 
-- **Don't blanket-invalidate in `onSuccess` for peak-affecting mutations.** SSE `post_state` via `applyRemoteToCache` handles cache settle. The defensive `invalidateQueries` was deliberately removed from `reanalyzeExposureMutator` in `60f9ccc`. Re-introducing it costs a triple refetch on every success.
+- **Don't blanket-invalidate in `onSuccess` for peak-affecting mutations.** The one exception is the peak list: call `refreshPeaks(qc, exposureId)`, which waits until no peak mutation for that exposure is pending (an earlier refetch would erase later optimistic patches). SSE `post_state` via `applyRemoteToCache` handles cache settle. The defensive `invalidateQueries` was deliberately removed from `reanalyzeExposureMutator` in `60f9ccc`. Re-introducing it costs a triple refetch on every success.
 
 - **Per-mutation `clientOpId` minted INSIDE `mutationFn`.** `useQueueMutation` does this for you. Don't capture a single id at hook construction and reuse it across `mutate()` calls.
 
