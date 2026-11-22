@@ -95,6 +95,24 @@ end
     end
 end
 
+@testset "auto_group: a sharp peak above the first reflection does not change the call" begin
+    cases = [
+        (0.08 .* [1, 2, 3], [10.0, 1.0, 0.2], 0.1696, 20.0, "Lamellar"),
+        (0.06 .* [1, sqrt(2), sqrt(3), 2, sqrt(5), sqrt(6)], [6.0, 3.0, 1.5, 0.8, 0.4, 0.2],
+         0.06 * sqrt(1.5), 12.0, "Im3m"),
+    ]
+    for (q0, sh0, qx, shx, phase) in cases
+        order = sortperm(vcat(q0, qx))
+        q  = vcat(q0, qx)[order]
+        sh = vcat(sh0, shx)[order]
+        cands = collect(indexpeaks(q, sh))
+        for group in _both(cands, _eff(q, sh))
+            @test phase in _phases(group)
+            @test "Pn3m" ∉ _phases(group)
+        end
+    end
+end
+
 @testset "auto_group: colliding peak_ids across kinds" begin
     base = _eff(HEX_Q, HEX_SH; ids = collect(11:17))
     ids = collect(11:17); ids[7] = ids[1]

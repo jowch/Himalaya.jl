@@ -63,13 +63,13 @@ Zero-sharpness falls back to `cv = 0` (treated as maximally consistent), degradi
 `auto_group` does not simply take the top-scoring index. At each step, let `t` be the highest-scoring candidate whose effective peaks are all unclaimed. The group takes instead the highest-scoring compatible candidate `a` (other than `t`) such that:
 
 1. `a` contains every peak of `t`, and
-2. `a` contains a peak sharper than every peak of `t`.
+2. `a` contains a peak below `t`'s lowest q that is sharper than every peak of `t`.
 
 If no such `a` exists, `t` is taken. The picked index claims its peaks and the step repeats until no compatible candidate remains. Peaks are identified by q for the two conditions.
 
 The consistency term is `1/(1+CV)` of the peak sharpnesses. Higher-order amplitudes naturally fall off, so a correct index that includes a very sharp first reflection and several weak high-order peaks has a high CV and a low consistency. An index that skips the sharp first peak and fits only the weaker ones can then outscore it. For example, a hexagonal pattern with one sharp first peak and six weak higher peaks can score below an Ia3d index that explains only some of the weak peaks. Hexagonal contains all of that Ia3d index's peaks plus the sharp one, so it is picked instead. The same rule lets Hexagonal and Lamellar coexist when the top-scoring Ia3d index is contained in the Hexagonal index.
 
-The rule resists a single spurious sharp peak. An index built on a spurious peak can displace the top index only if it contains all of the top index's peaks, which means the top index is a subset of it.
+The sharper peak must lie below `t`'s lowest q because the failure being corrected is an index that skipped a sharp low-order reflection. Without that condition a single spurious sharp peak above the first reflection could change the call: dense series contain sparser ones (Lamellar `q, 2q, 3q` sits inside the Hexagonal, Square, Pn3m and Im3m series, and Im3m sits inside Pn3m with the same lattice constant), so a denser series holding the real peaks plus the spurious one would displace the correct index. A spurious sharp peak below the first reflection can displace `t` only through an index that contains all of `t`'s peaks as well.
 
 Known limit: the rule only overrides when one index strictly contains the other's peaks. If the higher-scoring index explains some peaks the sharper one does not, score order stands.
 

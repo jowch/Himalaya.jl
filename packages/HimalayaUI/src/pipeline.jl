@@ -22,8 +22,10 @@ function greedy_dominating(candidates, claims_of)
         if !isempty(qs[t])
             tq   = qs[t]
             tmax = maximum(shs[t])
+            tmin = minimum(tq)
             k = findfirst(free) do a
-                a != t && all(in(qs[a]), tq) && any(>(tmax), shs[a])
+                a != t && all(in(qs[a]), tq) &&
+                    any(j -> shs[a][j] > tmax && qs[a][j] < tmin, eachindex(qs[a]))
             end
             k === nothing || (pick = free[k])
         end
@@ -41,7 +43,8 @@ end
 Greedily select a non-overlapping set of indices. At each step the
 candidate is the highest-scoring index whose peaks are all unclaimed. It is
 replaced by the highest-scoring compatible index that contains every one of
-its peaks and a peak sharper than all of them (`docs/scoring.md`); the pick
+its peaks and, below its lowest q, a peak sharper than all of them
+(`docs/scoring.md`); the pick
 then claims its peaks. Both forms use the same rule, with peaks identified by q.
 
 The two-arg form claims by `eff.peak_id` (Int) — the membership test is
