@@ -1,10 +1,11 @@
-import { appItems, themePage, type AppActions } from "../workspace/palette";
+import { appItems, goToSampleItem, openExperimentItem, themePage, type AppActions } from "../workspace/palette";
+import type { CorpusExperiment, CorpusSampleRow } from "../hooks/useCorpusPalette";
 import type { PaletteGroup, PaletteItem, PalettePage } from "../ui/palette/model";
 
 export interface ShellPaletteInput extends AppActions {
   pathname: string;
-  experiments: readonly { id: number; name: string }[];
-  samples: readonly { id: number; name: string; experiment: string; href: string }[];
+  experiments: readonly CorpusExperiment[];
+  samples: readonly CorpusSampleRow[];
   go: (path: string) => void;
 }
 
@@ -12,13 +13,13 @@ export function shellPalette(p: ShellPaletteInput): { groups: PaletteGroup[]; pa
   const experiments: PaletteItem[] = [
     ...(p.pathname === "/experiments/new" ? [] : [{ id: "new-experiment", label: "New experiment", run: () => p.go("/experiments/new") }]),
     ...(p.pathname === "/experiments" ? [] : [{ id: "home", label: "All experiments", run: () => p.go("/experiments") }]),
-    ...p.experiments.map((e) => ({ id: `open-${e.id}`, label: `Open ${e.name}`, name: e.name, run: () => p.go(`/experiments/${e.id}`) })),
+    ...p.experiments.map((e) => openExperimentItem(e, p.go)),
   ];
   return {
     groups: [
       { title: "Experiments", items: experiments },
       { title: "App", items: appItems(p) },
-      { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: s.experiment, run: () => p.go(s.href) })) },
+      { title: "Samples", searchOnly: true, items: p.samples.map((s) => goToSampleItem(s, p.go)) },
     ],
     pages: { theme: themePage(p.theme) },
   };

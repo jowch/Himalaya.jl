@@ -1,21 +1,8 @@
-/**
- * speculative_created mutator (M2.4).
- *
- * Speculative-create can affect the indices ordering globally (the new index
- * lands in `indices`, possibly altering score-sort positions). Reconstructing
- * the exact post-create cache shape optimistically would duplicate backend
- * score logic, so we snapshot the prior cache for rollback and let SSE
- * invalidation (in `applyRemoteToCache`) + `onSuccess` produce the final state.
- *
- * The backend POST returns the freshly-built index; on success we splice it
- * into the indices cache.
- */
 import * as api from "../../../api";
 import type { IndexEntry, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
-
 export type CreateSpeculativeInput = {
   phase: string;
   anchor_peak_id: number;
@@ -23,17 +10,14 @@ export type CreateSpeculativeInput = {
   additional: api.SpeculativeAdditional[];
   active?: boolean;
 };
-
 type CreateSpeculativeScope = {
   exposureId: number;
   username: string | undefined;
   clientId: string;
 };
-
 function buildAuth(p: { username: string | undefined; clientId: string; clientOpId: string }): AuthOpts {
   return authOpts(p.username, p.clientId, p.clientOpId);
 }
-
 export const createSpeculativeMutator: Mutator<
   CreateSpeculativeInput,
   CreateSpeculativeScope,
@@ -58,11 +42,6 @@ export const createSpeculativeMutator: Mutator<
   }, buildAuth(p)),
   onSuccess: (p, response, qc) => {
     const indicesKey = queryKeys.indices(p.exposureId);
-    // SSE-wins synthesis only carries `index_id` (the SSE payload for
-    // speculative_created omits the IndexEntry shape — see routes_analysis.jl).
-    // Detect by checking for `phase`: HTTP response has it, synth doesn't.
-    // Without this guard, the splice below pushes a phantom row with
-    // id=undefined/phase=undefined/score=undefined into the indices cache.
     const hasFullShape = (response as Partial<IndexEntry>).phase !== undefined;
     if (hasFullShape) {
       qc.setQueryData<IndexEntry[]>(indicesKey, (old) => {

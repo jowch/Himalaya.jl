@@ -5,27 +5,6 @@ import { applyRemoteToCache, applyPostStateOnly } from "./applyRemoteToCache";
 import { getClientId } from "../clientId";
 import { resolveMutatorForEvent } from "./mutatorRegistry";
 
-/**
- * Process an SSE frame against the local cache and pending mutation queue.
- *
- * Two cases:
- *   1. The frame's client_op_id matches a registered deferred: this is the
- *      server confirming our own pending op. Resolve the deferred with a
- *      synthesized response so the originating useQueueMutation can settle.
- *      Aborts any in-flight HTTP request via the deferred's controller — the
- *      HTTP response would be redundant with the SSE-synthesized one.
- *   2. No matching deferred: the event came from another tab or user.
- *      Rollback pending optimistic effects in reverse queue order, apply
- *      the remote effect to the cache, then re-run pending optimistic
- *      effects in insertion order. This is replay-as-rerun.
- *
- * MutationCache.getAll() preserves insertion order — a regression test
- * asserts this against TanStack version drift.
- *
- * Per-kind SSE response synthesis is delegated to each owning mutator's
- * synthesizeFromSse method — see synthesizeResponseFromSse below for the
- * dispatch model and the generic fallback for kinds without a custom synth.
- */
 export function handleRemoteEvent(
   remote: SseEvent,
   qc: QueryClient,
@@ -34,57 +13,28 @@ export function handleRemoteEvent(
   const isOwnTab = remote.client_id !== undefined &&
                    remote.client_id !== null &&
                    remote.client_id === getClientId();
-
-  // Case 1: SSE confirms a pending op of ours.
   if (remote.client_op_id) {
     const deferred = getDeferred(remote.client_op_id);
     if (deferred) {
       applyPostStateOnly(remote, qc);
-      // Resolve first, THEN abort — Promises only settle once, so the
-      // resolution wins and the abort-handler's reject becomes a no-op.
-      // Order matters: aborting first triggers onAbort → reject, which
-      // would settle the deferred before resolve() lands.
       deferred.resolve(synthesizeResponseFromSse(remote));
-      // Abort the in-flight HTTP request — its response is redundant with
-      // the SSE-synthesized one. abort() is a no-op if already aborted or
-      // never wired up.
       deferred.controller?.abort();
       clearDeferred(remote.client_op_id);
       return;
     }
   }
-
   if (isOwnTab) {
     applyPostStateOnly(remote, qc);
     return;
   }
-
-  // Case 2: foreign event. Replay-as-rerun.
   const pending = mc.getAll().filter(
     (m) => m.state.status === "pending"
   );
-
-  // Rollback in reverse queue order — last-in first-out so dependent ops
-  // unwind before the ops they depend on.
   for (const m of [...pending].reverse()) {
     const ctx = m.state.context as { restore?: () => void } | undefined;
     ctx?.restore?.();
   }
-
   applyRemoteToCache(remote, qc);
-
-  // Re-apply optimistic effects in insertion order so the cache reflects
-  // the remote effect plus our pending pipeline on top. Capture each fresh
-  // restore closure and swap it onto `m.state.context` so a later `onError`
-  // rolls back to the post-foreign-event snapshot rather than the original
-  // pre-rollback state (issue #3 from PR review). TanStack v5 sets
-  // `state.context` once from the original `onMutate` return value and
-  // doesn't replace it on its own — the assignment below overrides that.
-  //
-  // Each iteration is independently try/caught (issue #37 Bug 3): if one
-  // mutator's onMutate throws, subsequent siblings must still re-run.
-  // Otherwise their `state.context` keeps the pre-rollback snapshot, and a
-  // later HTTP-settle's onError rollback writes stale state into the cache.
   for (const m of pending) {
     const onMutate = m.options.onMutate as
       | ((vars: unknown) => unknown)
@@ -92,9 +42,6 @@ export function handleRemoteEvent(
     try {
       const fresh = onMutate?.(m.state.variables);
       if (fresh !== undefined) {
-        // Cast through `unknown` because TanStack types `state.context` as
-        // readonly at the public API surface; we're surgically updating it
-        // here to keep the per-mutation rollback closure consistent.
         (m.state as unknown as { context: unknown }).context = fresh;
       }
     } catch (e) {
@@ -102,35 +49,6 @@ export function handleRemoteEvent(
     }
   }
 }
-
-/**
- * Build a synthetic response object mirroring what the HTTP route would
- * have returned. The deferred is awaited inside useQueueMutation's
- * mutationFn; the resolution lets the mutation transition to "success"
- * without the HTTP call having returned. event_id is lifted from the SSE
- * frame; analysis_inputs_hash from post_state if present; remaining
- * fields come from the owning mutator's synthesizeFromSse method.
- *
- * Dispatch: lookup by event_kind via resolveMutatorForEvent,
- * then ask the mutator to build its shape. Falls back to a generic
- * `{...base, ...payload}` for forward-scaffolded kinds (set_exposure_status,
- * update_sample). These emit SSE today but their
- * UI gesture doesn't queue through this pipeline (yet); when a future plan
- * wires that gesture, add `synthesizeFromSse` to the matching mutator and the
- * fallback stops handling them.
- *
- * Ordering note: `applyPostStateOnly(remote)` runs BEFORE the deferred is
- * resolved with this synth (see handleRemoteEvent). That ordering keeps the
- * post-mutation indices cache fresh before the mutator's onSuccess fires.
- * This refactor does NOT change that ordering — it only changes how the
- * synth shape is produced.
- *
- * `base` carries only the three guaranteed framework fields (event_id,
- * client_op_id, analysis_inputs_hash). `view_row_id` is NOT in `base` —
- * it's an optional field on QueueResponseMeta that any mutator whose
- * TResponse requires it (e.g. `PeakAddResponse` which has `view_row_id:
- * number` required) must include explicitly in its `synthesizeFromSse`.
- */
 function synthesizeResponseFromSse(remote: SseEvent): unknown {
   const base: QueueResponseMeta = {
     event_id: remote.id,

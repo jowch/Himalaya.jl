@@ -210,6 +210,32 @@ end
         SQLite.close(db)
     end
 
+    @testset "DELETE /api/experiments/{id} leaves no dangling rows" begin
+        db, dir, exp_id = scan_test_db()
+        other = HimalayaUI.create_experiment!(db; path = "/tmp/other", data_dir = "/tmp/other", analysis_dir = "/tmp/other")
+        sid = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "A")
+        keep = HimalayaUI.create_sample!(db; experiment_id = other, name = "B")
+        eid = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = sid, filename = "f.tif")
+        iid = Int(DBInterface.lastrowid(DBInterface.execute(db,
+            "INSERT INTO indices (exposure_id, phase, basis) VALUES (?, 'Pn3m', 0.1)", [eid])))
+        DBInterface.execute(db, "INSERT INTO index_peaks (index_id, peak_id) VALUES (?, 1)", [iid])
+        DBInterface.execute(db, "INSERT INTO speculative_peak_intents (index_id, ratio_position, q) VALUES (?, 3, 0.2)", [iid])
+        DBInterface.execute(db, "INSERT INTO sample_compares (sample_id, ref_sample_id) VALUES (?, ?)", [keep, sid])
+        DBInterface.execute(db, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)", [keep, sid])
+
+        with_inproc_routes(db) do call
+            @test call("DELETE", "/api/experiments/$exp_id").status == 200
+        end
+
+        @test isempty(Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_check")))
+        count(t) = Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS c FROM $t"))[1].c
+        @test count("speculative_peak_intents") == 0
+        @test count("sample_compares") == 0
+        @test count("sample_subtractions") == 0
+        @test count("samples") == 1
+        SQLite.close(db)
+    end
+
     @testset "DELETE /api/experiments/{id} refuses while an ingest runs" begin
         db, dir, exp_id = scan_test_db()
         DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'scanning' WHERE id = ?", [exp_id])
