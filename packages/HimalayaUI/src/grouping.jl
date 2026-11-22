@@ -1,26 +1,9 @@
-# packages/HimalayaUI/src/grouping.jl
-#
-# Directory scanning + sample grouping (spec §5, §9.1).
-#
-# scan_directory: enumerate (tif, prp, dat) triplets from a beamtime directory.
-# group_into_samples: cluster exposures into loads and samples (Tasks 5–7).
-# scan_and_group!: transactional orchestrator (ingest.jl, Task 8).
-#
-# Naming note: `auto_group` already exists in pipeline.jl for index-candidate
-# grouping (an unrelated concept). This module uses `group_into_samples` (spec §9.1).
-
-"""
-    ExposureMeta
-
-Per-file metadata collected during directory scan. All fields except `stem`
-are nullable (`nothing` or `missing`).
-"""
 struct ExposureMeta
     stem         ::String
     tif_path     ::Union{String, Nothing}
     prp_path     ::Union{String, Nothing}
     dat_path     ::Union{String, Nothing}
-    prp          ::Union{NamedTuple, Nothing}  # parse_prp result; nothing if no .prp
+    prp          ::Union{NamedTuple, Nothing}
 end
 
 function tif_listing(data_dir::AbstractString, tif_pattern::AbstractString)
@@ -36,16 +19,6 @@ function tif_listing(data_dir::AbstractString, tif_pattern::AbstractString)
     (tif_scan_dir, tif_files, tif_suffix)
 end
 
-"""
-    scan_directory(data_dir, analysis_dir;
-                   tif_pattern = "{name}.tif",
-                   prp_pattern = "{name}.prp",
-                   dat_pattern = "{name}.dat") -> Vector{ExposureMeta}
-
-Enumerate every TIFF found in `data_dir`, then pair each with its PRP and .dat
-sidecar (the file the pattern names with `{name}` replaced by the stem). Returns
-one `ExposureMeta` per TIFF stem, sorted by stem.
-"""
 function scan_directory(
     data_dir::AbstractString,
     analysis_dir::AbstractString;
@@ -54,8 +27,6 @@ function scan_directory(
     dat_pattern::String = "{name}.dat",
     on_progress::Union{Function, Nothing} = nothing,
 )::Vector{ExposureMeta}
-    # Resolve a sidecar by substituting the known stem into the pattern: the file
-    # is exactly `joinpath(base, pattern-with-{name}→stem)` if it exists.
     sidecar(base, stem, pattern) =
         (p = joinpath(base, replace(pattern, "{name}" => stem)); isfile(p) ? p : nothing)
 
@@ -63,14 +34,6 @@ function scan_directory(
     listing === nothing && return ExposureMeta[]
     tif_scan_dir, tif_files, tif_suffix = listing
 
-    # Strip the TIF suffix to get stems, then pair each stem with its sidecars.
-    #
-    # This loop is the expensive half of an ingest, not `readdir`: per exposure it
-    # does two `isfile` stats plus a full `parse_prp` read. Over SMB that is three
-    # round trips × N exposures, and it used to run entirely silent — the UI had no
-    # denominator until it finished. `on_progress(done, total, "discovery")` is
-    # called with `total` known up front (from `tif_files`), coalesced to ~1% steps
-    # so a 1100-file scan emits ~100 frames rather than 1100.
     suffix_len = length(tif_suffix)
     metas = ExposureMeta[]
     n_total = length(tif_files)
@@ -89,21 +52,9 @@ function scan_directory(
     return metas
 end
 
-# ---------------------------------------------------------------------------
-# Time-gap load segmentation (spec §5, step 2)
-# ---------------------------------------------------------------------------
-
-"""
-    _segment_loads_with_flag(metas; gap_k = 10.0) -> (loads, flag)
-
-`flag ∈ {:ok, :unimodal_fallback}`:
-- `:ok`                — bimodal split found, or trivially one exposure
-- `:unimodal_fallback` — no gap exceeds the threshold; entire directory is one load
-"""
 function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 10.0)
     isempty(metas) && return (Vector{ExposureMeta}[], :ok)
 
-    # Sort by timestamp; push exposures with missing timestamp to the end.
     sorted = sort(metas; by = m -> begin
         ts = m.prp !== nothing ? m.prp.timestamp : missing
         ismissing(ts) ? DateTime(9999) : ts
@@ -111,7 +62,6 @@ function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 
 
     length(sorted) == 1 && return ([[sorted[1]]], :ok)
 
-    # Compute consecutive time gaps in seconds.
     timestamps = [begin
         ts = m.prp !== nothing ? m.prp.timestamp : missing
         ismissing(ts) ? missing : ts
@@ -120,7 +70,7 @@ function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 
     gaps = Float64[]
     for i in 2:length(timestamps)
         if !ismissing(timestamps[i]) && !ismissing(timestamps[i-1])
-            push!(gaps, Float64(Dates.value(timestamps[i] - timestamps[i-1])) / 1000.0)  # ms → s
+            push!(gaps, Float64(Dates.value(timestamps[i] - timestamps[i-1])) / 1000.0)
         end
     end
 
@@ -130,7 +80,7 @@ function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 
 
     med = _median_inline(gaps)
     threshold = med * gap_k
-    flag = :unimodal_fallback  # default; set to :ok when we actually split
+    flag = :unimodal_fallback
 
     loads = Vector{ExposureMeta}[[sorted[1]]]
     for i in 2:length(sorted)
@@ -148,67 +98,12 @@ function _segment_loads_with_flag(metas::Vector{ExposureMeta}; gap_k::Float64 = 
     return (loads, flag)
 end
 
-# ---------------------------------------------------------------------------
-# Stepping-axis detection + slot clustering (spec §5, step 1)
-# ---------------------------------------------------------------------------
-
-"""
-    _median_inline(xs) -> Float64
-
-Exact median of a non-empty `Vector{Float64}`. Inlined to avoid a `Statistics`
-dependency (mirrors the inlined median in `_segment_loads_with_flag`).
-"""
 function _median_inline(xs::Vector{Float64})::Float64
     v = sort(xs)
     n = length(v)
     iseven(n) ? (v[n÷2] + v[n÷2+1]) / 2.0 : v[(n+1)÷2]
 end
 
-"""
-    _cluster_slots(load_metas; slot_k = 5.0) -> Vector{Vector{ExposureMeta}}
-
-Group the exposures in one load into slots (one slot = one sample position).
-
-Algorithm (spec §5):
-1. Extract horizontal positions; if all are missing → one slot (fallback).
-2. Compute consecutive-pair position deltas; the within-burst jitter tolerance
-   is `slot_k × median(|consecutive deltas|)`.
-3. A position gap exceeding that tolerance starts a new slot.
-4. Median-near-zero fallback (spec §5 "fall back to the absolute-position gap
-   learned from the multi-frame bursts"): when the *median* consecutive delta is ~0
-   — i.e. most consecutive frames sit at the *same* position (multi-frame bursts /
-   within-slot revisits) — the plain `median × slot_k` tolerance degenerates to 0
-   and would split on every step. Instead learn the tolerance from the non-zero
-   deltas, which in this regime ARE the burst→burst (slot-to-slot) jumps. The
-   tolerance must sit *between* the (≈0) within-burst jitter and the slot spacing,
-   so it is `median(nonzero deltas) / slot_k` — a fraction of the learned slot
-   spacing, below the jumps (so they split) yet above the jitter (so bursts don't).
-   If there are no non-zero deltas at all (every frame at one position),
-   tolerance = `Inf` → one slot.
-
-`slot_k = 5.0` is a validated default. In the normal branch (non-zero median):
-real data has 0.30 mm within-burst jitter vs 3.95 mm slot spacing → ratio 13, so a
-5× multiplier on the jitter (1.5 mm) sits well inside the gap. In the fallback
-branch the same `slot_k` divides the learned spacing (≈4 mm / 5 = 0.8 mm), which
-likewise sits well below the jumps and above the (zero) jitter.
-
-NOTE (deviation from the Phase-B plan / Task-6 brief draft): both drafts wrote the
-fallback tolerance as `median(nonzero) × slot_k`. That is an authoring error — a
-×5 tolerance (≈20 mm) exceeds the ~4 mm burst jumps it must split on, so it
-collapses every burst-fixture load to a single slot and FAILS the brief's own
-"3 bursts → 3 slots" assertion. Spec §5 requires the tolerance to fall *between*
-jitter and slot spacing; `/slot_k` is the only reading consistent with both the
-spec and the brief's behavioral test, so the operator is corrected to `/` here.
-
-KNOWN LIMITATION (deferred — see spec §5 "single-frame acquisitions … else flag"):
-a load of pure *single-frame* acquisitions visited round-robin (each slot exactly
-one frame, no multi-frame burst anywhere) has every consecutive delta equal to a
-slot-to-slot jump, so the jitter population and the spacing population are
-indistinguishable — there is nothing to "learn the gap from". This case is NOT
-handled here (it would under-split to one slot); the spec's prescribed behavior is
-to flag for human review. Wiring that flag is deferred to Phase D's grouping-review
-UI; for Phase B it falls through to a single slot.
-"""
 function _cluster_slots(
     load_metas::Vector{ExposureMeta};
     slot_k::Float64 = 5.0,
@@ -224,11 +119,9 @@ function _cluster_slots(
     ]
 
     if all(ismissing, hpos)
-        # No position axis available: one slot, flag for review
         return [load_metas]
     end
 
-    # Consecutive position deltas (absolute)
     deltas = Float64[]
     for i in 2:length(hpos)
         if !ismissing(hpos[i]) && !ismissing(hpos[i-1])
@@ -241,27 +134,16 @@ function _cluster_slots(
     end
 
     med_delta = _median_inline(deltas)
-    # Three regimes for the slot-boundary tolerance:
     local threshold::Float64
+    # physics: capillary slots on the holder sit at least ~1 mm apart, so a larger
+    # physics: step between consecutive frames is always a new slot. Below that,
+    # physics: within-slot jitter dominates and the adaptive tolerance applies.
     if med_delta < 1e-6
-        # Multi-frame bursts at one position: median Δ ≈ 0, so `median × slot_k`
-        # is a degenerate (zero) tolerance. Learn it from the non-zero burst→burst
-        # jumps instead; Inf when there are no jumps at all.
         nonzero = filter(d -> d > 1e-6, deltas)
         threshold = isempty(nonzero) ? Inf : _median_inline(nonzero) / slot_k
     elseif med_delta > min_slot_separation_mm
-        # Single-frame position scan: every exposure steps to a NEW slot, so the
-        # median Δ IS the slot step, not within-slot jitter. `median × slot_k`
-        # would then exceed every gap and collapse the whole load into one slot
-        # (the real-data load-20 failure: 34 distinct specimens → 1 sample). Split
-        # at the physical slot floor — SAXS capillary slots are ≥ ~1 mm apart, so
-        # any consecutive gap above it is a genuine boundary. Time order is kept,
-        # so a slot revisited later in the load (reshoot) still reads as its own
-        # cluster rather than being merged by position.
         threshold = min_slot_separation_mm
     else
-        # Within-slot jitter dominates (median Δ below the slot floor): the
-        # adaptive `median × slot_k` correctly sits between jitter and the jumps.
         threshold = med_delta * slot_k
     end
 
@@ -278,10 +160,6 @@ function _cluster_slots(
     return slots
 end
 
-# ---------------------------------------------------------------------------
-# Grouped structs returned by group_into_samples (spec §5)
-# ---------------------------------------------------------------------------
-
 struct GroupedExposure
     stem       ::String
     tif_path   ::Union{String, Nothing}
@@ -294,15 +172,15 @@ struct GroupedExposure
     incident_monitor       ::Union{Float64, Missing}
     counting_time_s        ::Union{Float64, Missing}
     pipe_length_m          ::Union{Float64, Missing}
-    scan_id    ::Union{Int, Missing}   # parsed from the `_S<digits>_` filename token
-    frame_no   ::Union{Int, Missing}   # parsed from the trailing `_<digits>` frame index
+    scan_id    ::Union{Int, Missing}
+    frame_no   ::Union{Int, Missing}
 end
 
 struct GroupedSample
     name           ::String
-    name_source    ::String   # always "auto" from this function
+    name_source    ::String
     slot_index     ::Int
-    grouping_source::String   # always "auto_position"
+    grouping_source::String
     exposures      ::Vector{GroupedExposure}
 end
 
@@ -312,55 +190,27 @@ struct GroupedLoad
     start_time    ::Union{DateTime, Missing}
     end_time      ::Union{DateTime, Missing}
     samples       ::Vector{GroupedSample}
-    flag          ::Symbol   # :ok | :unimodal_fallback | :single_exposure
+    flag          ::Symbol
     session_index ::Int
 end
 
 struct GroupingResult
     loads        ::Vector{GroupedLoad}
-    discrepancies::Vector{String}  # human-readable grouping anomalies
+    discrepancies::Vector{String}
 end
 
-# ---------------------------------------------------------------------------
-# Auto-naming helper (spec §5 naming rule)
-# ---------------------------------------------------------------------------
-
-"""
-    _auto_name(label_hint, load_index, slot_index) -> String
-
-Produce a sample name per spec §5: `<label> (SNNPMM)` where S=load index,
-P=slot index (both 1-based, zero-padded to two digits). `label_hint` is derived
-from the filename token when parseable; an empty hint yields just the coordinate
-anchor `(SNNPMM)`.
-"""
 function _auto_name(label_hint::AbstractString, load_index::Int, slot_index::Int)
     coord = "S$(lpad(load_index, 2, '0'))P$(lpad(slot_index, 2, '0'))"
     isempty(strip(label_hint)) && return "($(coord))"
     return "$(strip(label_hint)) ($(coord))"
 end
 
-"""
-    _label_from_stem(stem) -> String
-
-Extract the human label token from a filename stem like `HA_85_422_S2404_0_001`.
-Heuristic: the portion BEFORE the scan-id token `_S\\d+_`. Returns the stem
-unchanged if no such token is found.
-"""
 function _label_from_stem(stem::AbstractString)
     m = match(r"^(.+?)_S\d+_", stem)
     m === nothing && return String(stem)
     return String(m.captures[1])
 end
 
-"""
-    _parse_scan_frame(stem) -> (scan_id::Union{Int,Missing}, frame_no::Union{Int,Missing})
-
-Extract the SSRL scan id and frame index from a filename stem such as
-`HA_85_422_S2404_0_001` (scan_id=2404, frame_no=1). The scan id is the integer
-in the `_S<digits>_` token; the frame number is the trailing `_<digits>` group
-at the very end of the stem. Either is `missing` when its token is absent
-(confirmed against the real SSRL 2026-04 naming convention).
-"""
 function _parse_scan_frame(stem::AbstractString)
     m_scan  = match(r"_S(\d+)_", stem)
     m_frame = match(r"_(\d+)$", stem)
@@ -369,21 +219,6 @@ function _parse_scan_frame(stem::AbstractString)
     return (scan_id, frame_no)
 end
 
-# ---------------------------------------------------------------------------
-# group_into_samples (spec §5)
-# ---------------------------------------------------------------------------
-
-"""
-    _assign_sessions(start_times; session_gap_hours = 3.0) -> Vector{Int}
-
-Group time-ordered loads into macro-sessions (spec §5): a gap > `session_gap_hours`
-between consecutive load start times begins a new session. 1-based session indices.
-A `missing` start time stays in the current session and does not advance `prev`.
-
-ponytail: 3 h macro-session default (a human break — meal/overnight); reproduces the
-4 sessions of the SSRL 1p7m beamtime. Absolute, not gap-relative: a session boundary
-is an absolute human-time gap, unlike load spacing (§5). Tunable.
-"""
 function _assign_sessions(start_times::AbstractVector; session_gap_hours::Float64 = 3.0)
     ids = Vector{Int}(undef, length(start_times))
     s = 1; prev = missing
@@ -404,18 +239,6 @@ _monitors(prp) = (
     pipe_length_m      = prp === nothing ? missing : get(prp, :pipe_length_m, missing),
 )
 
-"""
-    group_into_samples(metas::Vector{ExposureMeta}) -> GroupingResult
-
-Run the full §5 backbone on the flat list of per-exposure metadata:
-  1. Time-gap segment into loads (`_segment_loads_with_flag`).
-  2. Within each load, cluster by position (`_cluster_slots`).
-  3. Build the `GroupedLoad`/`GroupedSample`/`GroupedExposure` tree with
-     auto-names (`<label> (SNNPMM)`).
-
-The segmentation fallback (`:unimodal_fallback`) is surfaced both as a
-human-readable discrepancy string and onto each affected load's `flag`.
-"""
 function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
     isempty(metas) && return GroupingResult(GroupedLoad[], String[])
 
@@ -428,10 +251,6 @@ function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
     end
     session_ids = _assign_sessions(load_starts)
 
-    # Surface the segmentation fallback durably (spec §5: "unimodal fallback → flag
-    # for review"). The flag is a property of the whole segmentation pass, so it is
-    # both (a) recorded as a human-readable discrepancy and (b) carried onto the load
-    # row(s) below via `seg_flag`.
     if seg_flag == :unimodal_fallback
         push!(discrepancies,
             "load segmentation: no clear bimodal time-gap separation; treated the " *
@@ -443,7 +262,6 @@ function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
         slot_groups = _cluster_slots(load_metas)
         grouped_samples = GroupedSample[]
         for (si, slot_metas) in enumerate(slot_groups)
-            # Label hint drawn from the slot's first stem.
             label_hint = _label_from_stem(first(slot_metas).stem)
 
             exps = [begin
@@ -485,8 +303,8 @@ function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
             start_time,
             end_time,
             grouped_samples,
-            seg_flag,        # :ok | :unimodal_fallback | :single_exposure — from segmentation (spec §5)
-            session_ids[li], # macro-session index (spec §5 "multi-hour gaps mark macro-sessions")
+            seg_flag,
+            session_ids[li],
         ))
     end
 

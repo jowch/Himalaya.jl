@@ -286,7 +286,14 @@ handler body with three guarantees:
    (double-check) so the fast path stays cheap.
 3. **Failures aren't cached.** Status ≥ 400 responses don't write
    `idempotent_responses`; the next retry re-executes the body. This
-   matches Stripe's idempotency-key semantics.
+   matches Stripe's idempotency-key semantics. A failed op (thrown or
+   status ≥ 400) also drops its `OP_LOCKS` entry, because the GC only
+   collects locks whose op has a cached row.
+
+A cached replay returns the stored body with `Content-Type:
+application/json` and no other headers. Every idempotent route returns
+plain JSON; a route that needs other headers must store them in the cache
+row.
 
 Without `X-Client-Op-Id` the body still runs inside an outer
 `SQLite.transaction` — bodies that call `apply_event!(InTransaction(), …)`
@@ -360,7 +367,7 @@ DELETE commits before the lock prune runs). Because each holder releases
 the first mutex before taking the second, the two paths can't deadlock.
 Any future code added under `OP_LOCKS_MU` that calls into something which
 may acquire `_DB_WRITE_LOCK` would converge the orderings and deadlock
-under concurrent load. Evidence: `server.jl:21-28`.
+under concurrent load.
 
 ---
 
