@@ -57,7 +57,7 @@ const mocked = <T,>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 
 function index(id: number, phase: string, basis: number, kind: IndexEntry["kind"] = "auto"): IndexEntry {
   return {
-    id, exposure_id: 101, phase, basis, score: 0.9, r_squared: 0.99, lattice_d: 100, ngc: null,
+    id, exposure_id: 101, phase, basis, score: 0.9, r_squared: 0.99, lattice_d: 100, 
     status: "candidate", kind, inputs_hash: null, peaks: [], predicted_q: [],
   } as IndexEntry;
 }

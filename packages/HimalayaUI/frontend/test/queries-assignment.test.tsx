@@ -86,7 +86,7 @@ describe("api — assignment fetchers (Plan D-1)", () => {
   it("createCustomIndex POSTs {phase, basis, ratios} to /custom-index", async () => {
     const spy = vi.spyOn(global, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ id: 77, exposure_id: 7, phase: "Pn3m", basis: 0.15,
-        score: null, r_squared: null, lattice_d: 197, ngc: null, status: "candidate",
+        score: null, r_squared: null, lattice_d: 197, status: "candidate",
         kind: "speculative", inputs_hash: "h", peaks: [], predicted_q: [0.15],
         event_id: 1, view_row_id: 1 }),
         { status: 200, headers: { "Content-Type": "application/json" } }));

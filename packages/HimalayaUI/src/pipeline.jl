@@ -758,7 +758,7 @@ observability.
 
 Intentionally distinct from `_serialized_indices_for_broadcast` below: this
 helper returns just the bytes of a thin metadata-only projection (no joined
-peaks, no predicted_q, no ngc), which is all the telemetry payload needs.
+peaks, no predicted_q), which is all the telemetry payload needs.
 The broadcast helper builds the full enriched cache-replay payload used by
 curation routes — it joins index_peaks and computes predicted_q per index.
 Consolidating the two would force `analyze_run` (which fires on every
@@ -1193,15 +1193,13 @@ Build the indices array for the SSE `post_state` payload — same shape as the
 `IndexEntry[]` consumed by the frontend: `id`, `exposure_id`, `phase`, `basis`,
 `score`, `r_squared`, `lattice_d`, `status`, `kind`, `inputs_hash`, plus the
 joined `peaks` (each `peak_id`, `ratio_position`, `residual`, `q_observed`)
-and the `predicted_q` array. `ngc` mirrors what `GET /api/exposures/:id/indices`
-emits and is computed lazily by the frontend in some places, but we include it
-here too so the cache can stay authoritative.
+and the `predicted_q` array.
 """
 function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
     # Suggestion #11: enumerate columns instead of SELECT * so a future
     # server-internal column doesn't leak into every SSE post_state frame.
     # The list mirrors the frontend IndexEntry interface (minus the joined
-    # `peaks`/`predicted_q`/`ngc` which are added below).
+    # `peaks`/`predicted_q` which are added below).
     indices = Tables.rowtable(DBInterface.execute(db,
         """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                   status, kind, inputs_hash
@@ -1236,7 +1234,6 @@ function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
         d = row_to_json(ix)
         d[:peaks]       = get(peaks_by_index, Int(ix.id), Any[])
         d[:predicted_q] = predicted_q_for_phase(String(ix.phase), Float64(ix.basis))
-        d[:ngc]         = _ngc_for_phase(String(ix.phase), ix.lattice_d)
         d
     end
 end

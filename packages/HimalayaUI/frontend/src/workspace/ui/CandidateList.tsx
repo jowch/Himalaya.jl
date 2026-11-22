@@ -54,7 +54,7 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
               onMouseEnter={() => onHover(c.id)}
               onFocus={() => onHover(c.id)}
               className={
-                "grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-sm border px-2 py-[5px] text-left text-base disabled:opacity-50 " +
+                "grid w-full grid-cols-[auto_auto_1fr_auto] items-center gap-1.5 rounded-sm border px-2 py-[5px] text-left text-base disabled:opacity-50 " +
                 (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong")
               }
             >
@@ -62,7 +62,7 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
               <PhaseChip phase={c.phase} variant="solid" />
               <span className="min-w-0 truncate whitespace-nowrap text-ink-soft" title={kappa !== null ? `${lattice}, ${formatCurvature(kappa)}` : undefined}>
                 {lattice}
-                {kappa !== null && <span className="ml-2" data-testid="workspace-candidate-curvature">{formatCurvature(kappa)}</span>}
+                {kappa !== null && <span className="ml-1.5 text-xs" data-testid="workspace-candidate-curvature">{formatCurvature(kappa)}</span>}
               </span>
               <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
             </button>

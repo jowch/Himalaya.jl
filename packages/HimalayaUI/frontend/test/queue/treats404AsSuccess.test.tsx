@@ -120,7 +120,7 @@ describe("treats404AsSuccess framework branch — coverage across mutator shapes
     const EXPOSURE_ID = 5;
     const INDEX: IndexEntry = {
       id: 10, exposure_id: EXPOSURE_ID, phase: "Pn3m", basis: 0.1, score: 0.9,
-      r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate",
+      r_squared: 0.99, lattice_d: 50, status: "candidate",
       kind: "auto", inputs_hash: "h1", peaks: [], predicted_q: [0.1],
     };
     const client = makeClient();

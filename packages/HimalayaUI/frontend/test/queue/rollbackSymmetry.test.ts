@@ -60,7 +60,7 @@ const ASSIGNMENT = {
 };
 const INDEX = {
   id: 10, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.9,
-  r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate" as const,
+  r_squared: 0.99, lattice_d: 50, status: "candidate" as const,
   kind: "auto" as const, inputs_hash: "h1", peaks: [], predicted_q: [0.1],
 };
 const EXP_LIST_KEY = ["sample", 1, "exposures"] as const;

@@ -57,7 +57,7 @@ const SAMPLE_LABEL_KEYS = new Set([
 ]);
 const INDEX_ENTRY_KEYS = new Set([
   "id", "exposure_id", "phase", "basis", "score", "r_squared",
-  "lattice_d", "ngc", "status", "kind", "inputs_hash",
+  "lattice_d", "status", "kind", "inputs_hash",
   "peaks", "predicted_q",
 ]);
 function mockFetchOnce(body: unknown, status = 200): void {
@@ -289,7 +289,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     // new one.
     mockFetchOnce({
       id: 77, exposure_id: 5, phase: "Pn3m", basis: 0.15, score: null, r_squared: null,
-      lattice_d: 197, ngc: -1.5, status: "candidate", kind: "speculative", inputs_hash: "h",
+      lattice_d: 197, status: "candidate", kind: "speculative", inputs_hash: "h",
       peaks: [{ peak_id: 3, ratio_position: 1, residual: 0.0, q_observed: 0.15 }],
       predicted_q: [0.15, 0.1837], bonnet: null,
       event_id: 30, view_row_id: 12,
@@ -343,7 +343,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     // Mock derived from routes_analysis.jl POST /speculative response (~line 374-397).
     mockFetchOnce({
       id: 99, exposure_id: 5, phase: "Pn3m", basis: 0.123,
-      score: 0.85, r_squared: 0.99, lattice_d: 50.0, ngc: 0.5,
+      score: 0.85, r_squared: 0.99, lattice_d: 50.0,
       status: "candidate", kind: "speculative", inputs_hash: "h-spec",
       peaks: [
         { peak_id: 7, ratio_position: 1, residual: 0.001, q_observed: 0.123 },

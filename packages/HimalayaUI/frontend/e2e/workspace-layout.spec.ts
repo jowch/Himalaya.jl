@@ -29,7 +29,7 @@ const PHASES = ["Pn3m", "Im3m", "Ia3d", "HII", "Lamellar", "Fd3m"];
 function indicesOf(exposureId: number, n: number) {
   return Array.from({ length: n }, (_, i) => PHASES[i % PHASES.length]!).map((phase, i) => ({
     id: exposureId * 100 + i, exposure_id: exposureId, phase, basis: 0.1, score: 0.9 - i * 0.01, r_squared: 0.99,
-    lattice_d: 100 + i, ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
+    lattice_d: 100 + i, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
   }));
 }
 
@@ -200,6 +200,33 @@ test("hovering a candidate does not move the candidate list, even when three pha
   await rows.nth(0).hover();
   await expect(page.locator("[data-testid=workspace-indexing-fit]")).toHaveCount(1);
   expect(await rows.nth(3).boundingBox()).toEqual(before);
+});
+
+test("a Custom cubic row keeps its curvature and unit whole on one line", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route(/\/api\/exposures\/410\/indices/, (r) =>
+    r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify([["Im3m", 699.9], ["Ia3d", 50], ["Pn3m", 499.9], ["Hexagonal", 499.9]].map(([phase, lattice_d], i) => ({
+        id: 41000 + i, exposure_id: 410, phase, basis: 0.1, score: null, r_squared: 0.99, lattice_d, 
+        status: "candidate", kind: "speculative", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
+      }))),
+    }),
+  );
+  await page.goto("/experiments/17/workspace/41");
+  const rows = page.locator("[data-testid=workspace-candidates] button");
+  await expect(rows).toHaveCount(4);
+  const plain = await rows.filter({ hasText: "Hexagonal" }).boundingBox();
+  for (const row of await rows.filter({ hasNotText: "Hexagonal" }).all()) {
+    await expect(row).toContainText("Custom");
+    await expect(row).toContainText("nm⁻²");
+    const inside = await row.evaluate((b) => {
+      const cell = b.children[2]!.getBoundingClientRect();
+      return b.querySelector("[data-testid=workspace-candidate-curvature]")!.getBoundingClientRect().right <= cell.right;
+    });
+    expect(inside).toBe(true);
+    expect((await row.boundingBox())!.height).toBe(plain!.height);
+  }
 });
 
 test("three comparisons with long names keep the compare bar on one line", async ({ page }) => {

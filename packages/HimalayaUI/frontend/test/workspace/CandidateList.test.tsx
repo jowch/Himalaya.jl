@@ -7,7 +7,7 @@ import { CandidateList } from "../../src/workspace/ui/CandidateList";
 function candidate(id: number, phase = "Lamellar", lattice: number | null = 40 + id): IndexEntry {
   return {
     id, exposure_id: 1, phase, basis: 0.1, score: 1 - id / 100, r_squared: null, lattice_d: lattice,
-    ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [],
+    status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [],
   };
 }
 
