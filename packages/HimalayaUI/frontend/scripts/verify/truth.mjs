@@ -39,6 +39,25 @@ export function bridgeLabelDrift(samples, labels, bridges) {
   return out;
 }
 
+export function bridgeCallDrift(samples, bridges) {
+  const groupOf = new Map(bridges.map((b) => [b.sample_id, b.group_id]));
+  const byId = new Map(samples.map((s) => [s.id, s]));
+  const call = (s) => ({ state: s.assignment_state ?? "indexed", phases: [...(s.call_phases ?? [])].sort() });
+  const same = (x, y) => x.state === y.state && x.phases.join("\n") === y.phases.join("\n");
+  const out = new Map();
+  for (const s of samples) {
+    const g = groupOf.get(s.id);
+    if (g === undefined) continue;
+    const mine = call(s);
+    const drift = bridges
+      .filter((b) => b.group_id === g && b.sample_id !== s.id && byId.has(b.sample_id))
+      .map((b) => ({ mate: byId.get(b.sample_id).name, mine, theirs: call(byId.get(b.sample_id)) }))
+      .filter((d) => !same(d.mine, d.theirs));
+    if (drift.length) out.set(s.id, drift);
+  }
+  return out;
+}
+
 function words(value) {
   return String(value ?? "").split(/\s+/).filter(Boolean);
 }
@@ -124,6 +143,7 @@ function sampleInvariants(app, frames, held = new Set()) {
     representative_kept: onDropped.length ? onDropped : null,
     views_agree: allRead && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
     bridged_labels_match: app.labelDrift?.length ? app.labelDrift : null,
+    bridged_calls_match: app.callDrift?.length ? app.callDrift : null,
   };
 }
 
@@ -134,6 +154,7 @@ export const INVARIANTS = {
   views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
   bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup. Unchecked while the experiment has no bridge.",
+  bridged_calls_match: "Samples bridged as the same sample show one call: the same call state and the same called phases. Unchecked while the experiment has no bridge.",
   plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this frame's trace.\" when its trace is held back in late/, and shows the trace otherwise (needs --ui).",
 };
 
@@ -146,7 +167,7 @@ function rollupInvariants(perSample, ui) {
     let checked = true;
     if (NEEDS_UI.has(name) && !ui.used) checked = false;
     if (NEEDS_VIEWS.has(name) && ui.unread) checked = false;
-    if (name === "bridged_labels_match" && !ui.bridged) checked = false;
+    if ((name === "bridged_labels_match" || name === "bridged_calls_match") && !ui.bridged) checked = false;
     const violations = perSample
       .filter((s) => s.invariants && s.invariants[name])
       .flatMap((s) => s.invariants[name].map((v) => ({ sample: s.sample, ...v })));
@@ -333,6 +354,7 @@ export async function collectApp(cfg, experimentId) {
     getJson(api, `/api/experiments/${experimentId}/bridges`),
   ]);
   const drift = bridgeLabelDrift(samples, labels, bridges);
+  const callDrift = bridgeCallDrift(samples, bridges);
   const groupSize = new Map();
   for (const b of bridges) groupSize.set(b.group_id, (groupSize.get(b.group_id) ?? 0) + 1);
   const bridged = new Set(bridges.filter((b) => groupSize.get(b.group_id) > 1).map((b) => b.sample_id));
@@ -357,6 +379,7 @@ export async function collectApp(cfg, experimentId) {
         frames,
         bridged: bridged.has(s.id),
         ...(drift.has(s.id) ? { labelDrift: drift.get(s.id) } : {}),
+        ...(callDrift.has(s.id) ? { callDrift: callDrift.get(s.id) } : {}),
       };
     }),
   );
