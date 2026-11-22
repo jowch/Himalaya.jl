@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "../../src/api";
-import { bonnetGroups, callRows } from "../../src/workspace/bonnetGroups";
+import { bonnetGroups, callRows, keyedRows } from "../../src/workspace/bonnetGroups";
 
 let nextId = 1;
 function ix(phase: string, a: number, peaks: readonly number[], score = 0.5): IndexEntry {
@@ -89,5 +89,15 @@ describe("callRows", () => {
   it("gives a group the number of peaks its members explain together", () => {
     const rows = callRows([ix("Im3m", 127.9, range(1, 6)), ix("Pn3m", 100, [5, 6, 7, 8])]);
     expect(rows[0]).toMatchObject({ kind: "group", peaks: 8 });
+  });
+});
+
+describe("keyedRows", () => {
+  it("numbers a group header before its members, in list order", () => {
+    const lam = ix("Lamellar", 60, [20, 21]);
+    const im = ix("Im3m", 127.9, range(5, 8));
+    const pn = ix("Pn3m", 100, range(1, 4));
+    const keyed = keyedRows(callRows([lam, im, pn]));
+    expect(keyed.map((r) => (r.kind === "group" ? "group" : r.candidate.id))).toEqual([lam.id, "group", im.id, pn.id]);
   });
 });

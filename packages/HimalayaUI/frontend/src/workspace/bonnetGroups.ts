@@ -86,3 +86,13 @@ export function callRows(candidates: readonly IndexEntry[]): CallRow[] {
   }
   return rows;
 }
+
+export type KeyedRow = { kind: "one"; candidate: IndexEntry } | { kind: "group"; members: readonly IndexEntry[] };
+
+export function keyedRows(rows: readonly CallRow[]): KeyedRow[] {
+  return rows.flatMap((row): KeyedRow[] =>
+    row.kind === "one"
+      ? [row]
+      : [{ kind: "group", members: row.members }, ...row.members.map((candidate) => ({ kind: "one" as const, candidate }))],
+  );
+}
