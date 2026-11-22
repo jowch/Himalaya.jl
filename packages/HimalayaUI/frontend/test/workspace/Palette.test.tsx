@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Palette } from "../../src/workspace/ui/palette/Palette";
-import { stepHighlight } from "../../src/workspace/ui/useListHighlight";
-import { DEEP_TITLE, cycleOption, rootRows, type PaletteForm, type PaletteGroup, type PalettePage } from "../../src/workspace/ui/palette/model";
+import { Palette } from "../../src/ui/palette/Palette";
+import { stepHighlight } from "../../src/ui/useListHighlight";
+import { DEEP_TITLE, cycleOption, rootRows, type PaletteForm, type PaletteGroup, type PalettePage } from "../../src/ui/palette/model";
 
 const ran: string[] = [];
 const run = (id: string) => () => ran.push(id);

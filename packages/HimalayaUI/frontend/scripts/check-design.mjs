@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/print/ui/**,
+// Zero-dependency design-token guard. Globs src/**/*.{ts,tsx}, excludes src/ui/**, src/plot/** and src/detector/**,
 // flags banned appearance utilities / raw color literals. PURE-ABSOLUTE: every matched
 // violation (after the ui/ exclusion + per-rule allowlist) is a hard error (exit 2). There is
 // no baseline — the named scale + component library are now the only sanctioned source of
 // appearance, so any new bracket/raw-color escape is a regression, full stop.
 // Pure functions are exported for unit testing; the CLI runs only when invoked directly.
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep, posix } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // import.meta.url is a file: URL when run by node directly, but some loaders
@@ -36,7 +36,7 @@ const SRC_DIR = join(HERE, "..", "src");
 // oklch()/rgba() literals. (Rules #1/#2/#4 take NO allowlist.)
 const COLOR_AUTHORING_ALLOWLIST = new Set([
   "phases.ts",
-  "print/main.tsx",
+  "main.tsx",
 ]);
 
 function colorAuthoringAllowed(relPath) {
@@ -126,10 +126,9 @@ function relToSrc(absPath) {
 
 function isExcluded(relPath) {
   return (
-    relPath.startsWith("print/ui/") ||
-    relPath.startsWith("workspace/ui/") ||
-    relPath.startsWith("print/plot/") ||
-    relPath.startsWith("print/detector/")
+    relPath.startsWith("ui/") ||
+    relPath.startsWith("plot/") ||
+    relPath.startsWith("detector/")
   );
 }
 
@@ -150,37 +149,6 @@ export function scanContent(relPath, content) {
     }
   }
   return violations;
-}
-
-// Relative import/export specifiers on one line. Group 1 = `... from "X"`, group 2 = dynamic import("X").
-const IMPORT_SPEC_RE =
-  /(?:import|export)\b[^'"]*?\bfrom\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
-
-// Import-boundary guard: a file under src/print/** may not import (relatively) from the OLD
-// src/components/** or src/pages/**. As of the full migration both legacy dirs are GONE (the
-// whole frontend now lives under src/print/), so this is a REINTRODUCTION guardrail — it keeps
-// anyone from re-creating a top-level src/components/ or src/pages/ and importing across it. We
-// resolve each relative specifier against the importer's dir (POSIX) and flag it if it lands
-// under components/ or pages/. Print-internal imports (./components, ./pages — i.e.
-// src/print/components, src/print/pages) resolve under print/ and pass. Exported pure for unit testing.
-export function scanLegacyImports(relPath, content) {
-  if (!relPath.startsWith("print/")) return [];
-  const dir = posix.dirname(relPath);
-  const out = [];
-  const lines = content.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    IMPORT_SPEC_RE.lastIndex = 0;
-    let m;
-    while ((m = IMPORT_SPEC_RE.exec(lines[i])) != null) {
-      const spec = m[1] ?? m[2];
-      if (!spec || !spec.startsWith(".")) continue; // bare/external specifiers are fine
-      const resolved = posix.normalize(posix.join(dir, spec));
-      if (resolved.startsWith("components/") || resolved.startsWith("pages/")) {
-        out.push({ rule: "no-legacy-import", file: relPath, line: i + 1, text: spec });
-      }
-    }
-  }
-  return out;
 }
 
 const PX_FONT_RE = /text-\[\d+(?:\.\d+)?px\]/;
@@ -221,7 +189,6 @@ function runCli() {
     const rel = relToSrc(abs);
     const content = readFileSync(abs, "utf8");
     all.push(...scanContent(rel, content));
-    all.push(...scanLegacyImports(rel, content));
     all.push(...scanUnpairedFontSize(rel, content));
   }
 
@@ -231,9 +198,8 @@ function runCli() {
       process.stderr.write(`  ${v.rule}  src/${v.file}:${v.line}  ${JSON.stringify(v.text)}\n`);
     }
     process.stderr.write(
-      "Move the appearance utility into src/print/ui/**, or use a named " +
+      "Move the appearance utility into src/ui/**, or use a named " +
         "scale/role token. Raw color literals belong only in the color-authoring files. " +
-        "src/print/** may not import from src/components/** or src/pages/** (no-legacy-import). " +
         "A pixel font size needs a whole-pixel line height on the same element (leading-[Npx] or " +
         "lineHeight), because body line heights are fixed px and would otherwise be inherited " +
         "unchanged, growing small text to a 20 px line box (font-size-needs-line-height).\n",

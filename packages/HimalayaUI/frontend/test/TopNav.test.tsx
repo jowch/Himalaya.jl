@@ -2,7 +2,7 @@
 import { describe, test, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { TopNav } from "../src/print/shell/TopNav";
+import { TopNav } from "../src/shell/TopNav";
 
 function renderWithRouter(ui: React.ReactElement, { route = "/" }: { route?: string } = {}) {
   render(<MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>);

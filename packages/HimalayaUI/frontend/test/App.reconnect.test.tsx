@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { PrintApp } from "../src/print/App";
+import { App } from "../src/App";
 import * as api from "../src/api";
 import { FakeEventSource } from "./helpers/fakeEventSource";
 
 const KEY = ["samples", "corpus-probe"];
 const OTHER = ["exposure", 9, "peaks"];
 
-describe("PrintApp after the live-update stream reconnects", () => {
+describe("App after the live-update stream reconnects", () => {
   let qc: QueryClient;
 
   beforeEach(() => {
@@ -20,7 +20,7 @@ describe("PrintApp after the live-update stream reconnects", () => {
     qc.setQueryData(OTHER, []);
     render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
+        <MemoryRouter initialEntries={["/experiments"]}><App /></MemoryRouter>
       </QueryClientProvider>,
     );
   });

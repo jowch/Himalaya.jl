@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { ToastContainer } from "../src/print/ui/Toast";
+import { ToastContainer } from "../src/ui/Toast";
 import { showToast } from "../src/lib/toast";
 
 describe("imperative toast action slot", () => {
