@@ -330,8 +330,9 @@ exposure stores the `.prp` pipe length, which is the flight path, as
 When every exposure of a sample that has a pipe length rounds to the same
 tenth of a metre, the sample gets the suggested label `<n.n> m`, for example
 `1.7 m`, with source `ingest`. Frames that disagree, or no pipe length at all,
-suggest nothing. A sample that already has any `<number> m` label, in any
-state, is left alone, so removing or renaming it sticks. Databases from before
+suggest nothing. A sample that already has any `<number> m` label (lowercase
+m, matched case-sensitively, so a molar `1 M` doesn't count), in any state, is
+left alone, so removing or renaming it sticks. Databases from before
 this column re-read their `.prp` files once (`exposures_pipe_length_v1` resets
 `monitors_read`), and the start-up back-fill then suggests the labels.
 

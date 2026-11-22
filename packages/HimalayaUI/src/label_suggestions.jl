@@ -46,7 +46,7 @@ function suggest_labels!(db, sample_id::Int)
     role
 end
 
-const DISTANCE_LABEL = r"^\s*\d+(\.\d+)?\s*m\s*$"i
+const DISTANCE_LABEL = r"^\s*\d+(\.\d+)?\s*m\s*$"
 
 flight_path_label(m::Real) = "$(round(m; digits = 1)) m"
 
