@@ -100,6 +100,5 @@ describe("App smoke", () => {
     await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "dark"));
     localStorage.removeItem("himalaya-ui:theme");
     document.documentElement.removeAttribute("data-theme");
-    document.documentElement.classList.remove("dark");
   });
 });

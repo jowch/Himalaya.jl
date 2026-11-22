@@ -2,7 +2,7 @@ import { UsageError } from "./args.mjs";
 import { ensureBrowser, connect } from "./browser.mjs";
 import { armSettle } from "./settle.mjs";
 import { reachable } from "./http.mjs";
-import { prepareUser, routeUrl } from "./page.mjs";
+import { leavePage, prepareUser, routeUrl } from "./page.mjs";
 
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
@@ -33,6 +33,7 @@ export function frameFromLabels(labels, frameOrder) {
 export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
 
 async function settledGoto(page, cfg, route) {
+  await leavePage(page);
   const tracker = armSettle(page);
   try {
     await page.goto(routeUrl(cfg, route), { waitUntil: "domcontentloaded" });

@@ -262,10 +262,6 @@ delayed further.
 - `npm run e2e` (mocked Playwright) uses its own port (:5191) and build folder
   (`dist-e2e/`), so the demo can keep running.
 
-- Vite logs `[boneyard] capture failed: … Executable doesn't exist at /opt/pw-browsers/…`
-  in cloud sessions: the boneyard skeleton-capture plugin uses the frontend's own
-  Playwright version, whose browser build isn't in the image. Harmless; skeletons
-  still load from the committed `src/bones/` captures.
 - On Julia ≥ 1.11, `Pkg.develop(path=".")` rewrites `packages/HimalayaUI/Project.toml`
   (adds `[sources]`, strips comments). `make setup` (and `make dev-setup`) restores the tracked file; the
   gitignored Manifest keeps the path dependency.
