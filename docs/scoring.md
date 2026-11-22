@@ -6,7 +6,7 @@ This document explains why `score(index)` is defined the way it is and what phys
 
 `score` is load-bearing in two places:
 
-1. **`auto_group`** (pipeline) — greedily selects the non-overlapping set of indices to present as the auto-analysis result by sorting candidates descending by score and claiming peaks first-come first-served. The highest-scoring index gets to claim its peaks before lower-scoring alternatives, so a wrong ordering can lock out the correct assignment.
+1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. It builds the group greedily in descending score order and claims peaks first-come first-served, except that a higher-scoring index can be displaced by one that strictly dominates it. A wrong ordering can lock out the correct assignment. See "A dominating index displaces the top-scoring one" below.
 
 2. **`remove_subsets`** — when two indices share the same basis but one's peaks are a subset of the other's, the lower-scoring one is removed. Score breaks the tie.
 
@@ -57,6 +57,23 @@ end
 ```
 
 Zero-sharpness falls back to `cv = 0` (treated as maximally consistent), degrading to coverage-only scoring.
+
+## A dominating index displaces the top-scoring one
+
+`auto_group` does not simply take the top-scoring index. At each step, let `t` be the highest-scoring candidate whose effective peaks are all unclaimed. The group takes instead the highest-scoring compatible candidate `a` (other than `t`) such that:
+
+1. `a` contains every peak of `t`, and
+2. `a` contains a peak below `t`'s lowest q that is sharper than every peak of `t`.
+
+If no such `a` exists, `t` is taken. The picked index claims its peaks and the step repeats until no compatible candidate remains. Peaks are identified by q for the two conditions.
+
+The consistency term is `1/(1+CV)` of the peak sharpnesses. Higher-order amplitudes naturally fall off, so a correct index that includes a very sharp first reflection and several weak high-order peaks has a high CV and a low consistency. An index that skips the sharp first peak and fits only the weaker ones can then outscore it. For example, a hexagonal pattern with one sharp first peak and six weak higher peaks can score below an Ia3d index that explains only some of the weak peaks. Hexagonal contains all of that Ia3d index's peaks plus the sharp one, so it is picked instead. The same rule lets Hexagonal and Lamellar coexist when the top-scoring Ia3d index is contained in the Hexagonal index.
+
+The sharper peak must lie below `t`'s lowest q because the failure being corrected is an index that skipped a sharp low-order reflection. Without that condition a single spurious sharp peak above the first reflection could change the call: dense series contain sparser ones (Lamellar `q, 2q, 3q` sits inside the Hexagonal, Square, Pn3m and Im3m series, and Im3m sits inside Pn3m with the same lattice constant), so a denser series holding the real peaks plus the spurious one would displace the correct index. A spurious sharp peak below the first reflection can displace `t` only through an index that contains all of `t`'s peaks as well.
+
+Known limit: the rule only overrides when one index strictly contains the other's peaks. If the higher-scoring index explains some peaks the sharper one does not, score order stands.
+
+`score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order, so the auto call can sit below a higher-scoring alternative. The displaced index shares peaks with the one picked, so it is not selected later.
 
 ## R² — not in the score
 

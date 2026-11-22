@@ -43,7 +43,7 @@ julia --project=. -e 'using Himalaya, Test; include("test/foo.jl")'
 
 `totalprom` and the `prom` field on `Index` no longer exist — the struct now has `sharpness::SparseVector`.
 
-`auto_group` (in `packages/HimalayaUI/src/pipeline.jl`) and `remove_subsets` (in `src/index.jl`) both depend on `score` ordering — correctness of auto-analysis flows from score quality.
+`auto_group` (in `packages/HimalayaUI/src/pipeline.jl`) and `remove_subsets` (in `src/index.jl`) both depend on `score` ordering (`auto_group` also lets an index that contains the top candidate's peaks plus a sharper peak below them displace it; see `docs/scoring.md`) — correctness of auto-analysis flows from score quality.
 
 R² is stored per index but is **NOT** part of `score`; it is surfaced informationally in the UI (a "fit R²" readout in the comb/residual chart). The old R²≥0.98 hard confirm gate was retired in the plotting-redesign — assignment is now ungated: the curator's assignment (`assignment_members` and its state) is the record of a phase decision, not a score threshold.
 

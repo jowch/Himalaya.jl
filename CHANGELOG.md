@@ -7,6 +7,15 @@ under `Unreleased` are application-level unless stated otherwise.
 
 ## Unreleased
 
+### Changed
+
+- **`auto_group` no longer orders purely by score.** At each step, if a compatible
+  candidate contains every peak of the top-scoring candidate plus a strictly
+  sharper peak below them, it is picked instead. A pattern with one sharp first reflection
+  and weak higher orders now calls Hexagonal rather than an Ia3d index fitted to
+  some of the weak peaks. Stored analyses are recomputed on the next analysis run
+  (`ANALYSIS_VERSION` is `+2`). See `docs/scoring.md`.
+
 ### Breaking changes
 
 - **`samples.label` removed; replaced by `name` (stable identifier, was column 3) and

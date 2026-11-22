@@ -15,7 +15,7 @@
     "frontend/src/shell/OnboardingFlow.tsx": 7,
     "src/db.jl": 605,
     "src/events.jl": 333,
-    "src/pipeline.jl": 427,
+    "src/pipeline.jl": 426,
     "src/routes_exposures.jl": 63,
     "src/routes_peaks.jl": 51,
     "src/speculative.jl": 239

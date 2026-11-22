@@ -4,13 +4,43 @@ using Tables
 using JSON3
 using HTTP: HTTP, Request
 
+function greedy_dominating(score_sorted, claims_of)
+    candidates = score_sorted
+    n = length(candidates)
+    qs  = [Float64.(collect(Himalaya.peaks(idx))) for idx in candidates]
+    shs = [Float64.(nonzeros(idx.sharpness)) for idx in candidates]
+    claim_sets = [claims_of(idx) for idx in candidates]
+    picked  = falses(n)
+    claimed = Set()
+    group   = eltype(candidates)[]
+    while true
+        free = [i for i in 1:n if !picked[i] && isempty(intersect(claim_sets[i], claimed))]
+        isempty(free) && break
+        t = first(free)
+        pick = t
+        if !isempty(qs[t])
+            tq   = qs[t]
+            tmax = maximum(shs[t])
+            tmin = minimum(tq)
+            k = findfirst(free) do a
+                a != t && all(in(qs[a]), tq) &&
+                    any(j -> shs[a][j] > tmax && qs[a][j] < tmin, eachindex(qs[a]))
+            end
+            k === nothing || (pick = free[k])
+        end
+        picked[pick] = true
+        push!(group, candidates[pick])
+        union!(claimed, claim_sets[pick])
+    end
+    group
+end
+
 """
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
 
-Greedily select a non-overlapping set of indices by descending score.
-An index is added to the group only if none of its peaks are already
-claimed by a previously selected index.
+Greedily select non-overlapping indices by score; a compatible index holding all
+of the top one's peaks plus a sharper peak below them displaces it (`docs/scoring.md`).
 
 The two-arg form claims by `eff.peak_id` (Int) — the membership test is
 on integer identity instead of `Float64` equality, so two indices whose
@@ -43,20 +73,10 @@ function auto_group(indices::Vector{<:Himalaya.Index},
         q_to_id[Float64(eff.q[i])] = Int(eff.peak_id[i])
     end
 
-    claimed = Set{Int}()
-    group   = eltype(indices)[]
-    for idx in sorted
-        idx_ids = Set{Int}()
-        for q in Himalaya.peaks(idx)
-            pid = get(q_to_id, Float64(q), nothing)
-            pid === nothing && continue  # arithmetically-derived q — won't claim
-            push!(idx_ids, pid)
-        end
-        isempty(intersect(idx_ids, claimed)) || continue
-        push!(group, idx)
-        union!(claimed, idx_ids)
-    end
-    group
+    ids_of(idx) = Set{Int}(pid for q in Himalaya.peaks(idx)
+                           for pid in (get(q_to_id, Float64(q), nothing),)
+                           if pid !== nothing)  # arithmetically-derived q — won't claim
+    greedy_dominating(sorted, ids_of)
 end
 
 function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
@@ -64,15 +84,7 @@ function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
     scores  = Himalaya.score.(indices)
     perm    = sortperm(scores; rev = true)
     sorted  = indices[perm]
-    claimed = Set{Float64}()
-    group   = eltype(indices)[]
-    for idx in sorted
-        idx_peaks = Set(Himalaya.peaks(idx))
-        isempty(intersect(idx_peaks, claimed)) || continue
-        push!(group, idx)
-        union!(claimed, idx_peaks)
-    end
-    group
+    greedy_dominating(sorted, idx -> Set{Float64}(Himalaya.peaks(idx)))
 end
 
 """
@@ -835,7 +847,7 @@ end
 # obviously file-I/O-free).
 # ──────────────────────────────────────────────────────────────────────────────
 
-const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+1")
+const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+2")
 
 function read_analysis_version(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     rows = Tables.rowtable(DBInterface.execute(db,
