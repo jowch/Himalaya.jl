@@ -1,6 +1,7 @@
 import type { IndexEntry } from "../../api";
 import { PhaseChip } from "../../print/ui/PhaseChip";
 import type { CallRow } from "../bonnetGroups";
+import { formatCurvature, gaussianCurvature } from "../curvature";
 import { Kbd } from "./Kbd";
 import { Note } from "./Note";
 
@@ -15,7 +16,7 @@ interface Props {
   onHover: (ids: readonly number[] | undefined) => void;
 }
 
-const ROW = "grid w-full items-center gap-2 rounded-sm border px-2 py-[5px] text-left text-base disabled:opacity-50 ";
+const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
 const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong");
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
@@ -29,7 +30,7 @@ export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, 
         disabled={disabled}
         onClick={onFormFactor}
         data-testid="workspace-form-factor"
-        className={ROW + "grid-cols-[auto_1fr] " + look(formFactor)}
+        className={ROW + "grid-cols-[auto_1fr] gap-2 py-[5px] " + look(formFactor)}
       >
         <Kbd>0</Kbd>
         <span>No phase (form factor)</span>
@@ -47,8 +48,10 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
   const candidateRow = (c: IndexEntry, inGroup: boolean) => {
     const on = assigned.has(c.id);
     const key = ++n;
+    const kappa = gaussianCurvature(c.phase, c.lattice_d);
+    const lattice = c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : "";
     return (
-      <li key={c.id} className={inGroup ? "pl-4" : undefined}>
+      <li key={c.id} className={inGroup ? "pl-2" : undefined}>
         <button
           type="button"
           aria-pressed={on}
@@ -56,11 +59,14 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
           onClick={() => onToggle(c)}
           onMouseEnter={() => onHover([c.id])}
           onFocus={() => onHover([c.id])}
-          className={ROW + "grid-cols-[auto_auto_1fr_auto] " + look(on)}
+          className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + look(on)}
         >
           <Key n={key} />
           <PhaseChip phase={c.phase} variant="solid" />
-          <span className="text-ink-soft">{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
+          <span className="min-w-0 truncate whitespace-nowrap text-ink-soft" title={kappa !== null ? `${lattice}, ${formatCurvature(kappa)}` : undefined}>
+            {lattice}
+            {kappa !== null && <span className="ml-1.5 text-xs" data-testid="workspace-candidate-curvature">{formatCurvature(kappa)}</span>}
+          </span>
           <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
         </button>
       </li>
@@ -74,6 +80,8 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
         const count = ids.filter((id) => assigned.has(id)).length;
         const pressed = count === ids.length ? true : count === 0 ? false : "mixed";
         const key = ++n;
+        const kappas = row.members.map((m) => gaussianCurvature(m.phase, m.lattice_d)).filter((k): k is number => k !== null);
+        const shared = kappas.length > 0 ? kappas.reduce((x, y) => x + y, 0) / kappas.length : null;
         return (
           <li key={`group-${ids.join("-")}`}>
             <button
@@ -84,10 +92,13 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
               onMouseEnter={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
-              className={ROW + "grid-cols-[auto_1fr_auto] " + (pressed === "mixed" ? "border-dashed border-ink-soft" : look(pressed === true))}
+              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + (pressed === "mixed" ? "border-dashed border-ink-soft" : look(pressed === true))}
             >
               <Key n={key} />
-              <span>Bonnet group</span>
+              <span className="min-w-0 truncate whitespace-nowrap">
+                Bonnet group
+                {shared !== null && <span className="ml-1.5 text-xs text-ink-soft" data-testid="workspace-bonnet-curvature">{formatCurvature(shared)}</span>}
+              </span>
               <span className="text-right text-ink-faint">{row.peaks} peaks</span>
             </button>
             <ol className="mt-1 flex flex-col gap-1">{row.members.map((m) => candidateRow(m, true))}</ol>

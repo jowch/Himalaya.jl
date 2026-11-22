@@ -57,7 +57,7 @@ const SAMPLE_LABEL_KEYS = new Set([
 ]);
 const INDEX_ENTRY_KEYS = new Set([
   "id", "exposure_id", "phase", "basis", "score", "r_squared",
-  "lattice_d", "ngc", "status", "kind", "inputs_hash",
+  "lattice_d", "status", "kind", "inputs_hash",
   "peaks", "predicted_q",
 ]);
 function mockFetchOnce(body: unknown, status = 200): void {
@@ -121,7 +121,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "peak_added",
       clientOpId: "op-shape-1",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      q: 0.42, payload: { q: 0.42 },
+      q: 0.42,
     });
     const list = qc.getQueryData<unknown[]>(queryKeys.peaks(5));
     expect(list).toHaveLength(1);
@@ -145,7 +145,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       clientOpId: "op-shape-2",
       exposureId: 5, username: "alice", clientId: "tab-1",
       peakId: 7, q: 0.5,
-      payload: { peakId: 7, q: 0.5 },
     });
     const list = qc.getQueryData<{ id: number }[]>(queryKeys.peaks(5));
     assertKeys(list!.find(p => p.id === 7)!, PEAK_KEYS,
@@ -168,7 +167,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       clientOpId: "op-shape-3",
       exposureId: 5, username: "alice", clientId: "tab-1",
       peakId: 7, q: 0.5,
-      payload: { peakId: 7, q: 0.5 },
     });
     const list = qc.getQueryData<{ id: number }[]>(queryKeys.peaks(5));
     assertKeys(list!.find(p => p.id === 7)!, PEAK_KEYS,
@@ -192,7 +190,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "peak_removed",
       clientOpId: "op-shape-4",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      peakId: 7, payload: { peakId: 7 },
+      peakId: 7,
     });
     const peaks = qc.getQueryData<unknown[]>(queryKeys.peaks(5));
     expect(peaks).toHaveLength(0);
@@ -214,7 +212,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "assignment_add",
       clientOpId: "op-asg-1",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      indexId: 42, payload: { indexId: 42 },
+      indexId: 42,
     });
     const a = qc.getQueryData<unknown>(queryKeys.assignment(5));
     assertKeys(a, ASSIGNMENT_KEYS, "addAssignmentPhase cache row");
@@ -230,7 +228,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "assignment_remove",
       clientOpId: "op-asg-2",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      indexId: 42, payload: { indexId: 42 },
+      indexId: 42,
     });
     assertKeys(qc.getQueryData(queryKeys.assignment(5)), ASSIGNMENT_KEYS, "removeAssignmentPhase cache row");
   });
@@ -247,7 +245,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "sample_call_set_state",
       clientOpId: "op-asg-3",
       sampleId: 1, username: "alice", clientId: "tab-1",
-      state: "form_factor", payload: { state: "form_factor" },
+      state: "form_factor",
     });
     for (const id of [5, 6]) {
       const a = qc.getQueryData<{ state: string; members: number[] }>(queryKeys.assignment(id));
@@ -263,9 +261,9 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     // present (the rollback snapshots the whole Assignment, so it is symmetric).
     qc.setQueryData(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
     const op1 = { kind: "assignment_add" as const, clientOpId: "c1", exposureId: 5,
-      username: "a", clientId: "t", indexId: 10, payload: { indexId: 10 } };
+      username: "a", clientId: "t", indexId: 10 };
     const op2 = { kind: "assignment_add" as const, clientOpId: "c2", exposureId: 5,
-      username: "a", clientId: "t", indexId: 11, payload: { indexId: 11 } };
+      username: "a", clientId: "t", indexId: 11 };
     const ctx1 = addAssignmentPhaseMutator.onMutate(op1, qc);
     const ctx2 = addAssignmentPhaseMutator.onMutate(op2, qc);
     // reverse-rollback
@@ -289,7 +287,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     // new one.
     mockFetchOnce({
       id: 77, exposure_id: 5, phase: "Pn3m", basis: 0.15, score: null, r_squared: null,
-      lattice_d: 197, ngc: -1.5, status: "candidate", kind: "speculative", inputs_hash: "h",
+      lattice_d: 197, status: "candidate", kind: "speculative", inputs_hash: "h",
       peaks: [{ peak_id: 3, ratio_position: 1, residual: 0.0, q_observed: 0.15 }],
       predicted_q: [0.15, 0.1837], bonnet: null,
       event_id: 30, view_row_id: 12,
@@ -298,7 +296,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "custom_index_commit", clientOpId: "op-ci-1",
       exposureId: 5, username: "alice", clientId: "tab-1",
       phase: "Pn3m", basis: 0.15, ratios: [1, 1.2247448714],
-      payload: { phase: "Pn3m", basis: 0.15, ratios: [1, 1.2247448714] },
     });
     type Claim = { peak_id: number; ratio_position: number; q_observed: number };
     const indices = qc.getQueryData<{ id: number; peaks: Claim[] }[]>(queryKeys.indices(5));
@@ -343,7 +340,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
     // Mock derived from routes_analysis.jl POST /speculative response (~line 374-397).
     mockFetchOnce({
       id: 99, exposure_id: 5, phase: "Pn3m", basis: 0.123,
-      score: 0.85, r_squared: 0.99, lattice_d: 50.0, ngc: 0.5,
+      score: 0.85, r_squared: 0.99, lattice_d: 50.0,
       status: "candidate", kind: "speculative", inputs_hash: "h-spec",
       peaks: [
         { peak_id: 7, ratio_position: 1, residual: 0.001, q_observed: 0.123 },
@@ -355,7 +352,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       clientOpId: "op-shape-8",
       exposureId: 5, username: "alice", clientId: "tab-1",
       phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [],
-      payload: { phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [] },
     });
     const indices = qc.getQueryData<unknown[]>(queryKeys.indices(5));
     expect(indices).toHaveLength(1);
@@ -380,7 +376,6 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       clientOpId: "op-shape-9",
       sampleId: 10, experimentId: 1, username: "alice", clientId: "tab-1",
       display_name: "new",
-      payload: { sampleId: 10 },
     });
     const row = qc.getQueryData<{ notes: string }[]>(queryKeys.samples(1))![0];
     assertKeys(row!, SAMPLE_KEYS, "updateSample list cache row");
@@ -406,7 +401,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "peak_removed",
       clientOpId: "op-collide-rm",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      peakId: 3, payload: { peakId: 3 },
+      peakId: 3,
     });
     const after = qc.getQueryData<{ id: number; source: string }[]>(queryKeys.peaks(5))!;
     expect(after).toHaveLength(1);
@@ -430,7 +425,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       kind: "peak_excluded",
       clientOpId: "op-collide-ex",
       exposureId: 5, username: "alice", clientId: "tab-1",
-      peakId: 3, q: 0.075, payload: { peakId: 3, q: 0.075 },
+      peakId: 3, q: 0.075,
     });
     const after = qc.getQueryData<{ id: number; source: string; excluded: boolean }[]>(queryKeys.peaks(5))!;
     expect(after.find(p => p.source === "auto")!.excluded).toBe(true);
@@ -450,7 +445,7 @@ describe("Cache-shape integrity (mutator onSuccess writes type-shaped rows)", ()
       { id: 4, sample_id: 10, label: "buffer", state: "suggested", source: "ingest" },
     ];
     const flat = {
-      kind, clientOpId: `op-${kind}`, payload: {},
+      kind, clientOpId: `op-${kind}`,
       sampleId: 10, label: "Buffer", experimentId: 1, username: "alice", clientId: "tab-1",
     };
     mutator.onMutate(flat, qc);

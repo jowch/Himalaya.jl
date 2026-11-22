@@ -11,7 +11,7 @@ function frame(kind: string, entity_id: number, payload: Record<string, unknown>
   return { kind, entity_id, entity_type: "sample", payload } as unknown as SseEvent;
 }
 
-const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "add_label", payload: {}, experimentId: 7 } as const;
+const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "add_label", experimentId: 7 } as const;
 
 function row(id: number, sample_id: number, label: string, state: SampleLabel["state"] = "confirmed"): SampleLabel {
   return { id, sample_id, label, state, source: "user" };

@@ -29,9 +29,9 @@ const assignmentRow = { exposure_id: 5, state: "indexed", members: [42], event_i
 describe("corpus sample status follows the calls that derive it", () => {
   describe("own op: mutator onSuccess", () => {
     it.each([
-      ["assignment_add", () => addAssignmentPhaseMutator.onSuccess({ ...scope, indexId: 42 }, assignmentRow as never, qc)],
-      ["assignment_remove", () => removeAssignmentPhaseMutator.onSuccess({ ...scope, indexId: 42 }, assignmentRow as never, qc)],
-      ["sample_call_set_state", () => setSampleCallStateMutator.onSuccess({ ...scope, state: "form_factor" }, { sample_id: 1, state: "form_factor", members: [] } as never, qc)],
+      ["assignment_add", () => addAssignmentPhaseMutator.onSuccess({ ...scope, kind: "assignment_add", indexId: 42 }, assignmentRow as never, qc)],
+      ["assignment_remove", () => removeAssignmentPhaseMutator.onSuccess({ ...scope, kind: "assignment_remove", indexId: 42 }, assignmentRow as never, qc)],
+      ["sample_call_set_state", () => setSampleCallStateMutator.onSuccess({ ...scope, kind: "sample_call_set_state", state: "form_factor" }, { sample_id: 1, state: "form_factor", members: [] } as never, qc)],
       ["select_exposure", () => selectExposureMutator.onSuccess(scope as never, { id: 5, selected: true }, qc)],
       ["set_exposure_status", () => setExposureStatusMutator.onSuccess({ ...scope, status: "rejected" } as never, { id: 5, status: "rejected" }, qc)],
     ])("%s invalidates the corpus samples", (_kind, run) => {
