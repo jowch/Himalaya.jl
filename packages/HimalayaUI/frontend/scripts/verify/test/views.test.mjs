@@ -5,20 +5,20 @@ import { tracked } from "../settle.mjs";
 
 test("the pressed thumbnail's frame number maps to the exposure list order", () => {
   const order = ["a_S1", "a_S2", "a_S3"];
-  assert.equal(frameFromLabels(["Frame 2, representative"], order), "a_S2");
-  assert.equal(frameFromLabels(["Frame 3, dropped"], order), "a_S3");
+  assert.equal(frameFromLabels(["Image 2, representative"], order), "a_S2");
+  assert.equal(frameFromLabels(["Image 3, dropped"], order), "a_S3");
   assert.equal(frameFromLabels([], order), null);
-  assert.equal(frameFromLabels(["Frame 1", "Frame 2"], order), null);
-  assert.equal(frameFromLabels(["Frame 9"], order), null);
-  assert.equal(frameFromLabels(["Frame 1 of A3 in Long pipe"], order), null);
+  assert.equal(frameFromLabels(["Image 1", "Image 2"], order), null);
+  assert.equal(frameFromLabels(["Image 9"], order), null);
+  assert.equal(frameFromLabels(["Image 1 of A3 in Long pipe"], order), null);
 });
 
 test("the workspace's frame cards give kept / total", () => {
-  assert.equal(keptFromLabels(["Frame 1", "Frame 2, dropped", "Frame 3"]), "2/3");
-  assert.equal(keptFromLabels(["Frame 1, dropped"]), "0/1");
+  assert.equal(keptFromLabels(["Image 1", "Image 2, dropped", "Image 3"]), "2/3");
+  assert.equal(keptFromLabels(["Image 1, dropped"]), "0/1");
   assert.equal(keptFromLabels(["Drop", "Restore"]), null);
   assert.equal(keptFromLabels([]), null);
-  assert.equal(keptFromLabels(["Frame 1", "Frame 1 of A3, dropped", "Frame 2 of A3"]), "1/1");
+  assert.equal(keptFromLabels(["Image 1", "Image 1 of A3, dropped", "Image 2 of A3"]), "1/1");
 });
 
 test("status text maps onto the sample states", () => {

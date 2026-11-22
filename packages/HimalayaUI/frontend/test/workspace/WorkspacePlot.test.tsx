@@ -10,7 +10,7 @@ describe("WorkspacePlot", () => {
     const { rerender } = render(<WorkspacePlot trace={undefined} peaks={[]} combs={[]} />);
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("");
     rerender(<WorkspacePlot trace={{ q: [], I: [], sigma: [] } as never} peaks={[]} combs={[]} />);
-    expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("This frame's trace has no points.");
+    expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("This image's trace has no points.");
   });
 
   it("puts the q label in the tick row, below the data, without a tick label under it", () => {
