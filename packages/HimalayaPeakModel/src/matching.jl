@@ -1,8 +1,8 @@
 const PEAK_MATCH_POINTS = 6
 
 """
-Tolerance for attaching a curation to a peak: 6 grid points when the grid step
-is known, else `max(1e-6, 0.001·|q|)`. HimalayaUI uses this same function for
+Tolerance for attaching a curation to a peak: `max(1e-6, 0.001·|q|)`, raised
+to 6 grid points when the grid step is known and that is larger. HimalayaUI uses this same function for
 curation matching, so labels and the app agree.
 """
 function peak_match_tol(q::Real, q_step)

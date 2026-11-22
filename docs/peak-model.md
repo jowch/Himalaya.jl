@@ -85,16 +85,25 @@ detector on screen (`ANALYSIS_VERSION` plus model id), and the curation.
 Training reads only snapshots, using each exposure's latest one for the peaks
 the user saw and all its curations as they stand now.
 
-Labels for training (all by q, matched with the app's tolerance):
+Labels for training (all by q). They use the app's tolerance function,
+`peak_match_tol`, with the grid step taken from the trace and an
+any-candidate-within-tolerance test, whereas the app attaches each curation to
+its single nearest auto peak using `exposures.q_step`. Rules are applied in
+order, first match wins:
 
 | Evidence | Label |
 |---|---|
-| `add` curation | positive |
-| `exclude` curation, whether or not an auto peak still matches it | strong negative |
-| snapshot peak left alone, `found_by` = `hybrid` or `both` | positive (as today) |
-| snapshot peak left alone, `found_by` = `model` | dropped, with candidates within tolerance of it |
-| every candidate on a form-factor exposure | strong negative |
-| other candidates on a reviewed exposure | weak negative |
+| nearest candidate to an `add` curation | positive |
+| nearest candidate to a snapshot peak left alone, `found_by` = `hybrid` or `both` | positive |
+| other candidates within tolerance of a positive | dropped |
+| candidates within tolerance of a snapshot peak left alone, `found_by` = `model` | dropped |
+| candidates within tolerance of an `exclude` curation, whether or not an auto peak still matches it | strong negative |
+| remaining candidates on a form-factor exposure | strong negative |
+| remaining candidates on a reviewed exposure | weak negative |
+
+Kept peaks count as positives on every reviewed exposure. Today the tool
+counts them only on exposures with at least one add or exclude, so this widens
+the positive set.
 
 Excludes are labelled at their own q (every candidate within the match
 tolerance of an exclude is a strong negative): after a re-analysis many excludes match
@@ -125,9 +134,10 @@ runs, all `found_by = hybrid`.
   and the core version, so they are cached per trace hash as raw Float32
   arrays in files next to the database (derived data, safe to delete; a raw
   array runs no code when read). Whoever can write that directory can alter
-  training inputs, which is the same trust as write access to the database. About 7k exposures × 30 candidates × 28
-  features is on the order of 25 MB as Float32, against roughly 100 MB as JSON
-  inside the database.
+  training inputs, which is the same trust as write access to the database. For
+  a hypothetical database of 10,000 exposures with 30 candidates of 28
+  features each, that is about 34 MB as Float32, against well over 100 MB as
+  JSON inside the database.
 - **Cold start.** No model is trained until the database has at least 100
   add and exclude curations across at least 30 curated exposures, in at least
   3 experiments (or 5 samples, grouping by sample, when it has fewer
@@ -166,14 +176,16 @@ by at least 25% in adds and excludes since the active model's watermark and
 the new one passes the hybrid comparison, so models do not churn.
 
 The threshold is the one that maximises add recall within the peaks caps. Adds
-in the high-q band the detectors trim (top 7% of the q range) are reported
+in the high-q band the detector trims (the top 7% of the q range for the
+hybrid, 5% for the persistence default) are reported
 separately and left out of add recall. A run that fails is recorded and
 production stays.
 
 ## Storage
 
 - Table `peak_models` (migration): id, created_at, status (`active`,
-  `pending`, `rejected`, `retired`), label watermark, counts, threshold,
+  `pending`, `rejected`, `retired`), label watermark, counts, threshold and
+  non-maximum-suppression window,
   metrics JSON (the cross-validated tables and the production comparison),
   feature version, core version, and the forest.
 - The forest is stored as JSON (each tree as nested split and leaf nodes) in
@@ -198,9 +210,10 @@ production stays.
   queries, `ingest_has_work` and the experiment-open scan never see a
   promotion: no "Analyzing" badge and no ingest notice.
 - One function resolves the production detector for a database (the active
-  model, or the hybrid), and every caller that detects peaks uses it:
-  `analyze_exposure!`, the CLI's `analyze` and `merge`, and the migration that
-  backfills versions.
+  model, or the hybrid). `analyze_exposure!` is the only code path that
+  detects peaks (the CLI's `analyze` and the ingest pass both go through it),
+  so it is the one caller; code that only stamps versions, such as the
+  migration that backfills `analysis_version`, must not stamp a model version.
 - A promotion starts a **model pass** over unreviewed exposures whose
   `peak_model_version` differs, one at a time, newest experiments first, after
   any previous pass has finished. It calls `analyze_exposure!` with a
@@ -235,13 +248,13 @@ deployment.
 
 ## Packaging
 
-HimalayaUI cannot depend on the tool while the tool depends on HimalayaUI.
-The features, model and cross-validation code move into a package that
-depends only on Himalaya (for example `packages/HimalayaPeakModel`). The
-database loader moves into HimalayaUI and takes an open database handle. The
-command-line tool keeps working on top of both, with its read-only open. Adding
-DecisionTree.jl to HimalayaUI's dependencies adds it to the sysimage; training
-and prediction go into the precompile workload.
+Done in step 1. The features, labels, model and cross-validation live in
+`packages/HimalayaPeakModel`, which depends only on Himalaya and DecisionTree.
+The database loader is `HimalayaUI.labeled_exposures(db)`, taking an open
+handle. The command-line tool `tools/peak-classifier/` sits on top of both and
+keeps its read-only open. HimalayaUI depends on HimalayaPeakModel, so
+DecisionTree is in the sysimage; prediction goes into the precompile workload
+in step 4.
 
 ## Privacy
 
@@ -252,7 +265,8 @@ cache are lab data like the rest of the database and are never exported.
 ## Delivery
 
 1. Packaging: move features, model and cross-validation into the new package;
-   loader takes a database handle; tool unchanged for users.
+   loader takes a database handle; the tool keeps its CLI, and excludes that
+   no longer match an auto peak now count as negatives.
 2. Provenance and pinning: `found_by`, `model_id`, `reviewed_at`, review
    snapshots and the snapshot-based labels. No peak changes.
 3. Training service: `peak_models` table, feature cache, child-process
@@ -269,8 +283,8 @@ of fold), reported here in aggregate terms only.
 
 - **Phase calls.** With classifier peaks scored through the same
   `auto_group` rule and sharpness as the hybrid's, top-1 phase calls on
-  confirmed exposures tie the hybrid at the default threshold (within one
-  call, with roughly equal paired wins and losses) and are worse at a stricter
+  confirmed exposures tie the hybrid at the default threshold (with roughly
+  equal paired wins and losses) and are worse at a stricter
   threshold. The gate therefore requires calls not to fall rather than to
   improve.
 - **Missed peaks.** The classifier recovers markedly more of the peaks users

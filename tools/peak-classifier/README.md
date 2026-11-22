@@ -38,7 +38,7 @@ fold key), `--no-form-factor`, `--no-detector-features` (drop the
 `predict_peaks(load_model(path), q, I, σ)`.
 
 A model file is a Julia `Serialization` dump: it loads only on the same Julia
-and DecisionTree.jl versions. Retrain after upgrading. Loading it runs
+and DecisionTree.jl versions, and only with the version of this tool that wrote it (model files from before the HimalayaPeakModel package cannot be read). Retrain after upgrading. Loading it runs
 arbitrary code from the file, so load only models you trained yourself. Pass
 the trace's `σ` to `predict_peaks` when you have it; without it `σ` is
 estimated, and predictions can differ from what was validated.

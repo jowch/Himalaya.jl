@@ -34,9 +34,13 @@ end
 
     bad = joinpath(mktempdir(), "bad.jls")
     open(bad, "w") do io
-        Serialization.serialize(io, (version = 2, julia = "x", model = m))
+        Serialization.serialize(io, (version = 1, julia = "x", model = m))
     end
     @test_throws ErrorException load_model(bad)
+
+    unreadable = joinpath(mktempdir(), "unreadable.jls")
+    write(unreadable, "not a model")
+    @test_throws ErrorException load_model(unreadable)
 end
 
 function write_dat(path, q, I, σ)
