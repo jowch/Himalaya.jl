@@ -4,6 +4,12 @@ using Tables
 using JSON3
 using HTTP: HTTP, Request
 
+function sharpest_first(sorted, has_sharpest)
+    k = findfirst(has_sharpest, sorted)
+    (k === nothing || k == 1) && return sorted
+    vcat(sorted[k:k], sorted[1:k-1], sorted[k+1:end])
+end
+
 """
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
@@ -29,13 +35,6 @@ the contract holds by construction.
 The one-arg form falls back to q-value equality (`Set{Float64}`) and is
 retained for test fixtures that don't materialize an `eff` tuple.
 """
-# Moves the first element satisfying `has_sharpest` to the front; the rest keep their order.
-function sharpest_first(sorted, has_sharpest)
-    k = findfirst(has_sharpest, sorted)
-    (k === nothing || k == 1) && return sorted
-    vcat(sorted[k:k], sorted[1:k-1], sorted[k+1:end])
-end
-
 function auto_group(indices::Vector{<:Himalaya.Index},
                     eff::NamedTuple)::Vector{<:Himalaya.Index}
     isempty(indices) && return indices
