@@ -15,17 +15,9 @@ import { ErrorBoundary } from "../ErrorBoundary";
 // capture CLI reads but the runtime does not). Kept here, not in registry.ts,
 // because the Vite HMR plugin rewrites registry.ts without preserving any
 // configureBoneyard call.
-// U-2 (#255): skeletons are `paper-sunk` shimmer on the warm paper field, NOT
-// the dark near-black blocks the dark era used (the milestone retired those).
-// boneyard's `color` is a plain CSS string applied before any element exists,
-// so a `var(--…)` may not resolve here — use the oklch literal matching
-// `--color-paper-sunk`. Detector-window skeletons override this per-component
-// with a `frame-edge` fill (the window is dark even while loading). `darkColor`
-// mirrors `color` — there is no dark mode, so it only guards against a stray
-// dark fallback.
 configureBoneyard({
   color: "oklch(0.951 0.008 84)",
-  darkColor: "oklch(0.951 0.008 84)",
+  darkColor: "oklch(0.140 0.005 280)",
   animate: "pulse",
   boneClass: "bone",
 });
