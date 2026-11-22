@@ -7,6 +7,7 @@ Peak-finding and phase-indexing algorithms for 1D SAXS traces.
 | Task | Location | Notes |
 |------|----------|-------|
 | Peak finding | `peakfinding.jl` | AND-gate of prominence + sharpness; adaptive kneedle thresholding |
+| Hybrid detector (opt-in) | `matchedfilter.jl` | SNIP + Ricker matched-filter z; `findpeaks(...; method = :hybrid)` merges it with the persistence peaks |
 | Persistence helper | `persistence.jl` | Topological persistence via Peaks.jl |
 | Sharpness | `sharpness.jl` | Savitzky-Golay 2nd derivative or CWT |
 | Thresholding | `threshold.jl` | Kneedle elbow finder |
