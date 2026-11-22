@@ -185,7 +185,7 @@ folder name) and `included`. Any other field is a `400`. It logs a
 `setup_updated` event and broadcasts it, and the palette's Settings page edits
 both (undoable). In the workspace, samples of hidden setups are left out of the
 list, Z, the progress count and every picker, and bridges or comparisons to them
-stay stored but are not drawn. With more than one shown setup, the sample list
+stay stored but are not shown. With more than one shown setup, the sample list
 is grouped under a sticky header per setup.
 
 ### Migration from one experiment per setup

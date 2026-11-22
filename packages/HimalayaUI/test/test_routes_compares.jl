@@ -189,5 +189,9 @@ end
         @test cc(Set([1, 2]), 2, Int[], [2], true, 1) == Dict(:remove => [2], :subtraction => 1)
         @test cc(Set([1]), 1, Int[], Int[], true, 1) == Dict()
         @test cc(Set{Int}(), nothing, [3], [3], false, nothing) == Dict()
+        @test cc(Set([1]), 2, [2], Int[], false, nothing) == Dict(:add => [2], :subtraction => nothing)
+        @test cc(Set([1]), 2, Int[], [1], false, nothing) == Dict(:remove => [1], :subtraction => nothing)
+        @test cc(Set([1]), 2, Int[], Int[], false, nothing) == Dict()
+        @test cc(Set([1]), 2, [2], Int[], true, 2) == Dict(:add => [2])
     end
 end
