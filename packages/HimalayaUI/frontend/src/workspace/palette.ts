@@ -36,7 +36,7 @@ export interface WorkspacePaletteInput extends AppActions {
     subtracted: number | undefined;
     subtract: (id: number) => void;
   };
-  bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: boolean; leave: () => void };
+  bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: readonly string[]; leave: () => void };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
     known: readonly PaletteLabel[];
@@ -250,10 +250,10 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
   if (p.settings) pages.settings = settingsPage(p.settings);
   if (p.canEdit) {
     pages.bridge = {
-      title: "Bridge to",
+      title: "Same sample as",
       arg: "Sample",
       deep: true,
-      empty: "No samples left to bridge to.",
+      empty: "No other samples.",
       items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) })),
     };
     if (p.candidates.list.length > 0) {
@@ -310,8 +310,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
     ...(pages.subtract ? [{ id: "subtract", label: "Subtract a comparison", page: "subtract" }] : []),
     ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
-    ...(p.canEdit ? [{ id: "bridge", label: "Bridge to a sample", page: "bridge" }] : []),
-    ...(p.canEdit && p.bridge.bridged ? [{ id: "unbridge", label: "Take this sample out of its bridges", run: p.bridge.leave }] : []),
+    ...(p.canEdit ? [{ id: "bridge", label: "Same sample as…", page: "bridge" }] : []),
+    ...(p.canEdit && p.bridge.bridged.length > 0 ? [{ id: "unbridge", label: `Not the same sample as ${p.bridge.bridged.join(", ")}`, run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),
     { id: "custom", label: "Custom index", shortcut: "I", run: p.customIndex },
     ...(p.canEdit ? [{ id: "form-factor", label: p.formFactor.on ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: p.formFactor.toggle }] : []),
