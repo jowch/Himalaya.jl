@@ -2830,7 +2830,7 @@ describe("WorkspacePage", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }];
     act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same sample as MO_H2O (setup2)")).toBeInTheDocument();
+    expect(screen.getByTitle("Same sample as MO_H2O in setup2")).toBeInTheDocument();
     expect(within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: "MO_PEG5, setup2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "c" });
     const picker = screen.getByRole("dialog", { name: "Compare with a sample" });

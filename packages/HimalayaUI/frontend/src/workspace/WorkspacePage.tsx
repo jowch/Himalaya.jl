@@ -358,7 +358,7 @@ export function WorkspacePage(): JSX.Element {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
     return bridged.map((r) => {
       const setup = sampleSetup.get(r);
-      return `${names.get(r) ?? `Sample ${r}`}${setup ? ` (${setup})` : ""}`;
+      return `${names.get(r) ?? `Sample ${r}`}${setup ? ` in ${setup}` : ""}`;
     });
   }, [bridged, inExperiment, sampleSetup]);
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
