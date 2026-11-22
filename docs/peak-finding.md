@@ -192,11 +192,14 @@ but alone it adds more spurious candidates than the persistence detector.
    - `zraw` is defined at it;
    - the max of `zraw` over the widths and the points within ±3 is below `kb`
      (default 5);
-   - no width there is blocked by a masked run.
+   - no width there is blocked by missing data: its window covers a missing
+     point or would cross a span edge next to a beamstop.
 
    This removes persistence peaks that are not significant against the noise.
    A peak too close to the trace ends for any kernel to be centred on it is
-   kept, as the default path would. So is a peak next to a masked run, where
+   kept, as the default path would. So is a peak next to missing data (a masked
+   run, a beamstop at either end, or a single nonfinite point, which blocks up to
+   64 points on each side for the widest kernel), where
    the wide kernels that would see a broad peak are not defined.
 4. Add local maxima of `z` (the max over the widths defined at a point) with
    `z ≥ k` (default 20). Each must be:
@@ -225,7 +228,7 @@ the peaks the hybrid adds, and the median keeps them neutral.
 Without `σ`, `findpeaks(q, I; method = :hybrid)` estimates
 `σ² = g·max(I, 0)`, clamped from below at a noise scale `s` taken from second
 differences (`1.4826·MAD/√6`, then their standard deviation over `√6` for
-quantised counts, then `mean(|I|)`). The gain `g` is the median of
+quantised counts, then `mean(|I|)`, then 1). The gain `g` is the median of
 `(d²/6)/I` over points with `I > 3s`, divided by 0.455. All of `g`, `s` and `I`
 scale with the intensity units. Both noise scales are estimated from the trace
 itself, so only the relative shape of `σ` matters.

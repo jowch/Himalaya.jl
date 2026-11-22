@@ -220,8 +220,8 @@ end
 # - `Z`: n × length(MF_WIDTHS), each width on its own clipped scale;
 # - `zraw`: per point, the max over widths of the response on the
 #   second-difference scale (`mf_white_scale`);
-# - `blocked`: points where some width fits in the span but covers a missing
-#   point.
+# - `blocked`: points where some width's window covers a missing point, or
+#   would cross a span edge that borders a missing run (a masked beamstop).
 # See `matched_filter_z`.
 function mf_width_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     n = length(I)
@@ -254,6 +254,9 @@ function mf_width_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
         h = (length(k) - 1) ÷ 2
         fill!(zw, NaN)
         fill!(use, false)
+        # A span edge next to a missing run blocks like an interior run does.
+        a > 1 && (blocked[seg[1:min(h, m)]] .= true)
+        b < n && (blocked[seg[max(1, m - h + 1):m]] .= true)
         @inbounds for i in (h + 1):(m - h)
             if cmiss[i + h + 1] - cmiss[i - h] > 0
                 blocked[seg[i]] = true
@@ -288,8 +291,10 @@ end
 # Noise scale of I relative to σ from second differences, which a smooth
 # background barely affects: the clipped scale (`mf_noise_scale`) of
 # (I[i-1] - 2I[i] + I[i+1]) / sqrt(σ[i-1]² + 4σ[i]² + σ[i+1]²) over triples with
-# no missing point, so the curvature of sharp peaks is removed as signal. 1 when
-# there are too few such triples or the scale is zero.
+# no missing point, so the curvature of sharp peaks is removed as signal. When
+# that scale is undefined (mostly zero differences, as in sparse counts) it is
+# their standard deviation, as in `second_difference_scale`; 1 if that is also
+# zero or there are no triples.
 function mf_white_scale(I, σ, missing)
     m = length(I)
     d = zeros(m)
@@ -303,7 +308,12 @@ function mf_white_scale(I, σ, missing)
         use[i] = true
     end
     est = mf_noise_scale(d, use, 2)
-    est === nothing ? 1.0 : est[2]
+    est === nothing || return est[2]
+    v = d[use]
+    isempty(v) && return 1.0
+    mu = sum(v) / length(v)
+    sd = sqrt(sum(abs2, v .- mu) / length(v))
+    sd > 0 ? sd : 1.0
 end
 
 """
@@ -323,7 +333,7 @@ A width is defined at a point when its kernel fits inside the span and covers
 no missing point. Each width is normalised by a noise centre and scale
 estimated from its own values with signal removed (`mf_noise_scale`), so dense
 or strong peaks do not inflate the scale. A width with too few signal-free
-points is skipped. The maximum at a point runs over the widths defined there;
+points, or zero spread among them, is skipped. The maximum at a point runs over the widths defined there;
 where none is, the value is `NaN`. Nonpositive or nonfinite `σ` are replaced by
 the smallest positive `σ` (or 1 if there is none).
 """
@@ -403,9 +413,10 @@ end
 
 # Combine persistence-detector peaks with matched-filter peaks. A persistence
 # peak is dropped only if `zraw` is defined at it, stays below `kb` within ±3
-# points, and no kernel there is `blocked` by a masked run: too close to the
-# trace ends no kernel is centred on the peak, and next to a masked run the
-# wide kernels cannot see a broad peak, so it is kept. `zraw` is judged against the
+# points, and no kernel there is `blocked` by missing data: too close to the
+# trace ends no kernel is centred on the peak, and next to missing data (a
+# masked run, including a beamstop at either end, or a single nonfinite point)
+# the wide kernels cannot see a broad peak, so it is kept. `zraw` is judged against the
 # second-difference noise scale, not the per-width clipped scale, so a trace
 # that is mostly signal cannot lower it. An added peak is a local maximum of the
 # clipped z with z ≥ k, more than `sep` points from every kept peak, that passes
