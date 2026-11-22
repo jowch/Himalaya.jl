@@ -30,6 +30,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test s.exposures[1].filename == "example_tot"
         @test length(s.exposures[1].indices) >= 1
         @test collect(s.labels) == ["Buffer", "37C"]
+        @test s.call_state == "uncalled"
+        @test s.phase === nothing
+        @test !s.exposures[1].called
         @test !haskey(s, :tags)
 
         # CSV
@@ -38,7 +41,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test occursin("text/csv", HTTP.header(r, "Content-Type"))
         csv_body = String(r.body)
         @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,phases")
-        @test occursin("D1,example_tot", csv_body)
+        @test occursin("D1,example_tot,uncalled,,", csv_body)
         @test strip(last(split(first(split(csv_body, "\n")), ","))) == "labels"
         @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C")
 

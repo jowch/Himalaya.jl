@@ -189,12 +189,17 @@ function cli_show(args)
     idx === nothing && error("sample $(p[:sample]) not found")
     sample_row = samples[idx]
 
-    exposures = get_exposures(db, Int(sample_row.id))
+    sid   = Int(sample_row.id)
+    state = sample_call_state(db, sid)
+    ms    = get(sample_call_members(db, [sid]), sid, [])
+    phases = call_summary(state, ms).call_phases
+    println("Call: ", export_call_state(state, ms), isempty(phases) ? "" : " ($(join(phases, ", ")))")
+
+    exposures = get_exposures(db, sid)
     for exp_row in exposures
         e_id    = Int(exp_row.id)
         pks     = get_peaks_for_exposure(db, e_id)
         idxs    = get_indices_for_exposure(db, e_id)
-        groups  = get_groups_for_exposure(db, e_id)
 
         println("\nExposure: $(exp_row.filename)")
         println("  Peaks ($(length(pks))):")
@@ -207,10 +212,6 @@ function cli_show(args)
             println("    ", rpad(ix.phase, 6), "  basis=", _fmt(ix.basis, "%.4f"),
                     "  score=", _fmt(ix.score, "%.3f"), "  R²=", _fmt(ix.r_squared, "%.4f"),
                     "  d=", _fmt(ix.lattice_d, "%.2f"))
-        end
-        active = findfirst(g -> g.active == 1, groups)
-        if active !== nothing
-            println("  Active group: $(groups[active].kind)")
         end
     end
 end

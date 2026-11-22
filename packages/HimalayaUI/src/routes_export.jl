@@ -5,7 +5,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
 
 Compose the per-sample summary used by both JSON and CSV exports.
 Each sample carries its phase call (`call_state`, `phase`, `call_phases`), as
-the Call list shows it. When the sample is called (`indexed` with members),
+the Call list shows it. `call_state` is `uncalled` until someone ticks a
+candidate, else `indexed`, `form_factor` or `null`. When the sample is called (`indexed` with members),
 each exposure's `indices` are the call's members on that exposure and
 `called` is true; otherwise they are all candidate indices by score.
 """
@@ -49,7 +50,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
             :name        => sm.name,
             :notes       => sm.notes isa Missing ? nothing : sm.notes,
             :labels      => labels,
-            :call_state  => state,
+            :call_state  => export_call_state(state, ms),
             :phase       => summary.phase,
             :call_phases => summary.call_phases,
             :exposures   => ex_out,
