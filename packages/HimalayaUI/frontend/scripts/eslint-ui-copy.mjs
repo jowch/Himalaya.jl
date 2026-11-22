@@ -5,14 +5,21 @@ const COPY_ATTRS = new Set([
 const COPY_KEYS = new Set(["what", "gesture", "hint", "label", "title", "description", "message", "placeholder", "content", "note"]);
 
 const VOCABULARY = [
-  { re: /\bexposures?\b(?!\s+times?\b)/i, word: "exposure", use: "image", why: "The UI calls one detector image of a sample an \"image\". \"Exposure\" stays only in \"exposure time\"." },
+  { re: /(?<!\btotal\s)\bexposures?\b(?!\s+times?\b|\s*\(s\))/i, word: "exposure", use: "image", why: "The UI calls one detector image of a sample an \"image\". \"Exposure\" stays only for time: \"exposure time\", \"Exposure (s)\", \"total exposure\"." },
   { re: /\bframes?\b/i, word: "frame", use: "image", why: "The UI calls one detector image of a sample an \"image\"." },
   { re: /\btag(s|ged|ging)?\b/i, word: "tag", use: "label", why: "Tags were renamed labels." },
   { re: /\bmut(e|es|ed|ing)\b/i, word: "mute", use: "Drop", why: "Use the plain literal verb: an image is dropped or restored." },
 ];
 
-const GESTURE = /(^|[\s(,;:])(\S*[Cc]lick|Enter|Esc|Escape|Return|Space|Tab|Drag|Scroll)\s+([a-z]+s)\b/;
-const NOT_VERBS = new Set(["is", "was", "has", "does", "this", "its", "groups", "bars", "keys", "always", "towards", "sometimes"]);
+const HINT_VERBS = [
+  "add", "remove", "hide", "show", "open", "close", "cancel", "confirm", "subtract", "toggle", "drop", "restore",
+  "select", "move", "zoom", "reset", "commit", "clear", "apply", "create", "delete", "undo", "redo", "enlarge",
+  "nudge", "pick", "tick", "untick", "compare", "fill", "complete", "save", "go", "jump", "stop", "start", "keep",
+  "mark", "set", "switch", "focus", "expand", "collapse", "filter", "run", "copy", "rename", "edit", "accept",
+  "dismiss", "insert", "step", "pan", "scale", "shift", "turn", "use", "include", "exclude", "label", "call", "back",
+];
+const VERB_FORMS = HINT_VERBS.map((v) => (/(sh|ch|x|ss|z|o)$/.test(v) ? `${v}es` : /[^aeiou]y$/.test(v) ? `${v.slice(0, -1)}ies` : `${v}s`));
+const GESTURE = new RegExp(`(^|[\\s(,;:])(\\S*[Cc]lick|Enter|Esc|Escape|Return|Space|Tab|Drag|Scroll|Backspace|Delete)\\s+(${VERB_FORMS.join("|")})\\b`);
 const ABBREVIATIONS = /\b(e\.g|i\.e|vs|etc|cf|approx|no)\.(?=\s)/gi;
 const SENTENCE_BREAK = /[.!?]\s+\S/;
 const INSTRUCTION = /^(\S*[Cc]lick|Press|Drag|Scroll|Hold)\b.*\bto\b/;
@@ -21,7 +28,8 @@ const NOT_COPY_ATTRS = /^(className|class|style|data-|id$|key$|to$|href$|src$|ro
 const TITLE_CASE = /^[A-Z][a-z]+(\s+[A-Z][a-z]+){2,}$/;
 
 function stem(verb) {
-  if (/(sh|ch|x|ss|z)es$/.test(verb)) return verb.slice(0, -2);
+  if (/ies$/.test(verb)) return `${verb.slice(0, -3)}y`;
+  if (/(sh|ch|x|ss|z|o)es$/.test(verb)) return verb.slice(0, -2);
   return verb.slice(0, -1);
 }
 
@@ -80,12 +88,26 @@ function handled(node) {
   return false;
 }
 
+function flatText(node) {
+  if (node.type === "JSXText") return node.value;
+  if (node.type === "JSXExpressionContainer") {
+    const t = node.expression && textOf(node.expression);
+    return t ? t.text : "${}";
+  }
+  if (node.type === "JSXElement" || node.type === "JSXFragment") return node.children.map(flatText).join("");
+  return "";
+}
+
+function hasElementChild(node) {
+  return node.children.some((c) => c.type === "JSXElement");
+}
+
 function check(context, node, raw, { template, whole }) {
   const text = raw.replace(/\s+/g, " ").trim();
   if (!/[A-Za-z]{2}/.test(text)) return;
 
   const g = GESTURE.exec(text);
-  if (g && !NOT_VERBS.has(g[3])) {
+  if (g) {
     const gesture = g[2].replace("${}", "⌘");
     context.report({ node, messageId: "telegraphic", data: { found: `${g[2]} ${g[3]}`, fix: fixFor(gesture, g[3]) } });
   }
@@ -117,6 +139,15 @@ const rule = {
   },
   create(context) {
     return {
+      JSXElement(node) {
+        if (!hasElementChild(node)) return;
+        const text = flatText(node).replace(/\s+/g, " ").trim();
+        const g = GESTURE.exec(text);
+        if (g && !node.children.some((c) => c.type === "JSXText" && GESTURE.test(c.value.replace(/\s+/g, " ").trim()))) {
+          const inner = node.children.filter((c) => c.type === "JSXElement").some((c) => GESTURE.test(flatText(c).replace(/\s+/g, " ").trim()));
+          if (!inner) context.report({ node, messageId: "telegraphic", data: { found: `${g[2]} ${g[3]}`, fix: fixFor(g[2].replace("${}", "⌘"), g[3]) } });
+        }
+      },
       JSXText(node) {
         check(context, node, node.value, { template: false, whole: isSoleText(node) });
       },

@@ -32,6 +32,18 @@ describe("ui-copy lint rule", () => {
     expect(messages('const a = <span title={on ? "Click hides." : "Click to show."} />;')).toHaveLength(1);
   });
 
+  it("only treats hint verbs after a key as telegraphic", () => {
+    expect(messages('const a = <p>Enter values separated by commas.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Drag handles appear on hover.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Tab titles stay short.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Esc closes it.</p>;')[0]).toMatch(/Press Esc to close/);
+  });
+
+  it("sees a telegraphic hint split by a keycap", () => {
+    expect(messages('const a = <p><Kbd>Enter</Kbd> removes it.</p>;')[0]).toMatch(/Press Enter to remove/);
+    expect(messages('const a = <p>Press <Kbd>Enter</Kbd> to remove it.</p>;')).toEqual([]);
+  });
+
   it("accepts imperative hints and label tooltips", () => {
     expect(messages('const a = <span title="Click to hide. ⌘-click to subtract." />;')).toEqual([]);
     expect(messages('const a = <Tooltip content="Keyboard shortcuts" />;')).toEqual([]);
@@ -50,6 +62,8 @@ describe("ui-copy lint rule", () => {
     expect(messages('const a = <p>Add a tag.</p>;')[0]).toMatch(/label/);
     expect(messages('const a = <p>Mute this image.</p>;')[0]).toMatch(/Drop/);
     expect(messages('const a = <dt>Exposure time</dt>;')).toEqual([]);
+    expect(messages('const a = <th>Exposure (s)</th>;')).toEqual([]);
+    expect(messages('const a = <dt>Total exposure</dt>;')).toEqual([]);
     expect(messages('const a = queryKey("exposure", "frame");')).toEqual([]);
     expect(messages('const a = <div data-testid="frame-strip" className="frame" />;')).toEqual([]);
   });
