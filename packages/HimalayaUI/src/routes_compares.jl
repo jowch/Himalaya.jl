@@ -35,6 +35,8 @@ function _current_subtraction(db, sample_id::Int)
     isempty(rows) ? nothing : Int(rows[1].ref_sample_id)
 end
 
+const MAX_COMPARES = 5
+
 function compare_changes(current::Set{Int}, subtraction::Union{Int, Nothing},
                          add::Vector{Int}, remove::Vector{Int}, sub_given::Bool, sub)
     adding = unique(filter(r -> r ∉ current && r ∉ remove, add))
@@ -82,8 +84,11 @@ function register_compare_routes!()
         exp_id = Int(rows[1].experiment_id)
 
         return with_idempotency(db, req) do
-            payload = compare_changes(_current_compares(db, id), _current_subtraction(db, id),
+            current = _current_compares(db, id)
+            payload = compare_changes(current, _current_subtraction(db, id),
                                       add, remove, sub_given, sub)
+            length(current) + length(get(payload, :add, Int[])) - length(get(payload, :remove, Int[])) > MAX_COMPARES &&
+                return _json_error(422, "a sample has at most $(MAX_COMPARES) comparisons")
             if !isempty(payload)
                 payload[:experiment_id] = exp_id
                 result = apply_event!(InTransaction(), db, req;

@@ -111,6 +111,22 @@ end
         end
     end
 
+    @testset "a sample holds at most five comparisons, one per comparison colour" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, rest...)) = _seed_compare_samples(db, 8)
+        with_inproc_routes(db) do call
+            patch(; kw...) = call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=_compare_body(; kw...))
+            @test patch(add=collect(rest[1:4])).status == 200
+            @test patch(add=[rest[5], rest[6]]).status == 422
+            @test _refs(_compares(call, exp_id), a) == collect(rest[1:4])
+            @test patch(add=[rest[5]]).status == 200
+            @test patch(add=[rest[6]]).status == 422
+            @test patch(add=[rest[1]]).status == 200
+            @test patch(add=[rest[6]], remove=[rest[1]]).status == 200
+            @test _refs(_compares(call, exp_id), a) == [rest[2:5]..., rest[6]]
+        end
+    end
+
     @testset "merged samples drop out of the list" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b, c)) = _seed_compare_samples(db, 3)

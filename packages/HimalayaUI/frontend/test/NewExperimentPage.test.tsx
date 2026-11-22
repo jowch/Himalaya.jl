@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NewExperimentPage } from "../src/print/pages/NewExperimentPage";
@@ -79,9 +79,9 @@ describe("NewExperimentPage", () => {
     const rows = await screen.findAllByTestId("setup-row");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByTestId("setup-summary")).toHaveTextContent(
-      "1,220 exposures · flight path 1.81 m · 3 without a trace yet",
+      "1,220 frames · flight path 1.81 m · 3 without a trace yet",
     );
-    expect(within(rows[1]!).getByTestId("setup-summary")).toHaveTextContent("1 exposure · flight path 1.81 m");
+    expect(within(rows[1]!).getByTestId("setup-summary")).toHaveTextContent("1 frame · flight path 1.81 m");
     expect(screen.getByTestId("create-submit")).toHaveTextContent("Add 2 experiments");
   });
 
@@ -117,6 +117,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/20261103/setup1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
   });
@@ -203,6 +204,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     const dialog = document.createElement("div");
     dialog.setAttribute("role", "dialog");
     const field = document.createElement("input");
@@ -215,6 +217,8 @@ describe("NewExperimentPage", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(create).not.toHaveBeenCalled();
     dialog.remove();
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   });
 
   it("adds once when ⌘/Ctrl+Enter is pressed twice quickly", async () => {
@@ -224,6 +228,7 @@ describe("NewExperimentPage", () => {
     renderPage();
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
+    await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     resolve({ id: 11 } as api.Experiment);
@@ -274,7 +279,7 @@ describe("NewExperimentPage", () => {
     fireEvent.change(screen.getByTestId("setup-name").querySelector("input")!, { target: { value: "kept" } });
     preview.mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1", { exposures: 2000 })] });
     await qc.invalidateQueries();
-    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("2,000 exposures"));
+    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("2,000 frames"));
     expect(screen.getByTestId("setup-name").querySelector("input")).toHaveValue("kept");
   });
 
@@ -331,7 +336,7 @@ describe("NewExperimentPage", () => {
     expect(screen.getByTestId("setup-summary")).toHaveTextContent("integration layout not recognised");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.change(screen.getByTestId("details-image-pattern").querySelector("input")!, { target: { value: "{name}_0_001.tif" } });
-    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("5 exposures"));
+    await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("5 frames"));
     expect(screen.getByTestId("setup-summary")).toHaveTextContent("1 without a trace yet");
     expect(manifest.mock.calls.at(-1)![1]).toMatchObject({ image: "{name}_0_001.tif" });
   });

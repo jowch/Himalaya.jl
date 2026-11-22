@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
-import { LABEL_COLORS, type LabelColor } from "../../api";
+import type { LabelColor } from "../../api";
+import { USER_LABEL_COLORS } from "../../lib/labels";
 import { LABEL_SWATCH } from "./labelSwatches";
 
 interface Props {
@@ -57,7 +58,7 @@ export function LabelColorMenu({ name, current, isDefault, left, onPick, onClose
       }}
     >
       <div role="radiogroup" aria-label={`Colour of label ${name}`} className="flex items-center gap-1.5" onKeyDown={move}>
-        {LABEL_COLORS.map((c) => (
+        {USER_LABEL_COLORS.map((c) => (
           <button
             key={c}
             type="button"

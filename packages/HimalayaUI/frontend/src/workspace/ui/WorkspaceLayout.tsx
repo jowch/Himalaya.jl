@@ -11,7 +11,7 @@ interface Props {
 
 export function WorkspaceLayout({ header, nav, main, tools, theme = "system", overlay }: Props): JSX.Element {
   return (
-    <div className="grid h-full grid-rows-[auto_1fr] bg-paper text-ink" data-testid="workspace" data-workspace-theme={theme}>
+    <div className="grid h-full grid-rows-[auto_1fr] bg-paper text-ink" data-testid="workspace" data-theme={theme}>
       <header className="flex min-w-0 items-center gap-3.5 border-b border-hair bg-plate px-3.5 py-2">{header}</header>
       <div className="grid min-h-0 grid-cols-[270px_minmax(0,1fr)_300px]">
         <nav aria-label="Samples" className="flex min-h-0 flex-col overflow-hidden border-r border-hair">{nav}</nav>

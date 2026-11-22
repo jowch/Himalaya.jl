@@ -357,7 +357,10 @@ export interface EditReads {
   assignment: (exposureId: number) => Promise<api.Assignment>;
   labels: () => Promise<api.SampleLabel[]>;
   bridges: () => Promise<api.SampleBridge[]>;
+  exposures: (sampleId: number) => Promise<api.Exposure[]>;
+  labelColors: () => Promise<api.LabelColorEntry[]>;
   experiment: () => Promise<api.Experiment>;
+  compares: () => Promise<api.CompareState>;
 }
 
 export interface EditOps {
@@ -377,6 +380,7 @@ export interface EditOps {
   patchExperiment: (patch: ExperimentPatch) => void;
   bridge: (sampleId: number, toSampleId: number) => void;
   unbridge: (sampleId: number) => void;
+  patchCompares: (sampleId: number, change: api.CompareChange) => void;
   read: EditReads;
   whenSaved: () => Promise<void>;
   saving: () => boolean;
@@ -419,6 +423,7 @@ export function useEditOps(experimentId: number): EditOps {
   const experiment = useQueueMutation(patchExperimentMutator, labelScope);
   const bridge = useQueueMutation(bridgeSamplesMutator, labelScope);
   const unbridge = useQueueMutation(unbridgeSampleMutator, labelScope);
+  const compares = useQueueMutation(patchComparesMutator, labelScope);
   const fresh = <T,>(queryKey: readonly unknown[], queryFn: () => Promise<T>): Promise<T> =>
     qc.fetchQuery({ queryKey, queryFn, staleTime: 0 });
   return {
@@ -439,6 +444,7 @@ export function useEditOps(experimentId: number): EditOps {
     patchExperiment: (patch) => experiment.mutate(patch),
     bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),
+    patchCompares: (sampleId, change) => compares.mutate({ sampleId, change }),
     read: {
       peaks: (exposureId) => fresh(queryKeys.peaks(exposureId), () => api.listPeaks(exposureId)),
       indices: (exposureId) => fresh(queryKeys.indices(exposureId), () => api.listIndices(exposureId)),
@@ -447,6 +453,9 @@ export function useEditOps(experimentId: number): EditOps {
       assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
       labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
       bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+      exposures: (sampleId) => fresh(queryKeys.exposures(sampleId), () => api.listExposures(sampleId)),
+      labelColors: () => fresh(queryKeys.labelColors(), () => api.listLabelColors()),
+      compares: () => fresh(queryKeys.compares(experimentId), () => api.listCompares(experimentId)),
       experiment: () => fresh(queryKeys.experiment(experimentId), () => api.getExperiment(experimentId)),
     },
     whenSaved: () => whenQueueIdle(qc),
