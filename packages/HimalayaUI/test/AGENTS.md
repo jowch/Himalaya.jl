@@ -26,7 +26,7 @@ The default fixture for route tests is `with_inproc_routes` (`test_inproc.jl`), 
 
 ```julia
 with_inproc_routes(db) do call
-    r = call("GET", "/api/experiments/$exp_id/samples")
+    r = call("GET", "/api/samples?experiment_id=$exp_id")
     @test r.status == 200
     list = JSON3.read(String(r.body))
     # POST/PATCH/DELETE: headers + a Vector{UInt8} body

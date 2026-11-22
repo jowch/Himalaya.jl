@@ -160,14 +160,6 @@ export function useSetLabelColor() {
   return useQueueMutation(setLabelColorMutator, { username, clientId: CLIENT_ID });
 }
 
-export function useSamples(experimentId: number) {
-  return useQuery({
-    queryKey: queryKeys.samples(experimentId),
-    queryFn: () => api.listSamples(experimentId),
-    enabled: experimentId > 0,
-  });
-}
-
 export function useCorpusSamples({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.corpusSamples,

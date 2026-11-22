@@ -56,9 +56,6 @@ async function mockCore(page: Page, users: { id: number; username: string }[] = 
   await page.route("**/api/experiments/1", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(EXPERIMENT) }));
-  await page.route("**/api/experiments/1/samples", (r) =>
-    r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify(SAMPLES) }));
   await page.route((url) => url.pathname === "/api/samples", (r) =>
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify(SAMPLES) }));
