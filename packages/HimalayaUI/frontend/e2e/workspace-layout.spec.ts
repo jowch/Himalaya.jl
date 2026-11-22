@@ -244,7 +244,7 @@ test("a Custom cubic row keeps its curvature and unit whole on one line", async 
 
 test("an indented Custom cubic in a Bonnet group keeps its curvature and unit whole on one line", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const peaksAt = (qs: number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
+  const peaksAt = (qs: readonly number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
   const group: [string, number, number[]][] = [
     ["Im3m", 699.9, [0.01, 0.02, 0.03]], ["Pn3m", 699.9 / 1.2793, [0.04, 0.05, 0.06]], ["Ia3d", 699.9 * 1.2319, [0.07, 0.08, 0.09]],
   ];
