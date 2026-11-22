@@ -57,82 +57,175 @@ function _experiment_row_to_json(row::NamedTuple, db::Union{SQLite.DB, Nothing} 
     d
 end
 
+_body_get(body, k) = get(body, k, get(body, string(k), nothing))
+
+_json_error(status, d) = HTTP.Response(status, ["Content-Type" => "application/json"], JSON3.write(d))
+
+function _setup_spec(spec; default_analysis_dir)
+    pats = something(_body_get(spec, :patterns), Dict())
+    ppat(k) = (v = _body_get(pats, k); v === nothing ? nothing : String(v))
+    geo = something(_body_get(spec, :geometry), Dict())
+    gnum(k) = (v = _body_get(geo, k); v isa Number ? Float64(v) : nothing)
+    gstr(k) = (v = _body_get(geo, k); v isa AbstractString ? String(v) : nothing)
+    psrc(val, k) = val === nothing ? "default" : something(gstr(Symbol(k, :_source)), "user")
+    ad = _body_get(spec, :analysis_dir)
+    analysis_dir = ad !== nothing ? String(ad) : default_analysis_dir
+    included = _body_get(spec, :included)
+    out = Dict{Symbol,Any}(:analysis_dir => analysis_dir,
+        :image_pattern => ppat(:image), :metadata_pattern => ppat(:metadata),
+        :integration_pattern => ppat(:integration),
+        :included => included === nothing ? true : included === true)
+    for k in (:beam_center_x, :beam_center_y, :flight_path_m, :pixel_size_um, :energy_kev)
+        v = gnum(k)
+        out[k] = v
+        out[Symbol(k, :_source)] = psrc(v, k)
+    end
+    out
+end
+
+_is_obj(v) = v isa AbstractDict || v isa JSON3.Object
+_under(child, parent) = (c = _canonical_dir(child); q = _canonical_dir(parent);
+    c == q || startswith(c, rstrip(q, '/') * "/"))
+
+function _malformed_setup(s)
+    _is_obj(s) || return "each setup must be an object"
+    _body_get(s, :data_dir) isa AbstractString || return "each setup needs a data_dir"
+    for k in (:root, :analysis_dir)
+        v = _body_get(s, k)
+        v === nothing || v isa AbstractString || return "$k must be a string"
+    end
+    inc = _body_get(s, :included)
+    inc === nothing || inc isa Bool || return "included must be true or false"
+    for k in (:patterns, :geometry)
+        v = _body_get(s, k)
+        v === nothing || _is_obj(v) || return "$k must be an object"
+    end
+    _patterns_problem(_body_get(s, :patterns))
+end
+
+function _patterns_problem(pats)
+    pats === nothing && return nothing
+    _is_obj(pats) || return "patterns must be an object"
+    for k in (:image, :metadata, :integration)
+        bad = pattern_problem(String(k), _body_get(pats, k))
+        bad === nothing || return bad
+    end
+    nothing
+end
+
+_default_analysis_dir(data_dir) = (ad = joinpath(data_dir, "analysis"); isdir(ad) ? ad : data_dir)
+
+function _checked_data_dir(db, raw)
+    raw === nothing && return _json_error(400, Dict(:error => "data_dir (or path) is required"))
+    data_dir = String(raw)
+    isdir(data_dir) || return _json_error(400,
+        Dict(:error => "path does not exist or is not a directory", :path => data_dir))
+    data_dir = _canonical_dir(data_dir)
+    existing = experiment_using_dir(db, data_dir)
+    existing === nothing || return _json_error(409,
+        Dict(:error => "an experiment already uses this directory",
+             :path => data_dir, :experiment_id => existing.id))
+    data_dir
+end
+
+function _create_one_setup_experiment(db, body)
+    bad = _patterns_problem(_body_get(body, :patterns))
+    bad === nothing || return _json_error(400, Dict(:error => bad))
+    data_dir = _checked_data_dir(db, something(_body_get(body, :data_dir), _body_get(body, :path), Some(nothing)))
+    data_dir isa HTTP.Response && return data_dir
+    name_val = _body_get(body, :name)
+    exp_name = name_val !== nothing ? String(name_val) : basename(rstrip(data_dir, '/'))
+    spec = _setup_spec(body; default_analysis_dir = _default_analysis_dir(data_dir))
+    delete!(spec, :included)
+    exp_id = lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            create_experiment!(db; name = exp_name, path = setup_root_dir(data_dir),
+                data_dir, ingest_status = "scanning", spec...)
+        end
+    end
+    (exp_id, exp_name, data_dir)
+end
+
+function _beamtime_setup_specs(db, path, raw_setups)
+    raw_setups isa AbstractVector && !isempty(raw_setups) ||
+        return _json_error(400, Dict(:error => "setups must be a non-empty list"))
+    specs = Dict{Symbol,Any}[]
+    for s in raw_setups
+        bad = _malformed_setup(s)
+        bad === nothing || return _json_error(400, Dict(:error => bad))
+        data_dir = _checked_data_dir(db, _body_get(s, :data_dir))
+        data_dir isa HTTP.Response && return data_dir
+        any(p -> _same_dir(p[:data_dir], data_dir), specs) && return _json_error(400,
+            Dict(:error => "two setups use the same data folder", :path => data_dir))
+        spec = _setup_spec(s; default_analysis_dir = _default_analysis_dir(data_dir))
+        spec[:data_dir] = data_dir
+        root = _body_get(s, :root)
+        root_dir = root === nothing ? setup_root_dir(data_dir) : _canonical_dir(String(root))
+        isdir(root_dir) && _under(data_dir, root_dir) && _under(root_dir, path) ||
+            return _json_error(400, Dict(:error => "a setup folder must hold its data folder and sit in the beamtime folder",
+                                         :path => root_dir))
+        spec[:root_dir] = root_dir
+        push!(specs, spec)
+    end
+    any(sp -> sp[:included], specs) ||
+        return _json_error(400, Dict(:error => "tick at least one setup"))
+    specs
+end
+
+function _add_beamtime_setups(db, id, body)
+    rows = Tables.rowtable(DBInterface.execute(db, "SELECT path FROM experiments WHERE id = ?", [id]))
+    isempty(rows) && return _json_error(404, Dict(:error => "experiment not found"))
+    path = _canonical_dir(String(first(rows).path))
+    any(st -> _same_dir(st.root_dir, path), setups_of(db, id)) && return _json_error(400,
+        Dict(:error => "this experiment is one setup folder, so it cannot hold more setups"))
+    specs = _beamtime_setup_specs(db, path, _body_get(body, :setups))
+    specs isa HTTP.Response && return specs
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            Int[create_setup!(db; experiment_id = id, position = _next_position(db, id), spec...)
+                for spec in specs]
+        end
+    end
+end
+
+function _create_beamtime_experiment(db, body, raw_setups)
+    raw_path = _body_get(body, :path)
+    raw_path === nothing && return _json_error(400, Dict(:error => "path is required"))
+    isdir(String(raw_path)) || return _json_error(400,
+        Dict(:error => "path does not exist or is not a directory", :path => String(raw_path)))
+    path = _canonical_dir(String(raw_path))
+    existing = experiment_at_path(db, path)
+    existing === nothing || return _json_error(409, Dict(
+        :error => "this beamtime is already added as $(existing.name)",
+        :experiment_id => existing.id, :name => existing.name, :path => path))
+    name_val = _body_get(body, :name)
+    name_val === nothing || name_val isa AbstractString ||
+        return _json_error(400, Dict(:error => "name must be a string"))
+    specs = _beamtime_setup_specs(db, path, raw_setups)
+    specs isa HTTP.Response && return specs
+    exp_name = name_val !== nothing && !isempty(strip(String(name_val))) ?
+        String(strip(String(name_val))) : basename(rstrip(path, '/'))
+    exp_id = lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            eid = create_experiment!(db; name = exp_name, path, ingest_status = "scanning")
+            for (i, spec) in enumerate(specs)
+                create_setup!(db; experiment_id = eid, position = i - 1, spec...)
+            end
+            eid
+        end
+    end
+    (exp_id, exp_name, specs[1][:data_dir])
+end
+
 function register_experiments_routes!()
     @post "/api/experiments" function(req::HTTP.Request)
         db   = current_db()
         body = json(req)
-
-        path_val = get(body, :data_dir, get(body, "data_dir",
-                       get(body, :path, get(body, "path", nothing))))
-        path_val === nothing && return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "data_dir (or path) is required")))
-        data_dir = String(path_val)
-
-        isdir(data_dir) || return HTTP.Response(400,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "path does not exist or is not a directory",
-                             :path  => data_dir)))
-        data_dir = _canonical_dir(data_dir)
-
-        existing = experiment_using_dir(db, data_dir)
-        existing === nothing || return HTTP.Response(409,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "an experiment already uses this directory",
-                             :path  => data_dir,
-                             :experiment_id => existing.id)))
-
-        # Derive defaults.
-        name_val  = get(body, :name, get(body, "name", nothing))
-        exp_name  = name_val !== nothing ? String(name_val) : basename(rstrip(data_dir, '/'))
-        # analysis_dir: prefer the explicit, user-confirmed value from the funnel
-        # (the resolver's default that the user corrected); else the old convention
-        # (look for an `analysis` subdir, fall back to data_dir) for older callers.
-        ad_val = get(body, :analysis_dir, get(body, "analysis_dir", nothing))
-        analysis_dir = ad_val !== nothing ? String(ad_val) :
-            let ad = joinpath(data_dir, "analysis"); isdir(ad) ? ad : data_dir end
-
-        # Patterns are edited on Configuration before Approve; persisted to the row
-        # so scan_and_group! (which reads the row + coalesces) uses them. Nested
-        # under `patterns` to match the frontend CreateExperimentBody.
-        pats = get(body, :patterns, get(body, "patterns", Dict()))
-        ppat(k) = (v = get(pats, k, get(pats, string(k), nothing)); v === nothing ? nothing : String(v))
-
-        # Geometry (optional): the funnel preview already derived geometry with the
-        # confirmed setup file, so Approve sends the WHOLE geometry — each field as
-        # a value + its honest source (`setup`/`prp`/`computed`, or `user` for a
-        # manual edit). It is persisted verbatim and the scan's fill-only step
-        # (`_fill_unset_geometry!`, ingest.jl) leaves any established field alone, so
-        # geometry is derived once (at preview) and never re-derived. A field with a
-        # value but no source defaults to `user` (back-compat with a values-only
-        # body). Non-numeric values / non-string sources are ignored (treated as not
-        # provided) so a malformed body can't 500 the create.
-        geo_body = get(body, :geometry, get(body, "geometry", Dict()))
-        gnum(k)  = (v = get(geo_body, k, get(geo_body, string(k), nothing)); v isa Number ? Float64(v) : nothing)
-        gstr(k)  = (v = get(geo_body, k, get(geo_body, string(k), nothing)); v isa AbstractString ? String(v) : nothing)
-        # value present → its source (or 'user' when omitted); absent → 'default'.
-        psrc(val, src) = val === nothing ? "default" : (src === nothing ? "user" : src)
-        g_bcx = gnum(:beam_center_x); g_bcy = gnum(:beam_center_y)
-        g_fp  = gnum(:flight_path_m); g_px  = gnum(:pixel_size_um); g_en = gnum(:energy_kev)
-
-        exp_id = lock(_DB_WRITE_LOCK) do
-            SQLite.transaction(db) do
-                create_experiment!(db;
-                    name              = exp_name,
-                    path              = setup_root_dir(data_dir),
-                    data_dir          = data_dir,
-                    analysis_dir      = analysis_dir,
-                    image_pattern     = ppat(:image),
-                    metadata_pattern  = ppat(:metadata),
-                    integration_pattern = ppat(:integration),
-                    beam_center_x = g_bcx, beam_center_x_source = psrc(g_bcx, gstr(:beam_center_x_source)),
-                    beam_center_y = g_bcy, beam_center_y_source = psrc(g_bcy, gstr(:beam_center_y_source)),
-                    flight_path_m = g_fp,  flight_path_m_source = psrc(g_fp,  gstr(:flight_path_m_source)),
-                    pixel_size_um = g_px,  pixel_size_um_source = psrc(g_px,  gstr(:pixel_size_um_source)),
-                    energy_kev    = g_en,  energy_kev_source    = psrc(g_en,  gstr(:energy_kev_source)),
-                    ingest_status     = "scanning")
-            end
-        end
+        raw_setups = _body_get(body, :setups)
+        created = raw_setups === nothing ? _create_one_setup_experiment(db, body) :
+                                           _create_beamtime_experiment(db, body, raw_setups)
+        created isa HTTP.Response && return created
+        exp_id, exp_name, data_dir = created
 
         Threads.@spawn run_ingest!(db, exp_id)
 
@@ -230,7 +323,22 @@ function register_experiments_routes!()
             "SELECT ingest_error FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return _json(404, Dict(:error => "experiment not found"))
         _json(200, Dict(:ingest_error => coalesce(first(rows).ingest_error, nothing),
-                        :exposures => ingest_problems(db, id)))
+                        :exposures => ingest_problems(db, id),
+                        :setups => [Dict(:root => r, :folder => basename(rstrip(r, '/')))
+                                    for r in unrecognized_setup_roots(db, id)]))
+    end
+
+    @post "/api/experiments/{id}/setups" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        body = json(req)
+        _is_obj(body) || return _json_error(400, Dict(:error => "body must be an object"))
+        added = _add_beamtime_setups(db, id, body)
+        added isa HTTP.Response && return added
+        _set_ingest_status!(db, id, "scanning")
+        Threads.@spawn run_ingest!(db, id; phase = "rescan")
+        log_action!(db, req; action = "setups_added", entity_type = "experiment", entity_id = id)
+        HTTP.Response(202, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:status => "scanning", :experiment_id => id, :setup_ids => added)))
     end
 
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)

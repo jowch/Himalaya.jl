@@ -1,5 +1,6 @@
 import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, LabelColor } from "../api";
 import type { EditOps } from "../queries";
+import type { SetupPatch } from "../lib/queue/mutators/setup";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import { bridgedWith } from "../lib/bridges";
 import { comparesOf } from "../lib/compares";
@@ -254,6 +255,29 @@ export function experimentEntry(ops: EditOps, at: Where & { prev: ExperimentPatc
     }
     const sent = Object.keys(patch).length;
     if (sent > 0) ops.patchExperiment(patch);
+    return sent;
+  };
+  return {
+    ...at,
+    undo: () => apply(at.next, at.prev),
+    redo: () => apply(at.prev, at.next),
+  };
+}
+
+const setupName = (v: string | null | undefined, folder: string): string | null => {
+  const t = (v ?? "").trim();
+  return t === "" || t === folder ? null : t;
+};
+
+export function setupEntry(ops: EditOps, at: Where & { setupId: number; prev: SetupPatch; next: SetupPatch }): UndoEntry {
+  const apply = async (from: SetupPatch, to: SetupPatch): Promise<number> => {
+    const server = (await ops.read.experiment()).setups?.find((s) => s.id === at.setupId);
+    if (!server) return 0;
+    const patch: SetupPatch = {};
+    if (to.name !== undefined && setupName(server.display_name, server.folder) === setupName(from.name, server.folder)) patch.name = to.name;
+    if (to.included !== undefined && server.included === from.included) patch.included = to.included;
+    const sent = Object.keys(patch).length;
+    if (sent > 0) ops.patchSetup(at.setupId, patch);
     return sent;
   };
   return {

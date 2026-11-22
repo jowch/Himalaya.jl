@@ -69,7 +69,10 @@ row, so a user's confirm or remove always wins.
 `peak_removed`, `speculative_created`, `speculative_deleted`, and
 `experiment_updated` (entity_type=`experiment`, payload: the patched fields,
 e.g. `{name}` or `{description: null}`; `PATCH /api/experiments/{id}` writes the
-row itself and the frontend merges the payload into the experiment caches).
+row itself and the frontend merges the payload into the experiment caches),
+and `setup_updated` (entity_type=`setup`, payload: `experiment_id` plus the
+patched `name`/`display_name` or `included`; `PATCH /api/setups/{id}` writes
+the row and the frontend merges it into that experiment's `setups`).
 Using
 `apply_event!` (with `entity_type='exposure'`) keeps these visible to
 `idx_events_by_exposure` so per-exposure folds find them; the dispatcher
@@ -91,7 +94,7 @@ guard for the same reason. Their `user_actions` rows stay in the log, and
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
 `set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
-`scan`, `experiment_created`. The dispatcher carries explicit no-op
+`scan`, `experiment_created`, `setups_added`. The dispatcher carries explicit no-op
 `return nothing` guards for the view-less kinds (`set_exposure_status`,
 `select_exposure`, …).
 

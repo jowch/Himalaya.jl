@@ -65,9 +65,9 @@ function ingest_root(root, port, name)
     println("Found $(rs.exposures) exposures, $(rs.without_trace) without a trace.")
 
     body = Dict(
-        :name => name, :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
-        :patterns => rs.patterns,
-        :geometry => rs.geometry,
+        :name => name, :path => root,
+        :setups => [Dict(:root => rs.root, :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
+                         :included => true, :patterns => rs.patterns, :geometry => rs.geometry)],
     )
     created = JSON3.read(HTTP.post("$base/experiments", ["Content-Type" => "application/json"],
                                    JSON3.write(body)).body)

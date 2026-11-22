@@ -96,7 +96,7 @@ npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (mocked; builds and serves the bundle; runs in CI)
 npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # lint:design + lint:ratchet + eslint + tsc --noEmit + vite build (must pass before PR)
-npm run typecheck:test  # tsc over src + test (Vitest skips types; CI runs this)
+npm run typecheck:test  # tsc over src + test + e2e (Vitest and Playwright skip types; CI runs this)
 ```
 
 Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` / `HimalayaUI.<name>` in tests.
@@ -112,6 +112,7 @@ make sysimage          # creates build/himalaya.so
 # creating an empty one if none exists. Create experiments in the UI (New experiment).
 bin/himalaya serve --port 8080
 bin/himalaya analyze -e <id|name|path>       # or --all; show takes -e too
+bin/himalaya merge <exp> <exp>... [--apply]   # one-time: fold per-setup experiments into one beamtime (dry run without --apply)
 
 # Without sysimage (slower cold start, no build required):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \

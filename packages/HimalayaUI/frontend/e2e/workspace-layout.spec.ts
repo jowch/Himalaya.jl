@@ -29,7 +29,7 @@ const PHASES = ["Pn3m", "Im3m", "Ia3d", "HII", "Lamellar", "Fd3m"];
 function indicesOf(exposureId: number, n: number) {
   return Array.from({ length: n }, (_, i) => PHASES[i % PHASES.length]!).map((phase, i) => ({
     id: exposureId * 100 + i, exposure_id: exposureId, phase, basis: 0.1, score: 0.9 - i * 0.01, r_squared: 0.99,
-    lattice_d: 100 + i, ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
+    lattice_d: 100 + i, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
   }));
 }
 
@@ -213,6 +213,70 @@ test("hovering a candidate does not move the candidate list, even when three pha
   await rows.nth(0).hover();
   await expect(page.locator("[data-testid=workspace-indexing-fit]")).toHaveCount(1);
   expect(await rows.nth(3).boundingBox()).toEqual(before);
+});
+
+test("a Custom cubic row keeps its curvature and unit whole on one line", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route(/\/api\/exposures\/410\/indices/, (r) =>
+    r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify([["Im3m", 699.9], ["Ia3d", 50], ["Pn3m", 499.9], ["Hexagonal", 499.9]].map(([phase, lattice_d], i) => ({
+        id: 41000 + i, exposure_id: 410, phase, basis: 0.1, score: null, r_squared: 0.99, lattice_d, 
+        status: "candidate", kind: "speculative", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
+      }))),
+    }),
+  );
+  await page.goto("/experiments/17/workspace/41");
+  const rows = page.locator("[data-testid=workspace-candidates] button");
+  await expect(rows).toHaveCount(4);
+  const plain = await rows.filter({ hasText: "Hexagonal" }).boundingBox();
+  for (const row of await rows.filter({ hasNotText: "Hexagonal" }).all()) {
+    await expect(row).toContainText("Custom");
+    await expect(row).toContainText("nm⁻²");
+    const inside = await row.evaluate((b) => {
+      const cell = b.children[2]!.getBoundingClientRect();
+      return b.querySelector("[data-testid=workspace-candidate-curvature]")!.getBoundingClientRect().right <= cell.right;
+    });
+    expect(inside).toBe(true);
+    expect((await row.boundingBox())!.height).toBe(plain!.height);
+  }
+});
+
+test("an indented Custom cubic in a Bonnet group keeps its curvature and unit whole on one line", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const peaksAt = (qs: readonly number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
+  const group: [string, number, number[]][] = [
+    ["Im3m", 699.9, [0.01, 0.02, 0.03]], ["Pn3m", 699.9 / 1.2793, [0.04, 0.05, 0.06]], ["Ia3d", 699.9 * 1.2319, [0.07, 0.08, 0.09]],
+  ];
+  await page.route(/\/api\/exposures\/410\/indices/, (r) =>
+    r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify([...group, ["Hexagonal", 499.9, [0.11, 0.12, 0.13]] as const].map(([phase, lattice_d, qs], i) => ({
+        id: 41000 + i, exposure_id: 410, phase, basis: 0.1, score: null, r_squared: 0.99, lattice_d,
+        status: "candidate", kind: "speculative", inputs_hash: null, peaks: peaksAt(qs), predicted_q: [0.1, 0.141],
+      }))),
+    }),
+  );
+  await page.goto("/experiments/17/workspace/41");
+  const header = page.locator("[data-testid=workspace-bonnet-group]");
+  await expect(header).toContainText("nm⁻²");
+  const rows = page.locator("[data-testid=workspace-candidates] li li button");
+  await expect(rows).toHaveCount(3);
+  const plain = await page.locator("[data-testid=workspace-candidates] button").filter({ hasText: "Hexagonal" }).boundingBox();
+  expect((await header.boundingBox())!.height).toBe(plain!.height);
+  const headerInside = await header.evaluate((b) =>
+    b.querySelector("[data-testid=workspace-bonnet-curvature]")!.getBoundingClientRect().right <= b.children[1]!.getBoundingClientRect().right);
+  expect(headerInside).toBe(true);
+  for (const row of await rows.all()) {
+    await expect(row).toContainText("Custom");
+    await expect(row).toContainText("nm⁻²");
+    const inside = await row.evaluate((b) => {
+      const cell = b.children[2]!.getBoundingClientRect();
+      return b.querySelector("[data-testid=workspace-candidate-curvature]")!.getBoundingClientRect().right <= cell.right;
+    });
+    expect(inside).toBe(true);
+    expect((await row.boundingBox())!.height).toBe(plain!.height);
+  }
 });
 
 test("three comparisons with long names keep the compare bar on one line", async ({ page }) => {

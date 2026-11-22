@@ -432,6 +432,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # them as known kinds rather than silently falling through.
     kind == "update_sample" && return nothing
     kind == "experiment_updated" && return nothing
+    kind == "setup_updated" && return nothing
     kind == "set_exposure_status" && return nothing
     kind == "select_exposure" && return nothing
 

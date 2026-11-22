@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Exposure, IndexEntry, LabelColor } from "../api";
+import type { CorpusSample, Exposure, IndexEntry, LabelColor } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -39,10 +39,10 @@ import {
 } from "../queries";
 import { comparesOf, EMPTY_COMPARES } from "../lib/compares";
 import { byRecent, recentRank, recordRecent } from "../lib/recents";
-import { useUndoHistory, type UndoStep } from "./undo";
+import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
+  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -67,7 +67,7 @@ import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { Palette } from "./ui/palette/Palette";
-import { workspacePalette } from "./palette";
+import { workspacePalette, type PaletteSetup } from "./palette";
 import { useAppTheme } from "../lib/theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
@@ -86,11 +86,13 @@ import { RemoveExperimentDialog } from "./ui/RemoveExperimentDialog";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
 import { ExposureStrip } from "./ui/ExposureStrip";
 import { CandidateList } from "./ui/CandidateList";
+import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { LabelRow } from "./ui/LabelRow";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
+import type { SetupPatch } from "../lib/queue/mutators/setup";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -196,6 +198,7 @@ export function WorkspacePage(): JSX.Element {
   const problemRows = problems.data?.exposures ?? [];
   const waitingForTrace = problemRows.filter((p) => p.problem === "no_trace").length;
   const failedAnalyses = problemRows.length - waitingForTrace;
+  const unrecognizedSetups = problems.data?.setups?.length ?? 0;
   const ingesting = scan.scanning || scan.rescanning;
   const count = (n: number): string => n.toLocaleString("en-US");
   const ingestProgress = !ingesting
@@ -207,10 +210,30 @@ export function WorkspacePage(): JSX.Element {
   const corpus = useExperimentCorpusSamples(experimentId);
   const [filter, setFilter] = useState("");
 
-  const samples = useMemo(
-    () => (corpus.data ?? []).filter((s) => s.experiment_id === experimentId),
-    [corpus.data, experimentId],
+  const setups = useMemo(() => experiment.data?.setups ?? [], [experiment.data]);
+  const setupOrder = useMemo(() => new Map(setups.map((st, i) => [st.id, i])), [setups]);
+  const hiddenSetups = useMemo(() => new Set(setups.filter((st) => !st.included).map((st) => st.id)), [setups]);
+  const setupsKnown = experiment.data !== undefined || experiment.isError;
+  const inExperiment = useMemo(
+    () => (setupsKnown ? (corpus.data ?? []).filter((s) => s.experiment_id === experimentId) : []),
+    [setupsKnown, corpus.data, experimentId],
   );
+  const samples = useMemo(() => {
+    const rank = (s: CorpusSample): number => setupOrder.get(s.setup_id ?? -1) ?? 0;
+    return inExperiment
+      .filter((s) => s.setup_id == null || !hiddenSetups.has(s.setup_id))
+      .map((s, i) => ({ s, i }))
+      .sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)
+      .map(({ s }) => s);
+  }, [inExperiment, setupOrder, hiddenSetups]);
+  const hiddenSamples = useMemo(
+    () => new Set(inExperiment.filter((s) => s.setup_id != null && hiddenSetups.has(s.setup_id)).map((s) => s.id)),
+    [inExperiment, hiddenSetups],
+  );
+  const setupHeaders = useMemo(() => {
+    const shown = setups.filter((st) => st.included);
+    return shown.length > 1 ? new Map(shown.map((st) => [st.id, st.name])) : undefined;
+  }, [setups]);
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
   const [recentLabels, setRecentLabels] = useState(() => recentRank(RECENT_LABELS));
@@ -271,6 +294,8 @@ export function WorkspacePage(): JSX.Element {
     settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
   });
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
+  const rows = useMemo(() => callRows(candidates), [candidates]);
+  const keyed = useMemo(() => keyedRows(rows), [rows]);
   const sampleCall = useSampleCall(sampleId);
   const otherFrames = useMemo(
     () => [...new Set((sampleCall.data?.members ?? []).map((m) => m.exposure_id))].filter((id) => id !== exposure?.id),
@@ -289,7 +314,7 @@ export function WorkspacePage(): JSX.Element {
     for (const c of candidates) if (phases.has(c.phase)) here.add(c.id);
     return here;
   }, [assignment.data, otherMembers, candidates]);
-  const [hoverId, setHoverId] = useState<number | undefined>(undefined);
+  const [hoverIds, setHoverIds] = useState<readonly number[] | undefined>(undefined);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
@@ -329,11 +354,17 @@ export function WorkspacePage(): JSX.Element {
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const bridged = useMemo(
+    () => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId).filter((r) => !hiddenSamples.has(r))),
+    [bridgeList, sampleId, hiddenSamples],
+  );
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
-  const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
+  const shownRefs = useMemo(
+    () => [...bridged, ...refs.filter((r) => !bridged.includes(r) && !hiddenSamples.has(r))],
+    [bridged, refs, hiddenSamples],
+  );
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
   const hiddenRefs = useMemo<ReadonlySet<number>>(
     () =>
@@ -394,34 +425,56 @@ export function WorkspacePage(): JSX.Element {
   );
 
 
-  const toggleCandidate = useCallback(
-    (ix: IndexEntry) => {
-      if (!exposure || sampleId === undefined) return;
+  const callEdit = useCallback(
+    (ix: IndexEntry, wasFormFactor: boolean): UndoEntry | undefined => {
+      if (!exposure || sampleId === undefined) return undefined;
       const eid = exposure.id;
       const where = sample?.name ?? "this sample";
       if (assignment.data?.members.includes(ix.id)) {
         removePhase.mutate(ix.id);
-        history.record(untickEntry(ops, {
+        return untickEntry(ops, {
           label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
           ids: Promise.resolve([{ exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }]),
-        }));
-        return;
+        });
       }
       const elsewhere = otherMembers.filter((m) => m.phase === ix.phase);
       if (elsewhere.length > 0) {
         const ids = identify(ops, elsewhere.map((m) => ({ exposureId: m.exposure_id, indexId: m.index_id })));
         for (const m of elsewhere) removeFramePhase.mutate(m.exposure_id, m.index_id);
-        history.record(untickEntry(ops, { label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid, ids }));
-        return;
+        return untickEntry(ops, { label: `unticked ${ix.phase} on ${where}`, sampleId, exposureId: eid, ids });
       }
-      if (exposure.status === "rejected") return;
+      if (exposure.status === "rejected") return undefined;
       addPhase.mutate(ix.id);
-      history.record(tickEntry(ops, {
+      return tickEntry(ops, {
         label: `ticked ${ix.phase} on ${where}`, sampleId, exposureId: eid,
-        id: { exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }, wasFormFactor: isFormFactor,
-      }));
+        id: { exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }, wasFormFactor,
+      });
     },
-    [exposure, sampleId, sample?.name, assignment.data, otherMembers, isFormFactor, addPhase, removePhase, removeFramePhase, history, ops],
+    [exposure, sampleId, sample?.name, assignment.data, otherMembers, addPhase, removePhase, removeFramePhase, ops],
+  );
+
+  const toggleCandidate = useCallback(
+    (ix: IndexEntry) => {
+      const entry = callEdit(ix, isFormFactor);
+      if (entry) history.record(entry);
+    },
+    [callEdit, isFormFactor, history],
+  );
+
+  const toggleGroup = useCallback(
+    (members: readonly IndexEntry[]) => {
+      if (!exposure || sampleId === undefined) return;
+      const allIn = members.every((m) => assigned.has(m.id));
+      const parts = (allIn ? members : members.filter((m) => !assigned.has(m.id)))
+        .map((m, i) => callEdit(m, isFormFactor && i === 0))
+        .filter((e): e is UndoEntry => e !== undefined);
+      if (parts.length === 0) return;
+      const phases = members.map((m) => m.phase).join(" + ");
+      history.record(combinedEntry({
+        label: `${allIn ? "unticked" : "ticked"} ${phases} on ${sample?.name ?? "this sample"}`, sampleId, exposureId: exposure.id,
+      }, parts));
+    },
+    [exposure, sampleId, sample?.name, assigned, callEdit, isFormFactor, history],
   );
 
   const toggleFormFactor = useCallback(() => {
@@ -458,8 +511,8 @@ export function WorkspacePage(): JSX.Element {
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(() => {
     if (draft) return [{ id: -1, qs: draftQs, color: phaseColor(draft.phase) }];
-    return candidates.filter((c) => c.id === hoverId).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
-  }, [candidates, hoverId, draft, draftQs]);
+    return candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
+  }, [candidates, hoverIds, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const nameOf = useCallback((rid: number) => sampleNames.get(rid) ?? `sample ${rid}`, [sampleNames]);
@@ -653,6 +706,28 @@ export function WorkspacePage(): JSX.Element {
     },
     [experiment.data, ops, sampleId, history],
   );
+  const paletteSetups: PaletteSetup[] = useMemo(
+    () => setups.map((st) => ({ id: st.id, folder: st.folder, name: st.name, included: st.included })),
+    [setups],
+  );
+  const editSetup = useCallback(
+    (setupId: number, next: SetupPatch) => {
+      const cur = setups.find((st) => st.id === setupId);
+      if (!cur) return;
+      const prev: SetupPatch = {};
+      if (next.name !== undefined) prev.name = cur.display_name;
+      if (next.included !== undefined) prev.included = cur.included;
+      ops.patchSetup(setupId, next);
+      if (sampleId === undefined) return;
+      const label = next.included === false
+        ? `hid setup ${cur.name}`
+        : next.included === true
+          ? `showed setup ${cur.name}`
+          : `renamed setup ${cur.name} to ${next.name ?? cur.folder}`;
+      history.record(setupEntry(ops, { label, sampleId, exposureId: undefined, setupId, prev, next }));
+    },
+    [setups, ops, sampleId, history],
+  );
   const createLabel = useCallback(
     (name: string, color: LabelColor) => {
       if (sampleId === undefined) return;
@@ -723,13 +798,13 @@ export function WorkspacePage(): JSX.Element {
     if (draft && draftFit) {
       return [{ key: "draft", phase: draft.phase, color: phaseColor(draft.phase), fit: draftFit, lattice: draft.lattice, param: latticeParam(draft.phase), r2: draftFit.r2 }];
     }
-    const hovered = candidates.find((c) => c.id === hoverId);
-    const shown = hovered ? [hovered] : candidates.filter((c) => assigned.has(c.id));
+    const hovered = candidates.filter((c) => hoverIds?.includes(c.id));
+    const shown = hovered.length > 0 ? hovered : candidates.filter((c) => assigned.has(c.id));
     return shown.map((c) => {
       const fit = storedFit(c, xExtent);
       return { key: String(c.id), phase: c.phase, color: phaseColor(c.phase), fit, lattice: c.lattice_d, param: latticeParam(c.phase), r2: c.r_squared ?? fit.r2 };
     });
-  }, [draft, draftFit, xExtent, candidates, hoverId, assigned]);
+  }, [draft, draftFit, xExtent, candidates, hoverIds, assigned]);
 
   const applyHistory = useCallback(
     (dir: "undo" | "redo") => {
@@ -875,10 +950,11 @@ export function WorkspacePage(): JSX.Element {
           break;
         default: {
           const n = Number(ev.key);
-          const c = Number.isInteger(n) && n >= 1 ? candidates[n - 1] : undefined;
-          if (c && username) {
+          const row = Number.isInteger(n) && n >= 1 ? keyed[n - 1] : undefined;
+          if (row && username) {
             setOpenPanel("call");
-            toggleCandidate(c);
+            if (row.kind === "group") toggleGroup(row.members);
+            else toggleCandidate(row.candidate);
           } else handled = false;
         }
       }
@@ -886,7 +962,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, candidates, toggleCandidate, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory]);
 
   const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
@@ -894,11 +970,13 @@ export function WorkspacePage(): JSX.Element {
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
-    : corpus.isLoading
+    : corpus.isLoading || !setupsKnown
       ? "Loading samples…"
       : samples.length === 0
         ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
-        : "This sample is not in this experiment.";
+        : inExperiment.some((s) => s.id === requested)
+          ? "This sample's setup is hidden. Show it again from Settings in the palette."
+          : "This sample is not in this experiment.";
 
   const addReference = (rid: number): void => {
     if (sampleId === undefined) return;
@@ -989,10 +1067,16 @@ export function WorkspacePage(): JSX.Element {
     ...(difference && subRef !== undefined ? { difference: { on: minusOn, name: subName, toggle: () => setMinus(!minusOn) } } : {}),
     settings:
       username && experiment.data
-        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: editExperiment }
+        ? {
+            name: experiment.data.name ?? "",
+            description: experiment.data.description ?? "",
+            save: editExperiment,
+            setups: paletteSetups,
+            saveSetup: editSetup,
+          }
         : undefined,
     rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
-    problems: problemRows.length > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
+    problems: problemRows.length > 0 || unrecognizedSetups > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
     removeExperiment:
       ingesting || !username
         ? undefined
@@ -1043,6 +1127,7 @@ export function WorkspacePage(): JSX.Element {
             <ProblemList
               problems={problems.data}
               onPick={(sid) => { setProblemsOpen(false); goSample(sid); }}
+              onAddSetups={() => navigate(`/experiments/new?path=${encodeURIComponent(experiment.data?.path ?? "")}`)}
               onClose={() => setProblemsOpen(false)}
             />
           )}
@@ -1069,7 +1154,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>
@@ -1189,13 +1274,14 @@ export function WorkspacePage(): JSX.Element {
               <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
                 {exposureDropped && <Note>This frame is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
-                  candidates={candidates}
+                  rows={rows}
                   assigned={assigned}
                   disabled={exposureDropped || !username}
                   formFactor={isFormFactor}
                   onToggle={toggleCandidate}
+                  onToggleGroup={toggleGroup}
                   onFormFactor={toggleFormFactor}
-                  onHover={setHoverId}
+                  onHover={setHoverIds}
                 />
               </Section>
             )}

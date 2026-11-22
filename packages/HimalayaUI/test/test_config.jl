@@ -23,8 +23,10 @@ _exposure_pattern(db, id) = HimalayaUI.integration_pattern_for_exposure(db,
         @test _exposure_pattern(db, id) == "{name}_tot.dat"
     end
 
-    @testset "ignores values without {name}" begin
-        db, id = _pattern_db(integration_pattern = "trace.dat")
+    @testset "refuses a new value without {name} and ignores a stored one" begin
+        @test_throws ArgumentError _pattern_db(integration_pattern = "trace.dat")
+        db, id = _pattern_db()
+        SQLite.DBInterface.execute(db, "UPDATE setups SET integration_pattern = 'trace.dat'")
         @test _exposure_pattern(db, id) == "{name}.dat"
     end
 

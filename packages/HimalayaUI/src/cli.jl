@@ -245,6 +245,37 @@ function cli_serve(args)
     serve(db; host = p[:host], port = p[:port])
 end
 
+function parse_merge_args(args)
+    s = ArgParseSettings(prog = "himalaya merge")
+    @add_arg_table! s begin
+        "experiments"
+            nargs = '+'
+            required = true
+        "--name"
+            default = nothing
+        "--path"
+            default = nothing
+        "--apply"
+            action = :store_true
+    end
+    parse_args(args, s; as_symbols = true)
+end
+
+function cli_merge(args; io::IO = stdout, db::Union{SQLite.DB,Nothing} = nothing)
+    p = parse_merge_args(args)
+    db = something(db, open_db(default_db_path()))
+    ids = Int[Int(_resolve_experiment(db, k).id) for k in p[:experiments]]
+    plan = merge_plan(db, ids; name = p[:name], path = p[:path])
+    print_merge_plan(io, plan)
+    if p[:apply]
+        apply_merge!(db, plan)
+        println(io, "Merged.")
+    else
+        println(io, "Dry run. Nothing was written. Run again with --apply to merge.")
+    end
+    plan
+end
+
 const _USAGE = """
 Usage: himalaya <command> [options]
 
@@ -252,6 +283,8 @@ Commands:
   analyze   [-e <experiment> | --all] [-s <label>]  Run peak-finding + indexing
   show     [-e <experiment>] -s <label>     Print stored analysis for one sample
   serve    [--port N] [--host H]            Start the web server
+  merge    <experiment>... [--name N] [--path P] [--apply]
+                                            Merge per-setup experiments into one beamtime
 
 Ingestion is performed via the HTTP scan API (`POST /api/experiments/{id}/scan`),
 not the CLI. `-e <experiment>` accepts an id, name, or path; when omitted it
@@ -274,6 +307,8 @@ function main(args = copy(ARGS))
         cli_show(args)
     elseif cmd == "serve"
         cli_serve(args)
+    elseif cmd == "merge"
+        cli_merge(args)
     else
         println("Unknown command: $cmd")
         println()

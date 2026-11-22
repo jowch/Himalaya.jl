@@ -14,7 +14,8 @@ Experiment directories are read-only data sources. Every write goes to the DB.
 ## The New-experiment funnel
 
 The funnel is one screen. The user picks a folder, Himalaya lists every setup
-under it, and one call per chosen setup creates the experiments. The probes
+under it, and one call creates one experiment for the folder with all of its
+setups. The probes
 live in `routes_fs.jl` and never write to the DB; the create and scan live in
 `routes_experiments.jl` and `ingest.jl`.
 
@@ -23,14 +24,15 @@ live in `routes_fs.jl` and never write to the DB; the create and scan live in
 | Pick a folder | `GET /api/fs/suggest?prefix=` | Directory autocomplete (at most 20 subdirectories). |
 | Preview | `GET /api/fs/preview?path=` | Lists the setups under the folder, each with its layout, counts and geometry (see [Preview](#preview)). `400` when the path is not a directory. |
 | Correct a setup | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Recounts one setup after the user edits its layout in Details (see [File manifest](#file-manifest)). |
-| Add | `POST /api/experiments` | One call per chosen setup. Creates the row, returns `202`, and starts the first scan in the background. |
+| Add | `POST /api/experiments` | One call for the folder. Creates the experiment and its setups, returns `202`, and starts the first scan in the background. |
 
-`NewExperimentPage` (`/experiments/new`) shows one row per setup: a checkbox,
-an editable name (default `<folder>/<setup>`, e.g. `20261103/setup1`), a
-one-line summary, and a Details panel for the folders, patterns and geometry.
-A setup that is already an experiment is listed but cannot be chosen.
-⌘/Ctrl+Enter adds the chosen setups. One setup opens its workspace straight
-away; several go back to the experiments home. The workspace shows the first
+`NewExperimentPage` (`/experiments/new`) shows a name field (default: the
+picked folder's name) and one row per setup: a checkbox, the setup's folder
+name, a one-line summary, and a Details panel for the folders, patterns and
+geometry. A setup that is already in an experiment is listed but cannot be
+chosen, and is not sent. Unticked setups are sent with `included: false`, so the
+experiment remembers them as hidden and never scans them. ⌘/Ctrl+Enter adds the
+experiment and opens its workspace. The workspace shows the first
 scan's progress in its status line (see [Problems](#problems)).
 
 "Manifest" here means the funnel's file manifest: a preview of which images,
@@ -96,35 +98,57 @@ without writing anything. `path` is the `data_dir`. It returns:
 
 ### Approve
 
-`POST /api/experiments` takes:
+`POST /api/experiments` takes the picked folder and every setup to store:
 
 ```json
 {
-  "data_dir": "/data/2026-04/HA",
-  "analysis_dir": "/data/2026-04/HA/analysis/automatic_analysis/tot_files",
-  "name": "HA",
-  "patterns": {
-    "image": "{name}_0_001.tif",
-    "metadata": "{name}_0_001.prp",
-    "integration": "{name}_tot.dat"
-  },
-  "geometry": {
-    "energy_kev": 11.0, "energy_kev_source": "prp",
-    "flight_path_m": 1.13, "flight_path_m_source": "setup",
-    "beam_center_x": 420.8, "beam_center_x_source": "setup",
-    "beam_center_y": 838.8, "beam_center_y_source": "setup",
-    "pixel_size_um": 172.0, "pixel_size_um_source": "prp"
-  }
+  "name": "20260426",
+  "path": "/data/20260426",
+  "setups": [
+    {
+      "root": "/data/20260426/setup1",
+      "data_dir": "/data/20260426/setup1/data",
+      "analysis_dir": "/data/20260426/setup1/analysis/automatic_analysis/tot_files",
+      "included": true,
+      "patterns": {
+        "image": "{name}_0_001.tif",
+        "metadata": "{name}_0_001.prp",
+        "integration": "{name}_tot.dat"
+      },
+      "geometry": {
+        "energy_kev": 11.0, "energy_kev_source": "prp",
+        "flight_path_m": 1.13, "flight_path_m_source": "setup"
+      }
+    },
+    { "root": "/data/20260426/setup2", "data_dir": "/data/20260426/setup2/data", "included": false }
+  ]
 }
 ```
 
-- `data_dir` is required (`path` is still accepted from older callers). It must
-  be an existing directory: `400` otherwise, and `409` if another experiment
-  already uses it.
-- `name` defaults to `basename(data_dir)`. `analysis_dir` defaults to
-  `data_dir/analysis` if that exists, else `data_dir`.
+- `path` must be an existing directory and is stored as its real path. `name`
+  defaults to the folder's name; surrounding spaces are trimmed.
+- `setups` must be a non-empty list with at least one `included` setup
+  (`included` defaults to `true`). Setups are stored in the order sent, as
+  `position` 0, 1, … Each `data_dir` must be an existing directory: `400`
+  otherwise, `400` when two setups share one, and `409` if another experiment
+  already uses it. `root` defaults to the folder that holds `data_dir`; it must
+  exist, hold `data_dir` and sit inside `path` (`400` otherwise). The setup's
+  `folder` is the root's name. A setup that is not an object, has no string
+  `data_dir`, or has a non-string `root`/`analysis_dir`, a non-boolean
+  `included`, or `patterns`/`geometry` that are not objects is a `400`, and so
+  is a non-string `name`.
+- `path` may not already be another experiment's `path`: that is a `409` with
+  `experiment_id` and `name`, and the funnel then offers to open that
+  experiment instead. `GET /api/fs/preview` reports the same as `existing`, so
+  the funnel says so before anything is sent. New setup folders in a beamtime
+  that is already added come in through a rescan.
+- `analysis_dir` defaults to `data_dir/analysis` if that exists, else `data_dir`.
 - A geometry value with no source is stored with source `user`. Non-numeric
   values and non-string sources are ignored.
+
+A body without `setups` is the older one-setup form: `data_dir` (or `path`),
+`name` (default `basename(data_dir)`), `analysis_dir`, `patterns` and
+`geometry` at the top level make an experiment with one setup.
 
 The row is created with `ingest_status = 'scanning'` and the route answers
 `202 {id, status: "scanning", name, data_dir}`. The first scan then runs on a
@@ -146,8 +170,8 @@ Everything else is a column on the experiment's `setups` rows.
 | Column | Set by | Editable later |
 |--------|--------|----------------|
 | `folder` | Create: the setup subfolder's name | No |
-| `display_name` | Not yet (planned palette rename) | Shown instead of `folder` when set |
-| `included` | Create (`1`) | Planned: unticking hides a setup, and the scan skips it |
+| `display_name` | `PATCH /api/setups/:id` (`name`) | Yes: shown instead of `folder`; an empty name or the folder name clears it |
+| `included` | Create (the funnel's tick box), or `PATCH /api/setups/:id` | Yes: a hidden setup's samples leave the workspace and the scan skips it; showing a hidden setup starts a rescan, so frames that arrived while it was hidden come in. The last shown setup cannot be hidden |
 | `root_dir`, `data_dir`, `analysis_dir` | Create | No |
 | `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Not yet (see [Rescans](#rescans)) |
 | `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Not yet |
@@ -155,6 +179,14 @@ Everything else is a column on the experiment's `setups` rows.
 
 `GET /api/experiments` and `GET /api/experiments/:id` return the setups under
 `setups`, ordered by `position`, with `name` set to the display name.
+
+`PATCH /api/setups/:id` takes `name` (a string, or `null` to go back to the
+folder name) and `included`. Any other field is a `400`. It logs a
+`setup_updated` event and broadcasts it, and the palette's Settings page edits
+both (undoable). In the workspace, samples of hidden setups are left out of the
+list, Z, the progress count and every picker, and bridges or comparisons to them
+stay stored but are not drawn. With more than one shown setup, the sample list
+is grouped under a sticky header per setup.
 
 ### Migration from one experiment per setup
 
@@ -171,7 +203,13 @@ before the first start of an upgraded build.
 
 ## File patterns
 
-Each pattern contains `{name}`, which stands for an exposure's stem.
+Each pattern contains `{name}` exactly once; it stands for an exposure's stem.
+A pattern without it would point every frame at the same file, so it is
+refused everywhere one is accepted: `400` from `POST /api/experiments`,
+`POST /api/experiments/:id/setups` and `GET /api/fs/manifest`, an
+`ArgumentError` from `create_setup!`, and an inline error in the funnel's
+Details that blocks adding a ticked setup (an unticked one is sent without
+patterns).
 
 | Pattern | Default when the column is `NULL` | Matched in |
 |---------|-----------------------------------|------------|
@@ -293,12 +331,29 @@ waiting for its trace says "Waiting for this frame's trace." in the plot, not
 "No integrated trace", and the plot refetches the trace when the next pass
 completes.
 
+It also returns `setups`: each folder under the beamtime that would be a new
+setup but whose file layout `resolve_experiment_layout` does not recognise
+(`unrecognized_setup_roots`, `{root, folder}`). A rescan skips these, so the
+notice counts them ("1 setup folder not recognised") and the list names them,
+with an "Add setup folders" link that opens New experiment on the beamtime
+folder. There the funnel shows the beamtime as already added, keeps its
+setups locked, and lets the user tick the new folder, type its patterns in
+Details, and add it with `POST /api/experiments/:id/setups`.
+
+`POST /api/experiments/:id/setups` takes `{setups: [...]}` in the same shape and
+with the same checks as the beamtime create (each root inside the experiment's
+`path`, each data folder unused, at least one ticked). It adds them as the next
+positions under the write lock, starts a rescan and answers
+`202 {status: "scanning", experiment_id, setup_ids}`. An experiment whose `path`
+is its own single setup folder cannot take more setups (`400`).
+
 ## Rescans
 
 Every pass goes through `run_ingest!` (`server.jl`), which holds a per-experiment
 lock, so one experiment never has two passes at once; a second caller waits and
 then runs its own, usually empty, pass. It sets `ingest_status` to `scanning`,
-back-fills beam monitors, runs `scan_and_group!`, suggests role tags, and ends
+back-fills beam monitors, adds new setup folders (`add_new_setups!`,
+`beamtime.jl`), runs `scan_and_group!`, suggests role tags, and ends
 `complete` (stamping `last_scanned_at`) or `failed`. Every pass after the first
 sends `phase: "rescan"`.
 
@@ -336,8 +391,21 @@ left alone, so removing or renaming it sticks. Databases from before
 this column re-read their `.prp` files once (`exposures_pipe_length_v1` resets
 `monitors_read`), and the start-up back-fill then suggests the labels.
 
+A new setup folder is any folder `setup_roots` finds under the experiment's
+`path` that is not one of its setups yet and whose data folder no other
+experiment uses. It waits until `resolve_experiment_layout` detects its layout
+(an integrated trace, or the SSRL `analysis/automatic_analysis/tot_files`
+folder), so a folder whose images arrive before anything else is not stored
+with guessed patterns (until then it is listed under [Problems](#problems)).
+It is then added as the next `position`, ticked, with
+that layout; the scan then fills its geometry. Setups
+the user unticked stay setups, so they are never re-added. An experiment whose
+`path` is one of its own setup folders (a single setup was picked, or a DB
+migrated from one experiment per setup) never adds folders. An unreachable
+`path` adds nothing.
+
 `ingest_has_work(db, id)` (`ingest.jl`) says whether a pass would change
-anything: an image (with its metadata file, when the folder has any) that has no
+anything: a new setup folder, an image (with its metadata file, when the folder has any) that has no
 exposure yet, an exposure whose trace has appeared, one never analyzed, or one
 analyzed by an older version, or a failed one whose trace file has changed. It
 lists the image, metadata and trace directories once each and stats only
@@ -400,7 +468,22 @@ himalaya show [-e <experiment>] -s <sample>
 himalaya serve [--port N] [--host H]
     Start the web server. Creates an empty DB if none exists, so a new user
     can create the first experiment through the funnel.
+
+himalaya merge <experiment> <experiment>... [--name N] [--path P] [--apply]
+    Merge experiments made one per setup into one beamtime. Without --apply
+    it prints the plan and writes nothing.
 ```
+
+`merge` keeps the first experiment named and moves the others' setups, loads,
+samples and frames into it, then deletes the emptied experiments. No other id
+changes, so phase calls, labels, bridges and the event log carry over. The
+result's `path` is the folder the setups share (or `--path`) and its name
+replaces the kept experiment's name: that folder's name, or `--name`. Setups
+are ordered by folder name. It refuses fewer than two experiments, one listed
+twice, one that is scanning or analyzing, two setups with the same folder name,
+setups that are not all in one folder (unless `--path` names it), and a `path`
+another experiment already has. Stop the server before applying it, so no
+open page holds stale experiment ids.
 
 `-e` takes an id, a name or a path. A path matches the experiment's folder whether
 it is typed through a symlink or with a trailing slash. When it is left out, `analyze` and `show`

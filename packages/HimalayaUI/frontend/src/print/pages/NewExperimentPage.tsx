@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../api";
 import { queryKeys } from "../../queries";
@@ -8,17 +8,17 @@ import { DirectoryPickerField } from "../components/DirectoryPickerField";
 import { Button } from "../ui/Button";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
+import { FieldError } from "../ui/FieldError";
 import { KbKey } from "../ui/KbKey";
 import { modCombo } from "../../lib/modKey";
 import { Kicker } from "../ui/Kicker";
 
 type Patterns = api.SetupPreview["patterns"];
 type GeometryKey = "flight_path_m" | "beam_center_x" | "beam_center_y" | "energy_kev" | "pixel_size_um";
-type CreateGeometry = NonNullable<api.CreateExperimentBody["geometry"]>;
+type CreateGeometry = NonNullable<api.CreateSetupBody["geometry"]>;
 
 interface RowEdit {
   include: boolean;
-  name: string;
   data_dir: string;
   analysis_dir: string;
   setup_file: string;
@@ -36,10 +36,11 @@ const GEOMETRY_FIELDS: ReadonlyArray<{ key: GeometryKey; label: string }> = [
 
 const count = (n: number): string => n.toLocaleString("en-US");
 
+const folderName = (p: string): string => p.replace(/\/+$/, "").split("/").pop() ?? p;
+
 function initialEdit(s: api.SetupPreview): RowEdit {
   return {
     include: s.duplicate_of === null && s.exposures > 0 && s.layout_detected,
-    name: s.name,
     data_dir: s.data_dir,
     analysis_dir: s.analysis_dir ?? "",
     setup_file: s.setup_file ?? "",
@@ -47,6 +48,15 @@ function initialEdit(s: api.SetupPreview): RowEdit {
     geometry: {},
   };
 }
+
+function patternProblem(v: string): string | undefined {
+  return v.split("{name}").length === 2 ? undefined : "Use {name} exactly once, for example {name}.tif.";
+}
+
+const patternsValid = (e: RowEdit): boolean =>
+  patternProblem(e.patterns.image) === undefined
+  && patternProblem(e.patterns.metadata) === undefined
+  && patternProblem(e.patterns.integration) === undefined;
 
 function layoutEdited(s: api.SetupPreview, e: RowEdit): boolean {
   return e.data_dir !== s.data_dir
@@ -114,30 +124,30 @@ function manifestQuery(e: RowEdit) {
   };
 }
 
-function DetailsField({ label, value, onChange, placeholder, testId }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string;
+function DetailsField({ label, value, onChange, placeholder, testId, error }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string; error?: string | undefined;
 }): JSX.Element {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-caption text-ink-soft">{label}</span>
-      <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId}
+      <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId} invalid={error !== undefined}
         {...(placeholder !== undefined ? { placeholder } : {})} />
+      {error !== undefined && <FieldError testId={`${testId}-error`}>{error}</FieldError>}
     </label>
   );
 }
 
-function SetupRow({ setup, edit, onEdit, error }: {
+function SetupRow({ setup, edit, onEdit }: {
   setup: api.SetupPreview;
   edit: RowEdit;
   onEdit: (patch: Partial<RowEdit>) => void;
-  error: string | undefined;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const settled = useDebounced(edit, 300);
   const edited = layoutEdited(setup, settled);
   const manifest = useQuery({
     ...manifestQuery(settled),
-    enabled: edited && settled.data_dir !== "",
+    enabled: edited && settled.data_dir !== "" && patternsValid(settled),
   });
   const sum: Summary = edited && manifest.data
     ? summaryFromManifest(manifest.data, setup.geometry)
@@ -155,10 +165,9 @@ function SetupRow({ setup, edit, onEdit, error }: {
           checked={edit.include}
           disabled={setup.duplicate_of !== null}
           onChange={(include) => onEdit({ include })}
-          aria-label={`Add ${edit.name}`}
+          aria-label={`Include ${folderName(setup.root)}`}
         />
-        <Input value={edit.name} onValueChange={(name) => onEdit({ name })} testId="setup-name"
-          aria-label="Experiment name" className="min-w-0 flex-1" />
+        <span data-testid="setup-folder" className="min-w-0 flex-1 truncate">{folderName(setup.root)}</span>
         <Button variant="ghost" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
           {open ? "Hide details" : "Details"}
         </Button>
@@ -168,7 +177,6 @@ function SetupRow({ setup, edit, onEdit, error }: {
           ? `Already added as "${setup.duplicate_of.name}".`
           : summaryLine(setup, sum, edit.setup_file)}
       </p>
-      {error !== undefined && <p role="alert" className="text-meta text-error">{error}</p>}
       {open && (
         <div data-testid="setup-details" className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <DetailsField label="Data folder" value={edit.data_dir} testId="details-data-dir"
@@ -178,10 +186,13 @@ function SetupRow({ setup, edit, onEdit, error }: {
           <DetailsField label="Setup file" value={edit.setup_file} testId="details-setup-file"
             onChange={(setup_file) => onEdit({ setup_file })} />
           <DetailsField label="Image files" value={edit.patterns.image} testId="details-image-pattern"
+            error={patternProblem(edit.patterns.image)}
             onChange={(image) => onEdit({ patterns: { ...edit.patterns, image } })} />
           <DetailsField label="Metadata files" value={edit.patterns.metadata} testId="details-metadata-pattern"
+            error={patternProblem(edit.patterns.metadata)}
             onChange={(metadata) => onEdit({ patterns: { ...edit.patterns, metadata } })} />
           <DetailsField label="Integration files" value={edit.patterns.integration} testId="details-integration-pattern"
+            error={patternProblem(edit.patterns.integration)}
             onChange={(integration) => onEdit({ patterns: { ...edit.patterns, integration } })} />
           {GEOMETRY_FIELDS.map(({ key, label }) => (
             <DetailsField key={key} label={label} value={edit.geometry[key] ?? ""} testId={`details-${key}`}
@@ -203,13 +214,23 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+function existingFrom(body: unknown): { id: number; name: string } | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const b = body as { experiment_id?: unknown; name?: unknown };
+  if (typeof b.experiment_id !== "number" || typeof b.name !== "string") return undefined;
+  return { id: b.experiment_id, name: b.name };
+}
+
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [path, setPath] = useState("");
+  const [search] = useSearchParams();
+  const [path, setPath] = useState(() => search.get("path") ?? "");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [typedName, setTypedName] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [refused, setRefused] = useState<{ id: number; name: string } | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const picked = useDebounced(path.trim(), 200);
 
@@ -234,61 +255,72 @@ export function NewExperimentPage(): JSX.Element {
       if (kept === undefined) return [s.root, initialEdit(s)];
       return [s.root, s.duplicate_of !== null ? { ...kept, include: false } : kept];
     })));
-    setErrors((cur) => Object.fromEntries(Object.entries(cur).filter(([root]) => setups.some((s) => s.root === root))));
   }, [setups]);
 
+  useEffect(() => { setTypedName(undefined); setRefused(undefined); }, [picked]);
+
+  const folder = preview.data?.path ?? picked;
+  const name = typedName ?? folderName(folder);
+  const existing = preview.data?.existing ?? refused;
+
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
+  const patternsOk = chosen.every((s) => patternsValid(edits[s.root]!));
   const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
-  const canSubmit = current && chosen.length > 0 && !submitting && chosen.every((s) => edits[s.root]!.name.trim() !== "");
-  const [submitWhenReady, setSubmitWhenReady] = useState<string | undefined>(undefined);
+  const canSubmit = current && chosen.length > 0 && patternsOk && !submitting && (existing !== undefined || name.trim() !== "");
+  const [submitWhenReady, setSubmitWhenReady] = useState<{ path: string } | undefined>(undefined);
+  const firedFor = useRef<{ path: string } | undefined>(undefined);
   const inFlight = useRef(false);
 
   const submit = useCallback(async (): Promise<void> => {
     if (!canSubmit || inFlight.current) return;
     inFlight.current = true;
     setSubmitting(true);
-    const created: number[] = [];
-    const failed: Record<string, string> = {};
-    for (const s of chosen) {
-      const e = edits[s.root]!;
-      let manifest: api.ManifestResponse | undefined;
-      if (layoutEdited(s, e)) {
-        try {
-          manifest = await queryClient.fetchQuery(manifestQuery(e));
-        } catch (err) {
-          failed[s.root] = `Could not read this setup's files: ${err instanceof Error ? err.message : String(err)}`;
-          continue;
+    setError(undefined);
+    try {
+      const body: api.CreateSetupBody[] = [];
+      for (const s of setups) {
+        if (s.duplicate_of !== null) continue;
+        const e = edits[s.root]!;
+        if (existing !== undefined && !e.include) continue;
+        let manifest: api.ManifestResponse | undefined;
+        if (e.include && layoutEdited(s, e)) {
+          try {
+            manifest = await queryClient.fetchQuery(manifestQuery(e));
+          } catch (err) {
+            throw new Error(`Could not read ${folderName(s.root)}: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
-      }
-      const geometry = createGeometry(manifest?.geometry ?? s.geometry, parsedGeometry(e));
-      try {
-        const exp = await api.createExperiment({
-          name: e.name.trim(),
+        const geometry = createGeometry(manifest?.geometry ?? s.geometry, parsedGeometry(e));
+        body.push({
+          root: s.root,
           data_dir: e.data_dir,
-          path: e.data_dir,
           ...(e.analysis_dir !== "" ? { analysis_dir: e.analysis_dir } : {}),
-          patterns: e.patterns,
+          included: e.include,
+          ...(patternsValid(e) ? { patterns: e.patterns } : {}),
           ...(geometry ? { geometry } : {}),
         });
-        created.push(exp.id);
-        setEdits((cur) => ({ ...cur, [s.root]: { ...cur[s.root]!, include: false } }));
-      } catch (err) {
-        failed[s.root] = err instanceof Error ? err.message : "Could not add this setup.";
       }
+      const exp = existing !== undefined
+        ? (await api.addSetups(existing.id, body), existing)
+        : await api.createExperiment({ name: name.trim(), path: folder, setups: body });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.experiments });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.folderPreviews });
+      navigate(`/experiments/${exp.id}`);
+    } catch (err) {
+      const taken = err instanceof api.ApiError && err.status === 409 ? existingFrom(err.body) : undefined;
+      if (taken !== undefined) setRefused(taken);
+      else setError(err instanceof Error ? err.message : "Could not add this beamtime.");
+    } finally {
+      setSubmitting(false);
+      inFlight.current = false;
     }
-    setErrors(failed);
-    setSubmitting(false);
-    inFlight.current = false;
-    void queryClient.invalidateQueries({ queryKey: queryKeys.experiments });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.folderPreviews });
-    if (Object.keys(failed).length > 0) return;
-    navigate(created.length === 1 ? `/experiments/${created[0]}` : "/experiments");
-  }, [canSubmit, chosen, edits, navigate, queryClient]);
+  }, [canSubmit, setups, edits, name, folder, existing, navigate, queryClient]);
 
   useEffect(() => {
     if (submitWhenReady === undefined) return;
-    if (submitWhenReady !== path.trim()) setSubmitWhenReady(undefined);
-    else if (current) {
+    if (submitWhenReady.path !== path.trim()) setSubmitWhenReady(undefined);
+    else if (current && firedFor.current !== submitWhenReady) {
+      firedFor.current = submitWhenReady;
       setSubmitWhenReady(undefined);
       if (canSubmit) void submit();
     }
@@ -329,17 +361,30 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady(path.trim()))} suggestions={suggestions} autoFocus />
-          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{status}</p>
+          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} suggestions={suggestions} autoFocus />
+          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing === undefined
+            ? status
+            : setups.some((s) => s.duplicate_of === null)
+              ? `This beamtime is already added as ${existing.name}. Tick a setup folder below to add it there.`
+              : `This beamtime is already added as ${existing.name}. New setup folders in it are added when it is rescanned.`}</p>
+          {existing !== undefined && (
+            <Button variant="ghost" data-testid="open-existing" className="mt-1" onClick={() => navigate(`/experiments/${existing.id}`)}>Open {existing.name}</Button>
+          )}
         </div>
+        {setups.length > 0 && existing === undefined && (
+          <div className="mt-6">
+            <DetailsField label="Experiment name" value={name} onChange={setTypedName} testId="experiment-name" />
+          </div>
+        )}
         {setups.length > 0 && (
           <ul data-testid="setup-list" className="mt-4 flex flex-col">
             {setups.map((s) => edits[s.root] && (
-              <SetupRow key={s.root} setup={s} edit={edits[s.root]!} error={errors[s.root]}
+              <SetupRow key={s.root} setup={s} edit={edits[s.root]!}
                 onEdit={(patch) => setEdits((cur) => ({ ...cur, [s.root]: { ...cur[s.root]!, ...patch } }))} />
             ))}
           </ul>
         )}
+        {error !== undefined && <p role="alert" className="mt-3 text-meta text-error">{error}</p>}
       </PageFrame>
       <footer
         data-testid="funnel-footer"
@@ -347,7 +392,7 @@ export function NewExperimentPage(): JSX.Element {
       >
         <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
         <Button variant="accent" data-testid="create-submit" disabled={!canSubmit} onClick={() => { void submit(); }}>
-          {chosen.length > 1 ? `Add ${chosen.length} experiments` : "Add experiment"}
+          {existing !== undefined ? "Add setups" : "Add experiment"}
           <KbKey variant="frost" className="ml-2">{modCombo("↵")}</KbKey>
         </Button>
       </footer>

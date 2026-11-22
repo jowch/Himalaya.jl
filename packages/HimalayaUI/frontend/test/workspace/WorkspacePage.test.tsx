@@ -20,6 +20,8 @@ const calls: Call[] = [];
 const traceRefetch = vi.fn();
 const corpusRequests: number[] = [];
 const state = {
+  experimentLoaded: true,
+  setups: [] as { id: number; name: string; folder: string; included: boolean }[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
   indices: [] as IndexEntry[],
@@ -136,7 +138,10 @@ vi.mock("../../src/queries", () => ({
     corpusRequests.push(experimentId);
     return { data: state.corpus, isLoading: false };
   },
-  useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
+  useExperiment: () => ({
+    data: state.experimentLoaded ? { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00", setups: state.setups } : undefined,
+    isError: false,
+  }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
@@ -257,7 +262,7 @@ function exposure(id: number, extra: Partial<Exposure> = {}): Exposure {
 function index(id: number, phase: string, score: number): IndexEntry {
   return {
     id, exposure_id: 101, phase, basis: 0.1, score, r_squared: 0.99, lattice_d: 100,
-    ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.14],
+    status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.14],
   } as IndexEntry;
 }
 
@@ -297,6 +302,8 @@ beforeEach(() => {
   compareFetches.length = 0;
   prefetchTargets.length = 0;
   state.username = "jc";
+  state.experimentLoaded = true;
+  state.setups = [];
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
     sample(11, "A2"),
@@ -350,6 +357,26 @@ describe("WorkspacePage", () => {
     state.traceFetching = false;
     rerender(page("/experiments/1/workspace/11"));
     expect(prefetchTargets.at(-1)!.settled).toBe(true);
+  });
+
+  it("holds the sample list until the setups are known, so it paints once in its final order", () => {
+    state.experimentLoaded = false;
+    state.setups = [
+      { id: 2, name: "setup2", folder: "setup2", included: true },
+      { id: 1, name: "setup1", folder: "setup1", included: false },
+    ];
+    state.corpus = [
+      { ...sample(10, "A1"), setup_id: 1 },
+      { ...sample(11, "B1"), setup_id: 2 },
+      { ...sample(12, "B2"), setup_id: 2 },
+    ];
+    const { rerender } = renderAt("/experiments/1/workspace");
+    expect(within(screen.getByTestId("workspace-samples")).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByText("Loading samples…")).toBeInTheDocument();
+    state.experimentLoaded = true;
+    rerender(page("/experiments/1/workspace"));
+    const rows = within(screen.getByTestId("workspace-samples")).getAllByRole("button");
+    expect(rows.map((r) => r.getAttribute("data-sample-id"))).toEqual(["11", "12"]);
   });
 
   it("lists only this experiment's samples and marks unreviewed ones", () => {
@@ -810,6 +837,58 @@ describe("WorkspacePage", () => {
     const redo = () => press({ key: "Z", ctrlKey: true, shiftKey: true });
     const onServer = (eid: number, a: Partial<Assignment>) =>
       server.assignments.set(eid, { exposure_id: eid, state: "indexed", members: [], ...a });
+
+    it("ticks a Bonnet group whole with its number key and undoes it as one edit", async () => {
+      const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
+      state.indices = [
+        { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: peaksAt([0.05, 0.07, 0.09, 0.11]) },
+        { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: peaksAt([0.06, 0.08, 0.1, 0.12]) },
+      ];
+      state.assignment = { exposure_id: 101, state: "null", members: [] };
+      renderAt("/experiments/1/workspace/10");
+      expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "false");
+      fireEvent.keyDown(window, { key: "1" });
+      expect(calls).toEqual([
+        { hook: "add", boundTo: 101, arg: 1 },
+        { hook: "add", boundTo: 101, arg: 2 },
+      ]);
+      onServer(101, { members: [1, 2] });
+      await undo();
+      expect(ops()).toEqual([["removePhase", 101, 2], ["removePhase", 101, 1]]);
+      expect(toasts.at(-1)).toBe("Undone: ticked Im3m + Pn3m on A1");
+    });
+
+    it("adds only the missing member when the header of a partly ticked group is clicked, and undoes only that", async () => {
+      const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
+      state.indices = [
+        { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: peaksAt([0.05, 0.07, 0.09, 0.11]) },
+        { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: peaksAt([0.06, 0.08, 0.1, 0.12]) },
+      ];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [1] };
+      renderAt("/experiments/1/workspace/10");
+      const header = screen.getByTestId("workspace-bonnet-group");
+      expect(header).toHaveAttribute("aria-pressed", "mixed");
+      fireEvent.click(header);
+      expect(calls).toEqual([{ hook: "add", boundTo: 101, arg: 2 }]);
+      onServer(101, { members: [1, 2] });
+      await undo();
+      expect(ops()).toEqual([["removePhase", 101, 2]]);
+    });
+
+    it("unticks a whole Bonnet group when every member is in the call", () => {
+      const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
+      state.indices = [
+        { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: peaksAt([0.05, 0.07, 0.09, 0.11]) },
+        { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: peaksAt([0.06, 0.08, 0.1, 0.12]) },
+      ];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [1, 2] };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByTestId("workspace-bonnet-group"));
+      expect(calls).toEqual([
+        { hook: "remove", boundTo: 101, arg: 1 },
+        { hook: "remove", boundTo: 101, arg: 2 },
+      ]);
+    });
 
     it("Ctrl+Z after 0 clears no phase and ticks every phase it wiped, on this frame and others", async () => {
       state.sampleCall = {
