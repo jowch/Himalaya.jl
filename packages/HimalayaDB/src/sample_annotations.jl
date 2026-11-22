@@ -46,8 +46,8 @@ filter on `state == "confirmed"` when that matters.
 """
 sample_labels(db::SQLite.DB, sample_id::Integer) = Tables.rowtable(DBInterface.execute(db, """
     SELECT l.id, l.label, l.state, l.source
-      FROM sample_labels l JOIN samples s ON s.id = l.sample_id
-     WHERE l.sample_id = ? AND s.merged_into_id IS NULL AND l.state != 'removed'
+      FROM sample_labels l
+     WHERE l.sample_id = ? AND l.state != 'removed'
      ORDER BY l.id""", [Int(sample_id)]))
 
 """
@@ -60,9 +60,7 @@ function subtraction_background(db::SQLite.DB, sample_id::Integer)
     rows = Tables.rowtable(DBInterface.execute(db, """
         SELECT t.ref_sample_id
           FROM sample_subtractions t
-          JOIN samples s ON s.id = t.sample_id
-          JOIN samples r ON r.id = t.ref_sample_id
-         WHERE t.sample_id = ? AND s.merged_into_id IS NULL AND r.merged_into_id IS NULL""",
+         WHERE t.sample_id = ?""",
         [Int(sample_id)]))
     isempty(rows) ? nothing : Int(rows[1].ref_sample_id)
 end
@@ -78,8 +76,5 @@ bridged_samples(db::SQLite.DB, sample_id::Integer) = [Int(r.sample_id) for r in
     Tables.rowtable(DBInterface.execute(db, """
         SELECT b.sample_id FROM sample_bridges b
           JOIN sample_bridges me ON me.group_id = b.group_id
-          JOIN samples s  ON s.id = b.sample_id
-          JOIN samples ms ON ms.id = me.sample_id
          WHERE me.sample_id = ? AND b.sample_id != me.sample_id
-           AND s.merged_into_id IS NULL AND ms.merged_into_id IS NULL
          ORDER BY b.sample_id""", [Int(sample_id)]))]

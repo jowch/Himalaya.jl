@@ -6,7 +6,7 @@ function bridge_groups_for_experiment(db, exp_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT b.sample_id, b.group_id
              FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
-            WHERE s.experiment_id = ? AND s.merged_into_id IS NULL
+            WHERE s.experiment_id = ?
             ORDER BY b.group_id, b.sample_id""", [exp_id]))
     sizes = Dict{Int, Int}()
     for r in rows
@@ -32,7 +32,7 @@ function _live_sample_count(db, sample_ids::Vector{Int})
     isempty(sample_ids) && return 0
     marks = join(fill("?", length(sample_ids)), ", ")
     Int(first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM samples WHERE id IN ($marks) AND merged_into_id IS NULL",
+        "SELECT COUNT(*) AS n FROM samples WHERE id IN ($marks)",
         sample_ids))).n)
 end
 
@@ -56,7 +56,7 @@ function bridge_mates(db, sample_id::Int)
     g === nothing && return Int[]
     [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
         """SELECT s.id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
-            WHERE b.group_id = ? AND s.id <> ? AND s.merged_into_id IS NULL
+            WHERE b.group_id = ? AND s.id <> ?
             ORDER BY s.id""", [g, sample_id]))]
 end
 
@@ -89,8 +89,7 @@ end
 function _live_bridge_groups(db)
     groups = Dict{Int, Vector{Int}}()
     for r in Tables.rowtable(DBInterface.execute(db,
-            """SELECT b.group_id, b.sample_id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
-                WHERE s.merged_into_id IS NULL ORDER BY b.group_id, b.sample_id"""))
+            "SELECT group_id, sample_id FROM sample_bridges ORDER BY group_id, sample_id"))
         push!(get!(groups, Int(r.group_id), Int[]), Int(r.sample_id))
     end
     filter(kv -> length(last(kv)) >= 2, groups)
@@ -146,7 +145,7 @@ function register_bridge_routes!()
         to === nothing && return _json_error(400, "to_sample_id is required")
         to == id && return _json_error(400, "a sample cannot be bridged to itself")
         both = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, experiment_id FROM samples WHERE id IN (?, ?) AND merged_into_id IS NULL", [id, to]))
+            "SELECT id, experiment_id FROM samples WHERE id IN (?, ?)", [id, to]))
         length(both) == 2 || return _json_error(404, "sample not found")
         Int(both[1].experiment_id) == Int(both[2].experiment_id) ||
             return _json_error(422, "samples are in different experiments")

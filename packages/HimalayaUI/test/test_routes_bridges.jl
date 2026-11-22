@@ -106,30 +106,6 @@ _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables
         end
     end
 
-    @testset "a lone live sample leaves when its only partner was merged away" begin
-        db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b, c, d)) = _seed_bridge_samples(db, 4)
-        with_inproc_routes(db) do call
-            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
-            call("POST", "/api/samples/$c/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(a))
-            DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [d, b])
-            call("DELETE", "/api/samples/$c/bridge"; headers=_BRIDGE_HEADERS)
-            @test _bridge_rows(db) == Set{Int}()
-        end
-    end
-
-    @testset "a merged sample cannot be bridged on either side" begin
-        db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b, c, d)) = _seed_bridge_samples(db, 4)
-        with_inproc_routes(db) do call
-            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
-            DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [c, b])
-            @test call("POST", "/api/samples/$b/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(d)).status == 404
-            @test call("POST", "/api/samples/$d/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b)).status == 404
-            @test _groups(call, exp_id) == Set()
-        end
-    end
-
     @testset "a body that is not JSON is a 400" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b)) = _seed_bridge_samples(db, 2)
@@ -148,16 +124,6 @@ _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables
         end
         @test _bridge_rows(db) == Set{Int}()
         @test isempty(Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_check")))
-    end
-
-    @testset "a group left with one live sample is not listed" begin
-        db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b, c)) = _seed_bridge_samples(db, 3)
-        with_inproc_routes(db) do call
-            call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
-            DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [c, b])
-            @test _groups(call, exp_id) == Set()
-        end
     end
 
     @testset "bridge events are logged on the sample and rebuild the view" begin

@@ -1,7 +1,7 @@
 name = "HimalayaDB"
 uuid = "2e6886ae-0ce7-4cd7-b61e-fefd8d4001fa"
 authors = ["Jonathan Chen"]
-version = "0.4.0"
+version = "0.5.0"
 
 [deps]
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"

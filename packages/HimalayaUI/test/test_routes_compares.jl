@@ -127,18 +127,6 @@ end
         end
     end
 
-    @testset "merged samples drop out of the list" begin
-        db = open_prepared_clone(mktempdir())
-        (exp_id, (a, b, c)) = _seed_compare_samples(db, 3)
-        with_inproc_routes(db) do call
-            call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=_compare_body(add=[b, c], subtraction=b))
-            DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [c, b])
-            body = _compares(call, exp_id)
-            @test _refs(body, a) == [c]
-            @test _sub(body, a) === nothing
-        end
-    end
-
     @testset "compare events are logged on the sample and rebuild the view" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b, c)) = _seed_compare_samples(db, 3)

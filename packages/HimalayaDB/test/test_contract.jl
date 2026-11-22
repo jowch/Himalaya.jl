@@ -23,7 +23,7 @@ using DBInterface
     db_calls = Dict(sid => phase_call(db, sid) for sid in (ids.sample_id, ids.sample2_id))
     db_labels = [l for sid in (ids.sample_id, ids.sample2_id) for l in sample_labels(db, sid)]
     db_setup = only(filter(s -> s.id == ui_setup.id, setups(db)))
-    all_ids = (ids.sample_id, ids.sample2_id, ids.merged_id)
+    all_ids = (ids.sample_id, ids.sample2_id)
     db_subs = [(sid, subtraction_background(db, sid)) for sid in all_ids]
     db_bridges = Dict(sid => bridged_samples(db, sid) for sid in all_ids)
     db_all_labels = [l for sid in all_ids for l in sample_labels(db, sid)]

@@ -6,7 +6,7 @@ function labels_for_experiment(db, exp_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
         """SELECT l.id, l.sample_id, l.label, l.state, l.source
              FROM sample_labels l JOIN samples s ON s.id = l.sample_id
-            WHERE s.experiment_id = ? AND s.merged_into_id IS NULL AND l.state != 'removed'
+            WHERE s.experiment_id = ? AND l.state != 'removed'
             ORDER BY l.sample_id, l.id""", [exp_id]))
     [Dict(:id => Int(r.id), :sample_id => Int(r.sample_id), :label => String(r.label),
           :state => String(r.state), :source => String(r.source)) for r in rows]
@@ -67,7 +67,7 @@ end
 
 function _live_sample_experiment(db, sample_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT experiment_id FROM samples WHERE id = ? AND merged_into_id IS NULL", [sample_id]))
+        "SELECT experiment_id FROM samples WHERE id = ?", [sample_id]))
     isempty(rows) || ismissing(rows[1].experiment_id) ? nothing : Int(rows[1].experiment_id)
 end
 
