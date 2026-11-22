@@ -104,19 +104,31 @@ setup:
 HIMALAYA_SERVICE ?= himalaya
 HIMALAYA_RESTART ?= sudo systemctl restart $(HIMALAYA_SERVICE)
 NEXT_BUILD_DIR   := $(BUILD_DIR)/next
-DIST              = "$${HIMALAYA_FRONTEND_DIST:-$(CURDIR)/$(FRONTEND_DIR)/dist}"
+RESOLVE_DIST = $(LOAD_ENV) dist="$${HIMALAYA_FRONTEND_DIST:-$(FRONTEND_DIR)/dist}"; \
+	case "$$dist" in /*) ;; *) dist="$(CURDIR)/$$dist" ;; esac; dist="$${dist%/}";
 
 deploy:
-	@case '$(HIMALAYA_RESTART)' in sudo\ *) sudo -v ;; esac
+	@case '$(HIMALAYA_RESTART)' in sudo\ *) \
+		sudo -n -l $(wordlist 2,99,$(HIMALAYA_RESTART)) >/dev/null 2>&1 || sudo -v ;; esac
 	$(MAKE) setup
-	@$(LOAD_ENV) dist=$(DIST); rm -rf "$$dist.next"; \
+	@$(RESOLVE_DIST) rm -rf "$$dist.next"; \
 	cd $(FRONTEND_DIR) && npm run build -- --outDir "$$dist.next"
 	$(MAKE) sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
 	$(MAKE) check-sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
-	mv $(NEXT_BUILD_DIR)/julia_version $(NEXT_BUILD_DIR)/depot_path $(BUILD_DIR)/
-	mv $(NEXT_BUILD_DIR)/himalaya.so $(BUILD_DIR)/himalaya.so
-	@$(LOAD_ENV) dist=$(DIST); rm -rf "$$dist.old"; \
-	{ [ ! -d "$$dist" ] || mv "$$dist" "$$dist.old"; } && mv "$$dist.next" "$$dist" && rm -rf "$$dist.old"
+	@$(RESOLVE_DIST) \
+	if [ ! -f "$$dist.next/index.html" ]; then echo "No frontend build at $$dist.next; nothing swapped."; exit 1; fi; \
+	rm -rf "$$dist.old"; \
+	if [ -d "$$dist" ]; then mv "$$dist" "$$dist.old" || exit 1; fi; \
+	if ! mv "$$dist.next" "$$dist"; then \
+		[ ! -d "$$dist.old" ] || mv "$$dist.old" "$$dist"; \
+		echo "Could not move the new frontend into $$dist; the old one is back."; exit 1; \
+	fi; \
+	if ! mv $(NEXT_BUILD_DIR)/himalaya.so $(BUILD_DIR)/himalaya.so; then \
+		rm -rf "$$dist"; [ ! -d "$$dist.old" ] || mv "$$dist.old" "$$dist"; \
+		echo "Could not move the new sysimage into $(BUILD_DIR); the old frontend is back."; exit 1; \
+	fi; \
+	mv $(NEXT_BUILD_DIR)/julia_version $(NEXT_BUILD_DIR)/depot_path $(BUILD_DIR)/; \
+	rm -rf "$$dist.old"
 	$(HIMALAYA_RESTART)
 
 dev-setup:

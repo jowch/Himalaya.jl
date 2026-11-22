@@ -194,11 +194,12 @@ until the swap the running daemon, the CLI and the served UI all stay on the
 old version. It takes about 5–10 min. The frontend goes to
 `HIMALAYA_FRONTEND_DIST` when `.env` sets it.
 
-It runs `sudo -v` first, so the password prompt comes at the start, not after the
-build. sudo's credential cache can expire during the build, so it may ask again
-at the restart. To avoid that, allow exactly the restart without a password, e.g.
+Unless sudo already allows the restart without a password, it runs `sudo -v`
+first, so the prompt comes at the start, not after the build. sudo's credential
+cache can expire during the build, so it may ask again at the restart. To avoid
+both, allow exactly the restart without a password, e.g.
 `<user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart himalaya` in
-`/etc/sudoers.d/himalaya`. `HIMALAYA_SERVICE=<unit>` names another systemd unit,
+`/etc/sudoers.d/himalaya`. Then it never prompts and runs without a terminal. `HIMALAYA_SERVICE=<unit>` names another systemd unit,
 and `HIMALAYA_RESTART=` skips the restart.
 
 Packages and the sysimage go into the shared depot that `bin/himalaya` runs
