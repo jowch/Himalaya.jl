@@ -19,7 +19,7 @@ function renderAt(path: string) {
 
 describe("shell keys on the pages outside the workspace", () => {
   beforeEach(() => {
-    useAppState.setState({ activeExperimentId: undefined, staleUrlContext: null, navModalOpen: false });
+    useAppState.setState({ activeExperimentId: undefined, staleUrlContext: null, paletteOpen: false });
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
   });
   afterEach(() => vi.restoreAllMocks());
@@ -34,7 +34,7 @@ describe("shell keys on the pages outside the workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
-  it("⌘K opens the finder from inside a text field, where ? and / type once it has text", async () => {
+  it("⌘K opens the palette from inside a text field, where ? and / type once it has text", async () => {
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
     const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
@@ -42,10 +42,10 @@ describe("shell keys on the pages outside the workspace", () => {
     fireEvent.change(field, { target: { value: "/lab" } });
     fireEvent.keyDown(field, { key: "?" });
     fireEvent.keyDown(field, { key: "/" });
-    expect(useAppState.getState().navModalOpen).toBe(false);
+    expect(useAppState.getState().paletteOpen).toBe(false);
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
     fireEvent.keyDown(field, { key: "k", metaKey: true });
-    expect(useAppState.getState().navModalOpen).toBe(true);
+    expect(useAppState.getState().paletteOpen).toBe(true);
   });
 
   it("? from the empty folder field opens the shortcuts list, and types once the field has text", async () => {
@@ -87,24 +87,35 @@ describe("shell keys on the pages outside the workspace", () => {
     }
   });
 
+  it("? types into the empty palette field on the experiments home instead of opening the shortcuts", async () => {
+    renderAt("/experiments");
+    await screen.findByTestId("app-shell");
+    fireEvent.keyDown(document.body, { key: "k", metaKey: true });
+    const palette = await screen.findByRole("dialog");
+    const input = palette.querySelector("input")!;
+    expect(input).toHaveValue("");
+    fireEvent.keyDown(input, { key: "?" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
   it("⌘K does nothing inside an open dialog", async () => {
     renderAt("/experiments");
     await screen.findByTestId("app-shell");
     fireEvent.keyDown(document.body, { key: "?" });
     const help = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
     fireEvent.keyDown(help, { key: "k", ctrlKey: true });
-    expect(useAppState.getState().navModalOpen).toBe(false);
+    expect(useAppState.getState().paletteOpen).toBe(false);
   });
 
   it.each([
     [{ key: "k", metaKey: true }],
     [{ key: "k", ctrlKey: true }],
     [{ key: "/" }],
-  ])("%o opens the finder", async (init) => {
+  ])("%o opens the palette", async (init) => {
     renderAt("/experiments");
     await screen.findByTestId("app-shell");
     fireEvent.keyDown(document.body, init);
-    expect(useAppState.getState().navModalOpen).toBe(true);
+    expect(useAppState.getState().paletteOpen).toBe(true);
   });
 
   it("ignores ? and / while typing in a field", async () => {
@@ -117,7 +128,7 @@ describe("shell keys on the pages outside the workspace", () => {
     fireEvent.keyDown(input, { key: "?" });
     fireEvent.keyDown(input, { key: "/" });
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
-    expect(useAppState.getState().navModalOpen).toBe(false);
+    expect(useAppState.getState().paletteOpen).toBe(false);
     input.remove();
   });
 });

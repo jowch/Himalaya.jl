@@ -12,13 +12,14 @@ interface Props {
   groups: readonly PaletteGroup[];
   pages: Readonly<Record<string, PalettePage>>;
   onClose: () => void;
+  onType?: (query: string) => void;
 }
 
 export function keepFocusInField(e: MouseEvent): void {
   if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
 }
 
-export function Palette({ groups, pages, onClose }: Props): JSX.Element {
+export function Palette({ groups, pages, onClose, onType }: Props): JSX.Element {
   const [stack, setStack] = useState<Level[]>([]);
   const [query, setQuery] = useState("");
   const listId = useId();
@@ -103,6 +104,7 @@ export function Palette({ groups, pages, onClose }: Props): JSX.Element {
       value={query}
       onChange={(e) => {
         setQuery(e.target.value);
+        onType?.(e.target.value);
         highlight.setAt(0);
       }}
       onKeyDown={onKeyDown}

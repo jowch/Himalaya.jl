@@ -139,7 +139,7 @@ async function findTestExposure(): Promise<TestExposure> {
 async function navigateToExposure(page: Page, fx: TestExposure): Promise<void> {
   // No deep-link route; seed Zustand-persisted client state so the app
   // mounts directly on the Index page for this exposure. Bypasses
-  // OnboardingFlow + NavModal in one shot.
+  // OnboardingFlow in one shot.
   await page.addInitScript((args) => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: {

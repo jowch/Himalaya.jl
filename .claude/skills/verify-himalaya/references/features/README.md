@@ -16,6 +16,12 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   bin/verify click --role button --name "Demo (synthetic)"     # opens its workspace on the first unreviewed sample
   ```
 - **Check:** `bin/verify api GET /api/experiments` (`ingest_status`, `stats`).
+- **Palette:** ⌘/Ctrl+K (or `/` when no field has the cursor) opens the same `dialog "Commands"` as the workspace, here and in the New-experiment funnel. Groups: Experiments ("New experiment", hidden in the funnel; "All experiments", hidden on home; one `option "Open NAME"` per experiment) and App (Theme, Switch user, Keyboard shortcuts). Typing adds "Go to NAME, EXPERIMENT" rows for samples in every experiment, which open that sample in the workspace. ⌘K again or Esc closes it. The "Experiment 'X' not found." page's button opens it too.
+  ```bash
+  bin/verify press Meta+k
+  bin/verify fill --role combobox --name "Command or sample" "peg5"
+  bin/verify press Enter                                     # opens MO_PEG5 in the workspace
+  ```
 
 ## Ingest funnel (new experiment)
 

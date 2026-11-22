@@ -4,8 +4,8 @@ import { MOD_KEY } from "../../lib/modKey";
 const GENERAL: HelpSection = {
   title: "General",
   rows: [
-    { keys: [MOD_KEY, "K"], what: "Find an experiment or sample" },
-    { keys: ["/"], what: "Find, when no field has the cursor" },
+    { keys: [MOD_KEY, "K"], what: "Commands and go to an experiment or sample" },
+    { keys: ["/"], what: "The same, when no field has the cursor" },
     { keys: ["?"], what: "This list" },
   ],
 };
