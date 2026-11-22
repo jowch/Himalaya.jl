@@ -11,6 +11,7 @@ export function armSettle(page) {
   const inflight = new Set();
   const httpErrors = [];
   const onRequest = (r) => {
+    if (r.isNavigationRequest() && r.frame() === page.mainFrame()) inflight.clear();
     if (tracked(r)) inflight.add(r);
   };
   const onDone = (r) => inflight.delete(r);
