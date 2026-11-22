@@ -15,7 +15,6 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
   const noop = vi.fn();
   return {
     modKey: "Ctrl",
-    sampleName: "A1",
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },

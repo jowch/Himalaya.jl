@@ -31,7 +31,7 @@ function stored(): { clientOpId: string }[] {
 
 function downFor(ms: number) {
   const upAt = Date.now() + ms;
-  return vi.fn(async () => {
+  return vi.fn(async (_p: { clientOpId: string }) => {
     if (Date.now() < upAt) throw new NetworkError("PUT", "/api/x");
     return { ok: true };
   });

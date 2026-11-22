@@ -160,7 +160,7 @@ export interface QueueResponseMeta {
  * caller passed in, and the per-call input merged together. Defined once so
  * mutators don't have to re-derive it via `as unknown as` casts.
  */
-export type FlatPayload<TInput, TScope> = OpPayload<TInput> & TScope & TInput;
+export type FlatPayload<TInput, TScope> = Omit<OpPayload<TInput>, "payload"> & TScope & TInput;
 
 /**
  * A mutator describes one queue-able operation:
