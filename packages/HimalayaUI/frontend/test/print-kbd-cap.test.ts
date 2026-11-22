@@ -4,12 +4,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
 
 /*
- * Keyboard-hint law: inline key hints use the KbKey cap, not dimmed glyphs.
+ * Keyboard-hint law: inline key hints use the Kbd cap, not dimmed glyphs.
  * ---------------------------------------------------------------------------
  * Bare `font-mono text-xs opacity-60` glyphs (e.g. Prev`[`, Drop`X`) composite
  * their inherited ink down to ~2.7:1 — sub-AA — AND diverge from the boxed
- * KbKey caps the KbdLegend uses (CC-KBDCAP). Every inline shortcut hint must
- * render through the <KbKey> primitive (bg-plate / text-ink-soft, 6.8:1).
+ * Kbd caps the help overlay uses (CC-KBDCAP). Every inline shortcut hint must
+ * render through the <Kbd> primitive (bg-plate / text-ink-soft, 6.8:1).
  *
  * The scan bans the `opacity-60 ml-1` inline-key-hint idiom anywhere under
  * src/print. Mirrors test/print-copy-no-emdash.test.ts (TEST-ONLY, reads the
@@ -31,7 +31,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("keyboard-hint law — src/print inline key hints", () => {
-  it("renders inline key hints via KbKey, not dimmed bare glyphs (CC-KBDCAP)", () => {
+  it("renders inline key hints via Kbd, not dimmed bare glyphs (CC-KBDCAP)", () => {
     const offenders: string[] = [];
     for (const file of walk(PRINT_ROOT)) {
       readFileSync(file, "utf8")

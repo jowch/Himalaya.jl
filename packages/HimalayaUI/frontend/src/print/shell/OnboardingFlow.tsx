@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../../api";
 import type { User } from "../../api";
 import { useAppState } from "../../state";
-import { Button, ModalShell, Kicker, KbKey } from "../ui";
+import { Button, ModalShell, Kicker } from "../ui";
+import { Kbd } from "../../workspace/ui/Kbd";
 
 type Segment = string | { key: string };
 
@@ -316,7 +317,7 @@ function TutorialStep({
       <Kicker tone="soft">Welcome · {slideIdx + 1} of {TUTORIAL_SLIDES.length}</Kicker>
       <h2 className="text-lg font-semibold text-ink">{slide.title}</h2>
       <p className="text-ink-soft text-base leading-relaxed">
-        {slide.body.map((seg, i) => (typeof seg === "string" ? seg : <KbKey key={i}>{seg.key}</KbKey>))}
+        {slide.body.map((seg, i) => (typeof seg === "string" ? seg : <Kbd key={i}>{seg.key}</Kbd>))}
       </p>
       <div className="flex items-center justify-between pt-2">
         <div className="flex gap-1">

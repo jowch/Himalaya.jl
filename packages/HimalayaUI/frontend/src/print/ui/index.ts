@@ -3,7 +3,6 @@ export { EmptyState } from "./EmptyState";
 export type { ButtonVariant } from "./Button";
 export { Dot } from "./Dot";
 export type { DotTone, DotSize } from "./Dot";
-export { KbKey } from "./KbKey";
 export { Kicker } from "./Kicker";
 export type { KickerTone } from "./Kicker";
 export { CheckCircle } from "./CheckCircle";
