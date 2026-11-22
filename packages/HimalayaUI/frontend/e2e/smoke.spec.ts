@@ -44,9 +44,9 @@ async function seedState(page: Page, extra: Record<string, unknown>): Promise<vo
   await page.addInitScript((state) => {
     localStorage.setItem(
       "himalaya-ui:state",
-      JSON.stringify({ state, version: 3 }),
+      JSON.stringify({ state, version: 6 }),
     );
-  }, { username: "alice", tutorialSeen: true, theme: "dark", ...extra });
+  }, { username: "alice", tutorialSeen: true, ...extra });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -79,7 +79,7 @@ test("picking a new user triggers the tutorial and dismisses with 'Got it'", asy
 
 for (const path of ["/experiments/1/compare", "/index/lipid/JC001", "/sample/10"]) {
   test(`an old link ${path} goes home and says the page is gone`, async ({ page }) => {
-    await seedState(page, { activeExperimentId: 1, activeSampleId: 10 });
+    await seedState(page, {});
     await mockCore(page, [{ id: 1, username: "alice" }]);
     await page.goto(path);
     await expect(page).toHaveURL(/\/experiments$/);

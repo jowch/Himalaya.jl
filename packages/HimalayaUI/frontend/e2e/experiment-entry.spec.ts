@@ -64,7 +64,7 @@ async function seedState(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem(
       "himalaya-ui:state",
-      JSON.stringify({ state: { username: "alice", tutorialSeen: true, theme: "dark" }, version: 5 }),
+      JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 6 }),
     );
   });
 }
