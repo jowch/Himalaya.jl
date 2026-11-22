@@ -9,16 +9,39 @@ const MF_SNIP_WINDOW = 60
 """
     snip_background(I, m) -> Vector{Float64}
 
-SNIP baseline of `I`, computed on `log(max(I, tiny))` with half-window `m`
-points: for `w = m … 1`, `v[i] = min(v[i], (v[i-w] + v[i+w]) / 2)`.
+SNIP baseline of `I`, computed on `log(I)` with half-window `m` points: for
+`w = m … 1`, `v[i] = min(v[i], (v[i-w] + v[i+w]) / 2)`. Points of `I` that are
+nonpositive or nonfinite are replaced in log space by linear interpolation
+between the nearest valid neighbours, so the result does not depend on
+intensity scale. A leading or trailing block of such points carries no
+information and is set to `Inf` in log space: it never clips its neighbours
+(extending the nearest valid value would put a flat step under a steep
+background and create a false peak at the block edge). The baseline is `Inf`
+there. With no valid point the baseline is all zeros.
 """
 function snip_background(I, m::Integer = MF_SNIP_WINDOW)
     n = length(I)
     v = Vector{Float64}(undef, n)
     u = Vector{Float64}(undef, n)
+    valid(x) = isfinite(x) && x > 0
+    prev = 0
     @inbounds for i in 1:n
-        v[i] = log(max(I[i], 1e-6))
+        if valid(I[i])
+            v[i] = log(I[i])
+            if prev != i - 1
+                if prev == 0
+                    for j in 1:(i - 1); v[j] = Inf; end
+                else
+                    for j in (prev + 1):(i - 1)
+                        v[j] = v[prev] + (v[i] - v[prev]) * (j - prev) / (i - prev)
+                    end
+                end
+            end
+            prev = i
+        end
     end
+    prev == 0 && return zeros(n)
+    @inbounds for j in (prev + 1):n; v[j] = Inf; end
     for w in m:-1:1
         copyto!(u, v)
         @inbounds for i in (w + 1):(n - w)
@@ -50,13 +73,16 @@ const MF_KERNELS = map(ricker_kernel, MF_WIDTHS)
 """
     matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
 
-Per-point matched-filter significance: the maximum over the Ricker widths `MF_WIDTHS` of
-the SNIP-subtracted residual correlated with a unit-norm, zero-mean kernel,
-divided by the kernel-weighted noise `sqrt(Σ k² σ²)`. Each width is
-normalised by its trace median and `1.4826·MAD` before the maximum is taken,
-so widths are comparable. Points whose kernel runs off the trace score 0
-before normalisation. Nonpositive `σ` are replaced by the smallest positive
-`σ` (or 1 if there is none).
+Per-point matched-filter significance: the maximum over the Ricker widths
+`MF_WIDTHS` of the SNIP-subtracted residual correlated with a unit-norm,
+zero-mean kernel, divided by the kernel-weighted noise `sqrt(Σ k² σ²)`. The
+residual uses the original `I` at valid points and is 0 at nonpositive or nonfinite ones (a masked point is missing data, and a hole in the residual would ring through the kernels into false peaks). Each width is normalised by its median and
+`1.4826·MAD`, both taken only over points where that kernel fits inside the
+trace, so widths are comparable and edge points do not bias the scale. The
+maximum at a point runs over the widths that fit there; where none fits the
+value is `NaN` (undefined). A width with zero MAD, or one that does not fit
+anywhere, is skipped. Nonpositive or nonfinite `σ` are replaced by the
+smallest positive `σ` (or 1 if there is none).
 """
 function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     n = length(I)
@@ -64,22 +90,22 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     B = snip_background(I, snip_window)
     σmin = Inf
     for s in σ
-        s > 0 && s < σmin && (σmin = s)
+        isfinite(s) && s > 0 && s < σmin && (σmin = s)
     end
     isfinite(σmin) || (σmin = 1.0)
     r  = Vector{Float64}(undef, n)
     σ2 = Vector{Float64}(undef, n)
     @inbounds for i in 1:n
-        r[i]  = I[i] - B[i]
-        s     = σ[i] > 0 ? σ[i] : σmin
+        r[i]  = isfinite(I[i]) && I[i] > 0 ? I[i] - B[i] : 0.0
+        s     = isfinite(σ[i]) && σ[i] > 0 ? σ[i] : σmin
         σ2[i] = s * s
     end
-    zbest = fill(-Inf, n)
+    zbest = fill(NaN, n)
     zw    = Vector{Float64}(undef, n)
     tmp   = Vector{Float64}(undef, n)
     for k in MF_KERNELS
         h = (length(k) - 1) ÷ 2
-        fill!(zw, 0.0)
+        n > 2h || continue
         @inbounds for i in (h + 1):(n - h)
             num = 0.0
             var = 0.0
@@ -90,32 +116,28 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
             end
             zw[i] = num / sqrt(var)
         end
-        copyto!(tmp, zw)
-        med = median!(tmp)
-        @inbounds for i in 1:n
-            tmp[i] = abs(zw[i] - med)
+        m   = n - 2h
+        med = median!(copyto!(view(tmp, 1:m), view(zw, (h + 1):(n - h))))
+        @inbounds for i in 1:m
+            tmp[i] = abs(zw[h + i] - med)
         end
-        mad = 1.4826 * median!(tmp)
-        if mad > 0
-            @inbounds for i in 1:n
-                zbest[i] = max(zbest[i], (zw[i] - med) / mad)
-            end
-        else
-            @inbounds for i in 1:n
-                zbest[i] = max(zbest[i], 0.0)
-            end
+        mad = 1.4826 * median!(view(tmp, 1:m))
+        mad > 0 || continue
+        @inbounds for i in (h + 1):(n - h)
+            z = (zw[i] - med) / mad
+            zbest[i] = isnan(zbest[i]) ? z : max(zbest[i], z)
         end
     end
     zbest
 end
 
-# Local maxima of z with z ≥ k, in the first `n - ntrim` points, greedily
+# Local maxima of z with z ≥ k at positions where `allowed[i]`, greedily
 # thinned so chosen peaks are more than `sep` points apart (strongest first).
-function mf_local_maxima(z, k, sep, ntrim)
+function mf_local_maxima(z, k, sep, allowed)
     n = length(z)
     cand = Int[]
     @inbounds for i in 2:(n - 1)
-        z[i] >= z[i - 1] && z[i] > z[i + 1] && z[i] >= k && i <= n - ntrim && push!(cand, i)
+        z[i] >= z[i - 1] && z[i] > z[i + 1] && z[i] >= k && allowed[i] && push!(cand, i)
     end
     sort!(cand; by = i -> -z[i])
     keep = Int[]
@@ -125,16 +147,23 @@ function mf_local_maxima(z, k, sep, ntrim)
     sort!(keep)
 end
 
-# Combine persistence-detector peaks with matched-filter peaks. Returns the
-# merged sorted index vector and a mask telling which entries came from the
-# persistence detector.
-function hybrid_merge(base_idx, z, k, kb, sep, ntrim, guard)
+# Combine persistence-detector peaks with matched-filter peaks. A persistence
+# peak is dropped only if z is defined at it and stays below `kb` within ±3
+# points. An added peak must be more than `sep` points from every kept peak.
+function hybrid_merge(base_idx, z, k, kb, sep, allowed)
     n = length(z)
     kept = Int[]
     for j in base_idx
-        a = max(1, j - 3); b = min(n, j + 3)
-        maximum(view(z, a:b)) >= kb && push!(kept, j)
+        if isnan(z[j])
+            push!(kept, j)
+            continue
+        end
+        zmax = -Inf
+        for t in max(1, j - 3):min(n, j + 3)
+            isnan(z[t]) || (zmax = max(zmax, z[t]))
+        end
+        zmax >= kb && push!(kept, j)
     end
-    added = [i for i in mf_local_maxima(z, k, sep, ntrim) if !any(j -> abs(i - j) <= guard, kept)]
-    sort!(vcat(kept, added)), kept
+    added = [i for i in mf_local_maxima(z, k, sep, allowed) if !any(j -> abs(i - j) <= sep, kept)]
+    sort!(vcat(kept, added))
 end

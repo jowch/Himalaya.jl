@@ -154,26 +154,42 @@ but alone it adds more spurious candidates than the persistence detector.
    unit-norm, zero-mean Ricker kernels of widths 2, 3, 4.5, 7, 11, 16
    points and divided by `sqrt(Σ k² σ²)`. Each width is normalised by its
    median and 1.4826·MAD over the trace, and the maximum over widths is
-   taken. Points whose kernel runs off the trace get `z = 0`.
+   taken. Median and MAD use only points where that kernel fits inside the
+   trace, and the maximum at a point runs over the widths that fit there;
+   where none fits, `z` is undefined (`NaN`). Nonpositive or nonfinite
+   intensities are treated as missing: SNIP interpolates over them in log
+   space (leading and trailing blocks are ignored), and the residual is 0
+   there. The result does not depend on intensity scale.
 3. Keep persistence peaks whose max `z` within ±3 points is at least `kb`
    (default 5). This removes persistence peaks that are not significant
-   against the noise.
-4. Add local maxima of `z` with `z ≥ k` (default 12), at least 9 points
-   apart (strongest first), outside the top 5% of points and more than 4
-   points from a kept persistence peak.
+   against the noise. A peak where `z` is undefined (within a few points of
+   the trace ends) is kept, as the default path would.
+4. Add local maxima of `z` with `z ≥ k` (default 12), more than 9 points
+   apart (strongest first) and more than 9 points from a kept persistence
+   peak, at or below the same q cut as the persistence path
+   (`q_trim_high`, 0.07).
 
 **Output.** Same fields as the default path, plus `z`. For an added peak,
 `prominence` is the persistence prominence of `I` at that index if it is a
 local maximum and `0.0` otherwise (a shoulder has none). `sharpness` is the
 Savitzky-Golay sharpness at the index; a value ≤ 0 (common for shoulders)
-is replaced by a small positive number scaled by `z`, at most the smallest
-positive sharpness in the trace, because `score` takes the CV of sharpness
-and fails on nonpositive values.
+is replaced by the median of the positive sharpness values of the returned
+peaks. `score` takes the CV of sharpness and falls back to CV = 0 when the
+mean is ≤ 0; a near-zero substitute would inflate the CV and demote exactly
+the peaks the hybrid adds, and the median keeps them neutral.
+
+Without `σ`, `findpeaks(q, I; method = :hybrid)` estimates `σ = sqrt(max(I, 0))`
+(nonpositive values replaced by the smallest positive one). The per-width MAD
+normalisation removes the overall scale, so only the relative shape matters.
+
+**Why this use of σ is not the rejected "σ-based SNR".** Nothing is fitted
+per peak. σ only weights the filter, and each width is MAD-normalised
+against the trace's own `z` distribution, so no parametric noise model
+decides whether a candidate is real.
 
 **Evidence.** On a set of curated real traces it recovered several times
 more user-added peaks than the default path while detecting fewer
-user-rejected ones, and the phase calls from the resulting peak lists were
-about as good. This is not enough to change the default; it is opt-in until
+user-rejected ones, and the phase calls from the resulting peak lists improved. This is not enough to change the default; it is opt-in until
 it has been tried on more data.
 
 ## References

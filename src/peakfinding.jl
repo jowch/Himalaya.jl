@@ -49,16 +49,25 @@ Shape-agnostic; no per-trace tuning.
   synthetic single-peak traces aren't suppressed by their own median.
 
 # Hybrid (`method = :hybrid`)
-Opt-in. Runs the persistence detector with `q_trim_high = 0.07`, keeps its
-peaks whose matched-filter z (max within ±3 points) is at least `kb`
-(default 5), then adds local maxima of z with `z ≥ k` (default 12), at least
-9 points apart, outside the top 5% of points and more than 4 points from a
-kept peak. Added peaks get `prominence` = the persistence prominence of `I`
-there if it is a local maximum, else `0.0`. Any `sharpness` ≤ 0 is replaced
-by a small positive value scaled by z, at most the smallest positive
-sharpness in the trace, so `score` can take its CV. The result has an extra field `z`
-(max-over-width matched-filter z, length `length(I)`). See
-`docs/peak-finding.md`.
+Opt-in. `k` and `kb` apply only to `:hybrid` and are ignored otherwise;
+`normalize_by_σ` affects only the persistence part (the matched filter
+always works on `I`). Runs the persistence detector with `q_trim_high = 0.07`,
+keeps its peaks whose matched-filter z (max within ±3 points) is at least `kb`
+(default 5; a peak where z is undefined because even the narrowest kernel runs
+off the trace is kept), then adds local maxima of z with `z ≥ k` (default 12),
+more than 9 points apart and more than 9 points from a kept peak, at or below
+the same q cut as the persistence path. Added peaks get `prominence` = the
+persistence prominence of `I` there if it is a local maximum, else `0.0`. A
+returned peak with `sharpness` ≤ 0 gets the median of the positive sharpness
+of the returned peaks (fallback: the smallest positive value in
+`sharpness_full`, then `eps()`). `score` falls back to CV = 0 when the mean
+sharpness is ≤ 0, and a near-zero value would inflate the CV and demote the
+peak; the median keeps it neutral. The result has an extra field `z`
+(max-over-width matched-filter z, `NaN` where undefined). Without `σ`
+(`findpeaks(q, I; method = :hybrid)`) σ is estimated as `sqrt(max(I, 0))`
+with nonpositive values replaced by the smallest positive one; the per-width
+MAD normalisation removes the overall scale, so only the relative shape
+matters. See `docs/peak-finding.md`.
 
 # Returns
 `(; indices, q, prominence, sharpness, sharpness_full)` —
@@ -122,29 +131,34 @@ end
 
 # Hybrid detector: persistence detector (gated by matched-filter z) plus
 # matched-filter peaks. See src/matchedfilter.jl and docs/peak-finding.md.
-function _hybrid_findpeaks(q, I, σ; k, kb, q_trim_high, sep = 9, guard = 4,
-                           trim_top = 0.05, kwargs...)
+function _hybrid_findpeaks(q, I, σ; k, kb, q_trim_high, sep = 9, kwargs...)
     base, cands = _persistence_findpeaks(q, I, σ; q_trim_high, kwargs...)
     n = length(I)
     z = matched_filter_z(I, σ)
-    idx, _ = hybrid_merge(base.indices, z, k, kb, sep, round(Int, trim_top * n), guard)
+    qmin, qmax = extrema(q)
+    qcut = qmin + (1 - q_trim_high) * (qmax - qmin)
+    allowed = q .<= qcut
+    idx = hybrid_merge(base.indices, z, k, kb, sep, allowed)
 
     sharps_full = base.sharpness_full
-    tiny = Inf
-    for s in sharps_full
-        s > 0 && s < tiny && (tiny = s)
+    sharp = sharps_full[idx]
+    # `score` takes the CV of sharpness; a near-zero substitute inflates it and
+    # demotes the peak, so use the median of the positive values instead.
+    pos = filter(>(0), sharp)
+    fill_value = if !isempty(pos)
+        median(pos)
+    else
+        tiny = Inf
+        for s in sharps_full
+            s > 0 && s < tiny && (tiny = s)
+        end
+        isfinite(tiny) ? tiny : eps()
     end
-    isfinite(tiny) || (tiny = eps())
-    zmax = max(maximum(view(z, idx); init = 1.0), 1.0)
-    sharp = similar(sharps_full, length(idx))
-    prom  = zeros(length(idx))
-    pmap  = Dict(zip(cands.indices, cands.prominence))
-    for (m, i) in enumerate(idx)
-        s = sharps_full[i]
-        # `score` takes a CV of sharpness; a nonpositive value breaks it.
-        sharp[m] = s > 0 ? s : tiny * max(z[i], 0.0) / zmax + eps()
-        prom[m]  = get(pmap, i, 0.0)
+    for m in eachindex(sharp)
+        sharp[m] > 0 || (sharp[m] = fill_value)
     end
+    pmap = Dict(zip(cands.indices, cands.prominence))
+    prom = [get(pmap, i, 0.0) for i in idx]
     (indices = idx, q = q[idx], prominence = prom, sharpness = sharp,
      sharpness_full = sharps_full, z = z)
 end
@@ -170,4 +184,20 @@ function findpeaks(q, I, σ; method = :persistence,
     throw(ArgumentError("Unknown method: $(repr(method)) (use :persistence or :hybrid)"))
 end
 
-findpeaks(q, I; kwargs...) = findpeaks(q, I, ones(length(I)); kwargs...)
+# Without σ, the default path uses a constant σ. The hybrid path needs the
+# relative noise shape, so it uses the Poisson estimate sqrt(max(I, 0)), with
+# nonpositive values replaced by the smallest positive one. The per-width MAD
+# normalisation removes the overall scale of σ.
+function _estimate_sigma(I)
+    σ = [x > 0 ? sqrt(float(x)) : 0.0 for x in I]
+    smin = Inf
+    for s in σ
+        s > 0 && s < smin && (smin = s)
+    end
+    isfinite(smin) || (smin = 1.0)
+    replace!(s -> s > 0 ? s : smin, σ)
+end
+
+findpeaks(q, I; kwargs...) =
+    findpeaks(q, I, get(kwargs, :method, :persistence) === :hybrid ?
+                    _estimate_sigma(I) : ones(length(I)); kwargs...)

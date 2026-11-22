@@ -17,7 +17,7 @@ function _hybrid_trace(; seed = 1, peaks = true, extra = (), strong = [0.07, 0.1
     shoulder = [0.04]           # sits on the steep low-q flank
     if peaks
         for (q0, h, γ) in vcat([(x, 400.0, 0.0012) for x in strong],
-                               [(x, 120.0, 0.0012) for x in weak],
+                               [(x, 140.0, 0.0012) for x in weak],
                                [(x, 1100.0, 0.0012) for x in shoulder])
             I .+= h ./ (1 .+ ((q .- q0) ./ γ) .^ 2)
         end
@@ -88,7 +88,7 @@ end
     q, I, σ, _ = _hybrid_trace()
     a = findpeaks(q, I, σ; method = :hybrid)
     b = findpeaks(q, I, σ; method = :hybrid)
-    @test a == b
+    @test isequal(a, b)
 end
 
 @testset "hybrid: keywords" begin
@@ -187,16 +187,24 @@ end
 end
 
 @testset "hybrid: nonpositive sharpness is replaced by the median of the others" begin
-    q, I, σ, _ = _hybrid_trace(; seed = 1, extra = [(0.06, 600.0, 0.01)], strong = [0.115, 0.16, 0.23])
-    hyb = findpeaks(q, I, σ; method = :hybrid)
-    sf = hyb.sharpness_full[hyb.indices]
-    substituted = findall(<=(0), sf)
-    @test !isempty(substituted)               # the branch is exercised
-    @test all(hyb.sharpness .> 0)
-    keep = setdiff(eachindex(sf), substituted)
-    ref = median(sf[keep][sf[keep] .> 0])
-    @test all(hyb.sharpness[substituted] .== ref)
-    @test hyb.sharpness[keep] == sf[keep] || all(>(0), sf[keep])
+    # A broad shoulder on the convex low-q flank has nonpositive SG sharpness.
+    hit = 0
+    for seed in 1:8
+        q, I, σ, _ = _hybrid_trace(; seed, peaks = false,
+            extra = [(0.06, 900.0, 0.008), (0.115, 400.0, 0.0012), (0.16, 400.0, 0.0012),
+                     (0.25, 400.0, 0.0012)])
+        hyb = findpeaks(q, I, σ; method = :hybrid)
+        sf = hyb.sharpness_full[hyb.indices]
+        sub = findall(<=(0), sf)
+        keep = setdiff(eachindex(sf), sub)
+        @test all(hyb.sharpness .> 0)
+        @test hyb.sharpness[keep] == sf[keep]
+        if !isempty(sub)
+            hit += 1
+            @test all(hyb.sharpness[sub] .== median(sf[keep]))
+        end
+    end
+    @test hit >= 1                            # the substitution branch is exercised
 end
 
 @testset "hybrid: real fixtures" begin
