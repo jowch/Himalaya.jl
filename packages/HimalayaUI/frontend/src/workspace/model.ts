@@ -6,8 +6,6 @@ export type SampleStatus =
   | { kind: "form_factor" }
   | { kind: "phase"; phase: string };
 
-export const MAX_CANDIDATES = 9;
-
 export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase">): SampleStatus {
   if (s.assignment_state === "form_factor") return { kind: "form_factor" };
   if (s.assignment_state === "indexed" && s.phase) return { kind: "phase", phase: s.phase };
@@ -33,15 +31,14 @@ export function nextUnreviewed(
   return undefined;
 }
 
-export function rankCandidates(indices: readonly IndexEntry[] | undefined, limit = MAX_CANDIDATES): IndexEntry[] {
+export function rankCandidates(indices: readonly IndexEntry[] | undefined): IndexEntry[] {
   return (indices ?? [])
     .filter((ix) => ix.kind === "speculative" || ix.score !== null)
     .sort((a, b) => {
       const custom = Number(b.kind === "speculative") - Number(a.kind === "speculative");
       if (custom !== 0) return custom;
       return a.kind === "speculative" ? b.id - a.id : (b.score ?? 0) - (a.score ?? 0);
-    })
-    .slice(0, limit);
+    });
 }
 
 export function stepExposure(

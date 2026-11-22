@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
+import { useSyncExternalStore } from "react";
+import type { CompareChange, CompareState } from "../../src/api";
+import { applyCompareChange, EMPTY_COMPARES } from "../../src/lib/compares";
+import { COMPARES_FULL, MAX_COMPARES } from "../../src/workspace/compare";
+import { COMPARE_COLORS } from "../../src/workspace/ui/WorkspacePlot";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };
@@ -34,6 +39,15 @@ const state = {
   ingest: undefined as { status: string; stage?: string; processed: number; total: number } | undefined,
   rescanError: false,
 };
+const compareStore = { data: EMPTY_COMPARES as CompareState, listeners: new Set<() => void>() };
+function setCompares(next: CompareState): void {
+  compareStore.data = next;
+  compareStore.listeners.forEach((l) => l());
+}
+const subscribeCompares = (l: () => void): (() => void) => {
+  compareStore.listeners.add(l);
+  return () => compareStore.listeners.delete(l);
+};
 const rescans: boolean[] = [];
 const removals: number[] = [];
 const opened: number[] = [];
@@ -47,6 +61,7 @@ function recorder(hook: string) {
 }
 
 const toasts: string[] = [];
+const compareFetches: number[][] = [];
 vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
 
 const server = {
@@ -54,14 +69,24 @@ const server = {
   assignments: new Map<number, Assignment>(),
   saving: false,
   saved: undefined as (() => void) | undefined,
+  status: new Map<number, Exposure["status"]>(),
+  colors: new Map<string, LabelColor | null>(),
   experiment: { name: "BL-19", description: null as string | null },
+};
+const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
+  server.status.set(eid, status);
+  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status] });
+};
+const serverColor = (label: string, color: LabelColor | null) => {
+  server.colors.set(label.toLowerCase(), color);
+  calls.push({ hook: "op:setLabelColor", boundTo: 0, arg: [label, color] });
 };
 const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
 const editOps = {
   addPhase: editOp("addPhase"),
   removePhase: editOp("removePhase"),
   setCallState: editOp("setCallState"),
-  setStatus: editOp("setStatus"),
+  setStatus: serverStatus,
   addPeak: editOp("addPeak"),
   removePeak: editOp("removePeak"),
   setPeakExcluded: editOp("setPeakExcluded"),
@@ -70,10 +95,14 @@ const editOps = {
   addLabel: editOp("addLabel"),
   removeLabel: editOp("removeLabel"),
   restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
-  setLabelColor: editOp("setLabelColor"),
+  setLabelColor: serverColor,
   patchExperiment: editOp("patchExperiment"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
+  patchCompares: (sampleId: number, change: CompareChange) => {
+    calls.push({ hook: "op:patchCompares", boundTo: 0, arg: [sampleId, change] });
+    setCompares(applyCompareChange(compareStore.data, sampleId, change, state.username ?? null));
+  },
   read: {
     peaks: async () => state.peaks,
     indices: async (eid: number) => server.indices.get(eid) ?? state.indices,
@@ -84,7 +113,17 @@ const editOps = {
       ?? { exposure_id: eid, state: "null" as const, members: [] },
     labels: async () => state.labels,
     bridges: async () => state.bridges,
+    exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
+    labelColors: async () => {
+      const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
+      for (const [k, color] of server.colors) {
+        if (color === null) merged.delete(k);
+        else merged.set(k, { label: merged.get(k)?.label ?? k, color });
+      }
+      return [...merged.values()];
+    },
     experiment: async () => ({ id: 1, ...server.experiment }),
+    compares: async () => compareStore.data,
   },
   saving: () => server.saving,
   whenSaved: () => (server.saving ? new Promise<void>((r) => { server.saved = r; }) : Promise.resolve()),
@@ -118,17 +157,34 @@ vi.mock("../../src/queries", () => ({
     mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
   }),
   useBridges: () => ({ data: state.bridges }),
+  useCompares: () => ({ data: useSyncExternalStore(subscribeCompares, () => compareStore.data) }),
+  usePatchCompares: () => ({
+    mutate: (arg: { sampleId: number; change: CompareChange }) => {
+      calls.push({ hook: "patchCompares", boundTo: arg.sampleId, arg: arg.change });
+      setCompares(applyCompareChange(compareStore.data, arg.sampleId, arg.change, state.username ?? null));
+    },
+  }),
   useBridgeSamples: recorder("bridge"),
   useUnbridgeSample: recorder("unbridge"),
   useLabels: () => ({ data: state.labels }),
   useAddLabel: recorder("addLabel"),
   useRemoveLabel: recorder("removeLabel"),
   useLabelColors: () => ({ data: state.labelColors }),
-  useSetLabelColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setLabelColor", boundTo: 0, arg }) }),
+  useSetLabelColor: () => ({
+    mutate: (arg: { label: string; color: LabelColor | null }) => {
+      server.colors.set(arg.label.toLowerCase(), arg.color);
+      calls.push({ hook: "setLabelColor", boundTo: 0, arg });
+    },
+  }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
-  useSetExposureStatus: recorder("status"),
+  useSetExposureStatus: (boundTo: number) => ({
+    mutate: (arg: { exposureId: number; status: Exposure["status"] }, callbacks?: Callbacks) => {
+      server.status.set(arg.exposureId, arg.status);
+      calls.push({ hook: "status", boundTo, arg, ...(callbacks ? { callbacks } : {}) });
+    },
+  }),
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
   useSetPeakExcluded: recorder("excludePeak"),
@@ -145,8 +201,10 @@ vi.mock("../../src/workspace/prefetch", () => ({
 }));
 
 vi.mock("../../src/workspace/useCompareTraces", () => ({
-  useCompareTraces: (ids: readonly number[]) =>
-    new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : []))),
+  useCompareTraces: (ids: readonly number[]) => {
+    compareFetches.push([...ids]);
+    return new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : [])));
+  },
 }));
 
 function makeTrace(level: number): Trace {
@@ -238,6 +296,7 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   calls.length = 0;
   toasts.length = 0;
+  compareFetches.length = 0;
   prefetchTargets.length = 0;
   state.username = "jc";
   state.corpus = [
@@ -259,6 +318,9 @@ beforeEach(() => {
   state.peaks = [];
   state.compareTraces = new Map();
   state.bridges = [];
+  compareStore.data = EMPTY_COMPARES;
+  localStorage.removeItem("himalaya-ui:recent:comparison:1");
+  localStorage.removeItem("himalaya-ui:recent:label");
   state.labels = [];
   state.problems = { ingest_error: null, exposures: [] };
   state.labelColors = [];
@@ -268,6 +330,8 @@ beforeEach(() => {
   server.assignments = new Map();
   server.saving = false;
   server.saved = undefined;
+  server.status = new Map();
+  server.colors = new Map();
   server.experiment = { name: "BL-19", description: null };
   rescans.length = 0;
   removals.length = 0;
@@ -483,7 +547,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-notice")).toBeNull();
   });
 
-  it("counts exposures waiting for a trace and failed analyses, and a problem opens its sample", () => {
+  it("counts frames waiting for a trace and failed analyses, and a problem opens its sample", () => {
     state.problems = {
       ingest_error: null,
       exposures: [
@@ -494,7 +558,7 @@ describe("WorkspacePage", () => {
     };
     renderAt("/experiments/1/workspace/10");
     const notice = screen.getByTestId("workspace-notice");
-    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 exposures waiting for a trace · 1 analysis failed");
+    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 frames waiting for a trace · 1 analysis failed");
     fireEvent.click(within(notice).getByRole("button", { name: "Details" }));
     const rows = screen.getAllByTestId("problem-row");
     expect(rows).toHaveLength(3);
@@ -640,7 +704,7 @@ describe("WorkspacePage", () => {
     ] };
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
-    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 exposure waiting for a trace");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 frame waiting for a trace");
   });
 
   it("keeps saying no integrated trace when only another frame is pending", () => {
@@ -818,6 +882,75 @@ describe("WorkspacePage", () => {
       await press({ key: "z", metaKey: true });
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
       expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("leaves a frame alone when someone else restored it before the undo", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      server.status.set(101, null);
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: dropped frame 2 of A1");
+    });
+
+    it("leaves a label's colour alone when someone else recoloured it before the undo", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      server.colors.set("37c", "green");
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: recoloured the label 37C");
+    });
+
+    it("redoes a drop only while the frame is still how the undo left it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await undo();
+      server.status.set(101, "rejected");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: dropped frame 2 of A1");
+    });
+
+    it("redoes a label recolour only while the label still has the colour the undo restored", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      server.colors.set("37c", "green");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: recoloured the label 37C");
+    });
+
+    it("redoes a rename only while the server still holds the name the undo restored", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "BL-20" } });
+      fireEvent.keyDown(name, { key: "Enter" });
+      server.experiment = { name: "BL-20", description: null };
+      await undo();
+      server.experiment = { name: "BL-21", description: null };
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: renamed the experiment to BL-20");
+    });
+
+    it("undoes recolouring a label while it still has the colour this edit set", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      expect(ops()).toEqual([["setLabelColor", "37C", null]]);
+      expect(toasts.at(-1)).toBe("Undone: recoloured the label 37C");
     });
 
     it("ignores a held-down Ctrl+Z", async () => {
@@ -1016,6 +1149,52 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: unbridged A2");
     });
 
+    it("undoes and redoes adding a comparison, and skips the redo once someone else re-added it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "c" });
+      fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchCompares", 10, { remove: [11] }]]);
+      expect(toasts.at(-1)).toBe("Undone: compared A1 with A2");
+      expect(screen.queryByRole("button", { name: "Remove A2" })).toBeNull();
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([["patchCompares", 10, { add: [11] }]]);
+      expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
+      await undo();
+      act(() => setCompares(applyCompareChange(compareStore.data, 10, { add: [11] }, "ana")));
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+    });
+
+    it("undoing a subtraction puts the raw trace back and leaves the comparison", async () => {
+      state.trace = makeTrace(1);
+      state.compareTraces = new Map([[11, makeTrace(2)]]);
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "c" });
+      fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+      fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+      expect(screen.getByTestId("workspace-subtraction-toggle")).toBeInTheDocument();
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchCompares", 10, { subtraction: null }]]);
+      expect(toasts.at(-1)).toBe("Undone: subtracted A2 from A1");
+      expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+      expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
+    });
+
+    it("undoing removing a subtracted comparison restores it as the subtraction", async () => {
+      act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "verify" }], subtractions: [{ sample_id: 10, ref_sample_id: 11 }] }));
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Remove A2" }));
+      calls.length = 0;
+      await undo();
+      expect(ops()).toEqual([["patchCompares", 10, { add: [11], subtraction: 11 }]]);
+      expect(toasts.at(-1)).toBe("Undone: stopped comparing A1 with A2");
+    });
+
     it("Ctrl+K then Enter still goes to the next unreviewed sample when there is something to undo", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
@@ -1199,6 +1378,44 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "addLabel", boundTo: 1, arg: { sampleId: 10, label: "Buffer" } }]);
   });
 
+  it("the label picker lists labels added recently first, and the choice stays on this browser only", () => {
+    state.labels = [
+      { id: 1, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 12, label: "37C", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 12, label: "dried", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const options = () =>
+      [...screen.getByTestId("workspace-label-picker").querySelectorAll("[data-label-option='existing']")].map((b) => b.textContent);
+    fireEvent.keyDown(window, { key: "l" });
+    expect(options()).toEqual(["37C", "dried", "Buffer", "Calibrant", "Empty capillary"]);
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
+    fireEvent.change(input, { target: { value: "cal" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "l" });
+    expect(options()).toEqual(["Calibrant", "37C", "dried", "Buffer", "Empty capillary"]);
+    expect(JSON.parse(localStorage.getItem("himalaya-ui:recent:label")!)).toEqual(["calibrant"]);
+  });
+
+  it("a recent label the experiment does not use is never listed or attached, and the palette's Label page shares the recent order", () => {
+    localStorage.setItem("himalaya-ui:recent:label", JSON.stringify(["ghost", "dried"]));
+    state.labels = [
+      { id: 1, sample_id: 11, label: "37C", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 12, label: "37C", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 12, label: "dried", state: "confirmed", source: "user" },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "l" });
+    const picker = screen.getByTestId("workspace-label-picker");
+    expect([...picker.querySelectorAll("[data-label-option='existing']")].map((b) => b.textContent)).toEqual(["dried", "37C", "Buffer", "Calibrant", "Empty capillary"]);
+    fireEvent.keyDown(within(picker).getByLabelText("Label name"), { key: "Escape" });
+    runFromPalette("label");
+    const names = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(names.findIndex((n) => n.startsWith("dried"))).toBeLessThan(names.findIndex((n) => n.startsWith("37C")));
+    expect(names.some((n) => n.toLowerCase().includes("ghost"))).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   it("L does nothing before a user is set", () => {
     state.username = undefined;
     renderAt("/experiments/1/workspace/10");
@@ -1240,7 +1457,7 @@ describe("WorkspacePage", () => {
     expect(row.querySelector("[data-testid='workspace-label-chips'] [data-label]")).toBeNull();
   });
 
-  it("colours each label from the shared map, built-ins blue and other labels violet by default", () => {
+  it("colours each label from the shared map, system labels their system colour and other labels violet by default", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
@@ -1283,6 +1500,24 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(form).getByRole("option", { name: "Green" }));
     fireEvent.keyDown(colour, { key: "Enter" });
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
+  });
+
+  it("system labels keep their own colours: no colour menu, and no row on the palette's colour page", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "Calibrant", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 10, label: "retake", state: "confirmed", source: "user" },
+    ];
+    state.labelColors = [{ label: "buffer", color: "rose" }];
+    renderAt("/experiments/1/workspace/10");
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect(chips.querySelector("[data-label='buffer']")).toHaveAttribute("data-label-color", "blue");
+    expect(chips.querySelector("[data-label='Calibrant']")).toHaveAttribute("data-label-color", "ochre");
+    fireEvent.contextMenu(chips.querySelector("[data-label='buffer']")!);
+    expect(screen.queryByRole("dialog", { name: /^Colour of label/ })).toBeNull();
+    runFromPalette("label colour");
+    const page = screen.getByRole("dialog", { name: "Label colour" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["retake, 1 sample"]);
   });
 
   it("the palette's Settings page renames the experiment and sets its description", () => {
@@ -1742,20 +1977,132 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("button", { name: "Minus A3" })).toBeInTheDocument();
   });
 
-  it("keeps comparisons when moving to another sample, but never compares a sample with itself", () => {
+  it("comparisons and the subtraction belong to the sample: moving on carries nothing, and coming back restores them", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    expect(calls.filter((c) => c.hook === "patchCompares").map((c) => [c.boundTo, c.arg])).toEqual([
+      [10, { add: [11] }],
+      [10, { subtraction: 11 }],
+    ]);
     const overlay = (): Element | null => screen.getByTestId("workspace-compares").querySelector("[data-compare='11']");
     fireEvent.keyDown(window, { key: "ArrowDown" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
     expect(screen.queryByRole("button", { name: "Remove A2" })).toBeNull();
-    expect(overlay()).toBeNull();
     fireEvent.keyDown(window, { key: "ArrowDown" });
-    expect(screen.getByRole("button", { name: "Remove A2" })).toBeInTheDocument();
-    expect(overlay()).not.toBeNull();
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+    expect(overlay()).toBeNull();
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+    expect(screen.getByRole("button", { name: "A2" })).toHaveAttribute("data-subtracted");
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("a comparison someone else added arrives hidden, and yours start shown", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    renderAt("/experiments/1/workspace/10");
+    const lines = (): string[] => Array.from(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).map((n) => n.getAttribute("data-compare")!);
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "ana" }], subtractions: [{ sample_id: 10, ref_sample_id: 11 }] }));
+    expect(screen.getByRole("button", { name: "A2, hidden" })).toHaveAttribute("data-subtracted");
+    expect(lines()).toEqual([]);
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
+    expect(lines()).toEqual(["11"]);
+    runFromPalette("compare with a sample", "a3");
+    expect(lines()).toEqual(["11", "12"]);
+  });
+
+  it("a sample holds five comparisons, one per colour, and the picker, palette and sample list say so at the cap", () => {
+    state.corpus = [...state.corpus, sample(14, "A5"), sample(15, "A6"), sample(16, "A7")];
+    expect(COMPARE_COLORS).toHaveLength(MAX_COMPARES);
+    act(() => setCompares({ compares: [11, 12, 13, 14, 15].map((r) => ({ sample_id: 10, ref_sample_id: r, added_by: "jc" })), subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    const colours = Array.from(screen.getByTestId("workspace-compare-bar").querySelectorAll<HTMLElement>("[data-compare-chip]")).map((n) => n.style.color);
+    expect(new Set(colours).size).toBe(MAX_COMPARES);
+    fireEvent.keyDown(window, { key: "c" });
+    const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
+    expect(within(picker).queryAllByRole("button")).toHaveLength(0);
+    expect(picker).toHaveTextContent(COMPARES_FULL);
+    fireEvent.keyDown(within(picker).getByLabelText("Find a sample to compare"), { key: "Escape" });
+    runFromPalette("compare with a sample");
+    expect(screen.getByRole("dialog")).toHaveTextContent(COMPARES_FULL);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
+    calls.length = 0;
+    fireEvent.click(within(screen.getByTestId("workspace-samples")).getByRole("button", { name: /A7/ }), { ctrlKey: true });
+    expect(calls.filter((c) => c.hook === "patchCompares")).toEqual([]);
+    expect(toasts.at(-1)).toBe(COMPARES_FULL);
+  });
+
+  it("showing or hiding a comparison is kept per sample, even when two samples compare the same one", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(2)]]);
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }, { sample_id: 11, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A3" }));
+    expect(screen.getByRole("button", { name: "A3, hidden" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.getByRole("button", { name: "A3" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(screen.getByRole("button", { name: "A3, hidden" })).toBeInTheDocument();
+  });
+
+  it("Minus is kept per sample: another sample subtracting the same comparison opens on Raw", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[12, makeTrace(2)]]);
+    act(() => setCompares({
+      compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }, { sample_id: 11, ref_sample_id: 12, added_by: "jc" }],
+      subtractions: [{ sample_id: 11, ref_sample_id: 12 }],
+    }));
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A3" }), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Minus A3" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+    expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("when someone else changes the subtraction, Minus stays on and uses the new background", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)], [12, makeTrace(3)]]);
+    act(() => setCompares({ compares: [11, 12].map((r) => ({ sample_id: 10, ref_sample_id: r, added_by: "jc" })), subtractions: [] }));
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "A2" }), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Minus A2" })).toHaveAttribute("aria-pressed", "true");
+    act(() => setCompares(applyCompareChange(compareStore.data, 10, { subtraction: 12 }, "ana")));
+    expect(screen.getByRole("button", { name: "Minus A3" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("a hidden comparison someone else added fetches no trace until it is shown", () => {
+    state.trace = makeTrace(1);
+    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    renderAt("/experiments/1/workspace/10");
+    act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "ana" }], subtractions: [] }));
+    expect(compareFetches.at(-1)).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
+    expect(compareFetches.at(-1)).toEqual([11]);
+  });
+
+  it("the compare picker lists samples you compared recently first, without adding them anywhere", () => {
+    state.trace = makeTrace(1);
+    state.labels = [{ id: 1, sample_id: 12, label: "Buffer", state: "confirmed", source: "user" }];
+    renderAt("/experiments/1/workspace/10");
+    const rows = (): string[] => within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button").map((r) => r.textContent ?? "");
+    fireEvent.keyDown(window, { key: "c" });
+    expect(rows()[0]).toBe("A3Buffer");
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A4"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove A4" }));
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(screen.queryByRole("button", { name: /^Remove/ })).toBeNull();
+    fireEvent.keyDown(window, { key: "c" });
+    expect(rows()[0]).toBe("A4");
   });
 
   it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {
@@ -1998,16 +2345,16 @@ describe("WorkspacePage", () => {
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" })).toBeInTheDocument();
   });
 
-  it("folds Call and Exposure as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
       const call = within(tools).getByRole("button", { name: /Call/ });
-      const exposure = within(tools).getByRole("button", { name: /Exposure/ });
+      const exposure = within(tools).getByRole("button", { name: /^Frame/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
@@ -2017,19 +2364,19 @@ describe("WorkspacePage", () => {
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-      expect(within(tools).queryByRole("button", { name: /Exposure/ })).toBeNull();
-      expect(within(tools).getByRole("heading", { name: /Exposure/ })).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /^Frame/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /^Frame/ })).toBeInTheDocument();
       expect(within(tools).queryByText("File")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("puts the indexing plot first in the tools column, above the phase list", () => {
+  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Indexing", "Call", "Exposure"]);
+    expect(headings).toEqual(["Call", "Indexing", "Frame"]);
   });
 
   it("the Custom index button in the indexing section opens a custom index", () => {
@@ -2051,7 +2398,7 @@ describe("WorkspacePage", () => {
   it("lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("KindSingle");
     expect(text).toContain("Exposure—");
@@ -2062,7 +2409,7 @@ describe("WorkspacePage", () => {
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
     expect(text).toContain("I₀1.501");
@@ -2074,7 +2421,7 @@ describe("WorkspacePage", () => {
       selected: true, timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
     })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Acquired2026-04-26 18:20:27");
     expect(text).toContain("Flight tube700 mm");
@@ -2084,7 +2431,7 @@ describe("WorkspacePage", () => {
 
   it("keeps the new .prp rows with a dash when the frame has no .prp", () => {
     renderAt("/experiments/1/workspace/10");
-    const text = screen.getByRole("heading", { name: "Exposure" }).closest("section")!.textContent ?? "";
+    const text = screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent ?? "";
     for (const k of ["Acquired", "Flight tube", "Energy", "Detector"]) expect(text).toContain(`${k}—`);
   });
 
