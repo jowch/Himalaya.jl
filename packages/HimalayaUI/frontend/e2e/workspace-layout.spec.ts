@@ -150,7 +150,7 @@ async function openSample(page: Page, id: number): Promise<void> {
     await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
     if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this frame.")).toBeVisible();
   }
-  await expect(page.locator("[data-testid=workspace-exposures] > li")).toHaveCount(FRAMES[id] ?? 1);
+  await expect(page.locator("[data-testid=workspace-exposures] li")).toHaveCount(FRAMES[id] ?? 1);
   const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
   if (await exposureOpen(page)) await expect(page.locator("aside").getByText(file)).toBeVisible();
   else await expect(page.locator("[data-testid=workspace-exposures] [aria-current='true']")).toBeVisible();
@@ -189,7 +189,7 @@ test("stepping between frames and hovering frames in another row keeps everythin
   await page.goto("/experiments/17/workspace/44");
   await openSample(page, 44);
   const first = await measured(page);
-  const cards = page.locator("[data-testid=workspace-exposures] > li");
+  const cards = page.locator("[data-testid=workspace-exposures] li");
   await expect(page.locator("aside").getByText("Averaged")).toBeVisible();
   await cards.nth(0).hover();
   expect(await measured(page), "hovering a frame in the other row").toEqual(first);
@@ -470,7 +470,7 @@ for (const viewport of [...VIEWPORTS, { width: 1024, height: 700 }]) {
       body: JSON.stringify(Array.from({ length: 7 }, (_, f) => ({ ...exposureOf(44, true, f, f === 6), status: f % 2 === 0 ? "rejected" : null }))),
     }));
     await page.goto("/experiments/17/workspace/44");
-    const frames = page.locator("[data-testid=workspace-exposures] > li");
+    const frames = page.locator("[data-testid=workspace-exposures] li");
     await expect(frames).toHaveCount(7);
     for (let i = 0; i < 7; i++) {
       await frames.nth(i).hover();
@@ -493,7 +493,7 @@ for (const width of [1024, 1280]) {
           r.fulfill(json([{ id, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" }])));
         await page.goto(`/experiments/17/workspace/${id}`);
         const title = page.getByRole("heading", { level: 2, name });
-        await expect(page.locator("[data-testid=workspace-exposures] > li").first()).toBeVisible();
+        await expect(page.locator("[data-testid=workspace-exposures] li").first()).toBeVisible();
         const meta = page.getByText("Frame 1 of 1", { exact: true });
         if (width === 1280) await expect(meta).toBeVisible();
         expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);

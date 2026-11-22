@@ -117,12 +117,13 @@ export function noPhaseEntry(
 
 export function dropEntry(
   ops: EditOps,
-  at: Where & { exposureId: number; prev: Exposure["status"]; next: Exposure["status"] },
+  at: Where & { exposureId: number; owner?: number; prev: Exposure["status"]; next: Exposure["status"] },
 ): UndoEntry {
+  const owner = at.owner ?? at.sampleId;
   const set = async (from: Exposure["status"], to: Exposure["status"]): Promise<number> => {
-    const hit = (await ops.read.exposures(at.sampleId)).find((e) => e.id === at.exposureId);
+    const hit = (await ops.read.exposures(owner)).find((e) => e.id === at.exposureId);
     if (!hit || (hit.status ?? null) !== (from ?? null)) return 0;
-    ops.setStatus(at.sampleId, at.exposureId, to);
+    ops.setStatus(owner, at.exposureId, to);
     return 1;
   };
   return {
