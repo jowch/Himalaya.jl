@@ -29,12 +29,17 @@ describe("CompareBar chip tooltip", () => {
 
   it("names the chip and its setup and says how to hide and subtract", () => {
     bar([chip({ setup: "setup2" })]);
-    expect(hover("MO_PEG5, setup2")).toHaveTextContent("MO_PEG5 · setup2Click to hide. ⌘-click to subtract from this sample.");
+    expect(hover("MO_PEG5, setup2")).toHaveTextContent("MO_PEG5 · setup2Click to hide. ⌘-click to subtract it from the current trace.");
   });
 
   it("says how to stop subtracting on the subtracted chip, with no setup when it is the current one", () => {
     bar([chip()], 2);
     expect(hover("MO_PEG5")).toHaveTextContent("MO_PEG5Click to hide. ⌘-click to stop subtracting.");
+  });
+
+  it("repeats the scale's note on the chip, so keyboard focus reaches it", () => {
+    bar([chip({ scale: { scale: 1, source: "monitor" } as CompareChip["scale"] })]);
+    expect(hover("MO_PEG5")).toHaveTextContent("Scaled by the transmitted beam");
   });
 
   it("carries no native title on the chip button", () => {
