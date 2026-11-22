@@ -17,8 +17,8 @@ function _hybrid_trace(; seed = 1, peaks = true, extra = (), strong = [0.07, 0.1
     shoulder = [0.04]           # sits on the steep low-q flank
     if peaks
         for (q0, h, γ) in vcat([(x, 400.0, 0.0012) for x in strong],
-                               [(x, 140.0, 0.0012) for x in weak],
-                               [(x, 1100.0, 0.0012) for x in shoulder])
+                               [(x, 130.0, 0.0012) for x in weak],
+                               [(x, 1300.0, 0.0012) for x in shoulder])
             I .+= h ./ (1 .+ ((q .- q0) ./ γ) .^ 2)
         end
     else
@@ -73,6 +73,23 @@ end
     # no spurious peaks beyond a small allowance
     spurious = count(x -> !any(abs(x - t0) <= 3HYB_DQ for t0 in truth), hyb.q)
     @test spurious <= 2
+end
+
+@testset "hybrid: weak peak and shoulder over noise seeds" begin
+    weak_h = shoulder_h = weak_d = shoulder_d = 0
+    nseed = 10
+    for seed in 1:nseed
+        q, I, σ, t = _hybrid_trace(; seed)
+        base = findpeaks(q, I, σ)
+        hyb  = findpeaks(q, I, σ; method = :hybrid)
+        @test _recall(hyb, t.strong) == length(t.strong)
+        weak_h += _recall(hyb, t.weak);   weak_d += _recall(base, t.weak)
+        shoulder_h += _recall(hyb, t.shoulder); shoulder_d += _recall(base, t.shoulder)
+    end
+    @test shoulder_h >= 9
+    @test shoulder_d <= 2
+    @test weak_h >= 5
+    @test weak_h >= weak_d + 2          # the hybrid adds weak peaks the persistence path misses
 end
 
 @testset "hybrid: few peaks on a trace without any" begin
@@ -161,20 +178,31 @@ end
     iso = copy(I0); iso[[100, 400, 401, 700]] .= 0.0
     @test isempty(findpeaks(q, iso, σ0; method = :hybrid).indices)
 
-    neg = I0 .- (I0[end] + 4 * σ0[end])      # high-q tail goes slightly negative
-    @test isempty(findpeaks(q, neg, σ0; method = :hybrid).indices)
+    # plain peak-free power law, shifted so the high-q tail goes slightly negative
+    for seed in 1:10
+        rng = MersenneTwister(seed)
+        Ip = 500.0 .* (q ./ q[1]) .^ (-2)
+        σp = sqrt.(Ip)
+        Ip .+= σp .* randn(rng, length(q))
+        Ip .-= Ip[end]
+        @test minimum(Ip) < 0
+        @test isempty(findpeaks(q, Ip, σp; method = :hybrid).indices)
+    end
 
     nanpt = copy(I0); nanpt[50] = NaN
     @test isempty(findpeaks(q, nanpt, σ0; method = :hybrid).indices)
 end
 
 @testset "hybrid: result does not depend on intensity scale" begin
-    q, I, σ, _ = _hybrid_trace()
-    a = findpeaks(q, I, σ; method = :hybrid)
-    b = findpeaks(q, I .* 1e-9, σ .* 1e-9; method = :hybrid)
-    @test a.indices == b.indices
-    c = findpeaks(q, I .* 1e6, σ .* 1e6; method = :hybrid)
-    @test a.indices == c.indices
+    # Seeds 8 and 9 change under an absolute intensity floor (weak peak lost at 1e-9).
+    for seed in 1:12
+        q, I, σ, _ = _hybrid_trace(; seed)
+        a = findpeaks(q, I, σ; method = :hybrid)
+        b = findpeaks(q, I .* 1e-9, σ .* 1e-9; method = :hybrid)
+        c = findpeaks(q, I .* 1e6, σ .* 1e6; method = :hybrid)
+        @test a.indices == b.indices
+        @test a.indices == c.indices
+    end
 end
 
 @testset "hybrid: without σ, an estimate is used" begin
