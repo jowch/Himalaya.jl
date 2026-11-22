@@ -100,6 +100,7 @@ describe("Bonnet tolerance from the lattice fits", () => {
 
   it("widens for scattered fits", () => {
     expect(pair(0.01, 0.015)).toHaveLength(1);
+    expect(pair(0.01, 0.017)).toHaveLength(1);
     expect(pair(0.01, 0.02)).toEqual([]);
   });
 
@@ -108,8 +109,16 @@ describe("Bonnet tolerance from the lattice fits", () => {
     expect(pair(0.05, 0.021)).toEqual([]);
   });
 
-  it("keeps a lattice alias out even with the widest tolerance", () => {
-    expect(bonnetGroups([fitted("Pn3m", 100, 0.01, 0.05), fitted("Im3m", 141.42, 0.013, 0.05)])).toEqual([]);
+  it("keeps out an alias that only the cap rejects", () => {
+    const pn = fitted("Pn3m", 100, 0.01, 0.03);
+    const im = fitted("Im3m", 100 * Math.sqrt(1.5), 0.013, 0.03);
+    expect(bonnetGroups([pn, im])).toEqual([]);
+    expect(bonnetGroups([pn, fitted("Im3m", 127.93, 0.013, 0.03)])).toHaveLength(1);
+  });
+
+  it("keeps out an alias inside any tolerance when it explains too few peaks of its own", () => {
+    const c = [ix("Pn3m", 100, range(1, 6)), ix("Ia3d", 100 * Math.sqrt(2.5), [2, 4, 6, 7])];
+    expect(bonnetGroups(c)).toEqual([]);
   });
 
   it("uses the floor alone for fits with fewer than three peaks", () => {

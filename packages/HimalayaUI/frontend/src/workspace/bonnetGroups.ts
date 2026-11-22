@@ -6,9 +6,9 @@ import { gaussianCurvature } from "./curvature";
 const K = 2;
 // physics: relative lattice error no fit can beat, set by q binning and detector resolution; it also stands in for fits with too few peaks to estimate their own.
 const FLOOR = 0.003;
-// physics: above about 2% a κ match starts admitting lattice aliases, so no fit scatter widens the tolerance past it.
+// physics: bounds how far scattered fits can widen the tolerance; near-aliases such as Ia3d at √(5/2)·a sit inside any tolerance and only MIN_OWN keeps them out.
 const CAP = 0.02;
-// physics: a κ match alone admits lattice aliases, so every member must explain peaks no other member does.
+// physics: a κ match alone admits lattice aliases, so every member must explain peaks no other member does; this, not the tolerance, is the alias guard.
 const MIN_OWN = 2;
 
 export type CallRow =
