@@ -4,16 +4,6 @@ import type { PersistedOpForResolution } from "./mutatorRegistry";
 import { queueMutationOptions } from "./useQueueMutation";
 
 export const STORAGE_KEY = "himalaya-ui:queue";
-// Bumped 1 → 2 in issue #88: sample.label dropped, payload.name → payload.display_name.
-// Bumped 2 → 3 in issue #183 (I5.2): Compare routes retired (I3.6 #177) — any
-// pre-cutover queued comparison_* op in sessionStorage must DROP on rehydrate
-// (warning toast) instead of replaying into a 404 against the dead route. This
-// counter is independent of the Zustand `persist` `version` in state.ts.
-// Bumped 3 → 4 in the plotting redesign (D-10): the /groups routes + the
-// index_confirmed / index_unconfirmed op kinds were retired. Any pre-cutover
-// queued group op must DROP on rehydrate rather than replay into a dead route.
-// Bumped 4 → 5 (Phase E1, Task 1b): samples.display_name collapsed into non-null
-// name; pre-deploy update_sample ops carrying display_name DROP on rehydrate.
 export const SCHEMA_VERSION = 6;
 
 interface PersistedOp {
@@ -23,39 +13,18 @@ interface PersistedOp {
   payload: unknown;
 }
 
-/**
- * A function that, given a persisted op, returns the Mutator that should
- * replay it (or undefined if the op should be dropped).
- */
 export type MutatorResolver = (
   op: PersistedOpForResolution,
 ) => Mutator<any, any, any> | undefined;
-
-/**
- * Subscribe to MutationCache events; mirror the current pending set to
- * sessionStorage on every add/update/remove. Returns an unsubscribe.
- *
- * Mirror happens unconditionally on every cache event — cheap because the
- * pending set is bounded (one in-flight op per user gesture, typically <10
- * concurrent). The full set is rewritten so transitions from pending →
- * success/error correctly drop the entry.
- */
 export function attachPersistence(mc: MutationCache): () => void {
   const dump = () => mirrorToSessionStorage(mc);
-  // Initial mirror so existing pending state at attach time lands in storage.
   dump();
   return mc.subscribe(() => dump());
 }
-
 function mirrorToSessionStorage(mc: MutationCache): void {
   const pending = mc.getAll().filter((m) => m.state.status === "pending");
   const ops: PersistedOp[] = [];
   for (const m of pending) {
-    // useQueueMutation flat-spreads scope + input into `variables`; there is
-    // no nested `payload` key. Persist the full variables object so rehydrate
-    // can pass it back into mutator.onMutate / .request unchanged. Mutators
-    // already destructure scope+input from this flat shape via their `flat()`
-    // helper, so the rehydrate path matches the live-mutate path.
     const vars = m.state.variables as
       | (Record<string, unknown> & { kind?: OpKind; clientOpId?: string })
       | undefined;
@@ -70,17 +39,14 @@ function mirrorToSessionStorage(mc: MutationCache): void {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(ops));
   } catch {
-    // Quota exceeded or sessionStorage unavailable. Best-effort: skip.
   }
 }
-
 export interface RehydrateResult {
   dropped: number;
   replayed: number;
   failed: number;
   lost: number;
 }
-
 export async function rehydrate(
   qc: QueryClient,
   mutators: Map<OpKind, Mutator<any, any, any>> | MutatorResolver,
@@ -88,7 +54,6 @@ export async function rehydrate(
   const raw = sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return { dropped: 0, replayed: 0, failed: 0, lost: 0 };
   sessionStorage.removeItem(STORAGE_KEY);
-
   let ops: PersistedOp[] = [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -96,12 +61,10 @@ export async function rehydrate(
   } catch {
     return { dropped: 0, replayed: 0, failed: 0, lost: 0 };
   }
-
   const lookup = (op: PersistedOp): Mutator<any, any, any> | undefined =>
     typeof mutators === "function"
       ? mutators({ kind: op.kind, payload: op.payload })
       : mutators.get(op.kind);
-
   let dropped = 0;
   let replayed = 0;
   let failed = 0;
@@ -113,7 +76,6 @@ export async function rehydrate(
       .filter((m) => m.state.status === "pending")
       .map((m) => (m.state.variables as { clientOpId?: string } | undefined)?.clientOpId),
   );
-
   for (const op of ops) {
     try {
       if (op.schemaVersion !== SCHEMA_VERSION) {
@@ -153,7 +115,6 @@ export async function rehydrate(
       lost++;
     }
   }
-
   await Promise.all(fires);
   return { dropped, replayed, failed, lost };
 }

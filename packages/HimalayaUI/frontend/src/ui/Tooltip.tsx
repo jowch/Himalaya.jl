@@ -3,31 +3,13 @@ import type { ReactElement } from "react";
 import { cx } from "../lib/cx";
 
 interface TooltipProps {
-  /** The caption text shown in the popover. */
   label: string;
-  /** A single focusable/hoverable trigger element. */
   children: ReactElement;
-  /** Which side of the trigger the tip sits on. Default `"top"`. */
   side?: "top" | "bottom";
-  /** Allow the caption to wrap (capped width) instead of a single nowrap strip.
-   *  For multi-clause guidance that would otherwise overflow the viewport. */
   multiline?: boolean;
-  /** Placement-only consumer override on the tip span (closed-look contract). */
   className?: string;
 }
 
-
-/**
- * Caption popover that shows on hover AND focus around a single trigger child.
- *
- * The Tooltip is the intentional DARK exception in the warm-paper system
- * (DESIGN.md §2 frame-edge / §4 detector dark window): a dark `frame-edge`
- * window with light `frame-tag` caption text, set via inline token vars so the
- * design guard's dark-exception stays explicit. A11y: `role="tooltip"` plus
- * `aria-describedby` wired from the trigger to the tip id (React `useId()`,
- * no `Math.random()`). No entrance bounce — opacity only; reduced-motion is
- * handled globally.
- */
 export function Tooltip({
   label,
   children,
@@ -37,14 +19,10 @@ export function Tooltip({
 }: TooltipProps): JSX.Element {
   const id = useId();
   const [open, setOpen] = useState(false);
-
-  // Only add aria-describedby when open, to avoid passing explicit `undefined`
-  // under exactOptionalPropertyTypes (conditional spread).
   const trigger = cloneElement(
     children,
     open ? { "aria-describedby": id } : {},
   );
-
   return (
     <span
       className="relative inline-flex"
@@ -69,8 +47,6 @@ export function Tooltip({
           style={{
             background: "var(--color-frame-edge)",
             color: "var(--color-frame-tag)",
-            // A hair of inset definition so the dark window reads against dark
-            // detector panels too (the warm-paper system's only dark exception).
             boxShadow: "0 6px 16px -4px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.06)",
           }}
         >

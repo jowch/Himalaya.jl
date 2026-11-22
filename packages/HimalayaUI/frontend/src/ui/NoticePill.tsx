@@ -9,7 +9,6 @@ interface NoticePillProps {
   className?: string;
 }
 
-
 export function NoticePill({
   tone,
   children,
@@ -90,7 +89,6 @@ export function NoticePill({
     );
   }
 
-  // tone === "draft"
   return (
     <span
       data-testid="notice-pill"

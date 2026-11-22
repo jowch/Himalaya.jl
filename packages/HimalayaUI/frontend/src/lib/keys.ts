@@ -1,48 +1,4 @@
-/**
- * suppressGlobalKeys — the shared guard for window-level page shortcuts
- * (loupe X/R/arrows, contact-sheet X/Escape, global `/`-`,`-`.`, scoping ⌘Z).
- *
- * Returns `true` (the page shortcut must NOT run) when either:
- *
- * 1. The event target is a typing/selection context — INPUT, TEXTAREA,
- *    SELECT, or inside a contenteditable region. Single letters and chords
- *    like ⌘Z belong to the editing surface there, never to the page.
- *
- * 2. The event target is inside an open NON-modal panel — a
- *    `[role="dialog"]` panel or a
- *    `[data-keys-trap]` inline editor (the tag editor). An open panel owns
- *    the keyboard while focus is inside it, so a single-letter page shortcut
- *    must not fire through a non-input control (a button/chip) sitting in the
- *    popover (LO-POPKEY). This is `target.closest(…)`, NOT document-level: a
- *    non-modal popover does not make the rest of the page inert, so shortcuts
- *    stay live everywhere OUTSIDE the popover's own subtree.
- *
- * 3. A modal dialog is open ANYWHERE in the document:
- *    `[role="dialog"][aria-modal="true"]` (what ModalShell emits).
- *    This is deliberately a document-level check, not `target.closest(…)`:
- *    `aria-modal="true"` declares everything outside the dialog inert, so
- *    page shortcuts must be off no matter where the event lands — and focus
- *    can transiently sit on <body> (target = body/window) in the instant
- *    before the modal's focus trap engages.
- *
- * Modifier-key chords (⌘/Ctrl/Alt) are deliberately NOT handled here: some
- * callers bind chords themselves (the shell keys own ⌘K), so each call site keeps
- * its own `if (e.metaKey || e.ctrlKey || e.altKey) return;` line where appropriate.
- *
- * The contenteditable check pairs the spec'd `isContentEditable` property
- * (the browser source of truth, covers inheritance + designMode) with an
- * attribute-based `closest` fallback: JSDOM does not implement
- * `isContentEditable`, and the fallback also resolves inherited editability
- * while respecting the nearest explicit `contenteditable="false"` island.
- */
 export function suppressGlobalKeys(e: KeyboardEvent): boolean {
-  // A handler closer to the source already consumed this key (e.g. ModalShell's
-  // Escape preventDefault()s before closing). The open-dialog check below is NOT
-  // enough on its own: in a real browser a microtask checkpoint runs between the
-  // dialog's `document` listener and a page's `window` listener, so React can
-  // flush the close and UNMOUNT the dialog mid-dispatch — by the time we query
-  // for `[aria-modal]` it is already gone and the page shortcut (loupe Esc →
-  // back to the sheet) wrongly fires. `defaultPrevented` survives that race.
   if (e.defaultPrevented) return true;
   const t = e.target;
   if (t instanceof HTMLElement) {
@@ -51,7 +7,6 @@ export function suppressGlobalKeys(e: KeyboardEvent): boolean {
   }
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 }
-
 export function isEditable(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   const tag = t.tagName;
@@ -60,13 +15,11 @@ export function isEditable(t: EventTarget | null): boolean {
   const editableHost = t.closest("[contenteditable]");
   return editableHost !== null && editableHost.getAttribute("contenteditable") !== "false";
 }
-
 export function inDialog(e: KeyboardEvent): boolean {
   const t = e.target;
   if (t instanceof Element && t.closest('[role="dialog"], [data-keys-trap]') !== null) return true;
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 }
-
 export function helpKeyFromEmptyField(e: KeyboardEvent): boolean {
   if (e.key !== "?" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || inDialog(e)) return false;
   const t = e.target;
