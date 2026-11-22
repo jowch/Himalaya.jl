@@ -27,18 +27,18 @@ function routes(demoDir) {
     "/api/experiments/4/problems": { ingest_error: null, exposures: [] },
     "/api/experiments/4/export": [
       { name: "MO_H2O_S1 (S01P01)", exposures: [
-        { filename: "MO_H2O_S1", selected: false, active_group_kind: "auto", indices: [{ phase: "Pn3m", basis: 0.087 }] },
-        { filename: "MO_H2O_S2", selected: false, active_group_kind: "auto", indices: [] },
+        { filename: "MO_H2O_S1", auto_phases: ["Pn3m"] },
+        { filename: "MO_H2O_S2", auto_phases: [] },
       ] },
       { name: "MO_PEG5_S3 (S01P02)", exposures: [
-        { filename: "MO_PEG5_S3", selected: false, active_group_kind: "auto", indices: [{ phase: "Im3m", basis: 0.064 }] },
+        { filename: "MO_PEG5_S3", auto_phases: ["Im3m"] },
       ] },
     ],
     "/api/samples/10/exposures": [
-      { id: 2, filename: "MO_H2O_S2", status: "rejected", selected: false, sample_id: 10 },
-      { id: 1, filename: "MO_H2O_S1", status: null, selected: false, sample_id: 10 },
+      { id: 2, filename: "MO_H2O_S2", status: "rejected", sample_id: 10 },
+      { id: 1, filename: "MO_H2O_S1", status: null, sample_id: 10 },
     ],
-    "/api/samples/11/exposures": [{ id: 3, filename: "MO_PEG5_S3", status: null, selected: false, sample_id: 11 }],
+    "/api/samples/11/exposures": [{ id: 3, filename: "MO_PEG5_S3", status: null, sample_id: 11 }],
     "/api/exposures/1/assignment": { exposure_id: 1, state: "indexed", members: [5] },
     "/api/exposures/1/indices": [{ id: 5, phase: "Pn3m", kind: "auto", status: "candidate" }],
     "/api/exposures/2/assignment": { exposure_id: 2, state: "indexed", members: [] },

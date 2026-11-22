@@ -64,7 +64,7 @@ async function seedState(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem(
       "himalaya-ui:state",
-      JSON.stringify({ state: { username: "alice", tutorialSeen: true, theme: "dark" }, version: 5 }),
+      JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 6 }),
     );
   });
 }
@@ -134,12 +134,6 @@ test("opening a scanned experiment lands on its first sample in the workspace", 
   await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
   await expect(page.getByRole("heading", { level: 2, name: "Sample 1" })).toBeVisible();
   await expect(page.getByTestId("workspace-notice")).toHaveCount(0);
-});
-
-test("an old corpus link opens the workspace", async ({ page }) => {
-  await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 2 });
-  await page.goto("/experiments/7/corpus");
-  await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
 });
 
 test("problem exposures show in the sample pane and open their sample", async ({ page }) => {

@@ -949,8 +949,8 @@ end
 """
     migrate_speculative_peak_durability!(db)
 
-One-shot durability migration for speculative indices (spec:
-2026-07-14-speculative-peak-durability-design.md):
+One-shot durability migration for speculative indices (rules in
+`packages/HimalayaUI/src/AGENTS.md`):
 
 1. Creates `speculative_peak_intents` — the durable record of the user's
    ratio→q assignments, written at creation and never wiped by analysis.

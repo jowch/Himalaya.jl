@@ -2,7 +2,8 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ExperimentEntry } from "../src/print/shell/ExperimentEntry";
+import { ExperimentEntry, EXPERIMENT_GONE } from "../src/print/shell/ExperimentEntry";
+import * as toast from "../src/lib/toast";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 import type { Experiment } from "../src/api";
@@ -59,7 +60,8 @@ describe("ExperimentEntry", () => {
     expect(await screen.findByTestId("where")).toHaveTextContent("/experiments/7/workspace");
   });
 
-  it("shows the not-found page for an experiment that no longer exists", async () => {
+  it("goes home with a toast for an experiment that no longer exists", async () => {
+    const shown = vi.spyOn(toast, "showToast");
     vi.spyOn(api, "getExperiment").mockRejectedValue(new api.ApiError(404, "experiment not found", null));
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -72,7 +74,7 @@ describe("ExperimentEntry", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(await screen.findByText("Experiment '7' not found.")).toBeInTheDocument();
-    expect(screen.queryByTestId("where")).toBeNull();
+    expect(await screen.findByTestId("where")).toHaveTextContent("/experiments");
+    expect(shown).toHaveBeenCalledWith(EXPERIMENT_GONE, "warning");
   });
 });

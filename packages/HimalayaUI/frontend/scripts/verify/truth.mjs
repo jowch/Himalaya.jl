@@ -304,14 +304,17 @@ export async function collectApp(cfg, experimentId) {
     getJson(api, `/api/experiments/${experimentId}/export`),
   ]);
   const autoByFrame = new Map();
-  for (const s of exported) for (const e of s.exposures) autoByFrame.set(e.filename, e.indices.map((i) => i.phase));
+  for (const s of exported) for (const e of s.exposures) {
+    if (!Array.isArray(e.auto_phases)) throw new Error(`export frame ${e.filename} has no auto_phases array`);
+    autoByFrame.set(e.filename, e.auto_phases);
+  }
   return Promise.all(
     samples.map(async (s) => {
       const exposures = await getJson(api, `/api/samples/${s.id}/exposures`);
       const frames = exposures
         .slice()
         .sort((a, b) => a.id - b.id)
-        .map((e) => ({ id: e.id, filename: e.filename, status: e.status, selected: Boolean(e.selected), autoPhases: autoByFrame.get(e.filename) ?? [] }));
+        .map((e) => ({ id: e.id, filename: e.filename, status: e.status, autoPhases: autoByFrame.get(e.filename) ?? [] }));
       for (const f of frames) f.assignment = await readAssignment(api, f.id);
       return {
         id: s.id,

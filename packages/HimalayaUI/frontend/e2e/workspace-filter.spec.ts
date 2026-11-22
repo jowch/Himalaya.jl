@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.clear();
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: { username: "alice", tutorialSeen: true },
-      version: 5,
+      version: 6,
     }));
   });
   const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });

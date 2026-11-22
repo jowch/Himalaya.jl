@@ -4,18 +4,7 @@ import { useAppState, LS_KEY } from "../src/state";
 describe("useAppState", () => {
   beforeEach(() => {
     localStorage.clear();
-    useAppState.setState({
-      username: undefined,
-      activeSampleId: undefined,
-      activeExposureId: undefined,
-    });
-  });
-
-  it("starts with undefined fields", () => {
-    const s = useAppState.getState();
-    expect(s.username).toBeUndefined();
-    expect(s.activeSampleId).toBeUndefined();
-    expect(s.activeExposureId).toBeUndefined();
+    useAppState.setState({ username: undefined, tutorialSeen: false, paletteOpen: false });
   });
 
   it("setUsername updates state", () => {
@@ -23,119 +12,24 @@ describe("useAppState", () => {
     expect(useAppState.getState().username).toBe("alice");
   });
 
-  it("setActiveSample clears activeExposureId", () => {
-    useAppState.setState({ activeExposureId: 7 });
-    useAppState.getState().setActiveSample(3);
-    expect(useAppState.getState().activeSampleId).toBe(3);
-    expect(useAppState.getState().activeExposureId).toBeUndefined();
-  });
-
-  it("persists to localStorage under the stable key", () => {
-    useAppState.getState().setUsername("bob");
-    const raw = localStorage.getItem(LS_KEY);
-    expect(raw).not.toBeNull();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.state.username).toBe("bob");
-  });
-
-  it("hoveredIndexId starts undefined and can be set/cleared", () => {
-    useAppState.setState({ hoveredIndexId: undefined });
-    expect(useAppState.getState().hoveredIndexId).toBeUndefined();
-    useAppState.getState().setHoveredIndex(7);
-    expect(useAppState.getState().hoveredIndexId).toBe(7);
-    useAppState.getState().setHoveredIndex(undefined);
-    expect(useAppState.getState().hoveredIndexId).toBeUndefined();
-  });
-
-  it("hoveredIndexId is NOT in the persisted partition", () => {
-    useAppState.setState({ hoveredIndexId: 42 });
-    const raw = localStorage.getItem(LS_KEY);
-    expect(raw ?? "").not.toContain("hoveredIndexId");
-  });
-
-  // ── new fields added by the three-card redesign ────────────────────────
-
-  it("activeExperimentId starts undefined and can be set", () => {
-    expect(useAppState.getState().activeExperimentId).toBeUndefined();
-    useAppState.getState().setActiveExperiment(5);
-    expect(useAppState.getState().activeExperimentId).toBe(5);
-  });
-
-  it("setActiveExperiment clears activeSampleId and activeExposureId", () => {
-    useAppState.setState({ activeSampleId: 9, activeExposureId: 2 });
-    useAppState.getState().setActiveExperiment(3);
-    const s = useAppState.getState();
-    expect(s.activeExperimentId).toBe(3);
-    expect(s.activeSampleId).toBeUndefined();
-    expect(s.activeExposureId).toBeUndefined();
-  });
-
-  // I5.1 (#182): the `activePage` field + `setActivePage` are deleted with the
-  // dual-nav model. The dedicated activePage test is removed (no field to test).
-
   it("tutorialSeen defaults to false and can be set true", () => {
     expect(useAppState.getState().tutorialSeen).toBe(false);
     useAppState.getState().setTutorialSeen(true);
     expect(useAppState.getState().tutorialSeen).toBe(true);
   });
 
-  // R0a (#221): "The Print" is the single identity. The `theme` field,
-  // `setTheme`, and `ThemeId` were removed; the app renders Print by default
-  // with no toggle. Guard against a regression that re-adds the field.
-  it("has no `theme` field or `setTheme` action (Print is the single identity)", () => {
-    const s: object = useAppState.getState();
-    expect("theme" in s).toBe(false);
-    expect("setTheme" in s).toBe(false);
-  });
-
   it("opens and closes the palette", () => {
-    expect(useAppState.getState().paletteOpen).toBe(false);
     useAppState.getState().openPalette();
     expect(useAppState.getState().paletteOpen).toBe(true);
     useAppState.getState().closePalette();
     expect(useAppState.getState().paletteOpen).toBe(false);
   });
 
-  it("persists the allow-listed fields", () => {
+  it("persists only the user and tutorial fields", () => {
     useAppState.getState().setUsername("alice");
-    useAppState.getState().setActiveExperiment(4);
-    useAppState.setState({ activeSampleId: 12 });
     useAppState.getState().setTutorialSeen(true);
-    const raw = localStorage.getItem(LS_KEY);
-    const parsed = JSON.parse(raw!);
-    expect(parsed.state.username).toBe("alice");
-    expect(parsed.state.activeExperimentId).toBe(4);
-    expect(parsed.state.activeSampleId).toBe(12);
-    // I5.1 (#182): `activePage` is no longer in the persisted partition.
-    expect(parsed.state.activePage).toBeUndefined();
-    expect(parsed.state.tutorialSeen).toBe(true);
-    // R0a (#221): `theme` is no longer persisted (field removed).
-    expect(parsed.state.theme).toBeUndefined();
+    useAppState.getState().openPalette();
+    const parsed = JSON.parse(localStorage.getItem(LS_KEY)!);
+    expect(parsed.state).toEqual({ username: "alice", tutorialSeen: true });
   });
-
-  it("does NOT persist ephemeral UI fields (paletteOpen, hoveredIndexId)", () => {
-    useAppState.setState({
-      hoveredIndexId: 3,
-      paletteOpen: true,
-    });
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("hoveredIndexId");
-    expect(raw).not.toContain("paletteOpen");
-  });
-
-  it("hoveredPeakId starts undefined and can be set/cleared", () => {
-    useAppState.setState({ hoveredPeakId: undefined });
-    expect(useAppState.getState().hoveredPeakId).toBeUndefined();
-    useAppState.getState().setHoveredPeak(5);
-    expect(useAppState.getState().hoveredPeakId).toBe(5);
-    useAppState.getState().setHoveredPeak(undefined);
-    expect(useAppState.getState().hoveredPeakId).toBeUndefined();
-  });
-
-  it("hoveredPeakId is NOT in the persisted partition", () => {
-    useAppState.setState({ hoveredPeakId: 99 });
-    const raw = localStorage.getItem(LS_KEY) ?? "";
-    expect(raw).not.toContain("hoveredPeakId");
-  });
-
 });

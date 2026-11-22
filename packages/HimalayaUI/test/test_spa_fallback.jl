@@ -1,10 +1,8 @@
 using Test, HTTP, JSON3, SQLite, DBInterface
 using HimalayaUI
 
-# Helpers are available via runtests.jl include order — see test_routes_resolve.jl.
-
 # Spec §3.2 — SPA catch-all serves index.html for any non-API, non-asset
-# path so deep-link URLs like /inspect/exp/sample reach the frontend.
+# path so deep links like /experiments/1/workspace/2 reach the frontend.
 # /api/* always returns 404 to prevent unregistered API typos from being
 # masked as 200 HTML responses.
 
