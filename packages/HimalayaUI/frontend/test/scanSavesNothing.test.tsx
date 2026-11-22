@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { InfrastructureBanner } from "../src/print/shell/InfrastructureBanner";
+import { InfrastructureBanner } from "../src/shell/InfrastructureBanner";
 import { useCheckForNewFilesOnOpen, useTriggerScan } from "../src/queries";
 import { triggerScan } from "../src/api";
 

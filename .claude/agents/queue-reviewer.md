@@ -34,8 +34,8 @@ Frontend (TS):
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/*.ts` — each mutator file
 - `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` — rehydrate dispatch
 - `packages/HimalayaUI/frontend/src/lib/{clientOpId,toast,authOpts}.ts`, `lib/queue/{peakQTol,optimisticId}.ts`
-- `packages/HimalayaUI/frontend/src/print/shell/InfrastructureBanner.tsx`, `print/ui/Toast.tsx`
-- `packages/HimalayaUI/frontend/src/print/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
+- `packages/HimalayaUI/frontend/src/shell/InfrastructureBanner.tsx`, `ui/Toast.tsx`
+- `packages/HimalayaUI/frontend/src/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
 
 ## Invariant checklist
 
@@ -89,7 +89,7 @@ Frontend (TS):
 
 ### App-level wiring
 
-- **`print/App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
+- **`App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
 
 ## Common diff patterns to watch for
 

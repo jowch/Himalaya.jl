@@ -25,7 +25,7 @@ describe("workspace theme", () => {
     const derivedColours = Array.from(theme.matchAll(/^\s*(--color-[\w-]+):[^;]*var\(--color-/gm)).map((m) => m[1]!);
     const files = (dir: string): string[] =>
       readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)]));
-    const source = files(resolve(__dirname, "../../src/workspace")).map((f) => readFileSync(f, "utf8")).join("\n");
+    const source = files(resolve(__dirname, "../../src")).map((f) => readFileSync(f, "utf8")).join("\n");
     const used = derivedColours.filter((name) => {
       const short = name.replace("--color-", "");
       return source.includes(name) || new RegExp(`-${short}\\b`).test(source);

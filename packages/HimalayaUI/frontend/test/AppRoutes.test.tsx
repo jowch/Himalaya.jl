@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../src/state";
-import { AppRoutes, PAGE_GONE } from "../src/print/shell/AppRoutes";
+import { AppRoutes, PAGE_GONE } from "../src/shell/AppRoutes";
 import * as api from "../src/api";
 import * as toast from "../src/lib/toast";
 

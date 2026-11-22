@@ -1,7 +1,7 @@
 // test/PageFrame.ingestion.test.tsx
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { PageFrame, PAGE_WIDTHS } from "../src/print/components/PageFrame";
+import { PageFrame, PAGE_WIDTHS } from "../src/components/PageFrame";
 
 describe("PageFrame ingestion widths (Phase E1)", () => {
   it("exposes home + experiment width keys", () => {
