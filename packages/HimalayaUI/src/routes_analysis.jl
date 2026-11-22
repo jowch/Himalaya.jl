@@ -120,6 +120,7 @@ function register_analysis_routes!()
                 entity_type = "sample",
                 entity_id   = id,
                 payload     = Dict(:state => state))
+            align_call_state!(db, req, bridge_mates(db, id), state)
             b = _sample_call_body(db, id)
             _enqueue_broadcast_from_result!(result, "sample_call_set_state", "sample", id;
                 post_state = Dict(:call => _sample_call_post_state(b)))
@@ -153,6 +154,7 @@ function register_analysis_routes!()
                 entity_type = "exposure",
                 entity_id   = id,
                 payload     = Dict(:index_id => index_id))
+            _align_mates_to_indexed!(db, req, id)
             b = _assignment_body(db, id)
             _enqueue_broadcast_from_result!(result, "assignment_add", "exposure", id;
                 post_state = Dict(:assignment => _assignment_post_state(b)))

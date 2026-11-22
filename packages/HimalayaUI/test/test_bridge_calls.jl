@@ -55,8 +55,9 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
                 @test [(Int(m.exposure_id), Int(m.index_id)) for m in body.members] == [(fx.ea, 10)]
                 @test String.(collect(body.call_phases)) == ["Pn3m"]
                 @test _bc_json(call("GET", "/api/exposures/$(fx.eb)/assignment")).members == []
-                exported = Dict(Int(s.sample_id) => s for s in _bc_json(call("GET", "/api/experiments/$(fx.exp_id)/export")))
-                @test String(exported[fx.b].call_state) == "indexed"
+                exported = Dict(String(s.name) => s for s in _bc_json(call("GET", "/api/experiments/$(fx.exp_id)/export")))
+                @test String(exported["B"].call_state) == "indexed"
+                @test String.(collect(exported["B"].call_phases)) == ["Pn3m"]
                 @test HimalayaUI.bridged_call_drift(fx.db) == Int[]
             end
         end
@@ -188,6 +189,33 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
             end
             HimalayaUI._upsert_sample_call!(fx.db, fx.a, "form_factor")
             @test length(HimalayaUI.bridged_call_drift(fx.db)) == 1
+        end
+    end
+
+    @testset "a one-time repair gives every member of an old bridge the same call state, through the log" begin
+        mktempdir() do dir
+            fx = _bridge_call_fixture(dir)
+            c = HimalayaUI.create_sample!(fx.db; experiment_id = fx.exp_id, name = "C")
+            d = HimalayaUI.create_sample!(fx.db; experiment_id = fx.exp_id, name = "D")
+            DBInterface.execute(fx.db, "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 7), (?, 7), (?, 8), (?, 8)",
+                [fx.a, fx.b, c, d])
+            DBInterface.execute(fx.db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 10)", [fx.ea])
+            HimalayaUI._upsert_sample_call!(fx.db, fx.b, "form_factor")
+            HimalayaUI._upsert_sample_call!(fx.db, c, "form_factor")
+            DBInterface.execute(fx.db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_BRIDGED_CALLS])
+            @test HimalayaUI.bridged_call_drift(fx.db) == [7, 8]
+            HimalayaUI.migrate_share_bridged_calls!(fx.db)
+            @test HimalayaUI.bridged_call_drift(fx.db) == Int[]
+            @test _bc_states(fx.db)[fx.b] == "indexed"
+            @test _bc_states(fx.db)[d] == "form_factor"
+            @test _bc_members(fx.db) == [(fx.ea, 10)]
+            logged = Tables.rowtable(DBInterface.execute(fx.db,
+                "SELECT entity_id, user_id FROM user_actions WHERE action = 'sample_call_set_state' ORDER BY id"))
+            @test [Int(r.entity_id) for r in logged] == [fx.b, d]
+            @test all(r -> r.user_id === missing, logged)
+            HimalayaUI.migrate_share_bridged_calls!(fx.db)
+            @test length(Tables.rowtable(DBInterface.execute(fx.db,
+                "SELECT id FROM user_actions WHERE action = 'sample_call_set_state'"))) == 2
         end
     end
 end
