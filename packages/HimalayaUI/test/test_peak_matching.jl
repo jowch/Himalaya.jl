@@ -320,3 +320,88 @@ end
         @test [p.excluded for p in list] == [true, false]
     end
 end
+
+@testset "add next to an excluded peak replaces nothing" begin
+    fx = _pm_fixture(auto_qs = [0.2, 0.2 + 5PM_H])
+    _curate!(fx.db, fx.e_id, "exclude", 0.2)
+    _curate!(fx.db, fx.e_id, "add", 0.2 + 2PM_H)
+    eff = HimalayaUI.effective_peaks(fx.db, fx.e_id, _grid(400), zeros(400))
+    @test eff.q == [0.2 + 2PM_H, 0.2 + 5PM_H]
+    @test eff.peak_kind == [:curation, :auto]
+    rows = HimalayaUI.get_peaks_for_exposure(fx.db, fx.e_id)
+    @test length(rows) == 3
+    @test HimalayaUI.hash_peak_set_from_db(fx.db, fx.e_id) ==
+          HimalayaUI.hash_peak_set(HimalayaUI.effective_peaks(
+              (DBInterface.execute(fx.db, "DELETE FROM peak_curations WHERE kind='add'"); fx.db),
+              fx.e_id, _grid(400), zeros(400)))
+end
+
+@testset "unexclude deletes every exclude that targets the peak" begin
+    fx = _pm_fixture(auto_qs = [0.2, 0.2 + 12PM_H])
+    req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+    _curate!(fx.db, fx.e_id, "exclude", 0.2)
+    _curate!(fx.db, fx.e_id, "exclude", 0.2 + 2PM_H)
+    _curate!(fx.db, fx.e_id, "exclude", 0.2 + 12PM_H)
+    HimalayaUI.apply_event!(fx.db, req; kind = "peak_unexcluded", entity_type = "exposure",
+        entity_id = fx.e_id, payload = Dict(:q => 0.2, :auto_peak_id => 1))
+    rows = HimalayaUI.get_peaks_for_exposure(fx.db, fx.e_id)
+    @test [Bool(r.excluded) for r in rows] == [false, true]
+end
+
+@testset "peak_unexcluded replay deletes the recorded ids even if auto peaks change" begin
+    fx = _pm_fixture(auto_qs = [0.2, 0.2 + 2PM_H])
+    hdr = ["Content-Type" => "application/json", "X-Username" => "alice"]
+    e1 = 0.2 + 1.5PM_H; e2 = 0.2 - 1.6PM_H
+    req = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
+    for q in (e1, e2)
+        HimalayaUI.apply_event!(fx.db, req; kind = "peak_excluded", entity_type = "exposure",
+            entity_id = fx.e_id, payload = Dict(:q => q, :auto_peak_id => 1))
+    end
+    ids = Dict(Float64(r.q) => Int(r.id) for r in Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT id, q FROM peak_curations WHERE kind='exclude'")))
+    live = HimalayaUI.exclude_ids_for_peak(fx.db, fx.e_id, 0.2)
+    HimalayaUI.apply_event!(fx.db, req; kind = "peak_unexcluded", entity_type = "exposure",
+        entity_id = fx.e_id,
+        payload = Dict(:q => 0.2, :auto_peak_id => 1, :curation_ids => live))
+    after_live = [Float64(r.q) for r in Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT q FROM peak_curations WHERE kind='exclude' ORDER BY q"))]
+    # a re-detect drops the neighbouring auto peak, then the views are rebuilt
+    DBInterface.execute(fx.db, "DELETE FROM auto_peaks WHERE q > 0.2 + 1PM_H".replace("PM_H", string(PM_H)))
+    DBInterface.execute(fx.db, "DELETE FROM peak_curations WHERE exposure_id = ?", [fx.e_id])
+    HimalayaUI.rebuild_views_from_log!(fx.db, fx.e_id)
+    after_rebuild = [Float64(r.q) for r in Tables.rowtable(DBInterface.execute(fx.db,
+        "SELECT q FROM peak_curations WHERE kind='exclude' ORDER BY q"))]
+    @test after_rebuild == after_live
+end
+
+@testset "unexclude route records the deleted curation ids in the event" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="S")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    step = HimalayaUI.exposure_q_step(db, e_id)
+    DBInterface.execute(db, "DELETE FROM index_peaks")
+    DBInterface.execute(db, "DELETE FROM auto_peaks WHERE exposure_id = ?", [e_id])
+    DBInterface.execute(db, "INSERT INTO auto_peaks (exposure_id, q, sharpness) VALUES (?, 0.2, 1.0)", [e_id])
+    aid = Int(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM auto_peaks"))[1].id)
+    _curate!(db, e_id, "exclude", 0.2)
+    _curate!(db, e_id, "exclude", 0.2 + 2step)
+    cids = sort([Int(r.id) for r in Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peak_curations"))])
+    hdr = ["Content-Type" => "application/json", "X-Username" => "alice"]
+    with_inproc_routes(db) do call
+        r = call("PATCH", "/api/peaks/auto/$aid"; headers = hdr,
+                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))))
+        @test r.status == 200
+    end
+    row = Tables.rowtable(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'peak_unexcluded'"))[1]
+    @test sort(Int.(JSON3.read(String(row.payload)).curation_ids)) == cids
+    @test isempty(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peak_curations")))
+end
