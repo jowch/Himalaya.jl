@@ -6,7 +6,7 @@ let nextId = 1;
 function ix(phase: string, a: number, peaks: readonly number[], score = 0.5): IndexEntry {
   return {
     id: nextId++, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: a,
-    ngc: null, status: "candidate", kind: "auto", inputs_hash: null, predicted_q: [],
+    status: "candidate", kind: "auto", inputs_hash: null, predicted_q: [],
     peaks: peaks.map((p, i) => ({ peak_id: p, ratio_position: i + 1, residual: 0, q_observed: p / 100 })),
   };
 }

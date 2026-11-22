@@ -1,7 +1,8 @@
 import type { IndexEntry } from "../api";
 
-// physics: Bonnet-related D/P/G surfaces share Gaussian curvature κ = 2πχ/(A₀a²), so equal κ fixes a_Pn3m : a_Im3m : a_Ia3d = 1 : 1.279 : 1.576.
-const BONNET_SCALE: Readonly<Record<string, number>> = { Pn3m: 1, Im3m: 1.279, Ia3d: 1.576 };
+import { gaussianCurvature } from "./curvature";
+
+// physics: Bonnet-related D/P/G surfaces share Gaussian curvature κ, so a lattice matches its partner when its κ-equal lattice lies within RELTOL.
 const RELTOL = 0.01;
 // physics: a κ match alone admits lattice aliases, so every member must explain peaks no other member does.
 const MIN_OWN = 2;
@@ -14,10 +15,10 @@ const peakKey = (q: number) => q.toFixed(6);
 const peakSet = (ix: IndexEntry) => new Set(ix.peaks.map((p) => peakKey(p.q_observed)));
 
 function related(a: IndexEntry, b: IndexEntry): boolean {
-  const sa = BONNET_SCALE[a.phase];
-  const sb = BONNET_SCALE[b.phase];
-  if (sa === undefined || sb === undefined || a.phase === b.phase || a.lattice_d === null || b.lattice_d === null) return false;
-  const predicted = a.lattice_d * (sb / sa);
+  const ka = gaussianCurvature(a.phase, a.lattice_d);
+  const kb = gaussianCurvature(b.phase, b.lattice_d);
+  if (ka === null || kb === null || b.lattice_d === null || a.phase === b.phase) return false;
+  const predicted = b.lattice_d * Math.sqrt(kb / ka);
   return Math.abs(b.lattice_d - predicted) <= RELTOL * predicted;
 }
 
@@ -29,7 +30,7 @@ function union(sets: readonly Set<string>[]): Set<string> {
 
 export function bonnetGroups(candidates: readonly IndexEntry[]): IndexEntry[][] {
   const cubic = candidates
-    .filter((c) => BONNET_SCALE[c.phase] !== undefined && c.lattice_d !== null && c.lattice_d > 0)
+    .filter((c) => gaussianCurvature(c.phase, c.lattice_d) !== null)
     .sort((a, b) => a.id - b.id);
   const peaks = new Map(cubic.map((c) => [c.id, peakSet(c)]));
   const of = (c: IndexEntry) => peaks.get(c.id)!;

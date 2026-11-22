@@ -242,6 +242,43 @@ test("a Custom cubic row keeps its curvature and unit whole on one line", async 
   }
 });
 
+test("an indented Custom cubic in a Bonnet group keeps its curvature and unit whole on one line", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const peaksAt = (qs: number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
+  const group: [string, number, number[]][] = [
+    ["Im3m", 699.9, [0.01, 0.02, 0.03]], ["Pn3m", 699.9 / 1.2793, [0.04, 0.05, 0.06]], ["Ia3d", 699.9 * 1.2319, [0.07, 0.08, 0.09]],
+  ];
+  await page.route(/\/api\/exposures\/410\/indices/, (r) =>
+    r.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify([...group, ["Hexagonal", 499.9, [0.11, 0.12, 0.13]] as const].map(([phase, lattice_d, qs], i) => ({
+        id: 41000 + i, exposure_id: 410, phase, basis: 0.1, score: null, r_squared: 0.99, lattice_d,
+        status: "candidate", kind: "speculative", inputs_hash: null, peaks: peaksAt(qs), predicted_q: [0.1, 0.141],
+      }))),
+    }),
+  );
+  await page.goto("/experiments/17/workspace/41");
+  const header = page.locator("[data-testid=workspace-bonnet-group]");
+  await expect(header).toContainText("nm⁻²");
+  const rows = page.locator("[data-testid=workspace-candidates] li li button");
+  await expect(rows).toHaveCount(3);
+  const plain = await page.locator("[data-testid=workspace-candidates] button").filter({ hasText: "Hexagonal" }).boundingBox();
+  expect((await header.boundingBox())!.height).toBe(plain!.height);
+  const headerInside = await header.evaluate((b) =>
+    b.querySelector("[data-testid=workspace-bonnet-curvature]")!.getBoundingClientRect().right <= b.children[1]!.getBoundingClientRect().right);
+  expect(headerInside).toBe(true);
+  for (const row of await rows.all()) {
+    await expect(row).toContainText("Custom");
+    await expect(row).toContainText("nm⁻²");
+    const inside = await row.evaluate((b) => {
+      const cell = b.children[2]!.getBoundingClientRect();
+      return b.querySelector("[data-testid=workspace-candidate-curvature]")!.getBoundingClientRect().right <= cell.right;
+    });
+    expect(inside).toBe(true);
+    expect((await row.boundingBox())!.height).toBe(plain!.height);
+  }
+});
+
 test("three comparisons with long names keep the compare bar on one line", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/experiments/17/workspace/40");
