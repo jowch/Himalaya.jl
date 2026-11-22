@@ -3,7 +3,7 @@ import type { Peak, PeakUpdatedResponse, AuthOpts } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, OpKind, RollbackContext } from "../types";
-import { refreshPeaks } from "../refreshPeaks";
+import { cancelPeakRefetch, refreshPeaks } from "../refreshPeaks";
 import { stripQueueMetadata } from "../queueMeta";
 
 export type PeakSetExcludedInput = { peakId: number };
@@ -24,6 +24,7 @@ function makeMutator(
   return {
     kind,
     onMutate: (p, qc): RollbackContext => {
+      cancelPeakRefetch(qc, p.exposureId);
       const peaksKey = queryKeys.peaks(p.exposureId);
       const prev = qc.getQueryData<Peak[]>(peaksKey);
       if (prev) {

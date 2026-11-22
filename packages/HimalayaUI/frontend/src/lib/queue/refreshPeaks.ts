@@ -26,3 +26,7 @@ export function refreshPeaks(qc: QueryClient, exposureId: number): void {
     run();
   });
 }
+
+export function cancelPeakRefetch(qc: QueryClient, exposureId: number): void {
+  void qc.cancelQueries({ queryKey: queryKeys.peaks(exposureId) });
+}

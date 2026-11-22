@@ -70,3 +70,39 @@ describe("peak list refetch waits for pending peak mutations", () => {
     expect(hook.result.current.peaks.data).toEqual([]);
   });
 });
+
+describe("a new peak edit cancels an in-flight peak list refetch", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    pendingDeferreds.clear();
+    useAppState.setState({ username: "alice" });
+  });
+
+  it("the late response does not overwrite the new optimistic state", async () => {
+    const server = [peak(7), peak(8)];
+    let hold = false;
+    const late: (() => void)[] = [];
+    vi.spyOn(api, "listPeaks").mockImplementation(() => {
+      const snapshot = server.map((p) => ({ ...p }));
+      if (!hold) return Promise.resolve(snapshot);
+      return new Promise((resolve) => { late.push(() => resolve(snapshot)); });
+    });
+    vi.spyOn(api, "removeManualPeak").mockImplementation(() => new Promise(() => {}));
+    const qc = makeClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const hook = renderHook(() => ({ peaks: usePeaks(E), remove: useRemovePeak(E) }), { wrapper });
+    await waitFor(() => expect(hook.result.current.peaks.data).toHaveLength(2));
+
+    hold = true;
+    act(() => { void qc.invalidateQueries({ queryKey: ["exposure", E, "peaks"] }); });
+    await waitFor(() => expect(late).toHaveLength(1));
+
+    act(() => hook.result.current.remove.mutate(7));
+    await waitFor(() => expect(hook.result.current.peaks.data?.map((p) => p.id)).toEqual([8]));
+    await act(async () => { late.forEach((f) => f()); });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(hook.result.current.peaks.data?.map((p) => p.id)).toEqual([8]);
+  });
+});

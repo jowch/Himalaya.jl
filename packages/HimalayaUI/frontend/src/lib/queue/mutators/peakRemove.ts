@@ -1,6 +1,6 @@
 import * as api from "../../../api";
 import type { Peak, PeakRemoveResponse, AuthOpts } from "../../../api";
-import { refreshPeaks } from "../refreshPeaks";
+import { cancelPeakRefetch, refreshPeaks } from "../refreshPeaks";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import type { Mutator, RollbackContext } from "../types";
@@ -26,6 +26,7 @@ export const peakRemoveMutator: Mutator<PeakRemoveInput, PeakRemoveScope, PeakRe
         `skip negative-id peaks until the add confirms.`,
       );
     }
+    cancelPeakRefetch(qc, p.exposureId);
     const peaksKey = queryKeys.peaks(p.exposureId);
     const prev = qc.getQueryData<Peak[]>(peaksKey);
     if (prev) {
