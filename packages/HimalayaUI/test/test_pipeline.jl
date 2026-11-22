@@ -987,3 +987,26 @@ end
         close(pending)
     end
 end
+
+@testset "analyze_exposure! stores the hybrid detector's peaks" begin
+    tmp          = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    src = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
+    cp(src, joinpath(analysis_dir, "example_tot.dat"))
+
+    db     = open_db(joinpath(tmp, "himalaya.db"))
+    exp_id = init_experiment!(db; path=tmp, data_dir=joinpath(tmp, "data"),
+                                   analysis_dir=analysis_dir)
+    s_id   = create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+
+    analyze_exposure!(db, e_id, analysis_dir)
+
+    q, I, σ = load_dat(src)
+    expected = Himalaya.findpeaks(q, I, σ; method = :hybrid).q
+    stored = [Float64(r.q) for r in DBInterface.execute(db,
+        "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e_id])]
+    @test stored ≈ sort(expected)
+    @test HimalayaUI.read_analysis_version(db, e_id) == HimalayaUI.ANALYSIS_VERSION
+end

@@ -136,8 +136,9 @@ is important.
 
 ## Hybrid detector (opt-in)
 
-`findpeaks(q, I, σ; method = :hybrid)`. The default `:persistence` path is
-unchanged and remains the default.
+`findpeaks(q, I, σ; method = :hybrid)`. The core default is still
+`:persistence`; the HimalayaUI pipeline (`analyze_exposure!`) calls the
+hybrid.
 
 **Why.** The persistence detector thresholds prominence in raw intensity.
 On a steep background that threshold is set by the large low-q features, so
@@ -247,8 +248,9 @@ second differences.
 
 **Evidence.** On a set of curated real traces it recovered several times
 more user-added peaks than the default path while detecting fewer
-user-rejected ones, and the phase calls from the resulting peak lists improved. This is not enough to change the default; it is opt-in until
-it has been tried on more data.
+user-rejected ones, and the phase calls from the resulting peak lists improved. This is not enough to change the core default, which stays
+`:persistence` until the hybrid has been tried on more data. The app uses
+the hybrid in the meantime, which gathers that data.
 
 ## References
 
