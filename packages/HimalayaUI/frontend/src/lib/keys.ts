@@ -46,13 +46,7 @@ export function suppressGlobalKeys(e: KeyboardEvent): boolean {
   if (e.defaultPrevented) return true;
   const t = e.target;
   if (t instanceof HTMLElement) {
-    const tag = t.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-    if (t.isContentEditable) return true;
-    const editableHost = t.closest("[contenteditable]");
-    if (editableHost !== null && editableHost.getAttribute("contenteditable") !== "false") {
-      return true;
-    }
+    if (isEditable(t)) return true;
     // An open non-modal popover (Popover primitive `[role="dialog"]`) or inline
     // editor (`[data-keys-trap]`, e.g. the tag editor) owns the keyboard while
     // focus is inside it — page shortcuts must not fire through a button/chip
@@ -60,4 +54,25 @@ export function suppressGlobalKeys(e: KeyboardEvent): boolean {
     if (t.closest('[role="dialog"], [data-keys-trap]') !== null) return true;
   }
   return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+}
+
+export function isEditable(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  const tag = t.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (t.isContentEditable) return true;
+  const editableHost = t.closest("[contenteditable]");
+  return editableHost !== null && editableHost.getAttribute("contenteditable") !== "false";
+}
+
+export function inDialog(e: KeyboardEvent): boolean {
+  const t = e.target;
+  if (t instanceof Element && t.closest('[role="dialog"], [data-keys-trap]') !== null) return true;
+  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+}
+
+export function helpKeyFromEmptyField(e: KeyboardEvent): boolean {
+  if (e.key !== "?" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || inDialog(e)) return false;
+  const t = e.target;
+  return t instanceof HTMLInputElement && t.value === "";
 }

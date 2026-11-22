@@ -43,7 +43,7 @@
  *        cd <worktree>
  *        bin/himalaya serve <experiment-dir> --port 8080  # or whatever port
  *      Or without sysimage:
- *        julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' \
+ *        julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' \
  *          -- serve <experiment-dir> --port 8080
  *   2. Bring up Vite pointing at the backend:
  *        cd packages/HimalayaUI/frontend

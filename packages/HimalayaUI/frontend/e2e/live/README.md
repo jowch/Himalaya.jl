@@ -22,7 +22,7 @@ manually before running the tests:
 ```bash
 # Terminal 1 — backend on port 8090, test DB
 HIMALAYA_DB_PATH=/tmp/himalaya-test/himalaya.db \
-  julia --project=packages/HimalayaUI -e 'using HimalayaUI; HimalayaUI.serve(open_db("/tmp/himalaya-test/himalaya.db"); port=8090)'
+  julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; HimalayaUI.serve(open_db("/tmp/himalaya-test/himalaya.db"); port=8090)'
 
 # Terminal 2 — Vite on port 5180, proxying /api → :8090
 (cd packages/HimalayaUI/frontend && \

@@ -2,9 +2,13 @@ import type { IndexEntry } from "../api";
 
 import { gaussianCurvature } from "./curvature";
 
-// physics: Bonnet-related D/P/G surfaces share Gaussian curvature κ, so a lattice matches its partner when its κ-equal lattice lies within RELTOL.
-const RELTOL = 0.01;
-// physics: a κ match alone admits lattice aliases, so every member must explain peaks no other member does.
+// physics: Bonnet-related D/P/G surfaces share Gaussian curvature κ, so a lattice matches its partner when its κ-equal lattice agrees within K standard errors of the two fits.
+const K = 2;
+// physics: relative lattice error no fit can beat, set by q binning and detector resolution; it also stands in for fits with too few peaks to estimate their own.
+const FLOOR = 0.003;
+// physics: bounds how far scattered fits can widen the tolerance; near-aliases such as Ia3d at √(5/2)·a sit inside any tolerance and only MIN_OWN keeps them out.
+const CAP = 0.02;
+// physics: a κ match alone admits lattice aliases, so every member must explain peaks no other member does; this, not the tolerance, is the alias guard.
 const MIN_OWN = 2;
 
 export type CallRow =
@@ -14,12 +18,25 @@ export type CallRow =
 const peakKey = (q: number) => q.toFixed(6);
 const peakSet = (ix: IndexEntry) => new Set(ix.peaks.map((p) => peakKey(p.q_observed)));
 
+// physics: each assigned peak estimates the lattice as a·q_pred/q_obs, so the spread of ln(q_pred/q_obs) over √n is the fit's relative standard error.
+function latticeError(ix: IndexEntry): number {
+  const logs = ix.peaks.flatMap((p) => {
+    const q = ix.predicted_q[p.ratio_position - 1];
+    return q !== undefined && q > 0 && p.q_observed > 0 ? [Math.log(q / p.q_observed)] : [];
+  });
+  const n = logs.length;
+  if (n < 3) return FLOOR;
+  const mean = logs.reduce((s, x) => s + x, 0) / n;
+  const variance = logs.reduce((s, x) => s + (x - mean) ** 2, 0) / (n - 1);
+  return Math.hypot(Math.sqrt(variance / n), FLOOR);
+}
+
 function related(a: IndexEntry, b: IndexEntry): boolean {
   const ka = gaussianCurvature(a.phase, a.lattice_d);
   const kb = gaussianCurvature(b.phase, b.lattice_d);
   if (ka === null || kb === null || b.lattice_d === null || a.phase === b.phase) return false;
-  const predicted = b.lattice_d * Math.sqrt(kb / ka);
-  return Math.abs(b.lattice_d - predicted) <= RELTOL * predicted;
+  const tolerance = Math.min(CAP, K * Math.hypot(latticeError(a), latticeError(b)));
+  return Math.abs(Math.log(kb / ka)) / 2 <= tolerance;
 }
 
 function union(sets: readonly Set<string>[]): Set<string> {

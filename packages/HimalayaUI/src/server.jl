@@ -353,7 +353,14 @@ function boot!(db::SQLite.DB; resume::Bool = true)
     start_background!(db; resume)
 end
 
+function warn_if_single_threaded(n::Int = Threads.nthreads(:default))
+    n >= 2 && return false
+    @warn "The server has one worker thread, so a scan or an analysis holds every other request until it finishes. Start Julia with --threads=4,1, or use bin/himalaya, which does." threads = n
+    true
+end
+
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
+    warn_if_single_threaded()
     boot!(db)
     # parallel = true wraps each request in `Threads.@spawn`, dispatching
     # handlers across the default thread pool. Without it, every handler
