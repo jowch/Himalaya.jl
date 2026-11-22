@@ -153,21 +153,12 @@ export const listExperiments = () =>
 export const getExperiment = (id: number) =>
   request<Experiment>("GET", `/api/experiments/${id}`);
 
-/** Create-from-directory (spec §9.2). Returns the new experiment id
- *  immediately; the first scan runs async with progress over SSE. */
-export interface CreateExperimentBody {
-  /** Legacy single-path field (= data_dir). Optional now that the funnel sends
-   *  explicit data_dir/analysis_dir/name confirmed by the user in Configuration. */
-  path?: string;
-  data_dir?: string;
+export interface CreateSetupBody {
+  root: string;
+  data_dir: string;
   analysis_dir?: string;
-  name?: string;
+  included: boolean;
   patterns?: { image?: string; metadata?: string; integration?: string };
-  /** First-run geometry, committed at create. The funnel preview already derived
-   *  geometry (with the confirmed setup file), so Approve sends the WHOLE thing —
-   *  each value with its honest source ('setup'/'prp'/'computed', or 'user' for a
-   *  manual edit). Persisted verbatim; the scan only fills fields left unset, so
-   *  geometry is derived once. A value with no source defaults to 'user'. */
   geometry?: {
     beam_center_x?: number; beam_center_x_source?: string;
     beam_center_y?: number; beam_center_y_source?: string;
@@ -175,6 +166,12 @@ export interface CreateExperimentBody {
     pixel_size_um?: number; pixel_size_um_source?: string;
     energy_kev?: number;    energy_kev_source?: string;
   };
+}
+
+export interface CreateExperimentBody {
+  name?: string;
+  path: string;
+  setups: CreateSetupBody[];
 }
 export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
   request<Experiment>("POST", "/api/experiments", body, opts);

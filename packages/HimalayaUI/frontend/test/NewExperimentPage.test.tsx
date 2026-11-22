@@ -82,33 +82,36 @@ describe("NewExperimentPage", () => {
       "1,220 exposures · flight path 1.81 m · 3 without a trace yet",
     );
     expect(within(rows[1]!).getByTestId("setup-summary")).toHaveTextContent("1 exposure · flight path 1.81 m");
-    expect(screen.getByTestId("create-submit")).toHaveTextContent("Add 2 experiments");
+    expect(rows.map((r) => within(r).getByTestId("setup-folder").textContent)).toEqual(["setup1", "setup2"]);
+    expect(screen.getByTestId("experiment-name").querySelector("input")).toHaveValue("20261103");
   });
 
-  it("creates one experiment per chosen setup with its name, layout and geometry, then goes home", async () => {
+  it("adds the beamtime as one experiment with every setup, unticked ones remembered, then opens it", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({
       path: "/b/20261103",
       setups: [setup("/b/20261103/setup1"), setup("/b/20261103/setup2")],
     });
-    const create = vi.spyOn(api, "createExperiment")
-      .mockResolvedValueOnce({ id: 11 } as api.Experiment)
-      .mockResolvedValueOnce({ id: 12 } as api.Experiment);
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
     pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
-    fireEvent.change(within(rows[1]!).getByTestId("setup-name").querySelector("input")!, { target: { value: "flight path 2" } });
+    fireEvent.click(within(rows[1]!).getByRole("checkbox"));
+    fireEvent.change(screen.getByTestId("experiment-name").querySelector("input")!, { target: { value: " Nov beamtime " } });
     fireEvent.click(screen.getByTestId("create-submit"));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments"));
-    expect(create).toHaveBeenCalledTimes(2);
-    const first = create.mock.calls[0]![0];
-    expect(first).toMatchObject({
-      name: "20261103/setup1",
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
+    expect(create).toHaveBeenCalledTimes(1);
+    const body = create.mock.calls[0]![0];
+    expect(body).toMatchObject({ name: "Nov beamtime", path: "/b/20261103" });
+    expect(body.setups).toHaveLength(2);
+    expect(body.setups[0]).toMatchObject({
+      root: "/b/20261103/setup1",
+      included: true,
       data_dir: "/b/20261103/setup1/data",
       analysis_dir: "/b/20261103/setup1/analysis/automatic_analysis/tot_files",
       patterns: { image: "{name}_0_001.tif", metadata: "{name}_0_001.prp", integration: "{name}_tot.dat" },
     });
-    expect(first.geometry).toMatchObject({ flight_path_m: 1.8095, flight_path_m_source: "setup" });
-    expect(create.mock.calls[1]![0].name).toBe("flight path 2");
+    expect(body.setups[0]!.geometry).toMatchObject({ flight_path_m: 1.8095, flight_path_m_source: "setup" });
+    expect(body.setups[1]).toMatchObject({ root: "/b/20261103/setup2", included: false });
   });
 
   it("opens the experiment straight away when only one setup is added", async () => {
@@ -136,7 +139,7 @@ describe("NewExperimentPage", () => {
     fireEvent.keyDown(second, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create.mock.calls[0]![0].name).toBe("20261103/setup1");
+    expect(create.mock.calls[0]![0].setups.map((x) => x.included)).toEqual([true, false]);
     expect(second).toHaveAttribute("aria-checked", "false");
   });
 
@@ -194,7 +197,7 @@ describe("NewExperimentPage", () => {
     expect(create).not.toHaveBeenCalled();
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
     expect(create).toHaveBeenCalledTimes(1);
-    expect(create.mock.calls[0]![0]).toMatchObject({ data_dir: "/b/day1/setup1/data" });
+    expect(create.mock.calls[0]![0]).toMatchObject({ path: "/b/day1/setup1/", setups: [{ data_dir: "/b/day1/setup1/data" }] });
   });
 
   it("leaves ⌘/Ctrl+Enter to an open dialog such as the palette", async () => {
@@ -258,7 +261,7 @@ describe("NewExperimentPage", () => {
     answer({ total: 1, matched: { image: 1, metadata: 1, integration: 1 }, unmatched: [],
       geometry: { ...GEOMETRY, flight_path_m: 0.5, flight_path_m_source: "setup" } });
     await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create.mock.calls[0]![0].geometry).toMatchObject({ flight_path_m: 0.5 });
+    expect(create.mock.calls[0]![0].setups[0]!.geometry).toMatchObject({ flight_path_m: 0.5 });
   });
 
   it("keeps a typed name when the preview refetches", async () => {
@@ -271,11 +274,11 @@ describe("NewExperimentPage", () => {
     );
     pick("/b/s1");
     await screen.findAllByTestId("setup-row");
-    fireEvent.change(screen.getByTestId("setup-name").querySelector("input")!, { target: { value: "kept" } });
+    fireEvent.change(screen.getByTestId("experiment-name").querySelector("input")!, { target: { value: "kept" } });
     preview.mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1", { exposures: 2000 })] });
     await qc.invalidateQueries();
     await waitFor(() => expect(screen.getByTestId("setup-summary")).toHaveTextContent("2,000 exposures"));
-    expect(screen.getByTestId("setup-name").querySelector("input")).toHaveValue("kept");
+    expect(screen.getByTestId("experiment-name").querySelector("input")).toHaveValue("kept");
   });
 
   it("says when a folder cannot be read for another reason", async () => {
@@ -295,10 +298,10 @@ describe("NewExperimentPage", () => {
     pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
     expect(within(rows[0]!).getByTestId("setup-summary")).toHaveTextContent('Already added as "Existing".');
-    expect(screen.getByTestId("create-submit")).toHaveTextContent("Add experiment");
+    expect(within(rows[0]!).getByRole("checkbox")).toHaveAttribute("aria-checked", "false");
     fireEvent.click(screen.getByTestId("create-submit"));
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-    expect(create.mock.calls[0]![0].data_dir).toBe("/b/20261103/setup2/data");
+    expect(create.mock.calls[0]![0].setups.map((x) => x.data_dir)).toEqual(["/b/20261103/setup2/data"]);
   });
 
   it("sends a geometry value typed in Details as a user value", async () => {
@@ -311,7 +314,7 @@ describe("NewExperimentPage", () => {
     fireEvent.change(screen.getByTestId("details-flight_path_m").querySelector("input")!, { target: { value: "2.5" } });
     fireEvent.click(screen.getByTestId("create-submit"));
     await waitFor(() => expect(create).toHaveBeenCalled());
-    expect(create.mock.calls[0]![0].geometry).toMatchObject({
+    expect(create.mock.calls[0]![0].setups[0]!.geometry).toMatchObject({
       flight_path_m: 2.5, flight_path_m_source: "user", beam_center_x: 421.4, beam_center_x_source: "setup",
     });
   });
@@ -336,7 +339,7 @@ describe("NewExperimentPage", () => {
     expect(manifest.mock.calls.at(-1)![1]).toMatchObject({ image: "{name}_0_001.tif" });
   });
 
-  it("shows a failed setup's error and stays on the page", async () => {
+  it("shows a failed add's error and stays on the page", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
     vi.spyOn(api, "createExperiment").mockRejectedValue(new Error("an experiment already uses this directory"));
     renderPage();
