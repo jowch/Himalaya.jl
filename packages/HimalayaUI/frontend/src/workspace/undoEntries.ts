@@ -328,7 +328,7 @@ export function bridgeEntry(
       for (const s of split.slice(1)) ops.bridge(split[0]!, s, "both");
       let sent = split.length * 2 - 1;
       for (const [side, prev] of [[sideA, at.states.from], [sideB, at.states.to]] as const) {
-        if (prev === call.state || prev === "null") continue;
+        if (prev === call.state || (prev === "null" && call.members.length > 0)) continue;
         ops.setCallState(side[0]!, prev);
         sent += 1;
       }

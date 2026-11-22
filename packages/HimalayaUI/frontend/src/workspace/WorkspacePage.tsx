@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, LabelColor, SampleCallMember } from "../api";
 import { ApiError } from "../api";
@@ -50,7 +50,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { keepChoices, type KeepCall } from "../lib/bridgeCall";
+import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
@@ -70,7 +70,8 @@ import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "../ui/DetectorOverlay";
 import { Palette } from "../ui/palette/Palette";
-import { workspacePalette, type PaletteSetup } from "./palette";
+import { keepCallForm, workspacePalette, type PaletteSetup } from "./palette";
+import type { PaletteForm } from "../ui/palette/model";
 import { useAppTheme } from "../lib/theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
@@ -659,13 +660,41 @@ export function WorkspacePage(): JSX.Element {
     },
     [sampleId, sample?.name, sample?.assignment_state, samples, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
   );
+  const setupNames = useMemo(() => (setups.length > 1 ? new Map(setups.map((st) => [st.id, st.name])) : undefined), [setups]);
+  const setupOfSample = useCallback(
+    (s: CorpusSample | undefined): string | undefined => (s?.setup_id == null ? undefined : setupNames?.get(s.setup_id)),
+    [setupNames],
+  );
+  const nameWithSetup = useCallback(
+    (s: Pick<CorpusSample, "id" | "name">): string => {
+      const setup = setupOfSample(samples.find((x) => x.id === s.id));
+      return setup ? `${s.name} in ${setup}` : s.name;
+    },
+    [samples, setupOfSample],
+  );
   const bridgeChoices = useCallback(
     (rid: number) => {
       const there = samples.find((s) => s.id === rid);
-      return sample && there ? keepChoices(sample, there) : undefined;
+      return sample && there ? keepChoices(sample, there, nameWithSetup) : undefined;
     },
-    [sample, samples],
+    [sample, samples, nameWithSetup],
   );
+  const unsettledMate = useMemo(() => {
+    if (!sample) return undefined;
+    return bridged.map((id) => samples.find((s) => s.id === id)).find((m) => m !== undefined && callStatesSplit(sample, m));
+  }, [sample, samples, bridged]);
+  const [paletteStart, setPaletteStart] = useState<PaletteForm | undefined>(undefined);
+  const settlePrompted = useRef(new Set<number>());
+  useEffect(() => {
+    if (!username || !sample || !unsettledMate || settlePrompted.current.has(sample.id)) return;
+    const choices = keepChoices(sample, unsettledMate, nameWithSetup);
+    if (!choices) return;
+    settlePrompted.current.add(sample.id);
+    const here = sample.id;
+    const mate = unsettledMate.id;
+    setPaletteStart(keepCallForm(`Calls differ: same sample as ${nameWithSetup(unsettledMate)}`, choices, (keep) => ops.bridge(here, mate, keep), "keep"));
+    setPaletteOpen(true);
+  }, [username, sample, unsettledMate, nameWithSetup, ops]);
   const labelEdit = useCallback(
     (sid: number, tag: string, added: boolean) => {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
@@ -1053,6 +1082,8 @@ export function WorkspacePage(): JSX.Element {
         bridgeTo(rid, keep);
       },
       choices: bridgeChoices,
+      names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
+      setupOf: (id) => setupOfSample(samples.find((x) => x.id === id)),
       bridged: bridgedNames,
       leave: leaveBridges,
     },
@@ -1162,7 +1193,7 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setBigOpen(false)}
             />
           )}
-          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} onType={paletteCorpus.onType} />}
+          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} start={paletteStart} onClose={() => { setPaletteOpen(false); setPaletteStart(undefined); }} onType={paletteCorpus.onType} />}
         </>
       }
       header={

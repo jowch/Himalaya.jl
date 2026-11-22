@@ -31,14 +31,18 @@ export interface KeepChoice {
   keep: KeepCall;
 }
 
-export function keepChoices(here: Listed, there: Listed): KeepChoice[] | undefined {
+export function keepChoices(here: Listed, there: Listed, name: (s: Listed) => string = (s) => s.name): KeepChoice[] | undefined {
   if (!callsConflict(here, there)) return undefined;
   const out: KeepChoice[] = [
-    { value: String(here.id), label: `${here.name}: ${callText(here)}`, keep: here.id },
-    { value: String(there.id), label: `${there.name}: ${callText(there)}`, keep: there.id },
+    { value: String(here.id), label: `${name(here)}: ${callText(here)}`, keep: here.id },
+    { value: String(there.id), label: `${name(there)}: ${callText(there)}`, keep: there.id },
   ];
   if (state(here) === "indexed" && state(there) === "indexed") {
     out.push({ value: "both", label: `Both: ${[...new Set([...phases(here), ...phases(there)])].sort().join(" + ")}`, keep: "both" });
   }
   return out;
+}
+
+export function callStatesSplit(a: Listed, b: Listed): boolean {
+  return isCalled(a) && isCalled(b) && state(a) !== state(b);
 }

@@ -2863,6 +2863,7 @@ describe("WorkspacePage", () => {
   });
 
   it("the palette's same-sample page leaves out this sample and its group, and Enter links the pick", () => {
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
     runFromPalette("same sample as…");
@@ -2893,7 +2894,24 @@ describe("WorkspacePage", () => {
     await waitFor(() => expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13, keepCall: 13 } }));
   });
 
+  it("opening a bridged sample whose call state differs from its mate's asks once which call to keep", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: true }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2 } : s));
+    renderAt("/experiments/1/workspace/10");
+    const form = screen.getByRole("dialog", { name: "Calls differ: same sample as A3 in Long pipe" });
+    const keep = within(form).getByRole("combobox", { name: "Keep the call of" });
+    expect(keep).toHaveTextContent("A1 in Short pipe: Pn3m");
+    fireEvent.keyDown(keep, { key: "ArrowDown" });
+    fireEvent.keyDown(keep, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.filter((c) => c.hook === "op:bridge").map((c) => c.arg)).toEqual([[10, 12, 12]]);
+    fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("the palette says the open sample is not the same sample as every other sample in its group", () => {
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }, { sample_id: 13, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });

@@ -42,6 +42,8 @@ export interface WorkspacePaletteInput extends AppActions {
     samples: readonly CorpusSample[];
     pick: (id: number, keep?: KeepCall) => void;
     choices: (id: number) => readonly KeepChoice[] | undefined;
+    names: (id: number) => string;
+    setupOf: (id: number) => string | undefined;
     bridged: readonly string[];
     leave: () => void;
   };
@@ -160,10 +162,10 @@ function recolourForm(l: PaletteLabel, p: WorkspacePaletteInput): PaletteForm {
   };
 }
 
-function keepCallForm(name: string, choices: readonly KeepChoice[], pick: (keep: KeepCall) => void): PaletteForm {
+export function keepCallForm(title: string, choices: readonly KeepChoice[], pick: (keep: KeepCall) => void, verb = "mark"): PaletteForm {
   return {
-    title: `Same sample as ${name}`,
-    verb: "mark",
+    title,
+    verb,
     fields: [{ id: "keep", label: "Keep the call of", kind: "choice", value: choices[0]!.value, options: choices.map(({ value, label }) => ({ value, label })) }],
     submit: (v) => {
       const hit = choices.find((c) => c.value === v.keep) ?? choices[0]!;
@@ -290,8 +292,10 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       empty: "No other samples.",
       items: p.bridge.samples.map((s) => {
         const choices = p.bridge.choices(s.id);
-        if (!choices) return { id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) };
-        return { id: `bridge-${s.id}`, label: s.name, hint: "Different call", form: () => keepCallForm(s.name, choices, (keep) => p.bridge.pick(s.id, keep)) };
+        const setup = p.bridge.setupOf(s.id);
+        if (!choices) return { id: `bridge-${s.id}`, label: s.name, hint: setup, run: () => p.bridge.pick(s.id) };
+        const hint = setup ? `${setup} · Different call` : "Different call";
+        return { id: `bridge-${s.id}`, label: s.name, hint, form: () => keepCallForm(`Same sample as ${p.bridge.names(s.id)}`, choices, (keep) => p.bridge.pick(s.id, keep)) };
       }),
     };
     if (p.candidates.list.length > 0) {

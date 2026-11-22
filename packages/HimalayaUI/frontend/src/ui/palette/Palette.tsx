@@ -13,14 +13,15 @@ interface Props {
   pages: Readonly<Record<string, PalettePage>>;
   onClose: () => void;
   onType?: (query: string) => void;
+  start?: PaletteForm | undefined;
 }
 
 export function keepFocusInField(e: MouseEvent): void {
   if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
 }
 
-export function Palette({ groups, pages, onClose, onType }: Props): JSX.Element {
-  const [stack, setStack] = useState<Level[]>([]);
+export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.Element {
+  const [stack, setStack] = useState<Level[]>(() => (start ? [{ form: start, query: "", cursor: 0 }] : []));
   const [query, setQuery] = useState("");
   const listId = useId();
   const list = useRef<HTMLDivElement | null>(null);

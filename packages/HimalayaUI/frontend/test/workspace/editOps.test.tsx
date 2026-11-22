@@ -336,6 +336,18 @@ describe("undo against the server", () => {
     expect(firstArgs(api.restoreLabelSuggestion)).toEqual([[2, "buffer"]]);
   });
 
+  it("undoing a bridge brings back a cleared call that the other side's form factor replaced", async () => {
+    const { result } = setup();
+    act(() => result.current.history.record(bridgeEntry(result.current.ops, {
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 2, bridges: [], labels: [],
+      keep: undefined, states: { from: "null", to: "form_factor" }, lost: [],
+    })));
+    server.bridges = [{ sample_id: 1, group_id: 1 }, { sample_id: 2, group_id: 1 }];
+    server.calls.set(1, { sample_id: 1, state: "form_factor", phase: null, call_phases: [], members: [] });
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.setSampleCallState)).toEqual([[1, "null"]]);
+  });
+
   it("undoes and redoes a comparison only while the server still matches what the edit left", async () => {
     const { result } = setup();
     const at = { label: "compared", sampleId: 1, exposureId: undefined };
