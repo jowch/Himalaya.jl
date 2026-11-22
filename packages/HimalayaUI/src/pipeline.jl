@@ -4,9 +4,8 @@ using Tables
 using JSON3
 using HTTP: HTTP, Request
 
-# `claims_of(idx)` is the set an index claims; `candidates` must be sorted by
-# descending score. Peaks are identified by q for the dominance test.
-function greedy_dominating(candidates, claims_of)
+function greedy_dominating(score_sorted, claims_of)
+    candidates = score_sorted
     n = length(candidates)
     qs  = [Float64.(collect(Himalaya.peaks(idx))) for idx in candidates]
     shs = [Float64.(nonzeros(idx.sharpness)) for idx in candidates]
@@ -40,12 +39,8 @@ end
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
 
-Greedily select a non-overlapping set of indices. At each step the
-candidate is the highest-scoring index whose peaks are all unclaimed. It is
-replaced by the highest-scoring compatible index that contains every one of
-its peaks and, below its lowest q, a peak sharper than all of them
-(`docs/scoring.md`); the pick
-then claims its peaks. Both forms use the same rule, with peaks identified by q.
+Greedily select non-overlapping indices by score; a compatible index holding all
+of the top one's peaks plus a sharper peak below them displaces it (`docs/scoring.md`).
 
 The two-arg form claims by `eff.peak_id` (Int) — the membership test is
 on integer identity instead of `Float64` equality, so two indices whose
