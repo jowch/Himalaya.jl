@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
+import { Tooltip } from "./Tooltip";
 import type { CompareScale } from "../workspace/compare";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
@@ -48,36 +49,45 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               <svg width={18} height={4} aria-hidden="true" className={"shrink-0" + dim}>
                 <line x1={0} x2={18} y1={2} y2={2} stroke="currentColor" strokeWidth={2} strokeDasharray={COMPARE_DASH} />
               </svg>
-              <button
-                type="button"
-                aria-pressed={!off}
-                {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
-                aria-description={sub ? "Subtracted from the current trace" : undefined}
-                data-subtracted={sub ? "" : undefined}
-                title={`${c.setup ? `From ${c.setup}. ` : ""}Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract from the current trace"}.`}
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey) onSubtract(c.id);
-                  else onToggleShown(c.id);
-                }}
-                className={"grid min-w-min grow grid-cols-[minmax(4ch,1fr)_auto] items-center gap-1 text-left text-ink" + dim}
+              <Tooltip
+                content={
+                  <>
+                    <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
+                    <span className="block">{`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract from this sample"}.`}</span>
+                  </>
+                }
               >
-                <span className="min-w-0 truncate">{c.name}</span>
-                {c.setup && (
-                  <svg data-chip-setup width={10} height={10} viewBox="0 0 10 10" aria-hidden="true" className="text-ink-faint">
-                    <rect x={0.5} y={3.5} width={6} height={6} rx={1} fill="none" stroke="currentColor" />
-                    <path d="M3.5 1.5 a1 1 0 0 1 1 -1 h4 a1 1 0 0 1 1 1 v4 a1 1 0 0 1 -1 1" fill="none" stroke="currentColor" />
-                  </svg>
-                )}
-              </button>
-              {c.scale !== undefined && (
-                <span
-                  className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
-                  data-scale-source={c.scale.source}
-                  title={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}
+                <button
+                  type="button"
+                  aria-pressed={!off}
+                  {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
+                  aria-description={sub ? "Subtracted from the current trace" : undefined}
+                  data-subtracted={sub ? "" : undefined}
+                  onClick={(e) => {
+                    if (e.metaKey || e.ctrlKey) onSubtract(c.id);
+                    else onToggleShown(c.id);
+                  }}
+                  className={"grid min-w-min grow grid-cols-[minmax(4ch,1fr)_auto] items-center gap-1 text-left text-ink" + dim}
                 >
-                  <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                  {c.scale.source === "matched" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
-                </span>
+                  <span className="min-w-0 truncate">{c.name}</span>
+                  {c.setup && (
+                    <svg data-chip-setup width={10} height={10} viewBox="0 0 10 10" aria-hidden="true" className="text-ink-faint">
+                      <rect x={0.5} y={3.5} width={6} height={6} rx={1} fill="none" stroke="currentColor" />
+                      <path d="M3.5 1.5 a1 1 0 0 1 1 -1 h4 a1 1 0 0 1 1 1 v4 a1 1 0 0 1 -1 1" fill="none" stroke="currentColor" />
+                    </svg>
+                  )}
+                </button>
+              </Tooltip>
+              {c.scale !== undefined && (
+                <Tooltip content={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}>
+                  <span
+                    className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
+                    data-scale-source={c.scale.source}
+                  >
+                    <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
+                    {c.scale.source === "matched" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                  </span>
+                </Tooltip>
               )}
               <button
                 type="button"
