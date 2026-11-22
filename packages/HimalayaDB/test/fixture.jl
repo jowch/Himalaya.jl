@@ -13,6 +13,12 @@ Also creates a second exposure (`exposure2_id`) with an assignment member row
 whose `assignments.state = 'form_factor'` (NOT `'indexed'`) — used to prove
 `confirmed_indices` gates on `assignments.state = 'indexed'`, not merely on
 `assignment_members` row presence.
+The experiment's one setup carries geometry and a `{name}_tot.dat` integration
+pattern. A second sample (`sample2_id`, a buffer) is sample 1's subtraction
+background and shares a bridge with it; sample 1 has an `indexed` sample call
+and confirmed, suggested and removed labels. A third sample (`merged_id`) is
+merged into sample 1, carries a label, is in the same bridge and is sample 2's
+background; every reader must leave it out, as HimalayaUI does.
 Direct INSERTs are fine here — a reader only cares that the view tables are populated.
 """
 function build_fixture(path::AbstractString, analysis_dir::AbstractString)
@@ -89,8 +95,40 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
         DBInterface.execute(db,
             "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [exposure2_id, index2_id])
 
-        return (; experiment_id, sample_id, exposure_id, exposure2_id,
-                  index_id, auto_peak_ids)
+        setup_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM setups WHERE experiment_id = ?", [experiment_id]))).id)
+        DBInterface.execute(db,
+            "UPDATE setups SET energy_kev = 11.0, flight_path_m = 1.1, integration_pattern = '{name}_tot.dat' WHERE id = ?",
+            [setup_id])
+
+        sample2_id = HimalayaUI.create_sample!(db; experiment_id=experiment_id, name="Buffer 1")
+        DBInterface.execute(db,
+            "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'indexed')", [sample_id])
+        for (sid, label, state, source) in [(sample2_id, "Buffer", "confirmed", "user"),
+                                            (sample_id, "Calibrant", "suggested", "system"),
+                                            (sample_id, "Empty capillary", "removed", "user"),
+                                            (sample_id, "Hot", "confirmed", "user")]
+            DBInterface.execute(db,
+                "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, ?, ?)",
+                [sid, label, state, source])
+        end
+        DBInterface.execute(db,
+            "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)", [sample_id, sample2_id])
+        for sid in (sample_id, sample2_id)
+            DBInterface.execute(db,
+                "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 1)", [sid])
+        end
+
+        merged_id = HimalayaUI.create_sample!(db; experiment_id=experiment_id, name="Merged away")
+        DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [sample_id, merged_id])
+        DBInterface.execute(db,
+            "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, 'Ghost', 'confirmed', 'user')", [merged_id])
+        DBInterface.execute(db, "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 1)", [merged_id])
+        DBInterface.execute(db,
+            "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)", [sample2_id, merged_id])
+
+        return (; experiment_id, setup_id, sample_id, sample2_id, merged_id, exposure_id, exposure2_id,
+                  index_id, index2_id, auto_peak_ids)
     finally
         close(db)
     end
