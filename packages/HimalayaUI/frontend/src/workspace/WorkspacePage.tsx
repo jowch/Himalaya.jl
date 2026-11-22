@@ -32,14 +32,13 @@ import {
   useTrace,
   useUnbridgeSample,
   useTriggerScan,
-  usePatchExperiment,
   useCheckForNewFilesOnOpen,
   useEditOps,
 } from "../queries";
 import { useUndoHistory, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
+  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -50,22 +49,22 @@ import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, l
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { MAX_CANDIDATES, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { MAX_CANDIDATES, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
-import { addCompare, clampDomain, compareScale, scaledTrace, subtractTrace } from "./compare";
+import { addCompare, clampDomain, withoutRef, compareScale, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
 import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "./ui/CompareBar";
 import { ComparePicker } from "./ui/ComparePicker";
-import { SubtractionStrip } from "./ui/SubtractionStrip";
+import { SubtractToggle } from "./ui/SubtractToggle";
 import { PlotCard } from "./ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "./ui/DetectorOverlay";
 import { Palette } from "./ui/palette/Palette";
 import { workspacePalette } from "./palette";
-import { useWorkspaceTheme } from "./theme";
+import { useAppTheme } from "../lib/theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../print/plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
@@ -87,6 +86,7 @@ import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { LabelRow } from "./ui/LabelRow";
+import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 
 function helpSections(mod: string): HelpSection[] {
   return [
@@ -102,7 +102,7 @@ function helpSections(mod: string): HelpSection[] {
       title: "Exposures",
       rows: [
         { keys: ["←", "→"], what: "Previous or next exposure" },
-        { keys: ["X"], what: "Drop or restore the exposure" },
+        { keys: ["X"], what: "Drop the exposure and show the nearest kept one, or restore a dropped one" },
         { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
@@ -122,6 +122,9 @@ function helpSections(mod: string): HelpSection[] {
         { gesture: "Scroll", what: "Zoom q" },
         { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["C"], what: "Compare with another sample" },
+        { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
+        { gesture: "Click a comparison", what: "Hide or show its trace" },
+        { gesture: `${mod}-click a comparison`, what: "Plot the current trace minus it, or stop" },
       ],
     },
     {
@@ -176,7 +179,6 @@ export function WorkspacePage(): JSX.Element {
   const scan = useScanState(experimentId);
   const inFlight = useAppState((s) => s.ingestInFlight?.[experimentId]);
   const triggerScan = useTriggerScan(experimentId);
-  const patchExperiment = usePatchExperiment(experimentId);
   useCheckForNewFilesOnOpen(experimentId);
   const problems = useProblems(experimentId);
   const [problemsOpen, setProblemsOpen] = useState(false);
@@ -301,11 +303,12 @@ export function WorkspacePage(): JSX.Element {
   const [refs, setRefs] = useState<number[]>([]);
   const [subChoice, setSubRef] = useState<number | undefined>(undefined);
   const [refsOn, setRefsOn] = useState(true);
+  const [hiddenRefs, setHiddenRefs] = useState<ReadonlySet<number>>(() => new Set());
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const theme = useWorkspaceTheme();
+  const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
@@ -317,6 +320,9 @@ export function WorkspacePage(): JSX.Element {
   const unbridgeSample = useUnbridgeSample(experimentId);
   const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
+  useEffect(() => {
+    setHiddenRefs((h) => ([...h].every((r) => shownRefs.includes(r)) ? h : new Set([...h].filter((r) => shownRefs.includes(r)))));
+  }, [shownRefs]);
   const compareTraces = useCompareTraces(shownRefs);
 
   const onClickPeak = useCallback(
@@ -411,16 +417,17 @@ export function WorkspacePage(): JSX.Element {
 
   const toggleDrop = useCallback(
     (e: Exposure) => {
-      setExposureId(e.id);
       const prev = e.status;
       const next = prev === "rejected" ? null : "rejected";
+      if (next === null) setExposureId(e.id);
+      else if (e.id === exposure?.id) setExposureId(nearestKeptExposure(exposureList, e.id) ?? e.id);
       setStatus.mutate({ exposureId: e.id, status: next });
       if (sampleId === undefined) return;
       history.record(dropEntry(ops, {
         label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, prev, next,
       }));
     },
-    [setStatus, sampleId, history, ops, frameName],
+    [setStatus, sampleId, history, ops, frameName, exposureList, exposure],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -431,6 +438,10 @@ export function WorkspacePage(): JSX.Element {
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const activeRefs = shownRefs.filter((r) => r !== sampleId);
+  const compareColors = useMemo(
+    () => new Map(shownRefs.filter((r) => r !== sampleId).map((rid) => [rid, COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!] as const)),
+    [shownRefs, sampleId],
+  );
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
   const scales = useMemo(() => {
@@ -444,16 +455,23 @@ export function WorkspacePage(): JSX.Element {
     return shownRefs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
-      if (rid === sampleId || !t || scale === undefined) return [];
+      if (rid === sampleId || hiddenRefs.has(rid) || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, shownRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, shownRefs, hiddenRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
     [mainTrace, subTrace, subScale],
+  );
+  const [minusFor, setMinusFor] = useState<number | undefined>(undefined);
+  const minusOn = difference !== null && subRef !== undefined && minusFor === subRef;
+  const subName = subRef !== undefined ? (sampleNames.get(subRef) ?? `Sample ${subRef}`) : "";
+  const shownCompareSet = useMemo<ReadonlySet<number>>(
+    () => (!refsOn ? new Set(shownRefs) : minusOn ? new Set(shownRefs.filter((r) => r !== subRef)) : hiddenRefs),
+    [refsOn, minusOn, shownRefs, subRef, hiddenRefs],
   );
   const xExtent = useMemo<[number, number] | null>(
     () => (mainTrace && mainTrace.q.length > 1 ? positiveExtent(mainTrace.q) : null),
@@ -564,6 +582,20 @@ export function WorkspacePage(): JSX.Element {
       if (sampleId !== undefined) history.record(labelRecolor(sampleId, tag, color));
     },
     [sampleId, history, labelRecolor],
+  );
+  const editExperiment = useCallback(
+    (next: ExperimentPatch) => {
+      const cur = experiment.data;
+      if (!cur) return;
+      const prev: ExperimentPatch = {};
+      if (next.name !== undefined) prev.name = cur.name ?? "";
+      if (next.description !== undefined) prev.description = cur.description ?? null;
+      ops.patchExperiment(next);
+      if (sampleId === undefined) return;
+      const label = next.name !== undefined ? `renamed the experiment to ${next.name}` : "changed the experiment description";
+      history.record(experimentEntry(ops, { label, sampleId, exposureId: undefined, prev, next }));
+    },
+    [experiment.data, ops, sampleId, history],
   );
   const createLabel = useCallback(
     (name: string, color: LabelColor) => {
@@ -776,6 +808,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "x":
         case "X":
+          if (ev.repeat) break;
           if (exposure && username) toggleDrop(exposure);
           break;
         case "0":
@@ -813,8 +846,17 @@ export function WorkspacePage(): JSX.Element {
 
   const addReference = (rid: number): void => {
     setRefs((r) => addCompare(r, rid));
-    if (subRef === undefined) setSubRef(rid);
     setRefsOn(true);
+  };
+  const toggleSubtract = (rid: number): void => {
+    setRefsOn(true);
+    setMinusFor(subRef === rid ? undefined : rid);
+    setSubRef((cur) => (cur === rid ? undefined : rid));
+  };
+  const toggleCompare = (rid: number): void => {
+    if (rid === sampleId || bridged.includes(rid)) return;
+    if (refs.includes(rid)) removeCompare(rid);
+    else addReference(rid);
   };
   const palette = workspacePalette({
     modKey: MOD_KEY,
@@ -827,6 +869,11 @@ export function WorkspacePage(): JSX.Element {
       samples: pickable,
       notes: bufferNotes,
       pick: addReference,
+      compared: refs.filter((r) => r !== sampleId && !bridged.includes(r)).flatMap((r) => samples.filter((x) => x.id === r)),
+      remove: removeCompare,
+      subtractable: activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
+      subtracted: subRef,
+      subtract: toggleSubtract,
     },
     bridge: {
       samples: bridgePickable,
@@ -864,9 +911,10 @@ export function WorkspacePage(): JSX.Element {
     views: { options: PLOT_VIEWS, current: view, set: setView },
     resetZoom: () => setXDomain(null),
     comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
+    ...(difference && subRef !== undefined ? { difference: { on: minusOn, name: subName, toggle: () => setMinusFor(minusOn ? undefined : subRef) } } : {}),
     settings:
       username && experiment.data
-        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: (patch) => patchExperiment.mutate(patch) }
+        ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: editExperiment }
         : undefined,
     rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
     problems: problemRows.length > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
@@ -936,7 +984,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>
@@ -972,12 +1020,24 @@ export function WorkspacePage(): JSX.Element {
                   color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
                   bridged: bridged.includes(rid),
+                  hidden: shownCompareSet.has(rid),
                 }))}
                 subtractId={subRef}
                 hidden={!refsOn}
-                onSubtract={(rid) => setSubRef((cur) => (cur === rid ? undefined : rid))}
+                modKey={MOD_KEY}
+                onToggleShown={(rid) => {
+                  if (minusOn && rid !== subRef) {
+                    setMinusFor(undefined);
+                    setHiddenRefs((h) => withoutRef(h, rid));
+                    return;
+                  }
+                  setRefsOn(true);
+                  setHiddenRefs((h) => (refsOn && !h.has(rid) ? new Set([...h, rid]) : withoutRef(h, rid)));
+                }}
+                onSubtract={toggleSubtract}
                 onRemove={onRemoveChip}
                 onAdd={() => setPicking(true)}
+                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={(on) => setMinusFor(on ? subRef : undefined)} /> : undefined}
               />
               {picking && (
                 <ComparePicker
@@ -1000,6 +1060,7 @@ export function WorkspacePage(): JSX.Element {
                   peaks={peaks.data ?? []}
                   combs={combs}
                   compares={compares}
+                  {...(minusOn && difference ? { difference } : {})}
                   xDomain={shownDomain}
                   view={view}
                   onXDomain={setXDomain}
@@ -1009,17 +1070,6 @@ export function WorkspacePage(): JSX.Element {
                       ? { onAddPeak: addPeakAt, onClickPeak }
                       : {})}
                 />
-                {difference && xExtent && subRef !== undefined && (
-                  <SubtractionStrip
-                    q={difference.q}
-                    d={difference.d}
-                    label={`minus ${sampleNames.get(subRef) ?? `Sample ${subRef}`}`}
-                    xDomain={shownDomain}
-                    xExtent={xExtent}
-                    peakQs={peakQs}
-                    view={view}
-                  />
-                )}
               </PlotCard>
             </div>
             <MainSection title="Exposures" hint={keptHint}>

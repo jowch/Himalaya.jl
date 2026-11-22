@@ -20,13 +20,13 @@ export function DetectorOverlay({ exposures, currentId, onStep, onToggleDrop, on
   const index = exposures.findIndex((e) => e.id === currentId);
   const current = exposures[index];
   const dropped = current?.status === "rejected";
-  const onKey = (key: string): boolean => {
+  const onKey = (key: string, repeat: boolean): boolean => {
     if (key === "ArrowRight" || key === "ArrowLeft") {
       onStep(key === "ArrowRight" ? 1 : -1);
       return true;
     }
     if ((key === "x" || key === "X") && onToggleDrop) {
-      onToggleDrop();
+      if (!repeat) onToggleDrop();
       return true;
     }
     return false;

@@ -57,9 +57,9 @@ export const COMMANDS = {
     run: (cfg, f, [file]) => screenshot(cfg, file, f),
   },
   click: {
-    usage: "click (--role <role> [--name <name>] | --label <l> | --text <t> | --testid <id> | --selector <css>) [--exact] [--within <css>] [--nth <i>] [--no-settle] [--expect-http <status>:<path re>]... [--timeout <ms>]",
-    summary: "Click exactly one element, then wait for the page to settle (requests started by the click included). Fails with a hint when zero or several match, or when the page does not settle within --timeout (default 15000 ms). Also fails when a request the click started returned 4xx/5xx (listed under settle.httpErrors). --expect-http 400:/api/fs/preview (repeatable) allows only matching responses and fails if none arrives. --no-settle skips this check (httpChecked: false).",
-    spec: { booleans: ["exact", "no-settle"], strings: TARGET, lists: ["expect-http"] },
+    usage: "click (--role <role> [--name <name>] | --label <l> | --text <t> | --testid <id> | --selector <css>) [--exact] [--within <css>] [--nth <i>] [--modifiers <Control,Meta,Shift,Alt,ControlOrMeta>] [--no-settle] [--expect-http <status>:<path re>]... [--timeout <ms>]",
+    summary: "Click exactly one element, holding --modifiers if given (ControlOrMeta is ⌘ on a Mac, Ctrl elsewhere), then wait for the page to settle (requests started by the click included). Fails with a hint when zero or several match, or when the page does not settle within --timeout (default 15000 ms). Also fails when a request the click started returned 4xx/5xx (listed under settle.httpErrors). --expect-http 400:/api/fs/preview (repeatable) allows only matching responses and fails if none arrives. --no-settle skips this check (httpChecked: false).",
+    spec: { booleans: ["exact", "no-settle"], strings: [...TARGET, "modifiers"], lists: ["expect-http"] },
     run: (cfg, f) => click(cfg, f),
   },
   fill: {
