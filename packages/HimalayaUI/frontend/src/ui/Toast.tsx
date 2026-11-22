@@ -16,9 +16,6 @@ const DURATIONS: Record<ToastKind, number> = {
   warning: 3000,
 };
 
-// Severity is conveyed by a leading status icon + word, NOT an edge hue.
-// The icon's color is decorative; the accessible severity is the aria-label
-// (on the icon) plus the visible word.
 const KIND_WORD: Record<ToastKind, string> = {
   info: "Info",
   success: "Success",
@@ -28,9 +25,9 @@ const KIND_WORD: Record<ToastKind, string> = {
 
 const KIND_GLYPH: Record<ToastKind, string> = {
   info: "i",
-  success: "✓", // ✓
+  success: "✓",
   warning: "!",
-  error: "✕", // ✕
+  error: "✕",
 };
 
 const KIND_ICON_COLOR: Record<ToastKind, string> = {
@@ -40,20 +37,10 @@ const KIND_ICON_COLOR: Record<ToastKind, string> = {
   error: "text-error",
 };
 
-/**
- * ToastContainer — mounts the global toast surface, wires showToast into a
- * local queue on mount, and restores the console.warn fallback on unmount.
- *
- * Render once at the root of the app (App.tsx).
- */
 export function ToastContainer(): JSX.Element {
   const [items, setItems] = useState<ToastItem[]>([]);
   const idRef = useRef(0);
-  // Tracks the auto-dismiss timer per toast id so we can clear it on manual
-  // dismissal (close button) and on unmount, preventing stale setItems calls
-  // and harmless-but-noisy "filter an already-absent id" follow-ups.
   const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
   const dismiss = useCallback((id: number): void => {
     const handle = timersRef.current.get(id);
     if (handle !== undefined) {
@@ -62,7 +49,6 @@ export function ToastContainer(): JSX.Element {
     }
     setItems((curr) => curr.filter((t) => t.id !== id));
   }, []);
-
   useEffect(() => {
     setToastImpl((msg, kind, action) => {
       idRef.current += 1;
@@ -77,9 +63,6 @@ export function ToastContainer(): JSX.Element {
     });
     return () => setToastImpl(null);
   }, []);
-
-  // Clear any in-flight auto-dismiss timers when the container unmounts so
-  // they don't fire setItems against stale state.
   useEffect(() => {
     const timers = timersRef.current;
     return () => {
@@ -87,7 +70,6 @@ export function ToastContainer(): JSX.Element {
       timers.clear();
     };
   }, []);
-
   return (
     <div
       data-testid="toast-container"
@@ -98,9 +80,6 @@ export function ToastContainer(): JSX.Element {
           key={t.id}
           data-testid="toast"
           data-toast-kind={t.kind}
-          // WCAG 4.1.3: error/warning are interruptive (assertive); info/success
-          // are advisory (polite, the default). The severity word stays the
-          // human-readable channel; the role/aria-live carry it to assistive tech.
           role={t.kind === "error" || t.kind === "warning" ? "alert" : "status"}
           aria-live={t.kind === "error" || t.kind === "warning" ? "assertive" : "polite"}
           className={

@@ -8,10 +8,6 @@ export const PAGE_WIDTHS = {
 
 export type PageWidth = keyof typeof PAGE_WIDTHS;
 
-
-/** Centers + caps a page body at its surface width. Greenfield pages wrap their
- *  body in this instead of a hand-rolled `mx-auto max-w-[…]`. PLACEMENT-ONLY
- *  className (padding/margin). */
 export function PageFrame({
   width,
   className,

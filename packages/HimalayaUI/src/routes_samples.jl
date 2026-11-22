@@ -5,8 +5,6 @@ function register_samples_routes!()
         db     = current_db()
         params = HTTP.queryparams(HTTP.URI(req.target))
 
-        # Optional ?experiment_id= filter. A non-integer value is a client
-        # error, not something to silently ignore.
         exp_filter = nothing
         if haskey(params, "experiment_id")
             exp_filter = tryparse(Int, params["experiment_id"])
@@ -69,7 +67,6 @@ function register_samples_routes!()
         for k in (:name, :notes)
             if haskey(body, k)
                 v = body[k]
-                # Trim leading/trailing whitespace on name only.
                 v isa AbstractString && k === :name && (v = strip(String(v)))
                 push!(fields, k); push!(vals, v)
             end
@@ -87,8 +84,6 @@ function register_samples_routes!()
             DBInterface.execute(db,
                 "UPDATE samples SET $sets WHERE id = ?", vcat(vals, [id]))
 
-            # Structured payload: the patched fields directly. Frontend
-            # applyRemoteToCache spreads this onto the cached sample.
             update_payload = Dict{Symbol, Any}(zip(fields, vals))
             result = apply_event!(InTransaction(), db, req;
                 kind = "update_sample",
