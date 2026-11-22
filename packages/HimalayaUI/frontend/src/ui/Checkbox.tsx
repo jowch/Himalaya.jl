@@ -18,19 +18,6 @@ export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "on
   className?: string;
 }
 
-/**
- * Checkbox — interactive tri-state checkbox primitive (src/ui/).
- *
- * The VISUAL is the round `CheckCircle` badge (reused, rendered `decorative`),
- * wrapped in an interactive `<span role="checkbox">` that owns all semantics:
- * `aria-checked` (false / true / mixed for indeterminate), `data-checked` /
- * `data-indeterminate` (stable E2E selectors), `tabIndex`, Space/Enter
- * activation, a disabled guard, and the accent `focus-visible` ring. The inner
- * CheckCircle is `aria-hidden` so the role/label live only on the wrapper.
- *
- * Appearance lives entirely in CheckCircle (token-driven); the wrapper carries
- * only placement + interaction classes — no inline colour literals here.
- */
 export const Checkbox = forwardRef<HTMLSpanElement, CheckboxProps>(function Checkbox(
   {
     checked = false,

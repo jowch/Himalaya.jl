@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 /*
  * House copy law: NO EM DASHES in user-facing copy.
  * ---------------------------------------------------------------------------
- * This pin comment-strips every non-story source under src/print and asserts
+ * This pin comment-strips every non-story source under src and asserts
  * no "—" survives outside the one sanctioned use: the standalone "—" string
  * literal used as a missing-value placeholder (e.g. `?? "—"`, `value: "—"`).
  *
@@ -45,7 +45,7 @@ function stripComments(src: string): string {
 /** The sanctioned placeholder: a string literal that is EXACTLY one em dash. */
 const PLACEHOLDER_LITERAL = /(["'`])—\1/g;
 
-describe("house copy law — src/print prose", () => {
+describe("house copy law — src prose", () => {
   it("contains no em dash outside comments and standalone placeholder literals", () => {
     const offenders: string[] = [];
     for (const file of walk(SRC_ROOT)) {

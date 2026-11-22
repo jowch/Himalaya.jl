@@ -21,12 +21,6 @@ import { getClientId } from "./lib/clientId";
 import type { SseEvent } from "./lib/queue/types";
 import { useDocumentTheme } from "./lib/theme";
 
-/**
- * App — root of "The Print", the sole production app
- * (index.html → src/main.tsx → here). Two concerns: the persistent
- * workspace shell and the onboarding overlay (rendered only when username is
- * unset), plus the app-wide SSE + mutation-queue wiring.
- */
 export function App(): JSX.Element {
   useDocumentTheme();
   const qc = useQueryClient();

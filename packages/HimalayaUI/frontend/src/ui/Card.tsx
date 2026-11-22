@@ -92,12 +92,6 @@ export function Card<T extends CardElement = "div">({
         : `rounded-md bg-plate ${borderClass[border]}`) +
     (interactive ? " cursor-pointer hover:border-hair-strong" : "") +
     (padding ? ` ${paddingClass[padding]}` : "");
-  // The selected ring style is injected inline so it can use CSS custom
-  // properties without minting a new Tailwind class outside ui.
-  // color-mix is allowed here (this file IS design-guard-exempt: src/ui/**).
-  // Selected (accent) and previewed (neutral ink) rings compose — a candidate can
-  // be both in-the-call AND under the arrow cursor. color-mix is allowed here
-  // (this file IS design-guard-exempt: src/ui/**).
   const ringStyle: { borderColor?: string; boxShadow?: string } = {};
   if (selected) {
     ringStyle.borderColor = "color-mix(in oklab, var(--color-accent) 42%, var(--color-hair))";

@@ -71,7 +71,7 @@ A count that falls must be locked in with `npm run lint:ratchet -- --update` (co
 
 `npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on all of `src/`, stories included.
 
-This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `ui/**` and `ui/**`:
+This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `ui/**`, `plot/**` and `detector/**`:
 
 - arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)
 - arbitrary radius `rounded-[…]` → `rounded-sm` / `rounded-md` (both 5px) / `rounded-full`

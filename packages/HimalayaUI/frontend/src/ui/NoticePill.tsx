@@ -10,18 +10,6 @@ interface NoticePillProps {
 }
 
 
-/** A compact 12px pill for a short status notice.
- *
- * Two tones:
- *   - `"new"`   — accent-tinted "+N new match" (recipe found new matching samples).
- *   - `"draft"` — dashed, faint "Draft" marker.
- *
- * Appearance (tint, dashed border, accent color) lives here; the consumer's
- * `className` is PLACEMENT-ONLY and appended last — open-placement / closed-look
- * contract.
- *
- * This file is design-guard-EXEMPT (`src/ui/`) because it necessarily
- * authors literal appearance (accent tint via `color-mix`, dashed border). */
 export function NoticePill({
   tone,
   children,

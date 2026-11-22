@@ -21,9 +21,6 @@ export function CheckCircle({ checked, label, decorative, className }: CheckCirc
       aria-label={decorative ? undefined : (label ?? (checked ? "Selected" : "Not selected"))}
       aria-hidden={decorative ? "true" : undefined}
       data-checked={checked ? "true" : undefined}
-      // 13px is a fixed semantic badge dimension (not body text), so the arbitrary
-      // size is intentional and allowed in ui. The check stroke uses the paper
-      // token (var(--color-paper)), never a raw hex.
       className={cx(
         "inline-block w-[13px] h-[13px] rounded-full flex-shrink-0 border",
         checked ? "bg-ink border-ink" : "border-hair-strong",

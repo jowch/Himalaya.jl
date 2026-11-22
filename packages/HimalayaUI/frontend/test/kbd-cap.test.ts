@@ -12,7 +12,7 @@ import { dirname, join, relative, resolve } from "node:path";
  * render through the <Kbd> primitive (bg-plate / text-ink-soft, 6.8:1).
  *
  * The scan bans the `opacity-60 ml-1` inline-key-hint idiom anywhere under
- * src/print. Mirrors test/print-copy-no-emdash.test.ts (TEST-ONLY, reads the
+ * src. Mirrors test/copy-no-emdash.test.ts (TEST-ONLY, reads the
  * real sources at test time). ui/ is excluded: the primitives own appearance.
  */
 
@@ -30,7 +30,7 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("keyboard-hint law — src/print inline key hints", () => {
+describe("keyboard-hint law — src inline key hints", () => {
   it("renders inline key hints via Kbd, not dimmed bare glyphs (CC-KBDCAP)", () => {
     const offenders: string[] = [];
     for (const file of walk(SRC_ROOT)) {

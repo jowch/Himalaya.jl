@@ -1,11 +1,3 @@
-// SR-only status announcer — the quiet sibling of lib/toast.ts.
-//
-// `showToast` surfaces consequential events visibly. `announce` is for
-// frequent, low-consequence, immediately-visible state changes (peak add/remove,
-// frame flips) where a visible toast on every action would be spam, but a
-// screen-reader user still needs WCAG 4.1.3 status feedback. The message is
-// written into a visually-hidden aria-live region (see ui/LiveRegion.tsx).
-
 export interface AnnounceOptions {
   /** true → assertive region (interrupts); default false → polite. */
   assertive?: boolean;

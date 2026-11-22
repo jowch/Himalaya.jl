@@ -18,7 +18,7 @@ import { dirname, join, relative, resolve } from "node:path";
  * floor is zero. If a genuinely decorative kicker ever appears, add its
  * `path:line` to ALLOWLIST with a one-line justification.
  *
- * Mirrors the file-reading guard pattern of test/print-copy-no-emdash.test.ts:
+ * Mirrors the file-reading guard pattern of test/copy-no-emdash.test.ts:
  * TEST-ONLY, reads the real sources at test time. The Kicker primitive's own
  * `tone = "faint"` DEFAULT (a destructured param, written `tone = "faint"`
  * with spaces) is not a JSX prop and never matches the `tone="faint"` scan;
@@ -42,7 +42,7 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("kicker tone law — src/print content labels", () => {
+describe("kicker tone law — src content labels", () => {
   it('uses no tone="faint" outside the decorative allowlist (CC-KICKER-FAINT)', () => {
     const offenders: string[] = [];
     for (const file of walk(SRC_ROOT)) {
