@@ -1,8 +1,7 @@
 using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
 @testset "samples routes" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d",
                                              analysis_dir="/t/a")
     s1 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -20,8 +19,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 end
 
 @testset "GET /api/samples: per-sample phase-call rollup" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
 
     # Sample A — INDEXED. Two exposures; the newer one is the representative.
@@ -65,8 +63,7 @@ end
 end
 
 @testset "PATCH /api/samples/:id accepts name, leading/trailing whitespace trimmed" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t3", data_dir="/t3/d",
                                              analysis_dir="/t3/a")
     sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -84,8 +81,7 @@ end
 end
 
 @testset "corpus samples route" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
 
     e1 = HimalayaUI.init_experiment!(db; name="E1", path="/e1",
         data_dir="/e1/d", analysis_dir="/e1/a")
@@ -135,8 +131,7 @@ end
 end
 
 @testset "corpus samples route reads q_units from the sample's setup" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
 
     e_typed = HimalayaUI.create_experiment!(db; name="ET", path="/et",
         data_dir="/et/d", analysis_dir="/et/a", q_units="nm^-1")
@@ -160,8 +155,7 @@ end
 end
 
 @testset "corpus samples route tolerates NULL experiment_id" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
 
     # `samples.experiment_id` is a nullable FK. A sample with no owning
     # experiment (a SQL NULL) must not 500 the corpus route — its q_units
@@ -190,8 +184,7 @@ end
 end
 
 @testset "GET /api/samples: the representative is never a dropped frame" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
     frames(name, n) = (s = HimalayaUI.create_sample!(db; experiment_id=exp_id, name=name);
         [HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s, filename="$(name)$(i)") for i in 1:n])

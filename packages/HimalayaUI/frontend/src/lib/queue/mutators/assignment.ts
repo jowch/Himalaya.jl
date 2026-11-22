@@ -7,7 +7,7 @@ import { authOpts } from "../../authOpts";
 import type {
   Mutator, RollbackContext, SseEvent, QueueResponseMeta, AssignmentPostState, SampleCallPostState,
 } from "../types";
-import { sampleFrameIds, writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "../sampleCall";
+import { sampleFrameIds, writeSampleCall, invalidateAssignmentsExcept, invalidateSampleCalls } from "../sampleCall";
 import { stripQueueMetadata } from "../queueMeta";
 
 type AssignmentScope = {
@@ -59,7 +59,7 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
   onSuccess: (p, response, qc) => {
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
-    invalidateOtherFrameAssignments(qc, p.exposureId);
+    invalidateAssignmentsExcept(qc, [p.exposureId]);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
     invalidateSampleCalls(qc);
   },
@@ -132,6 +132,7 @@ export const setSampleCallStateMutator: Mutator<SetStateInput, SampleCallScope, 
   onSuccess: (p, response, qc) => {
     const { payload: call } = stripQueueMetadata(response);
     writeSampleCall(qc, p.sampleId, call as SampleCall);
+    invalidateAssignmentsExcept(qc, [...sampleFrameIds(qc, p.sampleId), ...(call as SampleCall).members.map((m) => m.exposure_id)]);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
     invalidateSampleCalls(qc);
   },

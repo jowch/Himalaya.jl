@@ -115,14 +115,18 @@ function migrate_share_bridged_labels!(db::SQLite.DB)
     nothing
 end
 
-function bridge_samples!(db, req, a::Int, b::Int, exp_id::Int)
+function bridge_samples!(db, req, a::Int, b::Int, exp_id::Int; keep = nothing)
+    plan = bridge_call_plan(db, a, b, keep)
+    plan.ok || return plan
     moves = bridge_moves(_bridge_group_of(db, a), _bridge_group_of(db, b), a, b,
                          g -> _bridge_members(db, g), () -> _next_bridge_group_id(db))
     for (sid, g) in moves
         _emit_bridge_event!(db, req, "sample_bridged", sid,
             Dict(:group_id => g, :experiment_id => exp_id))
     end
+    apply_bridge_call_plan!(db, req, plan)
     _share_labels!(db, req, a, exp_id)
+    plan
 end
 
 function register_bridge_routes!()
@@ -148,8 +152,11 @@ function register_bridge_routes!()
             return _json_error(422, "samples are in different experiments")
         exp_id = Int(both[1].experiment_id)
 
+        keep = body isa AbstractDict ? get(body, "keep_call", nothing) : nothing
+        keep isa Integer && (keep = Int(keep))
         return with_idempotency(db, req) do
-            bridge_samples!(db, req, id, to, exp_id)
+            plan = bridge_samples!(db, req, id, to, exp_id; keep)
+            plan.ok || return _json_error(plan.status, plan.body[:error]; filter(kv -> first(kv) != :error, plan.body)...)
             _json_ok(bridge_groups_for_experiment(db, exp_id))
         end
     end

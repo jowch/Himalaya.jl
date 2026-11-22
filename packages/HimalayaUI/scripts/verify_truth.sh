@@ -126,6 +126,16 @@ step 12-bridge-labels log bash -c '
   done
   echo "both bridged samples carry 37C and pH 7"' _ "$OUT"
 
+step 13-bridge-call json node "$HELP" bridge-call
+step 13-calls-match log bash -c '
+  out=$1
+  bin/verify check-truth > "$out/13-bridged.json" || true
+  node -e "
+    const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
+    const inv = r.invariants.bridged_calls_match;
+    if (!inv.checked) { console.log(\"bridged_calls_match did not run: check-truth saw no bridge\"); process.exit(1); }
+    if (!inv.ok) { console.log(JSON.stringify(inv.violations, null, 2)); process.exit(1); }
+    console.log(\"bridged_calls_match checked and held\");" "$out/13-bridged.json"' _ "$OUT"
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"
   exit 1

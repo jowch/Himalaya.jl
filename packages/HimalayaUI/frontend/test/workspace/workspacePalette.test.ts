@@ -19,7 +19,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
-    bridge: { samples: [], pick: noop, bridged: [], leave: noop },
+    bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, setupOf: () => undefined, bridged: [], leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
@@ -172,6 +172,31 @@ describe("workspacePalette", () => {
     const { pages } = workspacePalette(input({ settings: { name: "B", description: "Lipid screen", save, setups: [], saveSetup: vi.fn() } }));
     pages.settings!.items[1]!.form!().submit({ v: "  " });
     expect(save).toHaveBeenCalledWith({ description: null });
+  });
+
+  it("marks a sample with a different call and asks which call to keep before bridging", () => {
+    const pick = vi.fn();
+    const a = { id: 2, name: "A" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const b = { id: 3, name: "B" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const choices = [{ value: "1", label: "Here: Pn3m", keep: 1 }, { value: "3", label: "B: Im3m", keep: 3 }, { value: "both", label: "Both: Im3m + Pn3m", keep: "both" as const }];
+    const setups = new Map([[2, "Short pipe"], [3, "Long pipe"]]);
+    const { pages } = workspacePalette(input({ bridge: {
+      samples: [a, b], pick, choices: (id) => (id === 3 ? choices : undefined),
+      names: (id) => `${id === 2 ? "A" : "B"} in ${setups.get(id)}`, setupOf: (id) => setups.get(id), bridged: [], leave: vi.fn(),
+    } }));
+    const [plain, differs] = pages.bridge!.items;
+    expect(plain!.form).toBeUndefined();
+    expect(plain!.hint).toBe("Short pipe");
+    plain!.run!();
+    expect(pick).toHaveBeenLastCalledWith(2);
+    expect(differs!.hint).toBe("Long pipe · Different call");
+    const form = differs!.form!();
+    expect(form.title).toBe("Same sample as B in Long pipe");
+    expect(form.fields[0]!.options!.map((o) => o.label)).toEqual(["Here: Pn3m", "B: Im3m", "Both: Im3m + Pn3m"]);
+    form.submit({ keep: "both" });
+    expect(pick).toHaveBeenLastCalledWith(3, "both");
+    form.submit({ keep: "3" });
+    expect(pick).toHaveBeenLastCalledWith(3, 3);
   });
 
   it("lists each setup on the Settings page and saves a rename or a hide from its form", () => {

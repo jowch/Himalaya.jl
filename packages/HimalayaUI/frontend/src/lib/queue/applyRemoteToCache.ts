@@ -292,6 +292,8 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "sample_unbridged": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
+      invalidateSampleCalls(qc);
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     case "compares_changed": {

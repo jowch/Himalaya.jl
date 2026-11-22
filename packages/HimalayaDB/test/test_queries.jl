@@ -93,11 +93,11 @@ end
     @test [m.index_id for m in call.members] == [ids.index_id, ids.index2_id]
     @test [m.exposure_id for m in call.members] == [ids.exposure_id, ids.exposure2_id]
 
-    blank = phase_call(db, ids.sample2_id)
-    @test blank.state == "indexed"
-    @test blank.phase === nothing
-    @test isempty(blank.call_phases)
-    @test isempty(blank.members)
+    shared = phase_call(db, ids.sample2_id)
+    @test shared.state == "indexed"
+    @test shared.phase == "Pn3m"
+    @test shared.call_phases == ["Im3m", "Pn3m"]
+    @test [m.exposure_id for m in shared.members] == [ids.exposure_id, ids.exposure2_id]
 
     close(db)
 end

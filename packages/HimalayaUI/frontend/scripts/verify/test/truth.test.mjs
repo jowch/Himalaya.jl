@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bridgeLabelDrift, compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
+import { bridgeCallDrift, bridgeLabelDrift, compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
 
 const TRUTH = [
   { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
@@ -350,4 +350,23 @@ test("bridged_labels_match is unchecked without a bridge, and fails on a sample 
   assert.deepEqual(r.invariants.bridged_labels_match.violations, [
     { sample: "MO_H2O", mate: "MO_PEG5_S3 (S01P02)", mine: ["buffer"], theirs: [] },
   ]);
+});
+
+test("bridgeCallDrift compares the call state and called phases across a bridge", () => {
+  const sample = (id, name, assignment_state, call_phases) => ({ id, name, assignment_state, call_phases });
+  const bridges = [{ sample_id: 1, group_id: 7 }, { sample_id: 2, group_id: 7 }];
+  const same = [sample(1, "A", "indexed", ["Pn3m", "Im3m"]), sample(2, "B", "indexed", ["Im3m", "Pn3m"]), sample(3, "C", "form_factor", [])];
+  assert.equal(bridgeCallDrift(same, bridges).size, 0);
+  const apart = bridgeCallDrift([sample(1, "A", "indexed", ["Pn3m"]), sample(2, "B", "form_factor", [])], bridges);
+  assert.deepEqual([...apart.keys()], [1, 2]);
+  assert.deepEqual(apart.get(1), [{ mate: "B", mine: { state: "indexed", phases: ["Pn3m"] }, theirs: { state: "form_factor", phases: [] } }]);
+});
+
+test("bridged_calls_match is unchecked without a bridge and fails on a sample whose call drifted from its bridge", () => {
+  assert.equal(compareTruth(TRUTH, app()).invariants.bridged_calls_match.checked, false);
+  const drifted = app();
+  drifted[0].bridged = true;
+  drifted[0].callDrift = [{ mate: "B", mine: { state: "indexed", phases: ["Pn3m"] }, theirs: { state: "form_factor", phases: [] } }];
+  const r = compareTruth(TRUTH, drifted);
+  assert.deepEqual(r.summary.invariants_failed, ["bridged_calls_match"]);
 });
