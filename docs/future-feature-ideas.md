@@ -23,9 +23,9 @@ starting point for that work.
 load-bearing assumption: a phase is a 1D ratio series scaled by a single
 scalar `basis`. Cubic, hexagonal, square, and lamellar all have one free
 lattice parameter, so peak ratios are constants stored in
-[src/phase.jl:62-75](src/phase.jl:62). Tetragonal ratios depend on `c/a`;
+[src/phase.jl](../src/phase.jl). Tetragonal ratios depend on `c/a`;
 monoclinic ratios depend on three ratios and an angle. The vectorized
-matcher at [src/index.jl:134-148](src/index.jl:134) — `observed_ratios = X * (1 ./ B)` —
+matcher at [src/index.jl](../src/index.jl) — `observed_ratios = X * (1 ./ B)` —
 collapses search to 1D *only* because the basis is a scalar. With two
 parameters, no scalar division turns a peak into a comparable ratio.
 
@@ -61,26 +61,26 @@ function indexpeaks(::Type{P}, peaks, sharpness, domain, tol, requiremin) where 
 end
 ```
 
-The top-level enumerator at [src/index.jl:98-100](src/index.jl:98) just adds
+The top-level enumerator at [src/index.jl](../src/index.jl) just adds
 the new phases to the loop — each phase routes itself to the correct method
 via dispatch. Cubic/hex/lamellar pay zero added cost.
 
 The same pattern applies to `predictpeaks`, `fit`, `score`'s coverage weights,
 `remove_subsets`, and `==` — one method per parameter-count class instead of
 runtime branches. The hexagonal `λ = 2/√3` special case at
-[src/index.jl:238](src/index.jl:238) is a foreshadowing of this exact pattern.
+[src/index.jl](../src/index.jl) is a foreshadowing of this exact pattern.
 
 **The `Index` struct change is unavoidable.**
-[src/index.jl:7-11](src/index.jl:7) declares `basis::Real` concretely.
+[src/index.jl](../src/index.jl) declares `basis::Real` concretely.
 Generalize once: `basis::Real` → `params::Tuple` (or `NTuple{N,Real}` keyed
 on phase). Provide `basis(idx) = idx.params[1]` as a back-compat accessor —
 the codebase already uses `basis(index)` everywhere it reads the value
-([src/index.jl:23](src/index.jl:23)), so most call sites are insulated.
+([src/index.jl](../src/index.jl)), so most call sites are insulated.
 
 **DB schema bump.** `indices.basis FLOAT` → either `indices.params TEXT`
 (JSON tuple) or split into typed columns (`lattice_a`, `lattice_b`,
 `lattice_c`, `lattice_beta`). One-time migration: scalar → `[scalar]`.
-Schema lives in [packages/HimalayaUI/src/db.jl](packages/HimalayaUI/src/db.jl).
+Schema lives in [packages/HimalayaUI/src/db.jl](../packages/HimalayaUI/src/db.jl).
 
 **Prerequisite: predicate-based selection rules.** Both the one-param and
 multi-param matchers need to enumerate allowed `(hkl)` per phase. Today's
@@ -114,7 +114,7 @@ parameter-count class.
 
 Today `phaseratios(P)` returns a hardcoded `Vector{Float64}` truncated by hand
 at the practical detection ceiling for each phase
-([src/phase.jl:62-75](src/phase.jl:62)). Proposed shape: a new method
+([src/phase.jl](../src/phase.jl)). Proposed shape: a new method
 `phaseratios(P, n)` that returns the first `n` allowed ratios — slicing the
 hardcoded prefix when `n` is small, generating additional ratios from
 selection-rule predicates when `n` exceeds the prefix.
@@ -145,8 +145,8 @@ Currently peaks are returned at grid positions.
 
 Automated SNIP or asymmetric least-squares background subtraction as a
 pre-processing step, particularly useful for traces with steeply falling
-backgrounds. Currently handled manually (background-subtracted exposures are
-ingested as derived exposures in the DB).
+backgrounds. Today the workspace subtracts a chosen buffer sample for display
+only, scaled by beam monitors; nothing is subtracted in the pipeline.
 
 ### Auto-best-exposure selection
 
@@ -192,7 +192,7 @@ The workspace plot lets a click add a manual peak, switch an auto peak off or
 remove a manual one. There is no way to move a peak: q is immutable.
 
 **Why later — the hard backend blocker.** Peaks are stored as two tables
-([db.jl:100-122](packages/HimalayaUI/src/db.jl:100)): `auto_peaks` (analysis
+([db.jl](../packages/HimalayaUI/src/db.jl)): `auto_peaks` (analysis
 output, **regenerated on every reanalysis**) and `peak_curations` (the manual
 delta layer, `kind IN ('exclude','add')`). Critically, **curations are
 keyed by q, not by a stable peak identity**: an exclude curation suppresses
@@ -227,11 +227,10 @@ CSV/JSON.
 
 ### Cross-experiment sample comparison
 
-Query sample labels and analysis results across multiple experiment
-databases to compare samples with similar compositions (e.g., same
-lipid/peptide system across beamtimes). The SQLite-per-experiment schema
-is migration-friendly: a thin aggregation layer can open multiple DBs and
-JOIN across them via SQLite's `ATTACH` mechanism.
+Query sample labels and analysis results across experiments to compare
+samples with similar compositions (e.g., same lipid/peptide system across
+beamtimes). Every experiment already lives in the one central DB, so this
+is a query and a UI, not an aggregation layer.
 
 ---
 
@@ -261,11 +260,11 @@ support both review and onboarding ("show me what alice has been doing").
 
 ## Onboarding & docs
 
-### Tutorial content beyond the four intro slides
+### Tutorial: the ⌘K palette
 
-Current tutorial covers title-button, three-card layout, sample stepping,
-and active-set editing. Add slides for the workspace keys, the ⌘K palette and
-comparisons as those become load-bearing.
+The three intro slides ("Add a beamtime", "One sample at a time", "Call it
+and move on") cover the workspace keys and comparisons. They don't mention
+the ⌘K palette, which now holds Rescan, settings, bridges and plot views.
 
 ### Empty / error state mock-ups
 
@@ -279,14 +278,20 @@ click to see traceback") need design.
 
 ### Beamline-config editor
 
-Each experiment has parameters (wavelength, sample-detector distance,
-calibrant) that currently live outside the DB. Expose these in the
-experiment metadata and add an editor UI.
+Each setup stores its geometry (energy, flight path, beam centre, pixel
+size) on the `setups` row, set when the setup is added. There is no UI to
+edit it afterwards, and no calibrant record.
 
 ### Export UI
 
 Backend has `routes_export.jl` (JSON / CSV), which `bin/verify` uses. No UI
 surface yet; a summary table (above) is the natural home for a download.
+
+### Multi-frame overlay on the trace
+
+Overlay several frames of one sample on the same plot with configurable
+I-offsets, to see flares and frame-to-frame consistency at a glance. Compare
+overlays other samples' representative frames only.
 
 ### Derived-exposure construction
 

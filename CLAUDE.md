@@ -161,7 +161,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - **Mutation queue:** a per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. See `docs/mutation-queue.md`.
 - **Frontend:** `index.html → src/print/main.tsx → PrintApp`. The experiments home, the one-screen New-experiment funnel and onboarding live under `src/print/`. Triage happens in the three-pane workspace at `/experiments/:id/workspace/:sampleId` (`src/workspace/`): sample list, trace plot with peak editing and custom index, detector overlay, phase calls, comparisons and subtraction, bridges, labels, undo, and the ⌘K palette.
 - **Design system:** closed-look primitives in `src/print/ui/` and `src/workspace/ui/`. Consumers pass placement-only `className`, and `scripts/check-design.mjs` (`lint:design`) fails the build on inline appearance utilities elsewhere. Storybook (`npm run storybook`) is the visual catalog.
-- **Removed features get a fresh design if they return.** Focus, Loupe, the Index chat, Series and comparisons, sample chat, tags, the corpus page, grouping review and the configuration page are gone. `migrate_drop_retired_tables!` drops their tables on `open_db` and the log rows stay.
+- **Removed features get a fresh design if they return.** Focus, Loupe, the Index chat, the old Series/Compare page, sample chat, tags, the corpus page, grouping review and the configuration page are gone. `migrate_drop_retired_tables!` drops their tables on `open_db` and the log rows stay.
 - **Deferred:** see [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
 ## Further reading
