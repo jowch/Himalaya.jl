@@ -46,11 +46,32 @@ function suggest_labels!(db, sample_id::Int)
     role
 end
 
+const DISTANCE_LABEL = r"^\s*\d+(\.\d+)?\s*m\s*$"i
+
+flight_path_label(m::Real) = "$(round(m; digits = 1)) m"
+
+function suggest_flight_path!(db, sample_id::Int)
+    lengths = [Float64(r.pipe_length_m) for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT pipe_length_m FROM exposures WHERE sample_id = ? AND pipe_length_m IS NOT NULL", [sample_id]))]
+    isempty(lengths) && return nothing
+    labels = unique(flight_path_label.(lengths))
+    length(labels) == 1 || return nothing
+    taken = Tables.rowtable(DBInterface.execute(db,
+        "SELECT label FROM sample_labels WHERE sample_id = ?", [sample_id]))
+    any(r -> occursin(DISTANCE_LABEL, String(r.label)), taken) && return nothing
+    DBInterface.execute(db,
+        """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'suggested', 'ingest')
+           ON CONFLICT(sample_id, label COLLATE NOCASE) DO NOTHING""",
+        [sample_id, only(labels)])
+    only(labels)
+end
+
 function suggest_labels_for_experiment!(db, experiment_id::Int)
     ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM samples WHERE experiment_id = ? AND merged_into_id IS NULL", [experiment_id]))]
     for id in ids
         suggest_labels!(db, id)
+        suggest_flight_path!(db, id)
     end
     nothing
 end
