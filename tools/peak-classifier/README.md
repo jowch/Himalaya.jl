@@ -57,8 +57,10 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
    prominence, curvature, background slope, position, local density of
    candidates, and whether the persistence and hybrid detectors found it. All
    are noise-normalised or relative, so intensity units do not matter.
-3. **Labels** (`label_candidates`). A reviewed exposure is one an event
-   pinned (a peak or assignment edit, a phase call, an accept or reject). Its
+3. **Labels** (`label_candidates`). A labelled exposure is one where you
+   edited its own peaks or indexing (a peak add, remove, exclude or un-exclude,
+   or an assignment edit); phase calls on a sample and accept or reject do not
+   count. Its
    kept peaks come from the latest review snapshot, the auto peaks you saw, minus
    those an exclude or add now hides. Rules apply in order, first match wins:
    - positive: the nearest candidate to each add, and to each kept peak the
@@ -69,7 +71,7 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
    - strong negative: a candidate within the match tolerance of any exclude
      you recorded (even one no stored auto peak matches any more), and every
      remaining candidate on a form-factor exposure;
-   - weak negative: any other candidate on a reviewed exposure. Weak negatives
+   - weak negative: any other candidate on a labelled exposure. Weak negatives
      are subsampled at 50% in training.
    Other exposures give no labels. Tolerance and the matching of curations to
    auto peaks come from `peak_match_tol` (defined in `HimalayaPeakModel`, used
