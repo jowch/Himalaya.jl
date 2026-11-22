@@ -149,22 +149,20 @@ but alone it adds more spurious candidates than the persistence detector.
 **What it does** (code in `src/matchedfilter.jl`):
 
 1. Run the persistence detector with `q_trim_high = 0.07`.
-2. Compute a matched-filter significance `z`. Background is a SNIP baseline
-   on `log I` (half-window 60 points); the residual is correlated with
-   unit-norm, zero-mean Ricker kernels of widths 2, 3, 4.5, 7, 11, 16
-   points and divided by `sqrt(Σ k² σ²)`. Each width is normalised by its
-   median and 1.4826·MAD over the trace, and the maximum over widths is
-   taken. Median and MAD use only points where that kernel fits inside the
-   trace and at least half of its window is usable; the maximum at a point
-   runs over the widths that fit there, and where none fits, `z` is undefined
-   (`NaN`). Points that are not significantly positive are treated as
-   missing: nonpositive or nonfinite intensities, points at or below their own
-   `σ`, and points whose 17-point windowed mean is not more than 3 standard
-   errors above zero (masked beamstop regions, noise-only tails, tails shifted
-   slightly below zero). SNIP interpolates over them in log space (leading and
-   trailing blocks are ignored), the residual is 0 there, and windows that are
-   less than half usable score `z = 0`. The result does not depend on
-   intensity scale.
+2. Compute a matched-filter significance `z`. The background is a SNIP
+   baseline (half-window 60 points) using the LLS operator on data scaled by
+   a robust noise scale `s = 1.4826·MAD(diff(I))/√2` taken from the data
+   itself: `v = log(log(sqrt(max(I/s, 0) + 1) + 1) + 1)`, clip, invert, and
+   multiply by `s`. The operator compresses the dynamic range without a hole
+   at zero, so zero and negative points need no special handling, and because
+   `s` scales with `I` the result does not depend on intensity units.
+   Nonfinite points are interpolated from their neighbours for the
+   background and have zero residual. The residual is correlated with
+   unit-norm, zero-mean Ricker kernels of widths 2, 3, 4.5, 7, 11, 16 points
+   and divided by `sqrt(Σ k² σ²)`. Each width is normalised by its median and
+   1.4826·MAD over the points where that kernel fits inside the trace (a
+   width with zero MAD is skipped), and the maximum over the widths that fit
+   at a point is taken. Where no kernel fits, `z` is undefined (`NaN`).
 3. Keep persistence peaks whose max `z` within ±3 points is at least `kb`
    (default 5). This removes persistence peaks that are not significant
    against the noise. A peak where `z` is undefined (within a few points of

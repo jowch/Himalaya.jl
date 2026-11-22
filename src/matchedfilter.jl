@@ -7,32 +7,55 @@ const MF_WIDTHS      = (2.0, 3.0, 4.5, 7.0, 11.0, 16.0)
 const MF_SNIP_WINDOW = 60
 
 """
-    snip_background(I, m) -> Vector{Float64}
+    noise_scale(I, σ) -> Float64
 
-SNIP baseline of `I`, computed on `log(I)` with half-window `m` points: for
-`w = m … 1`, `v[i] = min(v[i], (v[i-w] + v[i+w]) / 2)`. Points of `I` that are
-nonpositive, nonfinite or (when `usable` is given) not `usable[i]` are replaced in log space by linear interpolation
-between the nearest valid neighbours (a point at or below its own noise level
-sits in a deep, noisy log-space hole that would pull the baseline down around
-it), so the result does not depend on
-intensity scale. A leading or trailing block of such points carries no
-information and is set to `Inf` in log space: it never clips its neighbours
-(extending the nearest valid value would put a flat step under a steep
-background and create a false peak at the block edge). The baseline is `Inf`
-there. With no valid point the baseline is all zeros.
+Robust point-to-point noise scale of `I` from the data itself:
+`1.4826·median(|d − median(d)|)/√2` with `d = diff(I)` over finite pairs.
+Falls back to the median positive `σ`, then to 1. It scales with `I`, so
+everything built on it is independent of intensity units.
 """
-function snip_background(I, m::Integer = MF_SNIP_WINDOW, usable = nothing)
+function noise_scale(I, σ)
+    d = Float64[]
+    for i in 2:length(I)
+        x = I[i] - I[i - 1]
+        isfinite(x) && push!(d, x)
+    end
+    if !isempty(d)
+        m = median!(d)
+        for i in eachindex(d)
+            d[i] = abs(d[i] - m)
+        end
+        s = 1.4826 * median!(d) / sqrt(2)
+        s > 0 && isfinite(s) && return s
+    end
+    pos = [x for x in σ if isfinite(x) && x > 0]
+    isempty(pos) ? 1.0 : median!(pos)
+end
+
+"""
+    snip_background(I, s, m) -> Vector{Float64}
+
+SNIP baseline of `I` with half-window `m` points, using the LLS operator on
+data scaled by the noise scale `s`: `y = max(I/s, 0)`,
+`v = log(log(sqrt(y + 1) + 1) + 1)`, clip `v[i] = min(v[i], (v[i-w] + v[i+w]) / 2)`
+for `w = m … 1`, then invert and multiply by `s`. The operator compresses the
+dynamic range without a hole at zero, so zero and negative points need no
+special handling. Nonfinite points are replaced by linear interpolation in
+`v` between the nearest finite neighbours (nearest value at the ends); with
+no finite point the baseline is zero.
+"""
+function snip_background(I, s::Real, m::Integer = MF_SNIP_WINDOW)
     n = length(I)
     v = Vector{Float64}(undef, n)
     u = Vector{Float64}(undef, n)
-    valid(i) = isfinite(I[i]) && I[i] > 0 && (usable === nothing || usable[i])
     prev = 0
     @inbounds for i in 1:n
-        if valid(i)
-            v[i] = log(I[i])
+        if isfinite(I[i])
+            y = max(I[i] / s, 0.0)
+            v[i] = log(log(sqrt(y + 1) + 1) + 1)
             if prev != i - 1
                 if prev == 0
-                    for j in 1:(i - 1); v[j] = Inf; end
+                    for j in 1:(i - 1); v[j] = v[i]; end
                 else
                     for j in (prev + 1):(i - 1)
                         v[j] = v[prev] + (v[i] - v[prev]) * (j - prev) / (i - prev)
@@ -43,7 +66,7 @@ function snip_background(I, m::Integer = MF_SNIP_WINDOW, usable = nothing)
         end
     end
     prev == 0 && return zeros(n)
-    @inbounds for j in (prev + 1):n; v[j] = Inf; end
+    @inbounds for j in (prev + 1):n; v[j] = v[prev]; end
     for w in m:-1:1
         copyto!(u, v)
         @inbounds for i in (w + 1):(n - w)
@@ -52,7 +75,7 @@ function snip_background(I, m::Integer = MF_SNIP_WINDOW, usable = nothing)
         v, u = u, v
     end
     @inbounds for i in 1:n
-        v[i] = exp(v[i])
+        v[i] = s * ((exp(exp(v[i]) - 1) - 1)^2 - 1)
     end
     v
 end
@@ -70,27 +93,6 @@ function ricker_kernel(s::Real)
     k
 end
 
-# Points where `I` is significantly positive: above its own σ, and with a
-# windowed mean over `2h + 1` points more than `nσ` standard errors above zero.
-# Testing the local mean rather than each point keeps a noise-only or masked
-# region contiguous; a pointwise test lets isolated noise spikes through, and
-# they leave a residual that is zero everywhere except at the spikes.
-function significant_points(I, σ; h::Integer = 8, nσ = 3.0)
-    n = length(I)
-    out = BitVector(undef, n)
-    @inbounds for i in 1:n
-        s = 0.0; v = 0.0; c = 0
-        for j in max(1, i - h):min(n, i + h)
-            if isfinite(I[j])
-                s += I[j]; v += σ[j]^2; c += 1
-            end
-        end
-        out[i] = isfinite(I[i]) && I[i] > σ[i] && c > 0 && s > nσ * sqrt(v)
-    end
-    out
-end
-
-const MF_MIN_SCALE_POINTS = 20
 const MF_KERNELS = map(ricker_kernel, MF_WIDTHS)
 
 """
@@ -99,17 +101,14 @@ const MF_KERNELS = map(ricker_kernel, MF_WIDTHS)
 Per-point matched-filter significance: the maximum over the Ricker widths
 `MF_WIDTHS` of the SNIP-subtracted residual correlated with a unit-norm,
 zero-mean kernel, divided by the kernel-weighted noise `sqrt(Σ k² σ²)`. The
-residual uses the original `I` at valid points and is 0 at invalid ones
-(nonpositive, nonfinite, or not in a region significantly above zero, see `significant_points`): a masked point is missing data,
-and a hole in the residual would ring through the kernels into false peaks.
-Each width is normalised by its median and `1.4826·MAD`, both taken only over
-points where that kernel fits inside the trace and at least half of its window
-is usable (other fitting points score 0), so widths are comparable and edge
-points and unusable regions do not bias the scale. The
-maximum at a point runs over the widths that fit there; where none fits the
-value is `NaN` (undefined). A width whose MAD is zero uses the standard deviation instead; a width that
-does not fit anywhere, or has no spread, is skipped. Nonpositive or nonfinite `σ` are replaced by the
-smallest positive `σ` (or 1 if there is none).
+SNIP background uses the LLS operator on data scaled by `noise_scale`, so the
+result does not depend on intensity units. Nonfinite intensities have zero
+residual. Each width is normalised by its median and `1.4826·MAD` over the
+points where that kernel fits inside the trace (so edge points do not bias
+the scale), and a width with zero MAD is skipped. The maximum at a point runs
+over the widths that fit there; where none fits the value is `NaN`
+(undefined). Nonpositive or nonfinite `σ` are replaced by the smallest
+positive `σ` (or 1 if there is none).
 """
 function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     n = length(I)
@@ -120,20 +119,14 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     end
     isfinite(σmin) || (σmin = 1.0)
     σ2 = Vector{Float64}(undef, n)
-    σc = Vector{Float64}(undef, n)
     @inbounds for i in 1:n
-        σc[i] = isfinite(σ[i]) && σ[i] > 0 ? σ[i] : σmin
-        σ2[i] = σc[i] * σc[i]
+        s = isfinite(σ[i]) && σ[i] > 0 ? σ[i] : σmin
+        σ2[i] = s * s
     end
-    usable = significant_points(I, σc)
-    B = snip_background(I, snip_window, usable)
+    B = snip_background(I, noise_scale(I, σ), snip_window)
     r = Vector{Float64}(undef, n)
     @inbounds for i in 1:n
-        r[i] = usable[i] ? I[i] - B[i] : 0.0
-    end
-    cum = zeros(Int, n + 1)       # cum[i + 1] = number of usable points in 1:i
-    @inbounds for i in 1:n
-        cum[i + 1] = cum[i] + usable[i]
+        r[i] = isfinite(I[i]) ? I[i] - B[i] : 0.0
     end
     zbest = fill(NaN, n)
     zw    = Vector{Float64}(undef, n)
@@ -151,36 +144,15 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
             end
             zw[i] = num / sqrt(var)
         end
-        # Scale from windows that are at least half usable; the rest score 0.
-        m = 0
-        @inbounds for i in (h + 1):(n - h)
-            if 2 * (cum[i + h + 1] - cum[i - h]) >= 2h + 1
-                m += 1
-                tmp[m] = zw[i]
-            end
-        end
-        m >= MF_MIN_SCALE_POINTS || continue
-        med = median!(view(tmp, 1:m))
-        c = 0
-        @inbounds for i in (h + 1):(n - h)
-            if 2 * (cum[i + h + 1] - cum[i - h]) >= 2h + 1
-                c += 1
-                tmp[c] = abs(zw[i] - med)
-            end
+        m   = n - 2h
+        med = median!(copyto!(view(tmp, 1:m), view(zw, (h + 1):(n - h))))
+        @inbounds for i in 1:m
+            tmp[i] = abs(zw[h + i] - med)
         end
         mad = 1.4826 * median!(view(tmp, 1:m))
-        if !(mad > 0)
-            # More than half the residual is exactly 0: use the standard
-            # deviation so z is still defined.
-            ss = 0.0
-            @inbounds for i in (h + 1):(n - h)
-                2 * (cum[i + h + 1] - cum[i - h]) >= 2h + 1 && (ss += (zw[i] - med)^2)
-            end
-            mad = sqrt(ss / m)
-        end
         mad > 0 || continue
         @inbounds for i in (h + 1):(n - h)
-            z = 2 * (cum[i + h + 1] - cum[i - h]) >= 2h + 1 ? (zw[i] - med) / mad : 0.0
+            z = (zw[i] - med) / mad
             zbest[i] = isnan(zbest[i]) ? z : max(zbest[i], z)
         end
     end
