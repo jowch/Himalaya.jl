@@ -46,6 +46,9 @@ function call_summary(state::AbstractString, members)
      call_phases = sort(unique([m.phase for m in members])))
 end
 
+export_call_state(state::AbstractString, members) =
+    state == "indexed" && isempty(members) ? "uncalled" : String(state)
+
 function _sample_call_body(db::SQLite.DB, sample_id::Int)
     state = sample_call_state(db, sample_id)
     ms = get(sample_call_members(db, [sample_id]), sample_id, [])
