@@ -158,7 +158,9 @@ but alone it adds more spurious candidates than the persistence detector.
      Nonpositive points in a near-zero region (a negative tail, a masked
      block) are left alone.
    - **Valid range.** From the first to the last point whose 13-point mean
-     exceeds 3`s`. The filter runs only there, so a masked or empty block at
+     exceeds 3 standard errors, `3·rms(σ)/√13` over the window, using the
+     local `σ` (a global scale would be set by the steep low-q region and
+     exclude the quiet high-q end). The filter runs only there, so a masked or empty block at
      either end does not enter the background or the normalisation. Outside
      the range `z` is undefined (`NaN`) and persistence peaks there are kept,
      as on the default path.

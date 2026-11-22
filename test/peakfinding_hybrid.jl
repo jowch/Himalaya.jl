@@ -276,6 +276,25 @@ end
     end
 end
 
+@testset "hybrid: the valid range is judged against local noise" begin
+    # The high-q end of the standard trace has a low baseline but also low noise;
+    # a global noise scale (set by the steep low-q region) excludes it.
+    for seed in 1:10
+        q, I, σ, _ = _hybrid_trace(; seed, extra = [(0.365, 250.0, 0.0012)])
+        i = argmin(abs.(q .- 0.365))
+        for hyb in (findpeaks(q, I, σ; method = :hybrid), findpeaks(q, I; method = :hybrid))
+            @test !isnan(hyb.z[i])
+            @test hyb.z[i] >= 5
+            @test any(abs.(hyb.indices .- i) .<= 2)
+        end
+        # no peak at the high-q end: z must still be defined there (only the
+        # kernel edges, 8 points of the narrowest kernel, are undefined)
+        q, I, σ, _ = _hybrid_trace(; seed)
+        hyb = findpeaks(q, I, σ; method = :hybrid)
+        @test count(isnan, hyb.z) <= 2 * 8
+    end
+end
+
 @testset "hybrid: without σ, an estimate is used" begin
     q, I, σ, t = _hybrid_trace()
     with_σ = findpeaks(q, I, σ; method = :hybrid)

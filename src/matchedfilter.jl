@@ -200,18 +200,22 @@ function fill_isolated_nonpositive(I, s)
     out
 end
 
-# First and last index whose `MF_RANGE_WINDOW`-point mean exceeds 3 noise
-# units; (1, 0) if none. Outside this range the trace carries no signal.
-function mf_valid_range(I, s)
+# First and last index whose `MF_RANGE_WINDOW`-point mean exceeds 3 standard
+# errors, 3·rms(σ)/√c over the window's c finite points; (1, 0) if none.
+# Outside this range the trace carries no signal. The test uses the local σ,
+# so a steep low-q region does not set the threshold for the high-q end.
+function mf_valid_range(I, σ)
     n = length(I)
     h = MF_RANGE_WINDOW ÷ 2
     lo, hi = 0, 0
     for i in 1:n
-        t = 0.0; c = 0
+        t = 0.0; v = 0.0; c = 0
         for j in max(1, i - h):min(n, i + h)
-            isfinite(I[j]) && (t += I[j]; c += 1)
+            if isfinite(I[j])
+                t += I[j]; v += σ[j]^2; c += 1
+            end
         end
-        if c > 0 && t / c > 3s
+        if c > 0 && t > 3 * sqrt(v)
             lo == 0 && (lo = i)
             hi = i
         end
@@ -224,7 +228,7 @@ end
 
 Matched-filter significance `z` (see `matched_filter_core`) computed only on
 the valid range of the trace: from the first to the last point whose
-13-point mean exceeds 3 noise units (`noise_scale`), so a masked or empty
+13-point mean exceeds 3 standard errors (3·rms(σ)/√13, local σ), so a masked or empty
 block at either end does not enter the background or the normalisation.
 Nonpositive points inside a clearly positive region are first interpolated
 over. `z` is `NaN` outside the valid range, and everywhere if the range is
@@ -236,7 +240,13 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     length(σ) == n || throw(DimensionMismatch("I and σ must be equal length"))
     s  = noise_scale(I, σ)
     Iw = fill_isolated_nonpositive(I, s)
-    a, b = mf_valid_range(Iw, s)
+    σmin = Inf
+    for x in σ
+        isfinite(x) && x > 0 && x < σmin && (σmin = x)
+    end
+    isfinite(σmin) || (σmin = 1.0)
+    σc = [isfinite(x) && x > 0 ? Float64(x) : σmin for x in σ]
+    a, b = mf_valid_range(Iw, σc)
     z = fill(NaN, n)
     b - a + 1 >= MF_MIN_RANGE || return z
     z[a:b] = matched_filter_core(view(Iw, a:b), view(σ, a:b), s, snip_window)
