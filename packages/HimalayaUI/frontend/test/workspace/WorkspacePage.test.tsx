@@ -780,6 +780,41 @@ describe("WorkspacePage", () => {
     const onServer = (eid: number, a: Partial<Assignment>) =>
       server.assignments.set(eid, { exposure_id: eid, state: "indexed", members: [], ...a });
 
+    it("ticks a Bonnet group whole with its number key and undoes it as one edit", async () => {
+      const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
+      state.indices = [
+        { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: peaksAt([0.05, 0.07, 0.09, 0.11]) },
+        { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: peaksAt([0.06, 0.08, 0.1, 0.12]) },
+      ];
+      state.assignment = { exposure_id: 101, state: "null", members: [] };
+      renderAt("/experiments/1/workspace/10");
+      expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "false");
+      fireEvent.keyDown(window, { key: "1" });
+      expect(calls).toEqual([
+        { hook: "add", boundTo: 101, arg: 1 },
+        { hook: "add", boundTo: 101, arg: 2 },
+      ]);
+      onServer(101, { members: [1, 2] });
+      await undo();
+      expect(ops()).toEqual([["removePhase", 101, 2], ["removePhase", 101, 1]]);
+      expect(toasts.at(-1)).toBe("Undone: ticked Im3m + Pn3m on A1");
+    });
+
+    it("unticks a whole Bonnet group when every member is in the call", () => {
+      const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
+      state.indices = [
+        { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: peaksAt([0.05, 0.07, 0.09, 0.11]) },
+        { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: peaksAt([0.06, 0.08, 0.1, 0.12]) },
+      ];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [1, 2] };
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByTestId("workspace-bonnet-group"));
+      expect(calls).toEqual([
+        { hook: "remove", boundTo: 101, arg: 1 },
+        { hook: "remove", boundTo: 101, arg: 2 },
+      ]);
+    });
+
     it("Ctrl+Z after 0 clears no phase and ticks every phase it wiped, on this frame and others", async () => {
       state.sampleCall = {
         sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m", "Im3m"],
