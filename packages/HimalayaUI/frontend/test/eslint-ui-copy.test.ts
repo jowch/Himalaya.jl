@@ -1,0 +1,86 @@
+import { describe, it, expect } from "vitest";
+import { Linter } from "eslint";
+import tseslint from "typescript-eslint";
+import uiCopy from "../scripts/eslint-ui-copy.mjs";
+
+const linter = new Linter({ configType: "flat" });
+
+function messages(code: string): string[] {
+  return linter
+    .verify(code, [
+      {
+        files: ["**/*.tsx"],
+        languageOptions: { parser: tseslint.parser, parserOptions: { ecmaFeatures: { jsx: true } } },
+        plugins: { copy: uiCopy },
+        rules: { "copy/ui-copy": "error" },
+      },
+    ], "Probe.tsx")
+    .map((m) => m.message);
+}
+
+describe("ui-copy lint rule", () => {
+  it("flags a telegraphic click hint in a title", () => {
+    expect(messages('const a = <span title="Click hides. ⌘-click subtracts." />;')[0]).toMatch(/Click to hide/);
+  });
+
+  it("flags a telegraphic key hint in a palette hint field", () => {
+    expect(messages('const a = { hint: "On this sample, Enter removes it" };')[0]).toMatch(/Press Enter to/);
+  });
+
+  it("flags telegraphic hints inside template literals and ternaries", () => {
+    expect(messages("const a = <span title={`${x}-click subtracts.`} />;")).toHaveLength(1);
+    expect(messages('const a = <span title={on ? "Click hides." : "Click to show."} />;')).toHaveLength(1);
+  });
+
+  it("only treats hint verbs after a key as telegraphic", () => {
+    expect(messages('const a = <p>Enter values separated by commas.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Drag handles appear on hover.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Tab titles stay short.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Delete calls you no longer need.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Delete labels from this sample.</p>;')).toEqual([]);
+    expect(messages('const a = <input aria-label="Enter labels, comma separated" />;')).toEqual([]);
+    expect(messages('const a = <p>Tab stops skip the chips.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Esc closes it.</p>;')[0]).toMatch(/Press Esc to close/);
+  });
+
+  it("sees a telegraphic hint split by a keycap", () => {
+    expect(messages('const a = <p><Kbd>Enter</Kbd> removes it.</p>;')[0]).toMatch(/Press Enter to remove/);
+    expect(messages('const a = <p>Press <Kbd>Enter</Kbd> to remove it.</p>;')).toEqual([]);
+  });
+
+  it("accepts imperative hints and label tooltips", () => {
+    expect(messages('const a = <span title="Click to hide. ⌘-click to subtract." />;')).toEqual([]);
+    expect(messages('const a = <Tooltip content="Keyboard shortcuts" />;')).toEqual([]);
+    expect(messages("const a = <span title={`Click to ${off ? \"show\" : \"hide\"}.`} />;")).toEqual([]);
+  });
+
+  it("requires a string that holds a sentence to end with a period", () => {
+    expect(messages('const a = <button title="Suggested. Click to confirm" />;')[0]).toMatch(/period/);
+    expect(messages('const a = <span>Press Enter to add</span>;')[0]).toMatch(/period/);
+    expect(messages('const a = <button title="Suggested. Click to confirm." />;')).toEqual([]);
+  });
+
+  it("enforces the house vocabulary in user-facing copy only", () => {
+    expect(messages("const a = <p>Drop this exposure.</p>;")[0]).toMatch(/image/);
+    expect(messages('const a = { what: "Previous or next frame" };')[0]).toMatch(/image/);
+    expect(messages('const a = <p>Add a tag.</p>;')[0]).toMatch(/label/);
+    expect(messages('const a = <p>Mute this image.</p>;')[0]).toMatch(/Drop/);
+    expect(messages('const a = <dt>Exposure time</dt>;')).toEqual([]);
+    expect(messages('const a = <th>Exposure (s)</th>;')).toEqual([]);
+    expect(messages('const a = <dt>Total exposure</dt>;')).toEqual([]);
+    expect(messages('const a = queryKey("exposure", "frame");')).toEqual([]);
+    expect(messages('const a = <div data-testid="frame-strip" className="frame" />;')).toEqual([]);
+  });
+
+  it("checks prose-shaped strings anywhere, but not identifiers or paths", () => {
+    expect(messages('notify("This frame is dropped.");')[0]).toMatch(/image/);
+    expect(messages('const err = new Error(`Enter adds ${n} labels`);')[0]).toMatch(/telegraphic/);
+    expect(messages('fetch("/api/frames"); const k = ["exposure", id];')).toEqual([]);
+    expect(messages('const a = <input placeholder="Type to filter" />;')).toEqual([]);
+  });
+
+  it("flags title case", () => {
+    expect(messages('const a = <h2>Keyboard Shortcut Help</h2>;')[0]).toMatch(/sentence case/);
+    expect(messages('const a = <h2>Keyboard shortcuts</h2>;')).toEqual([]);
+  });
+});

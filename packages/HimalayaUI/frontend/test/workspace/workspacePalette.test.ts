@@ -133,7 +133,7 @@ describe("workspacePalette", () => {
     const toggle = vi.fn();
     const on = known("37C", { onSample: "confirmed" });
     const { pages } = workspacePalette(input({ labels: { known: [on, known("Buffer", { onSample: "suggested" }), known("x")], colorFor: () => "plum", toggle, create: vi.fn(), recolour: vi.fn() } }));
-    expect(pages.label!.items.map((i) => i.hint)).toEqual(["On this sample, Enter removes it", "Suggested, Enter confirms it", undefined]);
+    expect(pages.label!.items.map((i) => i.hint)).toEqual(["On this sample. Press Enter to remove it.", "Suggested. Press Enter to confirm it.", undefined]);
     pages.label!.items[0]!.run!();
     expect(toggle).toHaveBeenCalledWith(on);
   });
