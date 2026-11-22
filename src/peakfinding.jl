@@ -63,13 +63,13 @@ of the returned peaks (fallback: the smallest positive value in
 `sharpness_full`, then `eps()`). `score` falls back to CV = 0 when the mean
 sharpness is ≤ 0, and a near-zero value would inflate the CV and demote the
 peak; the median keeps it neutral. The result has an extra field `z`
-(max-over-width matched-filter z, `NaN` where undefined). If the valid range
-of the trace is shorter than 150 points the persistence result (with the
+(max-over-width matched-filter z, `NaN` where undefined or masked). If the
+trace has fewer than 150 points the persistence result (with the
 hybrid's `q_trim_high`) is returned and `z` is all `NaN`. Without `σ`
-(`findpeaks(q, I; method = :hybrid)`) σ is estimated as
-`sqrt(max(I, 0)·s)` clamped from below at the data noise scale `s`; both
-terms scale with `I`, and the per-width MAD normalisation removes the overall
-scale, so only the relative shape matters. See `docs/peak-finding.md`.
+(`findpeaks(q, I; method = :hybrid)`) σ is estimated as `sqrt(g·max(I, 0))`
+clamped from below at a second-difference noise scale, with the gain `g` from
+the same differences; everything scales with `I`, and the per-width MAD
+normalisation removes the overall scale, so only the relative shape matters. See `docs/peak-finding.md`.
 
 # Returns
 `(; indices, q, prominence, sharpness, sharpness_full)` —
@@ -136,10 +136,10 @@ end
 function _hybrid_findpeaks(q, I, σ; k, kb, q_trim_high, sep = 9, kwargs...)
     base, cands = _persistence_findpeaks(q, I, σ; q_trim_high, kwargs...)
     n = length(I)
-    z = matched_filter_z(I, σ)
-    # Too short a valid range: the matched filter is undefined, so return the
+    # Too short for the widest kernel to give a usable scale: return the
     # persistence result (with the hybrid's q_trim_high) unchanged.
-    all(isnan, z) && return (; base..., z = z)
+    n < MF_MIN_LENGTH && return (; base..., z = fill(NaN, n))
+    z = matched_filter_z(I, σ)
     qmin, qmax = extrema(q)
     qcut = qmin + (1 - q_trim_high) * (qmax - qmin)
     allowed = q .<= qcut
@@ -190,14 +190,22 @@ function findpeaks(q, I, σ; method = :persistence,
 end
 
 # Without σ, the default path uses a constant σ. The hybrid path needs the
-# relative noise shape, so it uses the Poisson shape sqrt(max(I, 0) · s) with
-# the data noise scale s, clamped from below at s. Both terms scale with I, so
-# the estimate is independent of intensity units, and it does not understate
-# noise where I is near zero or negative. The per-width MAD normalisation removes the
-# overall scale of σ.
+# relative noise shape, so it estimates σ² = g · max(I, 0), clamped from below
+# at the second-difference noise scale s. The gain g comes from the same second
+# differences: the median of (d²/6) / I over points with I > 3s, divided by 0.455
+# (the median of a χ² variable with one degree of freedom). g, s and I all scale
+# with the intensity units, so the estimate does too. With no such point the
+# estimate is the constant s.
 function _estimate_sigma(I)
-    s = noise_scale(I, Float64[])
-    [s * max(isfinite(x) && x > 0 ? sqrt(x / s) : 0.0, 1.0) for x in I]
+    s = second_difference_scale(I)
+    n = length(I)
+    ratios = Float64[]
+    for i in 2:(n - 1)
+        x = I[i - 1] - 2I[i] + I[i + 1]
+        isfinite(x) && isfinite(I[i]) && I[i] > 3s && push!(ratios, x^2 / 6 / I[i])
+    end
+    g = isempty(ratios) ? 0.0 : median(ratios) / 0.455
+    [max(isfinite(x) && x > 0 ? sqrt(g * x) : 0.0, s) for x in I]
 end
 
 findpeaks(q, I; kwargs...) =

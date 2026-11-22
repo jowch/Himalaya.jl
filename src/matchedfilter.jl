@@ -7,29 +7,36 @@ const MF_WIDTHS      = (2.0, 3.0, 4.5, 7.0, 11.0, 16.0)
 const MF_SNIP_WINDOW = 60
 
 """
-    noise_scale(I, σ) -> Float64
+    second_difference_scale(I) -> Float64
 
-Robust point-to-point noise scale of `I` from the data itself:
-`1.4826·median(|d − median(d)|)/√2` with `d = diff(I)` over finite pairs.
-Falls back to the median positive `σ`, then to 1. It scales with `I`, so
-everything built on it is independent of intensity units.
+Noise scale of `I` from second differences, for use without a provided `σ`.
+For independent noise of standard deviation `σ`, `I[i-1] - 2I[i] + I[i+1]` has
+standard deviation `σ√6`, and second differences remove a locally linear
+background. The estimate is `1.4826·MAD/√6`; if that is 0 (quantised counts)
+it is the standard deviation of the differences over `√6`, and if that is also
+0 it is `mean(|I|)`, then 1. It is proportional to `I`.
 """
-function noise_scale(I, σ)
+function second_difference_scale(I)
     d = Float64[]
-    for i in 2:length(I)
-        x = I[i] - I[i - 1]
-        isfinite(x) && push!(d, x)
+    # Differences below rounding error are zero: scaled integer counts must give
+    # the same exact zeros at every scale.
+    tol = 1e-9 * maximum((abs(x) for x in I if isfinite(x)); init = 0.0)
+    for i in 2:(length(I) - 1)
+        x = I[i - 1] - 2I[i] + I[i + 1]
+        isfinite(x) && push!(d, abs(x) <= tol ? 0.0 : x)
     end
     if !isempty(d)
-        m = median!(d)
-        for i in eachindex(d)
-            d[i] = abs(d[i] - m)
-        end
-        s = 1.4826 * median!(d) / sqrt(2)
-        s > 0 && isfinite(s) && return s
+        m = median(d)
+        mad = 1.4826 * median(abs.(d .- m))
+        mad > 0 && return mad / sqrt(6)
+        mu = sum(d) / length(d)
+        sd = sqrt(sum(abs2, d .- mu) / length(d))
+        sd > 0 && return sd / sqrt(6)
     end
-    pos = [x for x in σ if isfinite(x) && x > 0]
-    isempty(pos) ? 1.0 : median!(pos)
+    f = [abs(x) for x in I if isfinite(x)]
+    isempty(f) && return 1.0
+    mu = sum(f) / length(f)
+    mu > 0 ? mu : 1.0
 end
 
 """
@@ -95,39 +102,113 @@ end
 
 const MF_KERNELS = map(ricker_kernel, MF_WIDTHS)
 
+const MF_MIN_LENGTH = 150
+const MF_MASK_NEIGHBOURS = 7
+
+# Maximal runs of points that are exactly 0.0 or nonfinite and whose
+# neighbourhood is clearly above the noise: the median of the nearest
+# `MF_MASK_NEIGHBOURS` finite, non-run points on every available side exceeds
+# 3 times their rms σ. Such a run is a masked region (beamstop, detector gap),
+# not data. Zero runs in a near-zero region (a true zero baseline, a negative
+# tail) fail the test and stay data. Returns (masked, missing): `masked` marks
+# the runs that pass; `missing` additionally marks every nonfinite point.
+function mf_masked_runs(I, σ)
+    n = length(I)
+    inrun = [!isfinite(I[i]) || I[i] == 0.0 for i in 1:n]
+    masked = falses(n)
+    i = 1
+    while i <= n
+        if !inrun[i]
+            i += 1
+            continue
+        end
+        j = i
+        while j < n && inrun[j + 1]; j += 1; end
+        sides = Vector{Vector{Int}}()
+        left = Int[]
+        t = i - 1
+        while t >= 1 && length(left) < MF_MASK_NEIGHBOURS
+            inrun[t] || push!(left, t)
+            t -= 1
+        end
+        right = Int[]
+        t = j + 1
+        while t <= n && length(right) < MF_MASK_NEIGHBOURS
+            inrun[t] || push!(right, t)
+            t += 1
+        end
+        isempty(left) || push!(sides, left)
+        isempty(right) || push!(sides, right)
+        ok = !isempty(sides) && all(sides) do side
+            median(I[side]) > 3 * sqrt(sum(σ[t]^2 for t in side) / length(side))
+        end
+        ok && (masked[i:j] .= true)
+        i = j + 1
+    end
+    masked, [!isfinite(I[i]) for i in 1:n] .| masked
+end
+
+# Replace the points marked in `fill` by linear interpolation between the
+# nearest unmarked points (nearest value at the ends).
+function mf_interpolate(I, fill)
+    n = length(I)
+    out = Float64.(I)
+    i = 1
+    while i <= n
+        if !fill[i]
+            i += 1
+            continue
+        end
+        j = i
+        while j < n && fill[j + 1]; j += 1; end
+        lo, hi = i - 1, j + 1
+        for t in i:j
+            out[t] = if lo >= 1 && hi <= n
+                out[lo] + (out[hi] - out[lo]) * (t - lo) / (hi - lo)
+            elseif lo >= 1
+                out[lo]
+            elseif hi <= n
+                out[hi]
+            else
+                0.0
+            end
+        end
+        i = j + 1
+    end
+    out
+end
+
 """
-    matched_filter_core(I, σ, s, snip_window) -> Vector{Float64}
+    matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
 
 Per-point matched-filter significance: the maximum over the Ricker widths
 `MF_WIDTHS` of the SNIP-subtracted residual correlated with a unit-norm,
-zero-mean kernel, divided by the kernel-weighted noise `sqrt(Σ k² σ²)`. The
-SNIP background uses the LLS operator on data scaled by `noise_scale`, so the
-result does not depend on intensity units. Nonfinite intensities have zero
-residual. Each width is normalised by its median and `1.4826·MAD` over the
-points where that kernel fits inside the trace (so edge points do not bias
-the scale), and a width with zero MAD is skipped. The maximum at a point runs
-over the widths that fit there; where none fits the value is `NaN`
-(undefined). Nonpositive or nonfinite `σ` are replaced by the smallest
-positive `σ` (or 1 if there is none).
+zero-mean kernel, divided by the kernel-weighted noise `sqrt(Σ k² σ²)`.
+
+All statistics run over the whole trace. Masked runs (see `mf_masked_runs`)
+and nonfinite points are first replaced by linear interpolation of `I`, which
+is used for both the background and the residual; `z` is `NaN` on masked
+points. The background is the SNIP baseline (`snip_background`) of `I` scaled by
+`s`, the median positive `σ`, so the result does not depend on intensity
+units. Each width is normalised by its median and `1.4826·MAD` over the points
+where that kernel fits inside the trace and that are not masked; a width with
+zero MAD is skipped. The maximum at a point runs over the widths that fit
+there; where none fits the value is `NaN` (undefined). Nonpositive or
+nonfinite `σ` are replaced by the smallest positive `σ` (or 1 if there is
+none).
 """
-function matched_filter_core(I, σ, s::Real, snip_window::Integer)
+function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     n = length(I)
     length(σ) == n || throw(DimensionMismatch("I and σ must be equal length"))
-    σmin = Inf
-    for x in σ
-        isfinite(x) && x > 0 && x < σmin && (σmin = x)
-    end
-    isfinite(σmin) || (σmin = 1.0)
-    σ2 = Vector{Float64}(undef, n)
-    @inbounds for i in 1:n
-        x = isfinite(σ[i]) && σ[i] > 0 ? σ[i] : σmin
-        σ2[i] = x * x
-    end
-    B = snip_background(I, s, snip_window)
-    r = Vector{Float64}(undef, n)
-    @inbounds for i in 1:n
-        r[i] = isfinite(I[i]) ? I[i] - B[i] : 0.0
-    end
+    pos = [Float64(x) for x in σ if isfinite(x) && x > 0]
+    σmin = isempty(pos) ? 1.0 : minimum(pos)
+    s = isempty(pos) ? 1.0 : median(pos)
+    σc = [isfinite(x) && x > 0 ? Float64(x) : σmin for x in σ]
+    masked, missing = mf_masked_runs(I, σc)
+    Iw = mf_interpolate(I, missing)
+    B = snip_background(Iw, s, snip_window)
+    r = Iw .- B
+    σ2 = σc .^ 2
     zbest = fill(NaN, n)
     zw    = Vector{Float64}(undef, n)
     tmp   = Vector{Float64}(undef, n)
@@ -144,113 +225,25 @@ function matched_filter_core(I, σ, s::Real, snip_window::Integer)
             end
             zw[i] = num / sqrt(var)
         end
-        m   = n - 2h
-        med = median!(copyto!(view(tmp, 1:m), view(zw, (h + 1):(n - h))))
-        @inbounds for i in 1:m
-            tmp[i] = abs(zw[h + i] - med)
+        m = 0
+        @inbounds for i in (h + 1):(n - h)
+            masked[i] || (tmp[m += 1] = zw[i])
+        end
+        m > 0 || continue
+        med = median!(view(tmp, 1:m))
+        c = 0
+        @inbounds for i in (h + 1):(n - h)
+            masked[i] || (tmp[c += 1] = abs(zw[i] - med))
         end
         mad = 1.4826 * median!(view(tmp, 1:m))
         mad > 0 || continue
         @inbounds for i in (h + 1):(n - h)
+            masked[i] && continue
             z = (zw[i] - med) / mad
             zbest[i] = isnan(zbest[i]) ? z : max(zbest[i], z)
         end
     end
     zbest
-end
-
-const MF_MIN_RANGE = 150
-const MF_RANGE_WINDOW = 13
-
-# Replace nonpositive points that sit in a clearly positive neighbourhood (median
-# of the ±5 neighbours above 3 noise units) by linear interpolation between the
-# nearest points not so replaced. Nonpositive points in a near-zero region (a
-# negative tail, a masked block) are left alone.
-function fill_isolated_nonpositive(I, s)
-    n = length(I)
-    out = Float64.(I)
-    bad = falses(n)
-    nb = Float64[]
-    for i in 1:n
-        (isfinite(I[i]) && I[i] <= 0) || continue
-        empty!(nb)
-        for j in max(1, i - 5):min(n, i + 5)
-            j != i && isfinite(I[j]) && push!(nb, I[j])
-        end
-        !isempty(nb) && median!(nb) > 3s && (bad[i] = true)
-    end
-    i = 1
-    while i <= n
-        if !bad[i]
-            i += 1
-            continue
-        end
-        j = i
-        while j <= n && bad[j]; j += 1; end
-        lo, hi = i - 1, j
-        for t in i:(j - 1)
-            if lo >= 1 && hi <= n
-                out[t] = out[lo] + (out[hi] - out[lo]) * (t - lo) / (hi - lo)
-            else
-                out[t] = lo >= 1 ? out[lo] : out[hi]
-            end
-        end
-        i = j
-    end
-    out
-end
-
-# First and last index whose `MF_RANGE_WINDOW`-point mean exceeds 3 standard
-# errors, 3·rms(σ)/√c over the window's c finite points; (1, 0) if none.
-# Outside this range the trace carries no signal. The test uses the local σ,
-# so a steep low-q region does not set the threshold for the high-q end.
-function mf_valid_range(I, σ)
-    n = length(I)
-    h = MF_RANGE_WINDOW ÷ 2
-    lo, hi = 0, 0
-    for i in 1:n
-        t = 0.0; v = 0.0; c = 0
-        for j in max(1, i - h):min(n, i + h)
-            if isfinite(I[j])
-                t += I[j]; v += σ[j]^2; c += 1
-            end
-        end
-        if c > 0 && t > 3 * sqrt(v)
-            lo == 0 && (lo = i)
-            hi = i
-        end
-    end
-    lo == 0 ? (1, 0) : (lo, hi)
-end
-
-"""
-    matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
-
-Matched-filter significance `z` (see `matched_filter_core`) computed only on
-the valid range of the trace: from the first to the last point whose
-13-point mean exceeds 3 standard errors (3·rms(σ)/√13, local σ), so a masked or empty
-block at either end does not enter the background or the normalisation.
-Nonpositive points inside a clearly positive region are first interpolated
-over. `z` is `NaN` outside the valid range, and everywhere if the range is
-shorter than `MF_MIN_RANGE` (150 points; the widest kernel needs 129 points to
-fit, so a shorter range leaves too few points for the per-width scale).
-"""
-function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
-    n = length(I)
-    length(σ) == n || throw(DimensionMismatch("I and σ must be equal length"))
-    s  = noise_scale(I, σ)
-    Iw = fill_isolated_nonpositive(I, s)
-    σmin = Inf
-    for x in σ
-        isfinite(x) && x > 0 && x < σmin && (σmin = x)
-    end
-    isfinite(σmin) || (σmin = 1.0)
-    σc = [isfinite(x) && x > 0 ? Float64(x) : σmin for x in σ]
-    a, b = mf_valid_range(Iw, σc)
-    z = fill(NaN, n)
-    b - a + 1 >= MF_MIN_RANGE || return z
-    z[a:b] = matched_filter_core(view(Iw, a:b), view(σ, a:b), s, snip_window)
-    z
 end
 
 # Local maxima of z with z ≥ k at positions where `allowed[i]`, greedily

@@ -345,8 +345,10 @@ end
         λ = 0.8 .+ [sum(10.0 * exp(-((i - c)^2) / (2 * 3.0^2)) for c in (150, 300, 450, 600, 750)) for i in 1:n]
         I = Float64[_poisson(rng, l) for l in λ]
         a = findpeaks(q, I; method = :hybrid).indices
-        @test findpeaks(q, I .* 1e3; method = :hybrid).indices == a
-        @test findpeaks(q, I .* 1e-3; method = :hybrid).indices == a
+        # Powers of two scale exactly in floating point; the persistence stage has
+        # ties at integer prominences that other factors would break by rounding.
+        @test findpeaks(q, I .* 2.0^10; method = :hybrid).indices == a
+        @test findpeaks(q, I .* 2.0^-10; method = :hybrid).indices == a
     end
 end
 

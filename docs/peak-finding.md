@@ -149,36 +149,34 @@ but alone it adds more spurious candidates than the persistence detector.
 **What it does** (code in `src/matchedfilter.jl`):
 
 1. Run the persistence detector with `q_trim_high = 0.07`.
-2. Compute a matched-filter significance `z`.
-   - **Noise scale.** `s = 1.4826·MAD(diff(I))/√2`, taken from the data
-     itself. Everything below scales with `s`, so the result does not depend
-     on intensity units.
-   - **Isolated nonpositive points.** A nonpositive point whose ±5 neighbours
-     have a median above 3`s` is interpolated over before anything else.
-     Nonpositive points in a near-zero region (a negative tail, a masked
-     block) are left alone.
-   - **Valid range.** From the first to the last point whose 13-point mean
-     exceeds 3 standard errors, `3·rms(σ)/√13` over the window, using the
-     local `σ` (a global scale would be set by the steep low-q region and
-     exclude the quiet high-q end). The filter runs only there, so a masked or empty block at
-     either end does not enter the background or the normalisation. Outside
-     the range `z` is undefined (`NaN`) and persistence peaks there are kept,
-     as on the default path.
-   - **Short-trace fallback.** If the valid range is shorter than 150 points
-     (the widest kernel needs 129 points to fit), too few points remain for
-     the per-width scale. The persistence result (with `q_trim_high = 0.07`)
-     is returned unchanged, with `z` all `NaN`.
+2. Compute a matched-filter significance `z`. All statistics run over the
+   whole trace.
+   - **Masked data.** A maximal run of points that are exactly `0.0` or
+     nonfinite is masked when the median of the nearest 7 finite, non-run
+     points on every available side exceeds 3 times their rms `σ` (a beamstop,
+     a detector gap, at either end or in the interior). Masked points are
+     replaced by linear interpolation of `I` (nearest value at the ends) for
+     both the background and the residual, and `z` is `NaN` there. Exactly
+     zero runs in a near-zero region (a true zero baseline, a negative tail)
+     fail the test and stay data. Nonfinite points not in such a region are
+     interpolated too.
+   - **Noise scale.** `s` is the median positive `σ`. It scales with `I`, so
+     the result does not depend on intensity units.
    - **Background.** SNIP baseline (half-window 60 points) using the LLS
-     operator on data scaled by `s`: `v = log(log(sqrt(max(I/s, 0) + 1) + 1) + 1)`,
-     clip, invert, and multiply by `s`. The operator compresses the dynamic
-     range without a hole at zero. Nonfinite points are interpolated from
-     their neighbours for the background and have zero residual.
+     operator on data scaled by `s`:
+     `v = log(log(sqrt(max(I/s, 0) + 1) + 1) + 1)`, clip, invert, and
+     multiply by `s`. The operator compresses the dynamic range without a hole
+     at zero.
    - **Filter.** The residual is correlated with unit-norm, zero-mean Ricker
      kernels of widths 2, 3, 4.5, 7, 11, 16 points and divided by
      `sqrt(Σ k² σ²)`. Each width is normalised by its median and
-     1.4826·MAD over the points where that kernel fits inside the valid
-     range (a width with zero MAD is skipped), and the maximum over the
-     widths that fit at a point is taken.
+     1.4826·MAD over the points where that kernel fits inside the trace and
+     that are not masked (a width with zero MAD is skipped), and the maximum
+     over the widths that fit at a point is taken. Where no kernel fits, `z`
+     is undefined (`NaN`).
+   - **Short traces.** Traces with fewer than 150 points (the widest kernel
+     needs 129 points to fit) return the persistence result (with
+     `q_trim_high = 0.07`) unchanged, with `z` all `NaN`.
 3. Keep persistence peaks whose max `z` within ±3 points is at least `kb`
    (default 5). This removes persistence peaks that are not significant
    against the noise. A peak where `z` is undefined (within a few points of
@@ -198,9 +196,12 @@ mean is ≤ 0; a near-zero substitute would inflate the CV and demote exactly
 the peaks the hybrid adds, and the median keeps them neutral.
 
 Without `σ`, `findpeaks(q, I; method = :hybrid)` estimates
-`σ = sqrt(max(I, 0)·s)` clamped from below at `s` (both terms scale with `I`,
-and the clamp keeps noise from being understated where `I` is near zero). The per-width MAD
-normalisation removes the overall scale, so only the relative shape matters.
+`σ² = g·max(I, 0)`, clamped from below at a noise scale `s` taken from second
+differences (`1.4826·MAD/√6`, then their standard deviation over `√6` for
+quantised counts, then `mean(|I|)`). The gain `g` is the median of
+`(d²/6)/I` over points with `I > 3s`, divided by 0.455. All of `g`, `s` and `I`
+scale with the intensity units. The per-width MAD normalisation removes the
+overall scale, so only the relative shape matters.
 
 **Why this use of σ is not the rejected "σ-based SNR".** Nothing is fitted
 per peak. σ only weights the filter, and each width is MAD-normalised
