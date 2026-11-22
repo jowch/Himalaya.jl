@@ -53,7 +53,7 @@ cp -f "$PROD_DB" "$TEST_DB_PATH"
 
 # Restart backend in the background.
 HIMALAYA_DB_PATH="$TEST_DB_PATH" \
-  julia --project="$HIMALAYAUI_PROJECT" \
+  julia --threads=4,1 --project="$HIMALAYAUI_PROJECT" \
         -e 'using HimalayaUI; main(ARGS)' \
         -- serve --port "$TEST_BACKEND_PORT" --host "$TEST_BACKEND_HOST" \
         > "$TEST_BACKEND_LOG" 2>&1 &

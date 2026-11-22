@@ -70,7 +70,7 @@ julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   analyze -e /path/to/experiment
 
 # 3. Start the web UI (default port 8080; open http://localhost:8080)
-julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
+julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   serve --port 8080
 ```
 
