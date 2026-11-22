@@ -508,29 +508,74 @@ for (const width of [1024, 1280]) {
   }
 }
 
+const CHIP_PEG = "MO_PEG5_S2406 (S01P03)";
+
+async function openChips(page: Page, width: number, refs: readonly number[], subtracting: boolean): Promise<void> {
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  await page.setViewportSize({ width, height: 800 });
+  const setup = (id: number, name: string) => ({ id, experiment_id: 17, folder: name, display_name: null, name, position: id, included: true, root_dir: "", data_dir: "", analysis_dir: "" });
+  const experiment = { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "", manifest_path: null, created_at: "", q_units: null, setups: [setup(1, "setup1"), setup(2, "setup2")] };
+  await page.route("**/api/experiments/17", (r) => r.fulfill(json(experiment)));
+  const samples = [
+    { id: 40, name: "MO_H2O_S2401 (S01P01)", setup_id: 1 },
+    { id: 42, name: CHIP_PEG, setup_id: 1 },
+    { id: 44, name: CHIP_PEG, setup_id: 2 },
+    { id: 46, name: "MO_PEG10_S2409 (S01P04)", setup_id: 1 },
+    { id: 48, name: "MO_PEG10_S2409 (S01P04)", setup_id: 2 },
+    { id: 50, name: "vesicles_ULV_S2425 (S02P06)", setup_id: 1 },
+  ].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, q_units: "A-1" }));
+  await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(samples)));
+  let subtracted: number | null = subtracting && refs.length > 0 ? refs[0]! : null;
+  const state = () => ({
+    compares: refs.map((ref) => ({ sample_id: 40, ref_sample_id: ref, added_by: "alice" })),
+    subtractions: subtracted === null ? [] : [{ sample_id: 40, ref_sample_id: subtracted }],
+  });
+  await page.route("**/api/experiments/17/compares", (r) => r.fulfill(json(state())));
+  await page.route("**/api/samples/40/compares", (r) => {
+    const change = r.request().postDataJSON() as { subtraction?: number | null };
+    if (change.subtraction !== undefined) subtracted = change.subtraction;
+    return r.fulfill(json(state()));
+  });
+  await page.goto("/experiments/17/workspace/40");
+  await expect(page.locator("[data-compare-chip]")).toHaveCount(refs.length);
+  await expect(page.getByTestId("workspace-trace")).toBeVisible();
+  if (refs.length > 0) await expect(page.locator("[data-scale-value]")).toHaveCount(refs.length);
+}
+
+function barRects(page: Page) {
+  return page.getByTestId("workspace-compare-bar").locator("[data-compare-chip], [data-compare-chips] > button").evaluateAll((ns) =>
+    ns.map((n) => { const r = n.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width)]; }));
+}
+
+for (const width of [1024, 1280]) {
+  for (const refs of [[42], [42, 44, 46]]) {
+    test(`at ${width} px with ${refs.length} compare chip${refs.length === 1 ? "" : "s"}, turning subtraction on and off moves no chip`, async ({ page }) => {
+      await openChips(page, width, refs, false);
+      const before = await barRects(page);
+      const first = page.locator(`[data-compare-chip="${refs[0]}"] button[aria-pressed]`);
+      await first.click({ modifiers: ["ControlOrMeta"] });
+      await expect(page.getByTestId("workspace-subtraction-toggle")).toBeVisible();
+      expect(await barRects(page)).toEqual(before);
+      await first.click({ modifiers: ["ControlOrMeta"] });
+      await expect(page.getByTestId("workspace-subtraction-toggle")).toHaveCount(0);
+      expect(await barRects(page)).toEqual(before);
+    });
+  }
+  test(`at ${width} px the plot starts at the same height with no compare chips and with five`, async ({ page }) => {
+    await openChips(page, width, [], false);
+    const none = await layout(page);
+    await openChips(page, width, [42, 44, 46, 48, 50], true);
+    const five = await layout(page);
+    expect(five.plot![0]).toBe(none.plot![0]);
+    expect(five.compareBar).toEqual(none.compareBar);
+  });
+}
+
 for (const width of [1024, 1280, 1440]) {
   for (const subtracting of [false, true]) {
     test(`at ${width} px five compare chips${subtracting ? " and the subtraction toggle" : ""} fit in the two reserved rows, each whole`, async ({ page }) => {
-      const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
-      await page.setViewportSize({ width, height: 800 });
-      const setup = (id: number, name: string) => ({ id, experiment_id: 17, folder: name, display_name: null, name, position: id, included: true, root_dir: "", data_dir: "", analysis_dir: "" });
-      const experiment = { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "", manifest_path: null, created_at: "", q_units: null, setups: [setup(1, "setup1"), setup(2, "setup2")] };
-      await page.route("**/api/experiments/17", (r) => r.fulfill(json(experiment)));
-      const peg = "MO_PEG5_S2406 (S01P03)";
-      const samples = [
-        { id: 40, name: "MO_H2O_S2401 (S01P01)", setup_id: 1 },
-        { id: 42, name: peg, setup_id: 1 },
-        { id: 44, name: peg, setup_id: 2 },
-        { id: 46, name: "MO_PEG10_S2409 (S01P04)", setup_id: 1 },
-        { id: 48, name: "MO_PEG10_S2409 (S01P04)", setup_id: 2 },
-        { id: 50, name: "vesicles_ULV_S2425 (S02P06)", setup_id: 1 },
-      ].map((s) => ({ ...s, experiment_id: 17, display_name: s.name, notes: null, q_units: "A-1" }));
-      await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(samples)));
-      await page.route("**/api/experiments/17/compares", (r) => r.fulfill(json({
-        compares: [42, 44, 46, 48, 50].map((ref) => ({ sample_id: 40, ref_sample_id: ref, added_by: "alice" })),
-        subtractions: subtracting ? [{ sample_id: 40, ref_sample_id: 42 }] : [],
-      })));
-      await page.goto("/experiments/17/workspace/40");
+      await openChips(page, width, [42, 44, 46, 48, 50], subtracting);
+      const peg = CHIP_PEG;
       const bar = page.getByTestId("workspace-compare-bar");
       await expect(bar.getByRole("button", { name: peg, exact: true })).toBeVisible();
       await expect(bar.getByRole("button", { name: `${peg}, setup2`, exact: true })).toBeVisible();

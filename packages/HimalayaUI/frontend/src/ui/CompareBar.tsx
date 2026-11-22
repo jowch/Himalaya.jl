@@ -26,7 +26,7 @@ interface Props {
 }
 
 export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, trailing }: Props): JSX.Element {
-  const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + (trailing ? 1 : 0)) / 2));
+  const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + 1) / 2));
   const basis = `calc((100% - ${perRow - 1} * 0.5rem) / ${perRow})`;
   return (
     <div className="flex min-w-0 items-start gap-2" data-testid="workspace-compare-bar">
