@@ -341,6 +341,8 @@ export interface EditReads {
   assignment: (exposureId: number) => Promise<api.Assignment>;
   labels: () => Promise<api.SampleLabel[]>;
   bridges: () => Promise<api.SampleBridge[]>;
+  exposures: (sampleId: number) => Promise<api.Exposure[]>;
+  labelColors: () => Promise<api.LabelColorEntry[]>;
   experiment: () => Promise<api.Experiment>;
 }
 
@@ -431,6 +433,8 @@ export function useEditOps(experimentId: number): EditOps {
       assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
       labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
       bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+      exposures: (sampleId) => fresh(queryKeys.exposures(sampleId), () => api.listExposures(sampleId)),
+      labelColors: () => fresh(queryKeys.labelColors(), () => api.listLabelColors()),
       experiment: () => fresh(queryKeys.experiment(experimentId), () => api.getExperiment(experimentId)),
     },
     whenSaved: () => whenQueueIdle(qc),

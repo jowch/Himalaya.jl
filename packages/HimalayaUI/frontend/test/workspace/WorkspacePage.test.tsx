@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
@@ -54,14 +54,24 @@ const server = {
   assignments: new Map<number, Assignment>(),
   saving: false,
   saved: undefined as (() => void) | undefined,
+  status: new Map<number, Exposure["status"]>(),
+  colors: new Map<string, LabelColor | null>(),
   experiment: { name: "BL-19", description: null as string | null },
+};
+const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
+  server.status.set(eid, status);
+  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status] });
+};
+const serverColor = (label: string, color: LabelColor | null) => {
+  server.colors.set(label.toLowerCase(), color);
+  calls.push({ hook: "op:setLabelColor", boundTo: 0, arg: [label, color] });
 };
 const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
 const editOps = {
   addPhase: editOp("addPhase"),
   removePhase: editOp("removePhase"),
   setCallState: editOp("setCallState"),
-  setStatus: editOp("setStatus"),
+  setStatus: serverStatus,
   addPeak: editOp("addPeak"),
   removePeak: editOp("removePeak"),
   setPeakExcluded: editOp("setPeakExcluded"),
@@ -70,7 +80,7 @@ const editOps = {
   addLabel: editOp("addLabel"),
   removeLabel: editOp("removeLabel"),
   restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
-  setLabelColor: editOp("setLabelColor"),
+  setLabelColor: serverColor,
   patchExperiment: editOp("patchExperiment"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
@@ -84,6 +94,15 @@ const editOps = {
       ?? { exposure_id: eid, state: "null" as const, members: [] },
     labels: async () => state.labels,
     bridges: async () => state.bridges,
+    exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
+    labelColors: async () => {
+      const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
+      for (const [k, color] of server.colors) {
+        if (color === null) merged.delete(k);
+        else merged.set(k, { label: merged.get(k)?.label ?? k, color });
+      }
+      return [...merged.values()];
+    },
     experiment: async () => ({ id: 1, ...server.experiment }),
   },
   saving: () => server.saving,
@@ -124,11 +143,21 @@ vi.mock("../../src/queries", () => ({
   useAddLabel: recorder("addLabel"),
   useRemoveLabel: recorder("removeLabel"),
   useLabelColors: () => ({ data: state.labelColors }),
-  useSetLabelColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setLabelColor", boundTo: 0, arg }) }),
+  useSetLabelColor: () => ({
+    mutate: (arg: { label: string; color: LabelColor | null }) => {
+      server.colors.set(arg.label.toLowerCase(), arg.color);
+      calls.push({ hook: "setLabelColor", boundTo: 0, arg });
+    },
+  }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
-  useSetExposureStatus: recorder("status"),
+  useSetExposureStatus: (boundTo: number) => ({
+    mutate: (arg: { exposureId: number; status: Exposure["status"] }, callbacks?: Callbacks) => {
+      server.status.set(arg.exposureId, arg.status);
+      calls.push({ hook: "status", boundTo, arg, ...(callbacks ? { callbacks } : {}) });
+    },
+  }),
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
   useSetPeakExcluded: recorder("excludePeak"),
@@ -268,6 +297,8 @@ beforeEach(() => {
   server.assignments = new Map();
   server.saving = false;
   server.saved = undefined;
+  server.status = new Map();
+  server.colors = new Map();
   server.experiment = { name: "BL-19", description: null };
   rescans.length = 0;
   removals.length = 0;
@@ -818,6 +849,75 @@ describe("WorkspacePage", () => {
       await press({ key: "z", metaKey: true });
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
       expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("leaves a frame alone when someone else restored it before the undo", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      server.status.set(101, null);
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: dropped frame 2 of A1");
+    });
+
+    it("leaves a label's colour alone when someone else recoloured it before the undo", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      server.colors.set("37c", "green");
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: recoloured the label 37C");
+    });
+
+    it("redoes a drop only while the frame is still how the undo left it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await undo();
+      server.status.set(101, "rejected");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: dropped frame 2 of A1");
+    });
+
+    it("redoes a label recolour only while the label still has the colour the undo restored", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      server.colors.set("37c", "green");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: recoloured the label 37C");
+    });
+
+    it("redoes a rename only while the server still holds the name the undo restored", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "BL-20" } });
+      fireEvent.keyDown(name, { key: "Enter" });
+      server.experiment = { name: "BL-20", description: null };
+      await undo();
+      server.experiment = { name: "BL-21", description: null };
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: renamed the experiment to BL-20");
+    });
+
+    it("undoes recolouring a label while it still has the colour this edit set", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      expect(ops()).toEqual([["setLabelColor", "37C", null]]);
+      expect(toasts.at(-1)).toBe("Undone: recoloured the label 37C");
     });
 
     it("ignores a held-down Ctrl+Z", async () => {
