@@ -21,6 +21,9 @@ const traceRefetch = vi.fn();
 const corpusRequests: number[] = [];
 const state = {
   experimentLoaded: true,
+  experiments: [] as { id: number; name: string }[],
+  allCorpus: [] as CorpusSample[],
+  allCorpusEnabled: [] as boolean[],
   setups: [] as { id: number; name: string; folder: string; included: boolean }[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
@@ -134,6 +137,11 @@ const editOps = {
 
 vi.mock("../../src/queries", () => ({
   useEditOps: () => editOps,
+  useExperiments: () => ({ data: state.experiments }),
+  useCorpusSamples: ({ enabled = true }: { enabled?: boolean } = {}) => {
+    state.allCorpusEnabled.push(enabled);
+    return { data: enabled ? state.allCorpus : undefined };
+  },
   useExperimentCorpusSamples: (experimentId: number) => {
     corpusRequests.push(experimentId);
     return { data: state.corpus, isLoading: false };
@@ -303,6 +311,9 @@ beforeEach(() => {
   prefetchTargets.length = 0;
   state.username = "jc";
   state.experimentLoaded = true;
+  state.experiments = [{ id: 1, name: "BL-19" }, { id: 2, name: "Beamtime 12" }];
+  state.allCorpus = [];
+  state.allCorpusEnabled = [];
   state.setups = [];
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
@@ -668,6 +679,22 @@ describe("WorkspacePage", () => {
     expect(currentView()).toBe("Log");
     expect(screen.getByRole("button", { name: "A2" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "A2, hidden" })).toBeNull();
+  });
+
+  it("⌘K opens another experiment, and finds its samples once something is typed", () => {
+    state.allCorpus = [...state.corpus, { ...sample(40, "lipid_A"), experiment_id: 2 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(state.allCorpusEnabled.every((e) => !e)).toBe(true);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "BL-19" } });
+    expect(screen.queryByRole("option", { name: /Open BL-19/ })).toBeNull();
+    fireEvent.change(input, { target: { value: "lipid" } });
+    expect(state.allCorpusEnabled.at(-1)).toBe(true);
+    expect(screen.getByRole("option", { name: /Go to lipid_A/ })).toHaveTextContent("Beamtime 12");
+    fireEvent.change(input, { target: { value: "Beamtime 12" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/2");
   });
 
   it("/ puts the cursor in the filter, where letters type, and ? opens the shortcuts only while the filter is empty", () => {
