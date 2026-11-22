@@ -13,6 +13,7 @@ import { Kbd } from "../ui/Kbd";
 import { modCombo } from "../lib/modKey";
 import { Kicker } from "../ui/Kicker";
 import { useFireOnce } from "../hooks/useFireOnce";
+import { isFullPath, useFolderSuggestions } from "../hooks/useFolderSuggestions";
 
 type Patterns = api.SetupPreview["patterns"];
 type GeometryKey = "flight_path_m" | "beam_center_x" | "beam_center_y" | "energy_kev" | "pixel_size_um";
@@ -36,10 +37,6 @@ const GEOMETRY_FIELDS: ReadonlyArray<{ key: GeometryKey; label: string }> = [
 ];
 
 const count = (n: number): string => n.toLocaleString("en-US");
-
-const NO_FOLDERS: api.FolderSuggestions = { folders: [], more: false };
-
-const isFullPath = (p: string): boolean => p.startsWith("/") || p === "~" || p.startsWith("~/");
 
 const folderName = (p: string): string => p.replace(/\/+$/, "").split("/").pop() ?? p;
 
@@ -129,16 +126,35 @@ function manifestQuery(e: RowEdit) {
   };
 }
 
+function FieldCaption({ children }: { children: string }): JSX.Element {
+  return <span className="text-caption text-ink-soft">{children}</span>;
+}
+
 function DetailsField({ label, value, onChange, placeholder, testId, error }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string; error?: string | undefined;
 }): JSX.Element {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-caption text-ink-soft">{label}</span>
+      <FieldCaption>{label}</FieldCaption>
       <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId} invalid={error !== undefined}
         {...(placeholder !== undefined ? { placeholder } : {})} />
       {error !== undefined && <FieldError testId={`${testId}-error`}>{error}</FieldError>}
     </label>
+  );
+}
+
+function FolderField({ label, value, onChange, testId }: {
+  label: string; value: string; onChange: (v: string) => void; testId: string;
+}): JSX.Element {
+  const [focused, setFocused] = useState(false);
+  const typed = useDebounced(value.trim(), 200);
+  const suggested = useFolderSuggestions(typed, focused);
+  return (
+    <div className="flex flex-col gap-1" onFocus={() => setFocused(true)}>
+      <FieldCaption>{label}</FieldCaption>
+      <DirectoryPickerField value={value} onChange={onChange} folders={suggested.folders} more={suggested.more}
+        ariaLabel={label} placeholder="A folder, starting with / or ~" inputSize="sm" testId={testId} />
+    </div>
   );
 }
 
@@ -184,9 +200,9 @@ function SetupRow({ setup, edit, onEdit }: {
       </p>
       {open && (
         <div data-testid="setup-details" className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <DetailsField label="Data folder" value={edit.data_dir} testId="details-data-dir"
+          <FolderField label="Data folder" value={edit.data_dir} testId="details-data-dir"
             onChange={(data_dir) => onEdit({ data_dir })} />
-          <DetailsField label="Integration folder" value={edit.analysis_dir} testId="details-analysis-dir"
+          <FolderField label="Integration folder" value={edit.analysis_dir} testId="details-analysis-dir"
             onChange={(analysis_dir) => onEdit({ analysis_dir })} />
           <DetailsField label="Setup file" value={edit.setup_file} testId="details-setup-file"
             onChange={(setup_file) => onEdit({ setup_file })} />
@@ -231,7 +247,6 @@ export function NewExperimentPage(): JSX.Element {
   const queryClient = useQueryClient();
   const [search] = useSearchParams();
   const [path, setPath] = useState(() => search.get("path") ?? "");
-  const [suggested, setSuggested] = useState<api.FolderSuggestions>(NO_FOLDERS);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -239,13 +254,7 @@ export function NewExperimentPage(): JSX.Element {
   const [submitting, setSubmitting] = useState(false);
   const picked = useDebounced(path.trim(), 200);
   const full = isFullPath(picked);
-
-  useEffect(() => {
-    if (!full) { setSuggested(NO_FOLDERS); return; }
-    let live = true;
-    void api.suggestFolders(picked).then((r) => { if (live) setSuggested(r); }).catch(() => { if (live) setSuggested(NO_FOLDERS); });
-    return () => { live = false; };
-  }, [picked, full]);
+  const suggested = useFolderSuggestions(picked);
 
   const preview = useQuery({
     queryKey: queryKeys.folderPreview(picked),

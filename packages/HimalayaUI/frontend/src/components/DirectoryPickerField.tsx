@@ -11,6 +11,9 @@ export interface DirectoryPickerFieldProps {
   folders: ReadonlyArray<FolderSuggestion>;
   more?: boolean;
   ariaLabel?: string;
+  placeholder?: string;
+  inputSize?: "sm" | "md";
+  testId?: string;
   autoFocus?: boolean;
   className?: string;
 }
@@ -39,6 +42,9 @@ export function DirectoryPickerField({
   folders,
   more = false,
   ariaLabel = "Data directory",
+  placeholder = "Type or paste a beamtime folder, starting with / or ~",
+  inputSize = "md",
+  testId = "dirpicker",
   autoFocus = false,
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
@@ -114,11 +120,12 @@ export function DirectoryPickerField({
       }}
     >
       <Input
-        testId="dirpicker-input"
+        testId={`${testId}-input`}
+        inputSize={inputSize}
         value={value}
         onValueChange={change}
         onKeyDown={onKeyDown}
-        placeholder="Type or paste a beamtime folder, starting with / or ~"
+        placeholder={placeholder}
         role="combobox"
         aria-label={ariaLabel}
         aria-autocomplete="list"
@@ -134,7 +141,7 @@ export function DirectoryPickerField({
         <SuggestionList
           id={listId}
           label="Folders"
-          testId="dirpicker-suggestions"
+          testId={`${testId}-suggestions`}
           className="absolute left-0 right-0 top-full mt-1"
           items={folders.map((f) => ({ key: f.path, name: basename(f.path), hint: folderHint(f), title: f.path, strong: f.kind !== null }))}
           active={active}
