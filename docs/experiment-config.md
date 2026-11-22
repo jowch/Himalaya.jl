@@ -261,7 +261,7 @@ re-derives geometry that create committed or that the user edited.
 
 Beam-centred q-rings on the detector image need `energy_kev`,
 `flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` all set.
-No view draws them since the Focus page was deleted (2026-11-20).
+No view draws them yet.
 
 ## Scan and grouping
 
@@ -445,14 +445,6 @@ to the images. No code path writes into an experiment directory.
 
 This rule is kept by code review. No test checks it for the scan path.
 
-## Legacy: experiment.toml
-
-Before the funnel, each experiment directory carried an `experiment.toml` and a
-lab-notebook CSV, and the CLI ingested them. That path, the `upgrade-grouping`
-command that retrofitted those experiments to the current grouping, and every
-reader of the TOML text kept in `experiments.config` have been deleted. The
-column is left in place and never read or sent.
-
 ## CLI reference
 
 The CLI does not create experiments. It works on experiments already in the
@@ -460,7 +452,7 @@ central DB (`HIMALAYA_DB_PATH`, else `~/.himalaya/himalaya.db`).
 
 ```
 himalaya analyze [-e <experiment> | --all] [-s <sample>]
-    Run peak-finding and indexing for every exposure that is not rejected.
+    Run peak-finding and indexing for every frame that is not dropped.
 
 himalaya show [-e <experiment>] -s <sample>
     Print the stored peaks, indices and active group for one sample.
