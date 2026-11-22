@@ -96,7 +96,7 @@ function indexpeaks(peaks, sharpness, domain; removesubsets = true, kwargs...)
     indices = Index[]
 
     for phase in (Lamellar, Hexagonal, Square, Pn3m, Im3m, Ia3d, Fd3m)
-        push!(indices, indexpeaks(phase, peaks, sharpness, domain; kwargs...)...)
+        append!(indices, indexpeaks(phase, peaks, sharpness, domain; kwargs...))
     end
 
     if removesubsets
