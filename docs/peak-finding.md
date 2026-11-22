@@ -155,11 +155,16 @@ but alone it adds more spurious candidates than the persistence detector.
    points and divided by `sqrt(Σ k² σ²)`. Each width is normalised by its
    median and 1.4826·MAD over the trace, and the maximum over widths is
    taken. Median and MAD use only points where that kernel fits inside the
-   trace, and the maximum at a point runs over the widths that fit there;
-   where none fits, `z` is undefined (`NaN`). Nonpositive or nonfinite
-   intensities are treated as missing: SNIP interpolates over them in log
-   space (leading and trailing blocks are ignored), and the residual is 0
-   there. The result does not depend on intensity scale.
+   trace and at least half of its window is usable; the maximum at a point
+   runs over the widths that fit there, and where none fits, `z` is undefined
+   (`NaN`). Points that are not significantly positive are treated as
+   missing: nonpositive or nonfinite intensities, points at or below their own
+   `σ`, and points whose 17-point windowed mean is not more than 3 standard
+   errors above zero (masked beamstop regions, noise-only tails, tails shifted
+   slightly below zero). SNIP interpolates over them in log space (leading and
+   trailing blocks are ignored), the residual is 0 there, and windows that are
+   less than half usable score `z = 0`. The result does not depend on
+   intensity scale.
 3. Keep persistence peaks whose max `z` within ±3 points is at least `kb`
    (default 5). This removes persistence peaks that are not significant
    against the noise. A peak where `z` is undefined (within a few points of
