@@ -48,3 +48,9 @@ export function invalidateOtherFrameAssignments(qc: QueryClient, exposureId: num
 export function invalidateSampleCalls(qc: QueryClient): void {
   qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "sample" && q.queryKey[2] === "call" });
 }
+
+export function invalidateAssignmentsExcept(qc: QueryClient, keep: readonly number[]): void {
+  qc.invalidateQueries({
+    predicate: (q) => q.queryKey[0] === "exposure" && q.queryKey[2] === "assignment" && !keep.includes(q.queryKey[1] as number),
+  });
+}

@@ -293,8 +293,8 @@ export interface SampleBridge {
 export const listBridges = (experimentId: number): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("GET", `/api/experiments/${experimentId}/bridges`);
 
-export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
-  request<SampleBridge[]>("POST", `/api/samples/${sampleId}/bridge`, { to_sample_id: toSampleId }, opts);
+export const bridgeSamples = (sampleId: number, toSampleId: number, keepCall: number | "both" | undefined, opts?: AuthOpts): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("POST", `/api/samples/${sampleId}/bridge`, keepCall === undefined ? { to_sample_id: toSampleId } : { to_sample_id: toSampleId, keep_call: keepCall }, opts);
 
 export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);

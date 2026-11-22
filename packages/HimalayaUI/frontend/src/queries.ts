@@ -20,6 +20,7 @@ import {
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
+import type { KeepCall } from "./lib/bridgeCall";
 import { patchComparesMutator } from "./lib/queue/mutators/compares";
 import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
@@ -330,6 +331,7 @@ export interface EditReads {
   assignment: (exposureId: number) => Promise<api.Assignment>;
   labels: () => Promise<api.SampleLabel[]>;
   bridges: () => Promise<api.SampleBridge[]>;
+  call: (sampleId: number) => Promise<api.SampleCall>;
   exposures: (sampleId: number) => Promise<api.Exposure[]>;
   labelColors: () => Promise<api.LabelColorEntry[]>;
   experiment: () => Promise<api.Experiment>;
@@ -352,7 +354,7 @@ export interface EditOps {
   setLabelColor: (label: string, color: api.LabelColor | null) => void;
   patchExperiment: (patch: ExperimentPatch) => void;
   patchSetup: (setupId: number, patch: SetupPatch) => void;
-  bridge: (sampleId: number, toSampleId: number) => void;
+  bridge: (sampleId: number, toSampleId: number, keepCall?: KeepCall) => void;
   unbridge: (sampleId: number) => void;
   patchCompares: (sampleId: number, change: api.CompareChange) => void;
   read: EditReads;
@@ -418,7 +420,7 @@ export function useEditOps(experimentId: number): EditOps {
     setLabelColor: (label, color) => labelColor.mutate({ label, color }),
     patchExperiment: (patch) => experiment.mutate(patch),
     patchSetup: (setupId, patch) => setup.mutate({ setupId, ...patch }),
-    bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
+    bridge: (sampleId, toSampleId, keepCall) => bridge.mutate(keepCall === undefined ? { sampleId, toSampleId } : { sampleId, toSampleId, keepCall }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),
     patchCompares: (sampleId, change) => compares.mutate({ sampleId, change }),
     read: {
@@ -429,6 +431,7 @@ export function useEditOps(experimentId: number): EditOps {
       assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
       labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
       bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+      call: (sampleId) => fresh(queryKeys.sampleCall(sampleId), () => api.getSampleCall(sampleId)),
       exposures: (sampleId) => fresh(queryKeys.exposures(sampleId), () => api.listExposures(sampleId)),
       labelColors: () => fresh(queryKeys.labelColors(), () => api.listLabelColors()),
       compares: () => fresh(queryKeys.compares(experimentId), () => api.listCompares(experimentId)),

@@ -9,7 +9,34 @@ end
 _sample_exists(db::SQLite.DB, sample_id::Int) = !isempty(Tables.rowtable(DBInterface.execute(db,
     "SELECT 1 FROM samples WHERE id = ?", [sample_id])))
 
+function _call_groups(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
+    out = Dict(Int(sid) => [Int(sid)] for sid in sample_ids)
+    isempty(sample_ids) && return out
+    ph = join(fill("?", length(sample_ids)), ",")
+    for r in Tables.rowtable(DBInterface.execute(db, """
+            SELECT b.sample_id AS sid, m.sample_id AS mate
+              FROM sample_bridges b
+              JOIN sample_bridges m ON m.group_id = b.group_id AND m.sample_id <> b.sample_id
+              JOIN samples s ON s.id = m.sample_id
+             WHERE b.sample_id IN ($ph) AND s.merged_into_id IS NULL
+             ORDER BY m.sample_id""", collect(Int, sample_ids)))
+        push!(out[Int(r.sid)], Int(r.mate))
+    end
+    out
+end
+
 function sample_call_members(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
+    groups = _call_groups(db, sample_ids)
+    own = _own_call_members(db, unique(reduce(vcat, values(groups); init = Int[])))
+    out = Dict{Int, valtype(own)}()
+    for (sid, group) in groups
+        ms = reduce(vcat, (get(own, g, eltype(valtype(own))[]) for g in group); init = eltype(valtype(own))[])
+        isempty(ms) || (out[sid] = sort(ms; by = m -> m.index_id))
+    end
+    out
+end
+
+function _own_call_members(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
     out = Dict{Int, Vector{NamedTuple{(:index_id, :exposure_id, :phase, :score), Tuple{Int, Int, String, Float64}}}}()
     isempty(sample_ids) && return out
     ph = join(fill("?", length(sample_ids)), ",")

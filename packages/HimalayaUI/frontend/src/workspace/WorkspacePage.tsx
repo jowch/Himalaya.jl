@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, LabelColor } from "../api";
+import type { CorpusSample, Exposure, IndexEntry, LabelColor, SampleCallMember } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -42,7 +42,7 @@ import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
-  bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, combinedEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
@@ -50,6 +50,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
+import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
@@ -69,7 +70,8 @@ import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "../ui/DetectorOverlay";
 import { Palette } from "../ui/palette/Palette";
-import { workspacePalette, type PaletteSetup } from "./palette";
+import { keepCallForm, workspacePalette, type PaletteSetup } from "./palette";
+import type { PaletteForm } from "../ui/palette/model";
 import { useAppTheme } from "../lib/theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
@@ -640,16 +642,73 @@ export function WorkspacePage(): JSX.Element {
     if (sampleId !== undefined && bridged.length > 0) unbridgeOne(sampleId);
   }, [sampleId, bridged, unbridgeOne]);
   const bridgeTo = useCallback(
-    (rid: number) => {
+    (rid: number, keep?: KeepCall) => {
       if (sampleId === undefined) return;
-      bridgeSamples.mutate({ sampleId, toSampleId: rid });
-      history.record(bridgeEntry(ops, {
-        label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
-        from: sampleId, to: rid, bridges: bridgeList, labels: labelList,
-      }));
+      const states = {
+        from: sample?.assignment_state ?? "indexed",
+        to: samples.find((s) => s.id === rid)?.assignment_state ?? "indexed",
+      };
+      const send = (lost: readonly SampleCallMember[]): void => {
+        bridgeSamples.mutate(keep === undefined ? { sampleId, toSampleId: rid } : { sampleId, toSampleId: rid, keepCall: keep });
+        history.record(bridgeEntry(ops, {
+          label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
+          from: sampleId, to: rid, bridges: bridgeList, labels: labelList, keep, states, lost,
+        }));
+      };
+      if (typeof keep !== "number") return send([]);
+      ops.read.call(keep === sampleId ? rid : sampleId).then((c) => send(c.members), () => send([]));
     },
-    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
+    [sampleId, sample?.name, sample?.assignment_state, samples, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
   );
+  const setupNames = useMemo(() => (setups.length > 1 ? new Map(setups.map((st) => [st.id, st.name])) : undefined), [setups]);
+  const setupOfSample = useCallback(
+    (s: CorpusSample | undefined): string | undefined => (s?.setup_id == null ? undefined : setupNames?.get(s.setup_id)),
+    [setupNames],
+  );
+  const nameWithSetup = useCallback(
+    (s: Pick<CorpusSample, "id" | "name">): string => {
+      const setup = setupOfSample(samples.find((x) => x.id === s.id));
+      return setup ? `${s.name} in ${setup}` : s.name;
+    },
+    [samples, setupOfSample],
+  );
+  const bridgeChoices = useCallback(
+    (rid: number) => {
+      const there = samples.find((s) => s.id === rid);
+      return sample && there ? keepChoices(sample, there, nameWithSetup) : undefined;
+    },
+    [sample, samples, nameWithSetup],
+  );
+  const unsettledMate = useMemo(() => {
+    if (!sample) return undefined;
+    return bridged.map((id) => samples.find((s) => s.id === id)).find((m) => m !== undefined && callStatesSplit(sample, m));
+  }, [sample, samples, bridged]);
+  const [paletteStart, setPaletteStart] = useState<PaletteForm | undefined>(undefined);
+  const settlePrompted = useRef(new Set<number>());
+  useEffect(() => {
+    if (!username || !sample || !unsettledMate || settlePrompted.current.has(sample.id)) return;
+    const choices = keepChoices(sample, unsettledMate, nameWithSetup);
+    if (!choices) return;
+    settlePrompted.current.add(sample.id);
+    const here = sample.id;
+    const mate = unsettledMate.id;
+    const stateOf = new Map([[here, sample.assignment_state ?? "indexed"], [mate, unsettledMate.assignment_state ?? "indexed"]]);
+    const settle = (keep: KeepCall): void => {
+      if (typeof keep !== "number") return;
+      const state = stateOf.get(keep) ?? "indexed";
+      const record = (lost: readonly SampleCallMember[]): void => {
+        ops.bridge(here, mate, keep);
+        history.record(settleCallEntry(ops, {
+          label: `kept ${nameWithSetup(keep === here ? sample : unsettledMate)}'s call for the same sample`, sampleId: here, exposureId: undefined,
+          from: here, to: mate, keep, lost,
+        }));
+      };
+      if (state !== "form_factor") return record([]);
+      ops.read.call(here).then((c) => record(c.members), () => record([]));
+    };
+    setPaletteStart(keepCallForm(`Calls differ: same sample as ${nameWithSetup(unsettledMate)}`, choices, settle, "keep"));
+    setPaletteOpen(true);
+  }, [username, sample, unsettledMate, nameWithSetup, ops, history]);
   const labelEdit = useCallback(
     (sid: number, tag: string, added: boolean) => {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
@@ -1032,10 +1091,13 @@ export function WorkspacePage(): JSX.Element {
     },
     bridge: {
       samples: bridgePickable,
-      pick: (rid) => {
+      pick: (rid, keep) => {
         if (sampleId === undefined) return;
-        bridgeTo(rid);
+        bridgeTo(rid, keep);
       },
+      choices: bridgeChoices,
+      names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
+      setupOf: (id) => setupOfSample(samples.find((x) => x.id === id)),
       bridged: bridgedNames,
       leave: leaveBridges,
     },
@@ -1145,7 +1207,7 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setBigOpen(false)}
             />
           )}
-          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} onType={paletteCorpus.onType} />}
+          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} start={paletteStart} onClose={() => { setPaletteOpen(false); setPaletteStart(undefined); }} onType={paletteCorpus.onType} />}
         </>
       }
       header={
