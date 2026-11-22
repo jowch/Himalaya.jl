@@ -1,4 +1,5 @@
 import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
+import type { CorpusExperiment, CorpusSampleRow } from "../hooks/useCorpusPalette";
 import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
@@ -68,8 +69,8 @@ export interface WorkspacePaletteInput extends AppActions {
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
   elsewhere?: {
-    experiments: readonly { id: number; name: string }[];
-    samples: readonly { id: number; name: string; experiment: string; href: string }[];
+    experiments: readonly CorpusExperiment[];
+    samples: readonly CorpusSampleRow[];
     go: (path: string) => void;
   };
 }
@@ -92,6 +93,14 @@ export function themePage(theme: AppActions["theme"]): PalettePage {
     arg: "Theme",
     items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === theme.current ? "Current" : undefined, run: () => theme.choose(t.theme) })),
   };
+}
+
+export function openExperimentItem(e: CorpusExperiment, go: (path: string) => void): PaletteItem {
+  return { id: `open-${e.id}`, label: `Open ${e.name}`, name: e.name, run: () => go(`/experiments/${e.id}`) };
+}
+
+export function goToSampleItem(s: CorpusSampleRow, go: (path: string) => void): PaletteItem {
+  return { id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: s.experiment, run: () => go(s.href) };
 }
 
 export function appItems(p: AppActions): PaletteItem[] {
@@ -333,7 +342,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
     { id: "home", label: "Back to all experiments", run: p.home },
-    ...(p.elsewhere?.experiments ?? []).map((e) => ({ id: `open-${e.id}`, label: `Open ${e.name}`, name: e.name, typeOnly: true, run: () => p.elsewhere!.go(`/experiments/${e.id}`) })),
+    ...(p.elsewhere?.experiments ?? []).map((e) => ({ ...openExperimentItem(e, p.elsewhere!.go), typeOnly: true })),
     ...(p.removeExperiment ? [{ id: "remove-experiment", label: "Remove this experiment", danger: true, typeOnly: true, run: p.removeExperiment }] : []),
   ];
   const app: PaletteItem[] = [
@@ -352,7 +361,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       searchOnly: true,
       items: [
         ...p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })),
-        ...(p.elsewhere?.samples ?? []).map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: s.experiment, run: () => p.elsewhere!.go(s.href) })),
+        ...(p.elsewhere?.samples ?? []).map((s) => goToSampleItem(s, p.elsewhere!.go)),
       ],
     },
   ];

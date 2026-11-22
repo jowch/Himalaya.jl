@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { TopNav } from "./TopNav";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";
@@ -34,6 +34,11 @@ function AppShell(): JSX.Element {
   );
 }
 
+function WorkspaceRoute(): JSX.Element {
+  const { id } = useParams();
+  return <WorkspacePage key={id} />;
+}
+
 export function AppRoutes(): JSX.Element {
   return (
     <Routes>
@@ -43,7 +48,7 @@ export function AppRoutes(): JSX.Element {
         <Route path="/experiments/:id" element={<ExperimentEntry />} />
         <Route path="*" element={<LinkGone message={PAGE_GONE} />} />
       </Route>
-      <Route path="/experiments/:id/workspace/:sampleId?" element={<WorkspacePage />} />
+      <Route path="/experiments/:id/workspace/:sampleId?" element={<WorkspaceRoute />} />
       <Route path="/" element={<Navigate to="/experiments" replace />} />
     </Routes>
   );

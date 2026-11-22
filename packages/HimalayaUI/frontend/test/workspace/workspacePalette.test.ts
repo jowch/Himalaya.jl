@@ -202,7 +202,7 @@ describe("workspacePalette", () => {
     const go = vi.fn();
     const elsewhere = {
       experiments: [{ id: 2, name: "Beamtime 12" }],
-      samples: [{ id: 40, name: "lipid_A", experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }],
+      samples: [{ id: 40, name: "lipid_A", experimentId: 2, experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }],
       go,
     };
     const { groups, pages } = workspacePalette(input({ elsewhere }));
@@ -221,7 +221,7 @@ describe("workspacePalette", () => {
   it("goes to this experiment's samples in place and keeps them ahead of other experiments' samples", () => {
     const goSample = vi.fn();
     const here = { id: 5, name: "lipid_B" } as unknown as WorkspacePaletteInput["samples"][number];
-    const elsewhere = { experiments: [], samples: [{ id: 40, name: "lipid_A", experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }], go: vi.fn() };
+    const elsewhere = { experiments: [], samples: [{ id: 40, name: "lipid_A", experimentId: 2, experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }], go: vi.fn() };
     const { groups, pages } = workspacePalette(input({ samples: [here], goSample, elsewhere }));
     const found = rootRows(groups, pages, "lipid").flatMap((r) => (r.kind === "item" ? [r.item.label] : []));
     expect(found.indexOf("Go to lipid_B")).toBeLessThan(found.indexOf("Go to lipid_A"));
