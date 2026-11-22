@@ -514,7 +514,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-notice")).toBeNull();
   });
 
-  it("counts exposures waiting for a trace and failed analyses, and a problem opens its sample", () => {
+  it("counts frames waiting for a trace and failed analyses, and a problem opens its sample", () => {
     state.problems = {
       ingest_error: null,
       exposures: [
@@ -525,7 +525,7 @@ describe("WorkspacePage", () => {
     };
     renderAt("/experiments/1/workspace/10");
     const notice = screen.getByTestId("workspace-notice");
-    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 exposures waiting for a trace · 1 analysis failed");
+    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 frames waiting for a trace · 1 analysis failed");
     fireEvent.click(within(notice).getByRole("button", { name: "Details" }));
     const rows = screen.getAllByTestId("problem-row");
     expect(rows).toHaveLength(3);
@@ -671,7 +671,7 @@ describe("WorkspacePage", () => {
     ] };
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
-    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 exposure waiting for a trace");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 frame waiting for a trace");
   });
 
   it("keeps saying no integrated trace when only another frame is pending", () => {
@@ -2116,16 +2116,16 @@ describe("WorkspacePage", () => {
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" })).toBeInTheDocument();
   });
 
-  it("folds Call and Exposure as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
       const call = within(tools).getByRole("button", { name: /Call/ });
-      const exposure = within(tools).getByRole("button", { name: /Exposure/ });
+      const exposure = within(tools).getByRole("button", { name: /^Frame/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
@@ -2135,8 +2135,8 @@ describe("WorkspacePage", () => {
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-      expect(within(tools).queryByRole("button", { name: /Exposure/ })).toBeNull();
-      expect(within(tools).getByRole("heading", { name: /Exposure/ })).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /^Frame/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /^Frame/ })).toBeInTheDocument();
       expect(within(tools).queryByText("File")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
@@ -2147,7 +2147,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Call", "Indexing", "Exposure"]);
+    expect(headings).toEqual(["Call", "Indexing", "Frame"]);
   });
 
   it("the Custom index button in the indexing section opens a custom index", () => {
@@ -2169,7 +2169,7 @@ describe("WorkspacePage", () => {
   it("lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("KindSingle");
     expect(text).toContain("Exposure—");
@@ -2180,7 +2180,7 @@ describe("WorkspacePage", () => {
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
     expect(text).toContain("I₀1.501");
@@ -2192,7 +2192,7 @@ describe("WorkspacePage", () => {
       selected: true, timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
     })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Acquired2026-04-26 18:20:27");
     expect(text).toContain("Flight tube700 mm");
@@ -2202,7 +2202,7 @@ describe("WorkspacePage", () => {
 
   it("keeps the new .prp rows with a dash when the frame has no .prp", () => {
     renderAt("/experiments/1/workspace/10");
-    const text = screen.getByRole("heading", { name: "Exposure" }).closest("section")!.textContent ?? "";
+    const text = screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent ?? "";
     for (const k of ["Acquired", "Flight tube", "Energy", "Detector"]) expect(text).toContain(`${k}—`);
   });
 
