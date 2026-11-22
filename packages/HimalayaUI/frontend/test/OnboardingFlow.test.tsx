@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "./test-utils";
-import { OnboardingFlow } from "../src/shell/OnboardingFlow";
+import { OnboardingFlow, handleFromName } from "../src/shell/OnboardingFlow";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 
@@ -115,7 +115,7 @@ describe("OnboardingFlow tutorial", () => {
     expect(screen.getByTestId("onboarding-preview")).toHaveTextContent("José Ruiz @jose");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(api.createUser).toHaveBeenCalledWith("jose", { first_name: "José", last_name: "Ruiz" }, { username: "jose" });
-    expect(screen.queryByText("Handle required")).toBeNull();
+    expect(screen.queryByText("Pick a handle (letters, digits, _)")).toBeNull();
   });
 
   it("uses a typed handle instead of the derived one", async () => {
@@ -133,7 +133,55 @@ describe("OnboardingFlow tutorial", () => {
     await screen.findByPlaceholderText("First name");
     expect(screen.getByTestId("onboarding-new-handle")).toHaveAttribute("placeholder", "handle");
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(await screen.findByText("Handle required")).toBeInTheDocument();
+    expect(await screen.findByText("Pick a handle (letters, digits, _)")).toBeInTheDocument();
     expect(api.createUser).not.toHaveBeenCalled();
+  });
+
+  it("derives a free handle when the name's handle is taken, instead of signing in as that person", async () => {
+    vi.mocked(api.listUsers).mockResolvedValue([
+      { username: "ana", first_name: "Ana", last_name: "First" } as never,
+      { username: "ana_s", first_name: "Ana", last_name: "Silva" } as never,
+    ]);
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await screen.findByRole("option", { name: /Ana First/ });
+    await user.selectOptions(screen.getByTestId("onboarding-user-select"), "__new__");
+    await user.type(screen.getByPlaceholderText("First name"), "Ana");
+    await user.type(screen.getByPlaceholderText("Last name"), "Second");
+    expect(screen.getByTestId("onboarding-new-handle")).toHaveAttribute("placeholder", "ana2");
+    expect(screen.getByTestId("onboarding-preview")).toHaveTextContent("Ana Second @ana2");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(api.createUser).toHaveBeenCalledWith("ana2", { first_name: "Ana", last_name: "Second" }, { username: "ana2" });
+  });
+
+  it("tries the last name's initial before a number", async () => {
+    vi.mocked(api.listUsers).mockResolvedValue([{ username: "ana", first_name: "Ana", last_name: "First" } as never]);
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await screen.findByRole("option", { name: /Ana First/ });
+    await user.selectOptions(screen.getByTestId("onboarding-user-select"), "__new__");
+    await user.type(screen.getByPlaceholderText("First name"), "Ana");
+    await user.type(screen.getByPlaceholderText("Last name"), "Second");
+    expect(screen.getByTestId("onboarding-new-handle")).toHaveAttribute("placeholder", "ana_s");
+  });
+
+  it("says a typed handle is taken rather than signing in as its owner", async () => {
+    vi.mocked(api.listUsers).mockResolvedValue([{ username: "ana", first_name: "Ana", last_name: "First" } as never]);
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await screen.findByRole("option", { name: /Ana First/ });
+    await user.selectOptions(screen.getByTestId("onboarding-user-select"), "__new__");
+    await user.type(screen.getByPlaceholderText("First name"), "Ana");
+    await user.type(screen.getByTestId("onboarding-new-handle"), "Ana");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText("@Ana is taken. Pick another handle.")).toBeInTheDocument();
+    expect(api.createUser).not.toHaveBeenCalled();
+  });
+
+  it("transliterates letters that do not decompose", () => {
+    expect(handleFromName("Łukasz", "")).toBe("lukasz");
+    expect(handleFromName("Søren", "")).toBe("soren");
+    expect(handleFromName("Đorđe", "")).toBe("dorde");
+    expect(handleFromName("Strauß", "")).toBe("strauss");
   });
 });
