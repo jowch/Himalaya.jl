@@ -44,8 +44,9 @@ function grid_step(q::AbstractVector{<:Real})
 end
 
 # Greedy one-to-one assignment, closest pairs first. `blocked` autos are not
-# available. Returns the mask of claimed auto peaks.
-function _claim_nearest(auto_q, cur_q, q_step, blocked)
+# available. Returns owner[ai] = index of the curation that claimed auto peak
+# ai, or 0.
+function _assign_nearest(auto_q, cur_q, q_step, blocked)
     pairs = Tuple{Float64, Int, Int}[]
     for (ci, cq) in enumerate(cur_q), (ai, aq) in enumerate(auto_q)
         blocked[ai] && continue
@@ -53,15 +54,18 @@ function _claim_nearest(auto_q, cur_q, q_step, blocked)
         d <= peak_match_tol(aq, q_step) && push!(pairs, (d, ai, ci))
     end
     sort!(pairs)
-    claimed = falses(length(auto_q))
-    used    = falses(length(cur_q))
+    owner = zeros(Int, length(auto_q))
+    used  = falses(length(cur_q))
     for (_, ai, ci) in pairs
-        (claimed[ai] || used[ci]) && continue
-        claimed[ai] = true
-        used[ci]    = true
+        (owner[ai] != 0 || used[ci]) && continue
+        owner[ai] = ci
+        used[ci]  = true
     end
-    claimed
+    owner
 end
+
+_claim_nearest(auto_q, cur_q, q_step, blocked) =
+    BitVector(_assign_nearest(auto_q, cur_q, q_step, blocked) .!= 0)
 
 """
     match_curations(auto_q, exclude_q, add_q, q_step) -> (excluded, superseded)
@@ -134,4 +138,41 @@ function peak_listing(db::SQLite.DB, exposure_id::Integer; include_superseded::B
     end
     sort!(rows; by = r -> Float64(r.q))
     rows
+end
+
+"""
+    exclude_ids_for_peak(db, exposure_id, q) -> Vector{Int}
+
+Ids of the `exclude` curations that attach to the auto peak at `q` (the
+payload `q` of a `peak_unexcluded` event). Never returns a neighbour's
+exclude. With a known `q_step` and an auto peak at `q`, that is the exclude
+the one-to-one match gave this peak. With `q_step` unknown, every exclude
+within the base tolerance (the original rule). With no auto peak at `q`
+(it was re-detected elsewhere), the nearest exclude within tolerance plus any
+within the base tolerance.
+"""
+function exclude_ids_for_peak(db::SQLite.DB, exposure_id::Integer, q::Real)
+    q0   = Float64(q)
+    step = exposure_q_step(db, exposure_id)
+    ex = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id",
+        [Int(exposure_id)]))
+    base = peak_match_tol(q0, nothing)
+    legacy = [Int(e.id) for e in ex if abs(Float64(e.q) - q0) <= base]
+    step === nothing && return legacy
+
+    auto = Tables.rowtable(DBInterface.execute(db,
+        "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [Int(exposure_id)]))
+    aq = [Float64(r.q) for r in auto]
+    exq = [Float64(e.q) for e in ex]
+    ti = isempty(aq) ? 0 : argmin(abs.(aq .- q0))
+    if ti != 0 && abs(aq[ti] - q0) <= base
+        owner = _assign_nearest(aq, exq, step, falses(length(aq)))
+        return owner[ti] == 0 ? Int[] : [Int(ex[owner[ti]].id)]
+    end
+    tol = peak_match_tol(q0, step)
+    near = [i for i in eachindex(exq) if abs(exq[i] - q0) <= tol]
+    ids = Set(legacy)
+    isempty(near) || push!(ids, Int(ex[near[argmin([abs(exq[i] - q0) for i in near])]].id))
+    collect(ids)
 end

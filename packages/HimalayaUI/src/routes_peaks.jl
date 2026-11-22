@@ -209,7 +209,7 @@ function register_peaks_routes!()
                     _enqueue_broadcast_from_result!(result, "peak_excluded",
                         "exposure", exposure_id; post_state = post_state)
                 end
-            else
+            elseif Int(peak_row.excluded) == 1
                 # peak_unexcluded: find the prior peak_excluded event to record as undoes.
                 prior = Tables.rowtable(DBInterface.execute(db, """
                     SELECT id FROM user_actions
