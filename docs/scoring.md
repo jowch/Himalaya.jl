@@ -73,6 +73,8 @@ The sharper peak must lie below `t`'s lowest q because the failure being correct
 
 Known limit: the rule only overrides when one index strictly contains the other's peaks. If the higher-scoring index explains some peaks the sharper one does not, score order stands.
 
+The hybrid detector stores a peak whose measured sharpness is ≤ 0 with the median positive sharpness of the returned peaks. That substituted value can be the sharper peak that lets a containing index displace the top one.
+
 `score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order, so the auto call can sit below a higher-scoring alternative. The displaced index shares peaks with the one picked, so it is not selected later.
 
 ## R² — not in the score

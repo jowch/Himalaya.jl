@@ -213,24 +213,25 @@ end
     mktempdir() do tmp
         ctx = setup_clean_analyzed_exposure(tmp)
 
-        # Exclude the basis (lowest-q) peak — indexpeaks then finds no phase
+        # Exclude the two lowest-q peaks — indexpeaks then finds no phase
         # candidates and the re-analysis persists ZERO indices. The stored
         # inputs hash (written even on a zero-index persist) must still prove
         # no-op-ness on later re-analyzes; requiring indices to exist would
         # write a durable analyze_run row on every no-op call (#297/#268).
-        auto_q = Tables.rowtable(DBInterface.execute(ctx.db,
-            "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q ASC LIMIT 1",
-            [ctx.exposure_id]))[1].q
-        DBInterface.execute(ctx.db,
-            "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
-            [ctx.exposure_id, Float64(auto_q)])
+        for r in Tables.rowtable(DBInterface.execute(ctx.db,
+                "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q ASC LIMIT 2",
+                [ctx.exposure_id]))
+            DBInterface.execute(ctx.db,
+                "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)",
+                [ctx.exposure_id, Float64(r.q)])
+        end
 
         # Slow-path re-analysis: inputs hash drifts, indexing runs, finds zero.
         analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)
         n_indices = first(Tables.rowtable(DBInterface.execute(ctx.db,
             "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
             [ctx.exposure_id]))).c
-        # Precondition: this fixture really indexes to zero without its basis.
+        # Precondition: this fixture really indexes to zero without its two lowest peaks.
         # If core recall changes and this fails, the testset no longer covers
         # the zero-index case — pick a different peak to exclude.
         @test n_indices == 0
@@ -362,10 +363,11 @@ end
         @test baseline_auto >= 1
 
         # Add an 'add' curation. Sharpness for adds must be sampled from the
-        # trace, so the fast path MUST NOT short-circuit.
+        # trace, so the fast path MUST NOT short-circuit. The q is far from
+        # every auto peak, so the add does not replace one.
         DBInterface.execute(ctx.db,
             "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)",
-            [ctx.exposure_id, 0.123])
+            [ctx.exposure_id, 0.3])
 
         # First call: slow path (inputs hash drifts due to new add).
         analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)

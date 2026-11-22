@@ -847,7 +847,7 @@ end
 # obviously file-I/O-free).
 # ──────────────────────────────────────────────────────────────────────────────
 
-const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+2")
+const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+3")
 
 function read_analysis_version(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     rows = Tables.rowtable(DBInterface.execute(db,
@@ -1054,7 +1054,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     q, I, σ = load_dat(dat_path)
     q_step = grid_step(q)
-    fresh_peaks_result = findpeaks_skipped ? nothing : Himalaya.findpeaks(q, I, σ)
+    fresh_peaks_result = findpeaks_skipped ? nothing : Himalaya.findpeaks(q, I, σ; method = :hybrid)
 
     # Issue #42: bracket the entire write sequence — diff_update + trace_hash
     # UPDATE + persist_analysis! + the durable analyze_run row — in one tx.
