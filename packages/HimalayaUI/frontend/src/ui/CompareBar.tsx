@@ -62,7 +62,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
             </button>
             {c.scale !== undefined && (
               <span
-                className={"flex min-w-0 items-baseline whitespace-nowrap text-ink-faint" + dim}
+                className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
                 data-scale-source={c.scale.source}
                 title={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}
               >
